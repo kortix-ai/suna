@@ -106,6 +106,16 @@ export interface CreateSandboxOpts {
    * `session_sandboxes` row.
    */
   workloadType?: SandboxWorkloadType;
+  /**
+   * Boot this session as a CELL (a V8 isolate on a celld node) rather than a
+   * microVM of its own. Only the pi runtime can: the cell speaks the session
+   * protocol (apps/pi-worker-js `/kortix/*`) and has no shell of its own, which
+   * is exactly what a pi worker needs and what the OpenCode harness does not.
+   * Measured on dev 2026-09-06: microVM session ready in 8-12 s; a celld node
+   * costs 3.3 s once and every session after it is an isolate — 340-570 ms to
+   * spawn, 415-745 ms for a full scripted turn.
+   */
+  piWorker?: boolean;
   /** Provider-normalized App machine limits. Session snapshots retain their existing limits. */
   resourceSpec?: {
     cpuCores: number;

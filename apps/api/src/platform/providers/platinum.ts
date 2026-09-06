@@ -195,6 +195,48 @@ function isNameTakenConflict(error: unknown): boolean {
   return /name_taken|name[_ ]?already|name.{0,24}(exists|conflict|taken)/i.test(message);
 }
 
+
+/** The worker a pi cell boots. One per deployment; celld serves every session from it. */
+export const CELL_WORKER_NAME = 'pi-agent';
+/** The template that runs celld itself. A cell is an isolate INSIDE one of these. */
+export const CELL_TEMPLATE = 'pt-celld';
+/** The port the cell's worker listens on (the microVM agent's is 8000). */
+export const CELL_PORT = 8080;
+
+/**
+ * The create body for a session that runs as a CELL.
+ *
+ * Two things differ from a microVM create and both are load-bearing. The
+ * runtime is `cell` with a worker name, because Platinum refuses a worker-less
+ * cell as malformed. And every session variable is prefixed `CELLD_VAR_`,
+ * because celld passes exactly those into the isolate — an unprefixed variable
+ * reaches the node and never the worker, which looks like an agent that booted
+ * with no configuration at all.
+ */
+export function buildCellCreateBody(input: {
+  name: string;
+  envVars: Record<string, string>;
+  cpu?: number;
+  ramMb?: number;
+  metadata?: Record<string, unknown>;
+}): Record<string, unknown> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(input.envVars ?? {})) env[`CELLD_VAR_${k}`] = String(v);
+  return {
+    template: CELL_TEMPLATE,
+    runtime: 'cell',
+    worker: CELL_WORKER_NAME,
+    name: input.name,
+    ...(input.cpu ? { cpu: input.cpu } : {}),
+    ...(input.ramMb ? { ram_mb: input.ramMb } : {}),
+    // Inline expose, not `exposed_ports`: the create only opens a port under
+    // `expose`, and the other spelling is refused (platinum api #924).
+    expose: [{ port: CELL_PORT, public: true }],
+    env,
+    metadata: { 'kortix.managed': 'true', 'kortix.runtime': 'cell', ...(input.metadata ?? {}) },
+  };
+}
+
 export class PlatinumProvider implements SandboxProvider {
   readonly name: ProviderName = 'platinum';
 
@@ -252,6 +294,13 @@ export class PlatinumProvider implements SandboxProvider {
   private async provisionFromTemplate(
     template: string,
     opts: CreateSandboxOpts,
+    /**
+     * A ready-made create body. A cell needs a different body (runtime, worker,
+     * CELLD_VAR_ env) but the SAME everything else — dedup name, idempotency
+     * key, retry classification, eager expose, baseUrl — so it overrides the
+     * body rather than forking the method.
+     */
+    bodyOverride?: Record<string, unknown>,
   ): Promise<ProvisionResult> {
     const _t0 = Date.now();
     const workloadType = sandboxWorkloadType(opts);
@@ -296,6 +345,25 @@ export class PlatinumProvider implements SandboxProvider {
           }
         : null;
 
+    // A pi session runs as a CELL: an isolate on a celld node, not a microVM of
+    // its own. Everything below this point (dedup name, idempotency key, expose,
+    // baseUrl) is identical — only the body differs, because the lifecycle a
+    // cell takes is the same four host commands a microVM takes.
+    if (opts.piWorker) {
+      const cellBody = buildCellCreateBody({
+        name: dedup?.name ?? `kortix-cell-${opts.sandboxId ?? Date.now()}`,
+        envVars,
+        cpu: opts.resourceSpec?.cpuCores,
+        ramMb: opts.resourceSpec ? Math.round(opts.resourceSpec.memoryGb * 1024) : undefined,
+        metadata: {
+          'kortix.env': config.INTERNAL_KORTIX_ENV,
+          'kortix.workload': workloadType,
+          ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
+        },
+      });
+      return this.provisionFromTemplate(CELL_TEMPLATE, opts, cellBody);
+    }
+
     const createBody: Record<string, unknown> = {
       template,
       envVars,
@@ -326,7 +394,7 @@ export class PlatinumProvider implements SandboxProvider {
     if (dedup) {
       createBody.name = dedup.name;
     }
-    const createBodyJson = JSON.stringify(createBody);
+    const createBodyJson = JSON.stringify(bodyOverride ?? createBody);
     const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
     // This asks Platinum to long-poll server-side for up to 60s
     // (wait_timeout_ms) — platinumJson's default 20s client-side abort budget
@@ -392,7 +460,7 @@ export class PlatinumProvider implements SandboxProvider {
       );
     }
 
-    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
+    const ingressPort = bodyOverride ? CELL_PORT : (workloadType === 'app' ? 8080 : AGENT_PORT);
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment

@@ -632,6 +632,13 @@ export async function provisionSessionSandbox(opts: {
         // first. The claim delivers the exact env the create would have
         // (session token + gateway URL included), so the box boots the same
         // session either way; null falls through to the cold create unchanged.
+        // A pi worker boot runs as a CELL on Platinum: the cell speaks the
+        // session protocol (apps/pi-worker-js `/kortix/*`) and spawns as an
+        // isolate rather than a microVM. Inert for every other runtime and for
+        // every other provider.
+        if (opts.metadata?.pi_worker_boot === true && providerName === 'platinum') {
+          providerCreateInput.piWorker = true;
+        }
         const pooledClaim =
           opts.metadata?.pi_worker_boot === true && providerName === 'platinum'
             ? await claimParkedPlatinumBox(
