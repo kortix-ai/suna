@@ -4,9 +4,9 @@
  * What a subproject owns, beside the composer: Instructions, Context,
  * Scheduled, and (for a manager) Access — one flat panel of stacked sections
  * on the right of the page (user, 2026-09-06: "like Claude's project page,
- * not a drawer"). A section with something in it opens on load; an empty one
- * shows its one-line invitation and a `+` that opens the editor. The editors
- * are the same ones the sheet used (`subproject-sections.tsx`).
+ * not a drawer"). Every section starts closed, showing one line — what is in
+ * it, or the invitation when empty — and a caret; the title opens it. The
+ * editors are the same ones the sheet used (`subproject-sections.tsx`).
  */
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { AgentPeopleSection } from '@/features/workspace/capabilities/agents/agent-people-section';
@@ -15,7 +15,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { listProjectTriggers, type Subproject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { CaretDownIcon, PlusIcon } from '@phosphor-icons/react';
+import { CaretDownIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -111,8 +111,8 @@ export function SubprojectAside({
 
 /**
  * One section of the panel. The header is the disclosure trigger — its
- * accessible name is exactly the title, so the summary and the glyph live
- * beside it, not inside it. Opens on load when it holds something.
+ * accessible name is exactly the title, so the summary and the caret live
+ * beside it, not inside it. Closed on load, every one (user, 2026-09-06).
  */
 function AsideSection({
   title,
@@ -130,7 +130,7 @@ function AsideSection({
   canOpen: boolean;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(!empty);
+  const [open, setOpen] = useState(false);
   return (
     <Disclosure
       open={open && canOpen}
@@ -162,9 +162,9 @@ function AsideSection({
           </p>
         </div>
         {canOpen ? (
-          // The same toggle as the title, drawn as the glyph the state
-          // invites: `+` on an empty section, a caret once it holds
-          // something. Decorative — the title already carries the name.
+          // The same toggle as the title, drawn as a caret — one glyph for
+          // every section, whatever it holds. Decorative: the title already
+          // carries the name.
           <DisclosureTrigger>
             <button
               type="button"
@@ -172,13 +172,9 @@ function AsideSection({
               aria-hidden
               className="text-muted-foreground hover:text-foreground hover:bg-hover flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
             >
-              {empty && !open ? (
-                <PlusIcon className="size-4" />
-              ) : (
-                <CaretDownIcon
-                  className={cn('size-4 transition-transform', open && 'rotate-180')}
-                />
-              )}
+              <CaretDownIcon
+                className={cn('size-4 transition-transform', open && 'rotate-180')}
+              />
             </button>
           </DisclosureTrigger>
         ) : null}
