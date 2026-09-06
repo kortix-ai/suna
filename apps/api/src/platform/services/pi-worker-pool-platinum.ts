@@ -34,6 +34,56 @@ const PROVIDER_CALL_TIMEOUT_MS = 30_000;
 const CLAIM_REQUEST_TIMEOUT_MS = 5_000;
 const MAX_CREATES_PER_MAINTAIN = 2;
 
+/**
+ * THE POOL IS OFF UNTIL A CELL CAN ACTUALLY BE CLAIMED.
+ *
+ * A claim has to do two things: prove the claimer found the box through this
+ * pool, and hand the box the session's environment. The cell worker
+ * (apps/pi-worker-js) implements neither — it has no /kortix/claim route, and
+ * an unknown path falls through to the cell's generic handler. Measured on dev
+ * 2026-09-06: POST /kortix/claim with a DELIBERATELY WRONG park token and
+ * POST /definitely-not-a-route returned byte-identical 200 bodies.
+ *
+ * So `res.ok` was a false positive. A claim would have "succeeded" against any
+ * parked cell, renamed it to the session's name, and handed the session a cell
+ * still holding the PARK's environment — no Kortix token, no API URL, no repo.
+ * That is worse than a cold create, and silent.
+ *
+ * Two guards, because either alone can be defeated. The claim now requires the
+ * response to SAY it claimed (`claimed: true`), which no generic handler emits;
+ * and maintain parks nothing while this is false, because a park that can never
+ * be claimed is 4 GB of dev capacity held for no reason — which is what caused
+ * the `no capacity` 503 that broke session 9fec1c03.
+ *
+ * Flip this to true in the same commit that gives the worker a real claim
+ * route, not before. A cold cell create measured 1.0-1.4 s to running and
+ * ~0.5 s to serving on dev, so what the pool is worth is about a second — far
+ * less than the cost of a session that boots with someone else's env.
+ */
+const CELL_CLAIM_IMPLEMENTED = false;
+
+/**
+ * Is the Platinum pool usable at all? Both halves matter: an operator can turn
+ * it off with the target, and it turns ITSELF off while no worker can honour a
+ * claim. Exported so the claim about it is about this expression and not about
+ * a re-implementation of it in a test.
+ */
+export function cellClaimImplemented(): boolean {
+  return CELL_CLAIM_IMPLEMENTED;
+}
+
+export function platinumPoolEnabled(): boolean {
+  return CELL_CLAIM_IMPLEMENTED && config.KORTIX_PI_WORKER_POOL_TARGET > 0;
+}
+
+/**
+ * Did the box SAY it was claimed? A cell answers 200 to any path, so the status
+ * code carries no information — only an explicit `claimed: true` does.
+ */
+export function claimWasHonoured(body: unknown): boolean {
+  return (body as { claimed?: unknown } | null)?.claimed === true;
+}
+
 export interface PlatinumParkedBox {
   externalId: string;
   name: string;
@@ -207,7 +257,7 @@ export async function claimParkedPlatinumBox(
   claimEnv: Record<string, string>,
   sessionBoxName: string,
 ): Promise<ClaimedPiWorkerBox | null> {
-  if (config.KORTIX_PI_WORKER_POOL_TARGET <= 0) return null;
+  if (!platinumPoolEnabled()) return null;
   let candidates: PlatinumParkedBox[];
   let currentHash8: string;
   try {
@@ -237,6 +287,16 @@ export async function claimParkedPlatinumBox(
         console.warn(`[pi-pool/platinum] claim of ${box.externalId} failed: HTTP ${res.status}`);
         continue;
       }
+      // A 200 IS NOT A CLAIM. The cell's generic handler answers 200 to any
+      // path, so the response has to say what it did. Anything that does not
+      // is treated as a box that was never claimed, and the caller cold-creates.
+      const claimed = await res.json().then(claimWasHonoured, () => false);
+      if (!claimed) {
+        console.warn(
+          `[pi-pool/platinum] ${box.externalId} answered the claim without claiming it — cold-creating instead`,
+        );
+        continue;
+      }
       // The claim is won. The rename hands the box to the session AND takes it
       // out of the pool in one mutation; a failure here leaves a claimed box
       // wearing a park name, which the next maintain() re-reads directly and
@@ -259,7 +319,7 @@ let maintainInFlight: Promise<void> | null = null;
 
 /** Reconcile the Platinum pool toward its target. Never throws. */
 export function maintainPlatinumPiWorkerPool(): Promise<void> {
-  if (config.KORTIX_PI_WORKER_POOL_TARGET <= 0) return Promise.resolve();
+  if (!platinumPoolEnabled()) return Promise.resolve();
   if (maintainInFlight) return maintainInFlight;
   maintainInFlight = (async () => {
     const target = config.KORTIX_PI_WORKER_POOL_TARGET;

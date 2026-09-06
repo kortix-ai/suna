@@ -61,3 +61,34 @@ describe('the claim reaches the port the park opened', () => {
     expect(claimUrl('sbx_p')).not.toContain('/8000/');
   });
 });
+
+describe('a claim is refused unless the box says it was claimed', () => {
+  test('a 200 that does not SAY it claimed is not a claim', async () => {
+    const { claimWasHonoured } = await import('./pi-worker-pool-platinum');
+    // The exact body a parked cell returned on dev 2026-09-06, to
+    // /kortix/claim with a WRONG park token and to /definitely-not-a-route
+    // alike. Accepting it would have renamed the box to the session's name and
+    // handed the session a cell still holding the PARK's environment.
+    expect(claimWasHonoured({ ok: true, sessionId: 'c1a1e35e', messages: 0, ops: 0 })).toBe(false);
+    expect(claimWasHonoured({ ok: true })).toBe(false);
+    expect(claimWasHonoured(null)).toBe(false);
+    expect(claimWasHonoured('claimed')).toBe(false);
+    expect(claimWasHonoured({ claimed: 'true' })).toBe(false);
+    // Only the explicit answer counts.
+    expect(claimWasHonoured({ claimed: true })).toBe(true);
+  });
+
+  test('the pool is OFF while no worker implements the claim route', async () => {
+    const { platinumPoolEnabled, cellClaimImplemented } = await import('./pi-worker-pool-platinum');
+    // A park that can never be claimed is 4 GB of dev capacity held for
+    // nothing — which is what produced the `no capacity` 503 that broke
+    // session 9fec1c03 on 2026-09-06. Flipping CELL_CLAIM_IMPLEMENTED to true
+    // flips this, which is what makes it a claim and not a restatement.
+    // Asserted on the claim-route half SPECIFICALLY. `platinumPoolEnabled()`
+    // alone would pass for the wrong reason here — the unit environment has no
+    // pool target — so it would go on passing after the worker half was
+    // wrongly declared done.
+    expect(cellClaimImplemented()).toBe(false);
+    expect(platinumPoolEnabled()).toBe(false);
+  });
+});
