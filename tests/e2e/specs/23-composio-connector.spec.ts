@@ -104,13 +104,16 @@ test.describe("23 — Composio managed connector", () => {
         response.url().endsWith("/v1/connectors/connect-status") &&
         response.request().method() === "GET",
     );
-    const sectionsResponse = page.waitForResponse(
-      (response) =>
-        response
-          .url()
-          .includes(`/v1/connectors/projects/${project.id}/connect/sections`) &&
-        response.request().method() === "GET",
-    );
+    const sectionsResponse = composioConfigured
+      ? page.waitForResponse(
+          (response) =>
+            response
+              .url()
+              .includes(
+                `/v1/connectors/projects/${project.id}/connect/sections`,
+              ) && response.request().method() === "GET",
+        )
+      : null;
     await page.goto(`/projects/${project.id}/customize/connectors`, {
       waitUntil: "domcontentloaded",
     });
@@ -127,6 +130,9 @@ test.describe("23 — Composio managed connector", () => {
       return;
     }
 
+    if (!sectionsResponse) {
+      throw new Error("Composio sections request was not armed");
+    }
     const sectionsHttp = await sectionsResponse;
     expect(sectionsHttp.status()).toBe(200);
     const sectionsBody = (await sectionsHttp.json()) as {
