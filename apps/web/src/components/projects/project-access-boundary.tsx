@@ -75,6 +75,14 @@ export function errorStatus(error: unknown): number | undefined {
   );
 }
 
+/** A cold document must not ask the SDK for a token before auth hydration publishes the user. */
+export function shouldEnableProjectRead(
+  projectId: string,
+  userId: string | null | undefined,
+): boolean {
+  return Boolean(projectId && userId);
+}
+
 /** Only the idempotent getProject read uses this policy, never access-request writes. */
 export function shouldRetryProjectRead(failureCount: number, error: unknown): boolean {
   if (failureCount >= 3) return false;
@@ -208,7 +216,7 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
   const query = useQuery({
     queryKey: [QUERY_KEY, projectId],
     queryFn: () => getProject(projectId, { showErrors: false }),
-    enabled: !!projectId,
+    enabled: shouldEnableProjectRead(projectId, user?.id),
     // A cancelled read is not an access verdict. The SDK deliberately returns
     // AbortError without retrying; this mounted boundary owns recovery while
     // the user still wants the project. Query teardown cancels pending retries.

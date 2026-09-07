@@ -12,6 +12,7 @@ import {
   gateStateForRequestResult,
   isForbiddenState,
   resolveGateState,
+  shouldEnableProjectRead,
   shouldPollForApproval,
   shouldRetryProjectRead,
   projectReadRetryDelay,
@@ -82,6 +83,14 @@ describe('gateStateForError', () => {
 });
 
 describe('project read retries', () => {
+  test('waits for the authenticated user before issuing the project read', () => {
+    expect(shouldEnableProjectRead('project-1', null)).toBe(false);
+    expect(shouldEnableProjectRead('project-1', undefined)).toBe(false);
+    expect(shouldEnableProjectRead('', 'user-1')).toBe(false);
+    expect(shouldEnableProjectRead('project-1', 'user-1')).toBe(true);
+    expect(componentSource).toContain('enabled: shouldEnableProjectRead(projectId, user?.id)');
+  });
+
   test('retries abort and network failures from browser and SDK error shapes', () => {
     for (const error of [
       new DOMException('The operation was aborted.', 'AbortError'),
