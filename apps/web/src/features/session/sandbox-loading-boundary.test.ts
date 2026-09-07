@@ -34,13 +34,16 @@ describe('session navigation loading boundaries', () => {
     expect(projectLayoutSource).toContain('<ProjectShell projectId={projectId}>');
   });
 
-  test('first project access still keeps its intentional full-page loader', () => {
-    // The mirror of the `return null` rule above: a runtime-not-ready RETRY
-    // must stay invisible, but the very FIRST project fetch owns the whole
-    // viewport, so it has to show something rather than a blank screen.
-    expect(projectAccessSource).toContain('if (query.isLoading)');
-    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
-    expect(projectAccessSource).not.toMatch(/query\.isLoading\)\s*return null/);
+  test('first project access and foreground retries keep the intentional full-page loader', () => {
+    // The first pending read owns the viewport. A foreground retry keeps the
+    // same loader only before an access request enters its waiting state.
+    expect(projectAccessSource).toMatch(
+      /if \(query\.isPending \|\| \(!waiting && query\.isFetching\)\)\s*return <AuthPendingScreen footer=\{false\} \/>;/,
+    );
+    expect(projectAccessSource).not.toMatch(/query\.isPending\s*\|\|\s*query\.isFetching/);
+    expect(projectAccessSource).not.toMatch(
+      /query\.isPending \|\| \(!waiting && query\.isFetching\)\)\s*return null/,
+    );
   });
 
   test('the first-fetch loader carries no legal footer', () => {
