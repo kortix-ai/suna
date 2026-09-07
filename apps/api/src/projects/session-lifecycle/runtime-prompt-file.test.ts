@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, setSystemTime, test } from 'bun:test';
 
 import { RUNTIME_PROMPT_CHUNK_BYTES, writeRuntimePromptFile } from './runtime-prompt-file';
 
@@ -11,6 +11,8 @@ const input = {
   mime: 'application/zip',
   bytes: new Uint8Array([80, 75, 3, 4]),
 };
+
+afterEach(() => setSystemTime());
 
 test('uploads to a temporary path and renames the returned path over the deterministic target', async () => {
   const requests: Array<{ method: string; path: string; body: ArrayBuffer }> = [];
@@ -382,4 +384,58 @@ test('caches the legacy capability decision for one externalId', async () => {
   }
 
   expect(healthCalls).toBe(1);
+});
+
+test('reuses a capability decision for 60 seconds, then probes again after expiry', async () => {
+  setSystemTime(new Date('2026-09-07T00:00:00.000Z'));
+  let healthCalls = 0;
+  const forward = async (_externalId: string, _port: number, _access: unknown, method: string, route: string) => {
+    if (route === '/kortix/health') {
+      healthCalls += 1;
+      return Response.json({ runtime: { build: 1 } });
+    }
+    throw new Error(`unexpected ${method} ${route}`);
+  };
+  const write = () => writeRuntimePromptFile(
+    { ...input, externalId: 'sbx_legacy_ttl', bytes: new Uint8Array(200 * 1024) },
+    forward as Parameters<typeof writeRuntimePromptFile>[1],
+    () => 'fixed',
+  ).catch((value) => value);
+
+  expect((await write()).constructor.name).toBe('RuntimeStaleDaemonError');
+  setSystemTime(new Date('2026-09-07T00:00:59.999Z'));
+  expect((await write()).constructor.name).toBe('RuntimeStaleDaemonError');
+  expect(healthCalls).toBe(1);
+
+  setSystemTime(new Date('2026-09-07T00:01:00.000Z'));
+  expect((await write()).constructor.name).toBe('RuntimeStaleDaemonError');
+  expect(healthCalls).toBe(2);
+});
+
+test('shares one pending health probe across concurrent writes for one externalId', async () => {
+  let healthCalls = 0;
+  let resolveHealth!: (response: Response) => void;
+  const health = new Promise<Response>((resolve) => {
+    resolveHealth = resolve;
+  });
+  const forward = async (_externalId: string, _port: number, _access: unknown, method: string, route: string) => {
+    if (route === '/kortix/health') {
+      healthCalls += 1;
+      return health;
+    }
+    throw new Error(`unexpected ${method} ${route}`);
+  };
+  const write = () => writeRuntimePromptFile(
+    { ...input, externalId: 'sbx_legacy_concurrent', bytes: new Uint8Array(200 * 1024) },
+    forward as Parameters<typeof writeRuntimePromptFile>[1],
+    () => 'fixed',
+  ).catch((value) => value);
+
+  const first = write();
+  const second = write();
+
+  expect(healthCalls).toBe(1);
+  resolveHealth(Response.json({ runtime: { build: 1 } }));
+  expect((await first).constructor.name).toBe('RuntimeStaleDaemonError');
+  expect((await second).constructor.name).toBe('RuntimeStaleDaemonError');
 });

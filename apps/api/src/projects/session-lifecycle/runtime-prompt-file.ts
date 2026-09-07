@@ -65,12 +65,17 @@ interface RuntimeAppendCapability {
   expiresAt: number;
 }
 
-const runtimeAppendCapabilities = new WeakMap<Forward, Map<string, RuntimeAppendCapability>>();
+interface RuntimeAppendCapabilityCacheEntry {
+  resolved?: RuntimeAppendCapability;
+  pending?: Promise<boolean>;
+}
 
-function runtimeCapabilityCache(forward: Forward): Map<string, RuntimeAppendCapability> {
+const runtimeAppendCapabilities = new WeakMap<Forward, Map<string, RuntimeAppendCapabilityCacheEntry>>();
+
+function runtimeCapabilityCache(forward: Forward): Map<string, RuntimeAppendCapabilityCacheEntry> {
   const existing = runtimeAppendCapabilities.get(forward);
   if (existing) return existing;
-  const created = new Map<string, RuntimeAppendCapability>();
+  const created = new Map<string, RuntimeAppendCapabilityCacheEntry>();
   runtimeAppendCapabilities.set(forward, created);
   return created;
 }
@@ -143,34 +148,50 @@ async function runtimeSupportsAppend(
 ): Promise<boolean> {
   const cache = runtimeCapabilityCache(forward);
   const cached = cache.get(input.externalId);
-  if (cached && cached.expiresAt > Date.now()) return cached.supportsAppend;
+  if (cached?.resolved && cached.resolved.expiresAt > Date.now()) {
+    return cached.resolved.supportsAppend;
+  }
+  if (cached?.pending) return cached.pending;
 
-  const health = await forwarded(
-    input,
-    forward,
-    'GET',
-    '/kortix/health',
-    new Headers(),
-    new ArrayBuffer(0),
-  );
-  const body = await readRuntimeJson<{ capabilities?: unknown }>({
-    response: health,
-    method: 'GET',
-    route: '/kortix/health',
-    operation: 'health',
-  });
-  const supportsAppend = Array.isArray(body.capabilities) && body.capabilities.includes('file.append');
-  cache.set(input.externalId, {
-    supportsAppend,
-    expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
-  });
-  return supportsAppend;
+  const pending = (async () => {
+    const health = await forwarded(
+      input,
+      forward,
+      'GET',
+      '/kortix/health',
+      new Headers(),
+      new ArrayBuffer(0),
+    );
+    const body = await readRuntimeJson<{ capabilities?: unknown }>({
+      response: health,
+      method: 'GET',
+      route: '/kortix/health',
+      operation: 'health',
+    });
+    const supportsAppend = Array.isArray(body.capabilities) && body.capabilities.includes('file.append');
+    cache.set(input.externalId, {
+      resolved: {
+        supportsAppend,
+        expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
+      },
+    });
+    return supportsAppend;
+  })();
+  cache.set(input.externalId, { pending });
+  try {
+    return await pending;
+  } catch (error) {
+    if (cache.get(input.externalId)?.pending === pending) cache.delete(input.externalId);
+    throw error;
+  }
 }
 
 function markRuntimeAppendUnsupported(input: RuntimePromptFileWriteInput, forward: Forward): void {
   runtimeCapabilityCache(forward).set(input.externalId, {
-    supportsAppend: false,
-    expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
+    resolved: {
+      supportsAppend: false,
+      expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
+    },
   });
 }
 
