@@ -81,6 +81,9 @@ Pi workers use the agent and model compiled into their artifact. The React
 `useSession().sendParts()` path removes per-prompt model, agent, variant, and
 directory overrides for Pi. It rejects non-text prompt parts before transport.
 OpenCode sessions retain their existing prompt options and attachment contract.
+`useSession().runCommand()` also omits model, agent, and variant selections for
+Pi; the command executes with the compiled session configuration. OpenCode
+commands retain their explicit overrides.
 Hosts must also disable controls for choices their runtime cannot apply.
 
 ## No bundler, no framework

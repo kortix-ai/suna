@@ -629,14 +629,16 @@ export function buildSessionCommandInput(
   command: string,
   args: string,
   options: SessionCommandOptions = {},
+  runtime: 'pi-worker' | 'opencode' = 'opencode',
 ) {
+  const selection = runtime === 'pi-worker' ? {} : options;
   return {
     sessionId,
     command,
     args,
-    ...(options.agent ? { agent: options.agent } : {}),
-    ...(options.model ? { model: formatModelString(options.model) } : {}),
-    ...(options.variant ? { variant: options.variant } : {}),
+    ...(selection.agent ? { agent: selection.agent } : {}),
+    ...(selection.model ? { model: formatModelString(selection.model) } : {}),
+    ...(selection.variant ? { variant: selection.variant } : {}),
   };
 }
 
@@ -1308,7 +1310,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   ): Promise<void> => {
     if (!runtimeActionReady) return Promise.resolve();
     return commandMutation.mutateAsync(
-      buildSessionCommandInput(ocSessionId, command, args, options),
+      buildSessionCommandInput(ocSessionId, command, args, options, sessionRuntimeKind),
     );
   };
 
