@@ -535,7 +535,11 @@ export function useSessionPrompts(
     mutationFn: (promptId: string) => retrySessionPrompt(projectId!, sessionId!, promptId),
     onMutate: () => resetSessionPromptsCadence(projectId, sessionId),
     onSuccess: (retried) => {
-      const atMs = Date.now();
+      // The retry endpoint returns no `observed_at`. Its local ordering stamp
+      // must still outrank a read issued before this mutation, even when both
+      // happen in the same browser millisecond.
+      const current = useSessionWorkingStore.getState().inbox[sessionId!];
+      const atMs = Math.max(Date.now(), (current?.atMs ?? Number.NEGATIVE_INFINITY) + 1);
       queryClient.setQueryData<SessionPrompt[]>(key, (previous) => {
         const next = (previous ?? []).some((prompt) => prompt.prompt_id === retried.prompt_id)
           ? (previous ?? []).map((prompt) =>

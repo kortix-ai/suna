@@ -3,13 +3,17 @@ import {
   environmentManager,
   focusManager,
   QueryClient,
+  QueryClientProvider,
   QueryObserver,
 } from '@tanstack/react-query';
+import { createElement } from 'react';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { configureKortix } from '../core/http/config';
 import { INBOX_OBSERVATION_MAX_MS } from '../core/session/working';
 import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import type { SessionPrompt } from '../core/rest/projects-client/sessions';
+import { resetPollOwners } from '../core/session/poll-owner';
 import {
   applyOptimisticPrompt,
   applyInboxObservation,
@@ -21,6 +25,7 @@ import {
   SESSION_PROMPTS_LIVE_POLL_LADDER_MS,
   SESSION_PROMPTS_POLL_MS,
   type SessionPromptsCadenceState,
+  type UseSessionPromptsResult,
   countNonTerminalSessionPrompts,
   nextSessionPromptsCadenceState,
   noteInboxObservation,
@@ -28,7 +33,11 @@ import {
   sessionPromptsFingerprint,
   sessionPromptsPollMs,
   startSessionWithPrompt,
+  useSessionPrompts,
 } from './use-session-prompts';
+import { qk } from './query-keys';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 /**
  * The polling cadence is a CORRECTNESS decision, not a performance one.
@@ -224,6 +233,10 @@ class FakeTimers {
     await flushPromises();
   }
 
+  activeIntervals(): number {
+    return [...this.timers.values()].filter((timer) => timer.interval != null).length;
+  }
+
   private schedule(callback: () => void, delay: number, interval: number | null): number {
     const id = this.nextId++;
     this.timers.set(id, { callback, due: this.now + delay, interval });
@@ -342,6 +355,236 @@ describe('prompt inbox QueryObserver cadence', () => {
     expect(sessionPromptsPollMs(1, undefined, 0, cadence)).toBe(2_000);
     unsubscribeFollower();
     unsubscribeOwner();
+  });
+});
+
+describe('useSessionPrompts production cadence wiring', () => {
+  let renderer: ReactTestRenderer | null = null;
+  let restoreFakeTimers: (() => void) | undefined;
+  let restoreFetch: (() => void) | undefined;
+  let client: QueryClient | null = null;
+
+  const queued = (over: Partial<SessionPrompt> = {}): SessionPrompt => ({
+    prompt_id: 'p1',
+    client_message_id: 'q1',
+    message_id: 'msg_01',
+    state: 'queued',
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-08-18T10:00:00.000Z',
+    available_at: '2026-08-18T10:00:00.000Z',
+    ...over,
+  });
+
+  function json(body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  function PromptProbe({ capture }: { capture: (result: UseSessionPromptsResult) => void }) {
+    capture(useSessionPrompts('P1', 'S1'));
+    return null;
+  }
+
+  function renderPrompts(
+    ids: readonly string[],
+    capture: (result: UseSessionPromptsResult) => void,
+  ): void {
+    renderer?.update(
+      createElement(
+        QueryClientProvider,
+        { client: client! },
+        ids.map((id) => createElement(PromptProbe, { key: id, capture })),
+      ),
+    );
+  }
+
+  beforeEach(() => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    useSessionWorkingStore.getState().reset();
+    resetPollOwners();
+    resetSessionOpenBundles();
+  });
+
+  afterEach(async () => {
+    if (renderer) await act(async () => renderer?.unmount());
+    renderer = null;
+    client?.clear();
+    client = null;
+    restoreFakeTimers?.();
+    restoreFakeTimers = undefined;
+    restoreFetch?.();
+    restoreFetch = undefined;
+    environmentManager.setIsServer(() => true);
+    focusManager.setFocused(undefined);
+    configureKortix({ backendUrl: '', getToken: async () => null });
+    useSessionWorkingStore.getState().reset();
+    resetPollOwners();
+    resetSessionOpenBundles();
+  });
+
+  test('focus re-arms the production-owned live interval at one second', async () => {
+    const timers = new FakeTimers();
+    restoreFakeTimers = timers.install();
+    environmentManager.setIsServer(() => false);
+    focusManager.setFocused(true);
+    let reads = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      reads += 1;
+      return json({ prompts: [queued()], observed_at: '2026-08-18T10:00:00.000Z' });
+    }) as unknown as typeof fetch;
+    restoreFetch = () => void (globalThis.fetch = originalFetch);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    let promptInbox: UseSessionPromptsResult | null = null;
+    await act(async () => {
+      renderer = create(
+        createElement(QueryClientProvider, { client: client! }, createElement(PromptProbe, {
+          capture: (result) => { promptInbox = result; },
+        })),
+      );
+      await flushPromises();
+    });
+    expect(promptInbox).not.toBeNull();
+    expect(reads).toBe(1);
+    expect(timers.activeIntervals()).toBe(1);
+    await act(async () => { await timers.advanceBy(1_000); });
+    expect(reads).toBe(2);
+    await act(async () => { await timers.advanceBy(2_000); });
+    expect(reads).toBe(3);
+
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+      await flushPromises();
+    });
+    expect(reads).toBe(4);
+    await act(async () => { await timers.advanceBy(999); });
+    expect(reads).toBe(4);
+    await act(async () => { await timers.advanceBy(1); });
+    expect(reads).toBe(5);
+  });
+
+  test('two production hooks share one poller, hand it off, and clear cadence after the last unmount', async () => {
+    const timers = new FakeTimers();
+    restoreFakeTimers = timers.install();
+    environmentManager.setIsServer(() => false);
+    focusManager.setFocused(true);
+    let reads = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      reads += 1;
+      return json({ prompts: [queued()], observed_at: '2026-08-18T10:00:00.000Z' });
+    }) as unknown as typeof fetch;
+    restoreFetch = () => void (globalThis.fetch = originalFetch);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let promptInbox: UseSessionPromptsResult | null = null;
+
+    await act(async () => {
+      renderer = create(
+        createElement(
+          QueryClientProvider,
+          { client: client! },
+          createElement(PromptProbe, { key: 'owner', capture: (result) => { promptInbox = result; } }),
+          createElement(PromptProbe, { key: 'follower', capture: (result) => { promptInbox = result; } }),
+        ),
+      );
+      await flushPromises();
+    });
+    expect(promptInbox).not.toBeNull();
+    expect(reads).toBe(1);
+    expect(timers.activeIntervals()).toBe(1);
+    await act(async () => { await timers.advanceBy(1_000); });
+    expect(reads).toBe(2);
+
+    await act(async () => {
+      renderPrompts(['follower'], (result) => { promptInbox = result; });
+      await flushPromises();
+    });
+    await act(async () => { await timers.advanceBy(1_999); });
+    expect(reads).toBe(2);
+    await act(async () => { await timers.advanceBy(1); });
+    expect(reads).toBe(3);
+
+    await act(async () => {
+      renderPrompts([], (result) => { promptInbox = result; });
+      await flushPromises();
+      renderPrompts(['fresh'], (result) => { promptInbox = result; });
+      await flushPromises();
+    });
+    // A new observer immediately refetches the stale cache entry. That fetch
+    // must create fresh cadence state after the prior last-observer cleanup.
+    expect(reads).toBe(4);
+    await act(async () => { await timers.advanceBy(999); });
+    expect(reads).toBe(4);
+    await act(async () => { await timers.advanceBy(1); });
+    expect(reads).toBe(5);
+  });
+
+  test('retry retains its queued row when an older in-flight inbox snapshot resolves later', async () => {
+    environmentManager.setIsServer(() => true);
+    const failed = queued({ state: 'failed', last_error: 'delivery failed' });
+    const deferredReads: Array<(response: Response) => void> = [];
+    let promptReads = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/retry')) return json(queued());
+      if (String(init?.method ?? 'GET') === 'GET' && url.endsWith('/prompts')) {
+        promptReads += 1;
+        if (promptReads === 1) {
+          return json({ prompts: [failed], observed_at: '2026-08-18T10:00:01.000Z' });
+        }
+        return await new Promise<Response>((resolve) => { deferredReads.push(resolve); });
+      }
+      throw new Error(`unexpected request: ${String(init?.method ?? 'GET')} ${url}`);
+    }) as unknown as typeof fetch;
+    restoreFetch = () => void (globalThis.fetch = originalFetch);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let promptInbox: UseSessionPromptsResult | null = null;
+
+    await act(async () => {
+      renderer = create(
+        createElement(QueryClientProvider, { client: client! }, createElement(PromptProbe, {
+          capture: (result) => { promptInbox = result; },
+        })),
+      );
+      await flushPromises();
+    });
+    expect(client.getQueryData<SessionPrompt[]>(qk.project.sessionPrompts('P1', 'S1'))).toEqual([failed]);
+
+    await act(async () => {
+      void promptInbox!.refetch();
+      await flushPromises();
+    });
+    expect(deferredReads).toHaveLength(1);
+    let retried: Promise<SessionPrompt> | undefined;
+    await act(async () => {
+      retried = promptInbox!.retry('p1');
+      await flushPromises();
+    });
+    expect(client.getQueryData<SessionPrompt[]>(qk.project.sessionPrompts('P1', 'S1'))?.[0]?.state).toBe('queued');
+
+    await act(async () => {
+      deferredReads.shift()!(json({ prompts: [], observed_at: '2026-08-18T10:00:01.000Z' }));
+      await flushPromises();
+    });
+    expect(client.getQueryData<SessionPrompt[]>(qk.project.sessionPrompts('P1', 'S1'))).toEqual([queued()]);
+
+    // Retry invalidates after success. Its later read is newer and may settle
+    // normally; resolve it with the queued row before the mutation finishes.
+    await act(async () => {
+      deferredReads.shift()!(json({ prompts: [queued()], observed_at: '2026-08-18T10:00:02.000Z' }));
+      await flushPromises();
+    });
+    await act(async () => {
+      await retried;
+      await flushPromises();
+    });
   });
 });
 
