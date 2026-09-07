@@ -262,11 +262,11 @@ describe('"Files read" rows open the file viewer (Task 3)', () => {
     const onOpenFile = (path: string, allPaths: string[]) => calls.push({ path, allPaths });
 
     const rows = buttonsIn(
-      cardBody(
-        (detail) => opened.push(detail),
-        onOpenFile,
-        { files: filesWithAGap, web: [], tools: [] },
-      ),
+      cardBody((detail) => opened.push(detail), onOpenFile, {
+        files: filesWithAGap,
+        web: [],
+        tools: [],
+      }),
     );
     expect(rows).toHaveLength(1); // one group row: "Files read"
     (rows[0].props as { onClick?: () => void }).onClick?.();
@@ -327,6 +327,18 @@ describe('Empty-state actions: Add context (Task 5)', () => {
     (buttons[0].props as { onClick?: () => void }).onClick?.();
 
     expect(addContextCalls).toBe(1);
+  });
+
+  test('"Add context" is absent when the runtime accepts text prompt parts only', () => {
+    const card = ContextCard({
+      ...empty,
+      sessionId: 's1',
+      onOpenDetail: () => {},
+      onOpenFile: () => {},
+      onAddContext: undefined,
+    }) as ReactElement<PanelCardProps>;
+
+    expect(card.props.emptyActions).toBeUndefined();
   });
 
   // Mutation-checked: temporarily restoring the removed "Connect apps" button

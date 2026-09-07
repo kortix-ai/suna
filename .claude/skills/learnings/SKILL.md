@@ -4754,3 +4754,19 @@ requests bytes. Chat and events continue to use the worker.
 **Automation:** SDK runtime, session-start, project, file, and VCS tests assert
 the target URL and pending state. `file-preview-workspace.test.tsx` covers
 text and PDF readiness, successful attachment, and a retryable environment error.
+
+## 2026-09-07 — Compiled Pi sessions cannot apply composer model choices
+
+**Incident:** The Pi preview showed DeepSeek V4 Flash and an editable agent
+picker while its worker ran the compiled `gpt-5.6-luna` model. A stale UI choice
+looked effective even though the worker could not apply it.
+
+**Rule:** Derive available controls from the session runtime. Keep the agent
+fixed after Pi session creation. Omit unsupported model and reasoning choices
+from prompts, retries, and commands. Hide unsupported attachment and history
+actions, including their keyboard-menu entry points.
+
+**Automation:** Composer render tests cover fixed controls and absent attachment
+actions. Runtime prompt tests preserve OpenCode options and remove Pi overrides.
+The SDK rejects non-text Pi parts before transport. Verify the deployed composer
+with a real prompt after changing this contract.

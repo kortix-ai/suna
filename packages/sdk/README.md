@@ -74,6 +74,12 @@ It throws `RuntimeNotReadyError` while a Pi environment is pending. It never
 sends workspace requests to the Pi worker. Project and Git query caches use the
 workspace identity, so replacing an environment cannot reuse another workspace's data.
 
+Pi workers use the agent and model compiled into their artifact. The React
+`useSession().sendParts()` path removes per-prompt model, agent, variant, and
+directory overrides for Pi. It rejects non-text prompt parts before transport.
+OpenCode sessions retain their existing prompt options and attachment contract.
+Hosts must also disable controls for choices their runtime cannot apply.
+
 ## No bundler, no framework
 
 The published package ships a browser IIFE bundle alongside its ESM `dist/` —

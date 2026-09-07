@@ -26,7 +26,9 @@
  *     that would drop a live PTY WebSocket. See `PersistentLayer`.
  */
 
+import { runtimePromptOverridesEnabled } from '@/features/session/composer/runtime-prompt-contract';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
+import { resolveProjectSessionRuntimeIdentity } from '@/features/session/session-compaction';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { track } from '@/lib/track';
@@ -41,6 +43,7 @@ import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk';
+import { useProjectSession } from '@kortix/sdk/react';
 import { FileTextIcon as FileText } from '@phosphor-icons/react';
 import {
   createContext,
@@ -52,12 +55,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { collectAllToolParts } from './shared/collect-tool-parts';
-import { type OutputItem, deriveContext, deriveOutputs } from './shared/derive-panels';
-import { groupSteps } from './shared/group-steps';
-import { latestRunCallIds, latestRunMessages } from './shared/latest-run';
-import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
-import { deriveRunOutcome } from './shared/run-outcome';
 import { AppPreview } from './easy/app-preview';
 import type { Detail } from './easy/detail-view';
 import {
@@ -74,6 +71,12 @@ import {
 import { FilePreview, reportsIntrinsicSize } from './easy/file-preview';
 import { StepDetailBody } from './easy/step-detail-body';
 import { StepIcon } from './easy/step-icon';
+import { collectAllToolParts } from './shared/collect-tool-parts';
+import { deriveContext, deriveOutputs, type OutputItem } from './shared/derive-panels';
+import { groupSteps } from './shared/group-steps';
+import { latestRunCallIds, latestRunMessages } from './shared/latest-run';
+import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
+import { deriveRunOutcome } from './shared/run-outcome';
 
 /** Where an open was triggered from. Telemetry only (W5) — never read for
  *  behavior, only reported alongside `deliverable_opened`. */
@@ -82,6 +85,8 @@ export type OpenSource = 'row' | 'auto' | 'chip' | 'nav' | 'quick';
 export interface SessionPanelValue {
   sessionId: string;
   projectSessionId?: string;
+  /** False while a project session is unknown or runs a text-only Pi worker. */
+  attachmentsEnabled?: boolean;
 
   /** Card data — everything the floating overlay renders. */
   files: OutputItem[];
@@ -130,6 +135,7 @@ export function SessionPanelProvider({
   isSessionBusy = false,
   projectId,
   projectSessionId,
+  sandboxIsPiWorker = false,
   children,
 }: {
   sessionId: string;
@@ -141,8 +147,18 @@ export function SessionPanelProvider({
    *  case the palette's "Open Audit" consume below becomes a no-op. */
   projectId?: string;
   projectSessionId?: string;
+  /** Second fail-closed signal from the live `/start` sandbox projection. */
+  sandboxIsPiWorker?: boolean;
   children: ReactNode;
 }) {
+  const projectSessionRow = useProjectSession(projectId ?? '', projectSessionId, {
+    enabled: !!projectId && !!projectSessionId,
+  }).data;
+  const attachmentsEnabled = runtimePromptOverridesEnabled({
+    hasProjectSession: !!projectSessionId,
+    projectRuntimeIdentity: resolveProjectSessionRuntimeIdentity(projectSessionRow),
+    sandboxIsPiWorker,
+  });
   const parts = useMemo(() => collectAllToolParts(messages), [messages]);
   const steps = useMemo(() => groupSteps(parts), [parts]);
   const latestIds = useMemo(() => latestRunCallIds(messages), [messages]);
@@ -768,6 +784,7 @@ export function SessionPanelProvider({
     () => ({
       sessionId,
       projectSessionId,
+      attachmentsEnabled,
       files,
       context,
       apps,
@@ -787,6 +804,7 @@ export function SessionPanelProvider({
     [
       sessionId,
       projectSessionId,
+      attachmentsEnabled,
       files,
       context,
       apps,

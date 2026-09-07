@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SLASH_ACTIONS, filterSlashActions, controlToOpenFor } from './slash-actions';
+import {
+  SLASH_ACTIONS,
+  availableSlashActions,
+  controlToOpenFor,
+  filterSlashActions,
+} from './slash-actions';
 
 describe('SLASH_ACTIONS', () => {
   test('every action has a unique id', () => {
@@ -53,6 +58,43 @@ describe('filterSlashActions', () => {
 
   test('"token" matches show-context through its description', () => {
     expect(filterSlashActions(SLASH_ACTIONS, 'token').map((a) => a.id)).toContain('show-context');
+  });
+});
+
+describe('availableSlashActions', () => {
+  test('omits every unsupported control from a fixed Pi composer', () => {
+    const ids = availableSlashActions(SLASH_ACTIONS, {
+      canSwitchAgent: false,
+      canSwitchModel: false,
+      canSetReasoningEffort: false,
+      canAttachFiles: false,
+      canCompact: true,
+      canShowContext: true,
+    }).map((action) => action.id);
+
+    expect(ids).not.toContain('switch-agent');
+    expect(ids).not.toContain('switch-model');
+    expect(ids).not.toContain('set-reasoning-effort');
+    expect(ids).not.toContain('attach-file');
+    expect(ids).toContain('compact-session');
+  });
+
+  test('keeps OpenCode controls when the host can apply them', () => {
+    const ids = availableSlashActions(SLASH_ACTIONS, {
+      canSwitchAgent: true,
+      canSwitchModel: true,
+      canSetReasoningEffort: true,
+      canAttachFiles: true,
+      canCompact: false,
+      canShowContext: false,
+    }).map((action) => action.id);
+
+    expect(ids).toContain('switch-agent');
+    expect(ids).toContain('switch-model');
+    expect(ids).toContain('set-reasoning-effort');
+    expect(ids).toContain('attach-file');
+    expect(ids).not.toContain('compact-session');
+    expect(ids).not.toContain('show-context');
   });
 });
 

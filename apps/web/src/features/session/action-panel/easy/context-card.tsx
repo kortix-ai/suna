@@ -81,7 +81,7 @@ export function ContextCard({
   /** Empty-state "Add context" button. A plain callback, same pattern as
    *  `onOpenFile` — this card grows no store dependency of its own; see
    *  `easy-panel.tsx` for what it's wired to. */
-  onAddContext: () => void;
+  onAddContext?: () => void;
 }) {
   const groups: ContextGroup[] = [];
 
@@ -145,10 +145,12 @@ export function ContextCard({
       emptyArt={<ContextArt />}
       emptyText="Track tools and referenced files used in this task."
       emptyActions={
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddContext}>
-          <Plus className="size-3.5" />
-          Add context
-        </Button>
+        onAddContext ? (
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddContext}>
+            <Plus className="size-3.5" />
+            Add context
+          </Button>
+        ) : undefined
       }
       // The same dense gutter Outputs uses. Rows carry their own inset, so the
       // body only has to keep them off the card's edge — a full `p-4` frame

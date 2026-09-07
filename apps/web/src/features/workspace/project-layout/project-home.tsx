@@ -12,10 +12,10 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
-  type SandboxTemplate,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
+  type SandboxTemplate,
 } from '@kortix/sdk';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
@@ -26,8 +26,8 @@ import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-bod
 
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
-export { ProjectHomeWelcomeBody } from './home/welcome-body';
 export { PROJECT_SETUP_TILE_ACTIONS } from './home/setup-tiles';
+export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
@@ -111,6 +111,13 @@ export function ProjectHome({
     enabled: !!projectId,
     ...contract('config'),
   });
+  // A Pi-enabled project can compile `runtime: pi` at session creation. The
+  // browser cannot inspect that moving manifest safely, so keep the first-turn
+  // model fixed whenever the server says the Pi path is eligible. OpenCode
+  // sessions expose their selectors after their runtime identity resolves.
+  const modelOverridesEnabled =
+    projectDetailQuery.data != null &&
+    projectDetailQuery.data.project.experimental?.pi_worker !== true;
   const accountId = projectDetailQuery.data?.project?.account_id;
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
@@ -232,6 +239,8 @@ export function ProjectHome({
             onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
             sandboxSlot={sandboxSlot}
+            modelOverridesEnabled={modelOverridesEnabled}
+            attachmentsEnabled={modelOverridesEnabled}
           />
         }
       />

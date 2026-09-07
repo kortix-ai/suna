@@ -11,6 +11,7 @@ import {
   type SandboxLifecycle,
   type SessionPrompt,
   hasRetryingAssistantTurn,
+  isPiWorkerRuntimeMetadata,
   listSessionPrompts,
   projectSessionConnection,
   showsGeneratingIndicator,
@@ -72,6 +73,11 @@ import { useOptionalSessionPanel } from '@/features/session/action-panel/session
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
+import {
+  resolveRuntimePromptOverrides,
+  runtimePromptFilesError,
+  runtimePromptOverridesEnabled,
+} from '@/features/session/composer/runtime-prompt-contract';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
@@ -92,6 +98,10 @@ import {
 } from '@/features/session/question-prompt';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
+import {
+  resolveProjectSessionCompactionId,
+  resolveProjectSessionRuntimeIdentity,
+} from '@/features/session/session-compaction';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -2222,13 +2232,35 @@ export function SessionChat({
   const localModelVisible = local.model.visible;
   const localVariantSet = local.model.variant.set;
 
+  // Pi compiles one model into the worker. Keep model and effort controls
+  // closed until the control plane proves this is an OpenCode project session.
+  // The sandbox projection is a second fail-closed signal for a stale row.
+  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
+    enabled: !!projectId && !!projectSessionId,
+  }).data;
+  const projectSessionRuntimeIdentity = resolveProjectSessionRuntimeIdentity(projectSessionRow);
+  const sandboxIsPiWorker = isPiWorkerRuntimeMetadata(sessionState?.sandbox?.metadata);
+  const isPiWorkerSession = projectSessionRuntimeIdentity === 'pi-worker' || sandboxIsPiWorker;
+  const runtimePromptOverridesAllowed = runtimePromptOverridesEnabled({
+    hasProjectSession: !!projectSessionId,
+    projectRuntimeIdentity: projectSessionRuntimeIdentity,
+    sandboxIsPiWorker,
+  });
+  const historyMutationsEnabled =
+    !isPiWorkerSession && (!projectSessionId || projectSessionRuntimeIdentity === 'opencode');
+  const compactSessionId = isPiWorkerSession
+    ? null
+    : projectSessionId
+      ? resolveProjectSessionCompactionId(projectSessionRow)
+      : sessionId;
+
   // Default the agent picker to whichever agent owns the latest assistant
   // turn in this session. Catches PM onboarding sessions (first turn was PM),
   // "Ask PM" sessions, team-agent ticket sessions, etc. — without relying on
   // title patterns. Falls through if there's no assistant msg yet.
   const defaultedAgentRef = useRef(false);
   useEffect(() => {
-    if (defaultedAgentRef.current) return;
+    if (defaultedAgentRef.current || !runtimePromptOverridesAllowed) return;
     if (!messages || messages.length === 0) return;
     let lastAgent: string | null = null;
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -2245,16 +2277,25 @@ export function SessionChat({
       local.agent.set(lastAgent);
     }
     defaultedAgentRef.current = true;
-  }, [messages, local.agent]);
+  }, [messages, local.agent, runtimePromptOverridesAllowed]);
 
   const pendingPromptHandled = useRef(false);
 
   const [commandError, setCommandError] = useState<KortixSendError | null>(null);
   // The last prompt handed to the runtime, verbatim. Only read by the
-  // connector-refusal card, to re-send exactly what was refused.
-  const lastSubmittedRef = useRef<{ parts: unknown[]; options: Record<string, unknown> } | null>(
-    null,
-  );
+  // connector-refusal card, to re-send exactly what was refused through the
+  // same durable inbox and runtime contract as a new composer submission.
+  const lastSubmittedRef = useRef<{
+    text: string;
+    files: AttachedFile[];
+    mentions: TrackedMention[];
+    overrides: {
+      agent: string | null;
+      model: ModelKey | null;
+      variant: string | null;
+      preparedText: true;
+    };
+  } | null>(null);
   // The message currently open in the inline edit-from-here editor. Setting
   // this swaps that bubble for the full-width editor; nothing is staged
   // against the session until the editor's Send.
@@ -2377,12 +2418,12 @@ export function SessionChat({
     if (!stash) return;
     pendingPromptHandled.current = true;
     clearStartStash(sessionId);
-    if (stash.agent) localAgentSet(stash.agent);
     // The seed and the legacy replay share ONE validity check. A stash written
     // under the other provider mode (e.g. a `kortix` pick from before the
     // project's llm_gateway flag flipped off) must neither seed the store nor
     // ride the legacy prompt — it names a provider this session does not have.
     const stashModelValid =
+      runtimePromptOverridesAllowed &&
       !!stash.model &&
       localModelList.some(
         (m) => m.providerID === stash.model!.providerID && m.modelID === stash.model!.modelID,
@@ -2391,15 +2432,22 @@ export function SessionChat({
     if (stashModelValid) {
       localModelSet(stash.model as ModelKey, { autoSeed: true });
     }
-    if (stash.variant) localVariantSet(stash.variant);
+    if (runtimePromptOverridesAllowed && stash.agent) localAgentSet(stash.agent);
+    if (runtimePromptOverridesAllowed && stash.variant) localVariantSet(stash.variant);
+    const stashRuntimeSelection = resolveRuntimePromptOverrides({
+      agentEnabled: runtimePromptOverridesAllowed,
+      modelEnabled: runtimePromptOverridesAllowed,
+      variantEnabled: runtimePromptOverridesAllowed,
+      overrideAgent: stash.agent ?? null,
+      overrideModel: stashModelValid ? (stash.model as ModelKey) : null,
+      overrideVariant: stash.variant ?? null,
+    });
     const legacyPrompt = stash.prompt.trim();
     if (legacyPrompt && projectId && projectSessionId) {
       void startSessionWithPrompt(projectId, projectSessionId, {
         parts: [{ type: 'text', text: legacyPrompt }],
         overrides: {
-          ...(stash.agent ? { agent: stash.agent } : {}),
-          ...(stashModelValid ? { model: stash.model } : {}),
-          ...(stash.variant ? { variant: stash.variant } : {}),
+          ...stashRuntimeSelection,
         },
       }).catch((error) => {
         console.error('[session-chat] failed to queue the stashed legacy prompt', error);
@@ -3620,13 +3668,24 @@ export function SessionChat({
          * for a direct composer send, which has no retry path.
          */
         clientMessageId?: string;
+        /** Skip current reply state when replaying text whose reply context is already embedded. */
+        preparedText?: boolean;
       },
     ) => {
       setCommandError(null);
+      const fileError = runtimePromptFilesError({
+        attachmentsEnabled: runtimePromptOverridesAllowed,
+        attachmentCount: files?.length ?? 0,
+      });
+      if (fileError) {
+        const error = new Error(fileError);
+        errorToast(error.message);
+        throw error;
+      }
 
       // Wrap reply context in XML if present, then clear it
       let text = rawText;
-      if (replyTo) {
+      if (!overrides?.preparedText && replyTo) {
         text = `<reply_context>${replyTo.text}</reply_context>\n\n${rawText}`;
         setReplyTo(null);
       }
@@ -3745,28 +3804,20 @@ export function SessionChat({
       if (!sendingIntoRunningTurn) anchorTurn(messageID);
       else if (scrollRef.current?.dataset.follow === 'false') smoothScrollToAbsoluteBottom();
 
-      const options: Record<string, unknown> = {};
-      const overrideAgent = overrides?.agent;
-      const overrideModel = overrides?.model;
-      const overrideVariant = overrides?.variant;
-      if (overrideAgent !== undefined) {
-        if (overrideAgent) options.agent = overrideAgent;
-      } else if (composerAgentName) {
+      const options: Record<string, unknown> = resolveRuntimePromptOverrides({
+        agentEnabled: runtimePromptOverridesAllowed,
+        modelEnabled: runtimePromptOverridesAllowed,
+        variantEnabled: runtimePromptOverridesAllowed,
+        overrideAgent: overrides?.agent,
         // The name the picker is SHOWING, not `local.agent.current`: an
         // inaccessible project default resolves to the first agent this user
         // holds a grant on, and the send must carry that same one.
-        options.agent = composerAgentName;
-      }
-      if (overrideModel !== undefined) {
-        if (overrideModel) options.model = overrideModel;
-      } else if (local.model.sendKey) {
-        options.model = local.model.sendKey;
-      }
-      if (overrideVariant !== undefined) {
-        if (overrideVariant) options.variant = overrideVariant;
-      } else if (local.model.variant.current) {
-        options.variant = local.model.variant.current;
-      }
+        selectedAgent: composerAgentName,
+        overrideModel: overrides?.model,
+        selectedModel: local.model.sendKey,
+        overrideVariant: overrides?.variant,
+        selectedVariant: local.model.variant.current,
+      });
 
       // Build parts: text first, then upload attached files to /workspace/uploads/
       // and send as XML text references (agent reads from disk on demand, not loaded into context)
@@ -3867,10 +3918,21 @@ export function SessionChat({
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
       // Kept so a turn refused for a missing connector can be re-sent verbatim
-      // once the account is connected. Without it the user connects, the card
-      // retries, and re-sends nothing — losing the message they typed, which is
-      // a worse outcome than the refusal they started with.
-      lastSubmittedRef.current = { parts: mappedParts, options };
+      // once the account is connected. Preserve the prepared text and resolved
+      // picks, then re-enter `handleSend`: that path re-applies the current
+      // runtime contract and creates a fresh durable inbox row. A Pi retry must
+      // never fall through to the SDK picks that its compiled runtime forbids.
+      lastSubmittedRef.current = {
+        text,
+        files: [...attachedFiles],
+        mentions: mentions ? [...mentions] : [],
+        overrides: {
+          agent: typeof options.agent === 'string' ? options.agent : null,
+          model: options.model ? (options.model as ModelKey) : null,
+          variant: typeof options.variant === 'string' ? options.variant : null,
+          preparedText: true,
+        },
+      };
 
       // The prompt is going out, so the optimistic message stops being
       // `pending`. This is what lets the server's echo — which arrives under a
@@ -4002,6 +4064,7 @@ export function SessionChat({
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
+      runtimePromptOverridesAllowed,
       anchorTurn,
       smoothScrollToAbsoluteBottom,
       scrollRef,
@@ -4412,7 +4475,15 @@ export function SessionChat({
         : args
           ? `/${cmd.name} ${args}`
           : `/${cmd.name}`;
-      const selectedModel = local.model.sendKey ?? undefined;
+      const runtimeSelection = resolveRuntimePromptOverrides({
+        agentEnabled: runtimePromptOverridesAllowed,
+        modelEnabled: runtimePromptOverridesAllowed,
+        variantEnabled: runtimePromptOverridesAllowed,
+        selectedAgent: composerAgentName,
+        selectedModel: local.model.sendKey,
+        selectedVariant: local.model.variant.current,
+      });
+      const selectedModel = runtimeSelection.model;
       const handleCommandError = (err?: unknown) => {
         // A command that was DELIVERED and then lost its connection is not a
         // failed command. `/command` blocks for the whole turn, so both proxy
@@ -4459,8 +4530,8 @@ export function SessionChat({
       // SSE delivers it. Commands use the blocking /command endpoint
       // which can take minutes; using TQ would cause retry on timeout.
       commandInFlightRef.current = true;
-      const agent = composerAgentName ?? undefined;
-      const variant = local.model.variant.current;
+      const agent = runtimeSelection.agent;
+      const variant = runtimeSelection.variant;
       void (
         sessionState?.runCommand(cmd.name, args || '', {
           agent,
@@ -4507,6 +4578,7 @@ export function SessionChat({
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
+      runtimePromptOverridesAllowed,
     ],
   );
 
@@ -4784,7 +4856,7 @@ export function SessionChat({
   // revert is already spoken for; only a FAILED send (editSendPending back to
   // false, record still staged) should surface it.
   const composerRewind =
-    sessionState?.rewindMessageId && !editSendPending
+    historyMutationsEnabled && sessionState?.rewindMessageId && !editSendPending
       ? {
           pending: sessionState.rewindPending,
           // OpenCode's `unrevert` asserts the session is idle (`assertNotBusy`
@@ -4822,13 +4894,6 @@ export function SessionChat({
   // confirmed unreachable past the poll loop's failure threshold — plain
   // `runtimeReady` collapses both into the same false. See `retryable` on
   // `SessionComposerReadiness`.
-  // The control plane's own statement about the sandbox behind this session —
-  // the positive evidence the connection projection needs before anything may
-  // say "waking". Read from the shared cache entry `useProjectSession`
-  // populates, so this mounts no second poll of its own.
-  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
-    enabled: !!projectId && !!projectSessionId,
-  }).data;
   const runtimePhase = useRuntimePhase();
   // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
   // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
@@ -5085,11 +5150,13 @@ export function SessionChat({
         />
 
         {/* Compact modal — opened from the composer's `/` palette */}
-        <CompactModal
-          sessionId={sessionId}
-          open={compactModalOpen}
-          onOpenChange={setCompactModalOpen}
-        />
+        {compactSessionId && (
+          <CompactModal
+            sessionId={compactSessionId}
+            open={compactModalOpen}
+            onOpenChange={setCompactModalOpen}
+          />
+        )}
 
         {/* Change request detail — opened from a turn's outcome card, or from
           `?cr=` on load. Lives inside `ProjectFilesProvider` alongside
@@ -5365,14 +5432,16 @@ export function SessionChat({
                                   onPermissionReply={handlePermissionReply}
                                   onRewind={handleRewind}
                                   editingText={
+                                    historyMutationsEnabled &&
                                     rewindTarget?.messageId === turn.userMessage.info.id
                                       ? rewindTarget.text
                                       : null
                                   }
                                   editPending={editSendPending || !!sessionState?.rewindPending}
                                   onEditCancel={handleEditCancel}
-                                  onEditSend={handleEditSend}
+                                  onEditSend={historyMutationsEnabled ? handleEditSend : undefined}
                                   rewindDisabled={
+                                    !historyMutationsEnabled ||
                                     !!readOnly ||
                                     !sessionState ||
                                     isBusy ||
@@ -5415,11 +5484,10 @@ export function SessionChat({
                     rather than as a one-line pill. It is the one failure with a
                     button that fixes it.
 
-                    Fed `commandError`, NOT `sessionState.sendError`: the SDK sets
-                    `sendError` only inside `useSession.send()`, and this file has
-                    always gone through `sendParts` instead (the send above, and the
-                    resend below). So `sendError` is permanently null here, and
-                    since `TurnErrorDisplay` deliberately suppresses `kind:
+                    Fed `commandError`, NOT `sessionState.sendError`: this file sends
+                    through the durable prompt inbox, so the SDK hook's `sendError`
+                    is not populated here. Since `TurnErrorDisplay` deliberately
+                    suppresses `kind:
                     'connector'` to leave the remedy to this card, a refused turn
                     rendered NOTHING — no card, no pill. `commandError` is the same
                     typed error, classified through the same `classifySendError`. */}
@@ -5427,24 +5495,16 @@ export function SessionChat({
                       error={commandError}
                       projectId={projectId}
                       resend={
-                        sessionState && lastSubmittedRef.current
+                        lastSubmittedRef.current
                           ? () => {
                               const last = lastSubmittedRef.current;
                               if (!last) return;
-                              // Clear before, re-classify after: this bypasses the
-                              // normal submit path, which is the only other place
-                              // `commandError` is managed. Without the clear the
-                              // card outlives a successful retry; without the catch
-                              // a second refusal looks like success.
-                              setCommandError(null);
-                              void sessionState
-                                .sendParts(
-                                  last.parts as Parameters<typeof sessionState.sendParts>[0],
-                                  last.options as Parameters<typeof sessionState.sendParts>[1],
-                                )
-                                .catch((err: unknown) =>
-                                  setCommandError(classifySessionError(err)),
-                                );
+                              void handleSend(
+                                last.text,
+                                last.files,
+                                last.mentions,
+                                last.overrides,
+                              ).catch(() => undefined);
                             }
                           : undefined
                       }
@@ -5579,28 +5639,34 @@ export function SessionChat({
                 onStop={handleStop}
                 escCount={escCount}
                 agents={local.agent.list}
-                selectedAgent={composerAgentName}
-                onAgentChange={handleAgentChange}
+                selectedAgent={
+                  runtimePromptOverridesAllowed ? composerAgentName : boundAgentName?.trim() || null
+                }
+                onAgentChange={runtimePromptOverridesAllowed ? handleAgentChange : undefined}
+                agentSelectorLocked={!runtimePromptOverridesAllowed}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}
                 onCommand={handleCommand}
                 models={local.model.list}
                 selectedModel={local.model.currentKey ?? null}
-                onModelChange={handleModelChange}
-                modelDefaultControls={chatModelDefaultControls}
+                onModelChange={runtimePromptOverridesAllowed ? handleModelChange : undefined}
+                modelDefaultControls={
+                  runtimePromptOverridesAllowed ? chatModelDefaultControls : undefined
+                }
                 variants={local.model.variant.list}
                 selectedVariant={local.model.variant.current ?? null}
-                onVariantChange={handleVariantChange}
+                onVariantChange={runtimePromptOverridesAllowed ? handleVariantChange : undefined}
                 messages={messages}
                 sessionId={sessionId}
                 projectId={projectId}
                 providers={providers}
-                modelRequired
+                modelRequired={runtimePromptOverridesAllowed}
                 modelsLoading={providersLoading}
+                attachmentsEnabled={runtimePromptOverridesAllowed}
                 threadContext={threadContext}
                 onContextClick={handleContextClick}
-                onCompactClick={handleCompactClick}
+                onCompactClick={compactSessionId ? handleCompactClick : undefined}
                 replyTo={replyTo}
                 onClearReply={handleClearReply}
                 // Only lock the input into question-answer mode while the session is

@@ -10,18 +10,20 @@ import {
   SessionChatInput,
   type SessionChatInputProps,
 } from '@/features/session/session-chat-input';
-import { useRuntimeConfig } from '@kortix/sdk/react';
-import { type ModelKey, useSessionModelSelection } from '@kortix/sdk/react';
 import {
   type Command,
+  type ModelKey,
+  useProjectConfig,
   useRuntimeAgents,
   useRuntimeCommands,
+  useRuntimeConfig,
   useRuntimeProviders,
+  useSessionModelSelection,
 } from '@kortix/sdk/react';
-import { useProjectConfig } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
-import type { DraftScope } from './composer/draft/composer-draft';
 import { resolveComposerAgent } from './composer/composer-agent-access';
+import type { DraftScope } from './composer/draft/composer-draft';
+import { resolveRuntimePromptOverrides } from './composer/runtime-prompt-contract';
 
 export interface ComposerOptions {
   agent?: string;
@@ -64,6 +66,9 @@ export function ComposerChatInput({
   onAgentSelectionChange,
   sandboxSlot,
   draftScope,
+  modelOverridesEnabled = true,
+  agentOverridesEnabled = true,
+  attachmentsEnabled = true,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -107,6 +112,16 @@ export function ComposerChatInput({
   sandboxSlot?: SessionOverrideSlot;
   /** Persist the unsent draft under this scope — see `composer/draft/`. */
   draftScope?: DraftScope | null;
+  /**
+   * Whether this runtime accepts per-prompt model and reasoning choices.
+   * Pi compiles one model into the worker, so its hosts set this false. The
+   * selectors disappear and send-time options omit both fields.
+   */
+  modelOverridesEnabled?: boolean;
+  /** Existing Pi sessions run the agent compiled at creation. */
+  agentOverridesEnabled?: boolean;
+  /** Pi's prompt contract currently accepts text parts only. */
+  attachmentsEnabled?: boolean;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -142,7 +157,10 @@ export function ComposerChatInput({
     defaultAgent: projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
-  const selectedAgentName = lockedAgentName ?? agentResolution.selected;
+  const compiledAgentName = !agentOverridesEnabled ? boundAgentName?.trim() || null : null;
+  const selectedAgentName = agentOverridesEnabled
+    ? (lockedAgentName ?? agentResolution.selected)
+    : compiledAgentName;
   // A locked meta session runs its own bound agent, so an empty project roster
   // does not refuse it.
   const noAccessibleAgents = !lockedAgentName && agentResolution.disabled;
@@ -196,9 +214,17 @@ export function ComposerChatInput({
     // The resolved name, never `local.agent.current`: the composer must send
     // the agent it is SHOWING, and an inaccessible default resolves to the
     // first agent this user actually holds a grant on.
-    if (selectedAgentName) o.agent = selectedAgentName;
-    if (local.model.currentKey) o.model = local.model.currentKey;
-    if (local.model.variant.current) o.variant = local.model.variant.current;
+    Object.assign(
+      o,
+      resolveRuntimePromptOverrides({
+        agentEnabled: agentOverridesEnabled,
+        modelEnabled: modelOverridesEnabled,
+        variantEnabled: modelOverridesEnabled,
+        selectedAgent: selectedAgentName,
+        selectedModel: local.model.currentKey,
+        selectedVariant: local.model.variant.current,
+      }),
+    );
     if (!sessionId && newSessionScope && newSessionScope.agentName === selectedAgentName) {
       o.scope = newSessionScope.commit;
     }
@@ -233,19 +259,26 @@ export function ComposerChatInput({
       noAccessibleAgents={noAccessibleAgents}
       onAgentChange={
         // The selectedAgentName effect above notifies the parent; no inline call.
-        lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)
+        lockedAgentName || !agentOverridesEnabled
+          ? undefined
+          : (name) => local.agent.set(name ?? undefined)
       }
-      agentSelectorLocked={!!lockedAgentName}
+      agentSelectorLocked={!!lockedAgentName || !agentOverridesEnabled}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
-      onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
-      modelRequired
+      onModelChange={
+        modelOverridesEnabled ? (m) => local.model.set(m ?? undefined, { recent: true }) : undefined
+      }
+      modelRequired={modelOverridesEnabled}
       modelsLoading={providersLoading}
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
-      onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
+      onVariantChange={
+        modelOverridesEnabled ? (v) => local.model.variant.set(v ?? undefined) : undefined
+      }
       commands={commands || []}
       draftScope={draftScope}
+      attachmentsEnabled={attachmentsEnabled}
     />
   );
 }

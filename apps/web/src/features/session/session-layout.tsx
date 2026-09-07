@@ -44,6 +44,7 @@ interface SessionLayoutProps {
   sessionId: string;
   projectId?: string;
   projectSessionId?: string;
+  sandboxIsPiWorker?: boolean;
   children: React.ReactNode;
   bootStage?: SessionStartStage | null;
   transient?: boolean;
@@ -53,6 +54,7 @@ export const SessionLayout = memo(function SessionLayout({
   sessionId,
   projectId,
   projectSessionId,
+  sandboxIsPiWorker = false,
   children,
   bootStage = null,
   transient = false,
@@ -508,6 +510,7 @@ export const SessionLayout = memo(function SessionLayout({
       isSessionBusy={isSessionBusy}
       projectId={projectId}
       projectSessionId={projectSessionId}
+      sandboxIsPiWorker={sandboxIsPiWorker}
     >
       {node}
     </SessionPanelProvider>

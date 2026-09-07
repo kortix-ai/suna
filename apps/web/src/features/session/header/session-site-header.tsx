@@ -24,6 +24,7 @@ import {
 } from '@/features/session/header/session-config-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { resolveProjectSessionCompactionId } from '@/features/session/session-compaction';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
@@ -120,6 +121,9 @@ export function SessionSiteHeader({
     ...contract('inventory'),
   });
   const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
+  const compactSessionId = isProjectSession
+    ? resolveProjectSessionCompactionId(projectSession)
+    : sessionId;
   // Two verdicts, deliberately not one flag. `can_manage_sharing` is the
   // owner's right to change who can open the session; `can_manage_lifecycle`
   // is the manager-tier right to stop/restart/reload it. Reading the first for
@@ -240,13 +244,15 @@ export function SessionSiteHeader({
         Export conversation
       </DropdownMenuItem>
 
-      <DropdownMenuItem
-        className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
-        onClick={() => setCompactOpen(true)}
-      >
-        <Layers />
-        Summarize conversation
-      </DropdownMenuItem>
+      {compactSessionId && (
+        <DropdownMenuItem
+          className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+          onClick={() => setCompactOpen(true)}
+        >
+          <Layers />
+          Summarize conversation
+        </DropdownMenuItem>
+      )}
 
       {isProjectSession && (
         <>
@@ -433,7 +439,13 @@ export function SessionSiteHeader({
         open={exportOpen}
         onOpenChange={setExportOpen}
       />
-      <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
+      {compactSessionId && (
+        <CompactModal
+          sessionId={compactSessionId}
+          open={compactOpen}
+          onOpenChange={setCompactOpen}
+        />
+      )}
 
       {isProjectSession && (
         <>

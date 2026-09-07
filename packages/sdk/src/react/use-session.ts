@@ -55,6 +55,7 @@ import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
 import { clearStartStash, readStartStash } from './session-start-stash';
+import { normalizeSessionPromptForRuntime } from './runtime-prompt-contract';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
@@ -1144,6 +1145,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     [permissionMap, ocSessionId, switched],
   );
   const runtimeActionReady = switched && !!rootSessionId;
+  const sessionRuntimeKind = isPiWorkerRuntimeMetadata(sandbox?.metadata)
+    ? ('pi-worker' as const)
+    : ('opencode' as const);
 
   // 7. Server-side capabilities + per-session picks (all pre-runtime — no sandbox).
   const models = useProjectModels(projectId);
@@ -1230,6 +1234,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       ...(variant ? { variant } : {}),
       ...(override?.directory ? { directory: override.directory } : {}),
     };
+    const normalized = normalizeSessionPromptForRuntime({
+      runtime: sessionRuntimeKind,
+      parts,
+      ...(Object.keys(opts).length ? { options: opts } : {}),
+    });
     // The prompt is going out, so the optimistic message stops being `pending`.
     // Hosts own the optimistic add (they build the message id themselves), so
     // this resolves it the same way `hydrate` correlates an echo: by the
@@ -1237,7 +1246,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // lands, `hydrate` refuses to supersede the message on an ordinal match —
     // which is what keeps it on screen for the whole of a slow upload instead
     // of being deleted by a rehydrate that only carries older turns.
-    markDispatchedForPartIds(ocSessionId, parts);
+    markDispatchedForPartIds(ocSessionId, normalized.parts);
 
     const receipt: SendReceipt = {
       messageId: sendReceiptId(ocSessionId, parts, override?.clientMessageId),
@@ -1247,8 +1256,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     try {
       await sendMutation.mutateAsync({
         sessionId: ocSessionId,
-        parts,
-        ...(Object.keys(opts).length ? { options: opts } : {}),
+        parts: normalized.parts,
+        ...(normalized.options ? { options: normalized.options } : {}),
         ...(override?.clientMessageId ? { clientMessageId: override.clientMessageId } : {}),
       });
       // The server has the prompt. From here — and NOT before — a `/turn` read

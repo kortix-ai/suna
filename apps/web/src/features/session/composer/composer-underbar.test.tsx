@@ -32,7 +32,13 @@ import { ComposerUnderbar } from './composer-underbar';
 
 const noop = () => {};
 
-function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): string {
+function render(props?: {
+  noAccessibleAgents?: boolean;
+  agents?: Agent[];
+  selectedAgent?: string | null;
+  attachmentsEnabled?: boolean;
+  agentSelectorLocked?: boolean;
+}): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={{}} onError={noop}>
       {/* Both providers live higher up the tree in the app than this
@@ -44,10 +50,14 @@ function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): str
       >
         <TooltipProvider>
           <ComposerUnderbar
-            onAttachClick={noop}
+            onAttachClick={props?.attachmentsEnabled === false ? undefined : noop}
             agents={props?.agents ?? []}
-            selectedAgent={props?.agents?.[0]?.name ?? null}
-            agentSelectorLocked={false}
+            selectedAgent={
+              props && 'selectedAgent' in props
+                ? (props.selectedAgent ?? null)
+                : (props?.agents?.[0]?.name ?? null)
+            }
+            agentSelectorLocked={props?.agentSelectorLocked ?? false}
             noAccessibleAgents={props?.noAccessibleAgents}
             messages={[]}
             models={[]}
@@ -125,6 +135,10 @@ describe('ComposerUnderbar — the attach control lives here, not in the card', 
     expect(render()).toContain('aria-label="Attach files"');
   });
 
+  test('the attach button is absent for a text-only runtime', () => {
+    expect(render({ attachmentsEnabled: false })).not.toContain('aria-label="Attach files"');
+  });
+
   test('the row splits its two ends — brought-to-the-message left, cost right', () => {
     // `justify-between` is the whole layout contract: the ring is pinned to
     // the far right rather than trailing the attach button.
@@ -170,6 +184,32 @@ describe('ComposerUnderbar — the agent picker is unconditional', () => {
 
   test('renders with a DENIED roster', () => {
     expect(agentTrigger(render({ noAccessibleAgents: true }))).toBeDefined();
+  });
+
+  test('renders the compiled agent as a disabled picker for a fixed runtime', () => {
+    const html = render({
+      agents: [{ name: 'kortix', mode: 'primary' } as unknown as Agent],
+      agentSelectorLocked: true,
+    });
+    const button = agentTrigger(html);
+
+    expect(button).toBeDefined();
+    expect(button).toMatch(/\sdisabled=""/);
+    expect(html).toContain('Kortix');
+  });
+
+  test('does not claim a roster agent while a fixed runtime agent is unresolved', () => {
+    const html = render({
+      agents: [{ name: 'kortix', mode: 'primary' } as unknown as Agent],
+      selectedAgent: null,
+      agentSelectorLocked: true,
+    });
+    const button = agentTrigger(html);
+
+    expect(button).toBeDefined();
+    expect(button).toMatch(/\sdisabled=""/);
+    expect(html).toContain('>Agent</span>');
+    expect(html).not.toContain('>Kortix</span>');
   });
 });
 

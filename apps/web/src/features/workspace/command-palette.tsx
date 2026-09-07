@@ -40,6 +40,7 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { flattenModels } from '@/features/session/session-chat-input';
+import { resolveProjectSessionCompactionId } from '@/features/session/session-compaction';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
@@ -972,6 +973,9 @@ export function CommandPalette() {
   const currentProjectSession = projectSessionsList?.find(
     (session) => session.session_id === currentSessionId,
   );
+  const compactSessionId = projectId
+    ? resolveProjectSessionCompactionId(currentProjectSession)
+    : currentSessionId;
 
   // The registry's `requiresFlag` gate. One primitive (`useFeatureFlag`, via
   // `useProjectFeatureFlags`) decides for every surface, so a palette entry can
@@ -1148,6 +1152,7 @@ export function CommandPalette() {
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
       if (item.requiresSession && !currentSessionId) continue;
+      if (item.id === 'compact-session' && !compactSessionId) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
@@ -1169,7 +1174,15 @@ export function CommandPalette() {
       result.push(href === item.href ? item : { ...item, href });
     }
     return result;
-  }, [billingEnabled, currentSessionId, projectId, selectedAccountId, sidebarCtx, projectFlags]);
+  }, [
+    billingEnabled,
+    compactSessionId,
+    currentSessionId,
+    projectId,
+    selectedAccountId,
+    sidebarCtx,
+    projectFlags,
+  ]);
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
@@ -1948,11 +1961,11 @@ export function CommandPalette() {
   );
 
   const handleCompactSession = useCallback(() => {
-    if (!currentSessionId) return;
+    if (!compactSessionId) return;
     reopenPaletteRef.current = true;
     close();
     setCompactOpen(true);
-  }, [currentSessionId, close]);
+  }, [compactSessionId, close]);
 
   const handleViewChanges = useCallback(() => {
     if (!currentSessionId) return;
@@ -3167,22 +3180,23 @@ export function CommandPalette() {
         </CommandFooter>
       </CommandDialog>
 
+      {compactSessionId && (
+        <CompactModal
+          sessionId={compactSessionId}
+          open={compactOpen}
+          onOpenChange={handleOverlayClose(setCompactOpen)}
+          onCompactStart={() => {
+            reopenPaletteRef.current = false;
+          }}
+        />
+      )}
+
       {currentSessionId && (
-        <>
-          <CompactModal
-            sessionId={currentSessionId}
-            open={compactOpen}
-            onOpenChange={handleOverlayClose(setCompactOpen)}
-            onCompactStart={() => {
-              reopenPaletteRef.current = false;
-            }}
-          />
-          <DiffDialog
-            sessionId={currentSessionId}
-            open={diffOpen}
-            onOpenChange={handleOverlayClose(setDiffOpen)}
-          />
-        </>
+        <DiffDialog
+          sessionId={currentSessionId}
+          open={diffOpen}
+          onOpenChange={handleOverlayClose(setDiffOpen)}
+        />
       )}
 
       {/* The one consumer of `ProjectFilesContext` in this file — see

@@ -104,6 +104,32 @@ export function controlToOpenFor(id: SlashActionId): SlashActionControl | null {
   return null;
 }
 
+/**
+ * Remove local operations whose owning control is unavailable in this host.
+ * A hidden or runtime-owned selector must not remain reachable through `/`.
+ */
+export function availableSlashActions(
+  actions: SlashAction[],
+  availability: {
+    canSwitchAgent: boolean;
+    canSwitchModel: boolean;
+    canSetReasoningEffort: boolean;
+    canAttachFiles: boolean;
+    canCompact: boolean;
+    canShowContext: boolean;
+  },
+): SlashAction[] {
+  return actions.filter((action) => {
+    if (action.id === 'switch-agent') return availability.canSwitchAgent;
+    if (action.id === 'switch-model') return availability.canSwitchModel;
+    if (action.id === 'set-reasoning-effort') return availability.canSetReasoningEffort;
+    if (action.id === 'attach-file') return availability.canAttachFiles;
+    if (action.id === 'compact-session') return availability.canCompact;
+    if (action.id === 'show-context') return availability.canShowContext;
+    return true;
+  });
+}
+
 export function filterSlashActions(actions: SlashAction[], query: string): SlashAction[] {
   const q = query.toLowerCase().trim();
   if (!q) return actions;

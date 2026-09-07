@@ -55,6 +55,7 @@ export function EasyPanel() {
     apps,
     outputsDefaultOpen,
     sessionId,
+    attachmentsEnabled = true,
     handleOpenOutput,
     openDetail,
   } = panel;
@@ -88,7 +89,11 @@ export function EasyPanel() {
         onOpenFile={(path, allPaths) =>
           handleOpenOutput(pathOutput(path), allPaths.map(pathOutput))
         }
-        onAddContext={() => useSessionComposerPrefillStore.getState().requestAttach(sessionId)}
+        onAddContext={
+          attachmentsEnabled
+            ? () => useSessionComposerPrefillStore.getState().requestAttach(sessionId)
+            : undefined
+        }
       />
       {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
       {/* Last, under Preview, and conditional like it — the card draws itself
