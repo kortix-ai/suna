@@ -1261,7 +1261,22 @@
       "empty": "暂无会话",
       "noMatches": "没有会话符合当前筛选条件。",
       "actions": "会话操作",
+      "actionsFor": "{title} 的操作",
       "reviewCount": "等待你审阅：{count}",
+      "brief": {
+        "status": "状态",
+        "created": "创建时间",
+        "source": "来源",
+        "changeRequests": "更改请求",
+        "noChangeRequests": "无更改请求",
+        "changeRequestsLoading": "正在加载更改请求",
+        "changeRequestsUnavailable": "更改请求不可用",
+        "changeRequestStatus": {
+          "open": "待处理",
+          "merged": "已合并",
+          "closed": "已关闭"
+        }
+      },
       "status": {
         "needsYou": "需要你处理",
         "starting": "正在启动",

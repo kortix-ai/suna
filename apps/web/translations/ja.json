@@ -1261,7 +1261,22 @@
       "empty": "セッションはまだありません",
       "noMatches": "有効なフィルターに一致するセッションがありません。",
       "actions": "セッション操作",
+      "actionsFor": "{title} の操作",
       "reviewCount": "確認待ち：{count}",
+      "brief": {
+        "status": "状態",
+        "created": "作成日時",
+        "source": "ソース",
+        "changeRequests": "変更リクエスト",
+        "noChangeRequests": "変更リクエストはありません",
+        "changeRequestsLoading": "変更リクエストを読み込んでいます",
+        "changeRequestsUnavailable": "変更リクエストを利用できません",
+        "changeRequestStatus": {
+          "open": "保留中",
+          "merged": "マージ済み",
+          "closed": "クローズ済み"
+        }
+      },
       "status": {
         "needsYou": "対応が必要",
         "starting": "開始中",
