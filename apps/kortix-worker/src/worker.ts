@@ -1,3 +1,12 @@
+import type { IncomingMessage } from 'node:http';
+import { PiCommandUnsupportedError, preparePiCommand } from './command-runtime.ts';
+import { createTodoTools } from './todo-tools.ts';
+import { createSkillTool, type PiSkill } from './skill-runtime.ts';
+import type { PiCommand } from './command-runtime.ts';
+import type { RuntimeSurfaceOptions } from './runtime-surface.ts';
+import { PermissionBroker } from './permission-broker.ts';
+import type { PermissionConfig } from './permission-policy.ts';
+import { protectToolsWithPermissions } from './permission-tools.ts';
 import { QuestionBroker } from './question-broker.ts';
 import { createQuestionTool } from './question-tool.ts';
 /**
@@ -33,10 +42,14 @@ import { Session } from '@earendil-works/pi-agent-core';
 import { ChatEventAdapter } from './chat-events.ts';
 import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
-import { mintRootId, RuntimeSurface } from './runtime-surface.ts';
+import { decodePathSegment, mintRootId, RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
 import { persistNewMessages } from './durable-append.ts';
-import { type TurnEndIdentity, buildTurnEndRelay, scheduleBootReconcile } from './turn-end-relay.ts';
+import {
+  type TurnEndIdentity,
+  buildTurnEndRelay,
+  scheduleBootReconcile,
+} from './turn-end-relay.ts';
 import { createWorkspaceTools } from './workspace-tools.ts';
 
 /**
@@ -56,7 +69,8 @@ function toDurable<T>(value: T, path = 'message'): T {
   if (typeof value === 'number' && !Number.isFinite(value)) {
     throw new Error(`non-finite number at ${path} cannot be persisted`);
   }
-  if (Array.isArray(value)) return value.map((v, i) => toDurable(v, `${path}[${i}]`)) as unknown as T;
+  if (Array.isArray(value))
+    return value.map((v, i) => toDurable(v, `${path}[${i}]`)) as unknown as T;
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
@@ -99,7 +113,11 @@ export function restoredMessagesFromEntries(entries: readonly any[]): any[] {
  * boundary, before the Agent loop sees it — a slightly earlier and more
  * honest instant for a latency number. It is instrumentation, not plumbing.
  */
-function tapFirstToken(inner: AssistantMessageEventStream, onFirst: (ms: number) => void): AssistantMessageEventStream {
+export function tapFirstToken(
+  inner: AssistantMessageEventStream,
+  onFirst: (ms: number) => void,
+  model: { api?: unknown; provider?: unknown; id?: unknown },
+): AssistantMessageEventStream {
   const out = createAssistantMessageEventStream();
   const t0 = process.hrtime.bigint();
   let fired = false;
@@ -107,8 +125,12 @@ function tapFirstToken(inner: AssistantMessageEventStream, onFirst: (ms: number)
     try {
       for await (const ev of inner) {
         if (!fired) {
-          const t = (ev as any)?.type;
-          if (t === 'text_delta' || t === 'text_start' || t === 'thinking_delta') {
+          const event = ev as { type?: unknown; delta?: unknown };
+          if (
+            (event.type === 'text_delta' || event.type === 'thinking_delta') &&
+            typeof event.delta === 'string' &&
+            event.delta.length > 0
+          ) {
             fired = true;
             onFirst(Number(process.hrtime.bigint() - t0) / 1e6);
           }
@@ -116,8 +138,27 @@ function tapFirstToken(inner: AssistantMessageEventStream, onFirst: (ms: number)
         out.push(ev);
       }
       out.end(await inner.result());
-    } catch {
-      out.end(undefined as any);
+    } catch (error) {
+      const message: AssistantMessage = {
+        role: 'assistant',
+        content: [{ type: 'text', text: '' }],
+        api: String(model.api ?? 'unknown'),
+        provider: String(model.provider ?? 'unknown'),
+        model: String(model.id ?? 'unknown'),
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          reasoning: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'error',
+        errorMessage: String((error as Error)?.message ?? error),
+        timestamp: Date.now(),
+      };
+      out.push({ type: 'error', reason: 'error', error: message });
     }
   })();
   return out;
@@ -157,7 +198,9 @@ function vmUptimeMs(): number | null {
   try {
     const raw = require('node:fs').readFileSync('/proc/uptime', 'utf8');
     return Math.round(Number.parseFloat(raw.split(' ')[0]) * 1000);
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export interface WorkerConfig {
@@ -208,7 +251,9 @@ export function configFromEnv(): WorkerConfig {
     kortixToken: process.env.KORTIX_TOKEN,
     projectId: process.env.KORTIX_PROJECT_ID,
     envToken: process.env.KORTIX_ENV_TOKEN,
-    envHeaders: process.env.KORTIX_ENV_HEADERS ? JSON.parse(process.env.KORTIX_ENV_HEADERS) : undefined,
+    envHeaders: process.env.KORTIX_ENV_HEADERS
+      ? JSON.parse(process.env.KORTIX_ENV_HEADERS)
+      : undefined,
     envTransport: (process.env.KORTIX_ENV_TRANSPORT as any) ?? 'keepalive',
     environmentStartup,
     systemPrompt:
@@ -260,7 +305,13 @@ export async function buildHarness(cfg: WorkerConfig) {
       : null;
   const env =
     lazy ??
-    new KortixExecutionEnv({ baseUrl: cfg.envUrl, cwd: cfg.envCwd, token: cfg.envToken, headers: cfg.envHeaders, transport: cfg.envTransport });
+    new KortixExecutionEnv({
+      baseUrl: cfg.envUrl,
+      cwd: cfg.envCwd,
+      token: cfg.envToken,
+      headers: cfg.envHeaders,
+      transport: cfg.envTransport,
+    });
 
   const credentials = new InMemoryCredentialStore();
   const models = createModels({ credentials });
@@ -337,9 +388,13 @@ export async function buildHarness(cfg: WorkerConfig) {
 
   const agent = new Agent({
     streamFn: (m: any, ctx: any, opts: any) =>
-      tapFirstToken(models.streamSimple(m, ctx, opts), (ms) => {
-        if (timing.firstTokenMs === null) timing.firstTokenMs = ms;
-      }),
+      tapFirstToken(
+        models.streamSimple(m, ctx, opts),
+        (ms) => {
+          if (timing.firstTokenMs === null) timing.firstTokenMs = ms;
+        },
+        m,
+      ),
     toolExecution: 'sequential',
     initialState: {
       systemPrompt: cfg.systemPrompt,
@@ -370,12 +425,7 @@ export async function buildHarness(cfg: WorkerConfig) {
       // and if that message carried a `toolCall` whose `toolResult` appended
       // fine, every later turn 400'd at the provider, permanently, because the
       // hole is in an append-only log.
-      const result = await persistNewMessages(
-        session!,
-        agent.state.messages,
-        persisted,
-        toDurable,
-      );
+      const result = await persistNewMessages(session!, agent.state.messages, persisted, toDurable);
       persisted = result.persisted;
       if (result.error) throw result.error;
     });
@@ -440,7 +490,21 @@ export async function buildHarness(cfg: WorkerConfig) {
   // `lazy` is returned because startWorker prewarms it when a prompt arrives.
   // It was NOT, and the reference there compiled to a binding that does not
   // exist at runtime — every turn answered `lazy is not defined`.
-  return { agent, env, lazy, faux, models, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity };
+  return {
+    agent,
+    env,
+    lazy,
+    faux,
+    models,
+    timing,
+    session,
+    restoredEntries,
+    restoredMessages,
+    storeError,
+    modelError,
+    bootReconcile,
+    setTurnIdentity,
+  };
 }
 
 let LISTEN_UPTIME_MS: number | null = null;
@@ -448,9 +512,73 @@ let LISTEN_UPTIME_MS: number | null = null;
  *  `Date.now() - BOOT_T0` at request time measures process AGE, not boot. */
 let LISTEN_MS: number | null = null;
 
+class RequestBodyTooLargeError extends Error {}
+class RequestBodyValidationError extends Error {}
+
+function readBoundedRequestBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let settled = false;
+    const cleanup = () => {
+      req.off('data', onData);
+      req.off('end', onEnd);
+      req.off('error', onError);
+      req.off('aborted', onAborted);
+    };
+    const rejectLarge = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      // Discard any bytes already in flight. The response sets Connection:
+      // close, so a client that never sends EOF cannot retain a request slot.
+      req.resume();
+      reject(new RequestBodyTooLargeError(`request body exceeds ${maxBytes} bytes`));
+    };
+    const onData = (chunk: Buffer | string) => {
+      const next = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += next.byteLength;
+      if (bytes > maxBytes) return rejectLarge();
+      chunks.push(next);
+    };
+    const onEnd = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(Buffer.concat(chunks, bytes).toString('utf8'));
+    };
+    const onError = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onAborted = () => onError(new Error('request body was aborted'));
+
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
+    req.on('aborted', onAborted);
+    const declaredBytes = Number(req.headers['content-length']);
+    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) rejectLarge();
+  });
+}
+
 export async function startWorker(cfg = configFromEnv()) {
-  const { agent, env, lazy, faux, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity } =
-    await buildHarness(cfg);
+  const {
+    agent,
+    env,
+    lazy,
+    faux,
+    timing,
+    session,
+    restoredEntries,
+    restoredMessages,
+    storeError,
+    modelError,
+    bootReconcile,
+    setTurnIdentity,
+  } = await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
 
   agent.subscribe((event: any) => {
@@ -465,31 +593,74 @@ export async function startWorker(cfg = configFromEnv()) {
   // and lexicographically ordered across the whole session.
   const compiledPayload = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
     | {
-        manifest?: { agent_config_etag?: string | null; default_agent?: string | null };
+        manifest?: {
+          agent_config_etag?: string | null;
+          command_config_etag?: string | null;
+          skill_config_etag?: string | null;
+          default_agent?: string | null;
+        };
         agentConfig?: {
           model?: string;
-          agent?: Record<string, { description?: string; model?: string }>;
+          agent?: RuntimeSurfaceOptions['agents'];
         } | null;
+        commands?: PiCommand[];
+        skills?: PiSkill[];
       }
     | undefined;
   let surface!: RuntimeSurface;
+  const runtimeAgent =
+    process.env.KORTIX_AGENT ?? compiledPayload?.manifest?.default_agent ?? 'build';
+  const permissionConfig = compiledPayload?.agentConfig?.agent?.[runtimeAgent]?.permission;
+  const permissions = new PermissionBroker({
+    sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
+    permission: permissionConfig,
+    publish: (event) => surface.publishWire(event),
+  });
   const questions = new QuestionBroker({
     sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
     publish: (event) => surface.publishWire(event),
   });
-  agent.state.tools = [...agent.state.tools, createQuestionTool(questions, (id) => wireAdapter.toolContext(id))];
+  agent.state.tools = [
+    ...agent.state.tools,
+    createQuestionTool(questions, (id) => wireAdapter.toolContext(id)),
+  ];
+  const todos = createTodoTools({
+    sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
+    messages: () => agent.state.messages,
+    publish: (event) => surface.publishWire(event),
+  });
+  agent.state.tools = [
+    ...agent.state.tools,
+    ...todos.tools,
+    createSkillTool(compiledPayload?.skills ?? [], cfg.envCwd),
+  ];
+  const modelRef = cfg.modelId ?? compiledPayload?.agentConfig?.model;
+  const nativeModel = modelRef?.replace(/^kortix\//, '');
+  const model = nativeModel ? { providerID: 'kortix', modelID: nativeModel } : undefined;
+  agent.state.tools = protectToolsWithPermissions(
+    agent.state.tools,
+    permissions,
+    cfg.envCwd,
+    (id) => wireAdapter.toolContext(id),
+  );
   surface = new RuntimeSurface({
     sessionId: cfg.sessionId ?? 'session-local',
     token: cfg.kortixToken,
-    agentName:
-      process.env.KORTIX_AGENT ??
-      compiledPayload?.manifest?.default_agent ??
-      undefined,
+    agentName: process.env.KORTIX_AGENT ?? compiledPayload?.manifest?.default_agent ?? undefined,
     agentConfigEtag: compiledPayload?.manifest?.agent_config_etag ?? null,
     agents: compiledPayload?.agentConfig?.agent ?? {},
     defaultModel: cfg.modelId ?? compiledPayload?.agentConfig?.model ?? null,
     workspace: cfg.envCwd,
     questions,
+    permissions,
+    permissionConfig,
+    todos: todos.list,
+    tools: agent.state.tools,
+    commands: compiledPayload?.commands ?? [],
+    commandConfigEtag: compiledPayload?.manifest?.command_config_etag ?? null,
+    skillConfigEtag: compiledPayload?.manifest?.skill_config_etag ?? null,
+    skills: compiledPayload?.skills ?? [],
+    resolvedModel: model,
     // The Stop button. `session.abort` on the runtime client is POST
     // `session/:id/abort`, which this surface answered with its catch-all 404
     // until now — so the UI showed "Interrupted" from its own optimistic
@@ -518,7 +689,11 @@ export async function startWorker(cfg = configFromEnv()) {
   const seededMessages = surface.seedRestoredMessages(restoredMessages);
   if (seededMessages > 0) {
     console.log(
-      JSON.stringify({ msg: 'transcript restored', messages: seededMessages, entries: restoredEntries }),
+      JSON.stringify({
+        msg: 'transcript restored',
+        messages: seededMessages,
+        entries: restoredEntries,
+      }),
     );
   }
   const wireAdapter = new ChatEventAdapter({
@@ -604,18 +779,170 @@ export async function startWorker(cfg = configFromEnv()) {
       } finally {
         surface.markTurn(userMessageId, false);
       }
+      return userMessageId;
     })();
     return turnChain;
   };
 
+  const compiledCommands = new Map(
+    (compiledPayload?.commands ?? []).map((command) => [command.name, command]),
+  );
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
 
     if (url.pathname.startsWith('/kortix/opencode/')) {
       if (surface.handle(req, res, url)) return;
     }
-    if (url.pathname === '/global/event' || url.pathname === '/question' || url.pathname.startsWith('/question/') || url.pathname === '/session' || url.pathname.startsWith('/session/')) {
+    if (
+      [
+        '/global/event',
+        '/config',
+        '/global/config',
+        '/lsp/diagnostics',
+        '/agent',
+        '/command',
+        '/skill',
+        '/tool',
+        '/tool/ids',
+        '/experimental/tool',
+        '/experimental/tool/ids',
+      ].includes(url.pathname) ||
+      url.pathname === '/permission' ||
+      url.pathname.startsWith('/permission/') ||
+      url.pathname === '/question' ||
+      url.pathname.startsWith('/question/') ||
+      url.pathname === '/session' ||
+      url.pathname.startsWith('/session/')
+    ) {
       if (surface.handleRawSessionList(req, res, url)) return;
+    }
+
+    // ── OpenCode project command route ─────────────────────────────────────
+    // Commands are compiled into this artifact at the session's exact Git SHA.
+    // The worker never reads a moving branch or scans the environment for them.
+    {
+      const commandRoute = url.pathname.match(/^\/session\/([^/]+)\/command$/);
+      if (commandRoute && req.method === 'POST') {
+        if (!surface.authorize(req, url)) {
+          res
+            .writeHead(401, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'unauthorized' }));
+          return;
+        }
+        const sessionId = decodePathSegment(commandRoute[1]!);
+        if (sessionId === null) {
+          res
+            .writeHead(400, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'path contains malformed percent-encoding' }));
+          return;
+        }
+        if (sessionId !== surface.rootId) {
+          res
+            .writeHead(404, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'unknown session' }));
+          return;
+        }
+        const commandWorkspaces = [
+          ...url.searchParams.getAll('directory'),
+          ...url.searchParams.getAll('workspace'),
+        ];
+        if (commandWorkspaces.some((workspace) => workspace !== cfg.envCwd)) {
+          res.writeHead(400, { 'content-type': 'application/json' }).end(
+            JSON.stringify({
+              error: 'command workspace must equal the compiled environment workspace',
+            }),
+          );
+          return;
+        }
+        try {
+          const body = JSON.parse(await readBoundedRequestBody(req)) as unknown;
+          if (!body || typeof body !== 'object' || Array.isArray(body)) {
+            throw new RequestBodyValidationError('request body must be a JSON object');
+          }
+          const input = body as Record<string, unknown>;
+          if (typeof input.command !== 'string' || !input.command) {
+            throw new RequestBodyValidationError('command must be a non-empty string');
+          }
+          if (input.arguments !== undefined && typeof input.arguments !== 'string') {
+            throw new RequestBodyValidationError('arguments must be a string');
+          }
+          const argumentsText = input.arguments ?? '';
+          if (input.messageID !== undefined && typeof input.messageID !== 'string') {
+            throw new RequestBodyValidationError('messageID must be a string');
+          }
+          for (const field of ['agent', 'model', 'variant', 'subtask'] as const) {
+            if (!Object.hasOwn(input, field)) continue;
+            res.writeHead(409, { 'content-type': 'application/json' }).end(
+              JSON.stringify({
+                code: 'PI_COMMAND_RUNTIME_OVERRIDE_UNSUPPORTED',
+                error: `Pi command request field "${field}" is not supported by the compiled session runtime`,
+                field,
+              }),
+            );
+            return;
+          }
+          const command = compiledCommands.get(input.command);
+          if (!command) {
+            res.writeHead(404, { 'content-type': 'application/json' }).end(
+              JSON.stringify({
+                code: 'PI_COMMAND_NOT_FOUND',
+                error: `Command not found: "${input.command}".`,
+              }),
+            );
+            return;
+          }
+          if (Object.hasOwn(input, 'parts')) {
+            const error = new PiCommandUnsupportedError('file parts', command.name);
+            res
+              .writeHead(422, { 'content-type': 'application/json' })
+              .end(
+                JSON.stringify({ code: error.code, error: error.message, feature: error.feature }),
+              );
+            return;
+          }
+          const prompt = preparePiCommand(command, argumentsText);
+          const userMessageId = String(
+            await runTurn(prompt, { userMessageId: input.messageID as string | undefined }),
+          );
+          const assistant = surface.assistantMessagesForParent(userMessageId);
+          const last = assistant.at(-1);
+          if (!last) {
+            res
+              .writeHead(500, { 'content-type': 'application/json' })
+              .end(JSON.stringify({ error: 'command completed without an assistant message' }));
+            return;
+          }
+          surface.publishWire({
+            type: 'command.executed',
+            properties: {
+              name: command.name,
+              sessionID: surface.rootId,
+              arguments: argumentsText,
+              messageID: last.info.id,
+            },
+          });
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(last));
+        } catch (error) {
+          const unsupported = error instanceof PiCommandUnsupportedError;
+          const tooLarge = error instanceof RequestBodyTooLargeError;
+          const invalid =
+            error instanceof SyntaxError || error instanceof RequestBodyValidationError;
+          res
+            .writeHead(unsupported ? 422 : tooLarge ? 413 : invalid ? 400 : 503, {
+              'content-type': 'application/json',
+              ...(tooLarge ? { connection: 'close' } : {}),
+            })
+            .end(
+              JSON.stringify(
+                unsupported
+                  ? { code: error.code, error: error.message, feature: error.feature }
+                  : { error: String((error as Error)?.message ?? error) },
+              ),
+              tooLarge ? () => req.destroy() : undefined,
+            );
+        }
+        return;
+      }
     }
 
     // ── prompt_async — the composer/queue delivery route ────────────────────
@@ -635,17 +962,17 @@ export async function startWorker(cfg = configFromEnv()) {
         // write/edit/glob/grep against the session's environment and secrets; every
         // `/kortix/opencode/*` sibling has always been gated and this one was
         // not, purely because it is served here rather than by RuntimeSurface.
-      if (!surface.authorize(req, url)) {
-        res.writeHead(401, { 'content-type': 'application/json' }).end(
-          JSON.stringify({ error: 'unauthorized' }),
-        );
-        return;
-      }
+        if (!surface.authorize(req, url)) {
+          res
+            .writeHead(401, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'unauthorized' }));
+          return;
+        }
         const sid = decodeURIComponent(m[1]!);
         if (sid !== surface.rootId) {
-          res.writeHead(404, { 'content-type': 'application/json' }).end(
-            JSON.stringify({ error: 'unknown session' }),
-          );
+          res
+            .writeHead(404, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'unknown session' }));
           return;
         }
         let body = '';
@@ -664,9 +991,9 @@ export async function startWorker(cfg = configFromEnv()) {
               .map((p) => p.text)
               .join('');
           } catch {
-            res.writeHead(400, { 'content-type': 'application/json' }).end(
-              JSON.stringify({ error: 'invalid json body' }),
-            );
+            res
+              .writeHead(400, { 'content-type': 'application/json' })
+              .end(JSON.stringify({ error: 'invalid json body' }));
             return;
           }
           // Accept immediately (204), exactly like OpenCode's prompt_async — the
@@ -736,9 +1063,13 @@ export async function startWorker(cfg = configFromEnv()) {
     // Acknowledged, not applied: a pi worker's config is immutable per artifact
     // — a new commit compiles a new artifact. Refusing (non-200) would surface
     // every flagged session as a sync failure in the fan-out's logs.
-    if ((url.pathname === '/kortix/env' || url.pathname === '/kortix/refresh') && req.method === 'POST') {
-      res.writeHead(200, { 'content-type': 'application/json' })
-         .end(JSON.stringify({ ok: true, changed: false, engine: 'pi' }));
+    if (
+      (url.pathname === '/kortix/env' || url.pathname === '/kortix/refresh') &&
+      req.method === 'POST'
+    ) {
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ ok: true, changed: false, engine: 'pi' }));
       return;
     }
 
@@ -766,7 +1097,9 @@ export async function startWorker(cfg = configFromEnv()) {
                 rpcCalls: env.calls.length,
               }
             : { mode: 'url', url: cfg.envUrl, cwd: cfg.envCwd, rpcCalls: env.calls.length },
-        store: cfg.storeUrl ? { url: cfg.storeUrl, sessionId: cfg.sessionId, restoredEntries } : null,
+        store: cfg.storeUrl
+          ? { url: cfg.storeUrl, sessionId: cfg.sessionId, restoredEntries }
+          : null,
       });
       res.writeHead(200, { 'content-type': 'application/json' }).end(body);
       return;
@@ -774,12 +1107,16 @@ export async function startWorker(cfg = configFromEnv()) {
 
     if (url.pathname === '/events') {
       if (surface.requiresAuth() && !surface.authorize(req, url)) {
-        res.writeHead(401, { 'content-type': 'application/json' }).end(
-          JSON.stringify({ error: 'unauthorized' }),
-        );
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
-      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
       const send = (c: string) => res.write(c);
       listeners.add(send);
       req.on('close', () => listeners.delete(send));
@@ -788,9 +1125,9 @@ export async function startWorker(cfg = configFromEnv()) {
 
     if (url.pathname === '/prompt' && req.method === 'POST') {
       if (surface.requiresAuth() && !surface.authorize(req, url)) {
-        res.writeHead(401, { 'content-type': 'application/json' }).end(
-          JSON.stringify({ error: 'unauthorized' }),
-        );
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
       let body = '';
@@ -805,18 +1142,25 @@ export async function startWorker(cfg = configFromEnv()) {
             faux.setResponses(
               script.map((step: any) =>
                 step.tool
-                  ? fauxAssistantMessage([fauxToolCall(step.tool, step.args ?? {})], { stopReason: 'toolUse' })
+                  ? fauxAssistantMessage([fauxToolCall(step.tool, step.args ?? {})], {
+                      stopReason: 'toolUse',
+                    })
                   : fauxAssistantMessage(String(step.text ?? ''), { stopReason: 'stop' }),
               ),
             );
           }
           await runTurn(String(text ?? ''));
           const result = { messages: agent.state.messages.length };
-          const payload = JSON.stringify({ ok: true, result, rpcCalls: env.calls.map((c) => c.op) });
+          const payload = JSON.stringify({
+            ok: true,
+            result,
+            rpcCalls: env.calls.map((c) => c.op),
+          });
           res.writeHead(200, { 'content-type': 'application/json' }).end(payload);
         } catch (e: any) {
-          res.writeHead(500, { 'content-type': 'application/json' })
-             .end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
+          res
+            .writeHead(500, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
         }
       });
       return;
@@ -827,21 +1171,27 @@ export async function startWorker(cfg = configFromEnv()) {
     // for — not when the turn finishes.
     if (url.pathname === '/turn' && req.method === 'POST') {
       if (surface.requiresAuth() && !surface.authorize(req, url)) {
-        res.writeHead(401, { 'content-type': 'application/json' }).end(
-          JSON.stringify({ error: 'unauthorized' }),
-        );
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
-        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+        res.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+          connection: 'keep-alive',
+        });
         const { text, script } = JSON.parse(body || '{}');
         if (faux && Array.isArray(script)) {
           faux.setResponses(
             script.map((step: any) =>
               step.tool
-                ? fauxAssistantMessage([fauxToolCall(step.tool, step.args ?? {})], { stopReason: 'toolUse' })
+                ? fauxAssistantMessage([fauxToolCall(step.tool, step.args ?? {})], {
+                    stopReason: 'toolUse',
+                  })
                 : fauxAssistantMessage(String(step.text ?? ''), { stopReason: 'stop' }),
             ),
           );
@@ -851,9 +1201,13 @@ export async function startWorker(cfg = configFromEnv()) {
         });
         try {
           await runTurn(String(text ?? ''));
-          res.write(`event: done\ndata: ${JSON.stringify({ rpcCalls: env.calls.map((c) => c.op) })}\n\n`);
+          res.write(
+            `event: done\ndata: ${JSON.stringify({ rpcCalls: env.calls.map((c) => c.op) })}\n\n`,
+          );
         } catch (e: any) {
-          res.write(`event: error\ndata: ${JSON.stringify({ error: String(e?.message ?? e) })}\n\n`);
+          res.write(
+            `event: error\ndata: ${JSON.stringify({ error: String(e?.message ?? e) })}\n\n`,
+          );
         } finally {
           unsub();
           res.end();
@@ -866,9 +1220,9 @@ export async function startWorker(cfg = configFromEnv()) {
     // comparison benchmark calls, and the one to curl by hand.
     if (url.pathname === '/say' && req.method === 'POST') {
       if (surface.requiresAuth() && !surface.authorize(req, url)) {
-        res.writeHead(401, { 'content-type': 'application/json' }).end(
-          JSON.stringify({ error: 'unauthorized' }),
-        );
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
       let body = '';
@@ -880,9 +1234,9 @@ export async function startWorker(cfg = configFromEnv()) {
           const t0 = process.hrtime.bigint();
           await runTurn(String(text ?? ''));
           const totalMs = Number(process.hrtime.bigint() - t0) / 1e6;
-          const last = agent.state.messages
-            .filter((m: any) => m.role === 'assistant')
-            .pop() as AssistantMessage | undefined;
+          const last = agent.state.messages.filter((m: any) => m.role === 'assistant').pop() as
+            | AssistantMessage
+            | undefined;
           const answer = (last?.content ?? [])
             .filter((c: any) => c.type === 'text')
             .map((c: any) => c.text)
@@ -898,8 +1252,9 @@ export async function startWorker(cfg = configFromEnv()) {
             }),
           );
         } catch (e: any) {
-          res.writeHead(500, { 'content-type': 'application/json' })
-             .end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
+          res
+            .writeHead(500, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
         }
       });
       return;
@@ -910,12 +1265,15 @@ export async function startWorker(cfg = configFromEnv()) {
     // worker running at all — see bench/read-transcript.ts.
     if (url.pathname === '/history') {
       if (surface.requiresAuth() && !surface.authorize(req, url)) {
-        res.writeHead(401, { 'content-type': 'application/json' }).end(
-          JSON.stringify({ error: 'unauthorized' }),
-        );
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
-      if (!session) { res.writeHead(200, { 'content-type': 'application/json' }).end('{"messages":[]}'); return; }
+      if (!session) {
+        res.writeHead(200, { 'content-type': 'application/json' }).end('{"messages":[]}');
+        return;
+      }
       const leaf = await session.getLeafId();
       const entries = leaf ? await session.findEntriesOnBranch({ start: leaf } as any) : [];
       const payload = JSON.stringify({
@@ -928,9 +1286,9 @@ export async function startWorker(cfg = configFromEnv()) {
 
     if (url.pathname === '/interrupt' && req.method === 'POST') {
       if (surface.requiresAuth() && !surface.authorize(req, url)) {
-        res.writeHead(401, { 'content-type': 'application/json' }).end(
-          JSON.stringify({ error: 'unauthorized' }),
-        );
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
       agent.abort();
@@ -945,13 +1303,29 @@ export async function startWorker(cfg = configFromEnv()) {
   LISTEN_UPTIME_MS = vmUptimeMs();
   LISTEN_MS = Date.now() - BOOT_T0;
   const port = (server.address() as any).port;
-  console.log(JSON.stringify({ msg: 'worker listening', port, bootMs: LISTEN_MS, vmUptimeAtListenMs: LISTEN_UPTIME_MS, modelMode: cfg.modelMode, env: cfg.envUrl }));
+  console.log(
+    JSON.stringify({
+      msg: 'worker listening',
+      port,
+      bootMs: LISTEN_MS,
+      vmUptimeAtListenMs: LISTEN_UPTIME_MS,
+      modelMode: cfg.modelMode,
+      env: cfg.envUrl,
+    }),
+  );
   // Fire-and-forget, AFTER listen: a session that booted with no work to do
   // tells the control plane so, closing a row a previous process left open.
   // Not awaited — the worker must be answering requests immediately, and the
   // reconcile deliberately waits out its own race window first.
   void bootReconcile.run();
-  return { server, agent, env, faux, port, close: () => new Promise<void>((r) => server.close(() => r())) };
+  return {
+    server,
+    agent,
+    env,
+    faux,
+    port,
+    close: () => new Promise<void>((r) => server.close(() => r())),
+  };
 }
 
 // No self-start guard here: src/main.ts is the bundle's sole entrypoint and

@@ -83,7 +83,7 @@ describe('Pi worker OpenCode global event compatibility', () => {
     const connectedEvent = await eventPromise;
     expect(connectedEvent.value).toEqual({
       directory: '/remote/workspace',
-      payload: { type: 'server.connected', properties: {} },
+      payload: { id: expect.any(String), type: 'server.connected', properties: {} },
     });
     const event = await iterator.next();
     const partEvent = await iterator.next();

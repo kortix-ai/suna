@@ -1,4 +1,5 @@
 import type { ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import type { WorkerEventBus } from './runtime-surface.ts';
 
 export function serveGlobalEventStream(
@@ -52,7 +53,9 @@ export function serveGlobalEventStream(
     { since: null, epoch: null },
   ).unsubscribe;
   const transportEvent = (type: 'server.connected' | 'server.heartbeat') =>
-    write(`data: ${JSON.stringify({ directory, payload: { type, properties: {} } })}\n\n`);
+    write(
+      `data: ${JSON.stringify({ directory, payload: { id: `evt_${randomUUID()}`, type, properties: {} } })}\n\n`,
+    );
   heartbeat = setInterval(() => transportEvent('server.heartbeat'), options.heartbeatMs);
   heartbeat.unref?.();
   res.once('close', cleanup);

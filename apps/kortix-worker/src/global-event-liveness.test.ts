@@ -67,7 +67,7 @@ describe('global event stream liveness', () => {
       JSON.parse(new TextDecoder().decode(heartbeat.value).split('data: ')[1]!.trim()),
     ).toEqual({
       directory: '/workspace',
-      payload: { type: 'server.heartbeat', properties: {} },
+      payload: { id: expect.any(String), type: 'server.heartbeat', properties: {} },
     });
     bus.publish('session.status', { sessionID: 'session-1', status: { type: 'idle' } });
     let chunk = '';

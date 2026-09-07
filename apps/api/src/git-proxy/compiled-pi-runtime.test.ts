@@ -58,6 +58,10 @@ describe('compilePiRuntime', () => {
       source_sha: 'a'.repeat(40),
       default_agent: 'kortix',
       agent_config: INPUT.agentConfig ?? null,
+      command_config: null,
+      command_config_etag: null,
+      skill_config: null,
+      skill_config_etag: null,
     });
     expect(first.size).toBe(Buffer.byteLength(first.source));
   });

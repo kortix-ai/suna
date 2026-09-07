@@ -1,3 +1,10 @@
+import type { AgentTool } from '@earendil-works/pi-agent-core';
+import type { Agent, ToolList } from '@opencode-ai/sdk/v2';
+import { compilePermissionRules, type PermissionConfig } from './permission-policy.ts';
+import type { PiTodo } from './todo-tools.ts';
+import type { PiCommand } from './command-runtime.ts';
+import { projectSkillInfo, type PiSkill } from './skill-runtime.ts';
+import type { PermissionBroker } from './permission-broker.ts';
 import type { QuestionBroker } from './question-broker.ts';
 import { serveGlobalEventStream } from './global-event-stream.ts';
 /**
@@ -27,8 +34,17 @@ import { serveGlobalEventStream } from './global-event-stream.ts';
  * disagree between the two.
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { WIRE_ID_TIME_MASK, WIRE_ID_TIME_SCALE, mintWireMessageId, wireIdTime } from './wire-message-id';
-import { assistantContractFields, assistantMessageError, toolResultMetadata } from './chat-events.ts';
+import {
+  WIRE_ID_TIME_MASK,
+  WIRE_ID_TIME_SCALE,
+  mintWireMessageId,
+  wireIdTime,
+} from './wire-message-id';
+import {
+  assistantContractFields,
+  assistantMessageError,
+  toolResultMetadata,
+} from './chat-events.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
@@ -150,7 +166,11 @@ export class WorkerEventBus {
       });
       if (opts.epoch && opts.epoch !== this.epoch) resync = mkResync('epoch-changed');
       else if (opts.since > this.headSeq) resync = mkResync('ahead-of-head');
-      else if (opts.since < this.firstSeq - 1 && this.ring.length > 0 && opts.since < this.ring[0]!.seq - 1)
+      else if (
+        opts.since < this.firstSeq - 1 &&
+        this.ring.length > 0 &&
+        opts.since < this.ring[0]!.seq - 1
+      )
         resync = mkResync('gap-too-old');
       else replay = this.ring.filter((e) => e.seq > (opts.since as number));
     }
@@ -290,7 +310,9 @@ export class WireTranscript {
   }
 
   /** One message with its parts in order, or null. Used to re-announce a restore. */
-  messageById(id: string): { info: Record<string, unknown>; parts: Record<string, unknown>[] } | null {
+  messageById(
+    id: string,
+  ): { info: Record<string, unknown>; parts: Record<string, unknown>[] } | null {
     const m = this.messages.get(id);
     if (!m) return null;
     return { info: m.info, parts: m.order.map((pid) => m.parts.get(pid)!).filter(Boolean) };
@@ -300,7 +322,9 @@ export class WireTranscript {
     messages: Array<{ info: Record<string, unknown>; parts: Record<string, unknown>[] }>;
     hasMore: boolean;
   } {
-    const eligible = opts.before ? this.order.filter((id) => id < (opts.before as string)) : this.order;
+    const eligible = opts.before
+      ? this.order.filter((id) => id < (opts.before as string))
+      : this.order;
     const window = eligible.slice(-opts.limit);
     return {
       messages: window.map((id) => {
@@ -387,13 +411,38 @@ function readRawJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<un
 }
 
 export interface RuntimeSurfaceOptions {
+  commandConfigEtag?: string | null;
+  skillConfigEtag?: string | null;
+  permissionConfig?: PermissionConfig;
+  todos?: () => PiTodo[];
+  permissions?: PermissionBroker;
   questions?: QuestionBroker;
   sessionId: string;
   /** The worker's own KORTIX_TOKEN — service bearer AND user-context secret. */
   token?: string;
   agentName?: string;
   agentConfigEtag?: string | null;
-  agents?: Record<string, { description?: string; model?: string }>;
+  agents?: Record<
+    string,
+    {
+      description?: string;
+      mode?: 'primary' | 'subagent' | 'all';
+      model?: string;
+      variant?: string;
+      temperature?: number;
+      top_p?: number;
+      prompt?: string;
+      disable?: boolean;
+      hidden?: boolean;
+      options?: Record<string, unknown>;
+      color?: string;
+      steps?: number;
+      permission?: PermissionConfig;
+    }
+  >;
+  commands?: PiCommand[];
+  skills?: PiSkill[];
+  tools?: readonly AgentTool[];
   defaultModel?: string | null;
   resolvedModel?: { providerID: string; modelID: string } | null;
   workspace?: string;
@@ -431,6 +480,12 @@ function agentModel(ref: string | undefined): { providerID: string; modelID: str
   const native = ref.startsWith('kortix/') ? ref.slice('kortix/'.length) : ref;
   const slash = native.indexOf('/');
   return { providerID: native.slice(0, slash), modelID: native.slice(slash + 1) };
+}
+
+function workspaceQueryMatches(url: URL, workspace: string): boolean {
+  return [...url.searchParams.getAll('directory'), ...url.searchParams.getAll('workspace')].every(
+    (candidate) => candidate === workspace,
+  );
 }
 
 export class RuntimeSurface {
@@ -547,7 +602,12 @@ export class RuntimeSurface {
         this.applyToolPart(pending, {
           ...(message.isError
             ? { status: 'error', error: output }
-            : { status: 'completed', output, title: pending.tool, metadata: toolResultMetadata(message.details) }),
+            : {
+                status: 'completed',
+                output,
+                title: pending.tool,
+                metadata: toolResultMetadata(message.details),
+              }),
           input: pending.input,
           time: { start: pending.startedAt, end: created },
         });
@@ -705,6 +765,17 @@ export class RuntimeSurface {
     return seeded;
   }
 
+  /** Completed assistant wire messages that belong to one accepted user turn. */
+  assistantMessagesForParent(
+    parentId: string,
+  ): Array<{ info: Record<string, unknown>; parts: Record<string, unknown>[] }> {
+    return this.transcript
+      .page({ limit: Math.max(this.transcript.count, 1), before: null })
+      .messages.filter(
+        (message) => message.info.role === 'assistant' && message.info.parentID === parentId,
+      );
+  }
+
   /** One `tool` part, in the same shape the live adapter emits (chat-events.ts). */
   private applyToolPart(
     entry: { messageId: string; partId: string; tool: string },
@@ -756,8 +827,8 @@ export class RuntimeSurface {
     if (!wire.busOnly) this.transcript.apply(wire);
     const session =
       (wire.properties.sessionID as string | undefined) ??
-      ((wire.properties.info as { sessionID?: string } | undefined)?.sessionID ??
-        (wire.properties.part as { sessionID?: string } | undefined)?.sessionID);
+      (wire.properties.info as { sessionID?: string } | undefined)?.sessionID ??
+      (wire.properties.part as { sessionID?: string } | undefined)?.sessionID;
     this.bus.publish(wire.type, wire.properties, session);
   }
 
@@ -872,6 +943,37 @@ export class RuntimeSurface {
     };
   }
 
+  private selectedAgent(): Agent {
+    const name = this.opts.agentName ?? Object.keys(this.opts.agents ?? {})[0] ?? 'build';
+    const agent = this.opts.agents?.[name] ?? {};
+    const model =
+      this.opts.resolvedModel ?? agentModel(agent.model ?? this.opts.defaultModel ?? undefined);
+    return {
+      name,
+      ...(agent.description !== undefined ? { description: agent.description } : {}),
+      mode: agent.mode ?? 'primary',
+      native: false,
+      hidden: agent.hidden === true || agent.disable === true,
+      ...(agent.top_p !== undefined ? { topP: agent.top_p } : {}),
+      ...(agent.temperature !== undefined ? { temperature: agent.temperature } : {}),
+      ...(agent.color !== undefined ? { color: agent.color } : {}),
+      permission: compilePermissionRules(agent.permission ?? this.opts.permissionConfig),
+      ...(model ? { model } : {}),
+      ...(agent.variant !== undefined ? { variant: agent.variant } : {}),
+      ...(agent.prompt !== undefined ? { prompt: agent.prompt } : {}),
+      options: structuredClone(agent.options ?? {}),
+      ...(agent.steps !== undefined ? { steps: agent.steps } : {}),
+    };
+  }
+
+  private toolList(): ToolList {
+    return (this.opts.tools ?? []).map((tool) => ({
+      id: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }));
+  }
+
   private stateDoc() {
     const agents = Object.entries(this.opts.agents ?? {}).map(([name, agent]) => ({
       name,
@@ -893,10 +995,18 @@ export class RuntimeSurface {
         opencode_version: null,
         daemon_build: null,
         agent_config_etag: this.opts.agentConfigEtag ?? null,
+        command_config_etag: this.opts.commandConfigEtag ?? null,
+        skill_config_etag: this.opts.skillConfigEtag ?? null,
         head_seq: null,
       },
       agents: { known: true, value: agents },
-      commands: { known: true, value: [] },
+      commands: { known: true, value: this.opts.commands ?? [] },
+      skills: {
+        known: true,
+        value: (this.opts.skills ?? []).map((skill) =>
+          projectSkillInfo(skill, this.opts.workspace ?? '/workspace'),
+        ),
+      },
       config: {
         known: true,
         value: {
@@ -910,7 +1020,7 @@ export class RuntimeSurface {
       },
       sessions: { known: true, value: [this.sessionProjection()] },
       statuses: { known: true, value: { [this.rootId]: this.status } },
-      permissions: { known: true, value: [] },
+      permissions: { known: true, value: this.opts.permissions?.list() ?? [] },
       questions: { known: true, value: this.opts.questions?.list() ?? [] },
     };
   }
@@ -1015,7 +1125,8 @@ export class RuntimeSurface {
   handleRawSessionList(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
     if (url.pathname === '/global/event' && req.method === 'GET') {
       if (!this.authorized(req, url)) {
-        res.writeHead(401, { 'content-type': 'application/json' })
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
           .end(JSON.stringify({ error: 'unauthorized' }));
         return true;
       }
@@ -1094,8 +1205,54 @@ export class RuntimeSurface {
           return;
         }
         const { removed } = this.revertFrom(messageId);
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, removed }));
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ ok: true, removed }));
       });
+      return true;
+    }
+    const rawPermissionMutation = url.pathname.match(/^\/permission\/([^/]+)\/reply$/);
+    if (rawPermissionMutation && req.method === 'POST') {
+      if (!this.authorized(req, url)) {
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
+        return true;
+      }
+      const requestId = decodePathSegment(rawPermissionMutation[1] ?? '');
+      if (requestId === null) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'path contains malformed percent-encoding' }));
+        return true;
+      }
+      const write = (status: number, body: unknown) =>
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+      void readRawJsonBody(req)
+        .then((body) => {
+          const value =
+            body && typeof body === 'object' && !Array.isArray(body)
+              ? (body as { reply?: unknown; message?: unknown })
+              : null;
+          if (
+            !value ||
+            (value.reply !== 'once' && value.reply !== 'always' && value.reply !== 'reject') ||
+            (value.message !== undefined && typeof value.message !== 'string')
+          ) {
+            write(400, { error: 'reply must be once, always, or reject' });
+            return;
+          }
+          if (!this.opts.permissions?.reply(requestId, value.reply, value.message)) {
+            write(404, { error: 'permission request not found' });
+            return;
+          }
+          write(200, true);
+        })
+        .catch((error) => {
+          write(error instanceof RawBodyError ? error.status : 400, {
+            error: String((error as Error)?.message ?? error),
+          });
+        });
       return true;
     }
     const rawQuestionMutation = url.pathname.match(/^\/question\/([^/]+)\/(reply|reject)$/);
@@ -1115,9 +1272,7 @@ export class RuntimeSurface {
       }
       const action = rawQuestionMutation[2]!;
       const write = (status: number, body: unknown) =>
-        res
-          .writeHead(status, { 'content-type': 'application/json' })
-          .end(JSON.stringify(body));
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
       if (action === 'reject') {
         if (!this.opts.questions?.reject(requestId)) {
           write(404, { error: 'question request not found' });
@@ -1155,11 +1310,50 @@ export class RuntimeSurface {
     }
     if (req.method !== 'GET') return false;
     if (!this.authorized(req, url)) {
-      res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'unauthorized' }));
+      res
+        .writeHead(401, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ error: 'unauthorized' }));
+      return true;
+    }
+    if (url.pathname === '/permission') {
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(this.opts.permissions?.list() ?? []));
+      return true;
+    }
+    if (url.pathname === '/config' || url.pathname === '/global/config') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          default_agent: this.opts.agentName ?? 'build',
+          model: this.opts.defaultModel ?? undefined,
+          agent: this.opts.agents ?? {},
+          permission: this.opts.permissionConfig,
+          lsp: false,
+        }),
+      );
+      return true;
+    }
+    if (url.pathname === '/lsp/diagnostics') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({}));
+      return true;
+    }
+    const todoSession = url.pathname.match(/^\/session\/([^/]+)\/todo$/);
+    if (todoSession) {
+      const sessionID = decodePathSegment(todoSession[1]!);
+      const status = sessionID === null ? 400 : sessionID === this.rootId ? 200 : 404;
+      res
+        .writeHead(status, { 'content-type': 'application/json' })
+        .end(
+          JSON.stringify(
+            status === 200 ? (this.opts.todos?.() ?? []) : { error: 'unknown or invalid session' },
+          ),
+        );
       return true;
     }
     if (url.pathname === '/question') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(this.opts.questions?.list() ?? []));
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(this.opts.questions?.list() ?? []));
       return true;
     }
     if (url.pathname === '/session/status') {
@@ -1168,7 +1362,94 @@ export class RuntimeSurface {
       return true;
     }
     if (url.pathname === '/session') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify([this.opencodeSessionObject()]));
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify([this.opencodeSessionObject()]));
+      return true;
+    }
+    if (url.pathname === '/command') {
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(this.opts.commands ?? []));
+      return true;
+    }
+    if (url.pathname === '/agent') {
+      const workspace = this.opts.workspace ?? '/workspace';
+      if (!workspaceQueryMatches(url, workspace)) {
+        res.writeHead(400, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            error: 'agent workspace must equal the compiled environment workspace',
+          }),
+        );
+        return true;
+      }
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify([this.selectedAgent()]));
+      return true;
+    }
+    if (url.pathname === '/tool/ids' || url.pathname === '/experimental/tool/ids') {
+      const workspace = this.opts.workspace ?? '/workspace';
+      if (!workspaceQueryMatches(url, workspace)) {
+        res.writeHead(400, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            error: 'tool workspace must equal the compiled environment workspace',
+          }),
+        );
+        return true;
+      }
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(this.toolList().map((tool) => tool.id)));
+      return true;
+    }
+    if (url.pathname === '/tool' || url.pathname === '/experimental/tool') {
+      const workspace = this.opts.workspace ?? '/workspace';
+      if (!workspaceQueryMatches(url, workspace)) {
+        res.writeHead(400, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            error: 'tool workspace must equal the compiled environment workspace',
+          }),
+        );
+        return true;
+      }
+      const providers = url.searchParams.getAll('provider');
+      const models = url.searchParams.getAll('model');
+      if (
+        providers.length !== 1 ||
+        models.length !== 1 ||
+        !providers[0]?.trim() ||
+        !models[0]?.trim()
+      ) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'tool provider and model must be non-empty strings' }));
+        return true;
+      }
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(this.toolList()));
+      return true;
+    }
+    if (url.pathname === '/skill') {
+      const workspace = this.opts.workspace ?? '/workspace';
+      if (!workspaceQueryMatches(url, workspace)) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(
+            JSON.stringify({
+              error: 'skill workspace must equal the compiled environment workspace',
+            }),
+          );
+        return true;
+      }
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(
+          JSON.stringify(
+            (this.opts.skills ?? []).map((skill) => projectSkillInfo(skill, workspace)),
+          ),
+        );
       return true;
     }
     // GET /session/:id/message[/:messageId] — OpenCode's raw transcript
@@ -1195,9 +1476,7 @@ export class RuntimeSurface {
             .end(JSON.stringify({ error: 'unknown message' }));
           return true;
         }
-        res
-          .writeHead(200, { 'content-type': 'application/json' })
-          .end(JSON.stringify(message));
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(message));
         return true;
       }
       const limitRaw = Number(url.searchParams.get('limit'));
@@ -1206,14 +1485,14 @@ export class RuntimeSurface {
           ? Math.min(Math.floor(limitRaw), MAX_MESSAGE_PAGE)
           : Math.max(this.transcript.count, 1);
       const page = this.transcript.page({ limit, before: null });
-      res
-        .writeHead(200, { 'content-type': 'application/json' })
-        .end(JSON.stringify(page.messages));
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(page.messages));
       return true;
     }
     const m = url.pathname.match(/^\/session\/([^/]+)$/);
     if (m && decodeURIComponent(m[1]!) === this.rootId) {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(this.opencodeSessionObject()));
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(this.opencodeSessionObject()));
       return true;
     }
     return false;

@@ -1,3 +1,5 @@
+import { resolveCompiledPiCommandsForSession } from "../projects/lib/compile-pi-commands";
+import { resolveCompiledPiSkillsForSession, filterPiSkillsForPermission, type PiSkillPermissionConfig } from "../projects/lib/compile-pi-skills";
 /**
  * Build-and-cache for compiled pi runtime artifacts — the `engine: 'pi'`
  * sibling of ./compiled-runtime-artifact.ts, sharing its shape deliberately:
@@ -268,11 +270,19 @@ async function compileArtifact(
     }
   }
   const defaultAgent = baked || projectDefaultAgent;
+  const [commands, discoveredSkills] = await Promise.all([
+    resolveCompiledPiCommandsForSession(project, sourceSha),
+    resolveCompiledPiSkillsForSession(project, sourceSha),
+  ]);
+  const selectedConfig = agentConfig ? JSON.parse(agentConfig) as { agent?: Record<string, { permission?: PiSkillPermissionConfig }> } : {};
+  const skills = filterPiSkillsForPermission(discoveredSkills, selectedConfig.agent?.[defaultAgent ?? '']?.permission);
   const artifact = compilePiRuntime({
     projectId: project.projectId,
     ref,
     sourceSha,
     agentConfig,
+    commands,
+    skills,
     defaultAgent,
     workerBundle: workerBundle.source,
   });
