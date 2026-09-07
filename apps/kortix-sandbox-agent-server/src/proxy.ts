@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { BOOT_PHASE_HEADER, bootPhaseLabel } from './boot-phase'
 import { runtimeAssetsActivity } from './runtime-assets'
 import { egressShimPort } from './egress-shim'
@@ -423,6 +423,61 @@ export function buildOpencodeApp(
     }),
   )
 
+  // Every not-ready answer names the boot phase (X-Kortix-Boot-Phase) so the
+  // API's start budget measures lack of PROGRESS, not wall-clock. See
+  // boot-phase.ts.
+  const notReady = (c: Context, body: Record<string, unknown>, reason: string) => {
+    const phase = bootPhaseLabel({
+      timeline: bootState.timeline,
+      opencodeState: opencode.getState(),
+      runtimeAssetsActivity: runtimeAssetsActivity(),
+      notReadyReason: reason,
+    })
+    c.header(BOOT_PHASE_HEADER, phase)
+    return c.json({ ...body, phase }, 503)
+  }
+
+  app.use('*', async (c, next) => {
+    if (bootState.repoMaterializationError) {
+      return notReady(
+        c,
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'repo_materialization_failed',
+          message: bootState.repoMaterializationError,
+        },
+        'repo_materialization_failed',
+      )
+    }
+
+    if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
+      return notReady(
+        c,
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'repo_not_materialized',
+        },
+        'repo_not_materialized',
+      )
+    }
+    // The checkout can be on disk while its config-dir dependencies are still
+    // installing. A directory-scoped request in that window makes OpenCode
+    // cache a tool registry whose imports failed, for the life of the process
+    // (dev, 2026-08-27). Hold callers off until the workspace is complete.
+    if (bootState.workspaceReady === false) {
+      return notReady(
+        c,
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'workspace_not_ready',
+        },
+        'workspace_not_ready',
+      )
+    }
+
+    return next()
+  })
+
   // /file/* — the daemon owns the ENTIRE file API: reads (GET / list,
   // /content, /raw, /status) and writes (upload, delete, mkdir, rename). We do
   // NOT forward file reads to OpenCode — its /file/content base64-inlines
@@ -446,56 +501,9 @@ export function buildOpencodeApp(
   // attempting a fetch — surfaces the situation clearly to the client and
   // prevents noisy ECONNREFUSED loops.
   app.all('*', async (c) => {
-    // Every not-ready answer names the boot phase (X-Kortix-Boot-Phase) so the
-    // API's start budget measures lack of PROGRESS, not wall-clock. See
-    // boot-phase.ts.
-    const notReady = (body: Record<string, unknown>, reason: string) => {
-      const phase = bootPhaseLabel({
-        timeline: bootState.timeline,
-        opencodeState: opencode.getState(),
-        runtimeAssetsActivity: runtimeAssetsActivity(),
-        notReadyReason: reason,
-      })
-      c.header(BOOT_PHASE_HEADER, phase)
-      return c.json({ ...body, phase }, 503)
-    }
-
-    if (bootState.repoMaterializationError) {
-      return notReady(
-        {
-          error: 'sandbox runtime not ready',
-          reason: 'repo_materialization_failed',
-          message: bootState.repoMaterializationError,
-        },
-        'repo_materialization_failed',
-      )
-    }
-
-    if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
-      return notReady(
-        {
-          error: 'sandbox runtime not ready',
-          reason: 'repo_not_materialized',
-        },
-        'repo_not_materialized',
-      )
-    }
-    // The checkout can be on disk while its config-dir dependencies are still
-    // installing. A directory-scoped request in that window makes OpenCode
-    // cache a tool registry whose imports failed, for the life of the process
-    // (dev, 2026-08-27). Hold callers off until the workspace is complete.
-    if (bootState.workspaceReady === false) {
-      return notReady(
-        {
-          error: 'sandbox runtime not ready',
-          reason: 'workspace_not_ready',
-        },
-        'workspace_not_ready',
-      )
-    }
-
     if (bootState.initialOpenCodeSessionError) {
       return notReady(
+        c,
         {
           error: 'sandbox runtime not ready',
           reason: 'initial_opencode_session_failed',
@@ -507,6 +515,7 @@ export function buildOpencodeApp(
 
     if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
       return notReady(
+        c,
         {
           error: 'sandbox runtime not ready',
           reason: 'initial_opencode_session_pending',
@@ -517,6 +526,7 @@ export function buildOpencodeApp(
 
     if (opencode.getState() !== 'ok') {
       return notReady(
+        c,
         {
           error: 'opencode not ready',
           opencode: opencode.getState(),

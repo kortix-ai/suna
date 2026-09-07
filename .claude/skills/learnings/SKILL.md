@@ -4821,3 +4821,14 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
 - Verification: the live browser reproduced the inert path before the change.
   The existing Markdown, availability, and viewer suites passed 37 tests.
   The focused ESLint and full web typecheck both passed.
+
+
+### Gate native file routes on workspace readiness (2026-09-07)
+
+- Incident: Pi preview a800b78de9 woke compute from an inline file, then returned
+  file `404` before checkout finished. The same path returned `200` afterward.
+- Rule: apply checkout and workspace readiness gates before native file, search,
+  and presentation routes. Booting returns `503`; missing files return `404`
+  only after setup. File access does not depend on the OpenCode process.
+- Enforcement: `proxy-auth.test.ts` reproduces the premature `404`, then verifies
+  auth, checkout, setup, ready contents, and a genuinely missing file.
