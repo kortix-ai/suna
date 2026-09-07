@@ -21,6 +21,12 @@ linked, not inlined.
 
 ## Register
 
+### Authenticated reads wait for identity hydration (2026-09-07)
+
+**Rule:** A browser read that requires authentication starts only after the auth provider publishes the user; a missing token during cold hydration is not a resource failure.
+**Near-miss:** A full session-page reload enabled `getProject` from `projectId` alone. The SDK returned `AuthError` before issuing HTTP because auth hydration had not published a token, and the project boundary rendered `This project didn't load.` for a healthy project.
+**Enforcers:** `project-access-boundary.test.ts` verifies the auth-readiness policy and its query wiring. Exact-head preview verification reloads a valid session route and requires the project shell without a manual retry.
+
 ### Preview verification includes post-suite frontend liveness (2026-09-07)
 
 **Rule:** After target-full, require a real authenticated page load and a zero frontend restart delta before accepting a preview.
