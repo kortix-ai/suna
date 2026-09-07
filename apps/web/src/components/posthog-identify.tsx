@@ -5,6 +5,7 @@ import { useParams, usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import {
   consentFromUpdate,
+  hasKortixSession,
   parseCookieYesAnalytics,
   shouldCapture,
   type AnalyticsConsent,
@@ -14,7 +15,14 @@ import { createClient } from '@/lib/supabase/client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 interface AnalyticsState {
-  signedIn: boolean;
+  /**
+   * `null` until Supabase reports the auth state, which is asynchronous and
+   * lands AFTER the first route effect. Falling back to `false` there would opt
+   * the client out and drop the first pageview of every signed-in visit, so an
+   * unknown state reads the session cookie — the same source
+   * `instrumentation-client.ts` used to make the init-time decision.
+   */
+  signedIn: boolean | null;
   consent: AnalyticsConsent;
   pathname: string;
 }
@@ -30,7 +38,8 @@ interface AnalyticsState {
  */
 function applyAnalyticsState(state: AnalyticsState): void {
   try {
-    const capture = shouldCapture({ signedIn: state.signedIn, consent: state.consent });
+    const signedIn = state.signedIn ?? hasKortixSession(document.cookie);
+    const capture = shouldCapture({ signedIn, consent: state.consent });
     if (capture && posthog.has_opted_out_capturing()) {
       posthog.opt_in_capturing({ captureEventName: null });
     } else if (!capture && !posthog.has_opted_out_capturing()) {
@@ -40,6 +49,10 @@ function applyAnalyticsState(state: AnalyticsState): void {
     // Opt-in first: a recorder started while opted out sends nothing.
     const replay = capture && replayAllowedForPath(state.pathname);
     if (replay && !posthog.sessionRecordingStarted()) {
+      // Guarded: calling start on an already-running recorder resets it, and a
+      // recorder that keeps restarting never flushes a snapshot. Every later
+      // apply (remote config, auth, route change) retries, so a first call that
+      // lands too early self-heals.
       posthog.startSessionRecording();
     } else if (!replay && posthog.sessionRecordingStarted()) {
       posthog.stopSessionRecording();
@@ -65,7 +78,7 @@ export const PostHogIdentify = () => {
   const params = useParams();
   const pathname = usePathname();
   const projectId = typeof params?.id === 'string' ? params.id : null;
-  const stateRef = useRef<AnalyticsState>({ signedIn: false, consent: null, pathname: '' });
+  const stateRef = useRef<AnalyticsState>({ signedIn: null, consent: null, pathname: '' });
 
   useEffect(() => {
     stateRef.current.consent = parseCookieYesAnalytics(document.cookie);
@@ -76,6 +89,18 @@ export const PostHogIdentify = () => {
       applyAnalyticsState(stateRef.current);
     };
     document.addEventListener('cookieyes_consent_update', onConsentUpdate);
+
+    // Remote config decides sampling and whether replay is enabled for the
+    // project at all, and it arrives after mount. Re-apply once it lands so the
+    // recorder starts even when the first attempt was too early.
+    let stopFlagWatch: (() => void) | undefined;
+    try {
+      stopFlagWatch = posthog.onFeatureFlags(() => applyAnalyticsState(stateRef.current)) as
+        | (() => void)
+        | undefined;
+    } catch {
+      // Older builds return void; the route effect still applies.
+    }
 
     const supabase = createClient();
     const listener = supabase.auth.onAuthStateChange((event, session) => {
@@ -95,6 +120,7 @@ export const PostHogIdentify = () => {
 
     return () => {
       document.removeEventListener('cookieyes_consent_update', onConsentUpdate);
+      stopFlagWatch?.();
       listener.data.subscription.unsubscribe();
     };
   }, []);

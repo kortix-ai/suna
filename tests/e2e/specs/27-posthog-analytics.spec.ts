@@ -393,6 +393,94 @@ test.describe.serial('27 — PostHog product analytics', { tag: '@quarantine' },
   });
 });
 
+/**
+ * Replay scope, proven without the agent: a project row is enough to render
+ * `/projects/<id>`, so this never waits on a sandbox or a model reply. Each
+ * route is opened in its own browser context, so "no `$snapshot`" cannot be
+ * confused with a late flush of frames recorded on a previous page.
+ */
+test.describe('27 — PostHog session replay scope', { tag: '@quarantine' }, () => {
+  test.skip(!enabled, 'Set E2E_ENABLE_POSTHOG_SMOKE=1 for the real PostHog flow.');
+  test.setTimeout(5 * 60_000);
+
+  let user: AuthUser;
+  let auth: AuthSession;
+  let accountId = '';
+  let projectId = '';
+
+  test.beforeAll(async () => {
+    const email = `posthog-replay-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
+    user = await createAuthUser(email, authOptions);
+    auth = await signIn(email, authOptions);
+    const accounts = await api<{ account_id: string; personal_account?: boolean }[]>(auth.access_token, 'GET', '/accounts');
+    accountId = (accounts.find((item) => item.personal_account) ?? accounts[0]).account_id;
+    fundAccount(accountId);
+    const project = await api<{ project_id: string }>(
+      auth.access_token,
+      'POST',
+      '/projects/provision',
+      { account_id: accountId, name: `PostHog replay scope ${Date.now()}` },
+      201,
+    );
+    projectId = project.project_id;
+    await api(auth.access_token, 'PATCH', `/projects/${projectId}/onboarding`, { completed: true });
+  });
+
+  test.afterAll(async () => {
+    if (projectId) await api(auth.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+    if (accountId) {
+      try {
+        executeSql(`DELETE FROM kortix.accounts WHERE account_id = '${accountId}'`);
+      } catch {
+        // best effort
+      }
+    }
+    if (user?.id) await deleteAuthUser(user.id, { supabaseUrl });
+  });
+
+  const openAndCollect = async (
+    browser: import('@playwright/test').Browser,
+    route: string,
+    waitForSnapshot: boolean,
+  ): Promise<string[]> => {
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+    });
+    const page = await context.newPage();
+    await hideAutomation(page);
+    const captured: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (request.method() === 'POST' && url.pathname.startsWith('/ingest/') && !url.pathname.startsWith('/ingest/flags')) {
+        captured.push(...decodeCaptureBody(request).map((event) => event.event));
+      }
+    });
+    await installBrowserSessionDirect(page, auth, route, authOptions);
+    await dismissOnboarding(page);
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline && waitForSnapshot && !captured.includes('$snapshot')) {
+      await page.waitForTimeout(500);
+    }
+    if (!waitForSnapshot) await page.waitForTimeout(15_000); // long enough for a recorder to have started
+    await context.close();
+    return captured;
+  };
+
+  /**
+   * The blocked half of the rule. The allowed half is the consent test below:
+   * it accepts analytics on `/` and asserts a `$snapshot` follows. A signed-in
+   * "allowed route" is not a stable target here, because `/projects` opens the
+   * account's project and lands in the workspace on its own.
+   */
+  test('never records the workspace', async ({ browser }) => {
+    const workspace = await openAndCollect(browser, `/projects/${projectId}`, false);
+    // Capture is alive, so the missing $snapshot is the route rule, not a dead client.
+    expect(workspace, 'workspace is still captured').toContain('$pageview');
+    expect(workspace.filter((event) => event === '$snapshot'), 'workspace is never recorded').toEqual([]);
+  });
+});
+
 // No sandbox needed: only the web server and the PostHog key.
 test.describe('27 — PostHog consent', { tag: '@quarantine' }, () => {
   test.skip(!enabled, 'Set E2E_ENABLE_POSTHOG_SMOKE=1 for the real PostHog flow.');
