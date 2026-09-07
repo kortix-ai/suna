@@ -64,7 +64,8 @@ import {
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
   resolveCompiledAgentConfigForSession,
-  resolveManifestRuntime,
+  readManifestRuntime,
+  sessionRuntimeFor,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
@@ -1366,22 +1367,34 @@ export async function createProjectSession(input: {
       const authedProject = await withProjectGitAuth(project);
       const ref = (baseRef ?? '').trim() || project.defaultBranch;
       const sha = await resolveCommitSha(authedProject, ref);
-      const runtime = await resolveManifestRuntime(authedProject, sha);
+      // WHAT THE MANIFEST SAID vs WHAT THIS DEPLOYMENT RUNS.
+      //
+      // A manifest that names a runtime is obeyed, always — a project that
+      // wrote `runtime: opencode` gets OpenCode even here. But a manifest that
+      // names none has expressed no opinion, and on a deployment whose whole
+      // reason to exist is the pi worker the schema's default is the wrong
+      // answer: every project seeded from the v2 starter (`kortix_version: 2`,
+      // no runtime line) silently booted a 2 GB microVM. Measured on the dev
+      // stack 2026-09-07, project 97a2a697 "My First Project": seeded v2, no
+      // flag, session 35188845 running as `runtime: microvm`, 1.42 GB resident,
+      // with none of the cell's tools.
+      const reading = await readManifestRuntime(authedProject, sha);
+      const runtime = sessionRuntimeFor(reading, config.KORTIX_PI_WORKER_DEFAULT_ENABLED);
       if (runtime === 'pi') {
         piWorkerSha = sha;
         piWorkerBoot = true;
         sandboxSlug = PI_WORKER_SANDBOX_SLUG;
       } else {
         // SAY WHY, because every way this declines is silent otherwise.
-        // resolveManifestRuntime swallows a missing file, an unreadable ref and
-        // a parse error alike and answers null, and the catch below only fires
+        // readManifestRuntime answers `none` for a missing file, an unreadable
+        // ref and a parse error alike, and the catch below only fires
         // when the whole resolution throws. So a project with the flag ON that
         // quietly boots the OpenCode path looks identical to one without the
         // flag, and the only symptom is a session that takes seconds longer
         // than it should. Measured 2026-09-06: two sessions on a flagged
         // project booted the OpenCode path and nothing in the log said so.
         console.warn(
-          `[sessions] pi worker boot declined for ${projectId}: manifest at ${sha.slice(0, 8)} (ref ${ref}, path ${project.manifestPath ?? 'default'}) resolves runtime=${runtime ?? 'null'}, not 'pi'`,
+          `[sessions] pi worker boot declined for ${projectId}: manifest at ${sha.slice(0, 8)} (ref ${ref}, path ${project.manifestPath ?? 'default'}) resolves runtime=${runtime ?? 'null'} (${reading.kind}), not 'pi'`,
         );
       }
     } catch (err) {

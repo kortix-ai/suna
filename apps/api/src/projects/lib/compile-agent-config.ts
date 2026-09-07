@@ -486,27 +486,75 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
  * posture as resolveCompiledAgentConfigForSession below. Only an explicit,
  * well-formed `runtime: pi` can move a session onto the worker.
  */
-export async function resolveManifestRuntime(
+export type ManifestRuntimeReading =
+  /** The manifest names a runtime out loud. Nothing may override this. */
+  | { kind: 'declared'; runtime: RuntimeV2 }
+  /** A modern manifest that names none — the schema version supplied one. */
+  | { kind: 'default'; runtime: RuntimeV2; version: number }
+  /** No manifest, no readable ref, a parse error, or a pre-v2 body. */
+  | { kind: 'none' };
+
+/**
+ * WHAT THE MANIFEST SAID, kept separate from what it MEANT.
+ *
+ * `resolveManifestRuntime` collapses "the manifest says opencode" and "the
+ * manifest says nothing and v2 defaults to opencode" into the same answer, and
+ * for one caller that difference is the whole question: a deployment that
+ * exists to run pi may supply the default, but must never contradict a project
+ * that wrote `runtime: opencode` down. Callers that only want the effective
+ * runtime keep using `resolveManifestRuntime`, which is this plus a collapse.
+ */
+export async function readManifestRuntime(
   project: GitBackedProject,
   baseRef?: string | null,
-): Promise<RuntimeV2 | null> {
+): Promise<ManifestRuntimeReading> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     const found = await readManifestFromRepo(project, candidates, ref);
-    if (!found) return null;
+    if (!found) return { kind: 'none' };
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    if (!manifestUsesAgentMap(manifestSchemaVersion(raw))) return null;
+    const version = manifestSchemaVersion(raw);
+    if (!manifestUsesAgentMap(version)) return { kind: 'none' };
     // An explicit `runtime:` always wins; otherwise the VERSION decides, which
     // is the whole point of v3 — a pi project should not have to restate `pi`
     // in a file whose version already says so.
     const runtime = (raw as Record<string, unknown>).runtime;
-    if (runtime === 'pi') return 'pi';
-    if (runtime === 'opencode') return 'opencode';
-    return manifestDefaultRuntime(manifestSchemaVersion(raw));
+    if (runtime === 'pi') return { kind: 'declared', runtime: 'pi' };
+    if (runtime === 'opencode') return { kind: 'declared', runtime: 'opencode' };
+    return { kind: 'default', runtime: manifestDefaultRuntime(version), version };
   } catch {
-    return null;
+    return { kind: 'none' };
   }
+}
+
+/**
+ * The runtime a SESSION boots under: the manifest's word, or this deployment's
+ * default when the manifest offered none.
+ *
+ * Pure, so every branch is asserted rather than observed against a live repo.
+ *
+ * The rule in one line: an explicit `runtime:` is never overridden, in either
+ * direction. `deploymentDefaultsToPi` supplies an answer only where the
+ * manifest declined to give one, and it can never rescue a body that isn't a
+ * modern manifest at all — a v1 project is a legacy OpenCode project and
+ * turning a deployment switch on must not silently migrate it.
+ */
+export function sessionRuntimeFor(
+  reading: ManifestRuntimeReading,
+  deploymentDefaultsToPi: boolean,
+): RuntimeV2 | null {
+  if (reading.kind === 'none') return null;
+  if (reading.kind === 'declared') return reading.runtime;
+  return deploymentDefaultsToPi ? 'pi' : reading.runtime;
+}
+
+export async function resolveManifestRuntime(
+  project: GitBackedProject,
+  baseRef?: string | null,
+): Promise<RuntimeV2 | null> {
+  const reading = await readManifestRuntime(project, baseRef);
+  return reading.kind === 'none' ? null : reading.runtime;
 }
 
 export async function resolveCompiledAgentConfigForSession(

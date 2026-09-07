@@ -287,9 +287,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Compile boot artifacts for every push: a pi-based worker runtime .mjs per commit (agent config from kortix.yaml baked in at that exact sha, downloadable per ref+sha) plus the OpenCode compiled-boot artifacts for this project even where KORTIX_COMPILED_BOOT_MODE is off. Harness/worker split experiment. Sessions boot ON the worker when the manifest also sets `runtime: pi`; without that manifest line sessions keep the OpenCode path.',
     stability: 'experimental',
     available: () => true,
-    // Explicit opt-in per project. Off ⇒ no artifact is compiled on push and
-    // the download route answers 403.
-    platformDefault: () => false,
+    // Explicit opt-in per project, EXCEPT on a deployment that exists to run pi
+    // (KORTIX_PI_WORKER_DEFAULT_ENABLED), where every project wants it and
+    // asking each one to tick a box is just a way to boot microVMs by accident.
+    // Off ⇒ no artifact is compiled on push and the download route answers 403.
+    // A project's explicit choice still wins in both directions.
+    platformDefault: () => config.KORTIX_PI_WORKER_DEFAULT_ENABLED,
     enforcement: 'routes',
   },
 ];

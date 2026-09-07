@@ -556,6 +556,14 @@ const envSchema = z.object({
   // to another: the reaper stops a box when its session is finished and nothing
   // yet teaches it that a host is shared. See cell-host-platinum.ts.
   KORTIX_CELL_SHARED_HOST_ENABLED: optBoolUnset,
+  // THIS DEPLOYMENT RUNS PI. On an environment that exists to run the pi
+  // worker — pi-js.kortix.com is one — the per-project `pi_worker` flag is
+  // noise: every project there wants the cell. With this on, the flag defaults
+  // ON and a manifest that declares no `runtime:` resolves to pi instead of to
+  // its schema default. A manifest that says `runtime: opencode` out loud is
+  // still honoured, so a project can opt out; nothing here overrides an
+  // explicit choice. Default off, so kortix.com is untouched.
+  KORTIX_PI_WORKER_DEFAULT_ENABLED: optBoolUnset,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -1201,6 +1209,7 @@ export const config = {
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_CELL_SHARED_HOST_ENABLED: env.KORTIX_CELL_SHARED_HOST_ENABLED ?? false,
+  KORTIX_PI_WORKER_DEFAULT_ENABLED: env.KORTIX_PI_WORKER_DEFAULT_ENABLED ?? false,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
 
