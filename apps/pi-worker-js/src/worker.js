@@ -68,6 +68,11 @@ const ARCHIVE_MAX_BYTES = 8 * 1024 * 1024;
 // must not move a customer's invoice.
 const UNBILLED_PATHS = new Set(["/health", "/meter", "/sockets"]);
 
+// How many requests may go uncounted in storage at once. 20 turns a 154 ms
+// per-request floor into ~8 ms amortised, and bounds what a rebuild can lose
+// to requests nobody read back.
+const REQUEST_FLUSH_EVERY = 20;
+
 const SCRIPTED_MODEL = { id: "scripted", api: "anthropic-messages", provider: "scripted", name: "scripted" };
 
 // WHICH MODEL, entirely from config. MODEL_PROVIDER is any id pi ships
@@ -127,6 +132,7 @@ function modelConfig(env) {
 
 export class AgentCell {
   constructor(state, env) {
+    const _ctor0 = Date.now();
     this.state = state;
     this.env = env;
     this.sql = state.storage.sql;
@@ -157,12 +163,17 @@ export class AgentCell {
     // long HTTP call and stall reads too. A promise chain orders prompts
     // without blocking /history, which is what a transcript actually needs.
     this.tail = Promise.resolve();
+    // What the isolate cost before it could answer anything. Reported by
+    // /ping and /meter so the spawn budget is attributable rather than
+    // inferred from a stopwatch on the far side of an ocean.
+    this.ctorMs = Date.now() - _ctor0;
   }
 
   // Called at the top of every request. An isolate may be brand new even when
   // the cell is old, so this is idempotent and cheap rather than a constructor.
   init() {
     if (this.ready) return;
+    const _init0 = Date.now();
     this.sql.exec(`CREATE TABLE IF NOT EXISTS msgs (
       i    INTEGER PRIMARY KEY AUTOINCREMENT,
       role TEXT NOT NULL,
@@ -270,12 +281,19 @@ export class AgentCell {
     // cell running on the platform. A fresh cell reads builds=1; a cell that
     // has been evicted and rebuilt once reads 2, and its `requests` meter
     // carries on from where it was rather than restarting.
-    this.meter("builds");
+    this.pending = this.pending ?? {};
+    this.pending.builds = (this.pending.builds ?? 0) + 1;
+    this.initMs = Date.now() - _init0;
     this.ready = true;
   }
 
   // Runs queued turns, one at a time, and reschedules while work remains.
   async alarm() {
+    // The alarm is already paying for a durable write, so settling the tally
+    // here is free — and it is what bounds the loss for a cell that goes quiet
+    // mid-window and is then evicted.
+    this.init();
+    this.flushMeter();
     this.init();
     const sessionId = this.state.id?.toString?.() ?? "default";
 
@@ -627,7 +645,70 @@ export class AgentCell {
     );
   }
 
+  /**
+   * A DURABLE WRITE IS THE WHOLE COST OF A REQUEST HERE.
+   *
+   * celld makes a SQLite write durable in object storage before it lets the
+   * response out — that is the guarantee, not a bug. Measured on dev
+   * 2026-09-07 against one warm cell: entering the cell cost 2 ms, a SQLite
+   * READ 3 ms, and a single durable WRITE 154 ms. So counting requests on the
+   * request path made every billable call an object-storage round trip, and
+   * the counter was the only reason most of them wrote anything at all.
+   *
+   * The count is now kept in the instance and flushed in one statement. It is
+   * still EXACT wherever anyone looks: /meter flushes before it reports, and
+   * the alarm flushes whatever a turn left behind. What a rebuild can lose is
+   * bounded by the threshold and only covers requests nobody ever read back —
+   * which is the trade a 154 ms floor per request is worth.
+   */
+  meterRequest() {
+    this.pending = this.pending ?? {};
+    this.pending.requests = (this.pending.requests ?? 0) + 1;
+    if (this.pending.requests >= REQUEST_FLUSH_EVERY) this.flushMeter();
+  }
+
+  /**
+   * Settle the in-memory tally. One statement per key, and a no-op when
+   * nothing is owed.
+   *
+   * `builds` rides the same path. It is written once per isolate and it used
+   * to be written inside init(), which put a durable write on the FIRST
+   * request every fresh isolate served — the single most expensive request a
+   * session makes. Measured on dev 2026-09-07: a cold isolate cost 362 ms over
+   * the wire with that write and 178 ms of that was the wire itself. Deferring
+   * it costs nothing that matters, because every reader of `builds` goes
+   * through /meter, which settles before it reports.
+   */
+  flushMeter() {
+    const p = this.pending ?? {};
+    let wrote = 0;
+    for (const [k, n] of Object.entries(p)) {
+      if (!n) continue;
+      this.meter(k, n);
+      wrote += n;
+    }
+    this.pending = {};
+    return wrote;
+  }
+
   async fetch(req) {
+    // BEFORE init(), DELIBERATELY. /ping is the only path that reaches a cell
+    // without paying for its schema, which is what makes the two halves of a
+    // cold start separable: everything up to here is celld creating the
+    // isolate and evaluating the script, and the gap between /ping and any
+    // other path is this worker's own start-up.
+    //
+    // Measured on dev 2026-09-07 against agentOS's 4.8 ms in-process spawn —
+    // see the numbers in test/spawn-budget.mjs.
+    if (new URL(req.url).pathname === "/ping") {
+      return Response.json({
+        instance: this.instance,
+        ctorMs: this.ctorMs ?? null,
+        initMs: this.initMs ?? null,     // null until something has run init()
+        ready: this.ready,
+        ageMs: Date.now() - this.bornAt,
+      });
+    }
     this.init();
     const url = new URL(req.url);
 
@@ -637,7 +718,7 @@ export class AgentCell {
     // could not see why. Excluded by an explicit list rather than by a prefix
     // convention, so adding an endpoint is a decision about billing rather than
     // an accident of its name.
-    if (!UNBILLED_PATHS.has(url.pathname)) this.meter("requests");
+    if (!UNBILLED_PATHS.has(url.pathname)) this.meterRequest();
     const sessionId = url.searchParams.get("c") ?? this.state.id?.toString?.() ?? "default";
 
     if (req.headers.get("upgrade") === "websocket") {
@@ -1028,6 +1109,10 @@ export class AgentCell {
     // and would make two readers each see half the truth. The CP takes
     // differences between readings instead.
     if (url.pathname === "/meter") {
+      // Settle first: a reader must never see a number that is behind what the
+      // cell has actually served, or the control plane would difference two
+      // readings and bill the gap to whichever one happened to flush.
+      this.flushMeter();
       const rows = [...this.sql.exec("SELECT k, n FROM meter ORDER BY k")];
       return Response.json({
         sessionId,
@@ -1038,6 +1123,8 @@ export class AgentCell {
         // instance is a cell that stayed resident.
         instance: this.instance,
         instanceAgeMs: Date.now() - this.bornAt,
+        ctorMs: this.ctorMs ?? null,
+        initMs: this.initMs ?? null,
         at: Date.now(),
       });
     }

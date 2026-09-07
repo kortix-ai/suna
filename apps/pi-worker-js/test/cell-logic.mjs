@@ -10,7 +10,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=78
+// EXPECTED_PASSES=85
 
 import { createServer } from "node:http";
 import { makeCell, makeNamespace, installWorkerGlobals } from "./cell-harness.mjs";
@@ -615,6 +615,41 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   check("a rebuilt instance does build it again, because `ready` did not survive the eviction",
     woken.sqlLog.filter((q) => /^CREATE TABLE/i.test(q)).length === first,
     `${woken.sqlLog.filter((q) => /^CREATE TABLE/i.test(q)).length} vs ${first}`);
+}
+
+// THE SPAWN BUDGET, SEPARABLE.
+//
+// A cold request measured from a laptop is one number that hides three: the
+// wire, celld creating the isolate, and this worker starting up. /ping is what
+// splits the last two off — it is the ONE path that reaches a cell without
+// running init(), so a /ping to a fresh name pays for the isolate and nothing
+// of ours, and any other path pays for both.
+//
+// Without the guard below the split is fictional: if /ping ran init() like
+// every other path, both measurements would include the schema and the
+// difference would read as zero no matter how slow init actually was.
+{
+  const h = makeCell(AgentCell, ENV);
+  const before = h.sqlLog.length;
+  const ping = await (await h.fetch("/ping?c=s")).json();
+  check("/ping answers WITHOUT running init — no schema is created for it",
+    h.sqlLog.length === before, `${h.sqlLog.length - before} statements ran: ${h.sqlLog.slice(before, before + 2).join(" | ")}`);
+  check("and it says so: initMs is null until something else has run init",
+    ping.initMs === null && ping.ready === false, JSON.stringify(ping));
+  check("it reports what the CONSTRUCTOR cost, which is paid before any path",
+    typeof ping.ctorMs === "number" && ping.ctorMs >= 0, JSON.stringify(ping.ctorMs));
+  check("and names the isolate, so a spawn can be told from a reuse",
+    typeof ping.instance === "string" && ping.instance.length > 0, JSON.stringify(ping.instance));
+
+  const health = await (await h.fetch("/kortix/health?c=s")).json();
+  const after = await (await h.fetch("/ping?c=s")).json();
+  check("after a real request, initMs is a number — the schema cost is attributed",
+    typeof after.initMs === "number" && after.ready === true, JSON.stringify(after));
+  check("and it is the SAME isolate, so the two readings describe one spawn",
+    after.instance === ping.instance, `${ping.instance} -> ${after.instance}`);
+  check("the meter reports the same budget a /ping does",
+    (await (await h.fetch("/meter?c=s")).json()).ctorMs === after.ctorMs, "meter and /ping disagree about ctorMs");
+  void health;
 }
 
 console.log(bad ? `\n  ${bad} failure(s)` : "\n  the cell's logic holds");
