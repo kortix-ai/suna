@@ -1,33 +1,20 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import type {
-  SessionDisplayStatus,
-  SessionSource,
-  SessionSourceKind,
-} from '@/components/projects/session-label';
+import type { SessionDisplayStatus, SessionSource } from '@/components/projects/session-label';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { LocalTime } from '@/components/ui/local-time';
 import { menuRow } from '@/components/ui/menu-recipe';
-import { Slack } from '@/features/icon/icons/slack';
-import { Telegram } from '@/features/icon/icons/telegram';
 import { CR_ID_PREFIX } from '@/features/review-center/review-actions';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSessionHoverStore } from '@/stores/session-hover-store';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
-import {
-  CalendarDotsIcon,
-  CheckCircleIcon,
-  EnvelopeIcon,
-  GitDiffIcon,
-  WebhooksLogoIcon,
-  XCircleIcon,
-  type Icon,
-} from '@phosphor-icons/react';
+import { GitDiffIcon } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { useEffect, type ComponentType, type ReactElement } from 'react';
+import { useEffect, type ReactElement } from 'react';
 import { shortRelative } from './project-session-list-helpers';
+import { SOURCE_ICONS } from './session-source-icons';
 import { SessionStatusMark } from './session-status-mark';
 
 const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
@@ -38,27 +25,17 @@ const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   minute: '2-digit',
 };
 
-const CHANGE_REQUEST_STATUS_ICON: Record<ChangeRequestStatus, Icon> = {
-  open: GitDiffIcon,
-  merged: CheckCircleIcon,
-  closed: XCircleIcon,
-};
-
+/**
+ * Every change request wears the same glyph. Swapping the shape as well as the
+ * colour made three states look like three different KINDS of object in a list
+ * that holds one kind; the row already says "change request" by being in this
+ * list, so the icon repeats that and the colour carries the only thing that
+ * varies. Same split GitHub makes, and the same hues: in review, merged, closed.
+ */
 const CHANGE_REQUEST_STATUS_CLASS: Record<ChangeRequestStatus, string> = {
   open: 'text-kortix-blue',
   merged: 'text-kortix-green',
-  closed: 'text-muted-foreground',
-};
-
-const SOURCE_ICONS: Record<
-  Exclude<SessionSourceKind, 'chat'>,
-  ComponentType<{ className?: string }>
-> = {
-  slack: Slack,
-  telegram: Telegram,
-  email: EnvelopeIcon,
-  schedule: CalendarDotsIcon,
-  webhook: WebhooksLogoIcon,
+  closed: 'text-kortix-red',
 };
 
 const CHANGE_REQUEST_STATUS_KEY: Record<
@@ -144,11 +121,10 @@ function ChangeRequestRow({
   onOpenChangeRequest: (changeRequestId: string) => void;
   onDismiss: () => void;
 }) {
-  const StatusIcon = CHANGE_REQUEST_STATUS_ICON[changeRequest.status];
   const className = menuRow('sm', 'default', 'cursor-pointer py-1.5 text-left');
   const content = (
     <>
-      <StatusIcon className={CHANGE_REQUEST_STATUS_CLASS[changeRequest.status]} aria-hidden />
+      <GitDiffIcon className={CHANGE_REQUEST_STATUS_CLASS[changeRequest.status]} aria-hidden />
       <span className="min-w-0 flex-1 truncate">{changeRequest.title}</span>
     </>
   );
@@ -232,7 +208,7 @@ function SessionBriefContent({
       </div>
 
       {changeRequests.length > 0 ? (
-        <ul className="border-border max-h-48 overflow-y-auto overscroll-contain border-t p-1">
+        <ul className="border-border max-h-64 overflow-y-auto overscroll-contain border-t p-1">
           {changeRequests.map((changeRequest) => (
             <li key={changeRequest.cr_id}>
               <ChangeRequestRow

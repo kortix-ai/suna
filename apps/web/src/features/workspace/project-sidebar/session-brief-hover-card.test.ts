@@ -86,6 +86,60 @@ describe('session brief hover card surface', () => {
   });
 });
 
+describe('session source icons', () => {
+  const listSource = readFileSync(join(import.meta.dir, 'project-session-list.tsx'), 'utf8');
+  const mapSource = readFileSync(join(import.meta.dir, 'session-source-icons.ts'), 'utf8');
+
+  test('the row and the card read one map, not a copy each', () => {
+    // Two maps that happen to agree is not the same as one map. The row and its
+    // own hover card describe the same session, so two glyphs for it would leave
+    // a reader no way to tell which was true.
+    for (const consumer of [listSource, briefSource]) {
+      expect(consumer).toContain('SOURCE_ICONS');
+      expect(consumer).not.toContain('const SOURCE_ICONS');
+    }
+  });
+
+  test('email and schedule use the local marks, not Phosphor', () => {
+    // Scoped to the map body: the doc comment above it names the old icons on
+    // purpose, and a whole-file match would read that prose as code.
+    const map = between(mapSource, 'export const SOURCE_ICONS', '};');
+    expect(map).toContain('email: Email');
+    expect(map).toContain('schedule: Schedule');
+    expect(map).not.toContain('EnvelopeIcon');
+    expect(map).not.toContain('CalendarDotsIcon');
+  });
+
+  test('chat is excluded by type, not by a blank glyph', () => {
+    // `chat` is the fallback every session lands in when nothing claims it. It
+    // renders no icon at all, and the Exclude makes adding one a type error.
+    expect(mapSource).toContain("Exclude<SessionSourceKind, 'chat'>");
+  });
+});
+
+describe('change request rows', () => {
+  test('every state wears one glyph, and only the colour varies', () => {
+    // Three shapes in a list that holds one kind of thing read as three kinds of
+    // thing. The row says "change request" by being in this list; the colour is
+    // the only thing that should differ between the states.
+    expect(briefSource).not.toContain('CHANGE_REQUEST_STATUS_ICON');
+    expect(briefSource).not.toContain('CheckCircleIcon');
+    expect(briefSource).not.toContain('XCircleIcon');
+    expect(briefSource).toContain(
+      '<GitDiffIcon className={CHANGE_REQUEST_STATUS_CLASS[changeRequest.status]}',
+    );
+  });
+
+  test('open reads blue, merged green, closed red', () => {
+    const map = between(briefSource, 'CHANGE_REQUEST_STATUS_CLASS: Record', '};');
+    expect(map).toContain("open: 'text-kortix-blue'");
+    expect(map).toContain("merged: 'text-kortix-green'");
+    expect(map).toContain("closed: 'text-kortix-red'");
+    // A closed change is a decision, not an absence — it must not fade out.
+    expect(map).not.toContain('text-muted-foreground');
+  });
+});
+
 describe('session brief hover card timing', () => {
   test('opens with no enter animation', () => {
     // The card opens to the right, into the path the pointer is already taking,

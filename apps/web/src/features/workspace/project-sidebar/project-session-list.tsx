@@ -12,7 +12,6 @@ import {
   sessionIsShared,
   sessionSource,
   spawnedBySessionId,
-  type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import { Badge } from '@/components/ui/badge';
@@ -30,8 +29,6 @@ import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Slack } from '@/features/icon/icons/slack';
-import { Telegram } from '@/features/icon/icons/telegram';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
@@ -57,6 +54,7 @@ import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
+import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { useMediaQuery } from '@/hooks/utils';
@@ -81,10 +79,8 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import {
-  CalendarDotsIcon as CalendarClock,
   CaretRightIcon,
   DotsThreeIcon,
-  EnvelopeIcon as Mail,
   FolderSimpleIcon as MetaFolder,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
@@ -92,12 +88,11 @@ import {
   ArrowElbowDownRightIcon as SpawnedBy,
   SquareIcon as Square,
   TrashIcon,
-  WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useId, useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -173,17 +168,6 @@ const SESSION_MENU_TRIGGER_TOUCH_CLASS = cn(
 /** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
  *  centered in an identical 32px line at all three levels. */
 const SESSION_ROW_HEIGHT_CLASS = 'h-8';
-
-const SOURCE_ICONS: Record<
-  Exclude<SessionSourceKind, 'chat'>,
-  ComponentType<{ className?: string }>
-> = {
-  slack: Slack,
-  telegram: Telegram,
-  email: Mail,
-  schedule: CalendarClock,
-  webhook: Webhook,
-};
 
 // Staggered (unique) widths so the loading state reads as a list of rows, not a
 // block; the width doubles as a stable key.
