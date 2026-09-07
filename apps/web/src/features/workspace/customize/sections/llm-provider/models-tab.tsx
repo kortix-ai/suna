@@ -115,18 +115,6 @@ export function ModelsTab({
     );
   }
 
-  if (groups.length === 0) {
-    return (
-      <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-muted-foreground text-xs">
-          {search
-            ? tI18nComplete('textb475669b9d30', { value0: search })
-            : tI18nComplete.raw('textb12da9202e8c')}
-        </p>
-      </div>
-    );
-  }
-
   // No horizontal padding of its own: `CapabilityPageShell` supplies the page
   // column, and 20px more here indented this tab's content past the tab strip
   // that selects it.
@@ -181,94 +169,114 @@ export function ModelsTab({
         </div>
       )}
 
-      <div className="space-y-6">
-        {groups.map((group) => (
-          <div key={group.providerID} className="space-y-2">
-            <div className="flex items-center gap-2">
-              <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
-              <span className="text-foreground/70 text-xs font-medium">{group.providerName}</span>
-              <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
-                {group.rows.length}
-              </span>
-            </div>
-            <div className="bg-popover overflow-hidden rounded-md border">
-              {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
-                const enabled = !!model.enabled;
-                // `auto` resolves to this one, so turning it off would break
-                // every default request — the server refuses it with a 409.
-                // Lock the switch and say why instead of letting the click
-                // become a failed action.
-                const isProjectDefault = wireId === enablement.defaultModel;
-                // `useModelDefaults` builds every scope with `wireToModelKey`,
-                // which parks the whole wire id in `modelID` under the `kortix`
-                // provider — so comparing `modelID` to this row's `wireId` is
-                // the same comparison `isProjectDefault` makes one line up, not
-                // a lucky string match.
-                const isAccountDefault = defaults.accountDefault?.modelID === wireId;
-                const ctx = formatTokenCount(model.contextWindow);
-                const priceIn = formatPricePerMillion(model.cost?.input);
-                const priceOut = formatPricePerMillion(model.cost?.output);
-                return (
-                  // A plain row, NOT a <label>: it holds three controls (copy
-                  // id, set-as-default, the switch) and a label binds to the
-                  // FIRST labelable one — the copy button — so "click the row
-                  // to toggle" never did what it looked like. Each control
-                  // carries its own accessible name instead.
-                  <div
-                    key={wireId}
-                    className={cn(
-                      'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
-                      i > 0 && 'border-border border-t',
-                      !enabled && 'opacity-60',
-                    )}
-                  >
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-foreground truncate text-sm">{model.modelName}</span>
-                        <ModelCapabilityIcons
-                          reasoning={model.capabilities?.reasoning}
-                          toolCall={model.capabilities?.toolcall}
-                          vision={model.capabilities?.vision}
-                        />
-                        {/* Same display name as its pinned snapshots — say which
+      {/* The no-match message lives HERE, in the list's slot, never as an
+          early return above the search row. Returned early, a query that
+          matched nothing unmounted the input and its clear button: the string
+          survived in `ownSearch`, nothing on screen could change it, and the
+          tab stayed on "Nothing matches" until it was remounted. */}
+      {groups.length === 0 ? (
+        <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
+          <p className="text-muted-foreground text-xs">
+            {search
+              ? tI18nComplete('textb475669b9d30', { value0: search })
+              : tI18nComplete.raw('textb12da9202e8c')}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groups.map((group) => (
+            <div key={group.providerID} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <ProviderLogo
+                  providerID={group.providerID}
+                  name={group.providerName}
+                  size="small"
+                />
+                <span className="text-foreground/70 text-xs font-medium">{group.providerName}</span>
+                <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
+                  {group.rows.length}
+                </span>
+              </div>
+              <div className="bg-popover overflow-hidden rounded-md border">
+                {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
+                  const enabled = !!model.enabled;
+                  // `auto` resolves to this one, so turning it off would break
+                  // every default request — the server refuses it with a 409.
+                  // Lock the switch and say why instead of letting the click
+                  // become a failed action.
+                  const isProjectDefault = wireId === enablement.defaultModel;
+                  // `useModelDefaults` builds every scope with `wireToModelKey`,
+                  // which parks the whole wire id in `modelID` under the `kortix`
+                  // provider — so comparing `modelID` to this row's `wireId` is
+                  // the same comparison `isProjectDefault` makes one line up, not
+                  // a lucky string match.
+                  const isAccountDefault = defaults.accountDefault?.modelID === wireId;
+                  const ctx = formatTokenCount(model.contextWindow);
+                  const priceIn = formatPricePerMillion(model.cost?.input);
+                  const priceOut = formatPricePerMillion(model.cost?.output);
+                  return (
+                    // A plain row, NOT a <label>: it holds three controls (copy
+                    // id, set-as-default, the switch) and a label binds to the
+                    // FIRST labelable one — the copy button — so "click the row
+                    // to toggle" never did what it looked like. Each control
+                    // carries its own accessible name instead.
+                    <div
+                      key={wireId}
+                      className={cn(
+                        'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
+                        i > 0 && 'border-border border-t',
+                        !enabled && 'opacity-60',
+                      )}
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-foreground truncate text-sm">
+                            {model.modelName}
+                          </span>
+                          <ModelCapabilityIcons
+                            reasoning={model.capabilities?.reasoning}
+                            toolCall={model.capabilities?.toolcall}
+                            vision={model.capabilities?.vision}
+                          />
+                          {/* Same display name as its pinned snapshots — say which
                             row is the one that rolls forward. "latest" named
                             the alias; "auto-updates" names what it DOES. */}
-                        {isRollingAlias && (
-                          <Hint label={tI18nComplete.raw('text7482f09d1b13')}>
-                            <Tag>{tI18nComplete.raw('textf096ba0a2aa6')}</Tag>
-                          </Hint>
-                        )}
-                        {/* Both scopes badge the model that holds them. A
+                          {isRollingAlias && (
+                            <Hint label={tI18nComplete.raw('text7482f09d1b13')}>
+                              <Tag>{tI18nComplete.raw('textf096ba0a2aa6')}</Tag>
+                            </Hint>
+                          )}
+                          {/* Both scopes badge the model that holds them. A
                             "set as default" control with no matching "this one
                             IS the default" is the reason these moved here. */}
-                        {isProjectDefault && (
-                          <Hint label={tI18nComplete.raw('text68cde35131cf')}>
-                            <Tag>{tI18nComplete.raw('text5e06ae1125b5')}</Tag>
-                          </Hint>
-                        )}
-                        {isAccountDefault && (
-                          <Hint label={tI18nComplete.raw('textd197e66e9634')}>
-                            <Tag>{tI18nComplete.raw('text071c0f5e8495')}</Tag>
-                          </Hint>
+                          {isProjectDefault && (
+                            <Hint label={tI18nComplete.raw('text68cde35131cf')}>
+                              <Tag>{tI18nComplete.raw('text5e06ae1125b5')}</Tag>
+                            </Hint>
+                          )}
+                          {isAccountDefault && (
+                            <Hint label={tI18nComplete.raw('textd197e66e9634')}>
+                              <Tag>{tI18nComplete.raw('text071c0f5e8495')}</Tag>
+                            </Hint>
+                          )}
+                        </div>
+
+                        {(ctx || (priceIn && priceOut)) && (
+                          <InlineMeta>
+                            {ctx && (
+                              <span className="tabular-nums">
+                                {ctx} {tI18nComplete.raw('text0230c6b1d833')}
+                              </span>
+                            )}
+                            {priceIn && priceOut && (
+                              <span className="tabular-nums">
+                                {priceIn} / {priceOut} {tI18nComplete.raw('text38989e6be9c4')}
+                              </span>
+                            )}
+                          </InlineMeta>
                         )}
                       </div>
-
-                      {(ctx || (priceIn && priceOut)) && (
-                        <InlineMeta>
-                          {ctx && (
-                            <span className="tabular-nums">
-                              {ctx} {tI18nComplete.raw('text0230c6b1d833')}
-                            </span>
-                          )}
-                          {priceIn && priceOut && (
-                            <span className="tabular-nums">
-                              {priceIn} / {priceOut} {tI18nComplete.raw('text38989e6be9c4')}
-                            </span>
-                          )}
-                        </InlineMeta>
-                      )}
-                    </div>
-                    {/*
+                      {/*
                       Both default scopes, on the row they apply to.
 
                       Gated on `enabled` rather than on "is not already the
@@ -288,73 +296,78 @@ export function ModelsTab({
                       `useDialogDepth`, so it stacks above the modal this tab
                       lives in without any per-call-site z-index.
                     */}
-                    {enabled && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            disabled={defaults.isUpdating}
-                            aria-label={tI18nComplete('text43d1a2b807aa', {
-                              value0: model.modelName,
-                            })}
-                            title={tI18nComplete.raw('textc3b312278ee5')}
-                            className="text-muted-foreground/50 hover:text-foreground hover:bg-muted data-[state=open]:bg-muted data-[state=open]:text-foreground mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <MoreHorizontal className="size-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-90">
-                          <DropdownMenuItem
-                            disabled={isProjectDefault || defaults.isUpdating}
-                            onSelect={() => void defaults.setProjectDefault(wireToModelKey(wireId))}
-                          >
-                            <Folder className="size-3.5" />
-                            {tI18nComplete.raw('text246d55bd2682')}
-                            {isProjectDefault && <Check className="ml-auto size-3.5" />}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={isAccountDefault || defaults.isUpdating}
-                            onSelect={() => void defaults.setAccountDefault(wireToModelKey(wireId))}
-                          >
-                            <Star className="size-3.5" />
-                            {tI18nComplete.raw('textc74a21a56d79')}
-                            {isAccountDefault && <Check className="ml-auto size-3.5" />}
-                          </DropdownMenuItem>
-                          {/* The wire id's only home now that it is off the
+                      {enabled && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={defaults.isUpdating}
+                              aria-label={tI18nComplete('text43d1a2b807aa', {
+                                value0: model.modelName,
+                              })}
+                              title={tI18nComplete.raw('textc3b312278ee5')}
+                              className="text-muted-foreground/50 hover:text-foreground hover:bg-muted data-[state=open]:bg-muted data-[state=open]:text-foreground mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <MoreHorizontal className="size-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-90">
+                            <DropdownMenuItem
+                              disabled={isProjectDefault || defaults.isUpdating}
+                              onSelect={() =>
+                                void defaults.setProjectDefault(wireToModelKey(wireId))
+                              }
+                            >
+                              <Folder className="size-3.5" />
+                              {tI18nComplete.raw('text246d55bd2682')}
+                              {isProjectDefault && <Check className="ml-auto size-3.5" />}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={isAccountDefault || defaults.isUpdating}
+                              onSelect={() =>
+                                void defaults.setAccountDefault(wireToModelKey(wireId))
+                              }
+                            >
+                              <Star className="size-3.5" />
+                              {tI18nComplete.raw('textc74a21a56d79')}
+                              {isAccountDefault && <Check className="ml-auto size-3.5" />}
+                            </DropdownMenuItem>
+                            {/* The wire id's only home now that it is off the
                               row. It was printed under every model name —
                               `anthropic/claude-sonnet-4-5` on 34 rows, meaning
                               nothing to most readers and needed only by the
                               few about to paste one into a config file. A menu
                               item costs them one click and everyone else
                               nothing. */}
-                          <DropdownMenuItem
-                            onSelect={() => void navigator.clipboard?.writeText(wireId)}
-                          >
-                            <Copy className="size-3.5" />
-                            {tI18nComplete.raw('text16af2c8fb28f')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                    <Switch
-                      checked={enabled}
-                      disabled={enablement.isUpdating || isProjectDefault}
-                      aria-label={
-                        isProjectDefault
-                          ? tI18nComplete('texta931b0c34b16', { value0: model.modelName })
-                          : `Offer ${model.modelName}`
-                      }
-                      title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : undefined}
-                      onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
-                      className="mt-0.5 shrink-0"
-                    />
-                  </div>
-                );
-              })}
+                            <DropdownMenuItem
+                              onSelect={() => void navigator.clipboard?.writeText(wireId)}
+                            >
+                              <Copy className="size-3.5" />
+                              {tI18nComplete.raw('text16af2c8fb28f')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                      <Switch
+                        checked={enabled}
+                        disabled={enablement.isUpdating || isProjectDefault}
+                        aria-label={
+                          isProjectDefault
+                            ? tI18nComplete('texta931b0c34b16', { value0: model.modelName })
+                            : `Offer ${model.modelName}`
+                        }
+                        title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : undefined}
+                        onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
+                        className="mt-0.5 shrink-0"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
