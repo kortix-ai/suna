@@ -38,9 +38,16 @@ describe('session navigation loading boundaries', () => {
     // The mirror of the `return null` rule above: a runtime-not-ready RETRY
     // must stay invisible, but the very FIRST project fetch owns the whole
     // viewport, so it has to show something rather than a blank screen.
-    expect(projectAccessSource).toContain('if (query.isLoading)');
+    //
+    // This used to pin the literal `if (query.isLoading)`. That was the
+    // MECHANISM, not the rule, and `isLoading` turned out to be the wrong
+    // mechanism: it is `isPending && isFetching`, so a retry that React Query
+    // PAUSES (hidden tab, offline) reported false and dropped the boundary
+    // through to the error screen mid-flight. The rule is unchanged and now
+    // covers strictly more states — see `gateSurface` in the boundary.
+    expect(projectAccessSource).toContain("if (surface === 'pending')");
     expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
-    expect(projectAccessSource).not.toMatch(/query\.isLoading\)\s*return null/);
+    expect(projectAccessSource).not.toMatch(/surface === 'pending'\)\s*return null/);
   });
 
   test('the first-fetch loader carries no legal footer', () => {
