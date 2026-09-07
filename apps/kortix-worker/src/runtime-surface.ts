@@ -1,11 +1,3 @@
-import type { AgentTool } from '@earendil-works/pi-agent-core';
-import type { Agent, ToolList } from '@opencode-ai/sdk/v2';
-import { compilePermissionRules, type PermissionConfig } from './permission-policy.ts';
-import type { PiTodo } from './todo-tools.ts';
-import type { PiCommand } from './command-runtime.ts';
-import { projectSkillInfo, type PiSkill } from './skill-runtime.ts';
-import { PermissionApprovalUnavailableError, type PermissionBroker } from './permission-broker.ts';
-import type { QuestionBroker } from './question-broker.ts';
 import { serveGlobalEventStream } from './global-event-stream.ts';
 /**
  * The Kortix Runtime API, pi-worker half — `/kortix/opencode/*` served by the
@@ -34,22 +26,31 @@ import { serveGlobalEventStream } from './global-event-stream.ts';
  * disagree between the two.
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { isDeepStrictEqual } from 'node:util';
+import type { AgentTool } from '@earendil-works/pi-agent-core';
+import type { Agent, Session, ToolList } from '@opencode-ai/sdk/v2';
+import { assistantContractFields, assistantMessageError, toolResultMetadata } from './chat-events.ts';
+import type { PiCommand } from './command-runtime.ts';
+import { PermissionApprovalUnavailableError, type PermissionBroker } from './permission-broker.ts';
+import { type PermissionConfig, compilePermissionRules } from './permission-policy.ts';
+import type { QuestionBroker } from './question-broker.ts';
+import type { PiTodo } from './todo-tools.ts';
+import { type PiSkill, projectSkillInfo } from './skill-runtime.ts';
 import {
   WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
+  WIRE_MESSAGE_ID,
   mintWireMessageId,
   wireIdTime,
 } from './wire-message-id';
-import {
-  assistantContractFields,
-  assistantMessageError,
-  toolResultMetadata,
-} from './chat-events.ts';
-import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
 // Auth — the daemon's user-context codec, verify side.
 // ---------------------------------------------------------------------------
+
+export const KORTIX_USER_CONTEXT_HEADER = 'x-kortix-user-context';
+export const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 export function decodePathSegment(value: string): string | null {
   try {
@@ -58,9 +59,6 @@ export function decodePathSegment(value: string): string | null {
     return null;
   }
 }
-
-export const KORTIX_USER_CONTEXT_HEADER = 'x-kortix-user-context';
-export const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 function base64urlDecode(s: string): Buffer {
   const pad = 4 - (s.length % 4);
@@ -338,6 +336,12 @@ export class WireTranscript {
   get count(): number {
     return this.order.length;
   }
+
+  clear(): void {
+    this.messages.clear();
+    this.order = [];
+    this.staged = [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +356,36 @@ export function mintRootId(sessionId: string): string {
 
 export const DEFAULT_MESSAGE_PAGE = 20;
 export const MAX_MESSAGE_PAGE = 200;
+
+interface RawMessageCursor {
+  id: string;
+  time: number;
+}
+
+function encodeRawMessageCursor(cursor: RawMessageCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
+}
+
+function decodeRawMessageCursor(value: string): RawMessageCursor | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as {
+      id?: unknown;
+      time?: unknown;
+    };
+    if (
+      typeof parsed.id !== 'string' ||
+      !parsed.id.startsWith('msg_') ||
+      typeof parsed.time !== 'number' ||
+      !Number.isFinite(parsed.time) ||
+      parsed.time < 0
+    ) {
+      return null;
+    }
+    return { id: parsed.id, time: parsed.time };
+  } catch {
+    return null;
+  }
+}
 
 class RawBodyError extends Error {
   constructor(
@@ -411,17 +445,15 @@ function readRawJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<un
 }
 
 export interface RuntimeSurfaceOptions {
-  commandConfigEtag?: string | null;
-  skillConfigEtag?: string | null;
-  permissionConfig?: PermissionConfig;
   todos?: () => PiTodo[];
-  permissions?: PermissionBroker;
-  questions?: QuestionBroker;
   sessionId: string;
+  projectId?: string;
   /** The worker's own KORTIX_TOKEN — service bearer AND user-context secret. */
   token?: string;
   agentName?: string;
   agentConfigEtag?: string | null;
+  commandConfigEtag?: string | null;
+  skillConfigEtag?: string | null;
   agents?: Record<
     string,
     {
@@ -444,8 +476,12 @@ export interface RuntimeSurfaceOptions {
   skills?: PiSkill[];
   tools?: readonly AgentTool[];
   defaultModel?: string | null;
-  resolvedModel?: { providerID: string; modelID: string } | null;
+  resolvedModel?: { providerID: string; modelID: string };
   workspace?: string;
+  permissions?: PermissionBroker;
+  permissionConfig?: PermissionConfig;
+  /** Pending user questions created by Pi's `question` tool. */
+  questions?: QuestionBroker;
   /**
    * Stop the run in flight. Wired to `Agent.abort()` by the worker.
    *
@@ -455,7 +491,19 @@ export interface RuntimeSurfaceOptions {
    * generating (reported 2026-08-29, pi). Optional so the bench, which builds
    * a surface with no agent, keeps working.
    */
-  onAbort?: () => void;
+  onAbort?: () => void | Promise<void>;
+  /** Read the durable session status when requests can reach any worker. */
+  onStatus?: () => { type: string } | Promise<{ type: string }>;
+  /**
+   * Remove an admitted prompt before it starts running.
+   *
+   * The worker owns queue durability, so the HTTP compatibility surface must
+   * ask it before deleting transcript state. A running prompt is immutable:
+   * callers must abort it instead of making its accepted input disappear.
+   */
+  onDeleteMessage?: (
+    messageId: string,
+  ) => 'deleted' | 'running' | 'missing' | Promise<'deleted' | 'running' | 'missing'>;
 }
 
 interface RestoredTranscriptMessage {
@@ -473,6 +521,11 @@ interface RestoredTranscriptMessage {
   errorMessage?: string;
   kortixWireMessageId?: string;
   kortixParentMessageId?: string;
+}
+
+interface RestoredWireMessage {
+  info: Record<string, unknown> & { id: string };
+  parts: Array<Record<string, unknown>>;
 }
 
 function agentModel(ref: string | undefined): { providerID: string; modelID: string } | null {
@@ -500,6 +553,8 @@ export class RuntimeSurface {
   private messageSeq = 0;
   /** Clock of the last id this surface minted — see . */
   private lastMintedTime: bigint | null = null;
+  /** Complete durable transcript ordering key, including the random tail. */
+  private lastObservedMessageId: string | null = null;
   private readonly createdAt = Date.now();
   private updatedAt = Date.now();
   private title: string;
@@ -536,7 +591,7 @@ export class RuntimeSurface {
           ? this.lastMintedTime
           : parentTime;
     const minted = mintWireMessageId({ nowMs: Date.now(), newestKnownTime: floor });
-    this.lastMintedTime = minted.time;
+    this.observeMessageId(minted.id);
     return minted.id;
   };
 
@@ -602,12 +657,7 @@ export class RuntimeSurface {
         this.applyToolPart(pending, {
           ...(message.isError
             ? { status: 'error', error: output }
-            : {
-                status: 'completed',
-                output,
-                title: pending.tool,
-                metadata: toolResultMetadata(message.details),
-              }),
+            : { status: 'completed', output, title: pending.tool, metadata: toolResultMetadata(message.details) }),
           input: pending.input,
           time: { start: pending.startedAt, end: created },
         });
@@ -672,10 +722,7 @@ export class RuntimeSurface {
         id = `msg_${encoded.toString(16).padStart(12, '0')}${tail}`;
         restoredClock = encoded;
       }
-      const clock = wireIdTime(id);
-      if (clock !== null && (this.lastMintedTime === null || clock > this.lastMintedTime)) {
-        this.lastMintedTime = clock;
-      }
+      this.observeMessageId(id);
 
       if (role === 'assistant' && !message.kortixParentMessageId && !lastUserId) {
         // An assistant without a user parent cannot satisfy the OpenCode v2
@@ -763,6 +810,98 @@ export class RuntimeSurface {
       seeded++;
     }
     return seeded;
+  }
+
+  /** Advance the mint clock past an externally supplied or restored wire id. */
+  observeMessageId(id: string): void {
+    const time = wireIdTime(id);
+    if (time !== null && (this.lastMintedTime === null || time > this.lastMintedTime)) {
+      this.lastMintedTime = time;
+    }
+    if (
+      WIRE_MESSAGE_ID.test(id) &&
+      (this.lastObservedMessageId === null || id > this.lastObservedMessageId)
+    ) {
+      this.lastObservedMessageId = id;
+    }
+  }
+
+  /**
+   * New caller-supplied ids must advance the durable transcript clock.
+   * Exact retries are resolved from the turn journal before this check.
+   */
+  canAdmitMessageId(id: string): boolean {
+    return (
+      WIRE_MESSAGE_ID.test(id) &&
+      (this.lastObservedMessageId === null || id > this.lastObservedMessageId)
+    );
+  }
+
+  /**
+   * Restore exact OpenCode wire envelopes without announcing old data as new.
+   * Used for accepted queue entries that reached the durable admission log but
+   * had not yet entered Pi's own message tree when the worker stopped.
+   */
+  seedWireMessages(messages: RestoredWireMessage[]): number {
+    for (const message of messages) {
+      this.observeMessageId(message.info.id);
+      this.transcript.apply({
+        type: 'message.updated',
+        properties: { sessionID: this.rootId, info: message.info },
+      });
+      for (const part of message.parts) {
+        this.transcript.apply({
+          type: 'message.part.updated',
+          properties: { sessionID: this.rootId, part },
+        });
+      }
+    }
+    return messages.length;
+  }
+
+  replaceDurableMessages(
+    restoredMessages: RestoredTranscriptMessage[],
+    wireMessages: RestoredWireMessage[],
+  ): number {
+    const previous = structuredClone(
+      this.transcript.page({ limit: Math.max(this.transcript.count, 1), before: null }).messages,
+    );
+    const previousById = new Map(previous.map((message) => [message.info.id, message]));
+
+    this.transcript.clear();
+    const restored = this.seedRestoredMessages(restoredMessages);
+    this.seedWireMessages(wireMessages);
+
+    const next = structuredClone(
+      this.transcript.page({ limit: Math.max(this.transcript.count, 1), before: null }).messages,
+    );
+    const nextById = new Map(next.map((message) => [message.info.id, message]));
+    for (const message of previous) {
+      const replacement = nextById.get(message.info.id);
+      if (replacement && isDeepStrictEqual(message, replacement)) continue;
+      this.publishWire({
+        type: 'message.removed',
+        properties: { messageID: message.info.id, sessionID: this.rootId },
+        busOnly: true,
+      });
+    }
+    for (const message of next) {
+      const existing = previousById.get(message.info.id);
+      if (existing && isDeepStrictEqual(existing, message)) continue;
+      this.publishWire({
+        type: 'message.updated',
+        properties: { sessionID: this.rootId, info: message.info },
+        busOnly: true,
+      });
+      for (const part of message.parts) {
+        this.publishWire({
+          type: 'message.part.updated',
+          properties: { sessionID: this.rootId, part },
+          busOnly: true,
+        });
+      }
+    }
+    return restored;
   }
 
   /** Completed assistant wire messages that belong to one accepted user turn. */
@@ -856,6 +995,42 @@ export class RuntimeSurface {
    */
   turnEndIdentity(): { opencodeSessionId: string; messageId: string | null } {
     return { opencodeSessionId: this.rootId, messageId: this.activeTurnMessageId };
+  }
+
+  completedTurnIdentities(): Array<{
+    opencodeSessionId: string;
+    messageId: string;
+    status: 'idle' | 'error';
+  }> {
+    const messages = this.transcript.page({
+      limit: Math.max(this.transcript.count, 1),
+      before: null,
+    }).messages;
+    const byParent = new Map<
+      string,
+      { opencodeSessionId: string; messageId: string; status: 'idle' | 'error' }
+    >();
+    for (const message of messages) {
+      const info = message.info as
+        | { role?: unknown; parentID?: unknown; error?: unknown }
+        | undefined;
+      if (info?.role !== 'assistant' || typeof info.parentID !== 'string' || !info.parentID)
+        continue;
+      byParent.set(info.parentID, {
+        opencodeSessionId: this.rootId,
+        messageId: info.parentID,
+        status: info.error ? 'error' : 'idle',
+      });
+    }
+    return [...byParent.values()];
+  }
+
+  latestCompletedTurnIdentity(): {
+    opencodeSessionId: string;
+    messageId: string;
+    status: 'idle' | 'error';
+  } | null {
+    return this.completedTurnIdentities().at(-1) ?? null;
   }
 
   /**
@@ -984,7 +1159,8 @@ export class RuntimeSurface {
       color: null,
       variant: null,
       source: 'config' as const,
-      model: this.opts.resolvedModel ?? agentModel(agent.model ?? this.opts.defaultModel ?? undefined),
+      model:
+        this.opts.resolvedModel ?? agentModel(agent.model ?? this.opts.defaultModel ?? undefined),
     }));
     return {
       epoch: this.bus.epoch,
@@ -1015,7 +1191,7 @@ export class RuntimeSurface {
             : this.opts.defaultModel ?? null,
           small_model: null,
           default_agent: this.opts.agentName ?? null,
-          permission: null,
+          permission: this.opts.permissionConfig ?? null,
           instructions: null,
           enabled_providers: null,
         },
@@ -1070,45 +1246,29 @@ export class RuntimeSurface {
       // and re-applying would be harmless but redundant work on every restore.
       this.publishWire({
         type: 'message.updated',
-        properties: { info: message.info },
+        properties: { sessionID: this.rootId, info: message.info },
         busOnly: true,
       });
       for (const part of message.parts) {
-        this.publishWire({ type: 'message.part.updated', properties: { part }, busOnly: true });
+        this.publishWire({
+          type: 'message.part.updated',
+          properties: { sessionID: this.rootId, time: Date.now(), part },
+          busOnly: true,
+        });
       }
     }
     return { restored };
   }
 
-  /**
-   * Read a small JSON body. A malformed or absent body reads as `null` rather
-   * than throwing: the caller decides whether the field it wanted was required.
-   */
-  private readRevertBody(req: IncomingMessage): Promise<{ messageID?: string } | null> {
-    return new Promise((resolve) => {
-      const chunks: Buffer[] = [];
-      let total = 0;
-      req.on('data', (c: Buffer) => {
-        total += c.length;
-        // A revert body is a single id; anything larger is not one.
-        if (total > 64 * 1024) return;
-        chunks.push(c);
-      });
-      req.on('end', () => {
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
-        } catch {
-          resolve(null);
-        }
-      });
-      req.on('error', () => resolve(null));
-    });
-  }
-
-  private opencodeSessionObject() {
+  private opencodeSessionObject(): Pick<
+    Session,
+    'id' | 'slug' | 'projectID' | 'title' | 'directory' | 'time' | 'version'
+  > {
     const s = this.sessionProjection();
     return {
       id: s.id,
+      slug: s.id,
+      projectID: this.opts.projectId ?? this.opts.sessionId,
       title: s.title,
       directory: s.directory,
       time: { created: s.time.created, updated: s.time.updated },
@@ -1137,7 +1297,6 @@ export class RuntimeSurface {
       });
       return true;
     }
-
     // POST /session/:id/abort — the Stop button's REAL path.
     //
     // There is a second abort handler under `/kortix/opencode/`, and it is not
@@ -1163,20 +1322,42 @@ export class RuntimeSurface {
           .end(JSON.stringify({ error: 'unauthorized' }));
         return true;
       }
-      if (decodeURIComponent(rawAbort[1]!) !== this.rootId) {
+      const sessionId = decodePathSegment(rawAbort[1]!);
+      if (sessionId === null) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'path contains malformed percent-encoding' }));
+        return true;
+      }
+      if (sessionId !== this.rootId) {
         res
           .writeHead(404, { 'content-type': 'application/json' })
           .end(JSON.stringify({ error: 'unknown session' }));
         return true;
       }
-      this.opts.onAbort?.();
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }));
+      const finish = () => {
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(true));
+      };
+      const fail = (error: unknown) => {
+        res
+          .writeHead(503, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: String((error as Error)?.message ?? error) }));
+      };
+      try {
+        const outcome = this.opts.onAbort?.();
+        if (outcome && typeof outcome.then === 'function') {
+          void outcome.then(finish).catch(fail);
+        } else {
+          finish();
+        }
+      } catch (error) {
+        fail(error);
+      }
       return true;
     }
-    // POST /session/:id/revert and /unrevert — `kortix.session().rewind()` and
-    // `.restoreRewind()` land HERE, at the raw root, for the same reason abort
-    // does: the SDK's OpenCode client has no prefix. Answered 404 before this,
-    // so rewinding a pi session silently did nothing.
+    // Pi's append-only transcript and Pi's in-memory model tree cannot be
+    // rewound atomically. Fail closed instead of hiding messages from HTTP
+    // while the next model call still receives the old branch.
     const rawRevert = url.pathname.match(/^\/session\/([^/]+)\/(revert|unrevert)$/);
     if (rawRevert && req.method === 'POST') {
       if (!this.authorized(req, url)) {
@@ -1185,32 +1366,111 @@ export class RuntimeSurface {
           .end(JSON.stringify({ error: 'unauthorized' }));
         return true;
       }
-      if (decodeURIComponent(rawRevert[1]!) !== this.rootId) {
+      const sessionId = decodePathSegment(rawRevert[1]!);
+      if (sessionId === null) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'path contains malformed percent-encoding' }));
+        return true;
+      }
+      if (sessionId !== this.rootId) {
         res
           .writeHead(404, { 'content-type': 'application/json' })
           .end(JSON.stringify({ error: 'unknown session' }));
         return true;
       }
-      void this.readRevertBody(req).then((body) => {
-        if (rawRevert[2] === 'unrevert') {
-          const { restored } = this.restoreRevert();
-          res
-            .writeHead(200, { 'content-type': 'application/json' })
-            .end(JSON.stringify({ ok: true, restored }));
-          return;
-        }
-        const messageId = body?.messageID;
-        if (!messageId) {
-          res
-            .writeHead(400, { 'content-type': 'application/json' })
-            .end(JSON.stringify({ error: 'messageID is required' }));
-          return;
-        }
-        const { removed } = this.revertFrom(messageId);
+      res.writeHead(501, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          code: 'feature_not_supported',
+          error: 'session rewind is not supported by the durable Pi runtime',
+        }),
+      );
+      return true;
+    }
+    // DELETE /session/:id/message/:messageId[/part/:partId] — raw OpenCode
+    // message mutation routes used by the SDK queue controls. Queue ownership
+    // stays in worker.ts; this surface only commits the matching transcript
+    // removal after the worker confirms that the turn has not started.
+    const rawDeleteMessage = url.pathname.match(
+      /^\/session\/([^/]+)\/message\/([^/]+)(?:\/part\/([^/]+))?$/,
+    );
+    if (rawDeleteMessage && req.method === 'DELETE') {
+      if (!this.authorized(req, url)) {
         res
-          .writeHead(200, { 'content-type': 'application/json' })
-          .end(JSON.stringify({ ok: true, removed }));
-      });
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
+        return true;
+      }
+      const sessionId = decodePathSegment(rawDeleteMessage[1]!);
+      const messageId = decodePathSegment(rawDeleteMessage[2]!);
+      const partId = rawDeleteMessage[3] ? decodePathSegment(rawDeleteMessage[3]) : undefined;
+      if (sessionId === null || messageId === null || partId === null) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'path contains malformed percent-encoding' }));
+        return true;
+      }
+      if (sessionId !== this.rootId) {
+        res
+          .writeHead(404, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unknown session' }));
+        return true;
+      }
+      if (partId) {
+        const message = this.transcript.messageById(messageId);
+        if (!message?.parts.some((part) => part.id === partId)) {
+          res
+            .writeHead(404, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'unknown message part' }));
+          return true;
+        }
+        // A view-only removal is data loss in disguise: the queued prompt
+        // still reaches Pi, and a completed part returns after restart because
+        // both the admission journal and Pi tree still contain it. Refuse the
+        // mutation until branch-rewriting deletion exists.
+        res.writeHead(409, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            error: 'message part deletion is not supported by the durable Pi runtime',
+          }),
+        );
+        return true;
+      }
+
+      const finish = (outcome: 'deleted' | 'running' | 'missing') => {
+        if (outcome === 'running') {
+          res
+            .writeHead(409, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'message is already running' }));
+          return;
+        }
+        if (outcome === 'missing') {
+          if (this.transcript.messageById(messageId)) {
+            res
+              .writeHead(409, { 'content-type': 'application/json' })
+              .end(JSON.stringify({ error: 'message is durable history' }));
+            return;
+          }
+          res
+            .writeHead(404, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'unknown message' }));
+          return;
+        }
+        this.publishWire({
+          type: 'message.removed',
+          properties: { messageID: messageId, sessionID: this.rootId },
+        });
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(true));
+      };
+      const outcome = this.opts.onDeleteMessage?.(messageId) ?? 'missing';
+      if (typeof outcome === 'object' && 'then' in outcome) {
+        void outcome.then(finish).catch((error) => {
+          res
+            .writeHead(503, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: String((error as Error)?.message ?? error) }));
+        });
+      } else {
+        finish(outcome);
+      }
       return true;
     }
     const rawPermissionMutation = url.pathname.match(/^\/permission\/([^/]+)\/reply$/);
@@ -1229,7 +1489,9 @@ export class RuntimeSurface {
         return true;
       }
       const write = (status: number, body: unknown) =>
-        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+        res
+          .writeHead(status, { 'content-type': 'application/json' })
+          .end(JSON.stringify(body));
       void readRawJsonBody(req)
         .then(async (body) => {
           const value =
@@ -1274,7 +1536,9 @@ export class RuntimeSurface {
       }
       const action = rawQuestionMutation[2]!;
       const write = (status: number, body: unknown) =>
-        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+        res
+          .writeHead(status, { 'content-type': 'application/json' })
+          .end(JSON.stringify(body));
       if (action === 'reject') {
         if (!this.opts.questions?.reject(requestId)) {
           write(404, { error: 'question request not found' });
@@ -1317,24 +1581,44 @@ export class RuntimeSurface {
         .end(JSON.stringify({ error: 'unauthorized' }));
       return true;
     }
-    if (url.pathname === '/permission') {
+    if (url.pathname === '/session') {
       res
         .writeHead(200, { 'content-type': 'application/json' })
-        .end(JSON.stringify(this.opts.permissions?.list() ?? []));
+        .end(JSON.stringify([this.opencodeSessionObject()]));
+      return true;
+    }
+    if (url.pathname === '/session/status') {
+      const finish = (status: { type: string }) => {
+        const statuses = status.type === 'idle' ? {} : { [this.rootId]: status };
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(statuses));
+      };
+      const fail = (error: unknown) => {
+        res
+          .writeHead(503, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: String((error as Error)?.message ?? error) }));
+      };
+      try {
+        const outcome = this.opts.onStatus?.() ?? this.status;
+        if ('then' in outcome && typeof outcome.then === 'function') {
+          void outcome.then(finish).catch(fail);
+        } else {
+          finish(outcome as { type: string });
+        }
+      } catch (error) {
+        fail(error);
+      }
       return true;
     }
     if (url.pathname === '/config' || url.pathname === '/global/config') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({
-          default_agent: this.opts.agentName ?? 'build',
-          model: this.opts.resolvedModel
-            ? `${this.opts.resolvedModel.providerID}/${this.opts.resolvedModel.modelID}`
-            : this.opts.defaultModel ?? undefined,
-          agent: this.opts.agents ?? {},
-          permission: this.opts.permissionConfig,
-          lsp: false,
-        }),
-      );
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        default_agent: this.opts.agentName ?? 'build',
+        model: this.opts.resolvedModel
+          ? `${this.opts.resolvedModel.providerID}/${this.opts.resolvedModel.modelID}`
+          : this.opts.defaultModel ?? undefined,
+        agent: this.opts.agents ?? {},
+        permission: this.opts.permissionConfig,
+        lsp: false,
+      }));
       return true;
     }
     if (url.pathname === '/lsp/diagnostics') {
@@ -1345,13 +1629,9 @@ export class RuntimeSurface {
     if (todoSession) {
       const sessionID = decodePathSegment(todoSession[1]!);
       const status = sessionID === null ? 400 : sessionID === this.rootId ? 200 : 404;
-      res
-        .writeHead(status, { 'content-type': 'application/json' })
-        .end(
-          JSON.stringify(
-            status === 200 ? (this.opts.todos?.() ?? []) : { error: 'unknown or invalid session' },
-          ),
-        );
+      res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(
+        status === 200 ? this.opts.todos?.() ?? [] : { error: 'unknown or invalid session' },
+      ));
       return true;
     }
     if (url.pathname === '/question') {
@@ -1360,15 +1640,10 @@ export class RuntimeSurface {
         .end(JSON.stringify(this.opts.questions?.list() ?? []));
       return true;
     }
-    if (url.pathname === '/session/status') {
-      const statuses = this.status.type === 'idle' ? {} : { [this.rootId]: this.status };
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(statuses));
-      return true;
-    }
-    if (url.pathname === '/session') {
+    if (url.pathname === '/permission') {
       res
         .writeHead(200, { 'content-type': 'application/json' })
-        .end(JSON.stringify([this.opencodeSessionObject()]));
+        .end(JSON.stringify(this.opts.permissions?.list() ?? []));
       return true;
     }
     if (url.pathname === '/command') {
@@ -1440,19 +1715,13 @@ export class RuntimeSurface {
       if (!workspaceQueryMatches(url, workspace)) {
         res
           .writeHead(400, { 'content-type': 'application/json' })
-          .end(
-            JSON.stringify({
-              error: 'skill workspace must equal the compiled environment workspace',
-            }),
-          );
+          .end(JSON.stringify({ error: 'skill workspace must equal the compiled environment workspace' }));
         return true;
       }
       res
         .writeHead(200, { 'content-type': 'application/json' })
         .end(
-          JSON.stringify(
-            (this.opts.skills ?? []).map((skill) => projectSkillInfo(skill, workspace)),
-          ),
+          JSON.stringify((this.opts.skills ?? []).map((skill) => projectSkillInfo(skill, workspace))),
         );
       return true;
     }
@@ -1464,14 +1733,20 @@ export class RuntimeSurface {
     // reads with a 404 even though the worker held the complete transcript.
     const rawMessage = url.pathname.match(/^\/session\/([^/]+)\/message(?:\/([^/]+))?$/);
     if (rawMessage) {
-      const sessionId = decodeURIComponent(rawMessage[1]!);
+      const sessionId = decodePathSegment(rawMessage[1]!);
+      const messageId = rawMessage[2] ? decodePathSegment(rawMessage[2]) : null;
+      if (sessionId === null || (rawMessage[2] && messageId === null)) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'path contains malformed percent-encoding' }));
+        return true;
+      }
       if (sessionId !== this.rootId) {
         res
           .writeHead(404, { 'content-type': 'application/json' })
           .end(JSON.stringify({ error: 'unknown session' }));
         return true;
       }
-      const messageId = rawMessage[2] ? decodeURIComponent(rawMessage[2]) : null;
       if (messageId) {
         const message = this.transcript.messageById(messageId);
         if (!message) {
@@ -1483,17 +1758,59 @@ export class RuntimeSurface {
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(message));
         return true;
       }
-      const limitRaw = Number(url.searchParams.get('limit'));
-      const limit =
-        Number.isFinite(limitRaw) && limitRaw > 0
-          ? Math.min(Math.floor(limitRaw), MAX_MESSAGE_PAGE)
-          : Math.max(this.transcript.count, 1);
-      const page = this.transcript.page({ limit, before: null });
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(page.messages));
+      const limitParam = url.searchParams.get('limit');
+      const limitRaw = limitParam === null ? 0 : Number(limitParam);
+      if (!Number.isInteger(limitRaw) || limitRaw < 0) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'limit must be a non-negative integer' }));
+        return true;
+      }
+      const beforeParam = url.searchParams.get('before')?.trim() || null;
+      if (beforeParam && limitRaw <= 0) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'before requires a positive limit' }));
+        return true;
+      }
+      const before = beforeParam ? decodeRawMessageCursor(beforeParam) : null;
+      if (beforeParam && !before) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'before cursor is invalid' }));
+        return true;
+      }
+      const limit = limitRaw > 0 ? limitRaw : Math.max(this.transcript.count, 1);
+      const page = this.transcript.page({ limit, before: before?.id ?? null });
+      const headers: Record<string, string> = { 'content-type': 'application/json' };
+      const first = page.messages[0]?.info as { id?: string } | undefined;
+      if (page.hasMore && first?.id) {
+        const created = Number(
+          (first as { time?: { created?: unknown } }).time?.created ?? wireIdTime(first.id) ?? 0,
+        );
+        const cursor = encodeRawMessageCursor({
+          id: first.id,
+          time: Number.isFinite(created) && created >= 0 ? created : 0,
+        });
+        const next = new URL(url.toString());
+        next.searchParams.set('limit', String(limitRaw));
+        next.searchParams.set('before', cursor);
+        headers['access-control-expose-headers'] = 'Link, X-Next-Cursor';
+        headers.link = `<${next.pathname}${next.search}>; rel="next"`;
+        headers['x-next-cursor'] = cursor;
+      }
+      res.writeHead(200, headers).end(JSON.stringify(page.messages));
       return true;
     }
     const m = url.pathname.match(/^\/session\/([^/]+)$/);
-    if (m && decodeURIComponent(m[1]!) === this.rootId) {
+    const decodedSession = m ? decodePathSegment(m[1]!) : null;
+    if (m && decodedSession === null) {
+      res
+        .writeHead(400, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ error: 'path contains malformed percent-encoding' }));
+      return true;
+    }
+    if (m && decodedSession === this.rootId) {
       res
         .writeHead(200, { 'content-type': 'application/json' })
         .end(JSON.stringify(this.opencodeSessionObject()));
@@ -1531,7 +1848,9 @@ export class RuntimeSurface {
     }
 
     if (sub.startsWith('messages/') && req.method === 'GET') {
-      const sessionId = decodeURIComponent(sub.slice('messages/'.length));
+      const sessionId = decodePathSegment(sub.slice('messages/'.length));
+      if (sessionId === null)
+        return json(400, { error: 'path contains malformed percent-encoding' });
       const limitRaw = Number(url.searchParams.get('limit'));
       const limit =
         Number.isFinite(limitRaw) && limitRaw > 0
@@ -1573,17 +1892,33 @@ export class RuntimeSurface {
     // reached once the session id matches this root.
     const abortMatch = sub.match(/^session\/([^/]+)\/abort$/);
     if (abortMatch && req.method === 'POST') {
-      const sessionId = decodeURIComponent(abortMatch[1]!);
+      const sessionId = decodePathSegment(abortMatch[1]!);
+      if (sessionId === null)
+        return json(400, { error: 'path contains malformed percent-encoding' });
       if (sessionId !== this.rootId) return json(404, { error: 'unknown session' });
       // Idempotent by contract: the UI can send Stop against a turn row that is
       // already closed, and `Agent.abort()` on an idle agent is a no-op. An
       // unwired surface (the bench) answers the same way.
-      this.opts.onAbort?.();
-      return json(200, { ok: true });
+      const finish = () => json(200, { ok: true });
+      const fail = (error: unknown) =>
+        json(503, { error: String((error as Error)?.message ?? error) });
+      try {
+        const outcome = this.opts.onAbort?.();
+        if (outcome && typeof outcome.then === 'function') {
+          void outcome.then(finish).catch(fail);
+        } else {
+          finish();
+        }
+      } catch (error) {
+        fail(error);
+      }
+      return true;
     }
 
     if (sub.startsWith('session/') && req.method === 'GET') {
-      const sessionId = decodeURIComponent(sub.slice('session/'.length));
+      const sessionId = decodePathSegment(sub.slice('session/'.length));
+      if (sessionId === null)
+        return json(400, { error: 'path contains malformed percent-encoding' });
       if (sessionId !== this.rootId) return json(404, { error: 'unknown session' });
       // OpenCode's own Session shape, minimally: id, title, time.
       return json(200, this.opencodeSessionObject());

@@ -1,10 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  KortixExecutionEnv,
-  toExecTimeoutMs,
-  toFileErrorCode,
-} from './kortix-env.ts';
+import { KortixExecutionEnv, toExecTimeoutMs, toFileErrorCode } from './kortix-env.ts';
 import type { RpcTransport } from './rpc-transport.ts';
+import { RpcCancellationError } from './rpc-transport.ts';
 
 function replaceTransport(
   env: KortixExecutionEnv,
@@ -121,6 +118,180 @@ describe('RPC replay safety', () => {
 
     expect(attempts).toBe(2);
     expect(result).toEqual({ ok: true, value: 'contents' });
+  });
+
+  test("an aborted read is not replayed and returns Pi's aborted code", async () => {
+    const env = new KortixExecutionEnv({
+      baseUrl: 'http://unused.invalid',
+      cwd: '/workspace',
+      transport: 'fetch',
+    });
+    const controller = new AbortController();
+    let attempts = 0;
+    replaceTransport(env, async (_op, _args, _cwd, signal) => {
+      attempts += 1;
+      controller.abort();
+      await Promise.resolve();
+      throw signal?.reason ?? new Error('aborted');
+    });
+
+    const result = await env.readTextFile('/workspace/result.txt', controller.signal);
+
+    expect(attempts).toBe(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('aborted');
+  });
+
+  test('exec forwards its AbortSignal and exposes a cancellation settlement barrier', async () => {
+    const env = new KortixExecutionEnv({
+      baseUrl: 'http://unused.invalid',
+      cwd: '/workspace',
+      transport: 'fetch',
+    });
+    const controller = new AbortController();
+    const abortReason = new Error('caller stopped');
+    let forwardedSignal: AbortSignal | undefined;
+    let release!: () => void;
+    const cancelled = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    replaceTransport(env, async (_op, _args, _cwd, signal) => {
+      forwardedSignal = signal;
+      await new Promise<void>((resolve) => {
+        signal?.addEventListener(
+          'abort',
+          () => {
+            release();
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      throw new Error('aborted');
+    });
+
+    const run = env.exec('sleep 10', { abortSignal: controller.signal });
+    controller.abort(abortReason);
+    await env.waitForAbortSettled();
+
+    await cancelled;
+    expect(forwardedSignal?.aborted).toBe(true);
+    expect(forwardedSignal?.reason).toBe(abortReason);
+    const result = await run;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('aborted');
+  });
+
+  test('the cancellation settlement barrier rejects when remote cancellation is unconfirmed', async () => {
+    const env = new KortixExecutionEnv({
+      baseUrl: 'http://unused.invalid',
+      cwd: '/workspace',
+      transport: 'fetch',
+    });
+    const controller = new AbortController();
+    replaceTransport(env, async (_op, _args, _cwd, signal) => {
+      await new Promise<void>((resolve) =>
+        signal?.addEventListener('abort', () => resolve(), { once: true }),
+      );
+      throw new RpcCancellationError('cancel endpoint unavailable');
+    });
+    const run = env.exec('sleep 10', { abortSignal: controller.signal });
+
+    controller.abort();
+
+    await expect(env.waitForAbortSettled()).rejects.toThrow(/cancel endpoint unavailable/);
+    const result = await run;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('unknown');
+  });
+
+  test('RPC timeout aborts the transport and waits for cancellation settlement', async () => {
+    const env = new KortixExecutionEnv({
+      baseUrl: 'http://unused.invalid',
+      cwd: '/workspace',
+      transport: 'fetch',
+      timeoutMs: 0,
+    });
+    let releaseCancellation!: () => void;
+    const cancellationReleased = new Promise<void>((resolve) => {
+      releaseCancellation = resolve;
+    });
+    let cancellationStarted!: () => void;
+    const cancellationStart = new Promise<void>((resolve) => {
+      cancellationStarted = resolve;
+    });
+
+    replaceTransport(env, async (_op, _args, _cwd, signal) => {
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) {
+          cancellationStarted();
+          resolve();
+          return;
+        }
+        signal?.addEventListener(
+          'abort',
+          () => {
+            cancellationStarted();
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      await cancellationReleased;
+      throw signal?.reason ?? new Error('aborted');
+    });
+
+    const run = env.exec('sleep 600', { timeout: 600 });
+    const timeoutAbortedTransport = await Promise.race([
+      cancellationStart.then(() => true),
+      run.then(() => false),
+    ]);
+    expect(timeoutAbortedTransport).toBe(true);
+
+    let barrierSettled = false;
+    const barrier = env.waitForAbortSettled().then(() => {
+      barrierSettled = true;
+    });
+    await Promise.resolve();
+    expect(barrierSettled).toBe(false);
+
+    releaseCancellation();
+    await barrier;
+    const result = await run;
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected timeout failure');
+    expect(result.error.code).toBe('unknown');
+    expect(result.error.message).toBe('rpc timeout');
+  });
+
+  test('a timed-out read is aborted once and is not replayed', async () => {
+    const env = new KortixExecutionEnv({
+      baseUrl: 'http://unused.invalid',
+      cwd: '/workspace',
+      transport: 'fetch',
+      timeoutMs: 0,
+    });
+    let attempts = 0;
+    replaceTransport(env, async (_op, _args, _cwd, signal) => {
+      attempts += 1;
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) {
+          resolve();
+          return;
+        }
+        signal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+      throw signal?.reason ?? new Error('aborted');
+    });
+
+    const result = await env.readTextFile('/workspace/result.txt');
+    await env.waitForAbortSettled();
+
+    expect(attempts).toBe(1);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected timeout failure');
+    expect(result.error.code).toBe('unknown');
+    expect(result.error.message).toBe('rpc timeout');
   });
 });
 

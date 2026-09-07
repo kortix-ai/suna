@@ -4891,3 +4891,16 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
   replies; global-event tests exercise streaming and parsed heartbeats; runtime
   guidance and starter tests reject the old capability description. Browser
   verification asserts partial renders, interactive payloads, and restored cards.
+
+
+### Publish idle only after durable turn reconciliation (2026-09-07)
+
+- Incident: the Pi lease-recovery test intermittently returned a stale assistant
+  response after the worker had already reported no turn in flight. A controlled
+  transcript-read barrier reproduced the same ordering failure.
+- Rule: keep the turn busy until durable reconciliation finishes. Remove stale
+  message projections before publishing `session.idle`. Pi's `agent_end` alone
+  does not prove that the Kortix turn has settled.
+- Enforcement: `apps/kortix-worker/src/turn-routes.test.ts` blocks reconciliation
+  after fencing a stale append. It asserts busy through HTTP and SSE, releases
+  the barrier, then asserts message removal precedes idle and stale text is absent.

@@ -27,18 +27,46 @@
  * tree. Nothing about a conversation is lost; one derived field is refreshed.
  */
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { InMemorySessionStorage } from '@earendil-works/pi-agent-core';
 
-export type SessionLogItem =
+export interface SessionLogLeaseFence {
+  stream: string;
+  messageId: string;
+  ownerId: string;
+  previousRevision: number;
+}
+
+export type StorageLogItem = (
   | { kind: 'entry'; lane: string; entry: any }
   | { kind: 'record'; record: any }
-  | { kind: 'journal'; stream: string; record: Record<string, unknown> }
   | { kind: 'lane_create'; lane: string; at: string | null }
   | { kind: 'lane_move'; lane: string; to: string | null }
   | { kind: 'name'; name: string | undefined }
-  | { kind: 'label'; id: string; label: string | undefined };
+  | { kind: 'label'; id: string; label: string | undefined }
+) & {
+  /**
+   * A storage mutation and its turn-owner lease transition share one remote
+   * append. The deterministic append id makes this mutation compete with a
+   * heartbeat or reclaim observed at the same lease revision.
+   */
+  _kortixTurnLease?: SessionLogLeaseFence;
+};
+
+export interface JournalLogItem {
+  kind: 'journal';
+  stream: string;
+  record: Record<string, unknown>;
+}
+
+export type SessionLogItem = (StorageLogItem | JournalLogItem) & {
+  /** Persisted inside the item so a read can prove a timed-out append committed. */
+  _kortixAppendId?: string;
+};
 
 export interface SessionLog {
+  /** Reject an item before the caller commits any externally visible state. */
+  preflight?(item: SessionLogItem): void;
   append(item: SessionLogItem, options?: { idempotencyKey?: string }): Promise<void>;
   read(): Promise<SessionLogItem[]>;
 }
@@ -56,6 +84,12 @@ interface RemoteSessionLogOptions {
 const RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000, 4_000, 8_000] as const;
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+export const MAX_SESSION_LOG_ITEM_BYTES = 512 * 1024;
+const PREFLIGHT_APPEND_ID = '00000000-0000-4000-8000-000000000000';
+
+function persistedItemSize(item: SessionLogItem, appendId: string): number {
+  return Buffer.byteLength(JSON.stringify({ ...item, _kortixAppendId: appendId }), 'utf8');
+}
 
 function retryableStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
@@ -65,8 +99,34 @@ function defaultSleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+export class SessionLogUnavailableError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SessionLogUnavailableError';
+  }
+}
+
+export class SessionLogItemTooLargeError extends Error {
+  readonly sizeBytes: number;
+
+  constructor(sizeBytes: number) {
+    super(`session log item is ${sizeBytes} bytes; maximum is ${MAX_SESSION_LOG_ITEM_BYTES}`);
+    this.name = 'SessionLogItemTooLargeError';
+    this.sizeBytes = sizeBytes;
+  }
+}
+
+export class SessionLogConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionLogConflictError';
+  }
+}
+
 /** Append-only log over HTTP. Stands in for the Kortix control plane. */
 export class RemoteSessionLog implements SessionLog {
+  private failure: SessionLogUnavailableError | null = null;
+
   constructor(
     private readonly baseUrl: string,
     private readonly sessionId: string,
@@ -74,14 +134,45 @@ export class RemoteSessionLog implements SessionLog {
     private readonly options: RemoteSessionLogOptions = {},
   ) {}
 
-  async append(item: SessionLogItem, options: { idempotencyKey?: string } = {}): Promise<void> {
+  get error(): SessionLogUnavailableError | null {
+    return this.failure;
+  }
+
+  assertWritable(): void {
+    if (this.failure) throw this.failure;
+  }
+
+  preflight(item: SessionLogItem): void {
+    this.assertWritable();
+    const sizeBytes = persistedItemSize(item, PREFLIGHT_APPEND_ID);
+    if (sizeBytes > MAX_SESSION_LOG_ITEM_BYTES) {
+      throw new SessionLogItemTooLargeError(sizeBytes);
+    }
+  }
+
+  private poison(message: string, cause: unknown): SessionLogUnavailableError {
+    if (!this.failure) this.failure = new SessionLogUnavailableError(message, { cause });
+    return this.failure;
+  }
+
+  async append(
+    item: SessionLogItem,
+    appendOptions: { idempotencyKey?: string } = {},
+  ): Promise<void> {
+    this.assertWritable();
     const fetcher = this.options.fetch ?? globalThis.fetch;
     const sleep = this.options.sleep ?? defaultSleep;
     const maxAttempts = Math.max(1, this.options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
-    const appendId = options.idempotencyKey ?? (this.options.createAppendId ?? randomUUID)();
+    const appendId = appendOptions.idempotencyKey ?? (this.options.createAppendId ?? randomUUID)();
     const headers = new Headers({ 'content-type': 'application/json', ...this.headers });
     headers.set('idempotency-key', appendId);
-    const body = JSON.stringify(item);
+    const body = JSON.stringify({ ...item, _kortixAppendId: appendId });
+    const persistedItem = JSON.parse(body) as SessionLogItem;
+    const sizeBytes = Buffer.byteLength(body, 'utf8');
+    if (sizeBytes > MAX_SESSION_LOG_ITEM_BYTES) {
+      const error = new SessionLogItemTooLargeError(sizeBytes);
+      throw this.poison(error.message, error);
+    }
     let lastError: unknown;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -95,14 +186,18 @@ export class RemoteSessionLog implements SessionLog {
           ),
         });
         if (res.ok) return;
+        if (res.status === 409) {
+          throw new SessionLogConflictError('session log idempotency key has conflicting content');
+        }
         const error = new Error(`session log append failed: HTTP ${res.status}`);
-        if (!retryableStatus(res.status)) throw error;
+        if (!retryableStatus(res.status)) {
+          throw this.poison(error.message, error);
+        }
         lastError = error;
       } catch (error) {
+        if (error instanceof SessionLogUnavailableError) throw error;
+        if (error instanceof SessionLogConflictError) throw error;
         lastError = error;
-        if (error instanceof Error && error.message.startsWith('session log append failed: HTTP ')) {
-          throw error;
-        }
       }
 
       if (attempt + 1 < maxAttempts) {
@@ -110,10 +205,43 @@ export class RemoteSessionLog implements SessionLog {
       }
     }
 
-    throw new Error(
+    const terminal = new Error(
       `session log append failed after ${maxAttempts} attempts: ${String(
         (lastError as Error)?.message ?? lastError,
       )}`,
+    );
+    let remote: SessionLogItem[];
+    try {
+      remote = await this.read();
+    } catch (reconcileError) {
+      throw this.poison(
+        `${terminal.message}; reconciliation could not prove the append committed`,
+        new AggregateError([terminal, reconcileError], 'session log append outcome is unresolved'),
+      );
+    }
+    if (!Array.isArray(remote)) {
+      const reconcileError = new TypeError('session log reconciliation response must be an array');
+      throw this.poison(
+        `${terminal.message}; reconciliation could not prove the append committed`,
+        new AggregateError([terminal, reconcileError], 'session log append outcome is unresolved'),
+      );
+    }
+    const committed = remote.find(
+      (candidate) =>
+        candidate !== null &&
+        typeof candidate === 'object' &&
+        candidate._kortixAppendId === appendId,
+    );
+    if (committed && isDeepStrictEqual(committed, persistedItem)) return;
+    if (committed) {
+      throw new SessionLogConflictError(
+        `session log append id ${appendId} has conflicting persisted content`,
+      );
+    }
+    const reconcileError = new Error(`append id ${appendId} is absent from the remote log`);
+    throw this.poison(
+      `${terminal.message}; reconciliation could not prove the append committed`,
+      new AggregateError([terminal, reconcileError], 'session log append outcome is unresolved'),
     );
   }
 
@@ -131,7 +259,6 @@ export class RemoteSessionLog implements SessionLog {
             Math.max(1, this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
           ),
         });
-        if (res.status === 404) return [];
         if (res.ok) return (await res.json()) as SessionLogItem[];
         const error = new Error(`session log read failed: HTTP ${res.status}`);
         if (!retryableStatus(res.status)) throw error;
@@ -170,31 +297,53 @@ export class DurableSessionStorage {
     private replaying = false,
   ) {}
 
-  static async open(metadata: any, log: SessionLog): Promise<{ storage: DurableSessionStorage; restoredEntries: number; logItems: SessionLogItem[] }> {
+  static async open(
+    metadata: any,
+    log: SessionLog,
+  ): Promise<{
+    storage: DurableSessionStorage;
+    restoredEntries: number;
+    logItems: SessionLogItem[];
+  }> {
     const inner = new InMemorySessionStorage(metadata);
     const durable = new DurableSessionStorage(inner, log, true);
     const items = await log.read();
     for (const item of items) {
       switch (item.kind) {
-        case 'journal': break;
-        case 'lane_create': await inner.createLane(item.lane, item.at); break;
-        case 'lane_move': await inner.moveLane(item.lane, item.to); break;
+        case 'lane_create':
+          await inner.createLane(item.lane, item.at);
+          break;
+        case 'lane_move':
+          await inner.moveLane(item.lane, item.to);
+          break;
         case 'entry': {
           // Strip the storage-owned fields; the id is ours and is preserved.
           const { parentId: _p, seq: _s, timestamp: _t, ...provisioned } = item.entry;
           await inner.appendEntry(provisioned as any, item.lane);
           break;
         }
-        case 'record': await inner.appendRecord(item.record); break;
-        case 'name': await inner.setName(item.name); break;
-        case 'label': await inner.setLabel(item.id, item.label); break;
+        case 'record':
+          await inner.appendRecord(item.record);
+          break;
+        case 'name':
+          await inner.setName(item.name);
+          break;
+        case 'label':
+          await inner.setLabel(item.id, item.label);
+          break;
+        case 'journal':
+          break;
       }
     }
     durable.replaying = false;
-    return { storage: durable, restoredEntries: items.filter((i) => i.kind === 'entry').length, logItems: items };
+    return {
+      storage: durable,
+      restoredEntries: items.filter((i) => i.kind === 'entry').length,
+      logItems: items,
+    };
   }
 
-  private async write(item: SessionLogItem): Promise<void> {
+  private async write(item: StorageLogItem): Promise<void> {
     if (!this.replaying) await this.log.append(item);
   }
 
@@ -227,15 +376,37 @@ export class DurableSessionStorage {
   }
 
   // ---- reads: straight through, never touch the network --------------------
-  getMetadata() { return this.inner.getMetadata(); }
-  getLanes() { return this.inner.getLanes(); }
-  getEntry(id: string) { return this.inner.getEntry(id); }
-  findEntries(q?: any) { return this.inner.findEntries(q); }
-  findEntriesOnBranch(q: any) { return this.inner.findEntriesOnBranch(q); }
-  findRecords(q?: any) { return (this.inner as any).findRecords(q); }
-  findOpenOperations(lane: string, o?: any) { return this.inner.findOpenOperations(lane, o); }
-  getLog(o?: any) { return this.inner.getLog(o); }
-  getName() { return this.inner.getName(); }
-  getLabel(id: string) { return this.inner.getLabel(id); }
-  getStats() { return this.inner.getStats(); }
+  getMetadata() {
+    return this.inner.getMetadata();
+  }
+  getLanes() {
+    return this.inner.getLanes();
+  }
+  getEntry(id: string) {
+    return this.inner.getEntry(id);
+  }
+  findEntries(q?: any) {
+    return this.inner.findEntries(q);
+  }
+  findEntriesOnBranch(q: any) {
+    return this.inner.findEntriesOnBranch(q);
+  }
+  findRecords(q?: any) {
+    return (this.inner as any).findRecords(q);
+  }
+  findOpenOperations(lane: string, o?: any) {
+    return this.inner.findOpenOperations(lane, o);
+  }
+  getLog(o?: any) {
+    return this.inner.getLog(o);
+  }
+  getName() {
+    return this.inner.getName();
+  }
+  getLabel(id: string) {
+    return this.inner.getLabel(id);
+  }
+  getStats() {
+    return this.inner.getStats();
+  }
 }

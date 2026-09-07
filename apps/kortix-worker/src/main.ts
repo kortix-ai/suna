@@ -3,7 +3,7 @@
  *
  * The API's compiled-boot pipeline prepends one line before this bundle:
  *
- *   globalThis.__KORTIX_COMPILED__ = { manifest, agentConfig }
+ *   globalThis.__KORTIX_COMPILED__ = { manifest, agentConfig, commands }
  *
  * where `manifest` identifies the exact (project, ref, sha) this artifact was
  * compiled from and `agentConfig` is the server-compiled agent map
@@ -16,7 +16,10 @@
  * things at session-start time (model override, session id, environment URL)
  * that a per-commit artifact cannot.
  */
-import { configFromEnv, startWorker, type WorkerConfig } from './worker.ts';
+import type { PermissionConfig } from './permission-policy.ts';
+import type { PiCommand } from './command-runtime.ts';
+import type { PiSkill } from './skill-runtime.ts';
+import { type WorkerConfig, configFromEnv, startWorker } from './worker.ts';
 
 interface CompiledPayload {
   manifest?: {
@@ -27,8 +30,18 @@ interface CompiledPayload {
   };
   agentConfig?: {
     model?: string;
-    agent?: Record<string, { prompt?: string; model?: string; description?: string }>;
+    agent?: Record<
+      string,
+      {
+        prompt?: string;
+        model?: string;
+        description?: string;
+        permission?: PermissionConfig;
+      }
+    >;
   } | null;
+  commands?: PiCommand[];
+  skills?: PiSkill[];
 }
 
 function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
@@ -48,7 +61,12 @@ function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
   // kortix-sandbox-agent-server/src/opencode.ts wires apiKey = KORTIX_TOKEN).
   // Explicit KORTIX_API_KEY / KORTIX_MODEL_MODE always win.
   const gatewayBase = process.env.KORTIX_LLM_BASE_URL;
-  if (!process.env.KORTIX_API_KEY && !process.env.KORTIX_MODEL_MODE && gatewayBase && process.env.KORTIX_TOKEN) {
+  if (
+    !process.env.KORTIX_API_KEY &&
+    !process.env.KORTIX_MODEL_MODE &&
+    gatewayBase &&
+    process.env.KORTIX_TOKEN
+  ) {
     out.modelMode = 'real';
     out.gatewayUrl = gatewayBase;
     out.apiKey = process.env.KORTIX_TOKEN;

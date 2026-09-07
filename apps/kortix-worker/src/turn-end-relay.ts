@@ -29,8 +29,8 @@
  *   held alive for hours after its work is done.
  *
  * That last one is why this retries instead of being best-effort, and why it
- * mirrors the daemon's retry rule exactly: stop on ANY ok response (apps/api
- * answering "already finalized" is an answer), retry only network/5xx.
+ * stops on any ok response. Every non-ok response retains the durable marker
+ * and consumes the bounded retry budget.
  */
 
 export type TurnEndStatus = 'idle' | 'error';
@@ -95,6 +95,8 @@ export interface TurnEndRelayConfig {
   fetch?: typeof fetch;
   /** Injected for tests, so the retry budget is exercised without sleeping. */
   waitMs?: (ms: number) => Promise<void>;
+  /** Bound one HTTP attempt so a half-open socket cannot block the drain. */
+  requestTimeoutMs?: number;
   log?: (line: string) => void;
 }
 
@@ -105,14 +107,15 @@ export interface TurnEndRelayConfig {
  * optional and their absence is an ordinary configuration, not an error. The
  * returned function NEVER throws and never rejects: a turn that produced a
  * correct answer must not be reported as failed because a bookkeeping call
- * could not be delivered.
+ * could not be delivered. The boolean reports whether the durable relay marker
+ * can be cleared.
  */
 export function buildTurnEndRelay(
   cfg: TurnEndRelayConfig,
-): (status: TurnEndStatus, identity?: TurnEndIdentity | null) => Promise<void> {
+): (status: TurnEndStatus, identity?: TurnEndIdentity | null) => Promise<boolean> {
   const { apiUrl, projectId, sessionId, kortixToken } = cfg;
   if (!apiUrl || !projectId || !sessionId || !kortixToken) {
-    return async () => {};
+    return async () => true;
   }
 
   const doFetch = cfg.fetch ?? fetch;
@@ -120,7 +123,7 @@ export function buildTurnEndRelay(
   const log = cfg.log ?? ((line: string) => console.error(line));
   const url = turnEndUrl(apiUrl, projectId);
 
-  return async (status: TurnEndStatus, identity?: TurnEndIdentity | null): Promise<void> => {
+  return async (status: TurnEndStatus, identity?: TurnEndIdentity | null): Promise<boolean> => {
     const body = JSON.stringify(turnEndPayload({ sessionId, status, identity }));
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
@@ -128,10 +131,12 @@ export function buildTurnEndRelay(
           method: 'POST',
           headers: { 'content-type': 'application/json', Authorization: `Bearer ${kortixToken}` },
           body,
+          signal: AbortSignal.timeout(Math.max(1, cfg.requestTimeoutMs ?? 10_000)),
         } as RequestInit);
         // Any ok response settles it — including apps/api saying the turn was
-        // already finalized. Only a transport failure is worth retrying.
-        if (res.ok) return;
+        // already finalized. A non-ok response proves no settlement, so keep
+        // the durable marker and use the daemon's bounded retry rule.
+        if (res.ok) return true;
         log(
           JSON.stringify({
             msg: 'turn-end relay non-ok',
@@ -139,7 +144,6 @@ export function buildTurnEndRelay(
             attempt,
           }),
         );
-        return;
       } catch (error) {
         log(
           JSON.stringify({
@@ -152,6 +156,117 @@ export function buildTurnEndRelay(
       if (attempt < MAX_ATTEMPTS) await wait(1_000 * attempt);
     }
     log(JSON.stringify({ msg: 'turn-end relay gave up', sessionId, status }));
+    return false;
+  };
+}
+
+export interface PendingTurnEnd {
+  messageId: string;
+  status: TurnEndStatus;
+}
+
+export interface TurnEndRelayDrain {
+  /** Start now, or coalesce with the attempt already in flight. */
+  wake(): void;
+  /** Cancel future retry timers. The attempt already in flight can finish. */
+  close(): void;
+}
+
+/**
+ * Keep durable terminal markers live until the control plane acknowledges them.
+ * `buildTurnEndRelay` owns one bounded network budget. This drain owns the
+ * longer process lifetime and retries that budget without requiring a restart.
+ */
+export function createTurnEndRelayDrain(input: {
+  pending: () => PendingTurnEnd[];
+  relay: (status: TurnEndStatus, identity?: TurnEndIdentity | null) => Promise<boolean>;
+  markRelayed: (messageId: string) => Promise<unknown>;
+  identity?: (messageId: string) => TurnEndIdentity;
+  retryDelaysMs?: readonly number[];
+  log?: (line: string) => void;
+}): TurnEndRelayDrain {
+  const delays = input.retryDelaysMs?.length ? input.retryDelaysMs : [1_000, 5_000, 15_000, 30_000];
+  const log = input.log ?? ((line: string) => console.error(line));
+  let retryIndex = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let running = false;
+  let wakePending = false;
+  let closed = false;
+
+  const scheduleRetry = () => {
+    if (closed || timer) return;
+    const delay = delays[Math.min(retryIndex, delays.length - 1)]!;
+    retryIndex += 1;
+    timer = setTimeout(
+      () => {
+        timer = null;
+        void drain();
+      },
+      Math.max(0, delay),
+    );
+  };
+
+  const drain = async (): Promise<void> => {
+    if (closed) return;
+    if (running) {
+      wakePending = true;
+      return;
+    }
+    running = true;
+    let retry = false;
+    let progressed = false;
+    try {
+      for (const turn of input.pending()) {
+        const delivered = await input.relay(
+          turn.status,
+          input.identity?.(turn.messageId) ?? { messageId: turn.messageId },
+        );
+        if (!delivered) {
+          retry = true;
+          continue;
+        }
+        await input.markRelayed(turn.messageId);
+        progressed = true;
+      }
+      if (input.pending().length > 0) retry = true;
+    } catch (error) {
+      retry = true;
+      log(
+        JSON.stringify({
+          msg: 'turn-end relay drain failed',
+          error: String((error as Error)?.message ?? error),
+        }),
+      );
+    } finally {
+      running = false;
+      if (progressed) retryIndex = 0;
+      if (wakePending) {
+        wakePending = false;
+        void drain();
+      } else if (retry) {
+        scheduleRetry();
+      }
+    }
+  };
+
+  return {
+    wake() {
+      if (closed) return;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (running) {
+        wakePending = true;
+        return;
+      }
+      void drain();
+    },
+    close() {
+      closed = true;
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
   };
 }
 
@@ -194,7 +309,11 @@ export interface BootReconcile {
 }
 
 export function scheduleBootReconcile(input: {
-  relay: (status: TurnEndStatus, identity?: TurnEndIdentity | null) => Promise<void>;
+  relay: (status: TurnEndStatus, identity?: TurnEndIdentity | null) => Promise<unknown>;
+  /** Exact historical turns to reconcile. Every candidate is attempted once. */
+  candidates?: () => Array<{ status: TurnEndStatus; identity: TurnEndIdentity }>;
+  /** A recovered started turn closes as error; ordinary stale rows close idle. */
+  status?: () => TurnEndStatus;
   /** Read at fire time — the surface exists by then, and boot is not a turn. */
   identity?: () => TurnEndIdentity | null;
   delayMs?: number;
@@ -215,7 +334,14 @@ export function scheduleBootReconcile(input: {
       await wait(delayMs);
       // Re-checked AFTER the wait, which is the whole point of waiting.
       if (turnStarted) return;
-      await input.relay('idle', input.identity?.() ?? null);
+      const candidates = input.candidates?.() ?? [];
+      if (candidates.length > 0) {
+        for (const candidate of candidates) {
+          await input.relay(candidate.status, candidate.identity);
+        }
+        return;
+      }
+      await input.relay(input.status?.() ?? 'idle', input.identity?.() ?? null);
     },
   };
 }

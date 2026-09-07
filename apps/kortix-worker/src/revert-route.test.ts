@@ -1,13 +1,3 @@
-/**
- * Rewind must be served on the path the SDK actually calls.
- *
- * This is the abort bug's shape, and it is why this file exists separately from
- * the transcript tests. The SDK builds its OpenCode client with
- * `baseUrl = <backend>/p/<externalId>/8000`, so `session.revert()` resolves to
- * `<base>/session/:id/revert` — the RAW ROOT, no `/kortix/opencode` prefix.
- * Serving it anywhere else is indistinguishable from not implementing it: the
- * transcript tests would still pass and rewind would still do nothing.
- */
 import { describe, expect, test } from 'bun:test';
 import { mintRootId, RuntimeSurface } from './runtime-surface.ts';
 
@@ -76,29 +66,24 @@ const visible = (s: RuntimeSurface) =>
   s.transcript.page({ limit: 50, before: null }).messages.map((m) => m.info.id);
 
 describe('POST /session/:id/revert at the RAW ROOT', () => {
-  test('removes the tail and reports which ids went', async () => {
+  test('fails closed without changing the visible transcript', async () => {
     const s = surfaceWithHistory();
     const r = await call(s, 'POST', `/session/${ROOT}/revert`, { messageID: 'msg_03' });
     expect(r.handled).toBe(true);
-    expect(r.status).toBe(200);
-    expect(r.json.removed).toEqual(['msg_03', 'msg_04']);
-    expect(visible(s)).toEqual(['msg_01', 'msg_02']);
-  });
-
-  test('unrevert puts it back', async () => {
-    const s = surfaceWithHistory();
-    await call(s, 'POST', `/session/${ROOT}/revert`, { messageID: 'msg_03' });
-    const r = await call(s, 'POST', `/session/${ROOT}/unrevert`, {});
-    expect(r.status).toBe(200);
-    expect(r.json.restored).toEqual(['msg_03', 'msg_04']);
+    expect(r.status).toBe(501);
+    expect(r.json).toEqual({
+      code: 'feature_not_supported',
+      error: 'session rewind is not supported by the durable Pi runtime',
+    });
     expect(visible(s)).toEqual(['msg_01', 'msg_02', 'msg_03', 'msg_04']);
   });
 
-  test('a revert with no messageID is a 400, not a silent no-op', async () => {
+  test('fails closed for restore without changing the visible transcript', async () => {
     const s = surfaceWithHistory();
-    const r = await call(s, 'POST', `/session/${ROOT}/revert`, {});
-    expect(r.status).toBe(400);
-    expect(visible(s)).toHaveLength(4);
+    const r = await call(s, 'POST', `/session/${ROOT}/unrevert`, {});
+    expect(r.status).toBe(501);
+    expect(r.json.code).toBe('feature_not_supported');
+    expect(visible(s)).toEqual(['msg_01', 'msg_02', 'msg_03', 'msg_04']);
   });
 
   test('another session id is 404, never someone else’s transcript', async () => {

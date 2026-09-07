@@ -17,14 +17,20 @@
  * `Result.err` rather than letting them escape.
  */
 
-import { makeTransport, type RpcTransport } from './rpc-transport.ts';
+import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
+import {
+  makeTransport,
+  RpcCancellationError,
+  RpcUnauthorizedBeforeExecutionError,
+  type RpcTransport,
+} from './rpc-transport.ts';
 
 type Ok<T> = { ok: true; value: T };
 type Err<E> = { ok: false; error: E };
 type Result<T, E> = Ok<T> | Err<E>;
 
-const ok = <T,>(value: T): Ok<T> => ({ ok: true, value });
-const err = <E,>(error: E): Err<E> => ({ ok: false, error });
+const ok = <T>(value: T): Ok<T> => ({ ok: true, value });
+const err = <E>(error: E): Err<E> => ({ ok: false, error });
 
 const REPLAY_SAFE_RPC_OPERATIONS: ReadonlySet<string> = new Set([
   'absolutePath',
@@ -133,6 +139,7 @@ export class KortixExecutionEnv {
   private readonly headers: Record<string, string>;
   private readonly transport: RpcTransport;
   private readonly timeoutMs: number;
+  private readonly abortSettlements = new Set<Promise<void>>();
 
   /** Every RPC that crossed the boundary. The proof harness reads this. */
   readonly calls: Array<{ op: string; args: unknown }> = [];
@@ -156,30 +163,99 @@ export class KortixExecutionEnv {
    * This is where the per-turn RPC tax lives. The default transport negotiates
    * one multiplexed WebSocket and falls back to pooled HTTP for older images.
    */
-  private async rpc<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
+  private rpc<T>(
+    op: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Result<T, any>> {
     this.calls.push({ op, args });
-    // One retry for reads: a pooled keep-alive socket retired by the peer
-    // between calls is a transport artifact, not a tool failure. Mutations
-    // cannot be replayed because the daemon may commit the side effect before
-    // the response disappears.
-    const first = await this.rpcOnce<T>(op, args);
-    if (first.ok) return first;
-    const msg = String((first.error as any)?.message ?? '');
-    if (
-      REPLAY_SAFE_RPC_OPERATIONS.has(op) &&
-      /socket|ECONNRESET|closed|EPIPE/i.test(msg)
-    ) {
-      return this.rpcOnce<T>(op, args);
+    const operation = (async () => {
+      // One retry for reads: a pooled keep-alive socket retired by the peer
+      // between calls is a transport artifact, not a tool failure. Mutations
+      // cannot be replayed because the daemon may commit the side effect before
+      // the response disappears.
+      const first = await this.rpcOnce<T>(op, args, signal);
+      if (first.ok) return first;
+      const msg = String((first.error as any)?.message ?? '');
+      if (
+        !signal?.aborted &&
+        REPLAY_SAFE_RPC_OPERATIONS.has(op) &&
+        /socket|ECONNRESET|closed|EPIPE/i.test(msg)
+      ) {
+        return this.rpcOnce<T>(op, args, signal);
+      }
+      return first;
+    })();
+    if (signal) {
+      const trackAbort = () => {
+        const settlement = operation.then((result) => {
+          if (!result.ok && (result.error as { code?: unknown })?.code !== 'aborted') {
+            throw result.error;
+          }
+        });
+        this.abortSettlements.add(settlement);
+        void settlement.catch(() => {});
+      };
+      if (signal.aborted) trackAbort();
+      else signal.addEventListener('abort', trackAbort, { once: true });
+      void operation.then(
+        () => signal.removeEventListener('abort', trackAbort),
+        () => signal.removeEventListener('abort', trackAbort),
+      );
     }
-    return first;
+    return operation;
   }
 
-  private async rpcOnce<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
-    const timer = new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error('rpc timeout')), this.timeoutMs).unref?.(),
-    );
+  private async rpcOnce<T>(
+    op: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Result<T, any>> {
+    const operationController = new AbortController();
+    let abortSource: 'caller' | 'timeout' | undefined;
+    const abortFromCaller = () => {
+      if (operationController.signal.aborted) return;
+      abortSource = 'caller';
+      operationController.abort(signal?.reason);
+    };
+    if (signal?.aborted) abortFromCaller();
+    else signal?.addEventListener('abort', abortFromCaller, { once: true });
+
+    let transportOperation: Promise<any>;
     try {
-      const body: any = await Promise.race([this.transport.call(op, args, this.cwd), timer]);
+      transportOperation = Promise.resolve(
+        this.transport.call(op, args, this.cwd, operationController.signal),
+      );
+    } catch (error) {
+      transportOperation = Promise.reject(error);
+    }
+
+    const trackAbort = () => {
+      const settlement = transportOperation.then(
+        () => undefined,
+        (error) => {
+          if (error instanceof RpcCancellationError) throw error;
+        },
+      );
+      this.abortSettlements.add(settlement);
+      void settlement.catch(() => {});
+    };
+    if (operationController.signal.aborted) trackAbort();
+    else operationController.signal.addEventListener('abort', trackAbort, { once: true });
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timer = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        if (operationController.signal.aborted) return;
+        const error = new Error('rpc timeout');
+        abortSource = 'timeout';
+        operationController.abort(error);
+        reject(error);
+      }, this.timeoutMs);
+      timeout.unref?.();
+    });
+    try {
+      const body: any = await Promise.race([transportOperation, timer]);
       if (body?.ok) return ok(body.value as T);
       return err(
         new FileErrorLike(
@@ -190,80 +266,157 @@ export class KortixExecutionEnv {
       );
     } catch (e: any) {
       // Never throw. A dead environment is a Result, not an exception.
+      if (abortSource === 'caller' && !(e instanceof RpcCancellationError)) {
+        return err(new FileErrorLike('aborted', 'aborted'));
+      }
+      if (e instanceof RpcUnauthorizedBeforeExecutionError) {
+        return err(new FileErrorLike('rpc_unauthorized', e.message));
+      }
       return err(new FileErrorLike('unknown', String(e?.message ?? e)));
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      signal?.removeEventListener('abort', abortFromCaller);
+      operationController.signal.removeEventListener('abort', trackAbort);
     }
   }
 
   // ---- FileSystem ---------------------------------------------------------
-  absolutePath(path: string) { return this.rpc<string>('absolutePath', { path }); }
-  joinPath(parts: string[]) { return this.rpc<string>('joinPath', { parts }); }
-  readTextFile(path: string) { return this.rpc<string>('readTextFile', { path }); }
-  readTextLines(path: string, options?: { maxLines?: number }) {
-    return this.rpc<string[]>('readTextLines', { path, maxLines: options?.maxLines });
+  absolutePath(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<string>('absolutePath', { path }, abortSignal);
   }
-  async readBinaryFile(path: string): Promise<Result<Uint8Array, any>> {
-    const r = await this.rpc<string>('readBinaryFile', { path });
+  joinPath(parts: string[], abortSignal?: AbortSignal) {
+    return this.rpc<string>('joinPath', { parts }, abortSignal);
+  }
+  readTextFile(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<string>('readTextFile', { path }, abortSignal);
+  }
+  readTextLines(path: string, options?: { maxLines?: number; abortSignal?: AbortSignal }) {
+    return this.rpc<string[]>(
+      'readTextLines',
+      { path, maxLines: options?.maxLines },
+      options?.abortSignal,
+    );
+  }
+  async readBinaryFile(path: string, abortSignal?: AbortSignal): Promise<Result<Uint8Array, any>> {
+    const r = await this.rpc<string>('readBinaryFile', { path }, abortSignal);
     if (!r.ok) return r;
     return ok(Uint8Array.from(Buffer.from(r.value, 'base64')));
   }
-  writeFile(path: string, content: string | Uint8Array) {
+  writeFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal) {
     const isBin = typeof content !== 'string';
-    return this.rpc<void>('writeFile', {
-      path,
-      content: isBin ? Buffer.from(content as Uint8Array).toString('base64') : content,
-      encoding: isBin ? 'base64' : 'utf8',
-    });
+    return this.rpc<void>(
+      'writeFile',
+      {
+        path,
+        content: isBin ? Buffer.from(content as Uint8Array).toString('base64') : content,
+        encoding: isBin ? 'base64' : 'utf8',
+      },
+      abortSignal,
+    );
   }
-  appendFile(path: string, content: string | Uint8Array) {
+  appendFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal) {
     const isBin = typeof content !== 'string';
-    return this.rpc<void>('appendFile', {
-      path,
-      content: isBin ? Buffer.from(content as Uint8Array).toString('base64') : content,
-      encoding: isBin ? 'base64' : 'utf8',
-    });
+    return this.rpc<void>(
+      'appendFile',
+      {
+        path,
+        content: isBin ? Buffer.from(content as Uint8Array).toString('base64') : content,
+        encoding: isBin ? 'base64' : 'utf8',
+      },
+      abortSignal,
+    );
   }
-  renameFile(sourcePath: string, destinationPath: string) {
-    return this.rpc<void>('renameFile', { sourcePath, destinationPath });
+  renameFile(sourcePath: string, destinationPath: string, abortSignal?: AbortSignal) {
+    return this.rpc<void>('renameFile', { sourcePath, destinationPath }, abortSignal);
   }
-  fileInfo(path: string) { return this.rpc<any>('fileInfo', { path }); }
-  listDir(path: string) { return this.rpc<any[]>('listDir', { path }); }
-  canonicalPath(path: string) { return this.rpc<string>('canonicalPath', { path }); }
-  exists(path: string) { return this.rpc<boolean>('exists', { path }); }
-  createDir(path: string, options?: { recursive?: boolean }) {
-    return this.rpc<void>('createDir', { path, recursive: options?.recursive ?? true });
+  fileInfo(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<any>('fileInfo', { path }, abortSignal);
   }
-  remove(path: string, options?: { recursive?: boolean; force?: boolean }) {
-    return this.rpc<void>('remove', { path, recursive: !!options?.recursive, force: !!options?.force });
+  listDir(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<any[]>('listDir', { path }, abortSignal);
   }
-  createTempDir(prefix?: string) { return this.rpc<string>('createTempDir', { prefix: prefix ?? 'tmp-' }); }
-  createTempFile(options?: { prefix?: string; suffix?: string }) {
-    return this.rpc<string>('createTempFile', { prefix: options?.prefix ?? '', suffix: options?.suffix ?? '' });
+  canonicalPath(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<string>('canonicalPath', { path }, abortSignal);
+  }
+  exists(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<boolean>('exists', { path }, abortSignal);
+  }
+  createDir(path: string, options?: { recursive?: boolean; abortSignal?: AbortSignal }) {
+    return this.rpc<void>(
+      'createDir',
+      { path, recursive: options?.recursive ?? true },
+      options?.abortSignal,
+    );
+  }
+  remove(
+    path: string,
+    options?: { recursive?: boolean; force?: boolean; abortSignal?: AbortSignal },
+  ) {
+    return this.rpc<void>(
+      'remove',
+      { path, recursive: !!options?.recursive, force: !!options?.force },
+      options?.abortSignal,
+    );
+  }
+  createTempDir(prefix?: string, abortSignal?: AbortSignal) {
+    return this.rpc<string>('createTempDir', { prefix: prefix ?? 'tmp-' }, abortSignal);
+  }
+  createTempFile(options?: { prefix?: string; suffix?: string; abortSignal?: AbortSignal }) {
+    return this.rpc<string>(
+      'createTempFile',
+      { prefix: options?.prefix ?? '', suffix: options?.suffix ?? '' },
+      options?.abortSignal,
+    );
   }
 
   // ---- Shell --------------------------------------------------------------
-  async exec(command: string, options?: any): Promise<Result<{ stdout: string; stderr: string; exitCode: number }, any>> {
-    const r = await this.rpc<{ stdout: string; stderr: string; exitCode: number }>('exec', {
-      command,
-      cwd: options?.cwd,
-      env: options?.env,
-      // SECONDS -> MILLISECONDS. The two sides of this call disagreed on the
-      // unit: pi's ExecutionEnvironment contract is "Timeout in seconds"
-      // (@earendil-works/pi-agent-core harness/types.d.ts:205) and the Kortix
-      // daemon reads the field as `timeoutMs` and SIGKILLs on it
-      // (kortix-sandbox-agent-server routes/env-rpc.ts `case 'exec'`).
-      // Forwarding it unconverted killed every model-supplied timeout ~1000x
-      // early: `bash({ command: 'pnpm install', timeout: 600 })` — ten minutes
-      // — died after 600ms with exit code 124, and the model was told the
-      // command had timed out. Undefined stays undefined so the daemon applies
-      // its own default rather than 0.
-      timeout: toExecTimeoutMs(options?.timeout),
-    });
-    if (!r.ok) return err(new ExecutionErrorLike((r.error as any)?.code ?? 'unknown', String((r.error as any)?.message)));
+  async exec(
+    command: string,
+    options?: ShellExecOptions,
+  ): Promise<Result<{ stdout: string; stderr: string; exitCode: number }, any>> {
+    const r = await this.rpc<{ stdout: string; stderr: string; exitCode: number }>(
+      'exec',
+      {
+        command,
+        cwd: options?.cwd,
+        env: options?.env,
+        // SECONDS -> MILLISECONDS. The two sides of this call disagreed on the
+        // unit: pi's ExecutionEnvironment contract is "Timeout in seconds"
+        // (@earendil-works/pi-agent-core harness/types.d.ts:205) and the Kortix
+        // daemon reads the field as `timeoutMs` and SIGKILLs on it
+        // (kortix-sandbox-agent-server routes/env-rpc.ts `case 'exec'`).
+        // Forwarding it unconverted killed every model-supplied timeout ~1000x
+        // early: `bash({ command: 'pnpm install', timeout: 600 })` — ten minutes
+        // — died after 600ms with exit code 124, and the model was told the
+        // command had timed out. Undefined stays undefined so the daemon applies
+        // its own default rather than 0.
+        timeout: toExecTimeoutMs(options?.timeout),
+      },
+      options?.abortSignal,
+    );
+    if (!r.ok)
+      return err(
+        new ExecutionErrorLike(
+          (r.error as any)?.code ?? 'unknown',
+          String((r.error as any)?.message),
+        ),
+      );
     // Streaming callbacks are honoured after the fact for the spike; the real
     // implementation streams these over the multiplexed connection.
     if (options?.onStdout && r.value.stdout) options.onStdout(r.value.stdout);
     if (options?.onStderr && r.value.stderr) options.onStderr(r.value.stderr);
     return r;
+  }
+
+  async waitForAbortSettled(): Promise<void> {
+    while (this.abortSettlements.size > 0) {
+      const settlements = [...this.abortSettlements];
+      try {
+        await Promise.all(settlements);
+      } finally {
+        for (const settlement of settlements) this.abortSettlements.delete(settlement);
+      }
+    }
   }
 
   async cleanup(): Promise<void> {

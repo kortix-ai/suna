@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from './wire-message-id';
+import {
+  WIRE_ID_TIME_MASK,
+  WIRE_MESSAGE_ID,
+  canMintOrderedReplyAfter,
+  mintWireMessageId,
+  wireIdTime,
+} from './wire-message-id';
 
 /**
  * The worker used to mint `msg_pi00000001`. The web client splits messages
@@ -89,5 +95,24 @@ describe('ordering', () => {
     expect(wireIdTime(id)).toBe(time);
     expect(wireIdTime('msg_pi00000001')).toBeNull();
     expect(wireIdTime(null)).toBeNull();
+  });
+
+  test('rejects a user id that leaves fewer than two ordered reply clocks', () => {
+    const nowMs = Number(WIRE_ID_TIME_MASK / BigInt(0x1000));
+    const nearEnd = `msg_${(WIRE_ID_TIME_MASK - 1n).toString(16)}AAAAAAAAAAAAAA`;
+    const end = `msg_${WIRE_ID_TIME_MASK.toString(16)}AAAAAAAAAAAAAA`;
+
+    expect(canMintOrderedReplyAfter(nearEnd, nowMs)).toBe(false);
+    expect(canMintOrderedReplyAfter(end, nowMs)).toBe(false);
+  });
+
+  test('throws instead of wrapping when the ordering clock is exhausted', () => {
+    expect(() =>
+      mintWireMessageId({
+        nowMs: 0,
+        newestKnownTime: WIRE_ID_TIME_MASK,
+        random: () => 0,
+      }),
+    ).toThrow('wire message id ordering clock is exhausted');
   });
 });

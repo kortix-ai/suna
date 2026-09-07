@@ -49,6 +49,37 @@ Rejected and one-time replies do not create durable grants.
 Pending question and permission continuations still require a live worker.
 Durable approval grants do not make those blocked continuations restartable.
 
+## Turn admission and recovery
+
+The worker saves each accepted prompt before returning `204`. A serial queue
+starts prompts in durable acceptance order. Retrying the same `messageID` and
+input reuses the first admission. Reusing that ID with different input returns
+`409`. Cancelling a queued message commits before removing it from the UI.
+
+A turn-owner lease fences transcript writes and completion. A replacement
+worker resumes accepted prompts that never started. It does not replay a turn
+that could have executed a tool. It restores the committed answer or records
+one interruption, preserving message IDs and parent links.
+
+The session stays busy until durable reconciliation finishes. Recovery removes
+stale streamed messages before publishing idle. A durable completion also keeps
+its control-plane notification pending until delivery succeeds.
+
+Stop records an abort request and waits for the owner to acknowledge it. File
+and shell operations receive cancellation through the environment transport.
+The daemon kills the shell process group before acknowledging cancellation.
+An unreachable cancellation endpoint returns an error instead of claiming that
+the remote operation stopped. Runtime layer v47 supplies that endpoint.
+
+An authentication rejection before execution allows one credential refresh and
+retry. A disconnected mutation is never replayed because its side effect can
+already have committed. Read operations can retry after reconnecting.
+
+Prompt routes currently accept text parts, `messageID`, and the compiled agent
+and model. Unsupported fields return `400` before admission. The body and each
+durable log item are limited to 512 KiB. Attachments and the remaining OpenCode
+prompt options are still compatibility gaps.
+
 The direct Pi versus OpenCode benchmark and its raw measurements are documented
 in [`DIRECT_ENVIRONMENT.md`](../../spikes/pi-worker/bench/DIRECT_ENVIRONMENT.md).
 

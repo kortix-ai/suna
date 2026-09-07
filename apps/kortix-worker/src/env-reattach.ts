@@ -46,6 +46,11 @@ const UNREACHABLE = [
   /unexpected server response/i,
 ];
 
+export function isEnvironmentAuthenticationRejected(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  return (error as { code?: unknown }).code === 'rpc_unauthorized';
+}
+
 export function isEnvironmentUnreachable(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const { code, message } = error as { code?: unknown; message?: unknown };

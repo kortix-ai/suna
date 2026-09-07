@@ -16,13 +16,17 @@
  * a Result the tool renders, not a crash.
  */
 import { createHmac } from 'node:crypto';
+import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
 import { KortixExecutionEnv } from './kortix-env.ts';
-import { isEnvironmentUnreachable } from './env-reattach.ts';
+import {
+  isEnvironmentAuthenticationRejected,
+  isEnvironmentUnreachable,
+} from './env-reattach.ts';
 
 type Ok<T> = { ok: true; value: T };
 type Err<E> = { ok: false; error: E };
 type Result<T, E> = Ok<T> | Err<E>;
-const err = <E,>(error: E): Err<E> => ({ ok: false, error });
+const err = <E>(error: E): Err<E> => ({ ok: false, error });
 
 /**
  * The environment went away mid-operation and has been re-attached, but the
@@ -41,6 +45,14 @@ class EnvUnavailableError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'EnvUnavailableError';
+  }
+}
+
+class OperationAbortedError extends Error {
+  code = 'aborted';
+  constructor() {
+    super('aborted');
+    this.name = 'OperationAbortedError';
   }
 }
 
@@ -70,9 +82,8 @@ export function mintUserContext(secret: string, sandboxId: string): string {
         sandboxRole: 'owner',
         scopes: [],
         iat: Math.floor(Date.now() / 1000),
-        // Long-lived on purpose: the env object holds static headers for the
-        // session's whole life, and the real secret is the session token the
-        // signature already depends on.
+        // Long enough to avoid per-call signing. A 401 rejects the call before
+        // execution, so op() discards this client and remints through attach().
         exp: Math.floor(Date.now() / 1000) + 24 * 3600,
       }),
     ),
@@ -181,10 +192,7 @@ export class LazyKortixEnv {
       }
       const edge = ensured.preview_url.replace(/\/+$/, '');
       const headers: Record<string, string> = {
-        'x-kortix-user-context': mintUserContext(
-          ensured.rpc_secret,
-          ensured.external_id ?? 'env',
-        ),
+        'x-kortix-user-context': mintUserContext(ensured.rpc_secret, ensured.external_id ?? 'env'),
         ...(ensured.preview_token ? { 'x-daytona-preview-token': ensured.preview_token } : {}),
       };
       // Wait for the daemon (repo materialization included) before first use.
@@ -237,7 +245,8 @@ export class LazyKortixEnv {
    * branch now do exactly that (idle-stop at 24h, worker-stopped, and a removed
    * box reprovisioned under a NEW id).
    */
-  private discardEnvironment(): void {
+  private discardEnvironment(expected?: KortixExecutionEnv): void {
+    if (expected && this.inner !== expected) return;
     this.inner = null;
     this.attaching = null;
     this.externalId = null;
@@ -261,25 +270,62 @@ export class LazyKortixEnv {
   private async op<T>(
     run: (env: KortixExecutionEnv) => Promise<Result<T, unknown>>,
     /**
-     * Does this operation CHANGE the environment? Reads may be replayed for
-     * free; nothing else may be replayed at all. See the note in `op` below.
+     * Does this operation CHANGE the environment? Reads may be replayed after
+     * an ambiguous transport failure. Mutations may only be replayed after the
+     * daemon definitively rejects authentication before execution.
      */
     mutating: boolean,
+    signal?: AbortSignal,
   ): Promise<Result<T, unknown>> {
+    if (signal?.aborted) return err(new OperationAbortedError());
     try {
-      const first = await run(await this.attach());
-      if (first.ok || !isEnvironmentUnreachable(first.error)) return first;
+      const attached = this.attach();
+      const env = signal
+        ? await new Promise<KortixExecutionEnv>((resolve, reject) => {
+            const onAbort = () => reject(new OperationAbortedError());
+            if (signal.aborted) {
+              onAbort();
+              return;
+            }
+            signal.addEventListener('abort', onAbort, { once: true });
+            void attached.then(
+              (value) => {
+                signal.removeEventListener('abort', onAbort);
+                resolve(value);
+              },
+              (error) => {
+                signal.removeEventListener('abort', onAbort);
+                reject(error);
+              },
+            );
+          })
+        : await attached;
+      const first = await run(env);
+      if (signal?.aborted) return err(new OperationAbortedError());
+      if (first.ok) return first;
+
+      if (isEnvironmentAuthenticationRejected(first.error)) {
+        this.discardEnvironment(env);
+        const refreshed = await this.attach();
+        const retried = await run(refreshed);
+        if (!retried.ok && isEnvironmentAuthenticationRejected(retried.error)) {
+          this.discardEnvironment(refreshed);
+        }
+        return retried;
+      }
+
+      if (!isEnvironmentUnreachable(first.error)) return first;
 
       // Nothing answered. The box may have been stopped, deleted, or rebuilt
       // under a new id since we attached — all three are states the control
       // plane creates deliberately and can serve us out of. Re-attaching is
       // what unwedges the session, and it happens either way.
-      this.discardEnvironment();
+      this.discardEnvironment(env);
       await this.attach();
 
       if (!mutating) return await run(await this.attach());
 
-      // A mutating operation is NEVER replayed.
+      // A mutating operation is never replayed after an ambiguous failure.
       //
       // The inner RPC layer also restricts its socket-error retry to read-only
       // operations. Keep both boundaries fail-closed: `rpc timeout` and
@@ -307,40 +353,69 @@ export class LazyKortixEnv {
   }
 
   // ---- FileSystem (same surface as KortixExecutionEnv) --------------------
-  absolutePath(path: string) { return this.op((env) => env.absolutePath(path), false); }
-  joinPath(parts: string[]) { return this.op((env) => env.joinPath(parts), false); }
-  readTextFile(path: string) { return this.op((env) => env.readTextFile(path), false); }
-  readTextLines(path: string, options?: { maxLines?: number }) {
-    return this.op((env) => env.readTextLines(path, options), false);
+  absolutePath(path: string, abortSignal?: AbortSignal) {
+    return this.op((env) => env.absolutePath(path, abortSignal), false, abortSignal);
   }
-  readBinaryFile(path: string) { return this.op((env) => env.readBinaryFile(path), false); }
-  writeFile(path: string, content: string | Uint8Array) {
-    return this.op((env) => env.writeFile(path, content), true);
+  joinPath(parts: string[], abortSignal?: AbortSignal) {
+    return this.op((env) => env.joinPath(parts, abortSignal), false, abortSignal);
   }
-  appendFile(path: string, content: string | Uint8Array) {
-    return this.op((env) => env.appendFile(path, content), true);
+  readTextFile(path: string, abortSignal?: AbortSignal) {
+    return this.op((env) => env.readTextFile(path, abortSignal), false, abortSignal);
   }
-  renameFile(sourcePath: string, destinationPath: string) {
-    return this.op((env) => env.renameFile(sourcePath, destinationPath), true);
+  readTextLines(path: string, options?: { maxLines?: number; abortSignal?: AbortSignal }) {
+    return this.op((env) => env.readTextLines(path, options), false, options?.abortSignal);
   }
-  fileInfo(path: string) { return this.op((env) => env.fileInfo(path), false); }
-  listDir(path: string) { return this.op((env) => env.listDir(path), false); }
-  canonicalPath(path: string) { return this.op((env) => env.canonicalPath(path), false); }
-  exists(path: string) { return this.op((env) => env.exists(path), false); }
-  createDir(path: string, options?: { recursive?: boolean }) {
-    return this.op((env) => env.createDir(path, options), true);
+  readBinaryFile(path: string, abortSignal?: AbortSignal) {
+    return this.op((env) => env.readBinaryFile(path, abortSignal), false, abortSignal);
   }
-  remove(path: string, options?: { recursive?: boolean; force?: boolean }) {
-    return this.op((env) => env.remove(path, options), true);
+  writeFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal) {
+    return this.op((env) => env.writeFile(path, content, abortSignal), true, abortSignal);
   }
-  createTempDir(prefix?: string) { return this.op((env) => env.createTempDir(prefix), true); }
-  createTempFile(options?: { prefix?: string; suffix?: string }) {
-    return this.op((env) => env.createTempFile(options), true);
+  appendFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal) {
+    return this.op((env) => env.appendFile(path, content, abortSignal), true, abortSignal);
+  }
+  renameFile(sourcePath: string, destinationPath: string, abortSignal?: AbortSignal) {
+    return this.op(
+      (env) => env.renameFile(sourcePath, destinationPath, abortSignal),
+      true,
+      abortSignal,
+    );
+  }
+  fileInfo(path: string, abortSignal?: AbortSignal) {
+    return this.op((env) => env.fileInfo(path, abortSignal), false, abortSignal);
+  }
+  listDir(path: string, abortSignal?: AbortSignal) {
+    return this.op((env) => env.listDir(path, abortSignal), false, abortSignal);
+  }
+  canonicalPath(path: string, abortSignal?: AbortSignal) {
+    return this.op((env) => env.canonicalPath(path, abortSignal), false, abortSignal);
+  }
+  exists(path: string, abortSignal?: AbortSignal) {
+    return this.op((env) => env.exists(path, abortSignal), false, abortSignal);
+  }
+  createDir(path: string, options?: { recursive?: boolean; abortSignal?: AbortSignal }) {
+    return this.op((env) => env.createDir(path, options), true, options?.abortSignal);
+  }
+  remove(
+    path: string,
+    options?: { recursive?: boolean; force?: boolean; abortSignal?: AbortSignal },
+  ) {
+    return this.op((env) => env.remove(path, options), true, options?.abortSignal);
+  }
+  createTempDir(prefix?: string, abortSignal?: AbortSignal) {
+    return this.op((env) => env.createTempDir(prefix, abortSignal), true, abortSignal);
+  }
+  createTempFile(options?: { prefix?: string; suffix?: string; abortSignal?: AbortSignal }) {
+    return this.op((env) => env.createTempFile(options), true, options?.abortSignal);
   }
 
   // ---- Shell --------------------------------------------------------------
-  exec(command: string, options?: unknown) {
-    return this.op((env) => env.exec(command, options), true);
+  exec(command: string, options?: ShellExecOptions) {
+    return this.op((env) => env.exec(command, options), true, options?.abortSignal);
+  }
+
+  async waitForAbortSettled(): Promise<void> {
+    await this.inner?.waitForAbortSettled();
   }
 
   async cleanup(): Promise<void> {

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   buildTurnEndRelay,
+  createTurnEndRelayDrain,
   scheduleBootReconcile,
   turnEndPayload,
   turnEndUrl,
@@ -112,7 +113,11 @@ describe('turnEndPayload', () => {
 
   test('omits an unknown id rather than sending null, which the API reads as absent', () => {
     expect(
-      turnEndPayload({ sessionId: 'sess-1', status: 'idle', identity: { opencodeSessionId: 'ses_pi123', messageId: null } }),
+      turnEndPayload({
+        sessionId: 'sess-1',
+        status: 'idle',
+        identity: { opencodeSessionId: 'ses_pi123', messageId: null },
+      }),
     ).toEqual({
       session_id: 'sess-1',
       kind: 'turn_end',
@@ -137,7 +142,7 @@ describe('buildTurnEndRelay', () => {
       }) as unknown as typeof fetch,
     });
 
-    await relay('idle');
+    expect(await relay('idle')).toBe(true);
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe('https://api.example.test/v1/projects/proj-1/turn-stream');
@@ -155,7 +160,9 @@ describe('buildTurnEndRelay', () => {
       }) as unknown as typeof fetch,
     });
 
-    await relay('idle', { opencodeSessionId: 'ses_pi999', messageId: 'msg_zzz' });
+    expect(await relay('idle', { opencodeSessionId: 'ses_pi999', messageId: 'msg_zzz' })).toBe(
+      true,
+    );
 
     expect(body).toMatchObject({ opencode_session_id: 'ses_pi999', turn_message_id: 'msg_zzz' });
   });
@@ -172,13 +179,34 @@ describe('buildTurnEndRelay', () => {
       }) as unknown as typeof fetch,
     });
 
-    await relay('idle');
+    expect(await relay('idle')).toBe(true);
     expect(attempts).toBe(3);
   });
 
-  test('stops on ANY ok response — a non-ok 4xx is a definitive answer, not a retry', async () => {
-    // Mirrors the daemon's own rule: apps/api answering "already finalized" is
-    // an answer. Only network/5xx failures are worth another attempt.
+  test('times out a half-open request and continues the retry budget', async () => {
+    let attempts = 0;
+    const relay = buildTurnEndRelay({
+      ...cfg,
+      requestTimeoutMs: 5,
+      waitMs: async () => {},
+      fetch: (async (_url: unknown, init?: RequestInit) => {
+        attempts += 1;
+        if (attempts > 1) return { ok: true, status: 200 } as Response;
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+            once: true,
+          });
+        });
+      }) as typeof fetch,
+    });
+
+    expect(await relay('idle')).toBe(true);
+    expect(attempts).toBe(2);
+  });
+
+  test('retries non-ok responses and leaves the durable relay marker unresolved', async () => {
+    // Mirrors the daemon: only an ok response proves that apps/api received the
+    // terminal transition. A non-ok response must remain recoverable on restart.
     let attempts = 0;
     const relay = buildTurnEndRelay({
       ...cfg,
@@ -189,8 +217,8 @@ describe('buildTurnEndRelay', () => {
       }) as unknown as typeof fetch,
     });
 
-    await relay('idle');
-    expect(attempts).toBe(1);
+    expect(await relay('idle')).toBe(false);
+    expect(attempts).toBe(4);
   });
 
   test('gives up after its budget rather than retrying forever', async () => {
@@ -204,7 +232,7 @@ describe('buildTurnEndRelay', () => {
       }) as unknown as typeof fetch,
     });
 
-    await relay('idle');
+    expect(await relay('idle')).toBe(false);
     expect(attempts).toBe(4);
   });
 
@@ -216,7 +244,7 @@ describe('buildTurnEndRelay', () => {
         throw new Error('boom');
       }) as unknown as typeof fetch,
     });
-    await expect(relay('idle')).resolves.toBeUndefined();
+    await expect(relay('idle')).resolves.toBe(false);
   });
 
   test('is inert when the platform did not inject the wiring', async () => {
@@ -229,9 +257,42 @@ describe('buildTurnEndRelay', () => {
     }) as unknown as typeof fetch;
     for (const missing of ['apiUrl', 'projectId', 'sessionId', 'kortixToken'] as const) {
       const relay = buildTurnEndRelay({ ...cfg, [missing]: undefined, fetch: spyFetch });
-      await relay('idle');
+      expect(await relay('idle')).toBe(true);
     }
     expect(called).toBe(false);
+  });
+});
+
+describe('createTurnEndRelayDrain', () => {
+  test('retries a durable terminal turn in-process until it is relayed', async () => {
+    const pending = [{ messageId: 'msg_1', status: 'error' as const }];
+    const attempts: string[] = [];
+    let marked!: () => void;
+    const delivered = new Promise<void>((resolve) => {
+      marked = resolve;
+    });
+    const drain = createTurnEndRelayDrain({
+      pending: () => [...pending],
+      relay: async (_status, identity) => {
+        attempts.push(identity?.messageId ?? 'missing');
+        return attempts.length > 1;
+      },
+      markRelayed: async (messageId) => {
+        pending.splice(
+          pending.findIndex((turn) => turn.messageId === messageId),
+          1,
+        );
+        marked();
+      },
+      retryDelaysMs: [0],
+    });
+
+    drain.wake();
+    await delivered;
+
+    expect(attempts).toEqual(['msg_1', 'msg_1']);
+    expect(pending).toEqual([]);
+    drain.close();
   });
 });
 
@@ -259,6 +320,58 @@ describe('scheduleBootReconcile', () => {
     const reconcile = scheduleBootReconcile({ relay, delayMs: 0, wait: async () => {} });
     await reconcile.run();
     expect(sent).toEqual(['idle']);
+  });
+
+  test('closes a recovered started turn with its terminal error status and identity', async () => {
+    const sent: Array<{ status: TurnEndStatus; identity: unknown }> = [];
+    const reconcile = scheduleBootReconcile({
+      relay: async (status, identity) => void sent.push({ status, identity }),
+      status: () => 'error',
+      identity: () => ({ opencodeSessionId: 'ses_pi1', messageId: 'msg_started' }),
+      delayMs: 0,
+      wait: async () => {},
+    });
+
+    await reconcile.run();
+
+    expect(sent).toEqual([
+      {
+        status: 'error',
+        identity: { opencodeSessionId: 'ses_pi1', messageId: 'msg_started' },
+      },
+    ]);
+  });
+
+  test('reconciles every identified historical turn with its own terminal status', async () => {
+    const sent: Array<{ status: TurnEndStatus; identity: unknown }> = [];
+    const reconcile = scheduleBootReconcile({
+      relay: async (status, identity) => void sent.push({ status, identity }),
+      candidates: () => [
+        {
+          status: 'idle',
+          identity: { opencodeSessionId: 'ses_pi1', messageId: 'msg_first' },
+        },
+        {
+          status: 'error',
+          identity: { opencodeSessionId: 'ses_pi1', messageId: 'msg_second' },
+        },
+      ],
+      delayMs: 0,
+      wait: async () => {},
+    });
+
+    await reconcile.run();
+
+    expect(sent).toEqual([
+      {
+        status: 'idle',
+        identity: { opencodeSessionId: 'ses_pi1', messageId: 'msg_first' },
+      },
+      {
+        status: 'error',
+        identity: { opencodeSessionId: 'ses_pi1', messageId: 'msg_second' },
+      },
+    ]);
   });
 
   test('THE RACE: stands down when a turn started during the delay', async () => {

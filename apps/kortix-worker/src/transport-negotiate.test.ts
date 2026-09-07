@@ -13,7 +13,12 @@
  * fails — an old box must lose one connect attempt, not one tool call.
  */
 import { describe, expect, test } from 'bun:test';
-import { NegotiatingTransport, type RpcTransport } from './rpc-transport.ts';
+import {
+  NegotiatingTransport,
+  RpcUnavailableBeforeSendError,
+  type RpcTransport,
+  withCancellation,
+} from './rpc-transport.ts';
 
 function stub(kind: string, behaviour: { fail?: boolean } = {}): RpcTransport & { calls: number } {
   return {
@@ -21,7 +26,7 @@ function stub(kind: string, behaviour: { fail?: boolean } = {}): RpcTransport & 
     calls: 0,
     async call(op: string) {
       (this as unknown as { calls: number }).calls += 1;
-      if (behaviour.fail) throw new Error('connect ECONNREFUSED');
+      if (behaviour.fail) throw new RpcUnavailableBeforeSendError('connect ECONNREFUSED');
       return { ok: true, value: `${kind}:${op}` };
     },
     async close() {},
@@ -29,6 +34,23 @@ function stub(kind: string, behaviour: { fail?: boolean } = {}): RpcTransport & 
 }
 
 describe('transport negotiation', () => {
+  test('cancels an operation when abort wins before listener setup', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let cancellations = 0;
+
+    await expect(
+      withCancellation(
+        Promise.reject(new Error('request aborted')),
+        controller.signal,
+        async () => {
+          cancellations += 1;
+        },
+      ),
+    ).rejects.toThrow();
+    expect(cancellations).toBe(1);
+  });
+
   test('uses the socket when it works', async () => {
     const ws = stub('ws');
     const fallback = stub('keepalive');
@@ -84,6 +106,43 @@ describe('transport negotiation', () => {
     await t.call('first', {}, '/w');
     failNow = true;
     await expect(t.call('second', {}, '/w')).rejects.toThrow(/socket closed/);
+    expect(fallback.calls).toBe(0);
+  });
+
+  test('does not replay the first operation after an ambiguous socket failure', async () => {
+    const ws: RpcTransport = {
+      kind: 'ws',
+      async call() {
+        throw new Error('rpc socket closed after request send');
+      },
+      async close() {},
+    };
+    const fallback = stub('keepalive');
+    const t = new NegotiatingTransport(ws, fallback);
+
+    await expect(t.call('writeFile', {}, '/w')).rejects.toThrow(/after request send/);
+
+    expect(fallback.calls).toBe(0);
+  });
+
+  test('forwards AbortSignal and never falls back after cancellation', async () => {
+    const controller = new AbortController();
+    let observedSignal: AbortSignal | undefined;
+    const ws: RpcTransport = {
+      kind: 'ws',
+      async call(_op, _args, _cwd, signal) {
+        observedSignal = signal;
+        controller.abort();
+        throw signal?.reason ?? new Error('aborted');
+      },
+      async close() {},
+    };
+    const fallback = stub('keepalive');
+    const t = new NegotiatingTransport(ws, fallback);
+
+    await expect(t.call('exec', {}, '/w', controller.signal)).rejects.toThrow();
+
+    expect(observedSignal).toBe(controller.signal);
     expect(fallback.calls).toBe(0);
   });
 

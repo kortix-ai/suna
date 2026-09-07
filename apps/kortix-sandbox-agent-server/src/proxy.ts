@@ -1,43 +1,45 @@
-import { Hono, type Context } from 'hono'
-import { BOOT_PHASE_HEADER, bootPhaseLabel } from './boot-phase'
-import { runtimeAssetsActivity } from './runtime-assets'
-import { egressShimPort } from './egress-shim'
-import type { ServerWebSocket } from 'bun'
+import { Hono, type Context } from 'hono';
+import { BOOT_PHASE_HEADER, bootPhaseLabel } from './boot-phase';
+import { runtimeAssetsActivity } from './runtime-assets';
+import { egressShimPort } from './egress-shim';
+import type { ServerWebSocket } from 'bun';
 
-import type { Config } from './config'
-import { logger } from './logger'
-import { createPartRouter } from './routes/part'
-import { stripInlineAttachmentBytes } from './inline-attachments'
-import { withSseKeepalive } from './sse-keepalive'
-import type { Opencode } from './opencode'
-import { isRepoMaterialized } from './git'
-import { createHealthRouter, type SandboxBootState } from './routes/health'
-import { createRefreshRouter } from './routes/refresh'
-import { createLogsRouter } from './routes/logs'
-import { createDiagRouter } from './routes/diag'
-import { type ResourceMonitor, startResourceMonitor } from './resources'
-import { defaultSidecarDir, opencodeDbPath, runAttachmentOffloadPass } from './attachment-offload'
-import { opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state'
-import { OPENCODE_HOME } from './opencode'
-import { createAbortRouter } from './routes/abort'
-import { createEnvRouter } from './routes/env'
-import { createEnvRpcRouter, environmentRpcSecret } from './routes/env-rpc'
-import { createGitRouter } from './routes/git'
-import { createPortProxyRouter } from './routes/port-proxy'
-import { createFilesRouter } from './routes/files'
-import { createFindRouter } from './routes/find'
-import { createPresentationRouter } from './routes/presentation'
-import { createWebProxyRouter } from './routes/web-proxy'
-import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
-import { createOpencodeRuntimeRouter } from './routes/opencode-runtime'
-import { OpencodeDb } from './opencode-db'
-import { configureRuntimeState, runtimeStateStore } from './runtime-state-projection'
-import { registerAgentSwapBlocker, runtimeConvergenceReport } from './runtime-assets'
-import type { ProjectEnvStore } from './project-env'
+import type { Config } from './config';
+import { logger } from './logger';
+import { createPartRouter } from './routes/part';
+import { stripInlineAttachmentBytes } from './inline-attachments';
+import { withSseKeepalive } from './sse-keepalive';
+import type { Opencode } from './opencode';
+import { isRepoMaterialized } from './git';
+import { createHealthRouter, type SandboxBootState } from './routes/health';
+import { createRefreshRouter } from './routes/refresh';
+import { createLogsRouter } from './routes/logs';
+import { createDiagRouter } from './routes/diag';
+import { type ResourceMonitor, startResourceMonitor } from './resources';
+import { defaultSidecarDir, opencodeDbPath, runAttachmentOffloadPass } from './attachment-offload';
+import { opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state';
+import { OPENCODE_HOME } from './opencode';
+import { createAbortRouter } from './routes/abort';
+import { createEnvRouter } from './routes/env';
+import { createEnvRpcRouter, environmentRpcSecret } from './routes/env-rpc';
+import { createGitRouter } from './routes/git';
+import { createPortProxyRouter } from './routes/port-proxy';
+import { createFilesRouter } from './routes/files';
+import { createFindRouter } from './routes/find';
+import { createPresentationRouter } from './routes/presentation';
+import { createWebProxyRouter } from './routes/web-proxy';
 import {
-  KORTIX_USER_CONTEXT_HEADER,
-  verifyKortixUserContext,
-} from './kortix-user-context'
+  createPtyRegistry,
+  createPtyRouter,
+  type PtyAttachHandle,
+  type PtyRegistry,
+} from './routes/pty';
+import { createOpencodeRuntimeRouter } from './routes/opencode-runtime';
+import { OpencodeDb } from './opencode-db';
+import { configureRuntimeState, runtimeStateStore } from './runtime-state-projection';
+import { registerAgentSwapBlocker, runtimeConvergenceReport } from './runtime-assets';
+import type { ProjectEnvStore } from './project-env';
+import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from './kortix-user-context';
 
 // Headers that must not be forwarded — they're connection-scoped or set by us.
 const STRIP_REQUEST_HEADERS = new Set([
@@ -45,19 +47,19 @@ const STRIP_REQUEST_HEADERS = new Set([
   'connection',
   'content-length',
   'transfer-encoding',
-])
+]);
 
-const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
+const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection']);
 
 // The id segment is optional: connecting with no id (or an id the daemon
 // doesn't recognize) still opens a working terminal — see the lookup-or-
 // create handling in the `open` websocket handler below.
-const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty(?:\/([^/]+))?\/connect\/?$/
-const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
+const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty(?:\/([^/]+))?\/connect\/?$/;
+const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 // One per process: the periodic box telemetry (resources.ts). Started by
 // startProxy, read by /kortix/diag. Null in unit tests that build the app only.
-let resourceMonitor: ResourceMonitor | null = null
+let resourceMonitor: ResourceMonitor | null = null;
 
 // Bound on waiting for opencode to respond to a proxied request. Applied only
 // to the wait for the response to arrive (headers), never to a streaming body
@@ -71,7 +73,7 @@ let resourceMonitor: ResourceMonitor | null = null
 // surfaces as a confusing "blocked by CORS" error with no real diagnostic
 // value. Failing fast here instead gives a clean 502 that apps/api's own
 // retry+auto-wake loop can act on immediately.
-const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
+const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000;
 
 // The exception the bound above cannot express, and the omission that produced
 // the "upstream unreachable" banner in chat (2026-08-11, session 9f6b0d87).
@@ -94,7 +96,7 @@ const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
 // A generous ceiling rather than none: a genuinely wedged opencode must still
 // be caught eventually, and apps/api's own 50s proxy budget already bounds what
 // the browser waits for. This only stops the daemon severing a live turn first.
-const LONG_TURN_RESPONSE_TIMEOUT_MS = 10 * 60_000
+const LONG_TURN_RESPONSE_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * Does opencode withhold this response until a whole turn completes?
@@ -109,24 +111,25 @@ export function isBlockingTurnRequest(method: string, path: string): boolean {
   return (
     method.toUpperCase() === 'POST' &&
     /^\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(path)
-  )
+  );
 }
 
 type OpencodeWsData = {
   /** Absent means pty, the original and still the common case. */
-  kind?: 'pty' | 'env-rpc'
+  kind?: 'pty' | 'env-rpc';
   // Absent when the client connects without an id — lookup-or-create then
   // mints a brand new pty (see `websocket.open` below).
-  ptyId?: string
-  handle?: PtyAttachHandle
+  ptyId?: string;
+  handle?: PtyAttachHandle;
   /**
    * env-rpc only: the caller's verified user-context header, replayed onto the
    * synthetic request below so the RPC route authenticates exactly as it does
    * over HTTP. Verified once at upgrade time; kept so each frame does not have
    * to re-present it.
    */
-  userContext?: string
-}
+  userContext?: string;
+  envRpcControllers?: Map<string, AbortController>;
+};
 
 /**
  * The env-rpc websocket. One connection per session instead of one HTTP request
@@ -142,13 +145,13 @@ type OpencodeWsData = {
  * existed, the transport it measured was not something a real session could
  * use at all.
  */
-const KORTIX_ENV_RPC_WS_PATH_RE = /^\/kortix\/env-rpc\/rpc-ws\/?$/
+const KORTIX_ENV_RPC_WS_PATH_RE = /^\/kortix\/env-rpc\/rpc-ws\/?$/;
 
 function jsonError(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
-  })
+  });
 }
 
 // The Kortix-native PTY WS upgrade — independent of opencode/repo readiness
@@ -159,31 +162,33 @@ function prepareKortixPtyWsUpgrade(
   req: Request,
   cfg: Config,
 ): { ok: true; data: OpencodeWsData } | { ok: false; response: Response } {
-  const url = new URL(req.url)
-  const match = KORTIX_PTY_WS_PATH_RE.exec(url.pathname)
+  const url = new URL(req.url);
+  const match = KORTIX_PTY_WS_PATH_RE.exec(url.pathname);
   if (!match) {
-    return { ok: false, response: jsonError(404, { error: 'unsupported websocket path' }) }
+    return { ok: false, response: jsonError(404, { error: 'unsupported websocket path' }) };
   }
   // Absent when the client connects with no id segment at all (e.g.
   // `/kortix/pty/connect`) — lookup-or-create mints a fresh pty either way.
-  const ptyId = match[1]
+  const ptyId = match[1];
 
   if (!cfg.sandboxToken) {
-    logger.warn('[pty] rejecting websocket: KORTIX_TOKEN not configured')
+    logger.warn('[pty] rejecting websocket: KORTIX_TOKEN not configured');
     return {
       ok: false,
       response: jsonError(503, { error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }),
-    }
+    };
   }
 
-  const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER) ?? url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
-  const auth = verifyKortixUserContext(header, cfg.sandboxToken)
+  const header =
+    req.headers.get(KORTIX_USER_CONTEXT_HEADER) ??
+    url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM);
+  const auth = verifyKortixUserContext(header, cfg.sandboxToken);
   if (!auth.ok) {
-    logger.warn('[pty] reject websocket', { reason: auth.reason, path: url.pathname })
-    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
+    logger.warn('[pty] reject websocket', { reason: auth.reason, path: url.pathname });
+    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) };
   }
 
-  return { ok: true, data: { ptyId } }
+  return { ok: true, data: { ptyId } };
 }
 
 /**
@@ -205,32 +210,76 @@ async function handleEnvRpcFrame(
   app: { fetch: (req: Request) => Response | Promise<Response> },
   raw: string,
 ): Promise<void> {
-  let id: unknown
+  let id: unknown;
+  let activeRequestId: string | null = null;
   try {
-    const frame = JSON.parse(raw) as { id?: unknown; op?: unknown; args?: unknown; cwd?: unknown }
-    id = frame.id
-    const headers: Record<string, string> = { 'content-type': 'application/json' }
-    if (ws.data.userContext) headers[KORTIX_USER_CONTEXT_HEADER] = ws.data.userContext
+    const frame = JSON.parse(raw) as {
+      id?: unknown;
+      type?: unknown;
+      op?: unknown;
+      args?: unknown;
+      cwd?: unknown;
+      requestId?: unknown;
+    };
+    id = frame.id;
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (ws.data.userContext) headers[KORTIX_USER_CONTEXT_HEADER] = ws.data.userContext;
+    const requestId =
+      typeof frame.requestId === 'string' && frame.requestId.length > 0
+        ? frame.requestId
+        : String(frame.id ?? '');
+    if (frame.type === 'cancel') {
+      ws.data.envRpcControllers?.get(requestId)?.abort();
+      const res = await app.fetch(
+        new Request('http://daemon/kortix/env-rpc/cancel', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ requestId }),
+        }),
+      );
+      const body = await res.json().catch(() => ({
+        ok: false,
+        error: { code: 'unknown', message: 'bad cancellation response' },
+      }));
+      ws.send(JSON.stringify({ id, body }));
+      return;
+    }
+    const controller = new AbortController();
+    ws.data.envRpcControllers?.set(requestId, controller);
+    activeRequestId = requestId;
     const res = await app.fetch(
       new Request('http://daemon/kortix/env-rpc/rpc', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ op: frame.op, args: frame.args, cwd: frame.cwd }),
+        body: JSON.stringify({
+          op: frame.op,
+          args: frame.args,
+          cwd: frame.cwd,
+          requestId,
+        }),
+        signal: controller.signal,
       }),
-    )
-    const body = await res.json().catch(() => ({ ok: false, error: { code: 'unknown', message: 'bad rpc response' } }))
-    ws.send(JSON.stringify({ id, body }))
+    );
+    const body = await res
+      .json()
+      .catch(() => ({ ok: false, error: { code: 'unknown', message: 'bad rpc response' } }));
+    ws.send(JSON.stringify({ id, body }));
   } catch (e) {
     try {
       ws.send(
         JSON.stringify({
           id: id ?? null,
-          body: { ok: false, error: { code: 'unknown', message: String((e as Error)?.message ?? e) } },
+          body: {
+            ok: false,
+            error: { code: 'unknown', message: String((e as Error)?.message ?? e) },
+          },
         }),
-      )
+      );
     } catch {
       // socket already gone; the worker's own timeout covers it
     }
+  } finally {
+    if (activeRequestId) ws.data.envRpcControllers?.delete(activeRequestId);
   }
 }
 
@@ -238,7 +287,7 @@ function prepareEnvRpcWsUpgrade(
   req: Request,
   cfg: Config,
 ): { ok: true; data: OpencodeWsData } | { ok: false; response: Response } {
-  const rpcSecret = environmentRpcSecret(cfg)
+  const rpcSecret = environmentRpcSecret(cfg);
   if (!rpcSecret) {
     return {
       ok: false,
@@ -246,18 +295,25 @@ function prepareEnvRpcWsUpgrade(
         error: 'daemon not configured',
         detail: 'KORTIX_ENV_RPC_SECRET unset',
       }),
-    }
+    };
   }
-  const url = new URL(req.url)
+  const url = new URL(req.url);
   const header =
     req.headers.get(KORTIX_USER_CONTEXT_HEADER) ??
-    url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
-  const auth = verifyKortixUserContext(header, rpcSecret)
+    url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM);
+  const auth = verifyKortixUserContext(header, rpcSecret);
   if (!auth.ok) {
-    logger.warn('[env-rpc] reject websocket', { reason: auth.reason })
-    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
+    logger.warn('[env-rpc] reject websocket', { reason: auth.reason });
+    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) };
   }
-  return { ok: true, data: { kind: 'env-rpc', userContext: header ?? undefined } }
+  return {
+    ok: true,
+    data: {
+      kind: 'env-rpc',
+      userContext: header ?? undefined,
+      envRpcControllers: new Map(),
+    },
+  };
 }
 
 export function buildOpencodeApp(
@@ -270,50 +326,50 @@ export function buildOpencodeApp(
   ptyRegistry?: PtyRegistry,
   agentEnvFile?: string,
 ): Hono {
-  const app = new Hono()
+  const app = new Hono();
 
   // The daemon owns a small Kortix-namespaced control surface. Everything else is
   // pure passthrough to opencode. Mount at both `/health` and `/health/` so
   // a trailing slash doesn't fall through to the reverse proxy.
   // Health bypasses auth — it's how the cloud probes liveness mid-boot.
-  const kortixRouter = new Hono()
-  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
-  const refreshRouter = createRefreshRouter(cfg, opencode)
-  const abortRouter = createAbortRouter(cfg, opencode)
+  const kortixRouter = new Hono();
+  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort);
+  const refreshRouter = createRefreshRouter(cfg, opencode);
+  const abortRouter = createAbortRouter(cfg, opencode);
   const envRouter = projectEnv
     ? createEnvRouter(cfg, opencode, projectEnv, { agentEnvFile })
-    : null
+    : null;
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
   // opens change requests from a chat prompt). Kept as a host-driven primitive.
-  const gitRouter = createGitRouter(cfg)
+  const gitRouter = createGitRouter(cfg);
   // /kortix/pty — Kortix's own terminal, independent of opencode entirely
   // (see routes/pty.ts). `ptyRegistry` is always passed by `startProxy`;
   // the parameter is optional only so tests can build the app without one.
-  const ptyRouter = createPtyRouter(cfg, ptyRegistry ?? createPtyRegistry(cfg))
-  kortixRouter.route('/health', healthRouter)
-  kortixRouter.route('/health/', healthRouter)
-  kortixRouter.route('/refresh', refreshRouter)
-  kortixRouter.route('/refresh/', refreshRouter)
-  kortixRouter.route('/abort', abortRouter)
-  kortixRouter.route('/abort/', abortRouter)
-  kortixRouter.route('/git', gitRouter)
-  kortixRouter.route('/git/', gitRouter)
-  kortixRouter.route('/pty', ptyRouter)
-  kortixRouter.route('/pty/', ptyRouter)
+  const ptyRouter = createPtyRouter(cfg, ptyRegistry ?? createPtyRegistry(cfg));
+  kortixRouter.route('/health', healthRouter);
+  kortixRouter.route('/health/', healthRouter);
+  kortixRouter.route('/refresh', refreshRouter);
+  kortixRouter.route('/refresh/', refreshRouter);
+  kortixRouter.route('/abort', abortRouter);
+  kortixRouter.route('/abort/', abortRouter);
+  kortixRouter.route('/git', gitRouter);
+  kortixRouter.route('/git/', gitRouter);
+  kortixRouter.route('/pty', ptyRouter);
+  kortixRouter.route('/pty/', ptyRouter);
   // Harness/worker split (P1.7): the pi worker's ExecutionEnv, one op per POST.
   // Self-authenticated like /pty (X-Kortix-User-Context signed with this box's
   // KORTIX_TOKEN — the worker holds the same session credential).
-  const envRpcRouter = createEnvRpcRouter(cfg)
-  kortixRouter.route('/env-rpc', envRpcRouter)
-  kortixRouter.route('/env-rpc/', envRpcRouter)
+  const envRpcRouter = createEnvRpcRouter(cfg);
+  kortixRouter.route('/env-rpc', envRpcRouter);
+  kortixRouter.route('/env-rpc/', envRpcRouter);
   // /kortix/part — attachment bytes on demand; see routes/part.ts.
-  const partRouter = createPartRouter(opencode, { sidecarDir: defaultSidecarDir(OPENCODE_HOME) })
-  kortixRouter.route('/part', partRouter)
-  kortixRouter.route('/part/', partRouter)
+  const partRouter = createPartRouter(opencode, { sidecarDir: defaultSidecarDir(OPENCODE_HOME) });
+  kortixRouter.route('/part', partRouter);
+  kortixRouter.route('/part/', partRouter);
   // /kortix/logs — the daemon's own log file + OpenCode's; see routes/logs.ts.
-  const logsRouter = createLogsRouter(cfg, { opencodeHome: OPENCODE_HOME })
-  kortixRouter.route('/logs', logsRouter)
-  kortixRouter.route('/logs/', logsRouter)
+  const logsRouter = createLogsRouter(cfg, { opencodeHome: OPENCODE_HOME });
+  kortixRouter.route('/logs', logsRouter);
+  kortixRouter.route('/logs/', logsRouter);
   // /kortix/diag — the whole error report in one JSON document; see routes/diag.ts.
   const diagRouter = createDiagRouter(cfg, {
     opencode,
@@ -321,12 +377,12 @@ export function buildOpencodeApp(
     bootState,
     opencodeHome: OPENCODE_HOME,
     resources: () => resourceMonitor,
-  })
-  kortixRouter.route('/diag', diagRouter)
-  kortixRouter.route('/diag/', diagRouter)
+  });
+  kortixRouter.route('/diag', diagRouter);
+  kortixRouter.route('/diag/', diagRouter);
   if (envRouter) {
-    kortixRouter.route('/env', envRouter)
-    kortixRouter.route('/env/', envRouter)
+    kortixRouter.route('/env', envRouter);
+    kortixRouter.route('/env/', envRouter);
   }
 
   // /kortix/opencode/* — the Kortix Runtime API (routes/opencode-runtime.ts).
@@ -340,7 +396,7 @@ export function buildOpencodeApp(
   // reload can invalidate it without threading a handle through the proxy —
   // `reload()` rebuilds this app on a warm-snapshot restore and must not orphan
   // the projection it was maintaining.
-  const opencodeDb = new OpencodeDb(opencodeDbPath(OPENCODE_HOME))
+  const opencodeDb = new OpencodeDb(opencodeDbPath(OPENCODE_HOME));
   const runtimeState =
     runtimeStateStore() ??
     configureRuntimeState({
@@ -349,17 +405,17 @@ export function buildOpencodeApp(
       db: opencodeDb,
       pinnedSessionId: readPinnedSessionId,
       daemonBuild: async () => (await runtimeConvergenceReport()).build,
-    })
+    });
   const opencodeRuntimeRouter = createOpencodeRuntimeRouter(cfg, {
     opencode,
     db: opencodeDb,
     state: runtimeState,
     pinnedSessionId: readPinnedSessionId,
-  })
-  kortixRouter.route('/opencode', opencodeRuntimeRouter)
-  kortixRouter.route('/opencode/', opencodeRuntimeRouter)
+  });
+  kortixRouter.route('/opencode', opencodeRuntimeRouter);
+  kortixRouter.route('/opencode/', opencodeRuntimeRouter);
 
-  app.route('/kortix', kortixRouter)
+  app.route('/kortix', kortixRouter);
 
   // Auth gate for everything except /kortix/*. Spec §3.5: the daemon MUST
   // validate X-Kortix-User-Context (HMAC-signed by the API with KORTIX_TOKEN)
@@ -367,23 +423,23 @@ export function buildOpencodeApp(
   // an open door; we log loudly at boot and reject all proxied requests until
   // KORTIX_TOKEN is provided.
   app.use('*', async (c, next) => {
-    const path = new URL(c.req.url).pathname
-    if (path.startsWith('/kortix/')) return next()
+    const path = new URL(c.req.url).pathname;
+    if (path.startsWith('/kortix/')) return next();
 
     if (!cfg.sandboxToken) {
-      logger.warn('[proxy] rejecting request: KORTIX_TOKEN not configured')
-      return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
+      logger.warn('[proxy] rejecting request: KORTIX_TOKEN not configured');
+      return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503);
     }
 
-    const header = c.req.header(KORTIX_USER_CONTEXT_HEADER)
-    const result = verifyKortixUserContext(header, cfg.sandboxToken)
+    const header = c.req.header(KORTIX_USER_CONTEXT_HEADER);
+    const result = verifyKortixUserContext(header, cfg.sandboxToken);
     if (!result.ok) {
-      logger.warn('[proxy] reject', { reason: result.reason, path })
-      return c.json({ error: 'unauthorized', reason: result.reason }, 401)
+      logger.warn('[proxy] reject', { reason: result.reason, path });
+      return c.json({ error: 'unauthorized', reason: result.reason }, 401);
     }
 
-    return next()
-  })
+    return next();
+  });
 
   // /proxy/{port}/* — per-port reverse proxy to anything bound on localhost
   // inside the sandbox (the "internal browser" backend). Carried over from
@@ -398,8 +454,8 @@ export function buildOpencodeApp(
     // in the guest whose job is to sit in front of a credential, and "it fails
     // closed today" is a weaker guarantee than "it is not routable".
     blockedPorts: new Set([cfg.servicePort, egressShimPort()]),
-  })
-  app.route('/proxy', portProxyRouter)
+  });
+  app.route('/proxy', portProxyRouter);
 
   // /web-proxy/{scheme}/{host}/{path} — forward proxy that rewrites HTML/CSS
   // so external sites embed cleanly inside the internal browser iframe.
@@ -421,7 +477,7 @@ export function buildOpencodeApp(
         cfg.opencodeStandbyPort,
       ]),
     }),
-  )
+  );
 
   // Every not-ready answer names the boot phase (X-Kortix-Boot-Phase) so the
   // API's start budget measures lack of PROGRESS, not wall-clock. See
@@ -432,10 +488,10 @@ export function buildOpencodeApp(
       opencodeState: opencode.getState(),
       runtimeAssetsActivity: runtimeAssetsActivity(),
       notReadyReason: reason,
-    })
-    c.header(BOOT_PHASE_HEADER, phase)
-    return c.json({ ...body, phase }, 503)
-  }
+    });
+    c.header(BOOT_PHASE_HEADER, phase);
+    return c.json({ ...body, phase }, 503);
+  };
 
   app.use('*', async (c, next) => {
     if (bootState.repoMaterializationError) {
@@ -447,7 +503,7 @@ export function buildOpencodeApp(
           message: bootState.repoMaterializationError,
         },
         'repo_materialization_failed',
-      )
+      );
     }
 
     if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
@@ -458,7 +514,7 @@ export function buildOpencodeApp(
           reason: 'repo_not_materialized',
         },
         'repo_not_materialized',
-      )
+      );
     }
     // The checkout can be on disk while its config-dir dependencies are still
     // installing. A directory-scoped request in that window makes OpenCode
@@ -472,11 +528,11 @@ export function buildOpencodeApp(
           reason: 'workspace_not_ready',
         },
         'workspace_not_ready',
-      )
+      );
     }
 
-    return next()
-  })
+    return next();
+  });
 
   // /file/* — the daemon owns the ENTIRE file API: reads (GET / list,
   // /content, /raw, /status) and writes (upload, delete, mkdir, rename). We do
@@ -484,17 +540,17 @@ export function buildOpencodeApp(
   // images only and returns empty content for every other binary, breaking
   // Office-doc/PDF previews and downloads. Serving off disk here is correct for
   // all types. (/project/current + /global/health still fall through.)
-  app.route('/file', createFilesRouter(cfg))
+  app.route('/file', createFilesRouter(cfg));
 
   // /find/* — daemon-served search (file-by-name + ripgrep text search), also
   // formerly forwarded to OpenCode.
-  app.route('/find', createFindRouter(cfg))
+  app.route('/find', createFindRouter(cfg));
 
   // /presentation/* — on-demand PDF/PPTX export for the slide-deck viewer's
   // download buttons. Runs the conversion in the background and answers each
   // poll fast (202 while generating, 200 + the file when ready) so it never
   // trips the apps/api preview-proxy's per-attempt timeout. See the router doc.
-  app.route('/presentation', createPresentationRouter(cfg))
+  app.route('/presentation', createPresentationRouter(cfg));
 
   // Reverse-proxy catch-all → OpenCode. Stream both directions so SSE works.
   // If opencode hasn't bound its port yet (state !== 'ok') we 503 instead of
@@ -510,7 +566,7 @@ export function buildOpencodeApp(
           message: bootState.initialOpenCodeSessionError,
         },
         'initial_opencode_session_failed',
-      )
+      );
     }
 
     if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
@@ -521,7 +577,7 @@ export function buildOpencodeApp(
           reason: 'initial_opencode_session_pending',
         },
         'initial_opencode_session_pending',
-      )
+      );
     }
 
     if (opencode.getState() !== 'ok') {
@@ -532,30 +588,30 @@ export function buildOpencodeApp(
           opencode: opencode.getState(),
         },
         'opencode_not_ready',
-      )
+      );
     }
 
-    const url = new URL(c.req.url)
-    const upstreamUrl = `${opencode.getInternalUrl()}${url.pathname}${url.search}`
+    const url = new URL(c.req.url);
+    const upstreamUrl = `${opencode.getInternalUrl()}${url.pathname}${url.search}`;
 
-    const headers = new Headers()
+    const headers = new Headers();
     c.req.raw.headers.forEach((value, key) => {
-      if (!STRIP_REQUEST_HEADERS.has(key.toLowerCase())) headers.set(key, value)
-    })
+      if (!STRIP_REQUEST_HEADERS.has(key.toLowerCase())) headers.set(key, value);
+    });
 
-    const method = c.req.method.toUpperCase()
-    const hasBody = method !== 'GET' && method !== 'HEAD'
+    const method = c.req.method.toUpperCase();
+    const hasBody = method !== 'GET' && method !== 'HEAD';
 
     // Bound only the wait for opencode's response (headers) — not the abort
     // controller's whole lifetime — so we can free-run a stream once it starts.
     // Clearing the timer right after `fetch` resolves means the controller can
     // never fire again, so a long-lived SSE body already in flight (e.g.
     // /global/event) is never cut off mid-stream.
-    const controller = new AbortController()
+    const controller = new AbortController();
     const responseTimeoutMs = isBlockingTurnRequest(method, url.pathname)
       ? LONG_TURN_RESPONSE_TIMEOUT_MS
-      : UPSTREAM_RESPONSE_TIMEOUT_MS
-    const responseTimer = setTimeout(() => controller.abort(), responseTimeoutMs)
+      : UPSTREAM_RESPONSE_TIMEOUT_MS;
+    const responseTimer = setTimeout(() => controller.abort(), responseTimeoutMs);
     try {
       const fetchInit: RequestInit & { duplex?: 'half' } = {
         method,
@@ -565,14 +621,14 @@ export function buildOpencodeApp(
         // Bun accepts the extra key too. Not in lib.dom RequestInit yet.
         duplex: 'half',
         signal: controller.signal,
-      }
-      const upstream = await fetch(upstreamUrl, fetchInit)
-      clearTimeout(responseTimer)
+      };
+      const upstream = await fetch(upstreamUrl, fetchInit);
+      clearTimeout(responseTimer);
 
-      const respHeaders = new Headers()
+      const respHeaders = new Headers();
       upstream.headers.forEach((value, key) => {
-        if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) respHeaders.set(key, value)
-      })
+        if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) respHeaders.set(key, value);
+      });
 
       // The transcript list leaves this box WITHOUT its attachment bytes.
       //
@@ -584,36 +640,41 @@ export function buildOpencodeApp(
       // the bytes leaving. They now leave one part at a time, on demand, via
       // /kortix/part (see routes/part.ts). Buffering the JSON here is cheap
       // for the same reason: it is the in-VM copy.
-      const listMatch = method === 'GET' && upstream.ok
-        ? /^\/session\/([^/]+)\/message\/?$/.exec(url.pathname)
-        : null
+      const listMatch =
+        method === 'GET' && upstream.ok
+          ? /^\/session\/([^/]+)\/message\/?$/.exec(url.pathname)
+          : null;
       if (listMatch && (upstream.headers.get('content-type') ?? '').includes('application/json')) {
-        const sessionID = decodeURIComponent(listMatch[1] ?? '')
-        const text = await upstream.text()
-        let body = text
+        const sessionID = decodeURIComponent(listMatch[1] ?? '');
+        const text = await upstream.text();
+        let body = text;
         try {
           const stripped = stripInlineAttachmentBytes(
             JSON.parse(text),
             (messageID, partID) =>
               `/kortix/part/${encodeURIComponent(sessionID)}/${encodeURIComponent(messageID)}/${encodeURIComponent(partID)}`,
-          )
+          );
           if (stripped.stripped > 0) {
-            body = JSON.stringify(stripped.value)
+            body = JSON.stringify(stripped.value);
             logger.info('[proxy] stripped inline attachment bytes from message list', {
               sessionID,
               parts: stripped.stripped,
               savedBytes: stripped.savedBytes,
               bytes: body.length,
-            })
+            });
           }
         } catch {
           // Not the JSON we expected — pass it through untouched. This path
           // must never be the reason a transcript read fails.
         }
-        respHeaders.delete('content-length')
-        respHeaders.delete('content-encoding')
-        respHeaders.set('content-type', 'application/json; charset=utf-8')
-        return new Response(body, { status: upstream.status, statusText: upstream.statusText, headers: respHeaders })
+        respHeaders.delete('content-length');
+        respHeaders.delete('content-encoding');
+        respHeaders.set('content-type', 'application/json; charset=utf-8');
+        return new Response(body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        });
       }
 
       // SSE gets a keepalive-injecting passthrough. This proxy is one
@@ -622,47 +683,48 @@ export function buildOpencodeApp(
       // silently (stale ingress answering 200 and never writing, edge stalls,
       // the ALB's idle timeout) with the SDK's 60s heartbeat as the only
       // detector. See `sse-keepalive.ts` for the wire-format rules.
-      const upstreamContentType = upstream.headers.get('content-type') ?? ''
+      const upstreamContentType = upstream.headers.get('content-type') ?? '';
       if (upstream.ok && upstream.body && upstreamContentType.includes('text/event-stream')) {
-        respHeaders.delete('content-length')
+        respHeaders.delete('content-length');
         return new Response(withSseKeepalive(upstream.body), {
           status: upstream.status,
           statusText: upstream.statusText,
           headers: respHeaders,
-        })
+        });
       }
 
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
         headers: respHeaders,
-      })
+      });
     } catch (err) {
-      clearTimeout(responseTimer)
-      const timedOut = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+      clearTimeout(responseTimer);
+      const timedOut =
+        err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError');
       if (timedOut) {
         logger.error('[proxy] upstream fetch timed out — opencode unresponsive', {
           path: url.pathname,
           timeoutMs: responseTimeoutMs,
-        })
+        });
       } else {
-        logger.error('[proxy] upstream fetch failed', err)
+        logger.error('[proxy] upstream fetch failed', err);
       }
-      return c.json({ error: 'upstream unreachable', details: (err as Error).message }, 502)
+      return c.json({ error: 'upstream unreachable', details: (err as Error).message }, 502);
     }
-  })
+  });
 
-  return app
+  return app;
 }
 
 export type ProxyServer = {
-  stop(): Promise<void>
-  port: number
+  stop(): Promise<void>;
+  port: number;
   // Rebuild the control surface with a new Config. A warm snapshot seed boots
   // with seed-time credentials and only learns its forked session cfg after
   // restore; without this the proxy auth gate + routers keep the seed cfg.
-  reload(next: Config): void
-}
+  reload(next: Config): void;
+};
 
 export function startProxy(
   cfg: Config,
@@ -674,37 +736,41 @@ export function startProxy(
 ): ProxyServer {
   // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
-  let currentCfg = cfg
+  let currentCfg = cfg;
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
-  const ptyRegistry = createPtyRegistry(cfg)
+  const ptyRegistry = createPtyRegistry(cfg);
   // Box telemetry: a `[resources]` log line every minute and on every
   // opencode state change, `[resources] pressure` when a threshold is crossed.
-  resourceMonitor?.stop()
-  const turnInFlight = () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace)
+  resourceMonitor?.stop();
+  const turnInFlight = () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace);
   // Attachment offload (attachment-offload.ts): inline image bytes out of the
   // transcript store, only while no turn runs. Every 5 min, and right after a
   // memory-guard abort.
-  const offloadDbPath = opencodeDbPath(OPENCODE_HOME)
-  const offloadSidecarDir = defaultSidecarDir(OPENCODE_HOME)
-  let offloadRunning = false
+  const offloadDbPath = opencodeDbPath(OPENCODE_HOME);
+  const offloadSidecarDir = defaultSidecarDir(OPENCODE_HOME);
+  let offloadRunning = false;
   const runOffloadIfIdle = async (why: string): Promise<void> => {
-    if (offloadRunning) return
-    if (process.env.KORTIX_ATTACHMENT_OFFLOAD === '0') return
-    offloadRunning = true
+    if (offloadRunning) return;
+    if (process.env.KORTIX_ATTACHMENT_OFFLOAD === '0') return;
+    offloadRunning = true;
     try {
-      if ((await turnInFlight()) !== false) return
-      const result = await runAttachmentOffloadPass({ dbPath: offloadDbPath, sidecarDir: offloadSidecarDir })
-      if (result.offloaded > 0) logger.info('[offload] moved attachment bytes out of the transcript', { why, ...result })
+      if ((await turnInFlight()) !== false) return;
+      const result = await runAttachmentOffloadPass({
+        dbPath: offloadDbPath,
+        sidecarDir: offloadSidecarDir,
+      });
+      if (result.offloaded > 0)
+        logger.info('[offload] moved attachment bytes out of the transcript', { why, ...result });
     } catch (err) {
-      logger.warn('[offload] pass threw', { err: (err as Error).message })
+      logger.warn('[offload] pass threw', { err: (err as Error).message });
     } finally {
-      offloadRunning = false
+      offloadRunning = false;
     }
-  }
-  const offloadTimer = setInterval(() => void runOffloadIfIdle('interval'), 5 * 60_000)
-  offloadTimer.unref?.()
-  setTimeout(() => void runOffloadIfIdle('boot'), 90_000).unref?.()
+  };
+  const offloadTimer = setInterval(() => void runOffloadIfIdle('interval'), 5 * 60_000);
+  offloadTimer.unref?.();
+  setTimeout(() => void runOffloadIfIdle('boot'), 90_000).unref?.();
 
   resourceMonitor = startResourceMonitor({
     opencodePid: () => opencode.getPid(),
@@ -714,24 +780,28 @@ export function startProxy(
       guardPct: Number(process.env.KORTIX_MEMORY_GUARD_PCT) || undefined,
       turnInFlight,
       abortTurn: async (reason) => {
-        const sessionId = readPinnedSessionId()
-        if (!sessionId) return false
+        const sessionId = readPinnedSessionId();
+        if (!sessionId) return false;
         const url =
           `${opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/abort` +
-          `?directory=${encodeURIComponent(cfg.workspace)}`
-        logger.error('[resources] memory guard aborting the running turn', { sessionId, reason })
-        const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(10_000) })
-        return res.ok
+          `?directory=${encodeURIComponent(cfg.workspace)}`;
+        logger.error('[resources] memory guard aborting the running turn', { sessionId, reason });
+        const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(10_000) });
+        return res.ok;
       },
       onGuard: async ({ reason, snapshot, aborted }) => {
         // Tell the control plane in the same words the UI already renders for
         // a turn that ended in error, BEFORE OpenCode's own `session.error`
         // ("Aborted") can claim the turn end — the first end wins.
-        await relayMemoryGuardTurnEnd({ reason, aborted, opencodeRssMb: snapshot.opencode?.rssMb ?? null })
-        void runOffloadIfIdle('memory-guard')
+        await relayMemoryGuardTurnEnd({
+          reason,
+          aborted,
+          opencodeRssMb: snapshot.opencode?.rssMb ?? null,
+        });
+        void runOffloadIfIdle('memory-guard');
       },
     },
-  })
+  });
   // A staged daemon update must not exit this process while somebody has a
   // terminal open — the PTY dies with the daemon that spawned it. The registry
   // is the only thing that knows, so it answers the question rather than the
@@ -739,8 +809,16 @@ export function startProxy(
   // installs it at the next start.
   registerAgentSwapBlocker('pty', () =>
     ptyRegistry.list().some((entry) => entry.status === 'running'),
-  )
-  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
+  );
+  let app = buildOpencodeApp(
+    cfg,
+    opencode,
+    bootTime,
+    bootState,
+    projectEnv,
+    staticWebPort,
+    ptyRegistry,
+  );
 
   const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
@@ -752,23 +830,23 @@ export function startProxy(
     // stream itself / a real client disconnect (still aborts req.signal).
     idleTimeout: 0,
     async fetch(req, srv) {
-      const url = new URL(req.url)
-      const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket'
+      const url = new URL(req.url);
+      const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
       if (isWsUpgrade && KORTIX_ENV_RPC_WS_PATH_RE.test(url.pathname)) {
-        const prep = prepareEnvRpcWsUpgrade(req, currentCfg)
-        if (!prep.ok) return prep.response
-        const upgraded = srv.upgrade(req, { data: prep.data })
-        if (upgraded) return undefined
-        return jsonError(500, { error: 'websocket upgrade failed' })
+        const prep = prepareEnvRpcWsUpgrade(req, currentCfg);
+        if (!prep.ok) return prep.response;
+        const upgraded = srv.upgrade(req, { data: prep.data });
+        if (upgraded) return undefined;
+        return jsonError(500, { error: 'websocket upgrade failed' });
       }
       if (isWsUpgrade && KORTIX_PTY_WS_PATH_RE.test(url.pathname)) {
-        const prep = prepareKortixPtyWsUpgrade(req, currentCfg)
-        if (!prep.ok) return prep.response
-        const upgraded = srv.upgrade(req, { data: prep.data })
-        if (upgraded) return undefined
-        return jsonError(500, { error: 'websocket upgrade failed' })
+        const prep = prepareKortixPtyWsUpgrade(req, currentCfg);
+        if (!prep.ok) return prep.response;
+        const upgraded = srv.upgrade(req, { data: prep.data });
+        if (upgraded) return undefined;
+        return jsonError(500, { error: 'websocket upgrade failed' });
       }
-      return app.fetch(req, srv)
+      return app.fetch(req, srv);
     },
     websocket: {
       // Lookup-or-create: a normal "open a terminal" must always succeed
@@ -783,62 +861,88 @@ export function startProxy(
       // silently paper over.
       open(ws: ServerWebSocket<OpencodeWsData>) {
         // env-rpc has no session to attach — the socket is the session.
-        if (ws.data.kind === 'env-rpc') return
-        const state = ws.data
-        const requestedId = state.ptyId
+        if (ws.data.kind === 'env-rpc') return;
+        const state = ws.data;
+        const requestedId = state.ptyId;
         const result = ptyRegistry.attachOrCreate(requestedId, {
           onData: (chunk) => {
-            try { ws.send(chunk) } catch {}
+            try {
+              ws.send(chunk);
+            } catch {}
           },
           onExit: (exitCode) => {
-            try { ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`) } catch {}
+            try {
+              ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`);
+            } catch {}
           },
-        })
+        });
         if (result.kind === 'exited') {
           try {
-            ws.close(1000, `pty exited${result.meta.exitCode === undefined ? '' : ` (${result.meta.exitCode})`}`)
+            ws.close(
+              1000,
+              `pty exited${result.meta.exitCode === undefined ? '' : ` (${result.meta.exitCode})`}`,
+            );
           } catch {}
-          return
+          return;
         }
-        state.ptyId = result.meta.id
-        state.handle = result.handle
+        state.ptyId = result.meta.id;
+        state.handle = result.handle;
         if (result.kind === 'created') {
           logger.info('[proxy] pty websocket lookup-or-create minted a new pty', {
             requestedId: requestedId ?? null,
             id: result.meta.id,
-          })
+          });
         }
         if (result.handle.replay) {
-          try { ws.send(result.handle.replay) } catch {}
+          try {
+            ws.send(result.handle.replay);
+          } catch {}
         }
       },
       message(ws: ServerWebSocket<OpencodeWsData>, message: string | Buffer) {
         if (ws.data.kind === 'env-rpc') {
-          void handleEnvRpcFrame(ws, app, typeof message === 'string' ? message : message.toString())
-          return
+          void handleEnvRpcFrame(
+            ws,
+            app,
+            typeof message === 'string' ? message : message.toString(),
+          );
+          return;
         }
-        ws.data.handle?.write(typeof message === 'string' ? message : message.toString())
+        ws.data.handle?.write(typeof message === 'string' ? message : message.toString());
       },
       close(ws: ServerWebSocket<OpencodeWsData>) {
-        ws.data.handle?.detach()
+        if (ws.data.kind === 'env-rpc') {
+          for (const controller of ws.data.envRpcControllers?.values() ?? []) controller.abort();
+          ws.data.envRpcControllers?.clear();
+          return;
+        }
+        ws.data.handle?.detach();
       },
     },
-  })
+  });
 
-  const boundPort = server.port ?? cfg.servicePort
-  logger.info('[proxy] listening', { port: boundPort, hostname: '0.0.0.0' })
+  const boundPort = server.port ?? cfg.servicePort;
+  logger.info('[proxy] listening', { port: boundPort, hostname: '0.0.0.0' });
 
   return {
     port: boundPort,
     reload(next: Config) {
-      currentCfg = next
-      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
-      logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
+      currentCfg = next;
+      app = buildOpencodeApp(
+        next,
+        opencode,
+        bootTime,
+        bootState,
+        projectEnv,
+        staticWebPort,
+        ptyRegistry,
+      );
+      logger.info('[proxy] reloaded with session config', { projectId: next.projectId });
     },
     async stop() {
-      server.stop(true)
+      server.stop(true);
     },
-  }
+  };
 }
 
 /**
@@ -849,16 +953,16 @@ export function startProxy(
  * follows, and the turn-stream keeps the first end for a turn.
  */
 export async function relayMemoryGuardTurnEnd(input: {
-  reason: string
-  aborted: boolean
-  opencodeRssMb: number | null
+  reason: string;
+  aborted: boolean;
+  opencodeRssMb: number | null;
 }): Promise<boolean> {
-  const projectId = process.env.KORTIX_PROJECT_ID
-  const sessionId = process.env.KORTIX_SESSION_ID
-  const token = process.env.KORTIX_TOKEN
-  const apiUrl = (process.env.KORTIX_API_URL ?? '').replace(/\/+$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return false
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const projectId = process.env.KORTIX_PROJECT_ID;
+  const sessionId = process.env.KORTIX_SESSION_ID;
+  const token = process.env.KORTIX_TOKEN;
+  const apiUrl = (process.env.KORTIX_API_URL ?? '').replace(/\/+$/, '');
+  if (!projectId || !sessionId || !token || !apiUrl) return false;
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`;
   try {
     const res = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
       method: 'POST',
@@ -873,15 +977,15 @@ export async function relayMemoryGuardTurnEnd(input: {
         error_retryable: true,
       }),
       signal: AbortSignal.timeout(10_000),
-    })
+    });
     logger.warn('[resources] memory guard relayed to the control plane', {
       status: res.status,
       aborted: input.aborted,
       opencodeRssMb: input.opencodeRssMb,
-    })
-    return res.ok
+    });
+    return res.ok;
   } catch (err) {
-    logger.warn('[resources] memory guard relay failed', { err: (err as Error).message })
-    return false
+    logger.warn('[resources] memory guard relay failed', { err: (err as Error).message });
+    return false;
   }
 }

@@ -24,7 +24,7 @@ const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'worker.t
 
 /** Routes that must refuse an unauthenticated caller. */
 const GATED = [
-  "const m = url.pathname.match(/^\\/session\\/([^/]+)\\/prompt_async$/);",
+  'const m = url.pathname.match(/^\\/session\\/([^/]+)\\/(prompt_async|message)$/);',
   "if (url.pathname === '/events') {",
   "if (url.pathname === '/prompt' && req.method === 'POST') {",
   "if (url.pathname === '/turn' && req.method === 'POST') {",
@@ -54,7 +54,10 @@ describe('the worker gates its raw routes', () => {
   // Health stays open on purpose: the platform probes it before any credential
   // is available, exactly as it does for the OpenCode daemon.
   test('health endpoints stay unauthenticated', () => {
-    for (const health of ["if (url.pathname === '/health') {", "if (url.pathname === '/kortix/health') {"]) {
+    for (const health of [
+      "if (url.pathname === '/health') {",
+      "if (url.pathname === '/kortix/health') {",
+    ]) {
       const at = SRC.indexOf(health);
       expect(at).toBeGreaterThan(-1);
       expect(SRC.slice(at, at + 240)).not.toContain('surface.authorize(req, url)');

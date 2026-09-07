@@ -140,12 +140,16 @@ describe('a tool call whose environment went away', () => {
   interface Harness {
     env: LazyKortixEnv;
     attaches: () => number;
-    setBehaviour: (fn: (attachNo: number) => 'ok' | 'gone') => void;
+    runs: () => number;
+    sideEffects: () => number;
+    setBehaviour: (fn: (attachNo: number) => 'ok' | 'gone' | 'unauthorized') => void;
   }
 
   function harness(): Harness {
     let attaches = 0;
-    let behaviour: (n: number) => 'ok' | 'gone' = () => 'ok';
+    let runs = 0;
+    let sideEffects = 0;
+    let behaviour: (n: number) => 'ok' | 'gone' | 'unauthorized' = () => 'ok';
     const env = new LazyKortixEnv({
       apiUrl: 'http://127.0.0.1:1/v1',
       token: 'tok',
@@ -162,14 +166,33 @@ describe('a tool call whose environment went away', () => {
       if (this.inner) return this.inner;
       attaches += 1;
       const mine = attaches;
-      const answer = async () =>
-        behaviour(mine) === 'gone'
-          ? { ok: false as const, error: { code: 'unknown', message: 'fetch failed' } }
-          : { ok: true as const, value: `served-by-attach-${mine}` };
+      const answer = async () => {
+        runs += 1;
+        const result = behaviour(mine);
+        if (result === 'gone') {
+          return { ok: false as const, error: { code: 'unknown', message: 'fetch failed' } };
+        }
+        if (result === 'unauthorized') {
+          return {
+            ok: false as const,
+            error: { code: 'rpc_unauthorized', message: 'environment RPC returned HTTP 401' },
+          };
+        }
+        sideEffects += 1;
+        return { ok: true as const, value: `served-by-attach-${mine}` };
+      };
       this.inner = { exec: answer, readTextFile: answer, calls: [] };
       return this.inner;
     };
-    return { env, attaches: () => attaches, setBehaviour: (fn) => { behaviour = fn; } };
+    return {
+      env,
+      attaches: () => attaches,
+      runs: () => runs,
+      sideEffects: () => sideEffects,
+      setBehaviour: (fn) => {
+        behaviour = fn;
+      },
+    };
   }
 
   test('a healthy environment attaches once and stays', async () => {
@@ -202,6 +225,42 @@ describe('a tool call whose environment went away', () => {
     expect(h.attaches()).toBe(2);
     // ...but this command was not run a second time to find out.
     expect(r.ok).toBe(false);
+  });
+
+  test('a mutation rejected with 401 re-attaches and runs once with renewed credentials', async () => {
+    const h = harness();
+    h.setBehaviour((n) => (n === 1 ? 'unauthorized' : 'ok'));
+
+    const result = await h.env.exec('touch /workspace/result');
+
+    expect(result.ok).toBe(true);
+    expect(h.attaches()).toBe(2);
+    expect(h.runs()).toBe(2);
+    expect(h.sideEffects()).toBe(1);
+  });
+
+  test('a repeated 401 is bounded to one credential renewal', async () => {
+    const h = harness();
+    h.setBehaviour(() => 'unauthorized');
+
+    const result = await h.env.exec('touch /workspace/result');
+
+    expect(result.ok).toBe(false);
+    expect(h.attaches()).toBe(2);
+    expect(h.runs()).toBe(2);
+    expect(h.sideEffects()).toBe(0);
+  });
+
+  test('an ambiguous failure after credential renewal does not replay the mutation again', async () => {
+    const h = harness();
+    h.setBehaviour((n) => (n === 1 ? 'unauthorized' : 'gone'));
+
+    const result = await h.env.exec('touch /workspace/result');
+
+    expect(result.ok).toBe(false);
+    expect(h.attaches()).toBe(2);
+    expect(h.runs()).toBe(2);
+    expect(h.sideEffects()).toBe(0);
   });
 
   test('the dead client is discarded, not reused by the next call', async () => {
@@ -237,6 +296,67 @@ describe('a tool call whose environment went away', () => {
     expect(r.ok).toBe(false);
     // Zero attaches: inner was already set, and a tool error must not discard it.
     expect(h.attaches()).toBe(0);
+  });
+
+  test('concurrent 401 responses share one renewed client without discarding it', async () => {
+    const env = new LazyKortixEnv({
+      apiUrl: 'http://127.0.0.1:1/v1',
+      token: 'tok',
+      projectId: 'p',
+      sessionId: 's',
+      cwd: '/workspace',
+    });
+    let oldCalls = 0;
+    let attaches = 0;
+    let sideEffects = 0;
+    let releaseOldCalls!: () => void;
+    const bothOldCallsStarted = new Promise<void>((resolve) => {
+      releaseOldCalls = resolve;
+    });
+    const oldInner = {
+      calls: [],
+      exec: async () => {
+        oldCalls += 1;
+        if (oldCalls === 2) releaseOldCalls();
+        await bothOldCallsStarted;
+        return {
+          ok: false as const,
+          error: { code: 'rpc_unauthorized', message: 'environment RPC returned HTTP 401' },
+        };
+      },
+    };
+    const renewedInner = {
+      calls: [],
+      exec: async () => {
+        sideEffects += 1;
+        return { ok: true as const, value: { stdout: '', stderr: '', exitCode: 0 } };
+      },
+    };
+    const mutable = env as unknown as {
+      inner: unknown;
+      attaching: Promise<unknown> | null;
+      attach: () => Promise<unknown>;
+    };
+    mutable.inner = oldInner;
+    mutable.attach = async function attach() {
+      if (this.inner) return this.inner;
+      if (this.attaching) return this.attaching;
+      attaches += 1;
+      this.attaching = Promise.resolve().then(() => {
+        this.inner = renewedInner;
+        return renewedInner;
+      });
+      return this.attaching;
+    };
+
+    const results = await Promise.all([env.exec('touch /workspace/a'), env.exec('touch /workspace/b')]);
+    const later = await env.exec('touch /workspace/c');
+
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(later.ok).toBe(true);
+    expect(oldCalls).toBe(2);
+    expect(attaches).toBe(1);
+    expect(sideEffects).toBe(3);
   });
 })
 

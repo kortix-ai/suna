@@ -34,12 +34,36 @@ const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 /** Mirrors apps/api/src/projects/wire-message-id.ts. */
 export const WIRE_ID_TIME_MASK = BigInt(0xffffffffffff);
 export const WIRE_ID_TIME_SCALE = BigInt(0x1000);
+/** Same one-hour correction ceiling as the API and SDK wire-id minters. */
+export const MAX_WIRE_ID_CLOCK_CORRECTION = BigInt(60 * 60 * 1000) * WIRE_ID_TIME_SCALE;
+
+function wireClockAt(nowMs: number): bigint {
+  return (BigInt(Math.trunc(nowMs)) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+}
 
 /** Decode the ordering clock out of a wire message id, or null. */
 export function wireIdTime(messageId: string | null | undefined): bigint | null {
   const match = WIRE_MESSAGE_ID_TIME.exec(messageId ?? '');
   if (!match) return null;
   return BigInt(`0x${match[1]}`);
+}
+
+/**
+ * Whether the worker can mint a lexicographically later reply for this raw id.
+ *
+ * A caller-controlled clock may be ahead of the worker by at most the same
+ * one-hour correction bound used by the API and SDK. The maximum 48-bit value
+ * has no representable successor, so accepting it would wrap the reply to zero.
+ */
+export function canMintOrderedReplyAfter(messageId: string, nowMs: number): boolean {
+  if (!WIRE_MESSAGE_ID.test(messageId)) return false;
+  const parent = wireIdTime(messageId);
+  // One turn can emit more than one assistant message. Reserve two clock slots
+  // so the first reply cannot consume the final value and make the next reply
+  // wrap below its parent.
+  if (parent === null || parent >= WIRE_ID_TIME_MASK - BigInt(1)) return false;
+  const now = wireClockAt(nowMs);
+  return parent <= now || parent - now <= MAX_WIRE_ID_CLOCK_CORRECTION;
 }
 
 /**
@@ -60,14 +84,24 @@ export function mintWireMessageId(input: {
   random?: () => number;
 }): { id: string; time: bigint } {
   const random = input.random ?? Math.random;
-  let encoded = (BigInt(Math.trunc(input.nowMs)) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+  let encoded = wireClockAt(input.nowMs);
 
   // A clock that has not moved since the last mint — or that runs behind the
   // message being answered — must still produce a strictly larger id, or two
   // messages tie and the transcript order becomes the sort's tiebreak instead
   // of the conversation's.
   const newest = input.newestKnownTime ?? null;
-  if (newest !== null && newest >= encoded) encoded = newest + BigInt(1);
+  if (newest === WIRE_ID_TIME_MASK) {
+    throw new Error('wire message id ordering clock is exhausted');
+  }
+  if (
+    newest !== null &&
+    newest >= encoded &&
+    newest < WIRE_ID_TIME_MASK &&
+    newest - encoded <= MAX_WIRE_ID_CLOCK_CORRECTION
+  ) {
+    encoded = newest + BigInt(1);
+  }
   encoded &= WIRE_ID_TIME_MASK;
 
   let tail = '';
