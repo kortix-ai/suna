@@ -24,7 +24,7 @@ linked, not inlined.
 ### Compatibility recovery outlives capability-cache TTL (2026-09-07)
 
 **Rule:** After its eligibility gate, issue a request the old runtime supports and retain one bounded persisted delivery grace beyond capability-cache TTL.
-**Near-miss:** Stale daemons received only unsupported `/file/append` retries, then exhausted delivery as their post-gate runtime swap converged.
+**Near-miss:** Capability negotiation blocked the large upload before `/file/append`. Refreshes at t=0/30/150 preceded the old daemon's 300-second gate. Delivery failed at t=630 without an eligible refresh, so no swap began.
 **Enforcers:** `queued-continue-inbox-delivery.test.ts`: “an old daemon receives a post-gate refresh and delivers the full attachment after convergence”; “an old daemon that cannot upgrade fails once after its post-gate refresh grace”.
 `runtime-unreachable-park.test.ts`: “stale recovery retains one final grace and Stop hold after the third runtime retry”.
 
