@@ -1263,7 +1263,8 @@ export async function startWorker(cfg = configFromEnv()) {
   const permissions = new PermissionBroker({
     sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
     permission: selectedAgentConfig?.permission,
-    approved: permissionApprovals.approved(),
+    state: () => ({ rules: permissionApprovals.sessionRules(), approved: permissionApprovals.approved() }),
+    refresh: () => permissionApprovals.refresh(),
     saveApproval: (approval) => permissionApprovals.save(approval),
     ...(sessionLog ? {
       persistence: {
@@ -1335,9 +1336,9 @@ export async function startWorker(cfg = configFromEnv()) {
     workspace: cfg.envCwd,
     permissions,
     permissionConfig: selectedAgentConfig?.permission,
-    sessionPermission: () => Object.entries(turnJournal.toolControls).map(
-      ([permission, enabled]) => ({ permission, pattern: '*', action: enabled ? 'allow' : 'deny' }),
-    ),
+    sessionPermission: () => permissionApprovals.sessionRules(),
+    refreshSessionPermission: () => permissionApprovals.refresh(),
+    updateSessionPermission: (rules) => permissionApprovals.setRules(rules),
     questions,
     suspendedTools: () => [
       ...resumableQuestions.values(),
@@ -1450,6 +1451,7 @@ export async function startWorker(cfg = configFromEnv()) {
   const hydrateDurableState = async (): Promise<void> => {
     const messages = await refreshDurableTranscript();
     const journal = await turnJournal.refresh();
+    await permissionApprovals.refresh();
     surface.replaceDurableMessages(messages, journal.wireMessages);
   };
 
@@ -1714,7 +1716,7 @@ export async function startWorker(cfg = configFromEnv()) {
           .join('\n');
       }
       try {
-        permissions.setToolControls(turnJournal.toolControls);
+        await permissionApprovals.refresh();
         agent.state.tools = originalTools.filter((tool) => permissions.toolEnabled(tool.name));
         const created = Number(
           (turn.wireUserMessage.info.time as { created?: unknown } | undefined)?.created ??

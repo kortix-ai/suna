@@ -10,16 +10,31 @@ export interface PermissionRule {
 
 export type PermissionRuleset = readonly PermissionRule[];
 
+export function validatePermissionRules(value: unknown): PermissionRule[] {
+  if (!Array.isArray(value)) throw new TypeError('permission must be an array of rules');
+  return value.map((rule) => {
+    if (
+      !rule ||
+      typeof rule !== 'object' ||
+      Array.isArray(rule) ||
+      typeof rule.permission !== 'string' ||
+      !rule.permission.trim() ||
+      typeof rule.pattern !== 'string' ||
+      !rule.pattern.trim() ||
+      !isPermissionAction(rule.action) ||
+      Object.keys(rule).some((key) => !['permission', 'pattern', 'action'].includes(key))
+    ) {
+      throw new TypeError('permission rules require permission, pattern, and action');
+    }
+    return { permission: rule.permission, pattern: rule.pattern, action: rule.action };
+  });
+}
+
 const DEFAULT_PERMISSION_CONFIG: Record<string, PermissionRuleConfig> = {
   '*': 'allow',
   doom_loop: 'ask',
   external_directory: 'ask',
-  read: {
-    '*': 'allow',
-    '*.env': 'deny',
-    '*.env.*': 'deny',
-    '*.env.example': 'allow',
-  },
+  read: { '*': 'allow', '*.env': 'deny', '*.env.*': 'deny', '*.env.example': 'allow' },
 };
 
 function isPermissionAction(value: unknown): value is PermissionAction {

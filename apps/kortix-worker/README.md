@@ -238,6 +238,20 @@ As in OpenCode, `edit` controls both `edit` and `write`. `write: false` alone do
 not disable the `edit` permission. The user message retains its `tools` map, and
 the session read exposes the active permission rules.
 
+`PATCH /session/:id` accepts a `permission` ruleset. The update commits before
+HTTP 200 and publishes `session.updated`. Session reads refresh the durable
+rules, including changes made through another worker. A blanket allow survives
+worker replacement and a closed browser tab. Existing pending requests still
+require a reply. Each later authorization reads the current rules before it runs.
+
+An explicit ruleset replaces earlier session controls and clears prior always
+grants. `permission: []` restores compiled policy. A later nonempty prompt `tools`
+map replaces those session rules when its turn starts. Empty and omitted maps
+retain them. Grant records carry the permission update identity, so an older
+approval write cannot reinstate a grant after a concurrent reset. Unsupported
+session fields return 422; invalid rules return 400. Failed storage returns 503
+without claiming the update succeeded.
+
 Unsupported fields return `400` before admission. The body and each
 durable log item are limited to 512 KiB. Attachments and the remaining OpenCode
 prompt options are still compatibility gaps.

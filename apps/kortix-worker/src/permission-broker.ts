@@ -65,6 +65,8 @@ export interface PermissionBrokerOptions {
   createId?: () => string;
   approved?: readonly PermissionApproval[];
   saveApproval?: (approval: PermissionApproval) => Promise<void>;
+  state?: () => { rules: PermissionRule[]; approved: PermissionApproval[] };
+  refresh?: () => Promise<void>;
   persistence?: {
     open(
       request: PermissionRequest,
@@ -187,13 +189,27 @@ export class PermissionBroker {
 
   toolEnabled(toolName: string): boolean {
     const permission = permissionNameForTool(toolName);
-    const rule = [...this.rules, ...this.sessionRules].findLast((candidate) =>
-      wildcardMatch(permission, candidate.permission),
+    const rule = [...this.rules, ...(this.options.state?.().rules ?? this.sessionRules)].findLast(
+      (candidate) => wildcardMatch(permission, candidate.permission),
     );
     return rule?.pattern !== '*' || rule.action !== 'deny';
   }
 
   authorize(input: PermissionAuthorization): Promise<void> {
+    return this.options.refresh ? this.refreshAndAuthorize(input) : this.authorizeCurrent(input);
+  }
+
+  private async refreshAndAuthorize(input: PermissionAuthorization): Promise<void> {
+    if (input.signal?.aborted) return Promise.reject(abortError(input.signal));
+    try {
+      await this.options.refresh!();
+    } catch (cause) {
+      throw new PermissionApprovalUnavailableError(cause);
+    }
+    return this.authorizeCurrent(input);
+  }
+
+  private authorizeCurrent(input: PermissionAuthorization): Promise<void> {
     if (input.patterns.length === 0) {
       return Promise.reject(new TypeError('permission patterns must contain at least one value'));
     }
@@ -204,7 +220,11 @@ export class PermissionBroker {
         checkpoint.stage === input.stage &&
         isDeepStrictEqual(checkpoint.request.tool, input.tool),
     );
-    const rules = [...this.rules, ...this.sessionRules, ...this.approved];
+    const rules = [
+      ...this.rules,
+      ...(this.options.state?.().rules ?? this.sessionRules),
+      ...this.approvedRules(),
+    ];
     let needsAsk = Boolean(restored);
     for (const pattern of restored ? [] : input.patterns) {
       const action = evaluatePermission(input.permission, pattern, rules).action;
@@ -255,7 +275,7 @@ export class PermissionBroker {
     if (!resolution) return this.wait(checkpoint.request, signal);
     if (resolution.reply === 'reject')
       throw new PermissionRejectedError(checkpoint.request.id, resolution.message);
-    if (resolution.reply === 'always')
+    if (resolution.reply === 'always' && !this.options.state)
       this.addApproval({
         requestId: checkpoint.request.id,
         permission: checkpoint.request.permission,
@@ -313,7 +333,7 @@ export class PermissionBroker {
       } catch (cause) {
         throw new PermissionApprovalUnavailableError(cause);
       }
-      this.addApproval(approval);
+      if (!this.options.state) this.addApproval(approval);
     }
     if (this.options.persistence) {
       try {
@@ -342,12 +362,21 @@ export class PermissionBroker {
 
   private addApproval(approval: PermissionApproval): void {
     for (const pattern of approval.patterns) {
-      this.approved.push({
-        permission: approval.permission,
-        pattern,
-        action: 'allow',
-      });
+      this.approved.push({ permission: approval.permission, pattern, action: 'allow' });
     }
+  }
+
+  private approvedRules(): PermissionRule[] {
+    const state = this.options.state?.();
+    return state
+      ? state.approved.flatMap((approval) =>
+          approval.patterns.map((pattern) => ({
+            permission: approval.permission,
+            pattern,
+            action: 'allow' as const,
+          })),
+        )
+      : this.approved;
   }
 
   private cancelForAbort(requestId: string, error: Error): void {
@@ -360,11 +389,7 @@ export class PermissionBroker {
   private publishReply(request: PermissionRequest, reply: PermissionReply): void {
     this.options.publish({
       type: 'permission.replied',
-      properties: {
-        sessionID: request.sessionID,
-        requestID: request.id,
-        reply,
-      },
+      properties: { sessionID: request.sessionID, requestID: request.id, reply },
     });
   }
 
@@ -390,7 +415,8 @@ export class PermissionBroker {
       if (!pending) continue;
       const approved = pending.request.patterns.every(
         (pattern) =>
-          evaluatePermission(pending.request.permission, pattern, this.approved).action === 'allow',
+          evaluatePermission(pending.request.permission, pattern, this.approvedRules()).action ===
+          'allow',
       );
       if (!approved) continue;
       if (this.options.persistence) {

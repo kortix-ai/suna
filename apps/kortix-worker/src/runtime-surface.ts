@@ -33,7 +33,7 @@ import type { Agent, Session, ToolList } from '@opencode-ai/sdk/v2';
 import { assistantContractFields, assistantMessageError, toolResultMetadata } from './chat-events.ts';
 import type { PiCommand } from './command-runtime.ts';
 import { PermissionApprovalUnavailableError, type PermissionBroker } from './permission-broker.ts';
-import { type PermissionConfig, type PermissionRule, compilePermissionRules } from './permission-policy.ts';
+import { type PermissionConfig, type PermissionRule, compilePermissionRules, validatePermissionRules } from './permission-policy.ts';
 import { QuestionPersistenceUnavailableError, type QuestionBroker } from './question-broker.ts';
 import type { PiTodo } from './todo-tools.ts';
 import { type PiSkill, projectSkillInfo } from './skill-runtime.ts';
@@ -478,6 +478,8 @@ export interface RuntimeSurfaceOptions {
   permissions?: PermissionBroker;
   permissionConfig?: PermissionConfig;
   sessionPermission?: () => PermissionRule[];
+  refreshSessionPermission?: () => Promise<void>;
+  updateSessionPermission?: (rules: PermissionRule[]) => Promise<void>;
   /** Pending user questions created by Pi's `question` tool. */
   questions?: QuestionBroker;
   suspendedTools?: () => Array<{ messageId: string; toolCallId: string }>;
@@ -1590,6 +1592,48 @@ export class RuntimeSurface {
         });
       return true;
     }
+    const rawSessionUpdate = url.pathname.match(/^\/session\/([^/]+)$/);
+    if (rawSessionUpdate && req.method === 'PATCH') {
+      const write = (status: number, body: unknown) =>
+        res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+      if (!this.authorized(req, url)) {
+        write(401, { error: 'unauthorized' });
+        return true;
+      }
+      const sessionId = decodePathSegment(rawSessionUpdate[1]!);
+      if (sessionId === null) {
+        write(400, { error: 'path contains malformed percent-encoding' });
+        return true;
+      }
+      if (sessionId !== this.rootId) {
+        write(404, { error: 'unknown session' });
+        return true;
+      }
+      void readRawJsonBody(req).then(async body => {
+        if (!body || typeof body !== 'object' || Array.isArray(body) ||
+          Object.keys(body).length !== 1 || !Object.hasOwn(body, 'permission')) {
+          write(422, { error: 'only the permission session field is supported' });
+          return;
+        }
+        const rules = validatePermissionRules((body as { permission: unknown }).permission);
+        if (!this.opts.updateSessionPermission) {
+          write(503, { error: 'session permission storage is unavailable' });
+          return;
+        }
+        try {
+          await this.opts.updateSessionPermission(rules);
+        } catch {
+          write(503, { error: 'session permissions could not be saved; retry the update' });
+          return;
+        }
+        const info = this.opencodeSessionObject();
+        this.publishWire({ type: 'session.updated', properties: { info } });
+        write(200, info);
+      }).catch(error => write(error instanceof RawBodyError ? error.status : 400, {
+        error: String((error as Error)?.message ?? error),
+      }));
+      return true;
+    }
     if (req.method !== 'GET') return false;
     if (!this.authorized(req, url)) {
       res
@@ -1598,9 +1642,7 @@ export class RuntimeSurface {
       return true;
     }
     if (url.pathname === '/session') {
-      res
-        .writeHead(200, { 'content-type': 'application/json' })
-        .end(JSON.stringify([this.opencodeSessionObject()]));
+      this.writeSessionRead(res, true);
       return true;
     }
     if (url.pathname === '/session/status') {
@@ -1827,12 +1869,21 @@ export class RuntimeSurface {
       return true;
     }
     if (m && decodedSession === this.rootId) {
-      res
-        .writeHead(200, { 'content-type': 'application/json' })
-        .end(JSON.stringify(this.opencodeSessionObject()));
+      this.writeSessionRead(res);
       return true;
     }
     return false;
+  }
+
+  private writeSessionRead(res: ServerResponse, list = false): void {
+    const finish = () => {
+      const info = this.opencodeSessionObject();
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(list ? [info] : info));
+    };
+    if (!this.opts.refreshSessionPermission) return finish();
+    void this.opts.refreshSessionPermission().then(finish).catch(() => {
+      res.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'session permissions are unavailable' }));
+    });
   }
 
   /**
@@ -1937,7 +1988,8 @@ export class RuntimeSurface {
         return json(400, { error: 'path contains malformed percent-encoding' });
       if (sessionId !== this.rootId) return json(404, { error: 'unknown session' });
       // OpenCode's own Session shape, minimally: id, title, time.
-      return json(200, this.opencodeSessionObject());
+      this.writeSessionRead(res);
+      return true;
     }
 
     if (sub === 'events' && req.method === 'GET') {

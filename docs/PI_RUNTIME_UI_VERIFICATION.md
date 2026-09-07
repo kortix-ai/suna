@@ -160,12 +160,12 @@ These fixes do not establish complete OpenCode replacement parity.
 | Commands | Agent/model/variant overrides, subtasks, shell interpolation, and file references return explicit unsupported errors. |
 | Extensibility | Custom tool/plugin hooks, MCP, and durable subagents are not implemented in the committed Pi worker. |
 | Compaction and complete OpenCode lifecycle | Full compaction, child-session, and raw lifecycle compatibility remain incomplete. |
-| Interactive requests across worker replacement | Pending questions restore through durable checkpoints on `885ad04b91`. A real replacement preserves the request and message IDs; replying and reloading succeed. Pending permission requests and session approvals still need replacement recovery. |
+| Interactive requests across worker replacement | Pending questions and permissions restore through durable checkpoints. Real replacement checks preserve request and message IDs, saved responses, and exact side-effect counts. |
 | LSP | Pi has no language-server process. Config advertises `lsp: false`; diagnostics are empty. |
 | Agent configuration | Some fields are discoverable but do not yet drive runtime behavior. The session's agent and model remain immutable. |
 
-The full deployed suite still has the separately documented Git-upload, public
-preview URL, and admin-browser failures. New behavior is verified on the branch
+The full deployed suite still has the separately documented Git-upload failures.
+Public preview URL and admin-browser regressions are resolved. New behavior is verified on the branch
 preview. Dev and production verification do not apply before an approved merge.
 
 **Shippable to production: NOT YET.**
@@ -220,3 +220,29 @@ appear in both the tool result and the composer. The next attempt exposed a
 wildcard mismatch for a literal newline. Approval of that primary request then
 verified recovery of the following external-directory stage. The wildcard
 regression fails locally before its follow-up fix and passes afterward.
+
+## Permission wildcards and repeated question call IDs
+
+Deployment [34165737162](https://github.com/kortix-ai/suna/actions/runs/34165737162)
+serves `f4f764f13d7bf6ddfe871e58ad0d416f8059965c`. A live bash command containing
+a literal newline receives only the configured external-directory request.
+The browser approval returns 200. The command writes exactly one marker, active
+turns settle, and reload preserves the transcript with zero failed requests.
+The full preview browser suite passes 19/19 without retries in 190.4 seconds.
+The original reported session also reloads this worker while preserving all 15
+wire messages exactly and adding no error.
+
+The repeated question regression reuses a provider call ID in a later assistant
+message. Replacement restores the second request and both distinct answers.
+Earlier tool effects execute once. Root checks pass in 58.6 seconds, including
+395/395 REST/CLI flows and 554 worker tests with 2,914 assertions.
+
+## Session permission updates
+
+The real child-process regression first returns 404 for `PATCH /session/:id`.
+The implementation stores ordered rules before acknowledgment and makes reset
+restore compiled policy. Six HTTP scenarios cover replacement, rejected input,
+failed writes, cross-worker updates, queued always grants, and prompt controls.
+Store tests also cover concurrent reset, approval retries, and corrupt records.
+The root command passes in 59.8 seconds, including 395/395 REST/CLI flows.
+Live session-wide permission verification follows deployment of this change.

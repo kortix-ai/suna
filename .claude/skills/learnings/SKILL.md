@@ -5201,3 +5201,19 @@ allow-all rule because the command contained a literal newline.
 Automation: checkpoint and child-process HTTP tests restore the second question
 with a distinct answer. `permission-wildcard.test.ts` covers multiline allow and
 deny rules, rule precedence, command arguments, separators, and literal regex text.
+
+
+## 2026-09-08 — Persist session permission updates and refresh grants across workers
+
+A permission switch must update the runtime before the UI claims persistence.
+Restore rules in journal order and refresh them before authorization. Scope saved
+grants to the last explicit permission update. A late approval cannot undo reset.
+Keep pending requests visible when the update fails, and acknowledge writes only
+after durable read-back.
+
+Incident: the Pi worker returned 404 for the SDK session permission update. The
+UI fell back to an approver that stopped working when its browser tab closed.
+An already-running second worker also missed grants saved by the first worker.
+Automation: session-permission-routes.test.ts exercises real worker HTTP routes
+for persistence, reset, validation, failed writes, concurrent workers, queued
+grants, and prompt controls. Permission-store tests race reset with approval.

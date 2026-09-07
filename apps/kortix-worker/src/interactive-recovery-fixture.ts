@@ -24,6 +24,8 @@ export async function fixture(
     secondQuestion?: boolean;
     continuedDoom?: boolean;
     rejectPermissionRelease?: boolean;
+    repeatPermissionPerPrompt?: boolean;
+    rejectPermissionUpdates?: boolean;
     ownerLeaseMs?: number;
     permission?: 'primary' | 'external' | 'doom';
   } = {},
@@ -36,6 +38,7 @@ export async function fixture(
   let storeUnavailableUntil = 0;
   let failedStoreRequests = 0;
   let rejectPermissionRelease = options.rejectPermissionRelease ?? false;
+  let rejectPermissionUpdates = options.rejectPermissionUpdates ?? false;
   const server = Bun.serve({
     port: 0,
     async fetch(request) {
@@ -84,7 +87,9 @@ export async function fixture(
           );
         }
         if (options.secondQuestion) calls.push(['question', { questions }]);
-        const first = providerRequests.length === 1;
+        const first = options.repeatPermissionPerPrompt
+          ? providerRequests.length % 2 === 1
+          : providerRequests.length === 1;
         const repeat =
           (options.repeatedCallId || options.repeatedQuestionCallId) &&
           providerRequests.length === 2;
@@ -144,6 +149,12 @@ export async function fixture(
       }
       if (request.method === 'GET') return Response.json(items);
       const item = (await request.json()) as SessionLogItem;
+      if (
+        rejectPermissionUpdates &&
+        item.kind === 'journal' &&
+        item.stream === 'kortix.pi.session-permissions.v1'
+      )
+        return new Response('Permission update forbidden', { status: 403 });
       if (
         rejectPermissionRelease &&
         item.kind === 'journal' &&
@@ -208,17 +219,18 @@ export async function fixture(
     const deadline = Date.now() + 8000;
     while (!port && Date.now() < deadline && child.exitCode === null) await Bun.sleep(10);
     if (!port) throw new Error('Worker failed to listen: ' + output.slice(-3000));
-    const call = (path: string, body?: unknown) =>
-      fetch(`http://127.0.0.1:${port}${path}`, {
+    const origin = `http://127.0.0.1:${port}`;
+    const call = (path: string, body?: unknown, method = 'POST') =>
+      fetch(`${origin}${path}`, {
         headers: { authorization: 'Bearer fixture', 'content-type': 'application/json' },
-        ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }),
+        ...(body === undefined ? {} : { method, body: JSON.stringify(body) }),
       });
     const read = async (path: string) => {
       const r = await call(path);
       expect(r.status).toBe(200);
       return r.json() as Promise<any>;
     };
-    return { child, call, read };
+    return { child, call, read, origin };
   };
   const until = async <T>(read: () => Promise<T>, match: (value: T) => boolean): Promise<T> => {
     const deadline = Date.now() + 5000;
@@ -239,6 +251,9 @@ export async function fixture(
     items,
     allowPermissionRelease: () => {
       rejectPermissionRelease = false;
+    },
+    allowPermissionUpdates: () => {
+      rejectPermissionUpdates = false;
     },
     outage: (durationMs: number) => {
       storeUnavailableUntil = Date.now() + durationMs;
