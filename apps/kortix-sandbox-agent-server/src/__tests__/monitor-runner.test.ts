@@ -104,6 +104,9 @@ function fakeTimeouts() {
   }
   return {
     timers,
+    isActive(timer: ReturnType<typeof setTimeout>): boolean {
+      return handlers.has(timer as unknown as number)
+    },
     onlyActive(): ReturnType<typeof setTimeout> {
       expect(handlers.size).toBe(1)
       return handlers.keys().next().value as unknown as ReturnType<typeof setTimeout>
@@ -360,12 +363,12 @@ describe('lifecycle events', () => {
     const initialWatchdog = clock.onlyActive()
     await waitFor(() => ingest.eventsFor('chatty').some((event) => event.kind === 'event'))
 
-    // The observed event cancelled the watchdog armed at process start.
-    clock.fire(initialWatchdog)
-    expect(ingest.eventsFor('chatty').filter((event) => event.line.event === 'silent')).toHaveLength(0)
+    expect(clock.isActive(initialWatchdog)).toBe(false)
+    const replacementWatchdog = clock.onlyActive()
+    expect(replacementWatchdog).not.toBe(initialWatchdog)
 
     // The replacement watchdog still reports a genuinely silent interval.
-    clock.fire(clock.onlyActive())
+    clock.fire(replacementWatchdog)
     await waitFor(() => ingest.eventsFor('chatty').some((event) => event.line.event === 'silent'))
   })
 })
