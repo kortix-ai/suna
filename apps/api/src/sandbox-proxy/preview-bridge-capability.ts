@@ -24,7 +24,10 @@ interface Dependencies {
 
 export function createPreviewBridgeCapabilityResolver(deps: Dependencies = {}) {
   const now = deps.now ?? Date.now;
-  const timeoutMs = deps.timeoutMs ?? 1_000;
+  // A cold provider expose plus the daemon round trip can exceed one second.
+  // Bound the complete operation without mistaking normal cold latency for an
+  // old daemon that cannot serve the bridge.
+  const timeoutMs = deps.timeoutMs ?? 3_000;
   const ingressResolver = deps.resolveIngress ?? resolveSandboxIngress;
   const headerBuilder = deps.buildHeaders ?? buildSandboxUpstreamHeaders;
   const fetcher = deps.fetch ?? globalThis.fetch;
@@ -63,15 +66,16 @@ export function createPreviewBridgeCapabilityResolver(deps: Dependencies = {}) {
           headers,
           signal: controller.signal,
         });
-        if (!response.ok) return { supported: false, ingressIdentity: ingress.url };
+        if (!response.ok) return null;
         const body = await response.json().catch(() => null) as {
           capabilities?: { localhost_preview_bridge?: unknown };
         } | null;
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
         return {
           supported: body?.capabilities?.localhost_preview_bridge === 1,
           ingressIdentity: ingress.url,
         };
-      })().catch(() => ({ supported: false, ingressIdentity: undefined }));
+      })().catch(() => null);
       let timer: ReturnType<typeof setTimeout> | undefined;
       const deadline = new Promise<null>((resolve) => {
         timer = setTimeout(() => {
@@ -81,7 +85,10 @@ export function createPreviewBridgeCapabilityResolver(deps: Dependencies = {}) {
       });
       const result = await Promise.race([operation, deadline]);
       if (timer) clearTimeout(timer);
-      const supported = result?.supported === true;
+      // A timeout or failed health request is not evidence of a downgrade.
+      // Keep this runtime's verified transport until health explicitly reports
+      // an older daemon. Runtime replacement and key rotation use a new key.
+      const supported = result?.supported ?? cached?.supported ?? false;
       if (cache.size >= MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value!);
       cache.set(key, {
         supported,

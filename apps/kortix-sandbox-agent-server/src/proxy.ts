@@ -762,7 +762,10 @@ export function startProxy(
         req.signal.addEventListener('abort', abortUpstream, { once: true })
         const connected = await new Promise<boolean>((resolve) => {
           upstream.once('open', () => resolve(true))
-          upstream.once('error', () => resolve(false))
+          // Keep an error listener for the socket's entire lifetime, including
+          // failed upgrades. Bun's ws adapter can emit again after a one-shot
+          // listener is consumed; an unhandled error exits the whole daemon.
+          upstream.on('error', () => resolve(false))
           upstream.once('close', () => resolve(false))
         })
         req.signal.removeEventListener('abort', abortUpstream)

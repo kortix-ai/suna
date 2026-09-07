@@ -249,13 +249,17 @@ credentials and `public_share`/`wake` parameters do not reach the app.
 
 The API checks the running daemon's explicit preview capability before choosing
 the transport. A supported daemon uses the localhost bridge. An old daemon or
-an unavailable capability probe retains the previous direct app-port ingress.
+an inconclusive first probe retains the previous direct app-port ingress.
 This decision happens before application bytes are sent. A failed bridge request
 is never replayed through legacy ingress.
 
-Capability discovery has a one-second total deadline, including provider ingress
+Capability discovery has a three-second total deadline, including provider ingress
 lookup. Concurrent requests for the same runtime and service key share one probe.
 Positive results expire after 15 seconds; negative results expire after two seconds.
+An inconclusive refresh preserves the cached decision for that runtime and service
+key. A timeout, HTTP failure, or malformed response does not prove a downgrade.
+A successful health response without capability v1 selects legacy ingress.
+Runtime replacement and service-key rotation require a new probe.
 
 The original host-check problem can persist on an old daemon until its safe
 update completes. Capability detection prevents the API deployment from turning
@@ -279,6 +283,14 @@ to satisfy this gate. A staged binary is not proof of a completed swap.
    The API reports that failure as `502`; an app's marked `401` stays `401`.
 5. Check the Next.js server log for Server Action rejection details.
    A successful page GET alone does not verify a Server Action.
+6. Use the app's actual HMR path and token when testing WebSockets. An Express
+   Vite middleware app can use `/vite-hmr`; a failed upgrade at `/` proves nothing
+   about that socket. Check that the connection remains open beyond 30 seconds.
+7. If the panel alternates between active and inactive, check daemon health and
+   process logs before changing React rendering. A running provider VM does not
+   prove the daemon is alive. On Bun 1.3.14, a one-shot `ws` error listener can
+   leave a repeated error unhandled and exit the daemon. The preview bridge keeps
+   its error listener for the socket's complete lifetime, including failed upgrades.
 
 ## What is still not identical to reaching the box directly
 

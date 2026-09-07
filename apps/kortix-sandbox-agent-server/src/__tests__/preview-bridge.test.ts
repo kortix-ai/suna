@@ -55,6 +55,37 @@ afterEach(() => {
 })
 
 describe('localhost preview bridge', () => {
+  test.each(['refused', 'cancelled'])('a %s app WebSocket does not crash the daemon process', async (failure) => {
+    const proxyPath = new URL('../proxy.ts', import.meta.url).pathname
+    const program = `
+      import { startProxy } from ${JSON.stringify(proxyPath)};
+      import { createHmac } from 'node:crypto';
+      const app = Bun.serve({port:0,fetch:()=>${failure === 'refused' ? "new Response('starting',{status:503})" : 'new Promise(()=>{})'}});
+      const daemon = startProxy(${JSON.stringify(config({ servicePort: 0 }))}, {
+        getState:()=> 'ok',getInternalUrl:()=> 'http://127.0.0.1:4096',getActivePort:()=>4096,getPid:()=>undefined,
+      },Date.now());
+      const exp=Math.floor(Date.now()/1000)+60;
+      const sig=createHmac('sha256',${JSON.stringify(TOKEN)}).update('localhost-preview:'+app.port+'.'+exp).digest('base64url');
+      const client=new WebSocket('ws://127.0.0.1:'+daemon.port+'/__kortix_preview/vite-hmr',{
+        headers:{'X-Kortix-Preview-Target':app.port+'.'+exp+'.'+sig},
+      });
+      ${failure === 'cancelled' ? 'setTimeout(()=>client.close(),20);' : ''}
+      await new Promise(resolve=>{client.onerror=resolve;client.onclose=resolve;});
+      await Bun.sleep(30);
+      const response=await fetch('http://127.0.0.1:'+daemon.port+'/kortix/health');
+      console.log('DAEMON_HEALTH='+response.status);
+      client.close();app.stop(true);await daemon.stop();process.exit(response.status===200?0:2);
+    `
+    const child = Bun.spawn([process.execPath, '--no-env-file', '-e', program], {
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+    ])
+    expect({ exitCode, stderr: stderr.includes('Unhandled error') }).toEqual({ exitCode: 0, stderr: false })
+    expect(stdout).toContain('DAEMON_HEALTH=200')
+  })
+
   test('a signed target dispatches the original request to localhost', async () => {
     const upstream = Bun.serve({
       port: 0,

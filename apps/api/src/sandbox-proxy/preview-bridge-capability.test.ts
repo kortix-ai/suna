@@ -5,6 +5,54 @@ const record = {
   sandboxId: 'runtime-1', externalId: 'external-1', provider: 'daytona', serviceKey: 'key-1',
 } as any;
 
+test('a cold provider lookup lasting over one second still discovers the bridge', async () => {
+  const resolve = createPreviewBridgeCapabilityResolver({
+    resolveIngress: async () => {
+      await Bun.sleep(1_100);
+      return { url: 'https://daemon.test', headers: {}, effectivePort: 8000 };
+    },
+    buildHeaders: async () => ({}),
+    fetch: async () => Response.json({ capabilities: { localhost_preview_bridge: 1 } }),
+  });
+  expect(await resolve(record)).toBe(true);
+});
+
+test.each(['http-error', 'timeout', 'invalid-json'])('a transient %s does not switch a confirmed bridge back to legacy ingress', async (failure) => {
+  let now = 0;
+  let fail = false;
+  const resolve = createPreviewBridgeCapabilityResolver({
+    now: () => now,
+    timeoutMs: 10,
+    resolveIngress: async () => ({ url: 'https://daemon.test', headers: {}, effectivePort: 8000 }),
+    buildHeaders: async () => ({}),
+    fetch: async () => {
+      if (!fail) return Response.json({ capabilities: { localhost_preview_bridge: 1 } });
+      if (failure === 'timeout') return new Promise(() => {});
+      if (failure === 'invalid-json') return new Response('{');
+      return new Response('temporarily unavailable', { status: 502 });
+    },
+  });
+  expect(await resolve(record)).toBe(true);
+  now = 15_001;
+  fail = true;
+  expect(await resolve(record)).toBe(true);
+});
+
+test('an explicit healthy downgrade switches a confirmed bridge back to legacy ingress', async () => {
+  let now = 0;
+  const resolve = createPreviewBridgeCapabilityResolver({
+    now: () => now,
+    resolveIngress: async () => ({ url: 'https://daemon.test', headers: {}, effectivePort: 8000 }),
+    buildHeaders: async () => ({}),
+    fetch: async () => Response.json(now === 0
+      ? { capabilities: { localhost_preview_bridge: 1 } }
+      : { daemon: 'ok' }),
+  });
+  expect(await resolve(record)).toBe(true);
+  now = 15_001;
+  expect(await resolve(record)).toBe(false);
+});
+
 test('keeps old daemons on direct app ingress and enables an explicit v1 bridge', async () => {
   let body: unknown = { daemon: 'ok' };
   const resolve = createPreviewBridgeCapabilityResolver({
