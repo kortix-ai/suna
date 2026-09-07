@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Normalize preview hosts after the provider ingress, not before it (2026-09-07)
+
+**When:** proxying agent-created app ports. Terminate provider ingress at the
+sandbox daemon, then forward to localhost with matching Host, Origin and forwarded
+host. Do not disable framework host checks. *Incident:* an internal `.aec.local`
+Host reproduced Vite's `403`; a real Next.js Server Action also requires coherent
+proxy headers. Verify the running daemon before enabling the API route.
+*Enforcers:* `e2e-preview-proxy.test.ts`, `ws-preview-app.test.ts`, and daemon
+`preview-bridge.test.ts`. See `docs/runbooks/sandbox-preview-origins.md`.
+
 ### One attachment tile, translated to tokens — never a mockup's pixels (2026-09-06)
 
 **When:** a reference screenshot arrives for a surface that two places render

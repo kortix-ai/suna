@@ -35,6 +35,14 @@ import { config } from '../../config';
 import { previewCorsHeaders } from '../preview-hosts';
 import { appCookieHeader } from '../preview-session';
 import {
+  PREVIEW_BRIDGE_HEADER,
+  PREVIEW_BRIDGE_PORT,
+  PREVIEW_BRIDGE_PREFIX,
+  PREVIEW_TARGET_HEADER,
+  signPreviewTarget,
+} from '../preview-bridge';
+import { supportsPreviewBridge } from '../preview-bridge-capability';
+import {
   PREVIEW_STATE_HEADER,
   previewStatePage,
   type PreviewState,
@@ -137,6 +145,8 @@ export const STRIP_FORWARD_HEADERS = new Set([
   'x-request-id',
   'accept-encoding',
   'content-length',
+  PREVIEW_TARGET_HEADER.toLowerCase(),
+  KORTIX_USER_CONTEXT_HEADER.toLowerCase(),
   KORTIX_SERVICE_CALL_HEADER.toLowerCase(),
 ]);
 
@@ -227,6 +237,7 @@ function stripFrameAncestors(csp: string): string | null {
 // not a framing restriction.
 function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
   const headers = new Headers(upstreamHeaders);
+  headers.delete(PREVIEW_BRIDGE_HEADER);
   headers.delete('x-frame-options');
   for (const key of ['content-security-policy', 'content-security-policy-report-only']) {
     const csp = headers.get(key);
@@ -879,12 +890,15 @@ export async function forwardToSandbox(
   // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
   // client actually used (/4096), and env-sync-before-prompt must behave identically
   // to Daytona, which likewise skips it on the direct 4096 opencode path.
-  const ingressRequest = {
+  const appPreview = !carriesSessionData(port);
+  const logicalIngressRequest = {
     port,
     path: remainingPath,
     transport: 'http' as const,
   };
-  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
+  // Authorization and lifecycle rules describe the LOGICAL port. The daemon is
+  // only transport for app previews; treating it as the target changes ACLs.
+  const upstreamPort = appPreview ? port : routeSandboxIngress(record, logicalIngressRequest).effectivePort;
   // Did the BOX author this request? It holds two credentials that authenticate
   // perfectly well, and every deadline decision below — the turn-start
   // observation, the preview-use extend, the auto-resume — must exclude them or
@@ -1016,6 +1030,17 @@ export async function forwardToSandbox(
       });
     }
   }
+  // Probe only after ownership, session visibility, and lifecycle checks.
+  // The decision is fixed before any application bytes are sent.
+  const bridgePreview = appPreview && await supportsPreviewBridge(record);
+  if (bridgePreview && !record.serviceKey) {
+    return jsonProxyError({ error: 'sandbox preview bridge is not configured' }, 503, origin);
+  }
+  const ingressRequest = {
+    port: bridgePreview ? PREVIEW_BRIDGE_PORT : port,
+    path: bridgePreview ? `${PREVIEW_BRIDGE_PREFIX}${remainingPath}` : remainingPath,
+    transport: 'http' as const,
+  };
   const serviceKey = record.serviceKey;
 
   // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
@@ -1141,7 +1166,8 @@ export async function forwardToSandbox(
   // could deposit up to 12 copies and still report failure.
   const uploadDelivery = isUploadRequest({ method, path: remainingPath });
   // Requests whose body must never be sent twice.
-  const nonReplayableWrite = promptDelivery || uploadDelivery;
+  const appMutation = appPreview && !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
+  const nonReplayableWrite = promptDelivery || uploadDelivery || appMutation;
   // False until this request reaches the non-idempotent upstream fetch.
   // Failures before it, such as env synchronization, are safe to retry.
   let promptDeliveryMayHaveReachedUpstream = false;
@@ -1189,13 +1215,13 @@ export async function forwardToSandbox(
         console.warn(
           `[PREVIEW] previous /global/event stream for ${sandboxId}:${port} delivered 0 bytes — re-resolving ingress`,
         );
-        invalidatePreviewLink(sandboxId, port);
+        invalidatePreviewLink(sandboxId, ingressRequest.port);
       }
       const ingress = await resolveSandboxIngress(record, ingressRequest);
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
-      const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
+      const targetUrl = previewUrl.replace(/\/$/, '') + ingressRequest.path + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
@@ -1257,10 +1283,13 @@ export async function forwardToSandbox(
       ptl.mark('env-sync');
       const authHeaders = await buildSandboxUpstreamHeaders({
         sandboxId,
-        userId,
+        // A bridge ticket is not a user context. An older daemon must reject
+        // the reserved bridge path, never reinterpret it as OpenCode traffic.
+        userId: bridgePreview ? '' : userId,
         serviceKey,
         providerHeaders: ingress.headers,
       });
+      if (bridgePreview) authHeaders[PREVIEW_TARGET_HEADER] = signPreviewTarget(port, serviceKey!);
 
       // PLACE THE WIRE ID against the target session's actual tip — for ANY
       // target, child sessions included. See `prompt-wire-id-repair.ts` for the
@@ -1463,7 +1492,8 @@ export async function forwardToSandbox(
         });
       }
 
-      if (upstream.status === 401 && serviceKey && userId) {
+      const appResponse = appPreview && upstream.headers.get(PREVIEW_BRIDGE_HEADER) === '1';
+      if (upstream.status === 401 && !appResponse && serviceKey) {
         await abandonTurnLifecycle();
         console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);
         return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502, origin);
@@ -1475,7 +1505,7 @@ export async function forwardToSandbox(
       //   502 — container started but the port isn't listening yet
       //   503 — sandbox service temporarily unavailable
       // Retry with auto-wake so users don't see errors during the boot window.
-      if (upstream.status === 503) {
+      if (upstream.status === 503 && !appResponse) {
         const bodyText = await upstream
           .clone()
           .text()
@@ -1497,7 +1527,7 @@ export async function forwardToSandbox(
         }
       }
 
-      if (upstream.status === 502 || upstream.status === 503) {
+      if ((upstream.status === 502 || upstream.status === 503) && !appResponse) {
         // A prompt-delivery or upload POST is NEVER retried on a 5xx: an upstream
         // 502 can mean the sandbox already accepted the body (the gateway just
         // dropped the response), so re-POSTing would enqueue the message twice or
@@ -1508,7 +1538,7 @@ export async function forwardToSandbox(
           console.warn(
             `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
           );
-          invalidatePreviewLink(sandboxId, port);
+          invalidatePreviewLink(sandboxId, ingressRequest.port);
           await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
           continue;
         }
@@ -1535,8 +1565,8 @@ export async function forwardToSandbox(
       if (upstream.status === 400) {
         const bodyText = await upstream.text();
         const isSandboxDown =
-          bodyText.includes('no IP address found') ||
-          bodyText.includes('failed to get runner info');
+          !appResponse && (bodyText.includes('no IP address found') ||
+          bodyText.includes('failed to get runner info'));
         // Daytona rejected this BEFORE opencode — the box has no runner, so the
         // prompt certainly was not enqueued. On the last attempt we stop
         // retrying and pass the 400 through, and the dedupe claim must go with
@@ -1560,7 +1590,7 @@ export async function forwardToSandbox(
               `[PREVIEW] Sandbox ${sandboxId} still booting (attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
             );
           }
-          invalidatePreviewLink(sandboxId, port);
+          invalidatePreviewLink(sandboxId, ingressRequest.port);
           await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
           continue;
         }
@@ -1764,7 +1794,7 @@ export async function forwardToSandbox(
         wakeTriggered = true;
       }
       if (attempt < MAX_RETRIES) {
-        invalidatePreviewLink(sandboxId, port);
+        invalidatePreviewLink(sandboxId, ingressRequest.port);
         await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
       }
     }
@@ -1829,6 +1859,8 @@ export async function resolvePreviewWsUpstream(opts: {
    *  first connect, or "Reconnect now". Automatic backoff retries never set it.
    *  See `shouldWakeStoppedSandboxForWsAttach`. */
   wakeRequested?: boolean;
+  incomingHeaders?: Headers;
+  originMode?: boolean;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
@@ -1840,12 +1872,13 @@ export async function resolvePreviewWsUpstream(opts: {
   let record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
 
-  const ingressRequest = {
+  const appPreview = !carriesSessionData(opts.upstreamPort);
+  const logicalIngressRequest = {
     port: opts.upstreamPort,
     path: remainingPath,
     transport: 'websocket' as const,
   };
-  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
+  const upstreamPort = appPreview ? opts.upstreamPort : routeSandboxIngress(record, logicalIngressRequest).effectivePort;
 
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
@@ -1897,6 +1930,16 @@ export async function resolvePreviewWsUpstream(opts: {
     }
   }
 
+  const bridgePreview = appPreview && await supportsPreviewBridge(record);
+  if (bridgePreview && !record.serviceKey) {
+    return { ok: false, status: 503, message: 'sandbox preview bridge is not configured' };
+  }
+  const ingressRequest = {
+    port: bridgePreview ? PREVIEW_BRIDGE_PORT : opts.upstreamPort,
+    path: bridgePreview ? `${PREVIEW_BRIDGE_PREFIX}${remainingPath}` : remainingPath,
+    transport: 'websocket' as const,
+  };
+
   const ingress = await resolveSandboxIngress(record, ingressRequest);
   const previewUrl = ingress.url;
   const wsBase = previewUrl
@@ -1905,12 +1948,27 @@ export async function resolvePreviewWsUpstream(opts: {
     .replace(/^https:/i, 'wss:');
   const headers = await buildSandboxUpstreamHeaders({
     sandboxId,
-    userId,
+    userId: bridgePreview ? '' : userId,
     serviceKey: record.serviceKey,
     providerHeaders: ingress.headers,
   });
+  if (appPreview) {
+    if (bridgePreview) {
+      headers[PREVIEW_TARGET_HEADER] = signPreviewTarget(opts.upstreamPort, record.serviceKey!);
+    }
+    // Copy only app handshake fields. Never relay client platform credentials or
+    // hop-specific WebSocket keys; each leg generates its own handshake.
+    for (const name of ['origin', 'referer', 'sec-websocket-protocol']) {
+      const value = opts.incomingHeaders?.get(name);
+      if (value) headers[name] = value;
+    }
+    if (opts.originMode) {
+      const cookies = appCookieHeader(opts.incomingHeaders?.get('cookie') ?? '');
+      if (cookies) headers.cookie = cookies;
+    }
+  }
 
-  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+  const upstreamUrl = new URL(wsBase + ingressRequest.path + queryString);
   if (ingress.websocket?.userContextQueryParam) {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
     if (signedContext) {

@@ -28,6 +28,9 @@ import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
 import { resolveSandboxIngress } from './backend';
 import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
+import { carriesSessionData } from './session-data-ports';
+import { PREVIEW_TARGET_HEADER } from './preview-bridge';
+import { selectPreviewWsUpstreamQuery } from './ws-query';
 
 // opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
 // a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
@@ -109,15 +112,16 @@ export interface PreviewWsData {
   queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>;
   /** Interval that pings both legs — see PREVIEW_WS_KEEPALIVE_MS. */
   keepalive?: ReturnType<typeof setInterval>;
+  pendingUpstreamMessages?: Array<string | ArrayBuffer>;
 }
 
 /** Minimal shape of the Bun server WebSocket we touch. */
 interface ServerWs {
   data: PreviewWsData;
-  send: (data: string | ArrayBufferView | ArrayBuffer) => void;
+  send: (data: string | Bun.BufferSource) => void;
   close: (code?: number, reason?: string) => void;
   /** Bun's ServerWebSocket sends a PING control frame. */
-  ping?: (data?: string | ArrayBufferView | ArrayBuffer) => void;
+  ping?: (data?: string | Bun.BufferSource) => void;
 }
 
 /**
@@ -167,6 +171,7 @@ export function matchPreviewWsPath(
  */
 export async function preparePreviewWsUpgrade(
   url: URL,
+  req?: Request,
 ): Promise<
   | { ok: true; data: PreviewWsData }
   | { ok: false; status: number; message: string }
@@ -189,6 +194,8 @@ export async function preparePreviewWsUpgrade(
     search: url.search,
     userId: principal.userId,
     callerSessionId: principal.sessionId,
+    incomingHeaders: req?.headers,
+    signal: req?.signal,
   });
 }
 
@@ -225,6 +232,7 @@ export async function preparePreviewHostWsUpgrade(
   }
 
   let session = sessionFromCookies(req, target);
+  const cookieAuthenticated = !!session;
   if (!session) {
     // No cookie yet — accept the same one-shot credential the HTTP handshake
     // takes, so a client that opens a socket before any page load still works.
@@ -246,6 +254,10 @@ export async function preparePreviewHostWsUpgrade(
     search: url.search,
     userId: session.userId,
     callerSessionId: session.callerSessionId,
+    incomingHeaders: req.headers,
+    originMode: true,
+    cookieAuthenticated,
+    signal: req.signal,
   });
 }
 
@@ -257,6 +269,10 @@ async function resolveUpgradeForPrincipal(input: {
   search: string;
   userId: string;
   callerSessionId: string | null;
+  incomingHeaders?: Headers;
+  originMode?: boolean;
+  cookieAuthenticated?: boolean;
+  signal?: AbortSignal;
 }): Promise<
   | { ok: true; data: PreviewWsData }
   | { ok: false; status: number; message: string }
@@ -266,20 +282,16 @@ async function resolveUpgradeForPrincipal(input: {
   // opencode PTY (and any other opencode endpoint) must reach opencode directly
   // on 4096 — the daemon on 8000 can't carry a WebSocket. Everything else is
   // proxied against the port the client addressed.
-  const ptyKind = classifyPtyWebSocketPath(remainingPath);
+  const ptyKind = carriesSessionData(port) ? classifyPtyWebSocketPath(remainingPath) : null;
   const upstreamPort =
     ptyKind === 'opencode' ? await resolveLiveOpencodePort(sandboxId) : port;
 
   // Strip our own auth credentials before forwarding — opencode authenticates
   // via the Daytona preview token header, not our query params.
-  const upstreamQuery = new URLSearchParams(input.search);
-  // `wake=1` is OUR resume signal (see shouldWakeStoppedSandboxForWsAttach) and
-  // means nothing to the daemon — strip it with the credentials.
-  const wakeRequested = upstreamQuery.get('wake') === '1';
-  upstreamQuery.delete('token');
-  upstreamQuery.delete('public_share');
-  upstreamQuery.delete('wake');
-  const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';
+  const { queryString, wakeRequested } = await selectPreviewWsUpstreamQuery(input.search, {
+    cookieAuthenticated: !!input.cookieAuthenticated,
+    carriesSessionData: carriesSessionData(port),
+  });
 
   try {
     const upstream = await resolvePreviewWsUpstream({
@@ -293,14 +305,15 @@ async function resolveUpgradeForPrincipal(input: {
       // a Supabase login id — so it is also the correct agent binding.
       boundCredentialSessionId: callerSessionId,
       wakeRequested,
+      incomingHeaders: input.incomingHeaders,
+      originMode: input.originMode,
     });
     if (!upstream.ok) {
       return { ok: false, status: upstream.status, message: upstream.message };
     }
-    return {
-      ok: true,
-      data: { type: 'preview-ws', url: upstream.url, headers: upstream.headers },
-    };
+    const data: PreviewWsData = { type: 'preview-ws', url: upstream.url, headers: upstream.headers };
+    if (upstream.headers[PREVIEW_TARGET_HEADER]) await connectPreviewAppWebSocket(data, input.signal);
+    return { ok: true, data };
   } catch (err) {
     console.warn('[PREVIEW-WS] upstream resolve failed:', (err as Error)?.message || err);
     return { ok: false, status: 502, message: 'failed to resolve sandbox upstream' };
@@ -324,6 +337,39 @@ export function sanitizePreviewWsCloseCode(code: number | undefined): number {
   return 4500;
 }
 
+/** An empty protocol header is invalid when the browser offered no protocol. */
+export function previewWsUpgradeHeaders(state: PreviewWsData): Record<string, string> | undefined {
+  return state.upstream?.protocol ? { 'Sec-WebSocket-Protocol': state.upstream.protocol } : undefined;
+}
+
+/** App protocols are chosen by the app, before the browser leg is upgraded. */
+export async function connectPreviewAppWebSocket(state: PreviewWsData, signal?: AbortSignal): Promise<void> {
+  const headers = new Headers(state.headers);
+  const protocols = (headers.get('sec-websocket-protocol') ?? '').split(',').map(p => p.trim()).filter(Boolean);
+  headers.delete('sec-websocket-protocol');
+  const upstream = new WebSocket(state.url, { headers: Object.fromEntries(headers), protocols } as any);
+  upstream.binaryType = 'arraybuffer';
+  state.upstream = upstream;
+  state.pendingUpstreamMessages = [];
+  let pendingBytes = 0;
+  upstream.onmessage = event => {
+    const message = event.data as string | ArrayBuffer;
+    pendingBytes += typeof message === 'string' ? Buffer.byteLength(message) : message.byteLength;
+    if (pendingBytes > 1024 * 1024) { upstream.close(1009, 'preview handshake buffer exceeded'); return; }
+    state.pendingUpstreamMessages!.push(message);
+  };
+  await new Promise<void>((resolve, reject) => {
+    const fail = () => { cleanup(); upstream.close(); reject(new Error('preview WebSocket upstream unavailable')); };
+    const timer = setTimeout(fail, 10_000);
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', fail); };
+    upstream.onopen = () => { cleanup(); resolve(); };
+    upstream.onerror = fail;
+    upstream.onclose = fail;
+    if (signal?.aborted) fail();
+    else signal?.addEventListener('abort', fail, { once: true });
+  });
+}
+
 // ── Byte-piping handlers, wired into Bun.serve's `websocket` config ──────────
 
 export const previewWsHandlers = {
@@ -336,7 +382,7 @@ export const previewWsHandlers = {
     try {
       // Bun extends the WebSocket constructor with a `headers` option so we can
       // forward the Daytona preview token / service key / signed user-context.
-      upstream = new WebSocket(state.url, { headers: state.headers } as any);
+      upstream = state.upstream ?? new WebSocket(state.url, { headers: state.headers } as any);
     } catch (err) {
       console.warn('[PREVIEW-WS] upstream connect threw:', (err as Error)?.message || err);
       try { ws.close(1011, 'upstream connect failed'); } catch {}
@@ -346,7 +392,7 @@ export const previewWsHandlers = {
     upstream.binaryType = 'arraybuffer';
     state.upstream = upstream;
 
-    upstream.onopen = () => {
+    const onOpen = () => {
       state.ready = true;
       const queued = state.queue ?? [];
       state.queue = [];
@@ -358,6 +404,7 @@ export const previewWsHandlers = {
       stopPreviewWsKeepalive(state);
       state.keepalive = setInterval(() => pingPreviewWsLegs(ws), PREVIEW_WS_KEEPALIVE_MS);
     };
+    upstream.onopen = onOpen;
 
     upstream.onmessage = (ev: MessageEvent) => {
       try { ws.send(ev.data as any); } catch {}
@@ -372,6 +419,13 @@ export const previewWsHandlers = {
       stopPreviewWsKeepalive(state);
       try { ws.close(4502, 'upstream error'); } catch {}
     };
+    if (upstream.readyState === WebSocket.OPEN) {
+      onOpen();
+      for (const message of state.pendingUpstreamMessages ?? []) ws.send(message);
+      state.pendingUpstreamMessages = undefined;
+    } else if (upstream.readyState !== WebSocket.CONNECTING) {
+      ws.close(4502, 'upstream closed during handshake');
+    }
   },
 
   message(ws: ServerWs, message: string | Buffer) {

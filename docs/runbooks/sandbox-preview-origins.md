@@ -62,6 +62,9 @@ with each other. An origin per preview puts each app in its own principal.
 | signed session cookie | `apps/api/src/sandbox-proxy/preview-session.ts` |
 | request handling | `apps/api/src/sandbox-proxy/preview-origin.ts` |
 | WebSocket upgrade | `apps/api/src/sandbox-proxy/ws-proxy.ts` |
+| signed localhost target | `apps/api/src/sandbox-proxy/preview-bridge.ts` |
+| in-sandbox localhost HTTP bridge | `apps/kortix-sandbox-agent-server/src/preview-bridge.ts` |
+| in-sandbox WebSocket bridge | `apps/kortix-sandbox-agent-server/src/proxy.ts` |
 | edge signature | `apps/api/src/shared/edge-signature.ts` |
 | edge Worker | `infra/cloudflare/workers/preview-router/` |
 | provisioning (cloud) | `.github/workflows/configure-preview-edge.yml` |
@@ -208,15 +211,78 @@ getting JSON — an app's own `fetch('/api')` must never be handed HTML.
 deployment serves before redirecting. Without that it would be an open redirect
 that also hands over a bearer token.
 
+## App traffic reaches localhost inside the sandbox
+
+The public preview hostname stays unchanged. App traffic follows this route:
+
+```text
+preview origin -> API authorization -> provider daemon ingress (8000)
+               -> signed daemon bridge -> http://localhost:<app-port>
+```
+
+Direct provider ingress can replace `Host` with an internal name such as
+`3000-<sandbox>.aec.local`. Vite rejects that host with `403`. A proxy can also
+break Next.js Server Actions when `Origin` and `x-forwarded-host` disagree.
+Changing generated framework allowlists does not repair this shared transport.
+
+The API signs `X-Kortix-Preview-Target: port.exp.signature` with the sandbox
+service key. The HMAC-SHA256 input is `localhost-preview:port.exp`; the signature
+uses base64url and expires after 60 seconds. The daemon strips the internal
+`/__kortix_preview` prefix and forwards the original app path and query.
+Both HTTP and WebSocket requests reach the app with `Host` and
+`x-forwarded-host` set to `localhost:<app-port>`. `Origin`, when present, uses
+that same HTTP origin. `Referer` keeps its path and query on that origin.
+
+The bridge removes platform credentials, provider credentials, internal headers,
+and hop-by-hop headers before forwarding. Session-data authorization still uses
+the requested logical port. Daemon, OpenCode, and credential-bearing loopback
+listeners cannot be selected as app targets. Public shares receive only an app
+target ticket, never a signed user context.
+
+WebSocket upgrades preserve the negotiated subprotocol and immediate HMR messages.
+No `Sec-WebSocket-Protocol` response header is sent when no protocol was selected.
+Cookie-authenticated app sockets retain app-owned `token` values. Platform
+credentials and `public_share`/`wake` parameters do not reach the app.
+
+### Compatibility and rollout
+
+The API checks the running daemon's explicit preview capability before choosing
+the transport. A supported daemon uses the localhost bridge. An old daemon or
+an unavailable capability probe retains the previous direct app-port ingress.
+This decision happens before application bytes are sent. A failed bridge request
+is never replayed through legacy ingress.
+
+The original host-check problem can persist on an old daemon until its safe
+update completes. Capability detection prevents the API deployment from turning
+that delay into a new preview outage. A forged bridge request still fails closed:
+the reserved prefix cannot be interpreted as an app-selected daemon control path.
+
+Verify the running daemon, not only the API SHA or a downloaded binary. Runtime
+asset reconciliation can stage a new daemon while active work defers its swap.
+Before rollout, verify one pre-change session before and after convergence, and
+one new session. Exercise app HTTP, WebSocket hot reload, cookies, Server Actions,
+and the unchanged chat/files/PTY control paths. Do not restart active user work
+to satisfy this gate. A staged binary is not proof of a completed swap.
+
+### Diagnosis
+
+1. Compare a request directly to the app with one through its preview origin.
+2. Inspect the app's received `Host`, `Origin`, and `x-forwarded-host`.
+3. A provider hostname at the app means the request used legacy ingress.
+   Check the running daemon's capability and pending runtime update.
+4. A daemon `401` without `X-Kortix-Preview-Bridge: 1` indicates bridge/auth failure.
+   The API reports that failure as `502`; an app's marked `401` stays `401`.
+5. Check the Next.js server log for Server Action rejection details.
+   A successful page GET alone does not verify a Server Action.
+
 ## What is still not identical to reaching the box directly
 
 - `X-Frame-Options` and CSP `frame-ancestors` are stripped from responses, so the
   preview can be embedded in the Kortix session panel.
-- The upstream sees `Host`/`x-forwarded-host` of the sandbox ingress, not the
-  preview hostname. This is deliberate: frameworks that check `Origin` against
-  `Host` on mutations (Next.js Server Actions, SvelteKit, Django CSRF) reject a
-  mismatch. The true public origin is passed as `X-Forwarded-Prefix`.
-- Request bodies are buffered, not streamed, because the proxy retries an
-  attempt that fails before delivery.
+- App requests use a localhost origin, not the browser's public preview origin.
+  The public proxy context remains in `X-Forwarded-Prefix`.
+- The API buffers request bodies; the daemon forwards the body stream.
+  App mutations are not replayed after an ambiguous failure. App responses are
+  not reclassified as provider errors solely because they return `401` or `5xx`.
 - `Accept-Encoding` is forced to `identity` upstream, so bytes pass through
   without a decompress/recompress step.

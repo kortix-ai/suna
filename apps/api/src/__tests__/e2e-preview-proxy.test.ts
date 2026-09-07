@@ -12,6 +12,7 @@
  * - Global fetch is mocked to simulate upstream responses
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { createHmac } from 'node:crypto';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -60,6 +61,7 @@ let mockFetchCalls: Array<{
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let mockResolvedPreviewPorts: number[] = [];
 let mockSnapshotSyncCalls: Array<Record<string, unknown>> = [];
+let mockPreviewBridgeSupported = true;
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -271,6 +273,11 @@ mock.module('../shared/daytona', () => ({
       };
     },
   }),
+}));
+
+mock.module('../sandbox-proxy/preview-bridge-capability', () => ({
+  supportsPreviewBridge: async (record: { serviceKey?: string | null }) =>
+    mockPreviewBridgeSupported && !!record.serviceKey,
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -532,6 +539,7 @@ beforeEach(() => {
   mockDbUpdateCalls = [];
   mockResolvedPreviewPorts = [];
   mockSnapshotSyncCalls = [];
+  mockPreviewBridgeSupported = true;
   mockTitleCalls = [];
   // The per-sandbox env-push memo (`PROMPT_ENV_PUSH_TTL_MS`) would otherwise
   // carry over from the previous test on the same TEST_SANDBOX_ID and skip the
@@ -547,6 +555,46 @@ afterEach(() => {
 });
 
 describe('Preview proxy: websocket upstream resolution', () => {
+  test('an old daemon keeps app WebSockets on direct ingress', async () => {
+    mockPreviewBridgeSupported = false;
+    const result = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID, upstreamPort: 3000, userId: TEST_USER_ID,
+      remainingPath: '/socket', queryString: '?room=1', callerSessionId: null,
+      boundCredentialSessionId: null,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([3000]);
+    if (result.ok) {
+      expect(result.url).toBe('wss://preview.daytona.io/proxy-url/socket?room=1');
+      expect(result.headers['X-Kortix-Preview-Target']).toBeUndefined();
+    }
+  });
+
+  test('app WebSockets use the signed localhost bridge with their original path and query', async () => {
+    const result = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID, upstreamPort: 3000, userId: TEST_USER_ID,
+      remainingPath: '/_next/webpack-hmr', queryString: '?token=app-hmr-token',
+      callerSessionId: null, boundCredentialSessionId: null,
+      incomingHeaders: new Headers({
+        Origin: 'https://public-preview.example', Cookie: 'app_session=abc; __kortix_preview=platform-secret',
+        'Sec-WebSocket-Protocol': 'vite-hmr',
+        'X-Kortix-Preview-Target': '8000.forged.signature',
+      }),
+      originMode: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    if (!result.ok) return;
+    expect(result.url).toBe('wss://preview.daytona.io/proxy-url/__kortix_preview/_next/webpack-hmr?token=app-hmr-token');
+    const headers = new Headers(result.headers);
+    expect(headers.get('x-kortix-preview-target')).toMatch(/^3000\.\d+\.[A-Za-z0-9_-]+$/);
+    expect(headers.get('x-kortix-user-context')).toBeNull();
+    expect(headers.get('origin')).toBe('https://public-preview.example');
+    expect(headers.get('cookie')).toBe('app_session=abc');
+    expect(headers.get('sec-websocket-protocol')).toBe('vite-hmr');
+  });
+
   test('keeps Daytona PTY websocket upstreams on direct OpenCode port 4096', async () => {
     const upstream = await resolvePreviewWsUpstream({
       sandboxId: TEST_SANDBOX_ID,
@@ -816,6 +864,83 @@ describe('Preview proxy: ownership', () => {
 });
 
 describe('Preview proxy: forwarding', () => {
+  test('an old daemon keeps HTTP app requests on direct ingress', async () => {
+    mockPreviewBridgeSupported = false;
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/3000/app?q=1`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockResolvedPreviewPorts).toEqual([3000]);
+    expect(mockFetchCalls[0].url).toBe(`${mockPreviewUrl}/app?q=1`);
+    expect(mockFetchCalls[0].headers['x-kortix-preview-target']).toBeUndefined();
+  });
+
+  for (const provider of ['daytona', 'platinum', 'e2b']) {
+    test(`${provider}: app previews reach the daemon with a signed localhost target, not provider app ingress`, async () => {
+      mockDbSandbox = { ...mockDbSandbox, provider };
+      const app = createProxyTestApp();
+      const response = await app.request(`/v1/p/${TEST_SANDBOX_ID}/3000/kortix/health?q=app`, {
+        headers: {
+          Authorization: 'Bearer test',
+          'X-Kortix-Preview-Target': '8000.forged.signature',
+          'X-Kortix-User-Context': 'forged-user-context',
+        },
+      });
+      expect(response.status).toBe(200);
+      expect(mockResolvedPreviewPorts).toEqual([8000]);
+      expect(mockFetchCalls[0].url).toBe(`${mockPreviewUrl}/__kortix_preview/kortix/health?q=app`);
+      const headers = mockFetchCalls[0].headers;
+      expect(headers['x-kortix-user-context']).toBeUndefined();
+      const ticket = headers['x-kortix-preview-target'];
+      expect(ticket).toBeDefined();
+      const [port, expiry, signature] = ticket!.split('.');
+      expect(port).toBe('3000');
+      expect(Number(expiry)).toBeGreaterThan(Math.floor(Date.now() / 1000));
+      expect(Number(expiry)).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 60);
+      expect(signature).toBe(createHmac('sha256', TEST_SERVICE_KEY)
+        .update(`localhost-preview:${port}.${expiry}`).digest('base64url'));
+    });
+  }
+
+  test('a client cannot inject a localhost target ticket into a daemon control request', async () => {
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/health`, {
+      headers: { Authorization: 'Bearer test', 'X-Kortix-Preview-Target': '3000.forged.signature' },
+    });
+    expect(response.status).toBe(200);
+    expect(mockFetchCalls[0].headers['x-kortix-preview-target']).toBeUndefined();
+    expect(mockFetchCalls[0].url).toBe(`${mockPreviewUrl}/kortix/health`);
+  });
+
+  test('an app mutation is not replayed after an ambiguous connection reset', async () => {
+    mockFetchResponses = [{ status: 502, body: '', error: new Error('ECONNRESET') }];
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/3000/action`, {
+      method: 'POST', headers: { Authorization: 'Bearer test' }, body: 'increment=1',
+    });
+    expect(response.status).toBe(502);
+    expect(mockFetchCalls.filter(call => call.method === 'POST')).toHaveLength(1);
+  });
+
+  test('an app 401 is not confused with daemon authentication failure', async () => {
+    mockFetchResponses = [{ status: 401, body: 'Sign in to this app', headers: { 'x-kortix-preview-bridge': '1' } }];
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/3000/login`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(response.status).toBe(401);
+    expect(await response.text()).toBe('Sign in to this app');
+    expect(response.headers.has('x-kortix-preview-bridge')).toBe(false);
+  });
+
+  test('an app preview without a service key keeps legacy direct ingress', async () => {
+    mockDbSandbox = { ...mockDbSandbox, config: {} };
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/3000/`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(response.status).toBe(200);
+    expect(mockResolvedPreviewPorts).toEqual([3000]);
+    expect(mockFetchCalls).toHaveLength(1);
+  });
+
   test('proxies GET request and returns upstream response', async () => {
     mockFetchResponses = [
       { status: 200, body: '<html>Hello</html>', headers: { 'content-type': 'text/html' } },
@@ -1205,13 +1330,13 @@ describe('Preview proxy: forwarding', () => {
 
     expect(mockFetchCalls[0].headers['e2b-traffic-access-token']).toBe('e2b-traffic-token');
     expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBeUndefined();
-    expect(mockResolvedPreviewPorts).toEqual([TEST_PORT]);
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
   });
 
   test('forwards signed user context for session sandbox access', async () => {
     mockFetchResponses = [{ status: 200, body: 'OK' }];
     const app = createProxyTestApp();
-    await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/kortix/health`, {
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/health`, {
       headers: { Authorization: 'Bearer test' },
     });
 
