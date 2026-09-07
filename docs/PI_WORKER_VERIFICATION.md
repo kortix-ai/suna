@@ -5,6 +5,8 @@ Draft PR: [#6998](https://github.com/kortix-ai/suna/pull/6998).
 Preview: [pi.kortix.com](https://pi.kortix.com).
 Architecture: [walkthrough, Q&A, and diagram](./PI_WORKER_WALKTHROUGH.md).
 
+Latest UI and streaming checks: [runtime UI verification](./PI_RUNTIME_UI_VERIFICATION.md).
+
 ## Source and deployment
 
 This session started at `0ea36cfd55483344184ab70080f75505547c4024` with extensive
@@ -16,7 +18,7 @@ The manual-stop fix deployed as `b67a248bea8bc5671d4b411c34869eff0c12c5ca`, from
 [run 34110201077](https://github.com/kortix-ai/suna/actions/runs/34110201077).
 Its health returned that exact SHA and `started_at: 2026-09-07T10:17:15.716Z`.
 
-The latest verified browser deployment is `5d619e7a8b322e778e8e198f0f2b7a04979b7901`, from
+The earlier browser deployment is `5d619e7a8b322e778e8e198f0f2b7a04979b7901`, from
 [run 34106940711](https://github.com/kortix-ai/suna/actions/runs/34106940711).
 `GET /v1/health` returned `status: ok`, `environment: preview`, that exact commit,
 and `started_at: 2026-09-07T09:41:45.170Z`.

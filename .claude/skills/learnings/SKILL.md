@@ -4877,3 +4877,17 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
 - Enforcement: stop.test.ts holds the capture promise open and proves the
   provider receives no stop until persistence finishes. SESS-24 reads the
   completed reply from the durable mirror after a real provider stop.
+
+
+### Keep Pi tool registration, UI transport, and prompt guidance together (2026-09-07)
+
+- Incident: the test deployment returned text questions instead of question cards.
+  An older live worker also returned `404` for `/global/event`, while health
+  remained `200`. The starter prompt still claimed four tools and no skill loader.
+- Rule: a runtime capability includes its registered tool, compatible routes and
+  events, restored result metadata, and accurate model guidance. A healthy old
+  process is not proof that a new capability is installed.
+- Enforcement: question and permission HTTP tests exercise tool execution and
+  replies; global-event tests exercise streaming and parsed heartbeats; runtime
+  guidance and starter tests reject the old capability description. Browser
+  verification asserts partial renders, interactive payloads, and restored cards.

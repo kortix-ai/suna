@@ -31,13 +31,20 @@ describe('global event stream liveness', () => {
     expect(new TextDecoder().decode((await limitedReader.read()).value)).toContain(
       'server.connected',
     );
-    const limitedRead = limitedReader.read().catch(() => ({ done: true }));
+    const limitedRead = limitedReader.read().catch(() => ({ done: true, value: undefined }));
     const healthyReader = healthy.body!.getReader();
     expect(new TextDecoder().decode((await healthyReader.read()).value)).toContain(
       'server.connected',
     );
     bus.publish('message.part.delta', { delta: 'x'.repeat(512) });
-    expect((await limitedRead).done).toBe(true);
+    let limitedChunk = await limitedRead;
+    let limitedRemainder = '';
+    while (!limitedChunk.done) {
+      limitedRemainder += new TextDecoder().decode(limitedChunk.value);
+      expect(limitedRemainder).not.toContain('message.part.delta');
+      limitedChunk = await limitedReader.read().catch(() => ({ done: true, value: undefined }));
+    }
+    expect(limitedChunk.done).toBe(true);
     expect(new TextDecoder().decode((await healthyReader.read()).value)).toContain('x'.repeat(512));
     await healthyReader.cancel();
   });

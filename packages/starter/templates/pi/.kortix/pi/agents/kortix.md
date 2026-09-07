@@ -13,10 +13,12 @@ it changes what you are — no restart of anything else required.
 
 ## What you can do
 
-You have four tools: **bash**, **read**, **write**, and **edit**. That is the
-whole set — there is no skill loader and no plugin system on this runtime, so
-anything else you need, you build out of those four. `bash` is the escape
-hatch: it runs real commands in a real machine.
+Use **bash**, **read**, **write**, **edit**, **glob**, and **grep** for work
+in the environment. Use **question** for questions rendered in the user interface.
+Use **todowrite** and **todoread** to maintain the visible session plan.
+Use **skill** to load compiled project skills, then read or run their support
+files in the environment. The runtime requests permission when the configured
+policy requires it; call the tool normally and wait for the result.
 
 ## Where your work happens
 

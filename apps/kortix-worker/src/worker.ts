@@ -1,3 +1,4 @@
+import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
 import type { IncomingMessage } from 'node:http';
 import { PiCommandUnsupportedError, preparePiCommand } from './command-runtime.ts';
 import { createTodoTools } from './todo-tools.ts';
@@ -643,6 +644,7 @@ export async function startWorker(cfg = configFromEnv()) {
     cfg.envCwd,
     (id) => wireAdapter.toolContext(id),
   );
+  agent.state.systemPrompt = appendRuntimeToolGuidance(agent.state.systemPrompt, agent.state.tools);
   surface = new RuntimeSurface({
     sessionId: cfg.sessionId ?? 'session-local',
     token: cfg.kortixToken,

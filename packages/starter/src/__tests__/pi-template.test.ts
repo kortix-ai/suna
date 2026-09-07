@@ -17,7 +17,7 @@ import {
   validateAgentMdFrontmatter,
   validateManifest,
 } from '@kortix/manifest-schema';
-import { STARTER_TEMPLATE_IDS, getStarterFiles } from '../index.ts';
+import { STARTER_TEMPLATE_IDS, getStarterFiles } from '../index';
 
 const files = () => getStarterFiles({ projectName: 'Demo Project', template: 'pi' });
 const byPath = () => new Map(files().map((f) => [f.path, f.content]));
@@ -34,6 +34,15 @@ function agentMdPath(manifest: Record<string, unknown>, agent: string): string {
 }
 
 describe('pi starter kit', () => {
+  test('describes the interactive runtime tools instead of the old four-tool limit', () => {
+    const prompt = byPath().get('.kortix/pi/agents/kortix.md')!;
+    for (const name of ['question', 'todowrite', 'todoread', 'skill', 'glob', 'grep']) {
+      expect(prompt).toContain(`**${name}**`);
+    }
+    expect(prompt).not.toContain('You have four tools');
+    expect(prompt).not.toContain('there is no skill loader');
+  });
+
   test('is a selectable template id', () => {
     expect(STARTER_TEMPLATE_IDS).toContain('pi');
   });
@@ -102,12 +111,9 @@ describe('pi starter kit', () => {
     expect(checked).toBeGreaterThan(0);
   });
 
-  // The pi worker builds exactly [bash, read, write, edit] and never reads the
-  // `permission.skill` a `skills:` grant compiles into. Granting it would name
-  // a capability the runtime does not have — the same "authoritative but inert"
-  // trap as scaffolding .kortix/opencode into a pi project. v3 is
-  // deny-by-default, so omitting it is also the correct default.
-  test('grants no skills, because the pi runtime has no skill loader', () => {
+  // Manifest resource grants stay explicit. Runtime tool availability is
+  // described separately by the compiled agent and registered tools.
+  test('does not add implicit skill grants to the manifest', () => {
     const manifest = parseManifestText(byPath().get('kortix.yaml')!, 'yaml') as Record<
       string,
       unknown
