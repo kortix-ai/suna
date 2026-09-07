@@ -1,14 +1,17 @@
 'use client';
 
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import type {
   SessionDisplayStatus,
   SessionSource,
   SessionSourceKind,
 } from '@/components/projects/session-label';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { LocalTime } from '@/components/ui/local-time';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
+import { CR_ID_PREFIX } from '@/features/review-center/review-actions';
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
@@ -22,9 +25,20 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import type { ComponentType, ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type FocusEvent,
+  type ReactElement,
+} from 'react';
 import { shortRelative } from './project-session-list-helpers';
 import { SessionStatusMark } from './session-status-mark';
+
+const HOVER_OPEN_DELAY_MS = 200;
+const HOVER_CLOSE_DELAY_MS = 100;
 
 const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -77,6 +91,12 @@ interface SessionBriefProps {
   changeRequestLoadState: ChangeRequestLoadState;
 }
 
+interface SessionBriefInteractionProps {
+  projectId: string;
+  reviewEnabled: boolean;
+  onOpenChangeRequest: (changeRequestId: string) => void;
+}
+
 function useStatusLabel(status: SessionDisplayStatus): string {
   const t = useTranslations('sidebar.sessionList.status');
   const keys: Record<SessionDisplayStatus, Parameters<typeof t>[0]> = {
@@ -127,6 +147,53 @@ function ChangeRequestStatusIcon({ status }: { status: ChangeRequestStatus }) {
   );
 }
 
+const CHANGE_REQUEST_ACTION_CLASS =
+  'hover:bg-accent focus-visible:ring-ring -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1 text-left text-xs focus-visible:ring-2 focus-visible:outline-none';
+
+function ChangeRequestAction({
+  changeRequest,
+  projectId,
+  reviewEnabled,
+  onOpenChangeRequest,
+  onDismiss,
+}: {
+  changeRequest: ChangeRequest;
+  projectId: string;
+  reviewEnabled: boolean;
+  onOpenChangeRequest: (changeRequestId: string) => void;
+  onDismiss: () => void;
+}) {
+  const content = (
+    <>
+      <ChangeRequestStatusIcon status={changeRequest.status} />
+      <span className="text-foreground min-w-0 flex-1 truncate">{changeRequest.title}</span>
+    </>
+  );
+
+  if (reviewEnabled) {
+    const reviewItemId = `${CR_ID_PREFIX}${changeRequest.cr_id}`;
+    const href = `${capabilityTabHref(projectId, 'review')}?id=${encodeURIComponent(reviewItemId)}`;
+    return (
+      <HoverPrefetchLink href={href} onClick={onDismiss} className={CHANGE_REQUEST_ACTION_CLASS}>
+        {content}
+      </HoverPrefetchLink>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={CHANGE_REQUEST_ACTION_CLASS}
+      onClick={() => {
+        onDismiss();
+        onOpenChangeRequest(changeRequest.cr_id);
+      }}
+    >
+      {content}
+    </button>
+  );
+}
+
 function SessionBriefContent({
   title,
   status,
@@ -134,7 +201,11 @@ function SessionBriefContent({
   source,
   changeRequests,
   changeRequestLoadState,
-}: SessionBriefProps) {
+  projectId,
+  reviewEnabled,
+  onOpenChangeRequest,
+  onDismiss,
+}: SessionBriefProps & SessionBriefInteractionProps & { onDismiss: () => void }) {
   const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
   const visibleChangeRequests = changeRequestLoadState === 'ready' ? changeRequests : [];
 
@@ -165,9 +236,14 @@ function SessionBriefContent({
       {visibleChangeRequests.length > 0 ? (
         <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
           {visibleChangeRequests.map((changeRequest) => (
-            <li key={changeRequest.cr_id} className="flex min-w-0 items-center gap-2 text-xs">
-              <ChangeRequestStatusIcon status={changeRequest.status} />
-              <span className="text-foreground min-w-0 flex-1 truncate">{changeRequest.title}</span>
+            <li key={changeRequest.cr_id}>
+              <ChangeRequestAction
+                changeRequest={changeRequest}
+                projectId={projectId}
+                reviewEnabled={reviewEnabled}
+                onOpenChangeRequest={onOpenChangeRequest}
+                onDismiss={onDismiss}
+              />
             </li>
           ))}
         </ul>
@@ -179,21 +255,75 @@ function SessionBriefContent({
 export function SessionBriefHoverCard({
   children,
   ...brief
-}: SessionBriefProps & { children: ReactElement }) {
+}: SessionBriefProps & SessionBriefInteractionProps & { children: ReactElement }) {
+  const [open, setOpen] = useState(false);
+  const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+
+  useEffect(() => clearTimer, [clearTimer]);
+
+  const openNow = useCallback(() => {
+    clearTimer();
+    setOpen(true);
+  }, [clearTimer]);
+
+  const updateAfterDelay = useCallback(
+    (nextOpen: boolean, delay: number) => {
+      clearTimer();
+      timer.current = setTimeout(() => setOpen(nextOpen), delay);
+    },
+    [clearTimer],
+  );
+
+  const handleContentBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      updateAfterDelay(false, HOVER_CLOSE_DELAY_MS);
+    }
+  };
+
+  // Radix HoverCard makes every descendant untabbable. Popover preserves the
+  // same hover behavior while keeping each change-request action keyboardable.
+  // Mount its portal beside the trigger so those actions follow it in Tab order.
   return (
-    <HoverCard openDelay={200} closeDelay={100}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent
-        aria-hidden
-        side="right"
-        align="start"
-        sideOffset={14}
-        collisionPadding={8}
-        className="w-72 p-3 shadow-xs"
+    <div ref={setPortalContainer} className="contents">
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          clearTimer();
+          setOpen(nextOpen);
+        }}
       >
-        <SessionBriefContent {...brief} />
-      </HoverCardContent>
-    </HoverCard>
+        <PopoverTrigger
+          asChild
+          onPointerEnter={() => updateAfterDelay(true, HOVER_OPEN_DELAY_MS)}
+          onPointerLeave={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
+          onFocus={openNow}
+          onBlur={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
+        >
+          {children}
+        </PopoverTrigger>
+        <PopoverContent
+          container={portalContainer ?? undefined}
+          side="right"
+          align="start"
+          sideOffset={14}
+          className="w-72 p-3 shadow-xs"
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onPointerEnter={openNow}
+          onPointerLeave={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
+          onFocusCapture={openNow}
+          onBlurCapture={handleContentBlur}
+        >
+          <SessionBriefContent {...brief} onDismiss={() => setOpen(false)} />
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 

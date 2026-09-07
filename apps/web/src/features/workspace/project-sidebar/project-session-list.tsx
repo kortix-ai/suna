@@ -32,6 +32,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
+import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
+import { ProjectFilesProvider } from '@/features/project-files/context';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
@@ -195,6 +197,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   );
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
+  const [selectedChangeRequestId, setSelectedChangeRequestId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: qk.project.sessions(projectId),
@@ -407,6 +410,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
             changeRequestLoadState={changeRequestLoadState}
             canShowHoverCard={canShowSessionHoverCard}
+            reviewEnabled={reviewEnabled}
+            onOpenChangeRequest={setSelectedChangeRequestId}
             onDelete={(id, label) => setSessionToDelete({ id, label })}
             onShare={(s) => setSessionToShare(s)}
             onRename={(id, name) => setSessionToRename({ id, name })}
@@ -510,6 +515,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
+
+      {!reviewEnabled && (
+        <ProjectFilesProvider value={{ projectId, ref: '' }}>
+          <ChangeRequestDetailDialog
+            crId={selectedChangeRequestId}
+            onClose={() => setSelectedChangeRequestId(null)}
+          />
+        </ProjectFilesProvider>
+      )}
     </div>
   );
 }
@@ -735,6 +749,8 @@ interface ProjectSessionRowProps {
   changeRequests: readonly ChangeRequest[];
   changeRequestLoadState: ChangeRequestLoadState;
   canShowHoverCard: boolean;
+  reviewEnabled: boolean;
+  onOpenChangeRequest: (changeRequestId: string) => void;
   /** Rendered indented under its coordinator — the indent already conveys the
    *  spawn link, so the right-side spawned-by icon is omitted. */
   nested?: boolean;
@@ -759,6 +775,8 @@ function ProjectSessionRow({
   changeRequests,
   changeRequestLoadState,
   canShowHoverCard,
+  reviewEnabled,
+  onOpenChangeRequest,
   nested = false,
 }: ProjectSessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -859,6 +877,9 @@ function ProjectSessionRow({
             source={source}
             changeRequests={changeRequests}
             changeRequestLoadState={changeRequestLoadState}
+            projectId={session.project_id}
+            reviewEnabled={reviewEnabled}
+            onOpenChangeRequest={onOpenChangeRequest}
           >
             {sessionLink}
           </SessionBriefHoverCard>
