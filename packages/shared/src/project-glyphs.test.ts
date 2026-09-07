@@ -28,7 +28,7 @@ describe('the glyph catalogue', () => {
     // The flat list is what the validator allowlists; the groups are what the
     // grid renders. A name in one but not the other is either an unpickable
     // glyph or an unsavable one.
-    const grouped = PROJECT_GLYPH_GROUPS.flatMap((g) => g.names).sort();
+    const grouped: string[] = PROJECT_GLYPH_GROUPS.flatMap((g) => g.names).sort();
     expect(grouped).toEqual([...PROJECT_GLYPH_NAMES].sort());
   });
 

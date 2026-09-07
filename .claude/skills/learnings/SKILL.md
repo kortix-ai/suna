@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Bake remote tool executables into every environment image (2026-09-07)
+
+**When:** a worker tool invokes an executable through environment RPC.
+**Incident:** Pi preview `0ea36cfd55` completed four workspace tools, but glob and grep returned exit `127`: `rg` was missing.
+**Rule:** install each required executable in the shared/custom layer and standalone image. Verify it during image build and invalidate the runtime layer cache.
+**Enforcer:** `workspace-search-floor.test.ts` requires ripgrep and `rg --version` in both image definitions.
+
 ### A two-runtime lifecycle policy must drive production writes (2026-09-04)
 
 **When:** adding an auxiliary runtime whose lifecycle follows a session worker.
