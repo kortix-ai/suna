@@ -163,6 +163,14 @@ It does not replay an uncertain model or tool boundary. Otherwise, it restores
 the committed answer or records one interruption, preserving message IDs and
 parent links.
 
+Transient session-log read failures preserve a running turn until its last
+confirmed owner lease expires. A monotonic timer cancels model and tool work
+at that deadline, including when a network request remains blocked. An explicit
+ownership conflict cancels immediately. When storage returns, the same worker
+retries durable reconciliation without requiring another user prompt. Recovery
+uses the existing checkpoint and interruption rules. It never retries an
+uncertain transcript append in the same process.
+
 The session stays busy until durable reconciliation finishes. Recovery removes
 stale streamed messages before publishing idle. A durable completion also keeps
 its control-plane notification pending until delivery succeeds.

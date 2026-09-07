@@ -58,6 +58,7 @@ import {
   MAX_SESSION_LOG_ITEM_BYTES,
   RemoteSessionLog,
   SessionLogItemTooLargeError,
+  SessionLogReadUnavailableError,
   type SessionLog,
   type SessionLogItem,
   type StorageLogItem,
@@ -423,6 +424,13 @@ function vmUptimeMs(): number | null {
   }
 }
 
+class TurnOwnerLeaseLostError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TurnOwnerLeaseLostError';
+  }
+}
+
 export interface WorkerConfig {
   port: number;
   envUrl: string;
@@ -644,7 +652,7 @@ export async function buildHarness(cfg: WorkerConfig) {
           return;
         }
         if (!(await turnJournalRef.appendTranscriptMutation(messageId, item as StorageLogItem))) {
-          throw new Error(
+          throw new TurnOwnerLeaseLostError(
             `turn ${messageId} lost its durable owner lease before transcript append`,
           );
         }
@@ -823,7 +831,7 @@ export async function buildHarness(cfg: WorkerConfig) {
       if (checkpoint) {
         planQuestionReplay(restoredMessages, checkpoint);
         if (recoveryOwnerLost || !(await turnJournal.heartbeat(messageId))) {
-          throw new Error(`lost recovered question ownership for ${messageId}`);
+          throw new TurnOwnerLeaseLostError(`lost recovered question ownership for ${messageId}`);
         }
         resumableQuestions.set(messageId, checkpoint);
         return true;
@@ -1043,7 +1051,9 @@ export async function buildHarness(cfg: WorkerConfig) {
       if (event.type !== 'agent_end' && event.type !== 'turn_end') return;
       const messageId = persistenceTurnIdentity?.() ?? null;
       if (messageId && !(await turnJournal.heartbeat(messageId))) {
-        throw new Error(`turn ${messageId} lost its durable owner lease before persistence`);
+        throw new TurnOwnerLeaseLostError(
+          `turn ${messageId} lost its durable owner lease before persistence`,
+        );
       }
       // The watermark advances only over messages that actually landed. It used
       // to be set to `all.length` unconditionally after a loop that swallowed
@@ -1483,6 +1493,8 @@ export async function startWorker(cfg = configFromEnv()) {
       : { tools: options.tools, toolsOrder: Object.keys(options.tools) }),
   });
   const turns = new Map<string, WorkerTurn>();
+  const admissionRetries = new Map<string, ReturnType<typeof setTimeout>>();
+  let closing = false;
   const removeCancelledTurn = (messageId: string): TurnCompletion => {
     if (surface.transcript.messageById(messageId)) {
       surface.publishWire({
@@ -1556,12 +1568,12 @@ export async function startWorker(cfg = configFromEnv()) {
         // model or tool execution. A replacement that reclaimed this turn
         // while the read was blocked must fence this worker out.
         if (!(await turnJournal.heartbeat(turn.messageId))) {
-          throw new Error(`turn ${turn.messageId} lost its durable owner lease`);
+          throw new TurnOwnerLeaseLostError(`turn ${turn.messageId} lost its durable owner lease`);
         }
         if (!resumingQuestion && await rewindAcceptedInputForReplay(turn.messageId)) {
           await hydrateDurableState();
           if (!(await turnJournal.heartbeat(turn.messageId))) {
-            throw new Error(`turn ${turn.messageId} lost its durable owner lease`);
+            throw new TurnOwnerLeaseLostError(`turn ${turn.messageId} lost its durable owner lease`);
           }
         }
       }
@@ -1575,18 +1587,35 @@ export async function startWorker(cfg = configFromEnv()) {
       const heartbeatMs = Math.max(1, cfg.turnOwnerHeartbeatMs ?? DEFAULT_TURN_OWNER_HEARTBEAT_MS);
       let ownerLost = false;
       let settling = false;
+      const leaseMs = Math.max(1, cfg.turnOwnerLeaseMs ?? DEFAULT_TURN_OWNER_LEASE_MS);
+      let leaseDeadline = performance.now() + leaseMs;
+      const expireLease = () => {
+        if (settling || ownerLost) return;
+        ownerLost = true;
+        agent.abort();
+      };
+      let leaseTimer = setTimeout(expireLease, leaseMs);
+      const renewLease = () => {
+        if (ownerLost || performance.now() >= leaseDeadline) {
+          expireLease();
+          return;
+        }
+        leaseDeadline = performance.now() + leaseMs;
+        clearTimeout(leaseTimer);
+        leaseTimer = setTimeout(expireLease, leaseMs);
+      };
       let heartbeatInFlight: Promise<void> | null = null;
       const heartbeatTimer = setInterval(() => {
         if (settling || ownerLost || heartbeatInFlight) return;
         const heartbeat = (async () => {
           try {
             if (!(await turnJournal.heartbeat(turn.messageId))) {
-              ownerLost = true;
-              agent.abort();
+              expireLease();
+            } else {
+              renewLease();
             }
           } catch (error) {
-            ownerLost = true;
-            agent.abort();
+            if (!(error instanceof SessionLogReadUnavailableError)) expireLease();
             console.error(
               JSON.stringify({
                 msg: 'turn owner heartbeat failed',
@@ -1614,8 +1643,7 @@ export async function startWorker(cfg = configFromEnv()) {
               await turnJournal.acknowledgeAbort(turn.messageId);
             }
           } catch (error) {
-            ownerLost = true;
-            agent.abort();
+            if (!(error instanceof SessionLogReadUnavailableError)) expireLease();
             console.error(
               JSON.stringify({
                 msg: 'turn abort poll failed',
@@ -1671,6 +1699,7 @@ export async function startWorker(cfg = configFromEnv()) {
           await agent.prompt(userMessage as any);
         }
         settling = true;
+        clearTimeout(leaseTimer);
         clearInterval(heartbeatTimer);
         clearInterval(abortPollTimer);
         await heartbeatInFlight;
@@ -1680,11 +1709,13 @@ export async function startWorker(cfg = configFromEnv()) {
           agent.abort();
           await env.waitForAbortSettled();
           if (!(await turnJournal.acknowledgeAbort(turn.messageId))) {
-            throw new Error(`turn ${turn.messageId} lost its durable owner lease`);
+            throw new TurnOwnerLeaseLostError(`turn ${turn.messageId} lost its durable owner lease`);
           }
           lastAgentEndStatus = 'error';
         }
-        if (ownerLost) throw new Error(`turn ${turn.messageId} lost its durable owner lease`);
+        if (ownerLost) {
+          throw new TurnOwnerLeaseLostError(`turn ${turn.messageId} lost its durable owner lease`);
+        }
         const assistant = toDurable(
           surface.assistantMessagesForParent(turn.messageId),
         ) as unknown as WireMessageEnvelope[];
@@ -1695,14 +1726,14 @@ export async function startWorker(cfg = configFromEnv()) {
             agent.abort();
             await env.waitForAbortSettled();
             if (!(await turnJournal.acknowledgeAbort(turn.messageId))) {
-              throw new Error(`turn ${turn.messageId} lost its durable owner lease`);
+              throw new TurnOwnerLeaseLostError(`turn ${turn.messageId} lost its durable owner lease`);
             }
             lastAgentEndStatus = 'error';
             completed = await turnJournal.complete(turn.messageId, assistant, lastAgentEndStatus);
           }
         }
         if (!completed) {
-          throw new Error(`turn ${turn.messageId} lost its durable owner lease`);
+          throw new TurnOwnerLeaseLostError(`turn ${turn.messageId} lost its durable owner lease`);
         }
         completedDurably = true;
         // Start bookkeeping only after the terminal journal record commits.
@@ -1716,6 +1747,7 @@ export async function startWorker(cfg = configFromEnv()) {
         agent.state.systemPrompt = originalSystemPrompt;
         agent.state.tools = originalTools;
         settling = true;
+        clearTimeout(leaseTimer);
         clearInterval(heartbeatTimer);
         clearInterval(abortPollTimer);
         await heartbeatInFlight;
@@ -1745,6 +1777,9 @@ export async function startWorker(cfg = configFromEnv()) {
   });
 
   const queueAdmission = (admission: TurnAdmission): Promise<TurnCompletion> => {
+    const retry = admissionRetries.get(admission.messageId);
+    if (retry) clearTimeout(retry);
+    admissionRetries.delete(admission.messageId);
     const existing = turns.get(admission.messageId);
     if (existing) return turnQueue.enqueue(existing).done;
     const turn: WorkerTurn = {
@@ -1756,7 +1791,28 @@ export async function startWorker(cfg = configFromEnv()) {
     const queued = turnQueue.enqueue(turn);
     void queued.done.then(
       () => turns.delete(turn.messageId),
-      () => turns.delete(turn.messageId),
+      (error) => {
+        turns.delete(turn.messageId);
+        if (
+          closing ||
+          !sessionLog ||
+          sessionLog.error ||
+          !(error instanceof SessionLogReadUnavailableError ||
+            error instanceof TurnOwnerLeaseLostError) ||
+          !['pending', 'started'].includes(turnJournal.state(turn.messageId))
+        ) return;
+        const timer = setTimeout(
+          () => {
+            admissionRetries.delete(turn.messageId);
+            if (closing) return;
+            const current = turnJournal.admission(turn.messageId);
+            if (current) queueAdmission(current);
+          },
+          Math.max(1, Math.min(1000, cfg.turnOwnerHeartbeatMs ?? DEFAULT_TURN_OWNER_HEARTBEAT_MS)),
+        );
+        timer.unref();
+        admissionRetries.set(turn.messageId, timer);
+      },
     );
     return queued.done;
   };
@@ -2680,6 +2736,9 @@ export async function startWorker(cfg = configFromEnv()) {
     faux,
     port,
     close: () => {
+      closing = true;
+      for (const timer of admissionRetries.values()) clearTimeout(timer);
+      admissionRetries.clear();
       relayDrain.close();
       return new Promise<void>((r) => server.close(() => r()));
     },

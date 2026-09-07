@@ -1729,7 +1729,10 @@ describe('raw OpenCode turn routes', () => {
       turnOwnerHeartbeatMs: 1_000,
       turnOwnerLeaseMs: 40,
     };
-    const [owner, waiter] = await Promise.all([startWorker(config), startWorker(config)]);
+    const [owner, waiter] = await Promise.all([
+      startWorker({ ...config, turnOwnerLeaseMs: 10000 }),
+      startWorker(config),
+    ]);
     workers.push(owner, waiter);
     requireValue(owner.faux, 'faux model').setResponses([
       fauxAssistantMessage([fauxToolCall('bash', { command: 'hold' })], {
@@ -1948,7 +1951,7 @@ describe('raw OpenCode turn routes', () => {
       turnOwnerLeaseMs: 40,
     };
     const [owner, recovery, stale] = await Promise.all([
-      startWorker(config),
+      startWorker({ ...config, turnOwnerLeaseMs: 10000 }),
       startWorker(config),
       startWorker(config),
     ]);
@@ -3254,7 +3257,8 @@ describe('context-only prompts', () => {
       kortixToken: 'runtime-token',
       sessionId: 'context-only',
       storeUrl: await sharedStore(items, options.rejectAppend),
-      turnOwnerLeaseMs: 5,
+      turnOwnerLeaseMs: 200,
+      turnOwnerHeartbeatMs: 20,
     };
     const worker = await startWorker(config);
     workers.push(worker);
@@ -3610,7 +3614,8 @@ describe("prompt tool controls", () => {
       kortixToken: "runtime-token",
       sessionId: "tool-controls",
       storeUrl: await sharedStore(options.items ?? []),
-      turnOwnerLeaseMs: 5,
+      turnOwnerLeaseMs: 200,
+      turnOwnerHeartbeatMs: 20,
     };
     const worker = await startWorker(config);
     workers.push(worker);

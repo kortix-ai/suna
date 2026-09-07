@@ -5153,3 +5153,19 @@ Automation: `question-submission.test.ts` checks acknowledgment, duplicate click
 failure, and retry. Browser checks inject 503 into real session replies and assert
 that the same request remains answerable, custom text survives, and dismissal does
 not issue an abort before acceptance.
+
+
+## 2026-09-07 — Separate storage availability from turn ownership
+
+A failed session-log read does not prove that another worker owns the turn.
+Preserve an active interaction until the last confirmed owner lease expires.
+Enforce that deadline independently of network requests. Retry fenced durable
+reconciliation when storage returns, even when no new prompt arrives.
+
+Incident: a preview API deployment interrupted a pending Pi question after read
+retries exhausted. Its worker stayed alive, but the API turn remained active.
+Automation: `question-recovery-routes.test.ts` runs real worker HTTP routes through
+short and expired-lease storage outages. It checks stable question identity,
+no repeated side effects, automatic settlement, and a successful next prompt.
+`session-store.test.ts` distinguishes transient read failures from rejected reads
+and preserves the fail-closed barrier for uncertain writes.

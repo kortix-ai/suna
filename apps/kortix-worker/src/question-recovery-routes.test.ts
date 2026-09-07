@@ -21,6 +21,7 @@ async function fixture(
     steps?: number;
     repeatedCallId?: boolean;
     secondQuestion?: boolean;
+    ownerLeaseMs?: number;
   } = {},
 ) {
   const items: SessionLogItem[] = [];
@@ -28,6 +29,8 @@ async function fixture(
   const providerRequests: any[] = [];
   const effects: string[] = [];
   const children: ReturnType<typeof Bun.spawn>[] = [];
+  let storeUnavailableUntil = 0;
+  let failedStoreRequests = 0;
   const server = Bun.serve({
     port: 0,
     async fetch(request) {
@@ -97,6 +100,10 @@ async function fixture(
           { headers: { 'content-type': 'text/event-stream' } },
         );
       }
+      if (Date.now() < storeUnavailableUntil) {
+        failedStoreRequests++;
+        return new Response('Store temporarily unavailable', { status: 503 });
+      }
       if (request.method === 'GET') return Response.json(items);
       const item = (await request.json()) as SessionLogItem;
       const key = request.headers.get('idempotency-key')!;
@@ -129,7 +136,7 @@ async function fixture(
     sessionId,
     kortixToken: 'fixture',
     storeUrl: server.url + 'store',
-    turnOwnerLeaseMs: 100,
+    turnOwnerLeaseMs: options.ownerLeaseMs ?? 100,
     turnOwnerHeartbeatMs: 20,
     turnAbortPollMs: 10,
   };
@@ -147,9 +154,9 @@ async function fixture(
         if (match) port = Number(match[1]);
       }
     })();
-    void new Response(child.stderr).text().then((text) => {
-      output += text;
-    });
+    void (async () => {
+      for await (const chunk of child.stderr as any) output += new TextDecoder().decode(chunk);
+    })();
     const deadline = Date.now() + 8000;
     while (!port && Date.now() < deadline && child.exitCode === null) await Bun.sleep(10);
     if (!port) throw new Error('Worker failed to listen: ' + output.slice(-3000));
@@ -182,6 +189,8 @@ async function fixture(
   };
   return {
     items,
+    outage: (durationMs: number) => { storeUnavailableUntil = Date.now() + durationMs; },
+    failedStoreRequests: () => failedStoreRequests,
     providerRequests,
     effects,
     sessionID,
@@ -540,4 +549,52 @@ test('a queued prompt on another worker first recovers an abandoned blocking que
   } finally {
     await f.cleanup();
   }
+}, 30000);
+
+
+test('a temporary store outage within the owner lease keeps a pending question answerable', async () => {
+  const f = await fixture({ ownerLeaseMs: 10000 });
+  try {
+    const worker = await f.start();
+    expect((await worker.call(`/session/${f.sessionID}/prompt_async`, {
+      parts: [{ type: 'text', text: 'Ask and continue after storage recovers.' }],
+    })).status).toBe(204);
+    const pending = await f.until(() => worker.read('/question'), value => value.length === 1);
+    f.outage(4200);
+    await Bun.sleep(4400);
+    expect(f.failedStoreRequests()).toBeGreaterThanOrEqual(6);
+    expect(await worker.read('/question')).toEqual(pending);
+    expect(f.effects).toEqual(['BEFORE_QUESTION']);
+    expect(f.providerRequests).toHaveLength(1);
+    expect((await worker.call(`/question/${pending[0].id}/reply`, { answers: [['Blue']] })).status).toBe(200);
+    await f.until(() => worker.read(`/session/${f.sessionID}/message`), value => value.some((m: any) => m.parts.some((p: any) => p.text === 'QUESTION_RECOVERED')));
+    await f.until(() => worker.read('/session/status'), value => !value[f.sessionID] || value[f.sessionID].type === 'idle');
+    expect(f.effects).toEqual(['BEFORE_QUESTION', 'AFTER_QUESTION']);
+    expect(f.providerRequests).toHaveLength(2);
+    expect((await worker.read(`/session/${f.sessionID}/message`)).filter((m: any) => m.info.error)).toEqual([]);
+  } finally { await f.cleanup(); }
+}, 30000);
+
+
+test('an expired owner aborts the blocked question and settles the turn after storage returns', async () => {
+  const f = await fixture({ ownerLeaseMs: 200 });
+  try {
+    const worker = await f.start();
+    expect((await worker.call(`/session/${f.sessionID}/prompt_async`, {
+      parts: [{ type: 'text', text: 'Ask before the long outage.' }],
+    })).status).toBe(204);
+    await f.until(() => worker.read('/question'), value => value.length === 1);
+    f.outage(6500);
+    await Bun.sleep(400);
+    expect(await worker.read('/question')).toEqual([]);
+    expect(f.effects).toEqual(['BEFORE_QUESTION']);
+    await Bun.sleep(6400);
+    await f.until(() => worker.read('/session/status'), value => !value[f.sessionID] || value[f.sessionID].type === 'idle');
+    expect(f.effects).toEqual(['BEFORE_QUESTION']);
+    expect(f.providerRequests).toHaveLength(1);
+    expect((await worker.read(`/session/${f.sessionID}/message`)).filter((m: any) => m.info.error)).toHaveLength(1);
+    expect((await worker.call(`/session/${f.sessionID}/prompt_async`, { parts: [{ type: 'text', text: 'Continue with a new turn.' }] })).status).toBe(204);
+    await f.until(() => worker.read(`/session/${f.sessionID}/message`), value => value.some((m: any) => m.parts.some((p: any) => p.text === 'QUESTION_RECOVERED')));
+    expect(f.providerRequests).toHaveLength(2);
+  } finally { await f.cleanup(); }
 }, 30000);

@@ -6,6 +6,7 @@ import {
   RemoteSessionLog,
   SessionLogConflictError,
   SessionLogItemTooLargeError,
+  SessionLogReadUnavailableError,
   SessionLogUnavailableError,
 } from './session-store.ts';
 
@@ -376,4 +377,23 @@ describe('DurableSessionStorage', () => {
     expect(await storage.getName()).toBe('restored');
     expect(appended).toEqual([]);
   });
+});
+
+
+test('exhausted transient reads remain recoverable and distinct from permanent rejection', async () => {
+  let available = false;
+  const log = new RemoteSessionLog('https://api.example.test/projects/p', 'session-1', {}, {
+    maxAttempts: 2, sleep: async () => {},
+    fetch: async () => available ? Response.json([]) : response(503),
+  });
+  await expect(log.read()).rejects.toBeInstanceOf(SessionLogReadUnavailableError);
+  expect(log.error).toBeNull();
+  available = true;
+  expect(await log.read()).toEqual([]);
+  const permanent = new RemoteSessionLog('https://api.example.test/projects/p', 'session-1', {}, {
+    fetch: async () => response(401),
+  });
+  const error = await permanent.read().catch(error => error);
+  expect(error).not.toBeInstanceOf(SessionLogReadUnavailableError);
+  expect(error.message).toBe('session log read failed: HTTP 401');
 });

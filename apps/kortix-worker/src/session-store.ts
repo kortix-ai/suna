@@ -101,6 +101,13 @@ function defaultSleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+export class SessionLogReadUnavailableError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SessionLogReadUnavailableError';
+  }
+}
+
 export class SessionLogUnavailableError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -277,10 +284,11 @@ export class RemoteSessionLog implements SessionLog {
       }
     }
 
-    throw new Error(
+    throw new SessionLogReadUnavailableError(
       `session log read failed after ${maxAttempts} attempts: ${String(
         (lastError as Error)?.message ?? lastError,
       )}`,
+      { cause: lastError },
     );
   }
 }
