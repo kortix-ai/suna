@@ -81,7 +81,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           // sessions after a DB reset where the JWT is valid but the user
           // no longer exists.
           const { error: userError } = await supabase.auth.getUser();
-          if (userError) {
+          if (
+            userError &&
+            (userError.status === 401 ||
+              userError.status === 403 ||
+              userError.code === 'bad_jwt' ||
+              userError.name === 'AuthSessionMissingError')
+          ) {
             console.warn('[AuthProvider] Stale session detected, signing out:', userError.message);
             await supabase.auth.signOut();
             setBootstrapAuthToken(null);
@@ -90,6 +96,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setUser(null);
             return;
           }
+          // A cancelled request or an unavailable auth server does not revoke
+          // the cached session. Authenticated API calls still validate its JWT.
         }
 
         // Before the publish, not after: the state on screen belongs to

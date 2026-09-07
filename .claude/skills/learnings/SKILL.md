@@ -5053,3 +5053,10 @@ replacement, and accepted-only replay through the provider HTTP boundary.
 - Incident: the Pi preview SESS-13 flow received 200 with `public_url: null`. Its deployment had no isolated preview domain.
 - Rule: file-share metadata returns 503 when its isolated origin is unavailable. Keep author-controlled file content off the API origin.
 - Enforcement: `unit-public-session-share.test.ts` asserts both missing-domain 503 and configured-domain HTTPS URLs. The existing SESS-13 HTTP flow rejects a null URL on 200.
+
+
+## 2026-09-07 — Auth transport failures must not revoke valid sessions
+
+- Incident: the Pi preview Apps journey cancelled `/auth/v1/user` during reload. AuthProvider called global sign-out for the transport error. The next validation returned `session_not_found`; Apps stayed on its loading frame.
+- Rule: clear a cached session only for a confirmed invalid credential or missing auth session. Preserve it through aborted requests, transport failures, rate limits, and unavailable auth services. Backend authorization still validates every request.
+- Enforcement: `auth-provider-bootstrap.test.ts` executes bootstrap with transient and invalid-session errors. The Apps browser journey aborts auth validation, verifies the token remains valid, and reloads the actual page.
