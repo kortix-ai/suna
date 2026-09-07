@@ -44,7 +44,10 @@ export function TemplateShell({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto max-w-6xl px-6 pt-28 pb-24 lg:px-0 lg:pt-32">
+    // `px-6` at every width: with `max-w-6xl` the container already centres on a
+    // wide screen, and dropping the padding at `lg` put the grid flush against
+    // the viewport edge for every window between 1024px and 1152px.
+    <div className="mx-auto max-w-6xl px-6 pt-28 pb-24 lg:pt-32">
       <div className="grid grid-cols-12 gap-6 lg:gap-8">
         {/* The breadcrumb sits INSIDE the sticky rail, not in a full-width row
             above the grid, so it stays pinned with the rail as the contents
@@ -56,7 +59,13 @@ export function TemplateShell({
           </aside>
         </div>
 
-        <div className="min-w-0 lg:col-span-9">{children}</div>
+        {/* `col-span-12` is load-bearing, not decoration. A grid child with no
+            span occupies ONE of the twelve tracks, so without it this column was
+            7px wide at 375px and 13px at 768px — the rail took the full row and
+            the content was squeezed into a single track, wrapping prose one
+            character per line. It only looked survivable on a phone because the
+            cards spilled out of their track instead of being clipped. */}
+        <div className="col-span-12 min-w-0 lg:col-span-9">{children}</div>
       </div>
     </div>
   );

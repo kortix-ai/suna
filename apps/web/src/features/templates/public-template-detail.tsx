@@ -198,7 +198,7 @@ export function PublicTemplateDetail({
         {template.skills.length > 0 ? (
           <section>
             <TemplateSectionLabel count={template.skills.length}>Skills</TemplateSectionLabel>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {template.skills.map((skill) => (
                 <TemplateContentCard
                   key={skill}
@@ -235,7 +235,7 @@ export function PublicTemplateDetail({
             <TemplateSectionLabel count={connectors.length}>
               Connectors it uses
             </TemplateSectionLabel>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {connectors.map((use) => {
                 const connector = connectorFor(use.id);
                 return (
