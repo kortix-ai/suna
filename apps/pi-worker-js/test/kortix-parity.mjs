@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=41
+// EXPECTED_PASSES=43
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -252,6 +252,22 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
       ...ENV, MODEL_PROVIDER: "anthropic", MODEL_API_KEY: "sk-x",
       KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt",
     });
+    // WHOSE MODEL. wrangler.json ships MODEL_ID as a bench default, and with
+    // the node's value first that default beat the model the session was
+    // started with — measured on dev 2026-09-07, session 6342be82: the turn ran
+    // against provider `openai-codex` and returned empty content and zero
+    // tokens, because the gateway does not speak the Codex Responses shape.
+    const bench = makeCell(AgentCell, {
+      ...ENV, MODEL_ID: "gpt-5.6-luna", MODEL_PROVIDER: "",
+      KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt",
+      KORTIX_MODEL: "glm-5.3-flash", KORTIX_PROVIDER: "openrouter",
+    });
+    const m = await (await bench.fetch("/model?c=s")).json();
+    check("the PLATFORM's model wins over the node's bench default when a gateway is driving",
+      m.active?.id === "glm-5.3-flash", JSON.stringify(m.active));
+    check("and its provider does too, so the call is the shape the gateway speaks",
+      m.active?.provider === "openrouter", JSON.stringify(m.active));
+
     check("and an explicit MODEL_* pin beats the platform's names",
       (await (await pinned.fetch("/kortix/health?c=s")).json()).model_mode === "live", "explicit pin lost");
   }

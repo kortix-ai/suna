@@ -150,10 +150,25 @@ function normalizeModelEnv(env) {
   const pick = (...vals) => vals.find((v) => typeof v === "string" && v.length > 0);
   const gateway = pick(env.MODEL_BASE_URL, env.KORTIX_GATEWAY_URL, env.KORTIX_LLM_BASE_URL);
   const key = pick(env.MODEL_API_KEY, env.KORTIX_API_KEY, gateway ? env.KORTIX_TOKEN : undefined);
+  // WHOSE MODEL IS IT. A gateway means the platform is driving this session, so
+  // ITS model and provider win over the node's — wrangler.json ships
+  // MODEL_ID "gpt-5.6-luna" as a bench default, and with the node first that
+  // default beat the model the session was actually started with.
+  //
+  // Measured on dev 2026-09-07, session 6342be82: the turn ran to `done`
+  // against provider `openai-codex` with the Codex Responses API, and came back
+  // with empty content and zero tokens — the gateway does not speak that shape.
+  // The platform had said which model to use and was not asked.
+  //
+  // With no gateway nothing is driving the session, so the node's own values
+  // are the answer and a bench keeps working unchanged.
+  const platform = Boolean(gateway);
   return {
     ...env,
-    MODEL_PROVIDER: pick(env.MODEL_PROVIDER, key ? pick(env.KORTIX_PROVIDER, "openrouter") : undefined),
-    MODEL_ID: pick(env.MODEL_ID, env.KORTIX_MODEL),
+    MODEL_PROVIDER: platform
+      ? pick(env.KORTIX_PROVIDER, env.MODEL_PROVIDER, key ? "openrouter" : undefined)
+      : pick(env.MODEL_PROVIDER),
+    MODEL_ID: platform ? pick(env.KORTIX_MODEL, env.MODEL_ID) : pick(env.MODEL_ID),
     MODEL_BASE_URL: gateway,
     MODEL_API_KEY: key,
   };
