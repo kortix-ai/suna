@@ -4770,3 +4770,17 @@ actions, including their keyboard-menu entry points.
 actions. Runtime prompt tests preserve OpenCode options and remove Pi overrides.
 The SDK rejects non-text Pi parts before transport. Verify the deployed composer
 with a real prompt after changing this contract.
+
+## 2026-09-07 — Seeded triggers make array-index assertions incorrect
+
+**Incident:** Preview flows TRG-2 and TRG-3 read `triggers[0].model`. Managed
+projects include the alphabetically earlier `harness-reflector` trigger. The
+model update succeeded on `toggle-me`, but the test asserted against the seed.
+The minimal local fixture had no seeded trigger, so the same tests passed locally.
+
+**Rule:** Select created resources by their stable key. Never assume a response
+list contains only the test-created resource. Prove persistence with another GET.
+
+**Automation:** TRG-2 and TRG-3 select their trigger by slug in both the mutation
+response and the read-back response. TRG-3 also asserts the disabled state remains
+unchanged by a model-only PATCH. The strict preview suite includes seeded projects.
