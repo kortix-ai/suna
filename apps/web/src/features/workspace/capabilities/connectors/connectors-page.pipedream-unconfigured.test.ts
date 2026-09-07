@@ -42,7 +42,10 @@ describe('connectors page without a Connect provider', () => {
     expect(catalog).toContain('const connectStatus = useConnectProviderStatus(');
     expect(catalog).toContain('const easyConnectRunnable =');
     expect(catalog).toContain('enabled: opts.enabled && easyConnectRunnable,');
-    expect(catalog).toContain("easyConnectProvider === 'pipedream'");
+    expect(catalog).toContain(
+      'enabled: opts.enabled && easyConnectRunnable && !searching && category === null,',
+    );
+    expect(catalog.match(/provider: easyConnectProvider,/g)).toHaveLength(2);
     expect(catalog).not.toContain("enabled: opts.enabled && source === 'easy-connect'");
   });
 

@@ -164,6 +164,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/connectors/catalog': 'Viewed connector catalog',
   'POST /v1/connectors/projects/:projectId/call': 'Ran project connector action',
   'GET /v1/connectors/projects/:projectId/catalog': 'Viewed connector catalog',
+  'GET /v1/connectors/projects/:projectId/connect/sections':
+    'Viewed connector discovery sections',
   'GET /v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests':
     'Viewed pending connector authorizations',
   'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding':
