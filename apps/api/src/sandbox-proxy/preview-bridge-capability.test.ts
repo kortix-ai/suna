@@ -66,3 +66,52 @@ test('uses direct ingress when health is unavailable or malformed', async () => 
     expect(await resolve(record)).toBe(false);
   }
 });
+
+test('bounds and deduplicates ingress resolution from resolver entry', async () => {
+  let ingressCalls = 0;
+  const resolve = createPreviewBridgeCapabilityResolver({
+    timeoutMs: 10,
+    resolveIngress: async () => {
+      ingressCalls++;
+      return await new Promise(() => {});
+    },
+    buildHeaders: async () => ({}),
+    fetch: async () => Response.json({ capabilities: { localhost_preview_bridge: 1 } }),
+  });
+
+  const startedAt = Date.now();
+  expect(await Promise.all([resolve(record), resolve(record)])).toEqual([false, false]);
+  expect(Date.now() - startedAt).toBeLessThan(100);
+  expect(ingressCalls).toBe(1);
+});
+
+test('ignores a positive probe result that completes after the deadline', async () => {
+  let now = 0;
+  let finishOldIngress!: (value: any) => void;
+  let ingressCalls = 0;
+  const oldIngress = new Promise<any>((resolve) => { finishOldIngress = resolve; });
+  const resolve = createPreviewBridgeCapabilityResolver({
+    now: () => now,
+    timeoutMs: 10,
+    resolveIngress: async () => {
+      ingressCalls++;
+      return ingressCalls === 1
+        ? oldIngress
+        : { url: 'https://new-daemon.test', headers: {}, effectivePort: 8000 };
+    },
+    buildHeaders: async () => ({}),
+    fetch: async (input) => Response.json({
+      capabilities: String(input).includes('old-daemon')
+        ? { localhost_preview_bridge: 1 }
+        : {},
+    }),
+  });
+
+  expect(await resolve(record)).toBe(false);
+  now = 2_001;
+  expect(await resolve(record)).toBe(false);
+  finishOldIngress({ url: 'https://old-daemon.test', headers: {}, effectivePort: 8000 });
+  await Bun.sleep(0);
+  expect(await resolve(record)).toBe(false);
+  expect(ingressCalls).toBe(2);
+});

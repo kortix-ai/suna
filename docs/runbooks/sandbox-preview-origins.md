@@ -234,9 +234,10 @@ Both HTTP and WebSocket requests reach the app with `Host` and
 that same HTTP origin. `Referer` keeps its path and query on that origin.
 
 The bridge removes platform credentials, provider credentials, internal headers,
-and hop-by-hop headers before forwarding. Session-data authorization still uses
-the requested logical port. Daemon, OpenCode, and credential-bearing loopback
-listeners cannot be selected as app targets. Public shares receive only an app
+and hop-by-hop headers before forwarding. Bridge authorization uses the requested
+logical port. Legacy ingress authorization uses the provider's effective port,
+including PTY paths that the provider remaps to the daemon. Daemon, OpenCode, and
+credential-bearing loopback listeners cannot be selected as app targets. Public shares receive only an app
 target ticket, never a signed user context.
 
 WebSocket upgrades preserve the negotiated subprotocol and immediate HMR messages.
@@ -251,6 +252,10 @@ the transport. A supported daemon uses the localhost bridge. An old daemon or
 an unavailable capability probe retains the previous direct app-port ingress.
 This decision happens before application bytes are sent. A failed bridge request
 is never replayed through legacy ingress.
+
+Capability discovery has a one-second total deadline, including provider ingress
+lookup. Concurrent requests for the same runtime and service key share one probe.
+Positive results expire after 15 seconds; negative results expire after two seconds.
 
 The original host-check problem can persist on an old daemon until its safe
 update completes. Capability detection prevents the API deployment from turning

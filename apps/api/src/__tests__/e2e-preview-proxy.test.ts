@@ -555,6 +555,54 @@ afterEach(() => {
 });
 
 describe('Preview proxy: websocket upstream resolution', () => {
+  for (const path of ['/kortix/pty/kpty_test/connect', '/pty/pty_test/connect']) {
+    test(`an old Platinum daemon rejects a sibling-bound caller before remapping ${path}`, async () => {
+      mockPreviewBridgeSupported = false;
+      mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+      const result = await resolvePreviewWsUpstream({
+        sandboxId: TEST_SANDBOX_ID, upstreamPort: 3000, userId: TEST_USER_ID,
+        remainingPath: path, queryString: '',
+        callerSessionId: '99999999-9999-4999-8999-999999999999',
+        boundCredentialSessionId: '99999999-9999-4999-8999-999999999999',
+      });
+
+      expect(result).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
+      expect(mockResolvedPreviewPorts).toEqual([]);
+    });
+  }
+
+  test('an old Platinum daemon allows an owner through the effective control-port gate', async () => {
+    mockPreviewBridgeSupported = false;
+    mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+    const result = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID, upstreamPort: 3000, userId: TEST_USER_ID,
+      remainingPath: '/kortix/pty/kpty_test/connect', queryString: '',
+      callerSessionId: mockDbSandbox.sessionId,
+      boundCredentialSessionId: mockDbSandbox.sessionId,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+  });
+
+  test('a bridge-capable Platinum app path stays on the logical app port for authorization', async () => {
+    mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+    const result = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID, upstreamPort: 3000, userId: TEST_USER_ID,
+      remainingPath: '/kortix/pty/kpty_test/connect', queryString: '',
+      callerSessionId: '99999999-9999-4999-8999-999999999999',
+      boundCredentialSessionId: '99999999-9999-4999-8999-999999999999',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    if (result.ok) {
+      expect(new URL(result.url).pathname).toEndWith(
+        '/__kortix_preview/kortix/pty/kpty_test/connect',
+      );
+    }
+  });
+
   test('an old daemon keeps app WebSockets on direct ingress', async () => {
     mockPreviewBridgeSupported = false;
     const result = await resolvePreviewWsUpstream({

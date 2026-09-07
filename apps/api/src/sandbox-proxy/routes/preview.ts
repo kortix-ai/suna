@@ -1878,11 +1878,24 @@ export async function resolvePreviewWsUpstream(opts: {
     path: remainingPath,
     transport: 'websocket' as const,
   };
-  const upstreamPort = appPreview ? opts.upstreamPort : routeSandboxIngress(record, logicalIngressRequest).effectivePort;
 
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
   }
+  const bridgePreview = appPreview && await supportsPreviewBridge(record);
+  if (bridgePreview && !record.serviceKey) {
+    return { ok: false, status: 503, message: 'sandbox preview bridge is not configured' };
+  }
+  const ingressRequest = {
+    port: bridgePreview ? PREVIEW_BRIDGE_PORT : opts.upstreamPort,
+    path: bridgePreview ? `${PREVIEW_BRIDGE_PREFIX}${remainingPath}` : remainingPath,
+    transport: 'websocket' as const,
+  };
+  // Bridge requests target the logical app port. Legacy requests retain the
+  // provider's effective-port classification, including Platinum PTY remaps.
+  const upstreamPort = bridgePreview
+    ? opts.upstreamPort
+    : routeSandboxIngress(record, logicalIngressRequest).effectivePort;
   // Both session-data ports carry the conversation — gate on session visibility,
   // not just account membership (see forwardToSandbox). This resolver forces
   // opencode WebSockets to :4096 on Daytona, so keying on 8000 alone left the
@@ -1929,16 +1942,6 @@ export async function resolvePreviewWsUpstream(opts: {
       return { ok: false, status: 503, message: `sandbox not ready (status: ${record.status})` };
     }
   }
-
-  const bridgePreview = appPreview && await supportsPreviewBridge(record);
-  if (bridgePreview && !record.serviceKey) {
-    return { ok: false, status: 503, message: 'sandbox preview bridge is not configured' };
-  }
-  const ingressRequest = {
-    port: bridgePreview ? PREVIEW_BRIDGE_PORT : opts.upstreamPort,
-    path: bridgePreview ? `${PREVIEW_BRIDGE_PREFIX}${remainingPath}` : remainingPath,
-    transport: 'websocket' as const,
-  };
 
   const ingress = await resolveSandboxIngress(record, ingressRequest);
   const previewUrl = ingress.url;
