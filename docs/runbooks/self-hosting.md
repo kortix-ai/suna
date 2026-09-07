@@ -210,7 +210,7 @@ self-host configure`, or the dashboard) once the box is up.
 
 ```hcl
 module "kortix_selfhost" {
-  source = "github.com/kortix-ai/suna//infra/terraform/modules/selfhost-ec2"
+  source = "github.com/kortix-ai/suna/infra/terraform/modules/selfhost-ec2"
 
   domain = "kortix.example.com"
   tags   = { Project = "kortix-selfhost" }
