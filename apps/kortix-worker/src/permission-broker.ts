@@ -32,6 +32,20 @@ interface PendingPermission {
   reject: (error: Error) => void;
   signal?: AbortSignal;
   onAbort?: () => void;
+  replying?: { reply: PermissionReply; done: Promise<boolean> };
+}
+
+export interface PermissionApproval {
+  requestId: string;
+  permission: string;
+  patterns: string[];
+}
+
+export class PermissionApprovalUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super('permission approval could not be saved; retry the reply', { cause });
+    this.name = 'PermissionApprovalUnavailableError';
+  }
 }
 
 export interface PermissionBrokerOptions {
@@ -39,6 +53,8 @@ export interface PermissionBrokerOptions {
   permission?: PermissionConfig;
   publish: (event: PermissionEvent) => void;
   createId?: () => string;
+  approved?: readonly PermissionApproval[];
+  saveApproval?: (approval: PermissionApproval) => Promise<void>;
 }
 
 export class PermissionDeniedError extends Error {
@@ -77,6 +93,7 @@ export class PermissionBroker {
   constructor(private readonly options: PermissionBrokerOptions) {
     this.rules = compilePermissionRules(options.permission);
     this.createId = options.createId ?? (() => `per_${randomUUID().replaceAll('-', '')}`);
+    for (const approval of options.approved ?? []) this.addApproval(approval);
   }
 
   list(): PermissionRequest[] {
@@ -130,9 +147,39 @@ export class PermissionBroker {
     });
   }
 
-  reply(requestId: string, reply: PermissionReply, message?: string): boolean {
-    const pending = this.take(requestId);
+  async reply(requestId: string, reply: PermissionReply, message?: string): Promise<boolean> {
+    const pending = this.pending.get(requestId);
     if (!pending) return false;
+    if (pending.replying) return pending.replying.reply === reply ? pending.replying.done : false;
+    const done = this.applyReply(pending, reply, message);
+    pending.replying = { reply, done };
+    try {
+      return await done;
+    } finally {
+      if (pending.replying?.done === done) pending.replying = undefined;
+    }
+  }
+
+  private async applyReply(
+    pending: PendingPermission,
+    reply: PermissionReply,
+    message?: string,
+  ): Promise<boolean> {
+    const requestId = pending.request.id;
+    if (reply === 'always') {
+      const approval = {
+        requestId,
+        permission: pending.request.permission,
+        patterns: [...pending.request.always],
+      };
+      try {
+        await this.options.saveApproval?.(approval);
+      } catch (cause) {
+        throw new PermissionApprovalUnavailableError(cause);
+      }
+      this.addApproval(approval);
+    }
+    if (this.take(requestId) !== pending) return false;
     this.publishReply(pending.request, reply);
 
     if (reply === 'reject') {
@@ -143,11 +190,18 @@ export class PermissionBroker {
 
     pending.resolve();
     if (reply === 'once') return true;
-    for (const pattern of pending.request.always) {
-      this.approved.push({ permission: pending.request.permission, pattern, action: 'allow' });
-    }
     this.resolveApprovedPending();
     return true;
+  }
+
+  private addApproval(approval: PermissionApproval): void {
+    for (const pattern of approval.patterns) {
+      this.approved.push({
+        permission: approval.permission,
+        pattern,
+        action: 'allow',
+      });
+    }
   }
 
   private cancelForAbort(requestId: string, error: Error): void {

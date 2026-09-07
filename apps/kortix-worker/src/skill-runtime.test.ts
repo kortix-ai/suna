@@ -88,7 +88,7 @@ describe('Pi skill runtime', () => {
         always: ['release'],
       }),
     ]);
-    expect(broker.reply('per_skill', 'once')).toBe(true);
+    expect(await broker.reply('per_skill', 'once')).toBe(true);
     const result = await execution;
     expect(result.content[0]).toMatchObject({ type: 'text' });
   });

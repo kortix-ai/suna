@@ -4,7 +4,7 @@ import { compilePermissionRules, type PermissionConfig } from './permission-poli
 import type { PiTodo } from './todo-tools.ts';
 import type { PiCommand } from './command-runtime.ts';
 import { projectSkillInfo, type PiSkill } from './skill-runtime.ts';
-import type { PermissionBroker } from './permission-broker.ts';
+import { PermissionApprovalUnavailableError, type PermissionBroker } from './permission-broker.ts';
 import type { QuestionBroker } from './question-broker.ts';
 import { serveGlobalEventStream } from './global-event-stream.ts';
 /**
@@ -1231,7 +1231,7 @@ export class RuntimeSurface {
       const write = (status: number, body: unknown) =>
         res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
       void readRawJsonBody(req)
-        .then((body) => {
+        .then(async (body) => {
           const value =
             body && typeof body === 'object' && !Array.isArray(body)
               ? (body as { reply?: unknown; message?: unknown })
@@ -1244,14 +1244,14 @@ export class RuntimeSurface {
             write(400, { error: 'reply must be once, always, or reject' });
             return;
           }
-          if (!this.opts.permissions?.reply(requestId, value.reply, value.message)) {
+          if (!(await this.opts.permissions?.reply(requestId, value.reply, value.message))) {
             write(404, { error: 'permission request not found' });
             return;
           }
           write(200, true);
         })
         .catch((error) => {
-          write(error instanceof RawBodyError ? error.status : 400, {
+          write(error instanceof RawBodyError ? error.status : error instanceof PermissionApprovalUnavailableError ? 503 : 400, {
             error: String((error as Error)?.message ?? error),
           });
         });

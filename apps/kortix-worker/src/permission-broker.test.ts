@@ -96,7 +96,7 @@ describe('PermissionBroker', () => {
       properties: instance.list()[0],
     });
 
-    expect(instance.reply('per_1', 'once')).toBe(true);
+    expect(await instance.reply('per_1', 'once')).toBe(true);
     await expect(authorization).resolves.toBeUndefined();
     expect(instance.list()).toEqual([]);
     expect(events.at(-1)).toEqual({
@@ -128,7 +128,7 @@ describe('PermissionBroker', () => {
       always: ['git status*'],
       metadata: {},
     });
-    expect(instance.reply('per_1', 'always')).toBe(true);
+    expect(await instance.reply('per_1', 'always')).toBe(true);
     await first;
 
     await expect(
@@ -251,7 +251,7 @@ describe('permission-protected tools', () => {
       tool: { messageID: 'msg_1', callID: 'call_1' },
       patterns: ['/tmp/secret.txt'],
     });
-    instance.reply(first(instance.list()).id, 'once');
+    await instance.reply(first(instance.list()).id, 'once');
     await execution;
     expect(executions).toBe(1);
   });
@@ -279,7 +279,7 @@ describe('permission-protected tools', () => {
       permission: 'external_directory',
       patterns: ['/tmp/secret.txt'],
     });
-    instance.reply(first(instance.list()).id, 'once');
+    await instance.reply(first(instance.list()).id, 'once');
     await execution;
     expect(executions).toBe(1);
   });
@@ -357,7 +357,7 @@ describe('permission-protected tools', () => {
       patterns: ['bash'],
       always: ['bash'],
     });
-    instance.reply(first(instance.list()).id, 'once');
+    await instance.reply(first(instance.list()).id, 'once');
     await third;
     expect(executions).toBe(3);
   });

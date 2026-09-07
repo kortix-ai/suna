@@ -34,19 +34,36 @@ closed (exit 78) on mismatch.
 env vars win, because the control plane knows session-start facts (model
 override, session id, environment URL) that a per-commit artifact cannot.
 
-## Why this is not a pnpm workspace package
+## Permission approvals
 
-Own `bun.lock`, excluded in `pnpm-workspace.yaml`: the pinned
-`@earendil-works/pi@0.84.3` release is younger than the workspace's 72h
-`minimumReleaseAge` supply-chain cooldown. Fold it in once the pin ages out.
-Pin 0.84.3 exactly — `AgentHarness` is unimplemented in this release (all 23
-methods throw) and the working `Agent` surface was verified against it.
+The `question` tool and permission prompts use the existing OpenCode UI
+contracts. `once` permits one tool invocation. `always` saves the approved
+permission and patterns in the session's durable log before the tool resumes.
+Those grants survive a worker restart or replacement within the same session.
+
+If the approval cannot be saved, the reply route returns `503`. The request
+stays pending and the tool does not run. Retrying the reply uses the same
+idempotency key. Stop still cancels the blocked tool during a pending save.
+Rejected and one-time replies do not create durable grants.
+
+Pending question and permission continuations still require a live worker.
+Durable approval grants do not make those blocked continuations restartable.
+
+The direct Pi versus OpenCode benchmark and its raw measurements are documented
+in [`DIRECT_ENVIRONMENT.md`](../../spikes/pi-worker/bench/DIRECT_ENVIRONMENT.md).
+
+## Standalone runtime build
+
+The package participates in the pnpm workspace and keeps its own `bun.lock`
+for the standalone runtime build. Keep both lockfiles synchronized when changing
+dependencies. Pin Pi 0.84.3 exactly. This worker uses the verified `Agent` surface;
+it does not use the unimplemented `AgentHarness` surface in that release.
 
 ## Tests
 
 Run `bun run test`, `bun run typecheck`, and `bun run build` inside this package.
-The repository root `pnpm test` command runs the same standalone gates despite
-the workspace exclusion. It then runs `pi-worker-bundle.test.ts` and
+The repository root `pnpm test -- --packages-only` command runs the standalone
+gates. It also runs `pi-worker-bundle.test.ts` and
 `pi-worker-lockdown.test.ts` against the real `dist/worker-runtime.mjs`. The
 required-bundle mode fails when the build artifact is absent; it never records
 that proof as skipped.

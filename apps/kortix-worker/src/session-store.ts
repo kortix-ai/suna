@@ -29,17 +29,18 @@
 import { randomUUID } from 'node:crypto';
 import { InMemorySessionStorage } from '@earendil-works/pi-agent-core';
 
-type LogItem =
+export type SessionLogItem =
   | { kind: 'entry'; lane: string; entry: any }
   | { kind: 'record'; record: any }
+  | { kind: 'journal'; stream: string; record: Record<string, unknown> }
   | { kind: 'lane_create'; lane: string; at: string | null }
   | { kind: 'lane_move'; lane: string; to: string | null }
   | { kind: 'name'; name: string | undefined }
   | { kind: 'label'; id: string; label: string | undefined };
 
 export interface SessionLog {
-  append(item: LogItem): Promise<void>;
-  read(): Promise<LogItem[]>;
+  append(item: SessionLogItem, options?: { idempotencyKey?: string }): Promise<void>;
+  read(): Promise<SessionLogItem[]>;
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -73,11 +74,11 @@ export class RemoteSessionLog implements SessionLog {
     private readonly options: RemoteSessionLogOptions = {},
   ) {}
 
-  async append(item: LogItem): Promise<void> {
+  async append(item: SessionLogItem, options: { idempotencyKey?: string } = {}): Promise<void> {
     const fetcher = this.options.fetch ?? globalThis.fetch;
     const sleep = this.options.sleep ?? defaultSleep;
     const maxAttempts = Math.max(1, this.options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
-    const appendId = (this.options.createAppendId ?? randomUUID)();
+    const appendId = options.idempotencyKey ?? (this.options.createAppendId ?? randomUUID)();
     const headers = new Headers({ 'content-type': 'application/json', ...this.headers });
     headers.set('idempotency-key', appendId);
     const body = JSON.stringify(item);
@@ -116,7 +117,7 @@ export class RemoteSessionLog implements SessionLog {
     );
   }
 
-  async read(): Promise<LogItem[]> {
+  async read(): Promise<SessionLogItem[]> {
     const fetcher = this.options.fetch ?? globalThis.fetch;
     const sleep = this.options.sleep ?? defaultSleep;
     const maxAttempts = Math.max(1, this.options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
@@ -131,7 +132,7 @@ export class RemoteSessionLog implements SessionLog {
           ),
         });
         if (res.status === 404) return [];
-        if (res.ok) return (await res.json()) as LogItem[];
+        if (res.ok) return (await res.json()) as SessionLogItem[];
         const error = new Error(`session log read failed: HTTP ${res.status}`);
         if (!retryableStatus(res.status)) throw error;
         lastError = error;
@@ -169,12 +170,13 @@ export class DurableSessionStorage {
     private replaying = false,
   ) {}
 
-  static async open(metadata: any, log: SessionLog): Promise<{ storage: DurableSessionStorage; restoredEntries: number }> {
+  static async open(metadata: any, log: SessionLog): Promise<{ storage: DurableSessionStorage; restoredEntries: number; logItems: SessionLogItem[] }> {
     const inner = new InMemorySessionStorage(metadata);
     const durable = new DurableSessionStorage(inner, log, true);
     const items = await log.read();
     for (const item of items) {
       switch (item.kind) {
+        case 'journal': break;
         case 'lane_create': await inner.createLane(item.lane, item.at); break;
         case 'lane_move': await inner.moveLane(item.lane, item.to); break;
         case 'entry': {
@@ -189,10 +191,10 @@ export class DurableSessionStorage {
       }
     }
     durable.replaying = false;
-    return { storage: durable, restoredEntries: items.filter((i) => i.kind === 'entry').length };
+    return { storage: durable, restoredEntries: items.filter((i) => i.kind === 'entry').length, logItems: items };
   }
 
-  private async write(item: LogItem): Promise<void> {
+  private async write(item: SessionLogItem): Promise<void> {
     if (!this.replaying) await this.log.append(item);
   }
 

@@ -6,6 +6,7 @@ import { createSkillTool, type PiSkill } from './skill-runtime.ts';
 import type { PiCommand } from './command-runtime.ts';
 import type { RuntimeSurfaceOptions } from './runtime-surface.ts';
 import { PermissionBroker } from './permission-broker.ts';
+import { PermissionApprovalStore } from './permission-store.ts';
 import type { PermissionConfig } from './permission-policy.ts';
 import { protectToolsWithPermissions } from './permission-tools.ts';
 import { QuestionBroker } from './question-broker.ts';
@@ -373,10 +374,12 @@ export async function buildHarness(cfg: WorkerConfig) {
   const storeError: string | null = null;
   let restoredEntries = 0;
   let restoredMessages: any[] = [];
+  let restoredLogItems: Awaited<ReturnType<typeof DurableSessionStorage.open>>['logItems'] = [];
   if (cfg.storeUrl && cfg.sessionId) {
     const log = new RemoteSessionLog(cfg.storeUrl, cfg.sessionId, cfg.storeHeaders ?? {});
     const opened = await DurableSessionStorage.open({ id: cfg.sessionId } as any, log);
     restoredEntries = opened.restoredEntries;
+    restoredLogItems = opened.logItems;
     session = new Session(opened.storage as any);
     const leaf = await session.getLeafId();
     if (leaf) {
@@ -384,6 +387,16 @@ export async function buildHarness(cfg: WorkerConfig) {
       restoredMessages = restoredMessagesFromEntries(entries);
     }
   }
+
+  const permissionApprovals = await PermissionApprovalStore.open(
+    cfg.storeUrl && cfg.sessionId
+      ? {
+          read: () => new RemoteSessionLog(cfg.storeUrl!, cfg.sessionId!, cfg.storeHeaders ?? {}).read(),
+          append: (item, options) => new RemoteSessionLog(cfg.storeUrl!, cfg.sessionId!, cfg.storeHeaders ?? {}).append(item, options),
+        }
+      : { read: async () => [], append: async () => {} },
+    restoredLogItems,
+  );
 
   const timing: { firstTokenMs: number | null } = { firstTokenMs: null };
 
@@ -503,6 +516,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     restoredMessages,
     storeError,
     modelError,
+    permissionApprovals,
     bootReconcile,
     setTurnIdentity,
   };
@@ -577,6 +591,7 @@ export async function startWorker(cfg = configFromEnv()) {
     restoredMessages,
     storeError,
     modelError,
+    permissionApprovals,
     bootReconcile,
     setTurnIdentity,
   } = await buildHarness(cfg);
@@ -615,6 +630,8 @@ export async function startWorker(cfg = configFromEnv()) {
   const permissions = new PermissionBroker({
     sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
     permission: permissionConfig,
+    approved: permissionApprovals.approved(),
+    saveApproval: (approval) => permissionApprovals.save(approval),
     publish: (event) => surface.publishWire(event),
   });
   const questions = new QuestionBroker({
