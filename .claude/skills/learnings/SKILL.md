@@ -5098,3 +5098,17 @@ Automation: `apps/kortix-worker/src/compiled-model-entry.test.ts` starts the rea
 entry process and checks the actual gateway request. Short, Kortix-prefixed,
 provider-prefixed, and explicit override cases pass. The short case fails before
 the fix.
+
+
+## 2026-09-07 — Do not retry an auth submission while it is pending
+
+The preview signup test waited two seconds for `POST /auth`, then waited for
+Continue to re-enable. The trace shows the request starts 8.4 seconds after Enter
+and returns 200. The UI reaches the code screen, where Continue no longer exists.
+
+Register the request wait before submitting once. Use the browser action budget
+and assert the resulting code screen. A short observation timeout does not prove
+that a mutation failed or authorize another submission.
+
+Automation: the existing account-authentication browser journey checks the real
+POST, delivered email, new user, sign-out, and subsequent login.
