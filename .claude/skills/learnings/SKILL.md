@@ -5046,3 +5046,10 @@ conflict detection and apply it during accepted-only replay.
 requests, omitted and empty strings, malformed inputs, and provider errors.
 The prompt-system cases in `turn-routes.test.ts` check queue isolation, retries,
 replacement, and accepted-only replay through the provider HTTP boundary.
+
+
+## 2026-09-07 — Do not return a successful file link with no serving origin
+
+- Incident: the Pi preview SESS-13 flow received 200 with `public_url: null`. Its deployment had no isolated preview domain.
+- Rule: file-share metadata returns 503 when its isolated origin is unavailable. Keep author-controlled file content off the API origin.
+- Enforcement: `unit-public-session-share.test.ts` asserts both missing-domain 503 and configured-domain HTTPS URLs. The existing SESS-13 HTTP flow rejects a null URL on 200.

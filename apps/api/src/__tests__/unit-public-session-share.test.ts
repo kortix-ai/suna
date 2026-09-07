@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import { config } from '../config';
+
+const originalPreviewDomain = config.KORTIX_PREVIEW_BASE_DOMAIN;
 
 const SHARE_TOKEN = 'kps_11111111111141118111111111111111';
 const SHARE_ID = '11111111-1111-4111-8111-111111111111';
@@ -76,6 +79,7 @@ mock.module('../sandbox-proxy/backend', () => ({
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
+  config.KORTIX_PREVIEW_BASE_DOMAIN = '';
   shareRow = {
     shareId: SHARE_ID,
     sessionId: SESSION_ID,
@@ -107,6 +111,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  config.KORTIX_PREVIEW_BASE_DOMAIN = originalPreviewDomain;
   globalThis.fetch = originalFetch;
 });
 
@@ -188,15 +193,36 @@ describe('public session preview shares', () => {
       filePath: '/workspace/app/index.html',
     };
 
-    const meta = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
-    expect(meta.status).toBe(200);
-    const body = (await meta.json()) as any;
-    expect(body.share.proxy_path).toBe(`/v1/p/public-share/${SHARE_TOKEN}/file`);
-    expect(body.share.public_url).toBeNull();
-
     const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file`);
     expect(res.status).toBe(200);
     expect(fetchUrls.at(-1)).toBe('https://preview.test/open?path=%2Fworkspace%2Fapp%2Findex.html');
+  });
+
+  test('file metadata reports unavailable when no isolated preview origin is configured', async () => {
+    shareRow = { ...shareRow, resourceType: 'file', port: null, filePath: '/workspace/report.html' };
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'File sharing requires an isolated preview domain' });
+    expect(fetchUrls).toEqual([]);
+  });
+
+  test('file metadata returns its isolated origin and public token when configured', async () => {
+    config.KORTIX_PREVIEW_BASE_DOMAIN = 'preview.example.test';
+    shareRow = { ...shareRow, resourceType: 'file', port: null, filePath: '/workspace/report.html' };
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.share.proxy_path).toBe(`/v1/p/public-share/${SHARE_TOKEN}/file`);
+    const url = new URL(body.share.public_url);
+    expect(url.protocol).toBe('https:');
+    expect(url.hostname).toBe(`${config.INTERNAL_KORTIX_ENV}-p3211-${EXTERNAL_ID}.preview.example.test`);
+    expect(url.pathname).toBe('/open');
+    expect(url.searchParams.get('public_share')).toBe(SHARE_TOKEN);
+    expect(fetchUrls).toEqual([]);
   });
 
   test('rejects file share subpaths instead of exposing the static file server', async () => {
