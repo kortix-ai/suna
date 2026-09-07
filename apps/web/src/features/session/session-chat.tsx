@@ -2196,8 +2196,19 @@ export function SessionChat({
     return settlement;
   }, [sessionId, projectSessionId, sessionState, abortSession]);
 
+  // Pi compiles one model into the worker. Keep model and effort controls
+  // closed until the control plane proves this is an OpenCode project session.
+  // The sandbox projection is a second fail-closed signal for a stale row.
+  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
+    enabled: !!projectId && !!projectSessionId,
+  }).data;
+  const projectSessionRuntimeIdentity = resolveProjectSessionRuntimeIdentity(projectSessionRow);
+  const sandboxIsPiWorker = isPiWorkerRuntimeMetadata(sessionState?.sandbox?.metadata);
+  const isPiWorkerSession = projectSessionRuntimeIdentity === 'pi-worker' || sandboxIsPiWorker;
+
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useSessionModelSelection({
+    runtime: isPiWorkerSession ? 'pi-worker' : 'opencode',
     agents,
     providers,
     config,
@@ -2232,15 +2243,6 @@ export function SessionChat({
   const localModelVisible = local.model.visible;
   const localVariantSet = local.model.variant.set;
 
-  // Pi compiles one model into the worker. Keep model and effort controls
-  // closed until the control plane proves this is an OpenCode project session.
-  // The sandbox projection is a second fail-closed signal for a stale row.
-  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
-    enabled: !!projectId && !!projectSessionId,
-  }).data;
-  const projectSessionRuntimeIdentity = resolveProjectSessionRuntimeIdentity(projectSessionRow);
-  const sandboxIsPiWorker = isPiWorkerRuntimeMetadata(sessionState?.sandbox?.metadata);
-  const isPiWorkerSession = projectSessionRuntimeIdentity === 'pi-worker' || sandboxIsPiWorker;
   const runtimePromptOverridesAllowed = runtimePromptOverridesEnabled({
     hasProjectSession: !!projectSessionId,
     projectRuntimeIdentity: projectSessionRuntimeIdentity,

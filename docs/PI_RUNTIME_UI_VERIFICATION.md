@@ -29,6 +29,8 @@ Live assistant messages now publish the compiled agent and gateway model identit
 Previously the adapter omitted both values, so live messages used native provider
 names and the default `build` agent. The UI could not match those messages to its
 model catalog. Restored messages already use the resolved identity.
+The SDK also resolves Pi's context meter from its compiled model. Account and
+persisted preferences no longer replace that displayed model or context limit.
 
 The SDK sends Pi slash commands without per-turn agent, model, or variant
 selections. Pi runs the compiled command on its immutable session runtime.
@@ -89,7 +91,7 @@ CLI, environment startup, stopped history, and stable message IDs after restart.
 
 - `pnpm test`: all lanes pass; REST/CLI reports `395/395 passed`, zero failures.
 - `pnpm --filter @kortix/sdk typecheck`, `test`, `smoke:install`: exit `0`.
-  The SDK suite records `2,844` passing tests. The install smoke imports and
+  The SDK suite records `2,847` passing tests. The install smoke imports and
   constructs clients from packed tarballs.
 - Selected committed worker source: `244 pass`, `0 fail`, 36 files.
   This source snapshot excludes unrelated worktree changes.

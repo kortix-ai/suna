@@ -680,3 +680,8 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
 REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.
+
+`useSessionModelSelection({ runtime: 'pi-worker', config, ...options })` uses the
+compiled `config.model` for the displayed model and context window. Account and
+persisted model preferences do not override this immutable runtime identity.
+Omitting `runtime` retains OpenCode selection behavior.

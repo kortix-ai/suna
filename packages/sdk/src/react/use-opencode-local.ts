@@ -11,6 +11,7 @@
  * - Variant persistence via useModelStore
  */
 
+import { resolveSessionDisplayModel } from './session-display-model';
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { featureFlags } from '../core/http/feature-flags';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
@@ -32,6 +33,8 @@ export interface UseOpenCodeLocalOptions {
   agents?: Agent[];
   providers?: ProviderListResponse;
   config?: Config;
+  /** Pi displays its compiled config model instead of persisted or account preferences. */
+  runtime?: 'pi-worker' | 'opencode';
   /** Session ID — used to persist agent selection per-session in localStorage */
   sessionId?: string;
   /**
@@ -272,6 +275,7 @@ export function useOpenCodeLocal({
   agents: rawAgents,
   providers,
   config,
+  runtime,
   sessionId,
   boundAgentName,
   defaultAgentName,
@@ -504,6 +508,9 @@ export function useOpenCodeLocal({
   // roster can be empty (e.g. a project with no configured agents, or
   // `enableProjects` off) — the agent-keyed slots are simply skipped then.
   const currentModelKey = useMemo<ModelKey | undefined>(() => {
+    if (runtime === 'pi-worker') {
+      return resolveSessionDisplayModel(runtime, config?.model, undefined);
+    }
     const resolved =
       explicitModelKey ??
       getFirstValidModel(
@@ -520,6 +527,8 @@ export function useOpenCodeLocal({
     // seam every source funnels through. No-op off Bedrock.
     return healBedrockModelKey(resolved, flatModels);
   }, [
+    runtime,
+    config?.model,
     explicitModelKey,
     serverDefaultKey,
     currentAgent,
