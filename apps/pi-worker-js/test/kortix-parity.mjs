@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=55
+// EXPECTED_PASSES=56
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -179,6 +179,18 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     const got = new TextDecoder().decode((await soon).value ?? new Uint8Array());
     check("a broadcast reaches the stream as `data:` — this is what makes an answer ARRIVE",
       got.startsWith("data:") && got.includes("\"probe\""), JSON.stringify(got).slice(0, 90));
+    // ONCE, NOT TWICE. A socket watcher gets a bare `{type}` notification for
+    // every agent event and an SSE client gets the event itself. Mirroring the
+    // notification too delivered everything twice — measured on dev
+    // 2026-09-07: agent_start, turn_start, message_start and message_end each
+    // arrived as themselves and again as a stub, and a consumer that renders
+    // what it is sent would render the turn twice.
+    const stub = reader.read();
+    h.cell.broadcast({ type: "agent_start" }, { mirror: false });
+    h.cell.broadcast({ type: "sentinel" });
+    const after = new TextDecoder().decode((await stub).value ?? new Uint8Array());
+    check("an event the stream already carried is not mirrored to it a second time",
+      !after.includes("agent_start") && after.includes("sentinel"), JSON.stringify(after).slice(0, 110));
     await reader.cancel();
   }
 

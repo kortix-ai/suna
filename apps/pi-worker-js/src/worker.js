@@ -579,8 +579,19 @@ export class AgentCell {
     }
   }
 
-  broadcast(event) {
-    this.sse({ ...event, at: Date.now() });
+  /**
+   * `mirror: false` when the SSE stream has already had the real thing.
+   *
+   * A WebSocket watcher gets a bare `{type}` notification for every agent
+   * event; an SSE client gets the event itself, verbatim, because that is the
+   * harness's contract. Mirroring the notification too delivered EVERY event
+   * twice — measured on dev 2026-09-07 against a live stream: `agent_start`,
+   * `turn_start`, `message_start` and `message_end` each arrived once as
+   * themselves and once as a stub, and a consumer that renders what it is sent
+   * would render the turn twice.
+   */
+  broadcast(event, { mirror = true } = {}) {
+    if (mirror) this.sse({ ...event, at: Date.now() });
     const payload = JSON.stringify({ ...event, at: Date.now() });
     // THE UNION, not either one. Measured on celld 0.3.0, 2026-09-02: after a
     // cell is evicted and rebuilt, getWebSockets() returns 0 for a watcher that
@@ -679,7 +690,9 @@ export class AgentCell {
         for (const r of event.toolResults ?? []) this.saveMessage("toolResult", r);
       }
       if (event.type !== "tool_execution_start" && event.type !== "tool_execution_end") {
-        this.broadcast({ type: event.type });
+        // Sockets only: the SSE stream already carried this event in full,
+        // above, and sending the stub after it delivers everything twice.
+        this.broadcast({ type: event.type }, { mirror: false });
       }
     });
 
