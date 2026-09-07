@@ -719,7 +719,7 @@ export class AgentCell {
     // convention, so adding an endpoint is a decision about billing rather than
     // an accident of its name.
     if (!UNBILLED_PATHS.has(url.pathname)) this.meterRequest();
-    const sessionId = url.searchParams.get("c") ?? this.state.id?.toString?.() ?? "default";
+    const sessionId = url.searchParams.get("c") ?? this.env?.KORTIX_SESSION_ID ?? this.state.id?.toString?.() ?? "default";
 
     if (req.headers.get("upgrade") === "websocket") {
       const pair = new WebSocketPair();
@@ -797,7 +797,41 @@ export class AgentCell {
       // The shape is kortix-worker's (apps/kortix-worker/src/worker.ts), because
       // that is the contract the session speaks and parity with it is the point.
       const turns = this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n;
+      // THE TURN PROBE, which is what releases the NEXT prompt.
+      //
+      // A queued prompt is held while the session holds turn authority, and the
+      // control plane settles that by polling /kortix/health?turn=1 and reading
+      // `turn_in_flight` (readSandboxTurn in apps/api/src/projects/reaping/
+      // box-reaper.ts). A body without the field reads as "this build says
+      // nothing about turns", the marker is never cleared, and every prompt
+      // after the first waits for ever on `turn_active`.
+      //
+      // Measured on dev 2026-09-07, session dee5338a: the session reached
+      // `ready`, the prompt was accepted 202, and it sat in state `waiting`
+      // reason `turn_active` with attempts=0 — the delivery loop never tried,
+      // because nothing ever told it the turn was over.
+      const probe = url.searchParams.get("turn") === "1"
+        ? (() => {
+            const pending = this.sql.exec(
+              "SELECT COUNT(*) AS n FROM turns WHERE status IN ('pending','running')",
+            ).toArray()[0].n;
+            const inFlight = !!this.running || pending > 0;
+            const last = this.sql.exec(
+              "SELECT status, error FROM turns ORDER BY i DESC LIMIT 1",
+            ).toArray()[0] ?? null;
+            return {
+              turn_in_flight: inFlight,
+              // Only meaningful when nothing is in flight; the reader ignores
+              // it otherwise.
+              turn_end: inFlight ? null : (last?.status === "error" ? "error" : "completed"),
+              // A prompt this cell accepted and never ran. `pending` with no
+              // running turn and no alarm progress is exactly that.
+              turn_orphaned_prompt: !this.running && pending > 0,
+            };
+          })()
+        : null;
       return Response.json({
+        ...(probe ?? {}),
         daemon: "ok",
         status: "ok",
         runtimeReady: true,
@@ -874,19 +908,49 @@ export class AgentCell {
         error: last?.error ?? null,
       });
     }
-    // The session document: what a session page needs before it renders one
-    // message — who this is, whether it is busy, how much it has said.
+    // GET /session IS A LIST, BECAUSE THAT IS WHAT THE CONTROL PLANE PROBES.
+    //
+    // A session does not reach `ready` on the strength of /kortix/health. The
+    // start path calls ensureOpencodeSessionPin, which GETs
+    // `/session?directory=…`, expects an ARRAY of OpenCode-shaped sessions, and
+    // pins the canonical root — the most recently active entry with no
+    // `parentID` (apps/api/src/projects/opencode-session-resolver.ts). No array,
+    // no root, and the answer is `not_ready`, which the envelope reports as
+    // runtime `booting` forever.
+    //
+    // This returned a cell-shaped OBJECT. Measured on dev 2026-09-07, session
+    // 6102257c: the cell answered /kortix/health with runtimeReady true and
+    // daemon ok the whole time, and the session still ended
+    // `runtime_not_ready_timeout` with observation runtime.state "booting",
+    // because the pin could never resolve.
+    //
+    // The shape is kortix-worker's (opencodeSessionObject in
+    // apps/kortix-worker/src/runtime-surface.ts): one root, no parent. The
+    // cell's own facts ride along as extra keys, which the resolver ignores and
+    // a cell-aware caller can still read.
     if (url.pathname === "/session") {
       const msgs = this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n;
       const turns = this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n;
-      return Response.json({
+      const t = this.sql.exec("SELECT MIN(ts) AS a, MAX(ts) AS b FROM msgs").toArray()[0] ?? {};
+      const created = t.a ?? this.bornAt;
+      const updated = t.b ?? created;
+      return Response.json([{
+        id: sessionId,
+        title: sessionId,
+        // No parentID: this cell IS the root. A parent would make it
+        // unpickable and the session would never leave `booting`.
+        parentID: null,
+        directory: this.env?.PT_WORKSPACE_CWD ?? "/workspace",
+        time: { created, updated },
+        version: "pi",
+        // The cell's own document, alongside rather than instead of it.
         sessionId,
         agent: "pi-in-a-cell",
         busy: !!this.running,
         messages: msgs,
         turns,
         contextFrom: this.contextFrom(),
-      });
+      }]);
     }
     if (url.pathname === "/stop" && req.method === "POST") {
       const running = this.running;
@@ -914,6 +978,53 @@ export class AgentCell {
         skills: skills.map((sk) => ({ name: sk.name, description: sk.description, path: sk.filePath, bytes: sk.content.length })),
         diagnostics,
       });
+    }
+
+    // THE ROUTE THE PRODUCT ACTUALLY DELIVERS PROMPTS ON.
+    //
+    // The session lifecycle sends every composer message and every queued
+    // prompt to POST /session/:rootId/prompt_async — not to this cell's own
+    // /prompt (apps/api engine.ts postPrompt, and the comment that names it in
+    // apps/kortix-worker/src/worker.ts). OpenCode answers 204 and runs the turn
+    // in the background; the worker matches that, so a send reaches the agent
+    // and the reply streams back over /events.
+    //
+    // Without this route the request fell through to the cell's generic
+    // handler, which answers 200 to ANY path. So the API believed every prompt
+    // was delivered and no turn ever ran. Measured on dev 2026-09-07, session
+    // ef37beb7: the session reached `ready` in 7.1 s, the prompt returned 200,
+    // and no assistant message ever appeared — the worst shape of failure,
+    // because nothing anywhere reported an error.
+    //
+    // Enqueued exactly like `/prompt?async=1`: persisted first, then the alarm
+    // does the work, so nothing runs on this request's back and an eviction
+    // mid-turn resumes rather than loses it.
+    {
+      const m = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/);
+      if (m && req.method === "POST") {
+        const rootId = decodeURIComponent(m[1]);
+        // Root-scoped, like the worker: a prompt addressed to another session
+        // must not run here just because it reached this cell.
+        if (rootId !== sessionId) {
+          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        }
+        const body = await req.json().catch(() => ({}));
+        const parts = Array.isArray(body?.parts) ? body.parts : [];
+        const text = parts
+          .filter((x) => x && (x.type === "text" || typeof x.text === "string"))
+          .map((x) => String(x.text ?? ""))
+          .join("\n")
+          .trim() || String(body?.text ?? "").trim();
+        if (!text) return Response.json({ error: "no text in prompt" }, { status: 400 });
+        this.sql.exec(
+          "INSERT INTO turns(text, script, window, status, created_at) VALUES (?, NULL, 0, 'pending', ?)",
+          text, Date.now(),
+        );
+        await this.state.storage.setAlarm(Date.now() + 1);
+        // 204, because that is what OpenCode answers and what the delivery loop
+        // treats as accepted.
+        return new Response(null, { status: 204 });
+      }
     }
 
     if (url.pathname === "/prompt" && req.method === "POST") {
@@ -1242,7 +1353,23 @@ export default {
         ok: true, agent: "pi-in-a-cell",
       });
     }
-    const name = url.searchParams.get("c") ?? "default";
+    // WHICH CELL, when the caller cannot say.
+    //
+    // A Kortix session reaches this worker through the API's sandbox proxy,
+    // which forwards the path and NOT the query — so `?c=` is absent on every
+    // request the product makes. Defaulting to "default" put all of them on an
+    // isolate that is nobody's session: the pin resolved to that isolate's
+    // internal id, and the delivery POST to /session/<the real session>/
+    // prompt_async then 404'd against it. Measured on dev 2026-09-07, session
+    // 16310084: GET /session through the proxy answered 200 while
+    // prompt_async 404'd on both 8000 and 8080.
+    //
+    // A Platinum cell sandbox holds exactly ONE Kortix session, and its id is
+    // in the environment the create put there. So that is the identity to fall
+    // back on: `?c=` still works for callers that name a cell (the suites, the
+    // eviction probes), and everything else lands on the session this cell was
+    // made for.
+    const name = url.searchParams.get("c") ?? env.KORTIX_SESSION_ID ?? "default";
     return env.AGENT.get(env.AGENT.idFromName(name)).fetch(req);
   },
 };

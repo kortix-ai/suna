@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=17
+// EXPECTED_PASSES=32
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -79,11 +79,83 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const turn = await (await h.fetch("/turn?c=s")).json();
   check("GET /turn is idle before anything runs", turn.running === false && turn.status === "idle", JSON.stringify(turn));
   const sess = await (await h.fetch("/session?c=s")).json();
-  check("GET /session describes the session, not a turn", sess.sessionId === "s" && sess.messages === 0 && sess.busy === false, JSON.stringify(sess));
+  // A LIST, and a pinnable one. ensureOpencodeSessionPin GETs this and picks
+  // the canonical root: the most recently active entry with NO parentID. An
+  // object, or an entry with a parent, resolves to nothing and the session
+  // reports runtime `booting` until it times out — measured on dev 2026-09-07,
+  // session 6102257c, whose cell was healthy throughout.
+  check("GET /session is a LIST, because the control plane pins a root from it",
+    Array.isArray(sess) && sess.length === 1, JSON.stringify(sess).slice(0, 120));
+  const root = Array.isArray(sess) ? sess[0] : {};
+  check("its one entry is a ROOT — a parentID would make it unpickable",
+    root.parentID === null && typeof root.id === "string" && root.id === "s", JSON.stringify(root).slice(0, 120));
+  check("and it carries the times the resolver orders roots by",
+    typeof root.time?.created === "number" && typeof root.time?.updated === "number", JSON.stringify(root.time));
+  check("the cell's own document rides along, so nothing was lost",
+    root.sessionId === "s" && root.messages === 0 && root.busy === false, JSON.stringify(root).slice(0, 140));
 
   // Interrupt with nothing running is an answer, not an error — a session may
   // stop a turn that has already finished.
   const stop = await (await h.fetch("/interrupt?c=s", { method: "POST" })).json();
+  // THE DELIVERY ROUTE. Every composer send and queued prompt arrives at
+  // POST /session/:rootId/prompt_async, not at this cell's /prompt. Before it
+  // existed the request fell through to the generic handler, which answers 200
+  // to any path — so the API believed the prompt was delivered and no turn ever
+  // ran. Measured on dev 2026-09-07, session ef37beb7: ready in 7.1 s, prompt
+  // 200, no assistant message ever.
+  {
+    const r = await h.fetch("/session/s/prompt_async?c=s", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "hello there" }] }),
+    });
+    check("POST /session/:root/prompt_async is ACCEPTED with 204, like OpenCode",
+      r.status === 204, `status ${r.status}`);
+    const turns = await (await h.fetch("/turn?c=s")).json();
+    check("and it queued a turn rather than answering 200 and dropping it",
+      turns.turn !== null || turns.status === "pending" || turns.status === "running", JSON.stringify(turns));
+    const wrong = await h.fetch("/session/somebody-else/prompt_async?c=s", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "x" }] }),
+    });
+    check("a prompt addressed to ANOTHER root is refused, not run here",
+      wrong.status === 404, `status ${wrong.status}`);
+    const empty = await h.fetch("/session/s/prompt_async?c=s", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ parts: [] }),
+    });
+    check("and a prompt with no text is a 400, not an empty turn",
+      empty.status === 400, `status ${empty.status}`);
+  }
+
+  // THE TURN PROBE RELEASES THE NEXT PROMPT. A queued prompt is held while the
+  // session holds turn authority, and the control plane settles that by reading
+  // `turn_in_flight` from /kortix/health?turn=1. A body without the field never
+  // clears the marker, so every prompt after the first waits for ever on
+  // `turn_active` — measured on dev 2026-09-07, session dee5338a: accepted 202,
+  // state `waiting`, attempts 0, no delivery ever attempted.
+  {
+    // A FRESH cell: an earlier claim in this file queues a prompt, and a probe
+    // taken after it would read `in flight` for a reason that has nothing to do
+    // with what is being claimed here.
+    const hp = makeCell(AgentCell, ENV);
+    const idle = await (await hp.fetch("/kortix/health?c=s&turn=1")).json();
+    check("health?turn=1 answers turn_in_flight, which is what settles a turn",
+      idle.turn_in_flight === false, JSON.stringify({ f: idle.turn_in_flight }));
+    check("and names how the last turn ended, so the settle has a reason",
+      idle.turn_end === "completed" || idle.turn_end === "error", JSON.stringify(idle.turn_end));
+    check("a plain health call does NOT carry the probe — it is asked for",
+      (await (await hp.fetch("/kortix/health?c=s")).json()).turn_in_flight === undefined, "turn fields leaked into plain health");
+
+    await hp.fetch("/session/s/prompt_async?c=s", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "queued work" }] }),
+    });
+    const busy = await (await hp.fetch("/kortix/health?c=s&turn=1")).json();
+    check("a QUEUED prompt reads as in flight — the next one must wait behind it",
+      busy.turn_in_flight === true, JSON.stringify({ f: busy.turn_in_flight }));
+    check("and an accepted prompt that has not run yet is reported as orphaned",
+      busy.turn_orphaned_prompt === true, JSON.stringify(busy.turn_orphaned_prompt));
+  }
+
   check("POST /interrupt with no turn says so rather than failing", stop.stopped === false && /no turn/.test(stop.reason), JSON.stringify(stop));
 
   // The session surface must not disturb the cell's own: /health and / still
@@ -97,6 +169,30 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const worker = mod.default;
   const r = await worker.fetch(new Request("http://cell/kortix/health"), { AGENT: null });
   const body = await r.json();
+  // THE PROXY CARRIES NO `?c=`. A Kortix session reaches this worker through
+  // the API's sandbox proxy, which forwards the path and not the query, so
+  // every request the product makes arrives unnamed. Defaulting to "default"
+  // put them all on an isolate that is nobody's session — measured on dev
+  // 2026-09-07, session 16310084: GET /session answered 200 through the proxy
+  // while the delivery POST to /session/<session>/prompt_async 404'd on both
+  // ports, because it was asking the wrong cell.
+  {
+    const envd = { ...ENV, KORTIX_SESSION_ID: "sess-42" };
+    const hd = makeCell(AgentCell, envd);
+    const unnamed = await (await hd.fetch("/session")).json();
+    check("with no ?c=, the cell answers as the session its ENV names",
+      Array.isArray(unnamed) && unnamed[0]?.id === "sess-42", JSON.stringify(unnamed).slice(0, 120));
+    const deliver = await hd.fetch("/session/sess-42/prompt_async", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "through the proxy" }] }),
+    });
+    check("so a delivery addressed to that session is ACCEPTED, not 404'd",
+      deliver.status === 204, `status ${deliver.status}`);
+    const named = await (await hd.fetch("/session?c=other")).json();
+    check("and an explicit ?c= still names a different cell — the suites rely on it",
+      named[0]?.id === "other", JSON.stringify(named).slice(0, 100));
+  }
+
   check("the worker answers /kortix/health with no session named", r.status === 200 && body.ok === true, JSON.stringify(body));
   // The session polls readiness BEFORE it has a session to name, so this body
   // has to classify too — an unclassifiable one leaves it waiting exactly as
