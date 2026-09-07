@@ -207,12 +207,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       provider: sessionEnvironments.provider,
       status: sessionEnvironments.status,
       baseUrl: sessionEnvironments.baseUrl,
-      serviceKey: sql<string | null>`(
-        select ${sessionSandboxes.config}->>'serviceKey'
-        from ${sessionSandboxes}
-        where ${sessionSandboxes.sessionId} = ${sessionEnvironments.sessionId}
-        limit 1
-      )`,
+      config: sessionEnvironments.config,
     };
     const selectEnvironment = async (condition: SQL) => {
       const [match] = await db
@@ -229,7 +224,9 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       ));
     if (!environment) return null;
 
-    setCachedServiceKey(externalId, environment.serviceKey);
+    const config = (environment.config || {}) as Record<string, unknown>;
+    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+    setCachedServiceKey(externalId, serviceKey);
     return {
       runtimeKind: 'environment',
       sandboxId: environment.sandboxId,
@@ -241,7 +238,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       provider: environment.provider,
       status: environment.status,
       baseUrl: environment.baseUrl || '',
-      serviceKey: environment.serviceKey,
+      serviceKey,
     };
   }
 

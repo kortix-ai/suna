@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Sign proxy requests with the target runtime's credential (2026-09-07)
+
+**When:** looking up an environment for files, terminals, or preview requests.
+**Incident:** Pi preview `0ea36cfd55` ran file tools successfully, but the browser received `503 sandbox proxy authentication rejected`.
+**Rule:** read `session_environments.config.serviceKey` for an environment. Never substitute its worker's credential.
+**Enforcer:** `backend-environment.test.ts` checks the selected config column, the distinct key, and absent or malformed keys.
+
 ### Bake remote tool executables into every environment image (2026-09-07)
 
 **When:** a worker tool invokes an executable through environment RPC.

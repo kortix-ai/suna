@@ -14,9 +14,10 @@ const environmentRow = {
   provider: 'daytona',
   status: 'active',
   baseUrl: 'https://environment.example',
-  serviceKey: 'session-service-key',
+  config: { serviceKey: 'environment-service-key' } as Record<string, unknown>,
 };
 let queriedTables: unknown[] = [];
+let environmentColumns: Record<string, unknown> | null = null;
 
 mock.module('../config', () => ({ config: {} }));
 mock.module('../shared/preview-ownership', () => ({
@@ -37,9 +38,10 @@ mock.module('../platform/providers', () => ({
 }));
 mock.module('../shared/db', () => ({
   db: {
-    select: () => ({
+    select: (columns: Record<string, unknown>) => ({
       from: (table: unknown) => {
         queriedTables.push(table);
+        if (table === sessionEnvironments) environmentColumns = columns;
         return {
           where: () => ({
             orderBy: () => ({ limit: async () => [] }),
@@ -65,7 +67,20 @@ describe('environment proxy lookup', () => {
       sandboxId: 'environment-uuid',
       externalId: 'env-provider-id',
       sessionId: 'session-1',
-      serviceKey: 'session-service-key',
+      serviceKey: 'environment-service-key',
     });
+    expect(environmentColumns?.config).toBe(sessionEnvironments.config);
+  });
+
+  test('does not substitute the worker credential when the environment has none', async () => {
+    const saved = environmentRow.config;
+    try {
+      for (const config of [{}, { serviceKey: 123 }]) {
+        environmentRow.config = config;
+        expect((await loadSandbox('env-provider-id'))?.serviceKey).toBeNull();
+      }
+    } finally {
+      environmentRow.config = saved;
+    }
   });
 });

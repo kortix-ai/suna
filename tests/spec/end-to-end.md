@@ -305,6 +305,17 @@ All under `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sandboxId` = 
 `PRX-1` `POST /p/auth` (JWT or token) → 200 sets `__preview_session` cookie (1h). Invalid token → 401.
 `PRX-2` `POST /p/share` → `combinedAuth` → 201 share link; `GET /p/share` → list; `DELETE /p/share/:token` → revoke. Shared link grants scoped preview access.
 `PRX-3` `GET /p/config` → 200 without authentication. `preview_url_template` is null or contains `{port}` and `{sandbox}`.
+
+Preview upstream authentication uses the target runtime's own credential. An environment lookup reads `session_environments.config.serviceKey`; it never signs with the worker's credential. Authenticated file reads through the environment proxy return the same persisted content that the worker's remote file tools read.
+`RUN-1` `POST /p/<sbx>/8000/session` → create OpenCode conversation → returns `{id}`.
+`RUN-2` `POST /p/<sbx>/8000/session/<ocId>/prompt_async {parts:[{type:text,text}]}` → **204** (async; agent runs in background).
+`RUN-3` `GET /p/<sbx>/8000/event` (SSE) → stream message/part deltas + `session.updated`; assert text streamed.
+`RUN-4` busy/idle — `GET /p/<sbx>/8000/session/<ocId>` → `status.type ∈ busy|retry` ⇒ busy.
+`RUN-5` `POST /p/<sbx>/8000/session/<ocId>/abort` → stop a running agent.
+`RUN-6` `GET /p/<sbx>/8000/session/<ocId>/message` (+`/message/<mid>`) → list/get messages (results).
+`RUN-7` `GET /p/<sbx>/8000/session/<ocId>/diff` → working-tree diff; agent commits land on branch `<sessionId>`.
+`RUN-8` proxy authz — request without any valid token/cookie → 401; preview-token from a `share` → scoped 200.
+`RUN-9` Stop → immediate send (T18, session-middle-stop). Abort a running turn through OpenCode's OWN `/session/<ocId>/abort` (the client-invoked runtime abort route the web "Stop" button calls — the same call `RUN-5` exercises), then, with NO settling delay, send a second, distinct prompt on the same conversation. The second turn's reply must address ONLY the second prompt — no bled-in content from the aborted first turn (the duplicate-streaming class of bug the branch's delta event-id idempotency fix targets) — and the first turn's own last assistant message must be left properly finalized: an abort `error` present AND `time.completed` set, never a dangling, never-completed row (the historical cause of a phantom "Interrupted" marker, T11).
 `RUN-1` `POST /p/<sbx>/8000/session` → create OpenCode conversation → returns `{id}`.
 `RUN-2` `POST /p/<sbx>/8000/session/<ocId>/prompt_async {parts:[{type:text,text}]}` → **204** (async; agent runs in background).
 `RUN-3` `GET /p/<sbx>/8000/event` (SSE) → stream message/part deltas + `session.updated`; assert text streamed.
