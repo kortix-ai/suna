@@ -119,6 +119,11 @@ Unsupported fields return `400` before admission. The body and each
 durable log item are limited to 512 KiB. Attachments and the remaining OpenCode
 prompt options are still compatibility gaps.
 
+Compiled commands and command requests may explicitly select the current agent
+and model. A different selection still requires another compiled runtime.
+An empty command file list is accepted. Nonempty file lists, child sessions,
+variant overrides, file references, and shell interpolation remain unsupported.
+
 The direct Pi versus OpenCode benchmark and its raw measurements are documented
 in [`DIRECT_ENVIRONMENT.md`](../../spikes/pi-worker/bench/DIRECT_ENVIRONMENT.md).
 

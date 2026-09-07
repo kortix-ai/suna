@@ -167,6 +167,42 @@ describe('Pi OpenCode command routes', () => {
     expect(user?.content).toEqual([{ type: 'text', text: 'Review the current changes.' }]);
   });
 
+  test('executes a command with matching compiled and request agent selections and an empty file list', async () => {
+    const worker = await start([
+      {
+        name: 'explicit',
+        agent: 'build',
+        model: 'faux/faux-1',
+        template: 'Apply $ARGUMENTS',
+        source: 'command',
+        hints: ['$ARGUMENTS'],
+      },
+    ]);
+    if (!worker.faux) throw new Error('faux provider is unavailable');
+    worker.faux.setResponses([fauxAssistantMessage('Selected command complete.')]);
+    const sessionID = await rootId(worker);
+    const agents = (await (await request(worker, '/agent')).json()) as Array<{
+      model: { providerID: string; modelID: string };
+    }>;
+    const model = agents[0]!.model;
+    const response = await client(worker).session.command({
+      sessionID,
+      command: 'explicit',
+      arguments: 'the convention',
+      agent: 'build',
+      model: `${model.providerID}/${model.modelID}`,
+      parts: [],
+    });
+    expect(response.error).toBeUndefined();
+    expect(
+      response.data?.parts.some(
+        (part) => part.type === 'text' && part.text === 'Selected command complete.',
+      ),
+    ).toBe(true);
+    const user = worker.agent.state.messages.find((message) => message.role === 'user');
+    expect(user?.content).toEqual([{ type: 'text', text: 'Apply the convention' }]);
+  });
+
   test('returns explicit errors for unknown commands and unsupported semantics', async () => {
     const worker = await start([
       {
@@ -219,7 +255,9 @@ describe('Pi OpenCode command routes', () => {
         field,
       });
     }
-    const parts = await execute('review', { parts: [] });
+    const parts = await execute('review', {
+      parts: [{ type: 'file', mime: 'text/plain', url: 'data:text/plain,context' }],
+    });
     expect(parts.status).toBe(422);
     expect(await parts.json()).toMatchObject({
       code: 'PI_COMMAND_FEATURE_UNSUPPORTED',

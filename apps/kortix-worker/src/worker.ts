@@ -1941,6 +1941,13 @@ export async function startWorker(cfg = configFromEnv()) {
           }
           for (const field of ['agent', 'model', 'variant', 'subtask'] as const) {
             if (!Object.hasOwn(input, field)) continue;
+            if (
+              field === 'agent' &&
+              typeof input.agent === 'string' &&
+              input.agent &&
+              input.agent === effectiveRuntime.agent
+            ) continue;
+            if (field === 'model' && runtimeModel && input.model === runtimeModel) continue;
             res.writeHead(409, { 'content-type': 'application/json' }).end(
               JSON.stringify({
                 code: 'PI_COMMAND_RUNTIME_OVERRIDE_UNSUPPORTED',
@@ -1960,14 +1967,17 @@ export async function startWorker(cfg = configFromEnv()) {
             );
             return;
           }
-          if (Object.hasOwn(input, 'parts')) {
+          if (
+            Object.hasOwn(input, 'parts') &&
+            (!Array.isArray(input.parts) || input.parts.length > 0)
+          ) {
             const error = new PiCommandUnsupportedError('file parts', command.name);
             res.writeHead(422, { 'content-type': 'application/json' }).end(
               JSON.stringify({ code: error.code, error: error.message, feature: error.feature }),
             );
             return;
           }
-          const prompt = preparePiCommand(command, argumentsText);
+          const prompt = preparePiCommand(command, argumentsText, effectiveRuntime);
           const admitted = await admitTurn(prompt, input.messageID as string | undefined);
           const completion = await admitted.done;
           if (completion === 'cancelled') {

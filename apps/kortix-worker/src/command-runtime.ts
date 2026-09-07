@@ -1,3 +1,5 @@
+import type { CompiledPromptRuntime } from './prompt-input.ts';
+
 /**
  * The immutable project-command contract baked into a Pi runtime artifact.
  *
@@ -72,16 +74,23 @@ export function expandCommandTemplate(template: string, argumentsText: string): 
  * Produce the single text prompt Pi admits for this command.
  *
  * Pi sessions are compiled for one agent and one model. Agent/model overrides
- * and child-session commands therefore fail instead of silently running with
- * different semantics. Shell interpolation and file-reference expansion also
- * fail until they can use the environment and the same permission boundary as
- * normal tools.
+ * that change the compiled selection and child-session commands fail. Explicit
+ * selections matching the compiled runtime keep their normal command behavior.
+ * Shell interpolation and file references require the environment and the same
+ * permission boundary as normal tools.
  */
-export function preparePiCommand(command: PiCommand, argumentsText: string): string {
-  if (command.agent !== undefined) {
+export function preparePiCommand(
+  command: PiCommand,
+  argumentsText: string,
+  runtime: CompiledPromptRuntime = {},
+): string {
+  if (command.agent !== undefined && (!command.agent || command.agent !== runtime.agent)) {
     throw new PiCommandUnsupportedError('agent overrides', command.name);
   }
-  if (command.model !== undefined) {
+  const runtimeModel = runtime.model
+    ? `${runtime.model.providerID}/${runtime.model.modelID}`
+    : null;
+  if (command.model !== undefined && (!command.model || command.model !== runtimeModel)) {
     throw new PiCommandUnsupportedError('model overrides', command.name);
   }
   if (command.variant !== undefined) {

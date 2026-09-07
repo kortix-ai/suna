@@ -48,6 +48,25 @@ describe('preparePiCommand', () => {
     expect(preparePiCommand(command, 'src/app.ts')).toBe('Review src/app.ts');
   });
 
+  test('accepts explicit command settings that match the compiled agent and model', () => {
+    expect(
+      preparePiCommand(
+        { ...command, agent: 'build', model: 'kortix/gpt-5.6-luna' },
+        'current changes',
+        { agent: 'build', model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' } },
+      ),
+    ).toBe('Review current changes');
+  });
+
+  test.each([
+    { agent: 'other', model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' } },
+    { agent: 'build', model: { providerID: 'kortix', modelID: 'another-model' } },
+  ])('rejects command settings that differ from the compiled runtime %j', (runtime) => {
+    expect(() =>
+      preparePiCommand({ ...command, agent: 'build', model: 'kortix/gpt-5.6-luna' }, '', runtime),
+    ).toThrow(PiCommandUnsupportedError);
+  });
+
   test.each([
     ['agent', { ...command, agent: 'plan' }, 'agent'],
     ['empty agent', { ...command, agent: '' }, 'agent'],
