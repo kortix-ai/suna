@@ -1,3 +1,4 @@
+import { WIRE_MESSAGE_ID } from '../../projects/wire-message-id';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
@@ -29,6 +30,7 @@ import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   beginSandboxTurn,
+  completeSandboxTurn,
   extractTurnIdentity,
 } from '../../projects/sandbox-turn-lifecycle';
 import { recordSessionActivity } from '../../projects/session-activity';
@@ -80,6 +82,8 @@ import {
   EFFECTIVE_MESSAGE_ID_HEADER,
   PROMPT_TRANSCRIPT_READ_LIMIT,
   WIRE_ID_PLACED_HEADER,
+  PROMPT_ADMISSION_HEADER,
+  DURABLE_MESSAGE_ADMISSION,
   isPromptWireIdRepairPath,
   promptBodyMessageId,
   promptTranscriptReadPath,
@@ -1092,10 +1096,14 @@ export async function forwardToSandbox(
       return 'unavailable';
     }
   };
-  const acceptTurnLifecycle = async (): Promise<void> => {
+  const acceptTurnLifecycle = async (
+    identity?: { opencodeSessionId: string; messageId: string },
+  ): Promise<void> => {
     if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
     try {
-      turnLifecycleAccepted = await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
+      turnLifecycleAccepted = identity
+        ? await acceptSandboxTurn({ externalId: sandboxId }, turnToken, identity)
+        : await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
     } catch (error) {
       // OpenCode already accepted this non-idempotent request. Do not convert a
       // post-delivery database outage into a failed send or delete the durable
@@ -1598,13 +1606,51 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
+      const completedMessageId = upstream.headers.get('x-kortix-prompt-message-id');
+      const completedStatus = upstream.headers.get('x-kortix-prompt-completed');
+      const completionReceipt =
+        upstream.ok &&
+        turnLifecycleBegun &&
+        turnIdentity &&
+        record.sessionId &&
+        isPromptWireIdRepairPath(remainingPath) &&
+        upstream.headers.get(PROMPT_ADMISSION_HEADER) === DURABLE_MESSAGE_ADMISSION &&
+        completedMessageId &&
+        WIRE_MESSAGE_ID.test(completedMessageId) &&
+        (completedStatus === 'idle' || completedStatus === 'error') &&
+        (!turnIdentity.messageId || turnIdentity.messageId === completedMessageId)
+          ? {
+              status: completedStatus,
+              identity: {
+                opencodeSessionId: turnIdentity.opencodeSessionId,
+                messageId: completedMessageId,
+              },
+            } as const
+          : null;
       // A 2xx confirms acceptance. A 5xx on a non-replayable turn is ambiguous:
       // OpenCode may hold the message even though the response was lost. Both
       // cases must preserve the turn. A definitive 4xx abandons delivery.
       if (upstream.ok || (turnIdentity && upstream.status >= 500)) {
-        await acceptTurnLifecycle();
+        await acceptTurnLifecycle(completionReceipt?.identity);
       } else {
         await abandonTurnLifecycle();
+      }
+      if (completionReceipt && turnLifecycleAccepted) {
+        try {
+          await completeSandboxTurn(
+            record.sessionId!,
+            completionReceipt.status,
+            completionReceipt.identity,
+            null,
+            undefined,
+            { allowUnidentifiedFallback: false },
+          );
+        } catch (error) {
+          console.error(
+            `[turn-lifecycle] could not settle completed prompt ${completedMessageId}`,
+            error,
+          );
+        }
       }
       if (promptDelivery) {
         ptl.mark('turn-accept');

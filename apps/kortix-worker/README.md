@@ -79,6 +79,13 @@ The API reads this capability from the current transcript response. It preserves
 proxy duplicate protection. An explicit `Idempotency-Key` continues to use the
 proxy contract. The capability check adds no read to a normal browser prompt.
 
+A completed durable prompt response includes `x-kortix-prompt-message-id` and
+`x-kortix-prompt-completed` (`idle` or `error`). This also applies to completed
+async retries. The API binds the receipt to the request's identity, accepts its
+delivery record, and closes only that exact message. A retry cannot leave a new
+active turn behind or close an unrelated prompt without a message ID. Retrying
+a cancelled message returns `409` on both prompt routes.
+
 A turn-owner lease fences transcript writes and completion. A replacement
 worker resumes accepted prompts that never started. It does not replay a turn
 that could have executed a tool. It restores the committed answer or records

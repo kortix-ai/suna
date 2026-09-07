@@ -5060,3 +5060,10 @@ replacement, and accepted-only replay through the provider HTTP boundary.
 - Incident: the Pi preview Apps journey cancelled `/auth/v1/user` during reload. AuthProvider called global sign-out for the transport error. The next validation returned `session_not_found`; Apps stayed on its loading frame.
 - Rule: clear a cached session only for a confirmed invalid credential or missing auth session. Preserve it through aborted requests, transport failures, rate limits, and unavailable auth services. Backend authorization still validates every request.
 - Enforcement: `auth-provider-bootstrap.test.ts` executes bootstrap with transient and invalid-session errors. The Apps browser journey aborts auth validation, verifies the token remains valid, and reloads the actual page.
+
+
+## 2026-09-07 — Settle each delivery of a completed durable prompt
+
+- Incident: Pi context-only retries returned 200 and 204 after the worker had already relayed completion. Each proxy retry created another active turn row. Reload kept Stop visible despite an idle runtime.
+- Rule: a durable completed response names its exact message and terminal status. Bind that identity before settling the delivery. Receipt-based settlement must never fall back to an unrelated unidentified prompt.
+- Enforcement: worker HTTP tests verify completed receipts for context, normal responses, and provider errors. Proxy tests verify receipt validation and acceptance order. Real PostgreSQL tests prove repeated completion leaves another unidentified prompt open.

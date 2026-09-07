@@ -3206,6 +3206,7 @@ describe('context-only prompts', () => {
     items: SessionLogItem[] = [],
     options: {
       beforeProvider?: () => Promise<void>;
+      providerStatus?: number;
       rejectAppend?: (item: SessionLogItem) => number | undefined;
     } = {},
   ) {
@@ -3216,6 +3217,12 @@ describe('context-only prompts', () => {
         for await (const chunk of req) raw += chunk;
         requests.push(JSON.parse(raw));
         await options.beforeProvider?.();
+        if (options.providerStatus) {
+          res
+            .writeHead(options.providerStatus, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: { message: 'Provider rejected the prompt.' } }));
+          return;
+        }
         res.writeHead(200, { 'content-type': 'text/event-stream' }).end(
           'data: ' +
             JSON.stringify({
@@ -3280,6 +3287,8 @@ describe('context-only prompts', () => {
     expect(requests).toEqual([]);
     const repeated = await send(worker, body);
     expect(repeated.status).toBe(200);
+    expect(repeated.headers.get('x-kortix-prompt-completed')).toBe('idle');
+    expect(repeated.headers.get('x-kortix-prompt-message-id')).toBe(body.messageID);
     expect(await repeated.json()).toEqual(saved);
     expect((await send(worker, { ...body, noReply: false })).status).toBe(409);
     worker.server.closeAllConnections();
@@ -3374,7 +3383,13 @@ describe('context-only prompts', () => {
       true,
     );
     expect(await event).toContain(body.messageID);
-    expect((await send(worker, body, 'prompt_async')).status).toBe(204);
+    await waitUntil(() =>
+      items.some((item) => item.kind === 'journal' && item.record.type === 'completed'),
+    );
+    const asyncRetry = await send(worker, body, 'prompt_async');
+    expect(asyncRetry.status).toBe(204);
+    expect(asyncRetry.headers.get('x-kortix-prompt-completed')).toBe('idle');
+    expect(asyncRetry.headers.get('x-kortix-prompt-message-id')).toBe(body.messageID);
     await waitUntil(() =>
       items.some((item) => item.kind === 'journal' && item.record.type === 'completed'),
     );
@@ -3435,6 +3450,8 @@ describe('context-only prompts', () => {
     };
     const response = await send(worker, { ...body, noReply: false });
     expect(response.status).toBe(200);
+    expect(response.headers.get('x-kortix-prompt-completed')).toBe('idle');
+    expect(response.headers.get('x-kortix-prompt-message-id')).toBe(body.messageID);
     const answer = (await response.json()) as any;
     expect(answer.info.role).toBe('assistant');
     const retry = await send(worker, body);
@@ -3475,5 +3492,55 @@ describe('context-only prompts', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].info.id).toBe(body.messageID);
     expect(requests).toHaveLength(0);
+  });
+
+  test('returns an error completion receipt for a durable provider failure and its retry', async () => {
+    const { worker, send, requests } = await fixture([], { providerStatus: 400 });
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() }).id,
+      parts: [{ type: 'text', text: 'Fail this prompt.' }],
+    };
+    const failed = await send(worker, body);
+    expect(failed.status).toBe(200);
+    expect(failed.headers.get('x-kortix-prompt-completed')).toBe('error');
+    expect(failed.headers.get('x-kortix-prompt-message-id')).toBe(body.messageID);
+    const answer = (await failed.json()) as any;
+    expect(answer.info.error).toBeDefined();
+    const retry = await send(worker, body, 'prompt_async');
+    expect(retry.status).toBe(204);
+    expect(retry.headers.get('x-kortix-prompt-completed')).toBe('error');
+    expect(requests).toHaveLength(1);
+  });
+
+  test('does not acknowledge a cancelled context retry as active work', async () => {
+    const hold = deferred();
+    const { worker, send, sessionID } = await fixture([], { beforeProvider: () => hold.promise });
+    const first = await send(
+      worker,
+      { parts: [{ type: 'text', text: 'Hold this model response.' }] },
+      'prompt_async',
+    );
+    expect(first.status).toBe(204);
+    expect(first.headers.get('x-kortix-prompt-completed')).toBeNull();
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() + 1_000 }).id,
+      noReply: true,
+      parts: [{ type: 'text', text: 'Cancel this context.' }],
+    };
+    try {
+      expect((await send(worker, body, 'prompt_async')).status).toBe(204);
+      expect(
+        (
+          await request(worker, `/session/${sessionID}/message/${body.messageID}`, {
+            method: 'DELETE',
+          })
+        ).status,
+      ).toBe(200);
+      const retried = await send(worker, body, 'prompt_async');
+      expect(retried.status).toBe(409);
+      expect(await retried.json()).toEqual({ error: 'message was cancelled before execution' });
+    } finally {
+      hold.resolve();
+    }
   });
 });

@@ -701,6 +701,11 @@ export class TurnAdmissionJournal {
     return this.reduced.turns.get(messageId)?.state ?? 'missing';
   }
 
+  completionStatus(messageId: string): 'idle' | 'error' | null {
+    const turn = this.reduced.turns.get(messageId);
+    return turn?.state === 'completed' ? turn.relayStatus : null;
+  }
+
   admission(messageId: string): TurnAdmission | null {
     const turn = this.reduced.turns.get(messageId);
     return turn ? structuredClone(turn.admission) : null;

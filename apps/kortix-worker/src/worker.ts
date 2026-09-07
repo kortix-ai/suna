@@ -1857,6 +1857,16 @@ export async function startWorker(cfg = configFromEnv()) {
     (compiledPayload?.commands ?? []).map((command) => [command.name, command]),
   );
 
+  const promptCompletionHeaders = (messageId: string): Record<string, string> => {
+    const status = sessionLog ? turnJournal.completionStatus(messageId) : null;
+    return status
+      ? {
+          'x-kortix-prompt-message-id': messageId,
+          'x-kortix-prompt-completed': status,
+        }
+      : {};
+  };
+
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (sessionLog) res.setHeader('x-kortix-prompt-admission', 'durable-message-id-v1');
@@ -2138,10 +2148,16 @@ export async function startWorker(cfg = configFromEnv()) {
               system: parsed.value.system,
               noReply: parsed.value.noReply,
             });
+            if (admitted.state === 'cancelled') {
+              res.writeHead(409, { 'content-type': 'application/json' }).end(
+                JSON.stringify({ error: 'message was cancelled before execution' }),
+              );
+              return;
+            }
             if (m[2] === 'prompt_async') {
               // The acceptance append has committed. Execution continues on
               // the serial queue and all output arrives over the event stream.
-              res.writeHead(204).end();
+              res.writeHead(204, promptCompletionHeaders(admitted.admission.messageId)).end();
               void admitted.done.catch((error) =>
                 console.error(
                   JSON.stringify({
@@ -2171,7 +2187,10 @@ export async function startWorker(cfg = configFromEnv()) {
               return;
             }
             if (admitted.admission.options.noReply === true) {
-              res.writeHead(200, { 'content-type': 'application/json' }).end(
+              res.writeHead(200, {
+                'content-type': 'application/json',
+                ...promptCompletionHeaders(admitted.admission.messageId),
+              }).end(
                 JSON.stringify(admitted.admission.wireUserMessage),
               );
               return;
@@ -2184,7 +2203,10 @@ export async function startWorker(cfg = configFromEnv()) {
                 .end(JSON.stringify({ error: 'turn completed without an assistant message' }));
               return;
             }
-            res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(last));
+            res.writeHead(200, {
+              'content-type': 'application/json',
+              ...promptCompletionHeaders(admitted.admission.messageId),
+            }).end(JSON.stringify(last));
           } catch (error) {
             const conflict =
               error instanceof TurnAdmissionConflictError || error instanceof TurnMessageOrderError;

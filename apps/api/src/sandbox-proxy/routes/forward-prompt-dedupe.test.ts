@@ -69,10 +69,18 @@ mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const lifecycleEvents: unknown[] = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
-  acceptSandboxTurn: async () => true,
+  acceptSandboxTurn: async () => {
+    lifecycleEvents.push('accepted');
+    return true;
+  },
+  completeSandboxTurn: async (...args: unknown[]) => {
+    lifecycleEvents.push(args);
+    return { outcome: 'completed', activeTurnCount: 0, closedTurnCount: 1 };
+  },
   abandonSandboxTurn: async () => true,
 }));
 mock.module('../../projects/routes/shared', () => ({
@@ -118,7 +126,10 @@ const PROMPT_BODY = new TextEncoder().encode(
   JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
 ).buffer;
 
-beforeEach(() => __resetPromptDedupe());
+beforeEach(() => {
+  __resetPromptDedupe();
+  lifecycleEvents.length = 0;
+});
 // Restore per TEST, not just once at the end. Every case installs its own stub
 // via queueFetch(), so a case that fails before reaching it would otherwise run
 // against the PREVIOUS case's exhausted queue and die with "fetch called more
@@ -386,5 +397,103 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
       status: 'duplicate',
       deduplicated: true,
     });
+  });
+});
+
+
+describe('durable prompt completion receipts', () => {
+  const messageID = 'msg_01990f4ca012abcdefghijklmn';
+  const receipt = {
+    'x-kortix-prompt-admission': 'durable-message-id-v1',
+    'x-kortix-prompt-message-id': messageID,
+    'x-kortix-prompt-completed': 'idle',
+  };
+
+  test.each([
+    { status: 204, completion: 'idle' },
+    { status: 200, completion: 'idle' },
+    { status: 200, completion: 'error' },
+    { status: 200, completion: 'idle', serverMinted: true },
+  ])(
+    'settles the retry ledger after upstream acceptance %j',
+    async ({ status, completion, serverMinted }) => {
+      const transcript = new Response('[]', {
+        headers: { 'x-kortix-prompt-admission': 'durable-message-id-v1' },
+      });
+      queueFetch(
+        ...(serverMinted ? [] : [transcript]),
+        new Response(null, {
+          status,
+          headers: { ...receipt, 'x-kortix-prompt-completed': completion },
+        }),
+      );
+      const response = await forwardToSandbox(
+        'sb-1',
+        8000,
+        {
+          kind: 'principal',
+          userId: 'u1',
+          callerSessionId: null,
+          boundCredentialSessionId: null,
+          sandboxAuthored: false,
+        },
+        'POST',
+        '/session/ses_1/prompt_async',
+        '',
+        jsonHeaders(),
+        new TextEncoder().encode(
+          JSON.stringify({
+            ...(serverMinted ? {} : { messageID }),
+            noReply: true,
+            parts: [{ type: 'text', text: 'Context.' }],
+          }),
+        ).buffer,
+        'http://app.local',
+      );
+      expect(response.status).toBe(status);
+      expect(lifecycleEvents).toEqual([
+        'accepted',
+        [
+          'sess-1',
+          completion,
+          { opencodeSessionId: 'ses_1', messageId: messageID },
+          null,
+          undefined,
+          { allowUnidentifiedFallback: false },
+        ],
+      ]);
+    },
+  );
+
+  test.each([
+    { 'x-kortix-prompt-admission': 'unknown' },
+    { 'x-kortix-prompt-message-id': 'msg_01990f4ca013abcdefghijklmn' },
+    { 'x-kortix-prompt-completed': 'busy' },
+  ])('does not settle a turn from an unsupported or mismatched receipt %j', async (override) => {
+    queueFetch(
+      new Response('[]', { headers: { 'x-kortix-prompt-admission': 'durable-message-id-v1' } }),
+      new Response(null, { status: 204, headers: { ...receipt, ...override } }),
+    );
+    const response = await forwardToSandbox(
+      'sb-1',
+      8000,
+      {
+        kind: 'principal',
+        userId: 'u1',
+        callerSessionId: null,
+        boundCredentialSessionId: null,
+        sandboxAuthored: false,
+      },
+      'POST',
+      '/session/ses_1/prompt_async',
+      '',
+      jsonHeaders(),
+      new TextEncoder().encode(
+        JSON.stringify({ messageID, parts: [{ type: 'text', text: 'Context.' }] }),
+      ).buffer,
+      'http://app.local',
+    );
+    expect(response.status).toBe(204);
+    expect(lifecycleEvents).toEqual(['accepted']);
   });
 });

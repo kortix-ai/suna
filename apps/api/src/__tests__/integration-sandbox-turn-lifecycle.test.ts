@@ -1214,3 +1214,41 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
     expect(await readOpenBySession()).toHaveLength(0);
   });
 });
+
+
+describe('exact durable prompt completion', () => {
+  test('a repeated receipt never closes another unidentified prompt', async () => {
+    const identity = { opencodeSessionId: 'ses_root', messageId: 'msg_receipt' };
+    await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('receipt'), ...identity });
+    await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('receipt'));
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token: t('unidentified'), opencodeSessionId: 'ses_root', messageId: null },
+    );
+    await completeSandboxTurn(SESSION_ID, 'idle', identity, null, undefined, {
+      allowUnidentifiedFallback: false,
+    });
+    expect((await readTurn(t('receipt')))?.state).toBe('ended');
+    await completeSandboxTurn(SESSION_ID, 'idle', identity, null, undefined, {
+      allowUnidentifiedFallback: false,
+    });
+    expect((await readTurn(t('unidentified')))?.state).toBe('delivering');
+    expect(Object.keys((await readRow()).metadata.activeTurns as object)).toEqual([
+      t('unidentified'),
+    ]);
+  });
+
+  test('a server-minted receipt binds its delivery token before exact completion', async () => {
+    const identity = { opencodeSessionId: 'ses_root', messageId: 'msg_server_minted' };
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token: t('server-minted'), opencodeSessionId: 'ses_root', messageId: null },
+    );
+    await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('server-minted'), identity);
+    await completeSandboxTurn(SESSION_ID, 'idle', identity, null, undefined, {
+      allowUnidentifiedFallback: false,
+    });
+    expect((await readTurn(t('server-minted')))?.state).toBe('ended');
+    expect((await readRow()).metadata.activeTurns).toEqual({});
+  });
+});

@@ -954,6 +954,7 @@ export async function completeSandboxTurn(
   identity?: Partial<SandboxTurnIdentity> | null,
   error?: { isRetryable?: boolean } | null,
   graceMs = idleGraceMs(),
+  options: { allowUnidentifiedFallback?: boolean } = {},
 ): Promise<SandboxTurnCompletionResult> {
   if (!isTerminalTurnEnd(status, error)) {
     return { outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 };
@@ -1019,7 +1020,8 @@ export async function completeSandboxTurn(
       SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
              candidate.value
         FROM turn_candidates candidate
-       WHERE candidate.value->>'messageId' IS NULL
+       WHERE ${options.allowUnidentifiedFallback !== false}::boolean
+         AND candidate.value->>'messageId' IS NULL
          AND NOT EXISTS (
            SELECT 1
              FROM exact_matches exact
