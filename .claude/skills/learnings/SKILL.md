@@ -5008,3 +5008,24 @@ options so `enabled: true` cannot bypass it.
 resolved anonymous identity, the loading-to-admin transition, and caller
 enablement. `tests/e2e/specs/09-admin-console.spec.ts` remains the deployed
 browser assertion. Do not add a sleep or retry to hide the initial refusal.
+
+
+### 2026-09-07 — Fence readiness observations against lifecycle changes
+
+The Pi preview full API gate exposed an OpenCode restart that stayed in
+provisioning for 300 seconds. Its accepted restart ID disappeared. Real
+PostgreSQL tests reproduce the same loss when an earlier readiness observation
+writes its stale metadata after the restart claim. An earlier ready observation
+can also erase the new attempt's wake clocks.
+
+A readiness write must compare the observed status and complete JSONB metadata
+with the current row before it changes that row. A stale observation does
+nothing; the next poll reads current state. Do not compare a JavaScript Date
+with PostgreSQL's full-precision updated_at as the concurrency fence. A
+millisecond Date loses timestamp microseconds and can reject a current row.
+
+`apps/api/src/__tests__/integration-runtime-readiness-race.test.ts` executes the
+actual readiness writes against PostgreSQL. Nine tests fail before the fence
+and pass afterward. They preserve accepted restart claims, new wake clocks,
+concurrent turn metadata, and stopped status. The current-observation case
+verifies writes and clearing with a microsecond-precision database timestamp.

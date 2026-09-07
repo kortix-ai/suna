@@ -639,7 +639,17 @@ function removedRuntimeStillInGrace(
   return graceStartedAtMs != null && nowMs - graceStartedAtMs <= STALE_RUNTIME_WAKE_MS;
 }
 
-async function markRuntimeWakeStarted(
+// A readiness result belongs to the state read before its network probes.
+// Do not let that result replace a restart claim or clear a newer boot clock.
+function readinessObservationMatches(row: typeof sessionSandboxes.$inferSelect): SQL {
+  return and(
+    eq(sessionSandboxes.sandboxId, row.sandboxId),
+    eq(sessionSandboxes.status, row.status),
+    sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) = ${JSON.stringify(row.metadata ?? {})}::jsonb`,
+  )!;
+}
+
+export async function markRuntimeWakeStarted(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
 ): Promise<void> {
@@ -656,13 +666,13 @@ async function markRuntimeWakeStarted(
         },
         updatedAt: new Date(),
       })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .where(readinessObservationMatches(row));
   } catch (err) {
     console.warn(`[start] failed to mark runtime wake for ${row.sandboxId}:`, err);
   }
 }
 
-async function markOpencodeReadyWaitStarted(
+export async function markOpencodeReadyWaitStarted(
   row: typeof sessionSandboxes.$inferSelect,
   reason: 'not_ready' | 'unreachable',
   bootPhase: string | undefined,
@@ -677,13 +687,13 @@ async function markOpencodeReadyWaitStarted(
     await db
       .update(sessionSandboxes)
       .set({ metadata: patch, updatedAt: new Date() })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .where(readinessObservationMatches(row));
   } catch (err) {
     console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
   }
 }
 
-async function clearRuntimeReadinessClocks(
+export async function clearRuntimeReadinessClocks(
   row: typeof sessionSandboxes.$inferSelect,
 ): Promise<void> {
   const metadata = sandboxMetadata(row);
@@ -699,7 +709,7 @@ async function clearRuntimeReadinessClocks(
         metadata: stripMetadataKeys(RUNTIME_READINESS_CLOCK_KEYS),
         updatedAt: new Date(),
       })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .where(readinessObservationMatches(row));
   } catch (err) {
     console.warn(`[start] failed to clear readiness clocks for ${row.sandboxId}:`, err);
   }
