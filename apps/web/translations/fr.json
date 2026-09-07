@@ -1261,7 +1261,22 @@
       "empty": "Aucune session pour le moment",
       "noMatches": "Aucune session ne correspond aux filtres actifs.",
       "actions": "Actions de la session",
+      "actionsFor": "Actions pour {title}",
       "reviewCount": "À examiner : {count}",
+      "brief": {
+        "status": "État",
+        "created": "Créée",
+        "source": "Source",
+        "changeRequests": "Demandes de modification",
+        "noChangeRequests": "Aucune demande de modification",
+        "changeRequestsLoading": "Chargement des demandes de modification",
+        "changeRequestsUnavailable": "Demandes de modification indisponibles",
+        "changeRequestStatus": {
+          "open": "En attente",
+          "merged": "Fusionnée",
+          "closed": "Fermée"
+        }
+      },
       "status": {
         "needsYou": "Votre intervention requise",
         "starting": "Démarrage",
@@ -10824,7 +10839,7 @@
       "text2c1ef1ad75b5": "Inscrit dans un journal d’audit",
       "text2c496ac4ee78": "Actions de l’application",
       "text2c4de2851235": "Piste d’audit complète",
-      "text2c6041fda32c": "i18nComplete.text6a332fb31d80",
+      "text2c6041fda32c": "Retiré de la file d’attente",
       "text2c6e8e7b3b77": "Afficher la clé {value0}",
       "text2c6ef0f0d0e4": "risque",
       "text2c7765e1edc9": "Comptes actifs",

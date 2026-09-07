@@ -1261,7 +1261,22 @@
       "empty": "No sessions yet",
       "noMatches": "No sessions match the active filters.",
       "actions": "Session actions",
+      "actionsFor": "Actions for {title}",
       "reviewCount": "Awaiting your review: {count}",
+      "brief": {
+        "status": "Status",
+        "created": "Created",
+        "source": "Source",
+        "changeRequests": "Change requests",
+        "noChangeRequests": "No change requests",
+        "changeRequestsLoading": "Loading change requests",
+        "changeRequestsUnavailable": "Change requests unavailable",
+        "changeRequestStatus": {
+          "open": "Pending",
+          "merged": "Merged",
+          "closed": "Closed"
+        }
+      },
       "status": {
         "needsYou": "Needs you",
         "starting": "Starting",
@@ -10824,7 +10839,7 @@
       "text2c1ef1ad75b5": "Written to an audit record",
       "text2c496ac4ee78": "App actions",
       "text2c4de2851235": "Full audit trail",
-      "text2c6041fda32c": "i18nComplete.text6a332fb31d80",
+      "text2c6041fda32c": "Removed from queue",
       "text2c6e8e7b3b77": "Show {value0} key",
       "text2c6ef0f0d0e4": "risk",
       "text2c7765e1edc9": "Active accounts",

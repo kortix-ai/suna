@@ -1261,7 +1261,22 @@
       "empty": "Ainda não existem sessões",
       "noMatches": "Nenhuma sessão corresponde aos filtros ativos.",
       "actions": "Ações da sessão",
+      "actionsFor": "Ações para {title}",
       "reviewCount": "A aguardar revisão: {count}",
+      "brief": {
+        "status": "Estado",
+        "created": "Criada em",
+        "source": "Origem",
+        "changeRequests": "Pedidos de alteração",
+        "noChangeRequests": "Sem pedidos de alteração",
+        "changeRequestsLoading": "A carregar pedidos de alteração",
+        "changeRequestsUnavailable": "Pedidos de alteração indisponíveis",
+        "changeRequestStatus": {
+          "open": "Pendente",
+          "merged": "Integrado",
+          "closed": "Fechado"
+        }
+      },
       "status": {
         "needsYou": "Precisa de si",
         "starting": "A iniciar",
@@ -10821,7 +10836,7 @@
       "text2c1ef1ad75b5": "Registrada em um log de auditoria",
       "text2c496ac4ee78": "Ações do aplicativo",
       "text2c4de2851235": "Trilha de auditoria completa",
-      "text2c6041fda32c": "i18nComplete.text6a332fb31d80",
+      "text2c6041fda32c": "Removido da fila",
       "text2c6e8e7b3b77": "Mostrar tecla {value0}",
       "text2c6ef0f0d0e4": "risco",
       "text2c7765e1edc9": "Contas ativas",
