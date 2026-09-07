@@ -83,10 +83,44 @@ export function noteInboxObservation(
   prompts: readonly SessionPrompt[],
   atMs: number,
   serverAtMs?: number,
+  drainedAtMs?: number,
 ): void {
   useSessionWorkingStore
     .getState()
-    .noteInboxPending(sessionId, countLiveInboxPrompts(prompts), atMs, serverAtMs);
+    .noteInboxPending(sessionId, countLiveInboxPrompts(prompts), atMs, serverAtMs, drainedAtMs);
+}
+
+/**
+ * Did the SERVER take a prompt off this queue between these two readings?
+ *
+ * The count cannot answer it. A row that drains and a row the user just put on
+ * hold both take the live count to zero, and they mean opposite things: one is
+ * a turn opening, the other is the user asking for nothing to run. What tells
+ * them apart is the ROW — a held or failed prompt is still listed, a delivered
+ * one is not (`listInboxPrompts` drops it the moment the ledger confirms a turn
+ * consumed its wire id).
+ *
+ * So: a prompt this tab watched WAITING (`queued`) or already handed over
+ * (`delivering`) is simply absent now. That is the control plane saying it gave
+ * the prompt to the runtime — the one transition no other observer can report
+ * yet, and the reason `WorkingInboxInput.drainedAtMs` exists.
+ *
+ * This tab's own optimistic rows are excluded: the server lists the same
+ * submission under ITS prompt id, so an optimistic row "disappears" on every
+ * successful send. That is a rename, not a hand-off.
+ */
+export function inboxDrained(
+  previous: readonly SessionPrompt[] | undefined,
+  next: readonly SessionPrompt[],
+): boolean {
+  if (!previous || previous.length === 0) return false;
+  const listed = new Set(next.map((p) => p.prompt_id));
+  return previous.some(
+    (p) =>
+      (p.state === 'queued' || p.state === 'delivering') &&
+      !isOptimisticSessionPrompt(p) &&
+      !listed.has(p.prompt_id),
+  );
 }
 
 /**
@@ -117,7 +151,15 @@ export function applyInboxObservation(
     ...(serverAtMs != null ? { serverAtMs } : {}),
   };
   if (!inboxObservationSupersedes(candidate, current)) return [...(cached ?? [])];
-  noteInboxObservation(sessionId, prompts, atMs, serverAtMs);
+  // Only a reading that SUPERSEDES may report a drain: an older snapshot
+  // arriving late has not watched anything leave, it simply never saw it.
+  noteInboxObservation(
+    sessionId,
+    prompts,
+    atMs,
+    serverAtMs,
+    inboxDrained(cached, prompts) ? atMs : undefined,
+  );
   return reconcileOptimisticPrompts(cached, prompts);
 }
 

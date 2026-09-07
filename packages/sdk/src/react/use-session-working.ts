@@ -350,6 +350,27 @@ export function useSessionWorking(
     });
   }, [canRead, projectId, sessionId, streamPhase, queryClient]);
 
+  // A ROW LEAVING THE QUEUE is news about `/turn`, and nothing else would ask.
+  //
+  // The drain is the moment the control plane hands a prompt to the runtime, so
+  // the ledger row for the turn it opens is written by a request this tab has
+  // not read since — and the projection's drain floor holds `working` until a
+  // read taken AFTER that instant answers. Waiting for the ordinary cadence
+  // would make that floor a 5-15s guess instead of a round trip.
+  //
+  // Keyed on the store's own stamp, not on a per-mount ref: three hooks observe
+  // one session (`useSession`, the composer, the panel) and a mount that first
+  // sees the store after the transition would never fire. One stamp, one fire,
+  // whichever mount sees it first. `/prompts` is deliberately NOT invalidated —
+  // re-reading a list that is empty for a known reason buys nothing.
+  const drainedAtMs = inbox?.drainedAtMs;
+  useEffect(() => {
+    if (!canRead || drainedAtMs == null) return;
+    void queryClient.invalidateQueries({
+      queryKey: qk.project.sessionTurn(projectId, sessionId),
+    });
+  }, [canRead, projectId, sessionId, drainedAtMs, queryClient]);
+
   // Re-evaluated on every render because `nowMs` moves — the projection is
   // pure, so this costs one object and cannot drift from the poll's own view.
   const inputs = inputsFor(canRead ? query.data : undefined, Date.now());

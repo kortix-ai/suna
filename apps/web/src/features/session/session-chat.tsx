@@ -1328,9 +1328,21 @@ function SessionTurnImpl({
   const lastStatusChangeRef = useRef(statusThrottleStart);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
+  // A turn the agent has not started has no status to report, and
+  // `getTurnStatus` says so with its fallback phrase — "Figuring out what's
+  // next…", which is a claim about a turn already under way. On a turn with no
+  // assistant message at all it is simply untrue, and the 2.5s throttle below
+  // then swaps the waiting row's honest "Thinking" for it while the prompt is
+  // still queued at the server (dev, 2026-09-06, on video).
+  //
+  // Gated at the SOURCE, not at the prop: the throttle ignores an empty status
+  // (`if (!newStatus) return`), so `throttledStatus` stays '' — the row keeps
+  // the default word AND grows no elapsed clock — until real content arrives,
+  // and the first real status then applies immediately.
+  const hasAssistantContent = turn.assistantMessages.length > 0;
   const rawStatus = useMemo(
-    () => getTurnStatus(allParts, childMessages),
-    [allParts, childMessages],
+    () => (hasAssistantContent ? getTurnStatus(allParts, childMessages) : ''),
+    [allParts, childMessages, hasAssistantContent],
   );
   const [throttledStatus, setThrottledStatus] = useState('');
   // How long the status has read the same thing. Past STATUS_STALL_AFTER_MS
@@ -3355,15 +3367,62 @@ export function SessionChat({
     transcriptShowsText: transcriptShowsFirstPrompt,
     transcriptCarriesFiles: transcriptCarriesFirstPromptFiles,
     releasedBefore: firstPromptReleased,
+    transcriptEmpty: turns.length === 0,
   });
   useEffect(() => {
     if (handover.released && !firstPromptReleased) setFirstPromptReleased(true);
   }, [handover.released, firstPromptReleased]);
   const showFirstPromptPreview = handover.showStandIn;
+  /**
+   * WHEN THE PRODUCER'S COPY IS FORGOTTEN — and why it is no longer the frame
+   * the transcript first shows the text.
+   *
+   * Forgetting there left the prompt with exactly one source, the transcript's
+   * own parts, during the window where the transcript is least reliable: the
+   * runtime's echo arrives as an info frame and its text part follows
+   * separately, and on this path nothing bridges the two (the producer POSTed a
+   * durable row rather than an optimistic message, so there are no optimistic
+   * parts to bridge FROM). The bubble drew nothing for that gap — the blank
+   * thread on the 2026-09-06 recording.
+   *
+   * So the copy lives until this prompt is SETTLED: answered, or the session is
+   * finished with it (idle, nothing left in the inbox — Stop, a failure, a
+   * delivery that never ran). `handOverToRealTurn` is unchanged and still goes
+   * false the moment the transcript carries text AND files, so a live preview
+   * adds nothing to a bubble that is already complete; it only comes back if
+   * that bubble loses its content again.
+   */
+  const firstPromptSettled =
+    turns.length > 0 &&
+    (turns[0].assistantMessages.length > 0 || (!isBusy && promptInbox.prompts.length === 0));
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
-    if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
-  }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
+    if (transcriptCarriesFirstPromptFiles && firstPromptSettled) {
+      clearFirstPromptPreview(projectSessionId);
+    }
+  }, [
+    projectSessionId,
+    firstPromptPreview,
+    transcriptCarriesFirstPromptFiles,
+    firstPromptSettled,
+    clearFirstPromptPreview,
+  ]);
+  // Leaving the session ends the copy's job too. It is in-memory and keyed by
+  // session, so a preview kept past an unfinished turn would otherwise still be
+  // there on the next visit — and the route reads its presence as "this is a
+  // brand-new session", painting the boot shell over a transcript that has been
+  // sitting there since. Only once the transcript has actually shown the
+  // prompt: before that the copy is the only thing that has it.
+  const firstPromptReleasedRef = useRef(firstPromptReleased);
+  useEffect(() => {
+    firstPromptReleasedRef.current = firstPromptReleased;
+  }, [firstPromptReleased]);
+  useEffect(() => {
+    if (!projectSessionId) return;
+    return () => {
+      if (firstPromptReleasedRef.current) clearFirstPromptPreview(projectSessionId);
+    };
+  }, [projectSessionId, clearFirstPromptPreview]);
   /** What the real first turn is handed once the stand-in has stepped aside:
    *  the prompt's text and its files' names, so it keeps drawing the bubble
    *  and the pending tiles through any frame where its own parts are still
@@ -3452,6 +3511,30 @@ export function SessionChat({
     const newest = wt.assistantMessages[wt.assistantMessages.length - 1];
     return !!(newest.info as { time?: { completed?: number } }).time?.completed;
   }, [turns, workingTurn]);
+  /**
+   * Is ANY turn going to draw the waiting row?
+   *
+   * `resolveWorkingTurn` deliberately declines to name a turn in two states,
+   * and both are states in which the session is very much working:
+   *
+   *  - every prompt on screen is still held by the server AND no turn has
+   *    assistant content yet — the fresh-session case, where rule 4 has no
+   *    "newest turn with content" to fall back to and returns null;
+   *  - the fallback landed on a turn whose answer is COMPLETE while queued
+   *    prompts wait below it (`suppressWorkingTurnBusy`).
+   *
+   * Neither is wrong: the shimmer must not sit on a prompt the agent has not
+   * reached, nor on a finished answer. But nothing else drew the row either,
+   * so the whole surface read as idle while the composer showed Stop — the
+   * user's session going INACTIVE with their prompt in flight (dev,
+   * 2026-09-06, on video: ~11s of it on the first prompt, ~1s on the second).
+   *
+   * The row below is that missing fallback. It is the same element and the
+   * same wording every other surface uses, and it is already what a session
+   * with no turns at all shows.
+   */
+  const someTurnDrawsBusyRow =
+    lastTurnWorking && workingTurn.workingTurnId !== null && !suppressWorkingTurnBusy;
   /**
    * ONE render key per turn. A turn keeps the id its bubble was FIRST painted
    * under (the optimistic origin), so a re-minted echo re-renders the same
@@ -5601,10 +5684,33 @@ export function SessionChat({
                       onSendNow={handleQueueSendNow}
                       onRetry={handleRetryQueuedMessage}
                     />
-                    {/* Busy with no turn to attach it to yet — the same waiting row
+                    {/* Busy with no turn to attach it to — the same waiting row
                         the optimistic turn and every live turn use, so it never
-                        changes shape as the first turn materialises. */}
-                    {isBusy && turns.length === 0 && <SessionBusyIndicator sessionId={sessionId} />}
+                        changes shape as the first turn materialises.
+
+                        "No turn to attach it to" is not only the empty
+                        transcript. A prompt the SERVER still holds is never the
+                        working turn (`resolveWorkingTurn`), and neither is a
+                        finished answer with queued prompts under it
+                        (`suppressWorkingTurnBusy`) — so on a fresh session the
+                        row vanished the moment the first bubble appeared and
+                        stayed gone until the agent answered, with Stop showing
+                        the whole time. See `someTurnDrawsBusyRow`.
+
+                        Not drawn when the boot stand-in is drawing its own row
+                        (`OptimisticTurn busy`), or the two would stack. */}
+                    {isBusy &&
+                      !someTurnDrawsBusyRow &&
+                      !(showFirstPromptPreview && firstPromptPreview && queuedMessages.length === 0 && turns.length === 0) && (
+                        <SessionBusyIndicator
+                          sessionId={sessionId}
+                          // Matches the stand-in's row spacing under a bubble
+                          // (`OptimisticTurn`), so the crossfade into the real
+                          // transcript does not move it. Nothing above it when
+                          // the transcript is empty, so no margin there.
+                          className={turns.length === 0 ? undefined : 'mt-6'}
+                        />
+                      )}
                   </div>
                   {/* Spacer — the transcript's anchor space. It is sized from
                       the scroll container so the newest turn

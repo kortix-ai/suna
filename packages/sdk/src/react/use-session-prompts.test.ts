@@ -7,6 +7,7 @@ import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
   applyInboxObservation,
+  inboxDrained,
   optimisticSessionPrompt,
   reconcileOptimisticPrompts,
   removeOptimisticPrompt,
@@ -137,7 +138,16 @@ describe('noteInboxObservation', () => {
     applyInboxObservation('sess_1', undefined, [queued], 500);
 
     expect(applyInboxObservation('sess_1', [queued], [], 600)).toEqual([]);
-    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 600 });
+    // The reading also carries WHAT it saw happen: a row this tab had watched
+    // waiting is gone, which is the server handing it to the runtime. Without
+    // that stamp the two honest-but-stale readings below it (an empty list, a
+    // `/turn` read taken before the hand-off) agree on `idle` and the session
+    // goes INACTIVE with the prompt in flight.
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 0,
+      atMs: 600,
+      drainedAtMs: 600,
+    });
   });
 
   /**
@@ -173,6 +183,7 @@ describe('noteInboxObservation', () => {
       pending: 0,
       atMs: 1_500,
       serverAtMs: 62_000 + skew,
+      drainedAtMs: 1_500,
     });
   });
 });
@@ -497,5 +508,114 @@ describe('readSessionPromptsInbox and the open bundle', () => {
     const prompts = await readSessionPromptsInbox('P1', 'S1', undefined);
     expect(urls.some((u) => u.endsWith('/prompts'))).toBe(true);
     expect(prompts[0]?.prompt_id).toBe('p9');
+  });
+});
+
+/**
+ * WHICH readings mean "the server took a prompt off the queue".
+ *
+ * The count alone cannot say. A row that drains and a row the user just put on
+ * hold both take the live count to zero, and they are opposites: one means a
+ * turn is opening, the other means the user asked for nothing to run. So the
+ * signal is the ROW, not the number — and a held or failed row is still listed,
+ * which is what makes them distinguishable at all.
+ */
+describe('inboxDrained', () => {
+  const prompt = (over: Partial<SessionPrompt> = {}): SessionPrompt => ({
+    prompt_id: 'p1',
+    client_message_id: 'q_1',
+    message_id: 'msg_01',
+    state: 'queued',
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-08-18T10:00:00.000Z',
+    available_at: '2026-08-18T10:00:00.000Z',
+    ...over,
+  });
+
+  test('a queued row that is simply gone is a drain', () => {
+    expect(inboxDrained([prompt()], [])).toBe(true);
+  });
+
+  test('a delivering row that is gone is a drain too', () => {
+    // `delivering` is already at OpenCode, queued behind the turn in front of
+    // it. Its disappearance is the ledger confirming a turn consumed it.
+    expect(inboxDrained([prompt({ state: 'delivering' })], [])).toBe(true);
+  });
+
+  test('a HELD row is still listed, so nothing drained', () => {
+    // Stop parks the row (`waiting`/`held`) rather than removing it. Reading
+    // that as a drain would put the composer back on Stop with nothing
+    // running — exactly what `countLiveInboxPrompts` excludes it to prevent.
+    const held = prompt({ state: 'waiting', reason: 'held' });
+    expect(inboxDrained([prompt()], [held])).toBe(false);
+  });
+
+  test('a row that only FAILED has not drained', () => {
+    expect(inboxDrained([prompt()], [prompt({ state: 'failed' })])).toBe(false);
+  });
+
+  test("this tab's own optimistic row being replaced is not a drain", () => {
+    // The echo arrives under the SERVER's prompt id, so the optimistic row
+    // "disappears" on every successful send. That is a rename, not a hand-off.
+    const optimistic = optimisticSessionPrompt(
+      { clientMessageId: 'q_9', messageId: 'msg_09', parts: [{ type: 'text', text: 'go' }] },
+      1_000,
+    );
+    expect(inboxDrained([optimistic], [prompt({ prompt_id: 'srv_9', client_message_id: 'q_9' })])).toBe(
+      false,
+    );
+  });
+
+  test('nothing to compare against is never a drain', () => {
+    expect(inboxDrained(undefined, [])).toBe(false);
+    expect(inboxDrained([], [])).toBe(false);
+  });
+
+  test('a row that is still there has not drained', () => {
+    expect(inboxDrained([prompt()], [prompt()])).toBe(false);
+  });
+});
+
+describe('the drain stamp survives the readings that follow it', () => {
+  const prompt = (over: Partial<SessionPrompt> = {}): SessionPrompt => ({
+    prompt_id: 'p1',
+    client_message_id: 'q_1',
+    message_id: 'msg_01',
+    state: 'queued',
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-08-18T10:00:00.000Z',
+    available_at: '2026-08-18T10:00:00.000Z',
+    ...over,
+  });
+
+  test('a later empty reading inherits it — the queue has not changed its mind', () => {
+    // The list polls every second while the projection believes something is
+    // pending. Without carry-forward the stamp would be erased by the very next
+    // poll, one second into a wait for a `/turn` read that takes a round trip.
+    useSessionWorkingStore.getState().reset();
+    applyInboxObservation('sess_1', undefined, [prompt()], 500);
+    applyInboxObservation('sess_1', [prompt()], [], 600);
+    applyInboxObservation('sess_1', [], [], 700);
+
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 0,
+      atMs: 700,
+      drainedAtMs: 600,
+    });
+  });
+
+  test('a new pending row drops it — this is a fact about an empty queue', () => {
+    useSessionWorkingStore.getState().reset();
+    applyInboxObservation('sess_1', undefined, [prompt()], 500);
+    applyInboxObservation('sess_1', [prompt()], [], 600);
+    applyInboxObservation('sess_1', [], [prompt({ prompt_id: 'p2' })], 700);
+
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 1, atMs: 700 });
   });
 });
