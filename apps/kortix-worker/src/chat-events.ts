@@ -177,6 +177,8 @@ export class ChatEventAdapter {
   private accum = new Map<string, string>();
   private partCount = 0;
   private partStartedAt = new Map<string, number>();
+  private replayedMessage = false;
+  private replayedToolParts = new Map<string, { id: string; startedAt: number }>();
 
   constructor(opts: AdapterOptions) {
     this.sessionID = opts.sessionID;
@@ -218,14 +220,38 @@ export class ChatEventAdapter {
         // messages are already carried as tool PARTS on the assistant message
         // (dev session 7f218b0a rendered a stray toolResult row).
         if ((event.message?.role ?? 'assistant') !== 'assistant') return [];
+        this.replayedMessage = typeof event.message?.kortixWireMessageId === 'string';
         this.currentMessageId =
-          this.fixedMessageId?.() ?? (this.mint ? this.mint() : `msg-${++this.messageSeq}`);
+          event.message?.kortixWireMessageId ??
+          this.fixedMessageId?.() ??
+          (this.mint ? this.mint() : `msg-${++this.messageSeq}`);
         this.currentParentId = this.parent?.() ?? null;
-        this.currentMessageCreatedAt = this.now();
+        this.currentMessageCreatedAt =
+          event.message?.kortixWireCreatedAt ??
+          (this.replayedMessage ? event.message.timestamp : undefined) ??
+          this.now();
         this.partCount = 0;
         this.textIndex.clear();
         this.accum.clear();
         this.partStartedAt.clear();
+        this.replayedToolParts.clear();
+        if (this.replayedMessage) {
+          for (const block of event.message.content ?? []) {
+            if (block.type === 'toolCall') {
+              const index = this.partCount++;
+              this.replayedToolParts.set(block.id, {
+                id: event.message.kortixWirePartIds?.[index] ?? partId(this.currentMessageId, index),
+                startedAt: this.currentMessageCreatedAt,
+              });
+            } else if (
+              (block.type === 'text' && block.text) ||
+              (block.type === 'thinking' && block.thinking)
+            ) {
+              this.partCount++;
+            }
+          }
+          return [];
+        }
         return [
           {
             type: 'message.updated',
@@ -307,8 +333,9 @@ export class ChatEventAdapter {
       }
 
       case 'tool_execution_start': {
-        const id = this.nextPart();
-        const startedAt = this.now();
+        const restored = this.replayedToolParts.get(event.toolCallId);
+        const id = restored?.id ?? this.nextPart();
+        const startedAt = restored?.startedAt ?? this.now();
         this.toolIndex.set(event.toolCallId, {
           partId: id,
           name: event.toolName,
@@ -375,8 +402,10 @@ export class ChatEventAdapter {
         // minting new ids and breaking parent relationships on every boot.
         if (event.message && typeof event.message === 'object') {
           event.message.kortixWireMessageId = this.currentMessageId;
+          event.message.kortixWireCreatedAt = this.currentMessageCreatedAt;
           if (this.currentParentId) event.message.kortixParentMessageId = this.currentParentId;
         }
+        if (this.replayedMessage) return [];
         const stop = event.message?.stopReason;
         const terminalError = assistantMessageError(event.message ?? {});
         const completedAt = this.now();

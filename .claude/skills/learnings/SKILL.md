@@ -5131,3 +5131,13 @@ Automation: `legacy-wire-identity.test.ts` validates capture and replay failures
 IDs and creation times, sends another prompt, and verifies a second replacement.
 The reported session's saved log also replays locally with all ten identities
 and no native-log writes.
+
+
+## 2026-09-07 — Resume interactions only from a fenced tool boundary
+
+Persist the native tool batch and question checkpoint before publishing a blocking card.
+Persist its answer before acknowledging HTTP. Reuse completed tool results during recovery;
+never repeat their side effects. Commit a release fence before subsequent execution.
+Incident: Pi worker replacement discarded pending questions and required another prompt.
+Automation: `question-recovery-routes.test.ts` kills real worker processes, checks unchanged
+question IDs, single shell execution, saved answers, step limits, Stop, and another owner's queue.

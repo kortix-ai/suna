@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { QuestionAnswer, QuestionInfo, QuestionRequest } from '@opencode-ai/sdk/v2';
+import type { QuestionCheckpoint, QuestionResolution } from './question-checkpoint.ts';
 
 export type QuestionEvent =
   | { type: 'question.asked'; properties: QuestionRequest }
@@ -18,6 +19,7 @@ interface PendingQuestion {
   reject: (error: Error) => void;
   signal?: AbortSignal;
   onAbort?: () => void;
+  settlement?: Promise<boolean>;
 }
 
 export class QuestionRejectedError extends Error {
@@ -27,17 +29,29 @@ export class QuestionRejectedError extends Error {
   }
 }
 
+export class QuestionPersistenceUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(`question persistence failed: ${String((cause as Error)?.message ?? cause)}`, { cause });
+    this.name = 'QuestionPersistenceUnavailableError';
+  }
+}
+
 export interface QuestionBrokerOptions {
   sessionId: string;
   publish: (event: QuestionEvent) => void;
   createId?: () => string;
+  persistence?: {
+    open(request: QuestionRequest, toolCallId: string): Promise<QuestionCheckpoint>;
+    resolve(requestId: string, resolution: QuestionResolution): Promise<void>;
+    release(requestId: string): Promise<void>;
+  };
 }
 
 function cloneRequest(request: QuestionRequest): QuestionRequest {
   return structuredClone(request);
 }
 
-function validateQuestions(questions: readonly QuestionInfo[]): void {
+export function validateQuestions(questions: readonly QuestionInfo[]): void {
   if (questions.length === 0) throw new TypeError('questions must contain at least one question');
   for (const [index, question] of questions.entries()) {
     if (!question.question.trim()) throw new TypeError(`questions[${index}].question is required`);
@@ -59,7 +73,10 @@ function validateQuestions(questions: readonly QuestionInfo[]): void {
   }
 }
 
-function validateAnswers(request: QuestionRequest, answers: readonly QuestionAnswer[]): void {
+export function validateAnswers(
+  request: QuestionRequest,
+  answers: readonly QuestionAnswer[],
+): void {
   if (answers.length !== request.questions.length) {
     throw new TypeError('answers must contain one answer per question');
   }
@@ -90,14 +107,6 @@ function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new Error('question was aborted');
 }
 
-/**
- * Owns the pending question lifecycle for one Pi worker process.
- *
- * A question is tied to an active tool call. It is intentionally ephemeral:
- * Stop and worker replacement terminate that tool call, publish rejection, and
- * let the durable turn journal record the interrupted turn. A stale request can
- * therefore never be answered after the model operation that created it died.
- */
 export class QuestionBroker {
   private readonly pending = new Map<string, PendingQuestion>();
   private readonly createId: () => string;
@@ -112,7 +121,7 @@ export class QuestionBroker {
 
   ask(
     questions: readonly QuestionInfo[],
-    options: { signal?: AbortSignal; tool?: QuestionRequest['tool'] } = {},
+    options: { signal?: AbortSignal; tool?: QuestionRequest['tool']; toolCallId?: string } = {},
   ): Promise<QuestionAnswer[]> {
     validateQuestions(questions);
     if (options.signal?.aborted) return Promise.reject(abortError(options.signal));
@@ -126,9 +135,51 @@ export class QuestionBroker {
       ...(options.tool ? { tool: structuredClone(options.tool) } : {}),
     };
 
+    if (this.options.persistence) {
+      if (!options.toolCallId)
+        return Promise.reject(new Error('durable questions require a native tool call id'));
+      return this.askDurable(request, options.toolCallId, options.signal);
+    }
+    return this.wait(request, options.signal);
+  }
+
+  private async askDurable(
+    request: QuestionRequest,
+    toolCallId: string,
+    signal?: AbortSignal,
+  ): Promise<QuestionAnswer[]> {
+    const persistence = this.options.persistence!;
+    let checkpoint: QuestionCheckpoint;
+    try {
+      checkpoint = await persistence.open(request, toolCallId);
+    } catch (error) {
+      throw new QuestionPersistenceUnavailableError(error);
+    }
+    if (signal?.aborted) throw abortError(signal);
+    let resolution = checkpoint.resolution;
+    if (!resolution) {
+      try {
+        resolution = { answers: await this.wait(checkpoint.request, signal) };
+      } catch (error) {
+        if (!(error instanceof QuestionRejectedError)) throw error;
+        resolution = { rejected: true };
+      }
+    }
+    try {
+      await persistence.release(checkpoint.request.id);
+    } catch (error) {
+      throw new QuestionPersistenceUnavailableError(error);
+    }
+    if ('rejected' in resolution) throw new QuestionRejectedError(checkpoint.request.id);
+    return structuredClone(resolution.answers);
+  }
+
+  private wait(request: QuestionRequest, signal?: AbortSignal): Promise<QuestionAnswer[]> {
+    const id = request.id;
+    if (signal?.aborted) return Promise.reject(abortError(signal));
+    if (this.pending.has(id)) return Promise.reject(new Error(`question id ${id} is not unique`));
     return new Promise<QuestionAnswer[]>((resolve, reject) => {
-      const pending: PendingQuestion = { request, resolve, reject, signal: options.signal };
-      const signal = options.signal;
+      const pending: PendingQuestion = { request, resolve, reject, signal };
       if (signal) {
         pending.onAbort = () => this.cancelForAbort(id, abortError(signal));
         signal.addEventListener('abort', pending.onAbort, { once: true });
@@ -143,11 +194,18 @@ export class QuestionBroker {
     });
   }
 
-  reply(requestId: string, answers: QuestionAnswer[]): boolean {
+  reply(requestId: string, answers: QuestionAnswer[]): boolean | Promise<boolean> {
     const pending = this.pending.get(requestId);
     if (!pending) return false;
     validateAnswers(pending.request, answers);
-    this.take(requestId);
+    if (this.options.persistence)
+      return this.settleDurably(pending, { answers: structuredClone(answers) });
+    return this.finishReply(requestId, answers);
+  }
+
+  private finishReply(requestId: string, answers: QuestionAnswer[]): boolean {
+    const pending = this.take(requestId);
+    if (!pending) return false;
     const cloned = structuredClone(answers);
     this.options.publish({
       type: 'question.replied',
@@ -157,7 +215,38 @@ export class QuestionBroker {
     return true;
   }
 
-  reject(requestId: string): boolean {
+  reject(requestId: string): boolean | Promise<boolean> {
+    const pending = this.pending.get(requestId);
+    if (!pending) return false;
+    if (this.options.persistence) return this.settleDurably(pending, { rejected: true });
+    return this.finishReject(requestId);
+  }
+
+  private settleDurably(
+    pending: PendingQuestion,
+    resolution: QuestionResolution,
+  ): Promise<boolean> {
+    if (pending.settlement) return pending.settlement.then(() => false);
+    const operation = (async () => {
+      try {
+        await this.options.persistence!.resolve(pending.request.id, resolution);
+      } catch (error) {
+        throw new QuestionPersistenceUnavailableError(error);
+      }
+      return 'answers' in resolution
+        ? this.finishReply(pending.request.id, resolution.answers)
+        : this.finishReject(pending.request.id);
+    })();
+    pending.settlement = operation;
+    void operation
+      .finally(() => {
+        if (pending.settlement === operation) pending.settlement = undefined;
+      })
+      .catch(() => {});
+    return operation;
+  }
+
+  private finishReject(requestId: string): boolean {
     const pending = this.take(requestId);
     if (!pending) return false;
     this.options.publish({

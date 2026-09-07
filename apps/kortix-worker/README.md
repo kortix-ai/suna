@@ -105,8 +105,27 @@ stays pending and the tool does not run. Retrying the reply uses the same
 idempotency key. Stop still cancels the blocked tool during a pending save.
 Rejected and one-time replies do not create durable grants.
 
-Pending question and permission continuations still require a live worker.
-Durable approval grants do not make those blocked continuations restartable.
+Pending permission continuations still require a live worker. Durable approval
+grants do not make those blocked continuations restartable.
+
+## Questions across worker replacement
+
+A durable question commits its native transcript and a question checkpoint
+before publishing the card. The checkpoint preserves the request ID, question
+content, tool call, and owning turn. A reply commits the answer before returning
+`200`. Failed answer storage returns `503` and keeps the question pending.
+
+After an abrupt worker replacement, the new owner claims the turn lease and
+restores the same question. It reuses completed results from that tool batch;
+it does not repeat their file writes, shell commands, or model request. The
+remaining tool calls run after the answer. The agent retains its step budget,
+system instructions, and tool controls. Stop cancels a restored question.
+
+The answer remains recoverable until a durable release fence commits. That
+fence precedes the next tool or model boundary. A crash after release uses the
+ordinary interrupted-turn recovery; it never repeats an uncertain side effect.
+A crash before an answer's HTTP acknowledgment restores the committed answer
+without asking the user again. Invalid or conflicting checkpoints fail closed.
 
 ## Turn admission and recovery
 
@@ -129,9 +148,10 @@ active turn behind or close an unrelated prompt without a message ID. Retrying
 a cancelled message returns `409` on both prompt routes.
 
 A turn-owner lease fences transcript writes and completion. A replacement
-worker resumes accepted prompts that never started. It does not replay a turn
-that could have executed a tool. It restores the committed answer or records
-one interruption, preserving message IDs and parent links.
+worker resumes accepted prompts that never started and checkpointed questions.
+It does not replay an uncertain model or tool boundary. Otherwise, it restores
+the committed answer or records one interruption, preserving message IDs and
+parent links.
 
 The session stays busy until durable reconciliation finishes. Recovery removes
 stale streamed messages before publishing idle. A durable completion also keeps

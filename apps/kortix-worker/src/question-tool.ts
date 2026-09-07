@@ -53,7 +53,7 @@ export function createQuestionTool(
     parameters: questionToolSchema,
     executionMode: 'sequential',
     async execute(toolCallId, { questions }, signal) {
-      const answers = await broker.ask(questions, { signal, tool: toolContext?.(toolCallId) });
+      const answers = await broker.ask(questions, { signal, tool: toolContext?.(toolCallId), toolCallId });
       return {
         content: [{ type: 'text', text: formatAnswers(questions, answers) }],
         details: { answers },

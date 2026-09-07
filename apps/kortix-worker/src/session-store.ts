@@ -58,6 +58,7 @@ export interface JournalLogItem {
   kind: 'journal';
   stream: string;
   record: Record<string, unknown>;
+  _kortixTurnLease?: SessionLogLeaseFence;
 }
 
 export type SessionLogItem = (StorageLogItem | JournalLogItem) & {

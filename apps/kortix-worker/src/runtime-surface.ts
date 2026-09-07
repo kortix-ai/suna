@@ -34,7 +34,7 @@ import { assistantContractFields, assistantMessageError, toolResultMetadata } fr
 import type { PiCommand } from './command-runtime.ts';
 import { PermissionApprovalUnavailableError, type PermissionBroker } from './permission-broker.ts';
 import { type PermissionConfig, type PermissionRule, compilePermissionRules } from './permission-policy.ts';
-import type { QuestionBroker } from './question-broker.ts';
+import { QuestionPersistenceUnavailableError, type QuestionBroker } from './question-broker.ts';
 import type { PiTodo } from './todo-tools.ts';
 import { type PiSkill, projectSkillInfo } from './skill-runtime.ts';
 import {
@@ -480,6 +480,7 @@ export interface RuntimeSurfaceOptions {
   sessionPermission?: () => PermissionRule[];
   /** Pending user questions created by Pi's `question` tool. */
   questions?: QuestionBroker;
+  suspendedQuestions?: () => Array<{ messageId: string; toolCallId: string }>;
   /**
    * Stop the run in flight. Wired to `Agent.abort()` by the worker.
    *
@@ -773,7 +774,12 @@ export class RuntimeSurface {
         },
       });
       if (role === 'user') lastUserId = id;
+      const suspended = this.opts.suspendedQuestions?.().find(question => question.messageId === id);
+      const suspendedIndex = suspended
+        ? parts.findIndex(part => part.kind === 'tool' && part.call.id === suspended.toolCallId)
+        : -1;
       parts.forEach((part, index) => {
+        if (part.kind === 'tool' && suspendedIndex >= 0 && index > suspendedIndex) return;
         const partId = message.kortixWirePartIds?.[index] ?? `${id}-p${index}`;
         if (part.kind === 'text' || part.kind === 'reasoning') {
           this.transcript.apply({
@@ -1542,15 +1548,21 @@ export class RuntimeSurface {
           .writeHead(status, { 'content-type': 'application/json' })
           .end(JSON.stringify(body));
       if (action === 'reject') {
-        if (!this.opts.questions?.reject(requestId)) {
-          write(404, { error: 'question request not found' });
-        } else {
-          write(200, true);
-        }
+        void Promise.resolve()
+          .then(async () => {
+            if (!(await this.opts.questions?.reject(requestId))) {
+              write(404, { error: 'question request not found' });
+            } else {
+              write(200, true);
+            }
+          })
+          .catch(error => write(error instanceof QuestionPersistenceUnavailableError ? 503 : 400, {
+            error: String((error as Error)?.message ?? error),
+          }));
         return true;
       }
       void readRawJsonBody(req)
-        .then((body) => {
+        .then(async (body) => {
           const answers =
             body && typeof body === 'object' && !Array.isArray(body)
               ? (body as { answers?: unknown }).answers
@@ -1560,13 +1572,15 @@ export class RuntimeSurface {
             return;
           }
           try {
-            if (!this.opts.questions?.reply(requestId, answers as string[][])) {
+            if (!(await this.opts.questions?.reply(requestId, answers as string[][]))) {
               write(404, { error: 'question request not found' });
               return;
             }
             write(200, true);
           } catch (error) {
-            write(400, { error: String((error as Error)?.message ?? error) });
+            write(error instanceof QuestionPersistenceUnavailableError ? 503 : 400, {
+              error: String((error as Error)?.message ?? error),
+            });
           }
         })
         .catch((error) => {

@@ -5,15 +5,22 @@ const stepLimitMessage =
   'Respond with text that explains the limit, summarizes completed work, lists unfinished tasks, ' +
   'and recommends the next action. Do not request another tool.';
 
-export function applyAgentSteps(agent: Agent, steps: number | undefined): void {
-  if (steps === undefined) return;
+export function applyAgentSteps(
+  agent: Agent,
+  steps: number | undefined,
+): (completedSteps: number) => void {
+  if (steps === undefined) return () => {};
   if (!Number.isSafeInteger(steps) || steps < 1) {
     throw new Error('compiled agent steps must be a positive safe integer');
   }
 
   let currentStep = 0;
+  let resumeStep = 0;
   agent.subscribe((event) => {
-    if (event.type === 'agent_start') currentStep = 0;
+    if (event.type === 'agent_start') {
+      currentStep = resumeStep;
+      resumeStep = 0;
+    }
   });
   const stream = agent.streamFunction;
   agent.streamFunction = (model, context, options) => {
@@ -41,4 +48,9 @@ export function applyAgentSteps(agent: Agent, steps: number | undefined): void {
   const shouldStopAfterTurn = agent.shouldStopAfterTurn;
   agent.shouldStopAfterTurn = (context, signal) =>
     currentStep >= steps || (shouldStopAfterTurn?.(context, signal) ?? false);
+  return (completedSteps) => {
+    if (!Number.isSafeInteger(completedSteps) || completedSteps < 0)
+      throw new Error('invalid completed agent steps');
+    resumeStep = completedSteps;
+  };
 }

@@ -373,7 +373,10 @@ function decodeEvent(item: SessionLogItem): TurnJournalEvent | null {
 }
 
 function decodeTranscriptEvent(item: SessionLogItem): TurnJournalEvent | null {
-  if (item.kind === 'journal' || item._kortixTurnLease === undefined) return null;
+  if (item._kortixTurnLease === undefined) return null;
+  if (item.kind === 'journal' && item.stream === TURN_JOURNAL_STREAM) {
+    throw new TurnJournalCorruptionError('turn journal transitions cannot carry transcript fences');
+  }
   try {
     const lease = item._kortixTurnLease;
     if (!lease || typeof lease !== 'object' || Array.isArray(lease)) {
@@ -889,8 +892,11 @@ export class TurnAdmissionJournal {
     });
   }
 
-  appendTranscriptMutation(messageId: string, item: StorageLogItem): Promise<boolean> {
+  appendTranscriptMutation(messageId: string, item: SessionLogItem): Promise<boolean> {
     return this.serialize(async () => {
+      if (item.kind === 'journal' && item.stream === TURN_JOURNAL_STREAM) {
+        throw new TypeError('turn journal transitions cannot be transcript mutations');
+      }
       const id = messageId.trim();
       while (true) {
         await this.reload();
@@ -904,7 +910,7 @@ export class TurnAdmissionJournal {
         };
         const unfenced = structuredClone(item);
         Reflect.deleteProperty(unfenced, '_kortixTurnLease');
-        const fenced: StorageLogItem = {
+        const fenced: SessionLogItem = {
           ...unfenced,
           _kortixTurnLease: {
             stream: TURN_JOURNAL_STREAM,
