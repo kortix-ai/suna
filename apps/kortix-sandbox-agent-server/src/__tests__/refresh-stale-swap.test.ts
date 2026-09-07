@@ -1,27 +1,15 @@
-import { beforeEach, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import type { Config } from '../config'
+import * as git from '../git'
 import type { Opencode } from '../opencode'
+import { createRefreshRouter } from '../routes/refresh'
+import * as runtimeAssets from '../runtime-assets'
 
 const calls: unknown[] = []
 let refreshDelay: Promise<void> | undefined
 let refreshStarted: (() => void) | undefined
 let refreshError: Error | undefined
-mock.module('../git', () => ({
-  refreshRepo: async () => {
-    refreshStarted?.()
-    await refreshDelay
-    if (refreshError) throw refreshError
-    return { before: 'a', after: 'a' }
-  },
-  syncOpencodeConfigDirToBase: async () => ({}),
-  syncWorkspaceToBase: async () => ({ before: 'a', after: 'a' }),
-}))
-mock.module('../runtime-assets', () => ({
-  scheduleRuntimeAssetsReconcile: (_cfg: Config, options: unknown) => {
-    calls.push(options)
-  },
-}))
-const { createRefreshRouter } = await import('../routes/refresh')
+const restoreSpies: Array<() => void> = []
 const cfg = { sandboxToken: 'test-secret' } as Config
 const opencode = { getState: () => 'ok', getPid: () => 123 } as Opencode
 beforeEach(() => {
@@ -29,6 +17,25 @@ beforeEach(() => {
   refreshDelay = undefined
   refreshStarted = undefined
   refreshError = undefined
+  // Module replacements leak into the real Git and runtime-convergence tests
+  // in the package's shared Bun process. Restore only these per-test spies.
+  const refresh = spyOn(git, 'refreshRepo').mockImplementation(async () => {
+    refreshStarted?.()
+    await refreshDelay
+    if (refreshError) throw refreshError
+    const repo = { path: '/workspace', branch: 'main', commit: 'a', remoteUrl: null }
+    return { before: repo, after: repo }
+  })
+  restoreSpies.push(() => refresh.mockRestore())
+  const reconcile = spyOn(runtimeAssets, 'scheduleRuntimeAssetsReconcile').mockImplementation(
+    (_cfg, options) => {
+      calls.push(options)
+    },
+  )
+  restoreSpies.push(() => reconcile.mockRestore())
+})
+afterEach(() => {
+  for (const restore of restoreSpies.splice(0)) restore()
 })
 
 test('authenticated swap=1 carries the early idle-swap request into convergence', async () => {
