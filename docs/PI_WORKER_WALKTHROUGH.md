@@ -4,7 +4,7 @@ This walkthrough separates the intended design from the current implementation.
 It follows the supplied huddle transcript and the
 [Splitting the Harness reference](https://claude.ai/code/artifact/8c57beff-da78-4378-b249-55464252f69b).
 See [the implementation plan](./PI_WORKER_PLAN.md) and
-[the compatibility audit](./PI_OPENCODE_PARITY.md) for outstanding work.
+[the verification record](./PI_WORKER_VERIFICATION.md) for delivery evidence and remaining work.
 
 ## The change
 
@@ -14,6 +14,9 @@ The environment is the separate machine where the agent performs workspace opera
 Today’s coupled startup must prepare the workspace before the agent can answer.
 The split removes workspace preparation from the initial response path.
 It also separates conversation storage from either machine's lifetime.
+
+The diagram shows the intended boundaries. Compiled project skills and the durable
+turn journal still have local changes that are not part of the verified preview.
 
 ```mermaid
 flowchart TB
@@ -83,10 +86,10 @@ That is the intended default. Reasoning and supported remote API tools do not ne
 workspace compute. A skill that runs Python does need it. Generating a document
 through LibreOffice or a Python library also needs it; describing the document does not.
 
-The working tree defaults to lazy startup. `KORTIX_ENV_STARTUP=prewarm` explicitly
+The deployed worker defaults to lazy startup. `KORTIX_ENV_STARTUP=prewarm` explicitly
 prepares compute when the worker starts a model turn. This trades text-only compute
-cost for lower first-tool latency. The branch preview still runs the earlier policy
-until the startup-policy commit is deployed and its SHA is verified.
+cost for lower first-tool latency. A live text-only probe streamed its reply with
+zero environment RPC calls. The environment endpoint still returned `404` afterward.
 
 **When does the full environment start?**
 
@@ -100,6 +103,11 @@ No. Model inference and provider allocation remain separate costs. The first wor
 tool can wait for environment startup. Remote tools also add network latency.
 Measure first assistant text and first completed workspace tool separately.
 Compare identical provider, region, model, account, prompt, and lifecycle conditions.
+
+The September 7 preview built a new environment image in about six minutes. That
+exceeded the first tool's three-minute attachment budget. After the image became
+ready, the retry completed all six tools. Image build time must be measured separately
+from starting a worker or resuming an existing environment.
 
 **Where is the “full data” when compute starts?**
 
@@ -120,12 +128,14 @@ In the durable Kortix store. The worker reconstructs its in-memory model context
 Reading history must not require a worker or environment to start. This is stateful
 execution with replaceable compute, not a stateless conversation.
 
-**What happens after a worker crashes during a tool call?**
+**What should happen after a worker crashes during a tool call?**
 
-The journal distinguishes accepted turns from started turns. A replacement can execute
+The local journal implementation distinguishes accepted turns from started turns. A replacement can execute
 an accepted turn that never started. It must not automatically repeat a started turn
 whose tool effects are unknown. It records an interruption or the durable completed
 result. This gives an explicit recovery outcome instead of duplicate side effects.
+This recovery implementation still needs committed-preview verification. The deployed
+proof covers normal stop/resume and durable history while both machines are stopped.
 
 **What happens if the environment stops?**
 
@@ -164,7 +174,11 @@ Those need compatible adapters and separate verification on the future substrate
 
 **Is the branch ready now?**
 
-No. The split exists, but extensive compatibility work remains uncommitted. Custom
-extensions, durable blocking interactions, and several conversation features remain incomplete.
-Local test results and the exact preview SHA must be recorded separately. A healthy
-preview on an older SHA does not verify the current working tree.
+The worker/environment split runs on `pi.kortix.com`. The preview verifies text-only
+startup, six remote workspace tools, file outputs, the terminal, durable history,
+stop/resume, and the shared-filesystem CLI. The verification record names each SHA.
+
+This is an experimental Pi runtime. Full OpenCode replacement is not ready. Custom
+extensions, durable blocking interactions, and several conversation features remain
+incomplete or uncommitted. Production readiness also requires the full preview gate.
+A healthy preview does not verify uncommitted code or a different commit.
