@@ -4736,3 +4736,21 @@ the class.
 - **Enforcement:** `buildPreviewBootstrapScript()` runs
   `pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile`.
   `sandbox-preview.test.ts` pins both commands in that order.
+
+
+## 2026-09-07 — Pi workspace readiness must follow the data runtime
+
+**Incident:** The Pi preview API returned `pi_worker_boot: true` on `/start`.
+The SDK checked only `sandbox_slug`, classified the worker as the workspace,
+and sent file-list requests to it. The browser received `404` even though the
+environment file route returned `200`. Opening a file output directly also
+skipped `useSessionWorkspace` and fetched before the environment URL existed.
+
+**Rule:** Recognize the server-owned runtime metadata at the SDK boundary.
+Workspace reads use the environment and wait for its readiness. Every file
+preview, including a rich renderer, resolves its session workspace before it
+requests bytes. Chat and events continue to use the worker.
+
+**Automation:** SDK runtime, session-start, project, file, and VCS tests assert
+the target URL and pending state. `file-preview-workspace.test.tsx` covers
+text and PDF readiness, successful attachment, and a retryable environment error.

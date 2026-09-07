@@ -32,7 +32,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { isSandboxNotReadyError } from '@kortix/sdk';
-import { useRuntimeConnectionStore } from '@kortix/sdk/react';
+import { useRuntimeConnectionStore, useSessionWorkspace } from '@kortix/sdk/react';
 import { FileXIcon as FileWarning, PresentationIcon as Presentation } from '@phosphor-icons/react';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
@@ -298,6 +298,11 @@ export function FilePreview({
   onPresent?: () => void;
 }) {
   const rich = isRich(fileName);
+  const workspace = useSessionWorkspace(shareContext?.projectId, shareContext?.sessionId, {
+    enabled: Boolean(shareContext),
+  });
+  const workspacePending = workspace.phase === 'resolving';
+  const workspaceFailed = workspace.phase === 'error';
 
   // Opening at fit-to-page is PDF-only. It is the one renderer here whose zoom
   // is a real mode rather than a scaled stage, so it can meet the fitted column
@@ -320,7 +325,9 @@ export function FilePreview({
 
   // The rich renderers fetch their own bytes (and stream the big ones), so
   // pulling the whole file into a string here first would be wasted work.
-  const { data, isLoading, isError, error } = useFileContent(path, { enabled: !rich });
+  const { data, isLoading, isError, error } = useFileContent(path, {
+    enabled: !rich && !workspacePending && !workspaceFailed,
+  });
 
   // A readiness 503 means the sandbox is parked or booting — a pending state,
   // never a failure. `useFileContent` keeps polling while this is true, so the
@@ -334,7 +341,8 @@ export function FilePreview({
   // failure paths clear it: this one for the non-rich branch below, and
   // `onStatusChange` for the rich branch, where a not-found is handled inside
   // `FileContentRenderer` and never reaches this component's own error state.
-  const failedToOpen = !rich && !isLoading && (isError || !data);
+  const failedToOpen =
+    workspaceFailed || (!workspacePending && !rich && !isLoading && (isError || !data));
   useEffect(() => {
     if (failedToOpen) setPanelAspect(null);
   }, [failedToOpen, setPanelAspect]);
@@ -347,6 +355,36 @@ export function FilePreview({
     },
     [setPanelAspect],
   );
+
+  if (workspacePending || workspaceFailed) {
+    return (
+      <PreviewShell
+        name={name}
+        shareContext={shareContext}
+        fileName={fileName}
+        path={path}
+        onClose={onClose}
+        onPresent={onPresent}
+      >
+        <Centered>
+          {workspaceFailed ? (
+            <>
+              <FileWarning className="size-5" />
+              <span>Could not open the workspace.</span>
+              <Button variant="outline" size="sm" onClick={() => void workspace.retry()}>
+                Retry
+              </Button>
+            </>
+          ) : (
+            <>
+              <Loading className="size-5" />
+              <span>Waking up the workspace… this file will load automatically.</span>
+            </>
+          )}
+        </Centered>
+      </PreviewShell>
+    );
+  }
 
   if (rich) {
     return (
