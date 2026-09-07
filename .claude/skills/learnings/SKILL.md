@@ -21,6 +21,12 @@ linked, not inlined.
 
 ## Register
 
+### Daemon routes negotiate capability across mixed builds (2026-09-07)
+
+**Rule:** A new daemon route ships behind a capability check or a fallback; the API and the daemon never assume the same build.
+**Incident:** `/file/append` reached a stale daemon, fell through to OpenCode's SPA as `200 text/html`, and five retries dead-lettered the first prompt.
+**Enforcers:** typed non-JSON response guard; `file.append` capability negotiation; 96 KiB legacy fallback; runtime-ladder parking/attempt refund; terminal file-router JSON 404; explicit swap refresh; deferred swap timer/turn-end tests.
+
 ### One attachment tile, translated to tokens — never a mockup's pixels (2026-09-06)
 
 **When:** a reference screenshot arrives for a surface that two places render
