@@ -149,18 +149,25 @@ const TRANSIENT_READ_RETRIES = 2;
  *
  * `withTokenRetry` defaults to a SINGLE attempt (pinned by `auth-core.test.ts`),
  * so calling `getSupabaseAccessTokenWithRetry()` bare made the name a lie: one
- * ask, and a host whose token is published a tick later got its request refused
- * with an `AuthError` that carries no HTTP status. A cold page load is exactly
- * that shape — the host's auth bootstrap and its first data fetch race, and the
- * fetch can easily ask first. `apps/web` surfaced it to correctly-signed-in
- * users as "This project didn't load. / The request failed before we could
- * check your access."
+ * ask, and a host that momentarily cannot produce a token got its request
+ * refused with an `AuthError` that carries no HTTP status — never sent, and no
+ * status for a caller to reason about. `apps/web` surfaced that to
+ * correctly-signed-in users as "This project didn't load. / The request failed
+ * before we could check your access."
  *
- * Three asks across ~300 ms: long enough to outlast a bootstrap publish, short
- * enough that a genuinely signed-out caller still fails fast — and that caller
- * is being redirected to sign-in anyway. `invalidateBetweenAttempts` stays off:
- * the host owns its cache, and telling it to throw the cache away is how a
- * token that was just published gets deleted before it can be used.
+ * The host-side window is real and, on Supabase, deterministic rather than
+ * racy: GoTrue refreshes an expiring token from inside its own `initialize()`
+ * and notifies subscribers before resolving, so a host that keys a cache on
+ * those notifications can answer "no token" to a caller parked on that very
+ * initialization. One ask lands squarely inside that window; asking again does
+ * not.
+ *
+ * Three asks across ~300 ms: long enough to outlast that window, short enough
+ * that a genuinely signed-out caller still fails fast — and that caller is
+ * being redirected to sign-in anyway. `invalidateBetweenAttempts` stays off
+ * here: it is for a STALE cached token, and this path's problem is the absence
+ * of one. The 401 handler below is what invalidates, and it does so only after
+ * the server has actually rejected a token.
  */
 const TOKEN_ACQUISITION_RETRY = { attempts: 3, baseDelayMs: 150 };
 

@@ -6,6 +6,7 @@ import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
   GATE_FETCH_RETRIES,
   errorStatus,
+  gateSurface,
   gateAction,
   gateCopyKeys,
   gateEscapePath,
@@ -116,6 +117,16 @@ describe('shouldRetryGateFetch', () => {
     }
   });
 
+  test('an expensive or user-cancelled failure is never retried', () => {
+    // Audit finding (medium): 4 attempts x the SDK's 30s request deadline turned
+    // a wedged backend from ~30s to ~122s of spinner with no "Try again" button,
+    // and fired up to 12 GETs at an already-struggling gateway. A timeout is
+    // proof the backend is not answering; replaying it cannot help.
+    for (const code of ['TIMEOUT', 'ABORTED', 'request_deadline']) {
+      expect(shouldRetryGateFetch(0, Object.assign(new Error('slow'), { code }))).toBe(false);
+    }
+  });
+
   test('retries are bounded — the screen still arrives rather than spinning forever', () => {
     const noSession = Object.assign(new Error('Not authenticated'), { code: 'NO_SESSION' });
     expect(shouldRetryGateFetch(GATE_FETCH_RETRIES - 1, noSession)).toBe(true);
@@ -131,6 +142,53 @@ describe('shouldRetryGateFetch', () => {
     );
     expect(queryOptions).toContain('retry: shouldRetryGateFetch');
     expect(queryOptions).not.toMatch(/retry:\s*(false|true|\d)/);
+  });
+});
+
+/**
+ * JAY: adversarial audit finding (medium) against the retry this branch added.
+ *
+ * The boundary renders: isSuccess -> children; isLoading -> AuthPendingScreen;
+ * else -> AccessGateScreen. `isLoading` is `isPending && isFetching`. React
+ * Query PAUSES a retry whenever `canContinue()` is false — a hidden tab
+ * (`focusManager.isFocused()`) or an offline browser — which sets
+ * `fetchStatus: 'paused'` while `status` stays `'pending'`. That makes
+ * `isLoading` false with nothing having failed, so the component fell through
+ * to the gate and painted "This project didn't load." mid-flight.
+ *
+ * This was UNREACHABLE before the retry: `retry: false` rejected on the first
+ * failure, so the retryer's pause branch never ran. The retry opened three
+ * pause windows, i.e. the fix for this screen could itself summon this screen.
+ * Measured against @tanstack/query-core 5.101.2 with these exact options:
+ * paused -> `status=pending fetchStatus=paused isLoading=false`.
+ *
+ * `isPending` is the correct predicate: it is true for every unsettled state —
+ * fetching, waiting on backoff, and paused — and false the moment the query
+ * really resolves or errors.
+ */
+describe('gateSurface', () => {
+  test('a PAUSED retry keeps the pending screen — it has not failed', () => {
+    // Hidden tab / offline: React Query pauses between attempts.
+    expect(gateSurface({ isSuccess: false, isPending: true })).toBe('pending');
+  });
+
+  test('an in-flight first load shows the pending screen', () => {
+    expect(gateSurface({ isSuccess: false, isPending: true })).toBe('pending');
+  });
+
+  test('a settled failure is the only thing that reaches the gate screen', () => {
+    expect(gateSurface({ isSuccess: false, isPending: false })).toBe('gate');
+  });
+
+  test('success renders the project, never a gate', () => {
+    expect(gateSurface({ isSuccess: true, isPending: false })).toBe('children');
+  });
+
+  test('the component renders from the predicate, not from isLoading', () => {
+    // `isLoading` is the trap this finding is about; it must not gate the
+    // pending branch.
+    expect(componentSource).toContain('gateSurface(');
+    expect(componentSource).not.toContain('query.isLoading');
   });
 });
 

@@ -145,18 +145,24 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
       // waiting on this fetch, not just the one that started it.
       //
       // Returning a bare `null` here was the bug behind "This project didn't
-      // load. / The request failed before we could check your access." on a
-      // cold project load. A RESEED is the common case, not the rare one:
-      // `AuthProvider.getInitialSession()` publishes the live session token on
-      // every cold load (`setCachedAuthToken(access_token)` +
-      // `setBootstrapAuthToken(null)` — two bumps, auth-provider.tsx) at
-      // exactly the moment the project shell's first `getProject` is inside
-      // `fetchToken()`. Reporting "no session" to that caller made
-      // `api-client.ts` refuse to send the request (`AuthError`, no `.status`),
-      // and `ProjectAccessBoundary` renders an unstatused failure as its
-      // terminal `unavailable` screen. Hand back what the writer published
-      // instead: an invalidation still yields null, a reseed yields the token
-      // the user actually holds.
+      // load. / The request failed before we could check your access."
+      //
+      // The reseeding writer is NOT `getInitialSession()`'s publish — that one
+      // awaits a network `getUser()` first, so it always lands strictly later
+      // than the boundary's token resolution. It is the TOKEN_REFRESHED branch
+      // of `onAuthStateChange` (auth-provider.tsx), fired from INSIDE GoTrue's
+      // own `initialize()` -> `_recoverAndRefresh()`, which refreshes whenever
+      // the stored token expires within its 90s margin. `_callRefreshToken`
+      // awaits `_notifyAllSubscribers('TOKEN_REFRESHED', ...)` before resolving,
+      // while `fetchToken()`'s own `getSession()` is parked on the very same
+      // `initializePromise` — so it CANNOT resume until both epoch bumps have
+      // landed. That makes this deterministic, not a race: reload a tab that
+      // idled past the token's expiry margin and it fails every time. The
+      // cross-tab TOKEN_REFRESHED rebroadcast and the 30s auto-refresh tick hit
+      // in-flight requests the same way, at arbitrary times.
+      //
+      // Hand back what the writer published instead: an invalidation still
+      // yields null, a reseed yields the token the user actually holds.
       return publishedAuthToken();
     }
     cachedToken = token;

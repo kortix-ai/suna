@@ -96,6 +96,9 @@ export function gateStateForError(error: unknown): AccessGateState {
  */
 export const GATE_FETCH_RETRIES = 3;
 
+/** Per-attempt deadline for the gate's own `getProject`. See the queryFn. */
+export const GATE_FETCH_TIMEOUT_MS = 10_000;
+
 /**
  * Whether a failed `getProject` deserves another attempt.
  *
@@ -109,10 +112,44 @@ export const GATE_FETCH_RETRIES = 3;
  * shown "This project didn't load. / The request failed before we could check
  * your access." after a single attempt, because this query was `retry: false`.
  */
+/**
+ * Failures that must never be replayed.
+ *
+ * TIMEOUT means the SDK's own request deadline elapsed — the backend is not
+ * answering, and a replay just buys another full deadline. ABORTED is the user
+ * navigating away or React Query cancelling. `request_deadline` is the server
+ * saying the same thing from its side. Retrying these was worth ~122s of
+ * spinner against a wedged backend (4 attempts x the SDK's 30s deadline), with
+ * no "Try again" button on screen because that button lives on the gate.
+ */
+const UNREPLAYABLE_CODES = new Set(['TIMEOUT', 'ABORTED', 'request_deadline']);
+
 export function shouldRetryGateFetch(failureCount: number, error: unknown): boolean {
   const status = errorStatus(error);
   if (status === 403 || status === 404) return false;
+  const code = (error as { code?: string } | null)?.code;
+  if (code && UNREPLAYABLE_CODES.has(code)) return false;
   return failureCount < GATE_FETCH_RETRIES;
+}
+
+/** Which of the boundary's three faces to render. */
+export type GateSurface = 'children' | 'pending' | 'gate';
+
+/**
+ * Pick the surface from the query's SETTLED-ness, never from `isLoading`.
+ *
+ * `isLoading` is `isPending && isFetching`, and React Query pauses a retry
+ * whenever `canContinue()` is false — a hidden tab (`focusManager.isFocused()`)
+ * or an offline browser. A paused query reports `fetchStatus: 'paused'` with
+ * `status: 'pending'`, so `isLoading` goes false while nothing has actually
+ * failed, and the boundary would paint "This project didn't load." over a fetch
+ * that is merely waiting to resume. `isPending` covers every unsettled state —
+ * fetching, backing off, paused — and clears only on a real resolve or error.
+ */
+export function gateSurface(query: { isSuccess: boolean; isPending: boolean }): GateSurface {
+  if (query.isSuccess) return 'children';
+  if (query.isPending) return 'pending';
+  return 'gate';
 }
 
 /**
@@ -216,7 +253,10 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
 
   const query = useQuery({
     queryKey: [QUERY_KEY, projectId],
-    queryFn: () => getProject(projectId, { showErrors: false }),
+    // A bounded per-attempt deadline. This is one small authorization GET; the
+    // SDK's 30s default is a hang detector for large reads, and multiplying it
+    // by the retries below is how a wedged backend became ~2 minutes of spinner.
+    queryFn: () => getProject(projectId, { showErrors: false, timeout: GATE_FETCH_TIMEOUT_MS }),
     enabled: !!projectId,
     // A predicate, never a fixed count: a 403/404 still renders on the first
     // response (see shouldRetryGateFetch), while everything else is retried,
@@ -273,14 +313,15 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
     forgetLastProjectId(user?.id, projectId);
   }, [unrenderable, projectId, user?.id]);
 
-  if (query.isSuccess) return <>{children}</>;
+  const surface = gateSurface(query);
+  if (surface === 'children') return <>{children}</>;
 
   // The same quiet spinner every auth sub-surface shows while it resolves —
   // minus the legal footer. This branch resolves into the project shell, which
   // carries no footer, so keeping it would flash Terms/Privacy for the length
   // of one fetch on every project open. The gate screens below still show it:
   // they are terminal, and there they are the whole page.
-  if (query.isLoading) return <AuthPendingScreen footer={false} />;
+  if (surface === 'pending') return <AuthPendingScreen footer={false} />;
 
   return (
     <AccessGateScreen

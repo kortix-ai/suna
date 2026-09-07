@@ -160,13 +160,19 @@ describe('getSupabaseAccessToken: stale in-flight fetch vs. a later invalidation
  * check your access." screen on a COLD project load while properly signed in.
  *
  * The epoch check above is right to refuse to COMMIT an in-flight fetch that
- * an authoritative write overtook. It was wrong about what to RETURN. On every
- * cold load `AuthProvider.getInitialSession()` publishes the real session token
- * (`setCachedAuthToken(access_token)` + `setBootstrapAuthToken(null)` —
- * auth-provider.tsx:95-98) at the same moment the project shell's first
- * `getProject` is inside `fetchToken()`. Two epoch bumps land mid-flight, so
- * that caller got `null` — "no session" — for a user whose session had just
- * been published one line earlier.
+ * an authoritative write overtook. It was wrong about what to RETURN.
+ *
+ * The overtaking writer is the TOKEN_REFRESHED branch of `onAuthStateChange`
+ * (auth-provider.tsx), fired from inside GoTrue's own `initialize()` ->
+ * `_recoverAndRefresh()` whenever the stored token is within its 90s expiry
+ * margin. It publishes the fresh session (`setCachedAuthToken(access_token)` +
+ * `setBootstrapAuthToken(null)` = two epoch bumps) while the project shell's
+ * first `getProject` is parked on the same `initializePromise` inside
+ * `fetchToken()`. That caller then got `null` — "no session" — for a user whose
+ * session had just been published. It is deterministic, not a race: reload a
+ * tab that idled past the margin and it fails every time. (Note it is NOT
+ * `getInitialSession()`'s publish: that awaits a network `getUser()` and so
+ * always lands later.)
  *
  * Nothing downstream absorbs it: `api-client.ts` calls
  * `getSupabaseAccessTokenWithRetry()` with no options, which is ONE attempt
