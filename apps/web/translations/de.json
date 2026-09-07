@@ -1375,7 +1375,10 @@
         "Moin moin! Was bauen wir heute?",
         "Morgen! Bereit durchzustarten?"
       ],
-      "afternoon": ["Guten Tag! Wie kann ich helfen?", "Na, wie läuft's? Was gibt's zu tun?"],
+      "afternoon": [
+        "Guten Tag! Wie kann ich helfen?",
+        "Na, wie läuft's? Was gibt's zu tun?"
+      ],
       "evening": [
         "Guten Abend! Nachtschicht?",
         "Abend! Woran arbeiten wir heute?",
@@ -18358,7 +18361,10 @@
       "text3f66f3329185": "Ich habe gesehen, dass Sie vier Plattformingenieure einstellen.",
       "text830ec669b118": "Teams in dieser Phase verlieren etwa eine Woche pro Monat durch",
       "text3685aac7952f": "manuelle Abstimmung. Wir haben einen Agenten entwickelt, der",
-      "textb38cb5e18525": "diesen Kreislauf schließt und seine Arbeit zeigt. Haben Sie zwanzig Minuten?"
+      "textb38cb5e18525": "diesen Kreislauf schließt und seine Arbeit zeigt. Haben Sie zwanzig Minuten?",
+      "textff5bd8333c4e": "Du und alle, die dieses Projekt verwalten können",
+      "text36d8691ae566": "Alle mit dem Link, sowie dein Team",
+      "text4fb2abecc0a6": "Alle mit dem Passwort, sowie dein Team"
     }
   },
   "projectOnboarding": {

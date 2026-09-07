@@ -1375,7 +1375,10 @@
         "¡Arriba! ¿Qué vamos a crear?",
         "¡Buen día! ¿Listos para la acción?"
       ],
-      "afternoon": ["¡Buenas tardes! ¿En qué te ayudo?", "¿Qué tal el día? ¿Qué necesitas?"],
+      "afternoon": [
+        "¡Buenas tardes! ¿En qué te ayudo?",
+        "¿Qué tal el día? ¿Qué necesitas?"
+      ],
       "evening": [
         "¡Buenas noches! ¿Trabajando hasta tarde?",
         "¡Hola! ¿En qué andamos esta noche?",
@@ -18358,7 +18361,10 @@
       "text3f66f3329185": "Vi que están contratando a cuatro ingenieros de plataforma.",
       "text830ec669b118": "En esa etapa, los equipos pierden cerca de una semana al mes en",
       "text3685aac7952f": "conciliación manual. Creamos un agente que cierra",
-      "textb38cb5e18525": "ese ciclo y muestra su trabajo. ¿Tienes veinte minutos?"
+      "textb38cb5e18525": "ese ciclo y muestra su trabajo. ¿Tienes veinte minutos?",
+      "textff5bd8333c4e": "Tú y cualquiera que pueda administrar este proyecto",
+      "text36d8691ae566": "Cualquiera con la URL, además de tu equipo",
+      "text4fb2abecc0a6": "Cualquiera con la contraseña, además de tu equipo"
     }
   },
   "projectOnboarding": {

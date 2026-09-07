@@ -1375,7 +1375,10 @@
         "Sveglia! Cosa costruiamo oggi?",
         "Buongiorno! Pronti a spaccare?"
       ],
-      "afternoon": ["Buon pomeriggio! Come posso aiutare?", "Come va? Cosa c'è da fare?"],
+      "afternoon": [
+        "Buon pomeriggio! Come posso aiutare?",
+        "Come va? Cosa c'è da fare?"
+      ],
       "evening": [
         "Buonasera! Lavoro notturno?",
         "Ciao! Su cosa lavoriamo stasera?",
@@ -18358,7 +18361,10 @@
       "text3f66f3329185": "Ho visto che state assumendo quattro ingegneri di piattaforma.",
       "text830ec669b118": "In questa fase i team perdono circa una settimana al mese nella",
       "text3685aac7952f": "riconciliazione manuale. Abbiamo creato un agente che chiude",
-      "textb38cb5e18525": "il ciclo e mostra il proprio lavoro. Ha venti minuti?"
+      "textb38cb5e18525": "il ciclo e mostra il proprio lavoro. Ha venti minuti?",
+      "textff5bd8333c4e": "Tu e chiunque possa gestire questo progetto",
+      "text36d8691ae566": "Chiunque abbia l’URL, oltre al tuo team",
+      "text4fb2abecc0a6": "Chiunque abbia la password, oltre al tuo team"
     }
   },
   "projectOnboarding": {

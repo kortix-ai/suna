@@ -337,6 +337,45 @@ headlessAuthRouter.openapi(
 headlessAuthRouter.openapi(
   createRoute({
     method: 'post',
+    path: '/sign-in/sso',
+    tags: ['auth'],
+    summary: 'Start enterprise SSO for an email domain (headless)',
+    description:
+      "Asks whether an email domain has an enterprise IdP and returns the redirect URL to send the browser to. Unauthenticated by design: the caller is signing IN, so there is no bearer yet, and the answer is not a secret — it is what the IdP's own discovery endpoint publishes.",
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ domain: z.string().min(1).max(253), redirect_to: z.string().optional() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ url: z.string() }), 'Send the browser here'),
+      ...errors(400, 404, 429),
+    },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const result = await gotrue<{ url?: string }>('/sso', {
+      body: { domain: body.domain.trim().toLowerCase() },
+      clientIp: clientIp(c),
+      query: { redirect_to: safeRedirect(body.redirect_to) },
+    });
+    // A domain with no provider is an ordinary answer, not a fault — pass
+    // GoTrue's own status through so the caller can tell "no IdP here" from
+    // "SSO is broken".
+    if (!result.ok) return upstreamError(c, result);
+    return c.json({ url: result.body.url ?? '' });
+  },
+);
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
     path: '/password/reset',
     tags: ['auth'],
     summary: 'Email a password-recovery link / code (headless)',

@@ -1375,7 +1375,10 @@
         "Bom dia! O que vamos construir?",
         "Bom dia! Pronto para arrasar?"
       ],
-      "afternoon": ["Boa tarde! Como posso ajudar?", "E aí, tudo bem? O que vamos fazer?"],
+      "afternoon": [
+        "Boa tarde! Como posso ajudar?",
+        "E aí, tudo bem? O que vamos fazer?"
+      ],
       "evening": [
         "Boa noite! Trabalhando até tarde?",
         "Boa noite! No que estamos trabalhando?",
@@ -18358,7 +18361,10 @@
       "text3f66f3329185": "Vi que vocês estão contratando quatro engenheiros de plataforma.",
       "text830ec669b118": "Equipes nessa fase perdem cerca de uma semana por mês com",
       "text3685aac7952f": "reconciliação manual. Criamos um agente que fecha",
-      "textb38cb5e18525": "esse ciclo e mostra seu trabalho. Tem vinte minutos?"
+      "textb38cb5e18525": "esse ciclo e mostra seu trabalho. Tem vinte minutos?",
+      "textff5bd8333c4e": "Você e qualquer pessoa que possa gerenciar este projeto",
+      "text36d8691ae566": "Qualquer pessoa com a URL, além da sua equipe",
+      "text4fb2abecc0a6": "Qualquer pessoa com a senha, além da sua equipe"
     }
   },
   "projectOnboarding": {
