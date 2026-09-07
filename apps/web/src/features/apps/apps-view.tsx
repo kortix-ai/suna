@@ -187,11 +187,20 @@ function appStatus(
  * as long as it takes to check whether it is.
  */
 const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }> = {
-  private: { label: 'Only you', desc: 'Only the App creator can open it' },
+  // "Only you" stated a guarantee the code does not make: a project manager can
+  // always open and operate an App (appVisibleToSubject), deliberately, so a
+  // private App does not become unmanageable the moment its creator leaves the
+  // account. A false promise about access, in the one dialog where people
+  // reason about access, is worse than a longer label.
+  private: { label: 'Just you', desc: 'You, and anyone who can manage this project' },
   project: { label: 'Whole team', desc: 'Every member of this project' },
   restricted: { label: 'Select members', desc: 'Chosen members and groups' },
-  public: { label: 'Public', desc: 'Anyone with the URL' },
-  password: { label: 'Password', desc: 'Anyone with the App password' },
+  // These two describe PUBLIC traffic only. Both are still team-visible: a
+  // password protects the App's hostname from the internet, it never hides the
+  // App from the teammates who operate it. Read as "only people with the
+  // password", it hides that every project member can open it too.
+  public: { label: 'Public', desc: 'Anyone with the URL, plus your team' },
+  password: { label: 'Password', desc: 'Anyone with the password, plus your team' },
 };
 
 /**

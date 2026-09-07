@@ -165,3 +165,26 @@ describe('selecting a model does not resize the layout above the list', () => {
     );
   });
 });
+
+/**
+ * A search that matches nothing must leave the search box on screen.
+ *
+ * The no-match message used to be an early `return` placed ABOVE the JSX that
+ * holds the search row, so typing "gpt 6" unmounted the input and its clear
+ * button. `ownSearch` kept the string; nothing rendered could edit it. The
+ * tab sat on "Nothing matches" until it was remounted.
+ */
+describe('a no-match search keeps the search input mounted', () => {
+  test('the no-match message is not an early return', () => {
+    // The only early return left is the one for an EMPTY catalogue, which has
+    // nothing to search. `groups.length === 0` must render inside the layout.
+    expect(tabSource).not.toMatch(/if \(groups\.length === 0\) \{\s*return \(/);
+  });
+
+  test('the no-match message renders below the search row, in the list slot', () => {
+    const searchRow = tabSource.indexOf('{(ownsSearch || !enablement.usingDefaults) && (');
+    const noMatch = tabSource.indexOf("tI18nComplete('textb475669b9d30'");
+    expect(searchRow).toBeGreaterThan(-1);
+    expect(noMatch).toBeGreaterThan(searchRow);
+  });
+});
