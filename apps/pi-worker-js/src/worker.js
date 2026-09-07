@@ -1693,6 +1693,28 @@ export default {
     // Measured on dev 2026-09-07 for the record kept in the comparison: from
     // outside, subtracting two readings over the identical path, the spawn was
     // 67 ms. This says what it is with nothing subtracted.
+    // WHAT A CELL CANNOT RUN, established 2026-09-07 and recorded rather than
+    // re-probed.
+    //
+    // A /bench/can endpoint asked this isolate three questions and each one
+    // dropped the connection — HTTP 000, with the cell still answering /health
+    // afterwards. Not a catchable error: a refusal below the language.
+    //
+    //   `await import("node:child_process")`   dropped
+    //   `eval("1+1")`                          dropped
+    //   `new WebAssembly.Module(<bytes>)`      dropped
+    //
+    // The last one is the interesting one. A Workers-style runtime takes
+    // WebAssembly as a BUNDLED module, never as bytes compiled at runtime, and
+    // compiled-tools-loaded-at-runtime is exactly how agentOS ships its tools.
+    // Together with a kernel that lives in a sidecar PROCESS owning a virtual
+    // filesystem, process table, PTYs and a network stack, that settles it:
+    // agentOS cannot run INSIDE a cell. Not because a cell is single-threaded —
+    // it is, and that was never the obstacle — but because a cell has no
+    // processes, no native addons, and no runtime codegen.
+    //
+    // The endpoint is gone because an endpoint that kills its own request has
+    // no business shipping. The answer is here.
     if (url.pathname === "/bench/spawn") {
       const n = Math.max(1, Math.min(Number(url.searchParams.get("n") ?? 25), 200));
       const t = [];
