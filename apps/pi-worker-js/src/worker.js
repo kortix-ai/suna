@@ -113,13 +113,48 @@ function toolsFor(env, sessionId, sql) {
 // test can exercise the money path without turning the scripted model off.
 //
 // modelConfig() below still decides what actually runs, and it needs the key.
-function pricedModel(env) {
+/**
+ * THE PLATFORM'S NAMES FOR THE SAME FOUR THINGS.
+ *
+ * A cell reads MODEL_PROVIDER / MODEL_API_KEY / MODEL_ID / MODEL_BASE_URL. The
+ * Kortix control plane injects KORTIX_PROVIDER / KORTIX_TOKEN / KORTIX_MODEL /
+ * KORTIX_LLM_BASE_URL (provisionSessionSandbox). Nothing translated between
+ * them, so a real session arrived with a gateway, a credential and a model and
+ * the cell found no key at all — it stayed scripted and answered nothing, with
+ * every health field reporting fine. Measured on dev 2026-09-07: sessions
+ * dee5338a and 5b482709 ran their turns to `done` with no model behind them.
+ *
+ * The mapping is kortix-worker's (configFromEnv in
+ * apps/kortix-worker/src/worker.ts), including the rule that matters most:
+ * KORTIX_TOKEN is a CONTROL-PLANE credential and is only valid as model auth
+ * when it is being sent to the Kortix gateway. With no gateway URL there is no
+ * key, and the cell stays scripted rather than posting a session token to an
+ * external provider.
+ *
+ * Explicit MODEL_* always wins, so a bench, a suite or an operator can pin a
+ * model without the platform's names getting in the way.
+ */
+function normalizeModelEnv(env) {
+  const gateway = env.MODEL_BASE_URL ?? env.KORTIX_GATEWAY_URL ?? env.KORTIX_LLM_BASE_URL;
+  const key = env.MODEL_API_KEY ?? env.KORTIX_API_KEY ?? (gateway ? env.KORTIX_TOKEN : undefined);
+  return {
+    ...env,
+    MODEL_PROVIDER: env.MODEL_PROVIDER ?? (key ? (env.KORTIX_PROVIDER ?? "openrouter") : undefined),
+    MODEL_ID: env.MODEL_ID ?? env.KORTIX_MODEL,
+    MODEL_BASE_URL: gateway,
+    MODEL_API_KEY: key,
+  };
+}
+
+function pricedModel(rawEnv) {
+  const env = normalizeModelEnv(rawEnv ?? {});
   if (!env.MODEL_PROVIDER || !env.MODEL_ID) return null;
   try { return resolveModel({ provider: env.MODEL_PROVIDER, modelId: env.MODEL_ID, baseUrl: env.MODEL_BASE_URL }); }
   catch { return null; }
 }
 
-function modelConfig(env) {
+function modelConfig(rawEnv) {
+  const env = normalizeModelEnv(rawEnv ?? {});
   const provider = env.MODEL_PROVIDER;
   const apiKey = env.MODEL_API_KEY;
   if (!provider || !apiKey) return null;
@@ -850,7 +885,7 @@ export class AgentCell {
         repo_ready: true,
         boot_error: null,
         store_error: null,
-        model_mode: this.env?.MODEL_API_KEY ? "live" : "scripted",
+        model_mode: normalizeModelEnv(this.env ?? {}).MODEL_API_KEY ? "live" : "scripted",
         model_error: null,
         opencode_session_id: sessionId,
         opencode_session_required: false,

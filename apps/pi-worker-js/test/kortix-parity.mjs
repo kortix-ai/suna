@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=35
+// EXPECTED_PASSES=38
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -215,6 +215,38 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     const unnamed = await (await shared.fetch("/session")).json();
     check("a request that names no session still falls back to the cell's own",
       unnamed[0]?.id === "owner", JSON.stringify(unnamed).slice(0, 100));
+  }
+
+  // THE PLATFORM'S NAMES FOR THE MODEL. The control plane injects
+  // KORTIX_PROVIDER / KORTIX_TOKEN / KORTIX_MODEL / KORTIX_LLM_BASE_URL; a cell
+  // reads MODEL_*. Nothing translated, so a real session arrived with a
+  // gateway, a credential and a model, found no key, stayed scripted and
+  // answered nothing — while every health field said it was fine. Measured on
+  // dev 2026-09-07: sessions dee5338a and 5b482709 ran turns to `done` with no
+  // model behind them.
+  {
+    const gw = makeCell(AgentCell, {
+      ...ENV, KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt", KORTIX_MODEL: "glm-5.3-flash",
+    });
+    const live = await (await gw.fetch("/kortix/health?c=s")).json();
+    check("a session given the platform's gateway and token runs LIVE, not scripted",
+      live.model_mode === "live", `model_mode=${live.model_mode}`);
+
+    // THE RULE THAT MATTERS MOST. KORTIX_TOKEN is a control-plane credential.
+    // With no gateway to send it to there is no model key, and the cell stays
+    // scripted rather than posting a session token to an external provider.
+    const noGw = makeCell(AgentCell, { ...ENV, KORTIX_TOKEN: "kt", KORTIX_MODEL: "glm-5.3-flash" });
+    const scripted = await (await noGw.fetch("/kortix/health?c=s")).json();
+    check("but a token with NO gateway is not a model key — it is never sent to a provider",
+      scripted.model_mode === "scripted", `model_mode=${scripted.model_mode}`);
+
+    // An explicit pin still wins, so a bench or an operator is never overridden.
+    const pinned = makeCell(AgentCell, {
+      ...ENV, MODEL_PROVIDER: "anthropic", MODEL_API_KEY: "sk-x",
+      KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt",
+    });
+    check("and an explicit MODEL_* pin beats the platform's names",
+      (await (await pinned.fetch("/kortix/health?c=s")).json()).model_mode === "live", "explicit pin lost");
   }
 
   check("the worker answers /kortix/health with no session named", r.status === 200 && body.ok === true, JSON.stringify(body));
