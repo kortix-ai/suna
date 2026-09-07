@@ -181,7 +181,7 @@ Deployed branch gates:
 
 1. `GET https://pi.kortix.com/v1/health` reports the exact branch tip SHA.
 2. A new Pi session streams assistant text before its environment is ready.
-3. Bash, read, write, glob, and grep execute against the environment.
+3. Bash, read, write, edit, glob, and grep execute against the environment.
 4. A second tool call reuses the environment.
 5. Stop and resume recover both runtimes.
 6. Runtime projection accepts the worker and rejects the environment.
