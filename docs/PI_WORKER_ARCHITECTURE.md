@@ -62,12 +62,14 @@ sequenceDiagram
     A->>W: Deliver prompt
     W->>D: Append user and assistant messages
     W-->>C: Stream initial assistant text
-    W->>A: Prewarm environment in parallel
+    opt Explicit prompt prewarm enabled
+        W->>A: Prewarm environment in parallel
+    end
     opt A workspace tool is needed
         W->>A: Ensure environment
         A->>E: Create or resume full workspace
         E-->>W: Provider-edge endpoint + RPC secret
-        W->>E: Execute bash/read/write/glob/grep
+        W->>E: Execute bash/read/write/edit/glob/grep
         E-->>W: Tool result
         W-->>C: Continue assistant stream
     end
@@ -78,13 +80,13 @@ sequenceDiagram
 ### What executes in the worker?
 
 The worker executes the Pi model loop, prompt assembly, message mutation,
-tool selection, tool-call bookkeeping, and the adapters for the five default
+tool selection, tool-call bookkeeping, and the adapters for the six default
 workspace tools. The adapters contain no local workspace implementation. They
 send each operation to the environment.
 
 ### What executes in the environment?
 
-The environment executes shell commands, file reads and writes, glob and grep,
+The environment executes shell commands, file reads, writes and edits, glob and grep,
 terminals, dev servers, browser-facing preview ports, the Kortix CLI, Claude
 Code, Codex CLI, and any other project process. It contains the session branch
 working tree and the dependencies from the project image.
@@ -115,8 +117,9 @@ operations. It fails if a tool mutates that disk.
 
 Session readiness requires only the small worker. It does not wait for a full
 repository image, branch checkout, dependency restore, or workspace daemon.
-The worker can begin the model turn while the API prepares the environment in
-parallel.
+The worker can begin the model turn without starting an environment. Explicit
+prewarming can prepare the environment in parallel when that latency tradeoff
+is desired.
 
 The measured branch result is 4.25 seconds p50 to first assistant text for a
 cold Pi worker. The compared OpenCode cold path is 29.19 seconds p50. The two
@@ -125,18 +128,20 @@ but not a provider-neutral ratio.
 
 ### When does the environment start?
 
-The worker requests a prewarm when a prompt begins. The first workspace tool
-joins the same in-flight attach. If no environment row exists, the API creates
-one. If the row is stopped, the API resumes it. If the provider removed the
-box, the API rebuilds it.
+By default, the first workspace tool requests an environment. Text-only turns
+do not request compute. `KORTIX_ENV_STARTUP=prewarm` explicitly starts the
+attach when the worker owns a model turn. The first workspace tool joins the
+same in-flight attach. If no environment row exists, the API creates one. If
+the row is stopped, the API resumes it. If the provider removed the box, the
+API rebuilds it.
 
 Prewarm is an accelerator. Tool correctness depends on the lazy ensure path,
 not on prewarm success.
 
 ### Does every session always consume two running boxes?
 
-No. Every Pi session has a worker. An environment exists only after a prompt
-prewarm or workspace tool needs it. The environment can stop while the worker
+No. Every Pi session has a worker. An environment exists only after an explicit
+prewarm or workspace operation needs it. The environment can stop while the worker
 continues the conversation. A parked worker causes the control plane to stop
 an active or provisioning environment.
 

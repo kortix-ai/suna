@@ -4866,3 +4866,14 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
   cannot substitute for a current boot artifact.
 - Enforcement: runtime layer v46 includes the native readiness and LLM proxy
   fixes. The existing runtime fingerprint and layer-render tests pass.
+
+
+### Capture completed messages before manual runtime shutdown (2026-09-07)
+
+- Incident: preview SESS-24 completed two assistant replies, then stopped one
+  runtime. Its durable transcript was empty because no turn-end capture ran.
+- Rule: after aborting a live turn, manual stop awaits transcript capture before
+  powering off. An unreachable runtime must still remain stoppable.
+- Enforcement: stop.test.ts holds the capture promise open and proves the
+  provider receives no stop until persistence finishes. SESS-24 reads the
+  completed reply from the durable mirror after a real provider stop.

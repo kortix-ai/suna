@@ -135,13 +135,10 @@ export class LazyKortixEnv {
   /**
    * Start provisioning now, without waiting for it.
    *
-   * Called when a PROMPT arrives, not when the session is created and not when
-   * the first tool runs. Measured on pi.kortix.com: first token 4.25s, first
-   * `bash` on that same cold session 37.5s — the split moved the environment's
-   * cold start out of session setup and into the middle of the first answer.
-   * A prompt means a turn is happening, so provisioning overlaps the model's
-   * own thinking instead of queueing behind it, while a session nobody ever
-   * prompts still provisions nothing.
+   * Called when a model turn starts only if the worker explicitly selects
+   * prewarm mode. Lazy mode never calls this method for a text-only prompt.
+   * Prewarm overlaps environment startup with the model request, trading
+   * compute use on text-only turns for lower first-tool latency.
    *
    * Fire-and-forget by contract: a failed prewarm is swallowed here, because
    * the tool call that actually needs the environment will attach again and

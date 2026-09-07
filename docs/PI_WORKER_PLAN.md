@@ -1,12 +1,13 @@
 # Pi worker implementation plan and status
 
 - Branch: `pi-worker`
-- Preview: `https://pi.kortix.com`
+- Preview target: `https://pi.kortix.com`
 - Architecture: [`PI_WORKER_ARCHITECTURE.md`](./PI_WORKER_ARCHITECTURE.md)
 - Two-runtime audit: [`PI_P24_SCOPE.md`](./PI_P24_SCOPE.md)
 
-This file records the implemented scope. Update it in the same commit as a
-status change.
+This file records implementation scope in the canonical working tree. A phase
+marked done is not deployment proof. See [the verification record](./PI_WORKER_VERIFICATION.md)
+for committed source, exact preview SHAs, live checks, and remaining gaps.
 
 ## Requirements from the design huddle
 
@@ -43,7 +44,7 @@ Status: done.
 | Compile pipeline | `kortix.yaml` at a commit becomes one content-addressed `.mjs` bundle |
 | Worker image | small Alpine image with a supervisor and runtime fetcher |
 | Session start | Pi sessions boot on the worker and stream before workspace readiness |
-| Lazy environment | first prompt prewarms; first workspace tool creates or resumes the full box |
+| Lazy environment | text-only prompts leave compute off; the first workspace tool creates or resumes the full box |
 | Durable transcript | message and part mutations persist in PostgreSQL |
 | Shared filesystems | content-addressed blobs through S3 or PostgreSQL |
 
@@ -70,9 +71,10 @@ The previous in-guest clock reported 0.08 s p50 while wall-clock readiness was
 
 Status: done.
 
-`LazyKortixEnv.prewarm()` starts when the prompt arrives. A workspace tool joins
-the same attach promise. The worker continues to stream model output while the
-environment starts. A failed prewarm does not poison the lazy ensure path.
+`KORTIX_ENV_STARTUP` defaults to `lazy`. The first workspace tool starts or resumes
+compute. Setting it to `prewarm` starts attachment when the model turn starts.
+Concurrent tools join the same attach promise. A failed prewarm does not poison
+the next ensure attempt. A live text-only prompt left the environment absent.
 
 A branch-preview probe reduced a fresh prompt plus first Bash operation from
 37.5 seconds to 9 seconds. This is one observation, not a percentile benchmark.

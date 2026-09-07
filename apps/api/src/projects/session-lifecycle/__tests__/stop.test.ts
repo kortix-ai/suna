@@ -14,6 +14,8 @@ let pausedCompute: string[] = [];
 let cacheInvalidations: string[] = [];
 let environmentStopCalls: string[] = [];
 let environmentStopError: Error | null = null;
+let captureCalls: string[] = [];
+let captureImpl: () => Promise<unknown> = async () => null;
 let updateCalls: Array<{
   table: unknown;
   updates: Record<string, unknown>;
@@ -159,6 +161,13 @@ mock.module('../../../platform/services/session-environment', () => ({
   },
 }));
 
+mock.module('../../lib/session-transcript-capture', () => ({
+  captureSessionTranscriptMirror: async (sessionId: string) => {
+    captureCalls.push(sessionId);
+    return captureImpl();
+  },
+}));
+
 const { stopSession } = await import('../stop');
 
 const baseInput = {
@@ -178,6 +187,8 @@ beforeEach(() => {
   cacheInvalidations = [];
   environmentStopCalls = [];
   environmentStopError = null;
+  captureCalls = [];
+  captureImpl = async () => null;
   updateCalls = [];
   executedStatements = [];
   inTransaction = false;
@@ -199,6 +210,51 @@ afterAll(() => {
 });
 
 describe('stopSession', () => {
+  test('waits for durable transcript capture after abort and before powering off', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    const entered = Promise.withResolvers<void>();
+    const persisted = Promise.withResolvers<void>();
+    captureImpl = async () => {
+      callOrder.push('capture');
+      entered.resolve();
+      await persisted.promise;
+      callOrder.push('persisted');
+      return { captured: 2, head_complete: true, pruned: 0 };
+    };
+
+    const stopping = stopSession(baseInput);
+    const first = await Promise.race([
+      entered.promise.then(() => 'capture'),
+      stopping.then(() => 'stopped'),
+    ]);
+    expect(first).toBe('capture');
+    expect(captureCalls).toEqual(['sess-1']);
+    expect(callOrder).toEqual(['abort', 'capture']);
+    expect(stopCalls).toEqual([]);
+    persisted.resolve();
+    expect((await stopping).status).toBe(200);
+    expect(callOrder).toEqual(['abort', 'capture', 'persisted', 'provider.stop']);
+  });
+
+  test('still stops when transcript capture cannot reach the runtime', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    expect((await stopSession(baseInput)).status).toBe(200);
+    expect(captureCalls).toEqual(['sess-1']);
+    expect(stopCalls).toEqual(['ext-1']);
+  });
+
   test('404s when the session has no sandbox row', async () => {
     const result = await stopSession(baseInput);
     expect(result.status).toBe(404);
@@ -239,6 +295,7 @@ describe('stopSession', () => {
     // Already-stopped row (a wake was mid-flight, not a live turn) — no live
     // opencode process to abort, so no pre-stop call is attempted.
     expect(abortFetchCalls).toEqual([]);
+    expect(captureCalls).toEqual([]);
     const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
     const rendered = describeSql(metadata);
     expect(rendered).toContain('runtimeWakeId');

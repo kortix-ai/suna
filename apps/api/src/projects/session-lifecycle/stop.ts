@@ -4,6 +4,7 @@ import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { stopSessionEnvironment } from '../../platform/services/session-environment';
 import { db } from '../../shared/db';
+import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
@@ -87,6 +88,9 @@ export async function stopSession(input: {
       externalId: sandbox.externalId,
       userId,
     });
+    // Persist settled messages before power-off, including turns whose end
+    // relay never arrived. Capture bounds its runtime read and never throws.
+    await captureSessionTranscriptMirror(sessionId);
   }
 
   try {
