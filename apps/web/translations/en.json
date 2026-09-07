@@ -771,9 +771,9 @@
       "permission": "You need the project's customize-write permission to change a feature flag.",
       "updateFailed": "Failed to update {key}",
       "flags": {
-        "marketplace": {
-          "name": "Marketplace",
-          "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
+        "templates": {
+          "name": "Templates",
+          "description": "Browse the template catalog and install a template — its agents, skills, connectors and triggers — into this project by change request."
         },
         "agent_tunnel": {
           "name": "Agent Computer Tunnel",

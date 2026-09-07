@@ -945,9 +945,9 @@
       "permission": "Vous devez disposer de l’autorisation de modification de la personnalisation du projet pour changer une fonctionnalité.",
       "updateFailed": "Impossible de mettre à jour {key}",
       "flags": {
-        "marketplace": {
-          "name": "Place de marché",
-          "description": "Parcourez et installez des compétences depuis des registres communautaires et fournisseurs. Les sources, mises à jour et portées d’équipe évoluent encore."
+        "templates": {
+          "name": "Modèles",
+          "description": "Parcourez le catalogue de modèles et installez un modèle — avec ses agents, compétences, connecteurs et déclencheurs — dans ce projet via une demande de modification."
         },
         "agent_tunnel": {
           "name": "Tunnel d’ordinateur pour agent",

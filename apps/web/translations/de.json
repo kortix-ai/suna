@@ -945,9 +945,9 @@
       "permission": "Zum Ändern einer Funktion benötigen Sie die Berechtigung zum Bearbeiten der Projektanpassung.",
       "updateFailed": "{key} konnte nicht aktualisiert werden",
       "flags": {
-        "marketplace": {
-          "name": "Marktplatz",
-          "description": "Suchen und installieren Sie Skills aus Community- und Anbieterregistern. Quellen, Updates und Teambreiche ändern sich noch."
+        "templates": {
+          "name": "Vorlagen",
+          "description": "Durchsuchen Sie den Vorlagenkatalog und installieren Sie eine Vorlage — mit ihren Agenten, Skills, Konnektoren und Triggern — per Änderungsanfrage in dieses Projekt."
         },
         "agent_tunnel": {
           "name": "Agenten-Computertunnel",

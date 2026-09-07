@@ -945,9 +945,9 @@
       "permission": "Necesitas permiso para editar la personalización del proyecto para cambiar una función.",
       "updateFailed": "No se pudo actualizar {key}",
       "flags": {
-        "marketplace": {
-          "name": "Marketplace",
-          "description": "Explora e instala habilidades de registros de la comunidad y proveedores. Las fuentes, actualizaciones y ámbitos de equipo aún cambian."
+        "templates": {
+          "name": "Plantillas",
+          "description": "Explora el catálogo de plantillas e instala una plantilla — con sus agentes, skills, conectores y disparadores — en este proyecto mediante una solicitud de cambio."
         },
         "agent_tunnel": {
           "name": "Túnel al ordenador del agente",

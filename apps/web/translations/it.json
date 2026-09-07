@@ -945,9 +945,9 @@
       "permission": "Per modificare una funzionalità serve l’autorizzazione a modificare la personalizzazione del progetto.",
       "updateFailed": "Impossibile aggiornare {key}",
       "flags": {
-        "marketplace": {
-          "name": "Marketplace",
-          "description": "Esplora e installa competenze dai registri della community e dei fornitori. Fonti, aggiornamenti e ambiti del team sono ancora in evoluzione."
+        "templates": {
+          "name": "Modelli",
+          "description": "Esplora il catalogo dei modelli e installa un modello — con i suoi agenti, skill, connettori e trigger — in questo progetto tramite una richiesta di modifica."
         },
         "agent_tunnel": {
           "name": "Tunnel computer dell’agente",

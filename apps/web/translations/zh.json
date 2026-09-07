@@ -945,9 +945,9 @@
       "permission": "您需要项目自定义编辑权限才能更改功能开关。",
       "updateFailed": "无法更新 {key}",
       "flags": {
-        "marketplace": {
-          "name": "市场",
-          "description": "浏览并安装社区和供应商注册表中的技能。来源、更新和团队范围仍在调整。"
+        "templates": {
+          "name": "模板",
+          "description": "浏览模板目录，并通过变更请求将模板（包含其智能体、技能、连接器和触发器）安装到此项目中。"
         },
         "agent_tunnel": {
           "name": "智能体电脑隧道",
