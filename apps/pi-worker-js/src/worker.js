@@ -44,7 +44,7 @@ globalThis.atob = (input) => {
 };
 
 import { Agent } from "@earendil-works/pi-agent-core";
-import { cellFs } from "./execenv.cell.js";
+import { cellFs, cellShellNote } from "./execenv.cell.js";
 import { executionEnvFor, piTools, piToolsCell, piToolsPlatinum } from "./pitools.js";
 import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
@@ -711,14 +711,20 @@ export class AgentCell {
       ? configured.streamFn
       : scriptedStream(script ?? JSON.parse(this.effectiveEnv().SCRIPT ?? "[]"));
 
+    // Tools FIRST, because what the shell is decides what the prompt must say.
+    // toolsFor is what creates this.cellFs, so the note can only be written
+    // after it has run — and only for the backend it describes: a session with
+    // a Platinum workspace has a real Linux box and must not be told otherwise.
+    const tools = toolsFor(this.effectiveEnv(), sessionId, this.sql, this);
+    const note = this.cellFs ? cellShellNote() : "";
     const agent = new Agent({
       streamFn,
       sessionId,
       getApiKey: configured?.getApiKey,
       initialState: {
-        systemPrompt,
+        systemPrompt: note ? `${systemPrompt}\n\n${note}` : systemPrompt,
         model: configured?.model ?? SCRIPTED_MODEL,
-        tools: toolsFor(this.effectiveEnv(), sessionId, this.sql, this),
+        tools,
         messages: this.loadMessages(),
       },
     });

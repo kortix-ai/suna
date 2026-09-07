@@ -57,6 +57,46 @@ export function cellFs(sql) {
 }
 
 /** pi's ExecutionEnv over the cell's own tree. Same shapes as the Platinum backend. */
+// WHAT THE SHELL ACTUALLY IS, in the agent's own system prompt.
+//
+// The cell's bash is just-bash: a bash interpreter over a virtual filesystem,
+// not a Linux box. Told nothing, a model reaches for the tools every coding
+// agent has always had and gets `command not found` with no idea what to try
+// instead — measured 2026-09-07: git, curl, node, npm, pip, python3, docker,
+// apt-get and uname all exit 127, and python3's message even names the
+// interpreter's own host ("not available in browser environments"), which is
+// both confusing and an implementation detail the model should never see.
+//
+// A LIST, NOT A LOOKUP: `/usr/bin` is synthesised by the shell rather than
+// present in the filesystem (`readdir` there is ENOENT), and the note has to
+// be built synchronously while the agent is constructed. So it is written
+// down — and cellfs-logic asserts this array equals what `ls /usr/bin` really
+// prints, so a just-bash upgrade that adds or drops a command fails the suite
+// instead of quietly leaving the prompt lying to the model.
+export const CELL_COMMANDS = ["alias", "awk", "base64", "basename", "bash", "cat", "chmod", "clear", "column", "comm", "cp", "cut", "date", "diff", "dirname", "du", "echo", "egrep", "env", "expand", "expr", "false", "fgrep", "file", "find", "fold", "grep", "gunzip", "gzip", "head", "help", "history", "hostname", "html-to-markdown", "join", "jq", "ln", "ls", "md5sum", "mkdir", "mv", "nl", "od", "paste", "printenv", "printf", "pwd", "readlink", "rev", "rg", "rm", "rmdir", "sed", "seq", "sh", "sha1sum", "sha256sum", "sleep", "sort", "split", "stat", "strings", "tac", "tail", "tee", "time", "timeout", "touch", "tr", "tree", "true", "unalias", "unexpand", "uniq", "wc", "which", "whoami", "xargs", "zcat"];
+
+/** The commands a real box has that this shell does not — named, because a
+ *  model that is not told will try them and burn a turn on exit 127. */
+export const CELL_MISSING = [
+  "git", "curl", "wget", "ssh", "node", "npm", "pnpm", "yarn", "python", "python3",
+  "pip", "docker", "make", "gcc", "apt-get", "tar", "uname",
+];
+
+export function cellShellNote() {
+  return [
+    "Your bash tool runs a POSIX shell over this session's own virtual filesystem.",
+    "It is NOT a Linux machine: there is no network, no package manager, and no language runtime.",
+    `These do not exist — never call them and never propose a plan that needs them: ${CELL_MISSING.join(", ")}.`,
+    "",
+    `The ${CELL_COMMANDS.length} commands you DO have: ${CELL_COMMANDS.join(", ")}.`,
+    "",
+    `Your working directory is ${CELL_CWD}, and it persists between turns: a file you write now is`,
+    "still there in the next message. Use the write and read tools for file contents, grep/rg/find to",
+    "search, and awk/sed/jq to transform. To run a program, write the logic as a shell script — you",
+    "cannot execute Python or JavaScript here.",
+  ].join("\n");
+}
+
 export function cellExecutionEnv(cell, cwd = CELL_CWD) {
   const { fs, bash, persist, ready } = cell;
   const abs = (p) => (p.startsWith("/") ? p : `${cwd}/${p}`).replace(/\/+/g, "/");
