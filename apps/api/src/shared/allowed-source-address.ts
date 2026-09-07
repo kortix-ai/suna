@@ -110,3 +110,40 @@ export function assertAllowedSourceAddress(address: string): void {
     throw new AllowedSourceValidationError('Only https registry URLs on public hosts are allowed.');
   throw new AllowedSourceValidationError('This source type is not allowed.');
 }
+
+/**
+ * The same guard for a CONNECTOR ENDPOINT — an absolute URL we fetch verbatim.
+ *
+ * Distinct from {@link assertAllowedSourceAddress}: a registry SOURCE address
+ * may be GitHub shorthand (`owner/repo`), so that guard lets anything that is
+ * not `http://`/`https://` through as a repo reference. A connector endpoint is
+ * never shorthand, so `HTTP://host`, `ws://host`, `localhost:3000/mcp` and
+ * `my server/mcp` all slipped past the source guard, reached `safeEgressFetch`,
+ * and died as an unhandled `UnsafeEgressError` (500 + Sentry: Better Stack API
+ * prod 2026-09-07 "url must be https", "invalid url"). Parse with WHATWG `URL`,
+ * which normalises the scheme case, and reject everything that is not https on
+ * a public host as the typed {@link AllowedSourceValidationError} the routes
+ * already turn into a 400.
+ *
+ * Ported here verbatim from `marketplace/catalog.ts`, which this branch
+ * deletes; it lives beside the source guard for the same leaf-module reason.
+ */
+export function assertAllowedEndpointUrl(address: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(address.trim());
+  } catch {
+    throw new AllowedSourceValidationError(
+      `Connector endpoint must be an absolute https URL: "${address}"`,
+    );
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new AllowedSourceValidationError('Connector endpoints must use https on a public host.');
+  }
+  if (isPrivateHost(parsed.hostname)) {
+    throw new AllowedSourceValidationError('Connector endpoints must use https on a public host.');
+  }
+  if (parsed.username || parsed.password) {
+    throw new AllowedSourceValidationError('Connector endpoints must not embed credentials.');
+  }
+}

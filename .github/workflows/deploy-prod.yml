@@ -966,6 +966,66 @@ jobs:
   # call job — GitHub rejects the whole file (startup_failure, zero jobs).
   # A job-level `if:` IS valid, and a skipped job leaves the run green — the
   # same mechanism `verify-schema` uses with ENABLE_PROD_SCHEMA_GATE.
+  # ── Deploy the prod API router Worker ───────────────────────────────────────
+  # api.kortix.com and gateway.kortix.com are fronted by the Cloudflare Worker
+  # in infra/cloudflare/workers/api-router. Until 2026-09-07 NOTHING in this
+  # workflow deployed it: only deploy-staging.yml and the cutover workflow ran
+  # a Worker deploy, so prod served a 2026-08-21 build for 17 days. That build
+  # still rewrote every origin 502/503/504 into a synthetic "Kortix is
+  # temporarily unavailable" maintenance page (removed in #6831, 2026-08-24) —
+  # which is how 8 days of failed project creation (a rotated managed-git PAT
+  # without Administration:write, #7063) surfaced in Better Stack as a
+  # maintenance mode nobody had switched on. The Worker is part of the origin's
+  # release: it deploys here, from the same checkout, after the origin rolls.
+  #
+  # `wrangler deploy --env prod` reads infra/cloudflare/workers/api-router/
+  # wrangler.toml — bindings, routes and the custom domain come from that file,
+  # so there is one source of truth (no hand-maintained binding list as in
+  # deploy-staging's REST path). The scoped CLOUDFLARE_API_TOKEN (Workers
+  # Scripts:Edit + Workers Routes:Edit on kortix.com) is the credential that
+  # deployed it by hand on 2026-09-07.
+  #
+  # Non-blocking for the same reason deploy-staging's wire-cloudflare is: a
+  # dead Cloudflare credential must not freeze the release. The failed step
+  # stays visible here, and the modified_on assertion below fails LOUDLY when
+  # the upload was accepted but the live script did not change.
+  deploy-api-router:
+    name: Deploy prod API router Worker
+    needs: [deploy-ecs]
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    continue-on-error: true
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
+      WORKER_NAME: api-kortix-router
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Deploy api-kortix-router from wrangler.toml [env.prod]
+        working-directory: infra/cloudflare/workers/api-router
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is unset — the prod API router Worker was NOT deployed. Set the repository secret (Workers Scripts:Edit + Workers Routes:Edit on kortix.com)."
+            exit 1
+          fi
+          started="$(date -u +%s)"
+          npx --yes wrangler@4 deploy --env prod
+          # Prove the LIVE script changed in this run. A 200 from the upload
+          # is not proof: the API answered 200 for a script it later refused.
+          modified="$(curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts" \
+            | jq -r --arg name "$WORKER_NAME" '.result[] | select(.id == $name) | .modified_on')"
+          modified_epoch="$(date -u -d "$modified" +%s)"
+          echo "api-kortix-router modified_on=$modified (run started $(date -u -d "@$started" +%FT%TZ))"
+          if [ "$modified_epoch" -lt "$((started - 60))" ]; then
+            echo "::error::api-kortix-router modified_on ($modified) predates this run — the live Worker did not change."
+            exit 1
+          fi
+
   deploy-us-shadow:
     name: Deploy API + gateway to US East 2 shadow
     needs: [version, retag-images, verify-image-commits, migrate-db]

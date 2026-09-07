@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TemplateShell } from './template-shell';
@@ -22,11 +21,9 @@ import { TemplateShell } from './template-shell';
  */
 describe('TemplateShell layout', () => {
   const html = renderToStaticMarkup(
-    createElement(
-      TemplateShell,
-      { crumbs: [{ label: 'Templates' }], sidebar: createElement('p', null, 'rail') },
-      createElement('p', null, 'content'),
-    ),
+    <TemplateShell crumbs={[{ label: 'Templates' }]} sidebar={<p>rail</p>}>
+      <p>content</p>
+    </TemplateShell>,
   );
 
   const gridChildren = [...html.matchAll(/<div class="((?:[^"]*\b)col-span-12[^"]*)"/g)].map(
