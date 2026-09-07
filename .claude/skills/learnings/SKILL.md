@@ -5084,3 +5084,17 @@ the epoch guard, bound the retry count, and return no credentials after sign-out
 
 Automation: `apps/web/src/lib/kortix-config-auth.test.ts` exercises concurrent
 reads during reseeding, an identity change, and bounded signed-out retries.
+
+
+## 2026-09-07 — Preserve short compiled model references at worker boot
+
+A compiled agent selected `gpt-5.6-luna`, but boot ignored model names without
+a slash. The provider received its first catalog model, `aion-labs/aion-2.0`.
+
+Apply short aliases as model IDs. Split a provider prefix only when one exists
+and no gateway is configured. Explicit session model overrides retain priority.
+
+Automation: `apps/kortix-worker/src/compiled-model-entry.test.ts` starts the real
+entry process and checks the actual gateway request. Short, Kortix-prefixed,
+provider-prefixed, and explicit override cases pass. The short case fails before
+the fix.

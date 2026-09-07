@@ -75,14 +75,14 @@ function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
   // The baked prompt applies only when the env did not set one — the env var
   // is a session-start override, the bake is the commit's truth.
   if (!process.env.KORTIX_SYSTEM_PROMPT && agent?.prompt) out.systemPrompt = agent.prompt;
-  // Agent model strings are opencode-shaped: "<providerID>/<modelID...>".
+  // Agent models can be short gateway aliases or "<providerID>/<modelID...>".
   const model = agent?.model ?? compiled.agentConfig?.model;
-  if (!process.env.KORTIX_MODEL && model?.includes('/')) {
+  if (!process.env.KORTIX_MODEL && model) {
     // Gateway model refs are kortix/<provider>/<model>; native ones are
     // <provider>/<model>. Behind the gateway the whole suffix is the model id.
     const native = model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
     const slash = native.indexOf('/');
-    if (out.gatewayUrl) {
+    if (out.gatewayUrl || slash < 0) {
       out.modelId = native;
     } else {
       out.providerId = native.slice(0, slash);

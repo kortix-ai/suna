@@ -49,7 +49,10 @@ does not alter the saved system prompt or tool discovery.
 
 The configured gateway URL overrides the endpoint for catalog models and new
 model references alike. Catalog membership must never bypass the gateway or
-send the session credential to a provider's public endpoint.
+send the session credential to a provider's public endpoint. Short compiled
+model references such as `gpt-5.6-luna` retain their model identity; they must
+not fall back to the first provider catalog entry. Explicit session model
+overrides still take precedence.
 
 ## Web search
 
