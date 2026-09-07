@@ -5,10 +5,12 @@ import type { Opencode } from '../opencode'
 const calls: unknown[] = []
 let refreshDelay: Promise<void> | undefined
 let refreshStarted: (() => void) | undefined
+let refreshError: Error | undefined
 mock.module('../git', () => ({
   refreshRepo: async () => {
     refreshStarted?.()
     await refreshDelay
+    if (refreshError) throw refreshError
     return { before: 'a', after: 'a' }
   },
   syncOpencodeConfigDirToBase: async () => ({}),
@@ -26,6 +28,7 @@ beforeEach(() => {
   calls.length = 0
   refreshDelay = undefined
   refreshStarted = undefined
+  refreshError = undefined
 })
 
 test('authenticated swap=1 carries the early idle-swap request into convergence', async () => {
@@ -53,6 +56,63 @@ test('swap=1 joins an in-flight refresh without losing the swap request', async 
   release()
   expect((await first).status).toBe(200)
   expect(calls).toEqual([{ swap: true }])
+})
+
+test('a direct swap request survives a non-fast-forward repository refresh', async () => {
+  refreshError = new Error('git pull refresh failed: Not possible to fast-forward, aborting.')
+  const router = createRefreshRouter(cfg, opencode)
+  const init = { method: 'POST', headers: { Authorization: 'Bearer test-secret' } }
+  const response = await router.request('http://daemon/?restart=0&swap=1', init)
+  expect(response.status).toBe(409)
+  expect(await response.json()).toMatchObject({
+    error: 'refresh failed',
+    message: refreshError.message,
+  })
+  expect(calls).toEqual([{ swap: true }])
+
+  refreshError = undefined
+  expect((await router.request('http://daemon/?restart=0', init)).status).toBe(200)
+  expect(calls).toEqual([{ swap: true }, { swap: false }])
+})
+
+test('a coalesced swap request survives the in-flight repository refresh failing', async () => {
+  refreshError = new Error('git pull refresh failed: Not possible to fast-forward, aborting.')
+  let release!: () => void
+  refreshDelay = new Promise((resolve) => {
+    release = resolve
+  })
+  const started = new Promise<void>((resolve) => {
+    refreshStarted = resolve
+  })
+  const router = createRefreshRouter(cfg, opencode)
+  const init = { method: 'POST', headers: { Authorization: 'Bearer test-secret' } }
+  const first = router.request('http://daemon/?restart=0', init)
+  await started
+  expect((await router.request('http://daemon/?restart=0&swap=1', init)).status).toBe(409)
+  release()
+  expect((await first).status).toBe(409)
+  expect(calls).toEqual([{ swap: true }])
+})
+
+test('a failed explicit refresh still respects runtime readiness', async () => {
+  refreshError = new Error('git pull refresh failed: Not possible to fast-forward, aborting.')
+  const starting = { ...opencode, getState: () => 'starting' } as Opencode
+  const response = await createRefreshRouter(cfg, starting).request(
+    'http://daemon/?restart=0&swap=1',
+    { method: 'POST', headers: { Authorization: 'Bearer test-secret' } },
+  )
+  expect(response.status).toBe(409)
+  expect(calls).toEqual([])
+})
+
+test('a failed refresh without an explicit swap keeps the existing behavior', async () => {
+  refreshError = new Error('git pull refresh failed: Not possible to fast-forward, aborting.')
+  const response = await createRefreshRouter(cfg, opencode).request(
+    'http://daemon/?restart=0',
+    { method: 'POST', headers: { Authorization: 'Bearer test-secret' } },
+  )
+  expect(response.status).toBe(409)
+  expect(calls).toEqual([])
 })
 
 test('unauthenticated swap=1 cannot schedule convergence', async () => {
