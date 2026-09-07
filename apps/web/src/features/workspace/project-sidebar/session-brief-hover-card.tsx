@@ -257,7 +257,6 @@ export function SessionBriefHoverCard({
   ...brief
 }: SessionBriefProps & SessionBriefInteractionProps & { children: ReactElement }) {
   const [open, setOpen] = useState(false);
-  const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearTimer = useCallback(() => {
@@ -287,43 +286,40 @@ export function SessionBriefHoverCard({
   };
 
   // Radix HoverCard makes every descendant untabbable. Popover preserves the
-  // same hover behavior while keeping each change-request action keyboardable.
-  // Mount its portal beside the trigger so those actions follow it in Tab order.
+  // same hover behavior while keeping each change-request action interactive.
+  // Keep the default body portal so the sidebar scroll container cannot clip it.
   return (
-    <div ref={setPortalContainer} className="contents">
-      <Popover
-        open={open}
-        onOpenChange={(nextOpen) => {
-          clearTimer();
-          setOpen(nextOpen);
-        }}
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        clearTimer();
+        setOpen(nextOpen);
+      }}
+    >
+      <PopoverTrigger
+        asChild
+        onPointerEnter={() => updateAfterDelay(true, HOVER_OPEN_DELAY_MS)}
+        onPointerLeave={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
+        onFocus={openNow}
+        onBlur={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
       >
-        <PopoverTrigger
-          asChild
-          onPointerEnter={() => updateAfterDelay(true, HOVER_OPEN_DELAY_MS)}
-          onPointerLeave={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
-          onFocus={openNow}
-          onBlur={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
-        >
-          {children}
-        </PopoverTrigger>
-        <PopoverContent
-          container={portalContainer ?? undefined}
-          side="right"
-          align="start"
-          sideOffset={14}
-          className="w-72 p-3 shadow-xs"
-          onOpenAutoFocus={(event) => event.preventDefault()}
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          onPointerEnter={openNow}
-          onPointerLeave={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
-          onFocusCapture={openNow}
-          onBlurCapture={handleContentBlur}
-        >
-          <SessionBriefContent {...brief} onDismiss={() => setOpen(false)} />
-        </PopoverContent>
-      </Popover>
-    </div>
+        {children}
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={14}
+        className="w-72 p-3 shadow-xs"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onPointerEnter={openNow}
+        onPointerLeave={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
+        onFocusCapture={openNow}
+        onBlurCapture={handleContentBlur}
+      >
+        <SessionBriefContent {...brief} onDismiss={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
   );
 }
 
