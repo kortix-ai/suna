@@ -33,7 +33,7 @@ import type { Agent, Session, ToolList } from '@opencode-ai/sdk/v2';
 import { assistantContractFields, assistantMessageError, toolResultMetadata } from './chat-events.ts';
 import type { PiCommand } from './command-runtime.ts';
 import { PermissionApprovalUnavailableError, type PermissionBroker } from './permission-broker.ts';
-import { type PermissionConfig, compilePermissionRules } from './permission-policy.ts';
+import { type PermissionConfig, type PermissionRule, compilePermissionRules } from './permission-policy.ts';
 import type { QuestionBroker } from './question-broker.ts';
 import type { PiTodo } from './todo-tools.ts';
 import { type PiSkill, projectSkillInfo } from './skill-runtime.ts';
@@ -480,6 +480,7 @@ export interface RuntimeSurfaceOptions {
   workspace?: string;
   permissions?: PermissionBroker;
   permissionConfig?: PermissionConfig;
+  sessionPermission?: () => PermissionRule[];
   /** Pending user questions created by Pi's `question` tool. */
   questions?: QuestionBroker;
   /**
@@ -1262,7 +1263,7 @@ export class RuntimeSurface {
 
   private opencodeSessionObject(): Pick<
     Session,
-    'id' | 'slug' | 'projectID' | 'title' | 'directory' | 'time' | 'version'
+    'id' | 'slug' | 'projectID' | 'title' | 'directory' | 'time' | 'version' | 'permission'
   > {
     const s = this.sessionProjection();
     return {
@@ -1273,6 +1274,7 @@ export class RuntimeSurface {
       directory: s.directory,
       time: { created: s.time.created, updated: s.time.updated },
       version: 'pi',
+      ...(this.opts.sessionPermission ? { permission: this.opts.sessionPermission() } : {}),
     };
   }
 

@@ -10,11 +10,14 @@ export interface PromptInput {
   text: string;
   system?: string;
   noReply?: boolean;
+  tools?: Record<string, boolean>;
 }
 
 export type PromptInputResult = { ok: true; value: PromptInput } | { ok: false; error: string };
 
-const SUPPORTED_FIELDS = new Set(['messageID', 'model', 'agent', 'parts', 'system', 'noReply']);
+const SUPPORTED_FIELDS = new Set([
+  'messageID', 'model', 'agent', 'parts', 'system', 'noReply', 'tools',
+]);
 const SUPPORTED_TEXT_PART_FIELDS = new Set(['type', 'text']);
 
 function own(value: Record<string, unknown>, field: string): boolean {
@@ -49,6 +52,16 @@ export function parsePromptInput(
   }
   if (own(body, 'noReply') && typeof body.noReply !== 'boolean') {
     return { ok: false, error: 'noReply must be a boolean' };
+  }
+  if (
+    own(body, 'tools') && (
+      !body.tools || typeof body.tools !== 'object' || Array.isArray(body.tools) ||
+      Object.entries(body.tools).some(
+        ([name, enabled]) => !name.trim() || typeof enabled !== 'boolean',
+      )
+    )
+  ) {
+    return { ok: false, error: 'tools must map non-empty permission names to booleans' };
   }
 
   if (own(body, 'agent')) {
@@ -138,6 +151,7 @@ export function parsePromptInput(
       text: text.join(''),
       ...(typeof body.system === 'string' ? { system: body.system } : {}),
       ...(typeof body.noReply === 'boolean' ? { noReply: body.noReply } : {}),
+      ...(own(body, 'tools') ? { tools: body.tools as Record<string, boolean> } : {}),
     },
   };
 }

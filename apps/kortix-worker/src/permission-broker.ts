@@ -6,6 +6,8 @@ import {
   type PermissionRule,
   compilePermissionRules,
   evaluatePermission,
+  permissionNameForTool,
+  wildcardMatch,
 } from './permission-policy.ts';
 
 export type PermissionReply = 'once' | 'always' | 'reject';
@@ -88,6 +90,7 @@ export class PermissionBroker {
   private readonly pending = new Map<string, PendingPermission>();
   private readonly approved: PermissionRule[] = [];
   private readonly rules: PermissionRule[];
+  private sessionRules: PermissionRule[] = [];
   private readonly createId: () => string;
 
   constructor(private readonly options: PermissionBrokerOptions) {
@@ -100,12 +103,28 @@ export class PermissionBroker {
     return [...this.pending.values()].map((item) => cloneRequest(item.request));
   }
 
+  setToolControls(controls: Record<string, boolean>): void {
+    this.sessionRules = Object.entries(controls).map(([permission, enabled]) => ({
+      permission,
+      pattern: '*',
+      action: enabled ? 'allow' : 'deny',
+    }));
+  }
+
+  toolEnabled(toolName: string): boolean {
+    const permission = permissionNameForTool(toolName);
+    const rule = [...this.rules, ...this.sessionRules].findLast(
+      (candidate) => wildcardMatch(permission, candidate.permission),
+    );
+    return rule?.pattern !== '*' || rule.action !== 'deny';
+  }
+
   authorize(input: PermissionAuthorization): Promise<void> {
     if (input.patterns.length === 0) {
       return Promise.reject(new TypeError('permission patterns must contain at least one value'));
     }
     if (input.signal?.aborted) return Promise.reject(abortError(input.signal));
-    const rules = [...this.rules, ...this.approved];
+    const rules = [...this.rules, ...this.sessionRules, ...this.approved];
     let needsAsk = false;
     for (const pattern of input.patterns) {
       const action = evaluatePermission(input.permission, pattern, rules).action;

@@ -697,6 +697,29 @@ export class TurnAdmissionJournal {
     return snapshot(this.reduced).unrelayed;
   }
 
+  get toolControls(): Record<string, boolean> {
+    for (let index = this.reduced.order.length - 1; index >= 0; index--) {
+      const turn = this.reduced.turns.get(this.reduced.order[index]!);
+      if (!turn || (turn.state !== 'started' && turn.state !== 'completed')) continue;
+      const tools = turn.admission.options.tools;
+      if (tools === undefined) continue;
+      if (
+        !tools || typeof tools !== 'object' || Array.isArray(tools) ||
+        Object.entries(tools).some(
+          ([name, enabled]) => !name.trim() || typeof enabled !== 'boolean',
+        )
+      ) {
+        throw new TurnJournalCorruptionError(
+          'durable tool controls must map permission names to booleans',
+        );
+      }
+      if (Object.keys(tools).length > 0) {
+        return structuredClone(tools) as Record<string, boolean>;
+      }
+    }
+    return {};
+  }
+
   state(messageId: string): TurnJournalState {
     return this.reduced.turns.get(messageId)?.state ?? 'missing';
   }

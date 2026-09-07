@@ -113,7 +113,7 @@ describe('parsePromptInput', () => {
     },
   );
 
-  test.each(['variant', 'tools', 'format', 'temperature', 'modle'])(
+  test.each(['variant', 'format', 'temperature', 'modle'])(
     'rejects unsupported %s instead of acknowledging and ignoring it',
     (field) => {
       const result = parsePromptInput(

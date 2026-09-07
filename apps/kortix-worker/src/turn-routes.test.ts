@@ -3544,3 +3544,285 @@ describe('context-only prompts', () => {
     }
   });
 });
+
+describe("prompt tool controls", () => {
+  async function fixture(
+    options: {
+      items?: SessionLogItem[];
+      beforeResponse?: (body: any, index: number) => Promise<void>;
+      delta?: (index: number) => Record<string, unknown>;
+      providerStatus?: number;
+    } = {},
+  ) {
+    const requests: any[] = [];
+    const provider = await listen(
+      createServer(async (req, res) => {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw);
+        requests.push(body);
+        const index = requests.length - 1;
+        await options.beforeResponse?.(body, index);
+        if (options.providerStatus) {
+          res
+            .writeHead(options.providerStatus, {
+              "content-type": "application/json",
+            })
+            .end(
+              JSON.stringify({
+                error: { message: "Fixture provider failure." },
+              }),
+            );
+          return;
+        }
+        const delta = options.delta?.(index) ?? {
+          role: "assistant",
+          content: "CONTROL_PROOF",
+        };
+        res.writeHead(200, { "content-type": "text/event-stream" }).end(
+          "data: " +
+            JSON.stringify({
+              id: `controls-${index}`,
+              model: "openai/gpt-4.1",
+              choices: [
+                {
+                  index: 0,
+                  delta,
+                  finish_reason: delta.tool_calls ? "tool_calls" : "stop",
+                },
+              ],
+            }) +
+            "\n\ndata: [DONE]\n\n",
+        );
+      }),
+    );
+    const config = {
+      port: 0,
+      envUrl: "http://127.0.0.1:1",
+      envUrlExplicit: true,
+      envCwd: "/workspace",
+      systemPrompt: "Follow the user.",
+      modelMode: "real" as const,
+      providerId: "openrouter",
+      modelId: "openai/gpt-4.1",
+      gatewayUrl: provider + "/v1",
+      apiKey: "provider-fixture",
+      kortixToken: "runtime-token",
+      sessionId: "tool-controls",
+      storeUrl: await sharedStore(options.items ?? []),
+      turnOwnerLeaseMs: 5,
+    };
+    const worker = await startWorker(config);
+    workers.push(worker);
+    const sessionID = await rootId(worker);
+    const send = (
+      target: typeof worker,
+      body: Record<string, unknown>,
+      endpoint = "message",
+    ) =>
+      request(target, `/session/${sessionID}/${endpoint}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ type: "text", text: "Verify tool controls." }],
+          ...body,
+        }),
+      });
+    const names = (index: number) =>
+      (requests[index]?.tools ?? []).map((tool: any) => tool.function.name);
+    return { worker, config, requests, send, names, sessionID };
+  }
+
+  test("context-only controls persist across worker replacement and exact retries cannot reset newer controls", async () => {
+    const { worker, config, requests, send, names, sessionID } =
+      await fixture();
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() }).id,
+      noReply: true,
+      tools: { edit: false, bash: false },
+    };
+    const response = await send(worker, body);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as any).info.tools).toEqual(body.tools);
+    expect(
+      ((await (await request(worker, `/session/${sessionID}`)).json()) as any)
+        .permission,
+    ).toEqual([
+      { permission: "edit", pattern: "*", action: "deny" },
+      { permission: "bash", pattern: "*", action: "deny" },
+    ]);
+    expect(requests).toHaveLength(0);
+    expect((await send(worker, {})).status).toBe(200);
+    expect(names(0)).not.toContain("bash");
+    expect(names(0)).not.toContain("write");
+    expect(names(0)).not.toContain("edit");
+    expect(names(0)).toContain("read");
+    worker.server.closeAllConnections();
+    await worker.close();
+    workers.splice(workers.indexOf(worker), 1);
+    const replacement = await startWorker(config);
+    workers.push(replacement);
+    expect((await send(replacement, { tools: {} })).status).toBe(200);
+    expect(names(1)).toEqual(names(0));
+    expect(
+      (
+        (await (
+          await request(replacement, `/session/${sessionID}`)
+        ).json()) as any
+      ).permission,
+    ).toEqual([
+      { permission: "edit", pattern: "*", action: "deny" },
+      { permission: "bash", pattern: "*", action: "deny" },
+    ]);
+    const messages = (await (
+      await request(replacement, `/session/${sessionID}/message`)
+    ).json()) as any[];
+    expect(
+      messages.find((message) => message.info.id === body.messageID).info.tools,
+    ).toEqual(body.tools);
+    expect(
+      (await send(replacement, { tools: { todowrite: false } })).status,
+    ).toBe(200);
+    expect(names(2)).toContain("bash");
+    expect(names(2)).toContain("write");
+    expect(names(2)).not.toContain("todowrite");
+    expect((await send(replacement, body)).status).toBe(200);
+    expect(requests).toHaveLength(3);
+    expect(
+      (await send(replacement, { ...body, tools: { bash: true } })).status,
+    ).toBe(409);
+    expect((await send(replacement, {})).status).toBe(200);
+    expect(names(3)).toEqual(names(2));
+    expect(replacement.env.calls).toHaveLength(0);
+  });
+
+  test("wildcard rule order is part of retry identity", async () => {
+    const { worker, send, names } = await fixture();
+    const messageID = mintWireMessageId({ nowMs: Date.now() }).id;
+    expect(
+      (await send(worker, { messageID, tools: { "*": false, question: true } }))
+        .status,
+    ).toBe(200);
+    expect(names(0)).toEqual(["question"]);
+    expect(
+      (await send(worker, { messageID, tools: { question: true, "*": false } }))
+        .status,
+    ).toBe(409);
+    expect((await send(worker, {})).status).toBe(200);
+    expect(names(1)).toEqual(["question"]);
+  });
+
+  test("queued and cancelled tool controls cannot change the active model request", async () => {
+    const hold = deferred();
+    const { worker, send, names, requests, sessionID } = await fixture({
+      beforeResponse: async (_body, index) => {
+        if (index === 0) await hold.promise;
+      },
+    });
+    try {
+      const first = send(worker, { tools: { bash: false } });
+      await waitUntil(() => requests.length === 1);
+      const queued = mintWireMessageId({ nowMs: Date.now() }).id;
+      expect(
+        (
+          await send(
+            worker,
+            { messageID: queued, tools: { read: false } },
+            "prompt_async",
+          )
+        ).status,
+      ).toBe(204);
+      const cancelled = mintWireMessageId({ nowMs: Date.now() + 1 }).id;
+      expect(
+        (
+          await send(
+            worker,
+            { messageID: cancelled, tools: { "*": false } },
+            "prompt_async",
+          )
+        ).status,
+      ).toBe(204);
+      expect(
+        (
+          await request(worker, `/session/${sessionID}/message/${cancelled}`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(200);
+      expect(worker.agent.state.tools.map((tool) => tool.name)).not.toContain(
+        "bash",
+      );
+      expect(worker.agent.state.tools.map((tool) => tool.name)).toContain(
+        "read",
+      );
+      hold.resolve();
+      expect((await first).status).toBe(200);
+      await waitUntil(() => requests.length === 2);
+      expect((await send(worker, {})).status).toBe(200);
+      expect(names(0)).not.toContain("bash");
+      expect(names(1)).toContain("bash");
+      expect(names(1)).not.toContain("read");
+      expect(names(2)).toEqual(names(1));
+    } finally {
+      hold.resolve();
+    }
+  });
+
+  test("a provider cannot execute a tool removed by prompt controls", async () => {
+    const { worker, send, names, requests } = await fixture({
+      delta: (index) =>
+        index === 0
+          ? {
+              role: "assistant",
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "blocked-todo",
+                  type: "function",
+                  function: {
+                    name: "todowrite",
+                    arguments: JSON.stringify({
+                      todos: [
+                        {
+                          content: "Must not execute",
+                          status: "pending",
+                          priority: "high",
+                        },
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }
+          : { role: "assistant", content: "The tool was unavailable." },
+    });
+    expect((await send(worker, { tools: { todowrite: false } })).status).toBe(
+      200,
+    );
+    expect(names(0)).not.toContain("todowrite");
+    expect(requests).toHaveLength(2);
+    const result = requests[1].messages.findLast(
+      (message: any) => message.role === "tool",
+    );
+    expect(result.content).toContain("not found");
+    const todo = await request(worker, `/session/${await rootId(worker)}/todo`);
+    expect(await todo.json()).toEqual([]);
+    expect(worker.env.calls).toHaveLength(0);
+  });
+
+  test("provider failure preserves started controls for the next worker", async () => {
+    const items: SessionLogItem[] = [];
+    const failed = await fixture({ items, providerStatus: 400 });
+    const response = await failed.send(failed.worker, {
+      tools: { bash: false },
+    });
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as any).info.error).toBeDefined();
+    failed.worker.server.closeAllConnections();
+    await failed.worker.close();
+    workers.splice(workers.indexOf(failed.worker), 1);
+    const next = await fixture({ items });
+    expect((await next.send(next.worker, {})).status).toBe(200);
+    expect(next.names(0)).not.toContain("bash");
+  });
+});

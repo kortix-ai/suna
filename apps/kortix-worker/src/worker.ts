@@ -1235,6 +1235,9 @@ export async function startWorker(cfg = configFromEnv()) {
     workspace: cfg.envCwd,
     permissions,
     permissionConfig: selectedAgentConfig?.permission,
+    sessionPermission: () => Object.entries(turnJournal.toolControls).map(
+      ([permission, enabled]) => ({ permission, pattern: '*', action: enabled ? 'allow' : 'deny' }),
+    ),
     questions,
     todos: todos.list,
     // The Stop button. `session.abort` on the runtime client is POST
@@ -1412,12 +1415,15 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   };
 
-  type PromptOptions = { system?: string; noReply?: boolean };
+  type PromptOptions = { system?: string; noReply?: boolean; tools?: Record<string, boolean> };
   const admissionOptions = (options: PromptOptions): JsonObject => ({
     ...(effectiveRuntime.agent ? { agent: effectiveRuntime.agent } : {}),
     ...(effectiveRuntime.model ? { model: effectiveRuntime.model } : {}),
     ...(options.system === undefined ? {} : { system: options.system }),
     ...(options.noReply === true ? { noReply: true } : {}),
+    ...(options.tools === undefined
+      ? {}
+      : { tools: options.tools, toolsOrder: Object.keys(options.tools) }),
   });
   const turns = new Map<string, WorkerTurn>();
   const removeCancelledTurn = (messageId: string): TurnCompletion => {
@@ -1553,12 +1559,15 @@ export async function startWorker(cfg = configFromEnv()) {
       }, abortPollMs);
       let completedDurably = false;
       const originalSystemPrompt = agent.state.systemPrompt;
+      const originalTools = agent.state.tools;
       if (typeof turn.options.system === 'string' && turn.options.system) {
         agent.state.systemPrompt = [originalSystemPrompt, turn.options.system]
           .filter(Boolean)
           .join('\n');
       }
       try {
+        permissions.setToolControls(turnJournal.toolControls);
+        agent.state.tools = originalTools.filter((tool) => permissions.toolEnabled(tool.name));
         const created = Number(
           (turn.wireUserMessage.info.time as { created?: unknown } | undefined)?.created ??
             Date.now(),
@@ -1621,6 +1630,7 @@ export async function startWorker(cfg = configFromEnv()) {
         relayDrain.wake();
       } finally {
         agent.state.systemPrompt = originalSystemPrompt;
+        agent.state.tools = originalTools;
         settling = true;
         clearInterval(heartbeatTimer);
         clearInterval(abortPollTimer);
@@ -1687,6 +1697,7 @@ export async function startWorker(cfg = configFromEnv()) {
           agent: runtimeAgent,
           model: effectiveRuntime.model ?? resolvedModel,
           ...(options.system === undefined ? {} : { system: options.system }),
+          ...(options.tools === undefined ? {} : { tools: options.tools }),
         },
         parts: [
           {
@@ -2149,6 +2160,7 @@ export async function startWorker(cfg = configFromEnv()) {
             const admitted = await admitTurn(parsed.value.text, parsed.value.messageID, {
               system: parsed.value.system,
               noReply: parsed.value.noReply,
+              tools: parsed.value.tools,
             });
             if (admitted.state === 'cancelled') {
               res.writeHead(409, { 'content-type': 'application/json' }).end(

@@ -123,7 +123,7 @@ An authentication rejection before execution allows one credential refresh and
 retry. A disconnected mutation is never replayed because its side effect can
 already have committed. Read operations can retry after reconnecting.
 
-Prompt routes accept text parts, `messageID`, `system`, `noReply`, and the compiled
+Prompt routes accept text parts, `messageID`, `system`, `noReply`, `tools`, and the compiled
 agent and model. A prompt's `system` string appends to the compiled instructions
 for that prompt. It survives queued delivery and accepted-only replay. A retry
 must preserve it; changing it under the same `messageID` returns `409`. The
@@ -138,6 +138,19 @@ partially stored context without adding an interruption. Exact retries return
 the same message. `false` and an omitted `noReply` both request a model response.
 Changing between context-only and model execution under one `messageID` returns
 `409`. A context-only input does not apply its `system` to later prompts.
+
+`tools` maps permission names to booleans. A nonempty map replaces the session's
+previous prompt controls when that queued prompt starts. Omitted controls and
+an empty map retain the previous rules. These rules persist through context-only
+prompts, provider failures, and worker replacement. Cancelled queued prompts do
+not change them. A completed retry does not reapply old controls.
+
+Tool visibility and authorization follow the compiled permissions plus session
+controls. A wildcard deny removes tools from the model registry; the provider
+cannot execute a removed tool. Rule order matters and is part of retry identity.
+As in OpenCode, `edit` controls both `edit` and `write`. `write: false` alone does
+not disable the `edit` permission. The user message retains its `tools` map, and
+the session read exposes the active permission rules.
 
 Unsupported fields return `400` before admission. The body and each
 durable log item are limited to 512 KiB. Attachments and the remaining OpenCode
