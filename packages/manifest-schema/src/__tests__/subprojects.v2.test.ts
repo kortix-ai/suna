@@ -41,7 +41,7 @@ function errorsOf(yaml: string) {
 function checkFile(raw: unknown, slug = 'marketing', path?: string) {
   const issues: ManifestIssue[] = [];
   const result = validateSubprojectFileV2(raw, slug, issues, path ? { path } : undefined);
-  return { errors: issues.filter((i) => i.severity === 'error'), result };
+  return { issues, errors: issues.filter((i) => i.severity === 'error'), result };
 }
 
 function checkSet(set: ManifestSetV2) {
@@ -111,8 +111,6 @@ describe('validateSubprojectFileV2 — one kortix-<slug>.yaml', () => {
       {
         name: 'Marketing',
         description: 'Campaign work.',
-        instructions: 'Always write in British English.\n',
-        context: ['docs/brand.md', '.kortix/subprojects/marketing/'],
         agent: 'writer',
         sessions: 'shared',
         agents: {
@@ -159,30 +157,33 @@ describe('validateSubprojectFileV2 — one kortix-<slug>.yaml', () => {
     expect(errors[0]?.message).toContain("root manifest's version");
   });
 
-  test('bad field types and context paths are errors', () => {
+  test('bad field types are errors', () => {
     const { errors } = checkFile({
       name: 5,
       description: [],
-      instructions: 42,
       sessions: 'everyone',
       agent: '',
-      context: ['../secrets.md', '/abs.md', ''],
     });
-    expect(errors.map((e) => e.path).sort()).toEqual([
-      'agent',
-      'context[0]',
-      'context[1]',
-      'context[2]',
-      'description',
-      'instructions',
-      'name',
-      'sessions',
-    ]);
+    expect(errors.map((e) => e.path).sort()).toEqual(['agent', 'description', 'name', 'sessions']);
   });
 
-  test('a non-list context is an error', () => {
-    const { errors } = checkFile({ context: 'docs/brand.md' });
-    expect(errors.map((e) => e.path)).toEqual(['context']);
+  // The two fields the 2026-09-07 simplification dropped. A file written when
+  // they were valid must keep parsing — rejecting it would take its sessions
+  // and its owned agents down with it — so they warn and are ignored.
+  test('instructions and context are warnings, not errors', () => {
+    const { issues, errors, result } = checkFile(
+      { instructions: 'British English.', context: ['docs/brand.md'], agents: { writer: {} } },
+      'marketing',
+      'kortix-marketing.yaml',
+    );
+    expect(errors).toEqual([]);
+    expect(issues.map((i) => [i.path, i.severity])).toEqual([
+      ['kortix-marketing.yaml:instructions', 'warning'],
+      ['kortix-marketing.yaml:context', 'warning'],
+    ]);
+    expect(issues[0]?.message).toContain('no longer a subproject field');
+    // The rest of the file is still read.
+    expect(result.owned).toEqual(['writer']);
   });
 
   test('issue paths carry the file prefix when one is given', () => {
@@ -461,7 +462,7 @@ describe('the subproject-file JSON schema', () => {
     const schema = buildSubprojectFileV2Schema() as any;
     expect(schema.$id).toBe('https://kortix.com/schema/kortix-subproject.v2.schema.json');
     expect(schema.additionalProperties).toBe(false);
-    expect(schema.properties.instructions).toEqual({ type: 'string' });
+    expect(schema.properties.instructions).toEqual({ type: 'string', deprecated: true });
     expect(schema.properties.sessions).toEqual({ type: 'string', enum: ['private', 'shared'] });
     expect(schema.properties.kortix_version).toBe(false);
   });
@@ -485,6 +486,8 @@ describe('the subproject-file JSON schema', () => {
     expect(
       validate({
         name: 'Marketing',
+        // Still accepted by the JSON Schema so an editor keeps validating an
+        // older file; the imperative validator warns and the loader ignores it.
         context: ['docs/brand.md'],
         agent: 'writer',
         sessions: 'shared',

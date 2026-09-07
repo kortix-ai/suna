@@ -66,7 +66,6 @@ const {
   compileAgentConfig,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
-  withSubprojectInstructions,
 } = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -700,7 +699,7 @@ describe('resolveSelectedAgentConfigForSession', () => {
   });
 });
 
-// ─── subproject `context[]` → top-level `instructions` (spec §7) ────────────
+// ─── the session's subproject decides which agents compile ─────────────────
 
 const ROOT_FIXTURE = `
 kortix_version: 2
@@ -712,101 +711,58 @@ agents:
 
 `;
 
-// `kortix-marketing.yaml` — a subproject is its own file beside the root.
+// `kortix-marketing.yaml` — a subproject is its own file beside the root, and
+// the agents it declares are usable only inside it (spec 2026-09-06 §2).
 const MARKETING_FILE = `
-instructions: |
-  Always write in British English.
-context:
-  - docs/brand.md
-  - .kortix/subprojects/marketing/
-  - docs/brand.md
+agents:
+  writer:
+    workspace: runtime
 `;
 
-describe('withSubprojectInstructions', () => {
-  const compiled = { agent: { support: { prompt: 'Support body.' } } };
-  // The context list a `kortix-marketing.yaml` declares — the compiler now
-  // receives the parsed list, not the manifest, since subprojects are files.
-  const MARKETING_CONTEXT = ['docs/brand.md', '.kortix/subprojects/marketing/', 'docs/brand.md'];
-
-  test('maps files through and a trailing-slash directory to a markdown glob', () => {
-    const out = withSubprojectInstructions(compiled, MARKETING_CONTEXT);
-    expect(out.instructions).toEqual([
-      'docs/brand.md',
-      '.kortix/subprojects/marketing/**/*.md',
-    ]);
-  });
-
-  test('never rewrites the agent prompt — instructions are additive', () => {
-    const out = withSubprojectInstructions(compiled, MARKETING_CONTEXT);
-    expect(out.agent.support.prompt).toBe('Support body.');
-    expect(compiled).not.toHaveProperty('instructions');
-  });
-
-  test('emits no key for no subproject, or a subproject with no context', () => {
-    expect(withSubprojectInstructions(compiled, null)).not.toHaveProperty('instructions');
-    expect(withSubprojectInstructions(compiled, undefined)).not.toHaveProperty('instructions');
-    expect(withSubprojectInstructions(compiled, [])).not.toHaveProperty('instructions');
-  });
-
-  test('appends to instructions the config already declares, without duplicating', () => {
-    const out = withSubprojectInstructions(
-      { ...compiled, instructions: ['docs/brand.md'] },
-      MARKETING_CONTEXT,
-    );
-    expect(out.instructions).toEqual([
-      'docs/brand.md',
-      '.kortix/subprojects/marketing/**/*.md',
-    ]);
-  });
-});
-
-describe('subproject instructions through the I/O resolvers', () => {
-  test('resolveCompiledAgentConfigForSession emits them when the session names a subproject', async () => {
+describe('a session inside a subproject compiles the agents that subproject owns', () => {
+  test('resolveCompiledAgentConfigForSession folds in the owned agent, and only there', async () => {
     manifestFile = { path: 'kortix.yaml', content: ROOT_FIXTURE };
     mdFileContent = {
       '.kortix/opencode/agents/support.md': 'Support body.',
+      '.kortix/opencode/agents/writer.md': 'Writer body.',
       'kortix-marketing.yaml': MARKETING_FILE,
     };
 
-    const withSub = JSON.parse(
+    const inSubproject = JSON.parse(
       (await resolveCompiledAgentConfigForSession(PROJECT, 'main', {
         subproject: 'marketing',
       }))!,
     );
-    expect(withSub.instructions).toEqual([
-      'docs/brand.md',
-      '.kortix/subprojects/marketing/**/*.md',
-    ]);
-    expect(withSub.agent.support.prompt).toBe('Support body.');
+    expect(Object.keys(inSubproject.agent).sort()).toEqual(['support', 'writer']);
+    expect(inSubproject.agent.writer.prompt).toBe('Writer body.');
 
-    const without = JSON.parse((await resolveCompiledAgentConfigForSession(PROJECT, 'main'))!);
-    expect(without).not.toHaveProperty('instructions');
-    expect(
-      JSON.parse(
-        (await resolveCompiledAgentConfigForSession(PROJECT, 'main', { subproject: 'gone' }))!,
-      ),
-    ).not.toHaveProperty('instructions');
+    const projectLevel = JSON.parse(
+      (await resolveCompiledAgentConfigForSession(PROJECT, 'main'))!,
+    );
+    expect(Object.keys(projectLevel.agent)).toEqual(['support']);
+
+    // An out-of-date session row naming a subproject that is gone still boots.
+    const stale = JSON.parse(
+      (await resolveCompiledAgentConfigForSession(PROJECT, 'main', { subproject: 'gone' }))!,
+    );
+    expect(Object.keys(stale.agent)).toEqual(['support']);
   });
 
-  test('resolveSelectedAgentConfigForSession emits them for a restricted session too', async () => {
+  test('resolveSelectedAgentConfigForSession can select an owned agent', async () => {
     manifestFile = { path: 'kortix.yaml', content: ROOT_FIXTURE };
     mdFileContent = {
-      '.kortix/opencode/agents/support.md': 'Support body.',
+      '.kortix/opencode/agents/writer.md': 'Writer body.',
       'kortix-marketing.yaml': MARKETING_FILE,
     };
 
     const compiled = JSON.parse(
-      await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main', {
+      await resolveSelectedAgentConfigForSession(PROJECT, 'writer', 'main', {
         subproject: 'marketing',
       }),
     );
-    expect(compiled.instructions).toEqual([
-      'docs/brand.md',
-      '.kortix/subprojects/marketing/**/*.md',
-    ]);
-    expect(compiled.agent.support.prompt).toBe('Support body.');
-    expect(
-      JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')),
-    ).not.toHaveProperty('instructions');
+    expect(compiled.agent.writer.prompt).toBe('Writer body.');
+    await expect(
+      resolveSelectedAgentConfigForSession(PROJECT, 'writer', 'main'),
+    ).rejects.toThrow('not declared');
   });
 });

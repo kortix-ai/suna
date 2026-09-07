@@ -35,11 +35,6 @@ import {
 const MARKETING = `
 name: Marketing
 description: Campaign work.
-instructions: |
-  Always write in British English.
-context:
-  - docs/brand.md
-  - .kortix/subprojects/marketing/
 agent: writer
 sessions: shared
 agents:
@@ -114,8 +109,6 @@ describe('parseSubprojectFile', () => {
     expect(spec.path).toBe('kortix-marketing.yaml');
     expect(spec.name).toBe('Marketing');
     expect(spec.description).toBe('Campaign work.');
-    expect(spec.instructions).toContain('British English');
-    expect(spec.context).toEqual(['docs/brand.md', '.kortix/subprojects/marketing/']);
     expect(spec.agent).toBe('writer');
     expect(spec.sessions).toBe('shared');
     expect(spec.agents).toEqual(['writer', 'researcher']);
@@ -136,8 +129,6 @@ describe('parseSubprojectFile', () => {
     expect(result.spec).toMatchObject({
       name: 'yo',
       description: null,
-      instructions: null,
-      context: [],
       agent: null,
       sessions: 'private',
       agents: [],
@@ -151,7 +142,6 @@ describe('parseSubprojectFile', () => {
     const cases: Array<[string, string, string]> = [
       ['marketing', 'name: [unclosed', 'not valid YAML'],
       ['marketing', 'sessions: public', 'sessions'],
-      ['marketing', 'context: ["../secrets"]', 'context'],
       ['marketing', 'instruction: oops', 'instruction'],
       ['Bad Slug', 'name: x', 'slug'],
       ['marketing', 'kortix_version: 2', 'kortix_version'],
@@ -238,21 +228,11 @@ describe('file round-trip', () => {
     const parsed = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
     if (!parsed.ok) throw new Error(parsed.error.error);
     const entry = subprojectSpecToFileEntry(parsed.spec);
-    expect(Object.keys(entry)).toEqual([
-      'name',
-      'description',
-      'instructions',
-      'context',
-      'agent',
-      'sessions',
-      'agents',
-    ]);
+    expect(Object.keys(entry)).toEqual(['name', 'description', 'agent', 'sessions', 'agents']);
     const minimal: SubprojectSpec = {
       ...parsed.spec,
       name: 'marketing',
       description: null,
-      instructions: null,
-      context: [],
       agent: null,
       sessions: 'private',
       agentsRaw: null,
@@ -295,18 +275,6 @@ agents:
     secrets: all
   writer:
     secrets: all
-subprojects:
-  marketing:
-    name: Marketing
-    description: Campaign work.
-    instructions: |
-      Always write in British English.
-    context:
-      - docs/brand.md
-      - .kortix/subprojects/marketing/
-    agent: writer
-    sessions: shared
-  research: {}
 triggers:
   - slug: weekly
     type: cron

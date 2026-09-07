@@ -59,18 +59,14 @@ export interface ProjectConfigSummary {
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
-  /** The manifest's `subprojects:` map, access-filtered for the reader by
-   *  `filterConfigResourcesForUser`. `instructions` is deliberately NOT here —
-   *  the /detail bundle only reports WHETHER a subproject has standing
-   *  instructions; the text itself comes from the subprojects routes. */
+  /** The project's `kortix-<slug>.yaml` files, access-filtered for the reader
+   *  by `filterConfigResourcesForUser`. */
   subprojects: Array<{
     slug: string;
     name: string;
     description: string | null;
     agent: string | null;
     sessions: 'private' | 'shared';
-    context: string[];
-    has_instructions: boolean;
     /** Agents usable here beyond the globals — owned or referenced, file order. */
     agents: string[];
   }>;

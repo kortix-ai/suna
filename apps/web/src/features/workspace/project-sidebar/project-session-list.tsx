@@ -35,6 +35,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { MoveSessionMenu } from '@/features/subprojects/move-session-menu';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -946,6 +947,9 @@ function ProjectSessionRow({
                 ? 'Share'
                 : tI18nComplete.raw('textadc01d813da0')}
             </DropdownMenuItem>
+            {/* Between Share and the lifecycle block: filing a session is an
+                access decision, not a lifecycle one. */}
+            <MoveSessionMenu session={session} />
             <DropdownMenuItem
               className="cursor-pointer"
               disabled={isRestarting}

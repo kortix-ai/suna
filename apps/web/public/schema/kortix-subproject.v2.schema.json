@@ -12,7 +12,8 @@
       "type": "string"
     },
     "instructions": {
-      "type": "string"
+      "type": "string",
+      "deprecated": true
     },
     "context": {
       "type": "array",
@@ -22,7 +23,8 @@
         "not": {
           "pattern": "^/|(^|/)\\.\\.($|/)"
         }
-      }
+      },
+      "deprecated": true
     },
     "agent": {
       "type": "string",

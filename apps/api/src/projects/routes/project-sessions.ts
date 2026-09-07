@@ -37,7 +37,13 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
 import { assertSubprojectAccessible, subprojectViewerAccess } from '../lib/subproject-access';
-import { loadProjectSubprojects } from '../subprojects';
+import { loadProjectAgents } from '../agents';
+import {
+  agentUsableIn,
+  loadProjectSubprojects,
+  usableAgentNames,
+  type SubprojectSpec,
+} from '../subprojects';
 import { withProjectGitAuth } from '../lib/git';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
@@ -503,7 +509,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(SessionSchema, 'The updated session'),
-        ...errors(400, 404),
+        ...errors(400, 403, 404),
     },
   }),
   async (c) => {
@@ -531,7 +537,7 @@ projectsApp.openapi(
     return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
 
-  const allowedFields = ['name', 'metadata'];
+  const allowedFields = ['name', 'metadata', 'subproject'];
   const unknownField = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unknownField) {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
@@ -575,6 +581,73 @@ projectsApp.openapi(
   const existing = visible.row;
 
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
+
+  // MOVE — `subproject: "<slug>"` files the session under that subproject,
+  // `null`/`""` moves it back to the project level. The row is the only thing
+  // that changes: every server-side gate (the list fold, the compile, the
+  // env) reads `project_sessions.subproject`, so the move is complete the
+  // moment it commits. A sandbox that is already running keeps the
+  // KORTIX_SUBPROJECT it booted with until its next start — the in-sandbox
+  // CLI's `sessions new` inheritance is the only thing that reads it there.
+  if (hasOwn(body, 'subproject')) {
+    const target = normalizeString(body.subproject);
+    if (target !== (existing.subproject ?? null)) {
+      // A move changes WHO CAN READ the session: everyone granted a `shared`
+      // subproject reads every session in it (spec §2). That is the sharing
+      // decision, so it takes the sharing gate — owner-governed, not
+      // manager-tier, for the same reason PUT /sharing is.
+      if (!visible.canManageSharing) {
+        return c.json({ error: SESSION_SHARING_OWNER_ONLY_ERROR }, 403);
+      }
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const declared = await loadProjectSubprojects(gitProject);
+      let spec: SubprojectSpec | null = null;
+      if (target) {
+        spec = declared.specs.find((s) => s.slug === target) ?? null;
+        if (!spec) {
+          return c.json(
+            {
+              error: `Subproject "${target}" is not declared in this project's manifest`,
+              code: 'SUBPROJECT_NOT_DECLARED',
+            },
+            400,
+          );
+        }
+        // Throws the 403 `subproject_not_accessible` with the usable set: a
+        // caller cannot file a session into a subproject they do not hold.
+        await assertSubprojectAccessible(
+          c,
+          loaded,
+          projectId,
+          target,
+          declared.specs.map((s) => s.slug),
+        );
+      }
+      // The session's agent has to be usable where it lands (spec 2026-09-06
+      // §2): an agent a subproject file owns runs only there and in the
+      // subprojects that reference it. Refused up front rather than left to
+      // fail at the session's next start.
+      const agentName = normalizeString(existing.agentName);
+      if (agentName) {
+        const agents = await loadProjectAgents(gitProject);
+        if (
+          agents.specs.some((a) => a.name === agentName) &&
+          !agentUsableIn(agents, spec, agentName)
+        ) {
+          const owner = agents.specs.find((a) => a.name === agentName)?.subproject;
+          return c.json(
+            {
+              error: `This session runs "${agentName}", which is not usable ${target ? `in subproject "${target}"` : 'at the project level'} — it is declared by subproject "${owner}" (kortix-${owner}.yaml). Reference it there with \`agents.${agentName}: { from: ${owner} }\`, or move the session somewhere it runs.`,
+              code: 'AGENT_NOT_IN_SUBPROJECT',
+              usable_agents: usableAgentNames(agents, spec),
+            },
+            400,
+          );
+        }
+      }
+      updates.subproject = target;
+    }
+  }
 
   // A user-set name is the AUTHORITATIVE display name. It lives in
   // metadata.custom_name — a separate key from metadata.name (the server-side

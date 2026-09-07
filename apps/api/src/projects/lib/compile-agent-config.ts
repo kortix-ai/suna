@@ -50,14 +50,7 @@ import {
   type RuntimeV2,
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
-import {
-  subprojectContextInstructions,
-} from './subproject-envelope';
-import {
-  agentBlocksUsableIn,
-  loadProjectSubprojectsAtRef,
-  type SubprojectSpec,
-} from '../subprojects';
+import { agentBlocksUsableIn, loadProjectSubprojectsAtRef } from '../subprojects';
 import {
   isRepoFileNotFoundError,
   readManifestFromRepo,
@@ -303,31 +296,6 @@ export function compileSelectedAgentConfig(
 }
 
 /**
- * Overlay the session's subproject `context[]` onto a compiled config as
- * OpenCode top-level `instructions` (spec §7). Pure.
- *
- * The agent `prompt` is deliberately untouched: it REPLACES OpenCode's default
- * system prompt, so folding standing context into it would silently rewrite
- * every agent's behavior. `instructions` is additive and is exactly the
- * mechanism the daemon already uses for the secret-capability guide.
- *
- * A slug that is not declared at this ref contributes nothing (no key), so an
- * out-of-date session row can never break a compile.
- */
-export function withSubprojectInstructions(
-  compiled: OpencodeConfig,
-  context: readonly string[] | null | undefined,
-): OpencodeConfig {
-  if (!context?.length) return compiled;
-  const existing = Array.isArray(compiled.instructions) ? compiled.instructions : [];
-  const instructions = [...existing];
-  for (const entry of subprojectContextInstructions(context)) {
-    if (!instructions.includes(entry)) instructions.push(entry);
-  }
-  return instructions.length > 0 ? { ...compiled, instructions } : compiled;
-}
-
-/**
  * Compile one agent: parse its `.md` (if supplied), copy every recognized
  * behavioral frontmatter field through unchanged, then overlay Kortix
  * governance — `enabled: false` forces `disable: true` (the one field where
@@ -542,8 +510,8 @@ export async function resolveCompiledAgentConfigForSession(
     // ones its file owns or references (spec 2026-09-06 §2). A project-level
     // session compiles the root's only. Read at the session's ref, like the
     // manifest itself.
-    const subproject = await subprojectAtRef(project, found.path, ref, opts?.subproject);
-    const raw = withUsableAgents(rootRaw, subproject.blocks);
+    const blocks = await subprojectAgentBlocksAtRef(project, found.path, ref, opts?.subproject);
+    const raw = withUsableAgents(rootRaw, blocks);
     const v2 = raw as unknown as ManifestV2;
     const agents =
       v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
@@ -575,9 +543,7 @@ export async function resolveCompiledAgentConfigForSession(
     );
 
     const compiled = compileAgentConfig(raw, 'opencode', agentMdFiles);
-    return compiled
-      ? JSON.stringify(withSubprojectInstructions(compiled, subproject.spec?.context))
-      : null;
+    return compiled ? JSON.stringify(compiled) : null;
   } catch (err) {
     console.warn(
       `[compile-agent-config] project ${project.projectId}: compile failed, session boots without a compiled agent config: ${(err as Error).message}`,
@@ -615,8 +581,8 @@ export async function resolveSelectedAgentConfigForSession(
     );
   }
 
-  const subproject = await subprojectAtRef(project, found.path, ref, opts?.subproject);
-  const raw = withUsableAgents(rootRaw, subproject.blocks);
+  const blocks = await subprojectAgentBlocksAtRef(project, found.path, ref, opts?.subproject);
+  const raw = withUsableAgents(rootRaw, blocks);
   const path = agentMarkdownPath(raw, agentName);
   const agentMdFiles: Record<string, string> = {};
   try {
@@ -625,29 +591,21 @@ export async function resolveSelectedAgentConfigForSession(
     if (!isRepoFileNotFoundError(err)) throw err;
   }
 
-  return JSON.stringify(
-    withSubprojectInstructions(
-      compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles),
-      subproject.spec?.context,
-    ),
-  );
+  return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
 }
 
-/** The session's subproject (if any) at `ref`: its spec, and the raw agent
- *  blocks usable there beyond the root's. A slug not declared at this ref
- *  contributes nothing, so an out-of-date session row never breaks a compile. */
-async function subprojectAtRef(
+/** The raw agent blocks usable inside the session's subproject at `ref`,
+ *  beyond the root's. A slug not declared at this ref contributes nothing, so
+ *  an out-of-date session row never breaks a compile. */
+async function subprojectAgentBlocksAtRef(
   project: GitBackedProject,
   manifestPath: string,
   ref: string,
   slug: string | null | undefined,
-): Promise<{ spec: SubprojectSpec | null; blocks: Record<string, unknown> }> {
-  if (!slug) return { spec: null, blocks: {} };
+): Promise<Record<string, unknown>> {
+  if (!slug) return {};
   const declared = await loadProjectSubprojectsAtRef(project, { manifestPath, ref });
-  return {
-    spec: declared.specs.find((s) => s.slug === slug) ?? null,
-    blocks: agentBlocksUsableIn(declared.specs, slug),
-  };
+  return agentBlocksUsableIn(declared.specs, slug);
 }
 
 /** The root manifest with the subproject's usable agent blocks folded into

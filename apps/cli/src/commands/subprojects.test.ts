@@ -5,7 +5,6 @@ import {
   buildCreateBody,
   buildUpdateBody,
   expiresAtEndOfDay,
-  readInstructionsFlag,
   resolveOptionalField,
   validateSessionsMode,
 } from './subprojects.ts';
@@ -38,7 +37,7 @@ describe('takeFlagValue — explicit empty value', () => {
 
 describe('buildCreateBody', () => {
   test('required name only', () => {
-    expect(buildCreateBody('Marketing', { context: [] })).toEqual({ name: 'Marketing' });
+    expect(buildCreateBody('Marketing', {})).toEqual({ name: 'Marketing' });
   });
 
   test('every optional field, slugified explicitly', () => {
@@ -47,8 +46,6 @@ describe('buildCreateBody', () => {
         slug: 'mktg',
         description: 'Campaign work.',
         agent: 'writer',
-        instructions: 'Always write in British English.\n',
-        context: ['docs/brand.md', '.kortix/subprojects/mktg/'],
         sessions: 'shared',
       }),
     ).toEqual({
@@ -56,14 +53,8 @@ describe('buildCreateBody', () => {
       slug: 'mktg',
       description: 'Campaign work.',
       agent: 'writer',
-      instructions: 'Always write in British English.\n',
-      context: ['docs/brand.md', '.kortix/subprojects/mktg/'],
       sessions: 'shared',
     });
-  });
-
-  test('an empty --context list is omitted, not sent as []', () => {
-    expect(buildCreateBody('X', { context: [] })).toEqual({ name: 'X' });
   });
 });
 
@@ -85,10 +76,6 @@ describe('buildUpdateBody', () => {
     expect(buildUpdateBody({ name: resolveOptionalField(undefined) })).toEqual({});
   });
 
-  test('context replaces the whole list when passed', () => {
-    expect(buildUpdateBody({ context: ['a.md', 'b.md'] })).toEqual({ context: ['a.md', 'b.md'] });
-  });
-
   test('a no-op update produces an empty body', () => {
     expect(buildUpdateBody({})).toEqual({});
   });
@@ -103,15 +90,6 @@ describe('resolveOptionalField', () => {
   });
   test('a real value passes through unchanged', () => {
     expect(resolveOptionalField('writer')).toBe('writer');
-  });
-});
-
-describe('readInstructionsFlag', () => {
-  test('undefined stays undefined — omit', () => {
-    expect(readInstructionsFlag(undefined)).toBeUndefined();
-  });
-  test('empty string clears — null', () => {
-    expect(readInstructionsFlag('')).toBeNull();
   });
 });
 

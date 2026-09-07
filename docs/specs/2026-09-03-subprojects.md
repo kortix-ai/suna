@@ -4,6 +4,11 @@
 > `kortix-<slug>.yaml`, and may own agents; the inline `subprojects:` map in
 > §2–§3 no longer exists. See `2026-09-06-subproject-files-and-scoped-agents.md`.
 
+> **Superseded in part (2026-09-07).** `instructions` and `context` are gone —
+> from the file, the API, the SDK, the CLI, the sandbox envelope and the page —
+> and a session can now be moved between subprojects. See
+> `2026-09-07-subprojects-simplified.md`.
+
 
 Branch `subprojects`, worktree `../suna-subprojects` (web `13400`, api `13408`,
 isolated Supabase `kortix-wt-subprojects`). Implementation is split into work

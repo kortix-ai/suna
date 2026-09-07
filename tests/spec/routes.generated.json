@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 642,
+  "count": 640,
   "routes": [
     {
       "method": "GET",
@@ -2145,14 +2145,6 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/subprojects/:slug"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/subprojects/:slug/context"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/subprojects/:slug/context"
     },
     {
       "method": "GET",

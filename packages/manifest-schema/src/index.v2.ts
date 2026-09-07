@@ -167,10 +167,9 @@ export interface AgentReferenceV2 {
 
 /**
  * The body of one `kortix-<slug>.yaml` — a Claude/ChatGPT-style "project"
- * INSIDE a Kortix project. It groups sessions, carries its own standing
- * instructions and context files, may pin a default agent, owns the triggers
- * that name it (`triggers[].subproject`), and declares the agents that are
- * usable only inside it. Identity is the FILENAME, so there is no `slug` key
+ * INSIDE a Kortix project. It groups sessions, may pin a default agent, owns
+ * the triggers that name it (`triggers[].subproject`), and declares the agents
+ * that are usable only inside it. Identity is the FILENAME, so there is no `slug` key
  * and no `kortix_version` (the root manifest's version applies).
  * Authorization is an IAM object grant (`object_type = 'subproject'`, closed
  * by default, like agents) and lives server-side — nothing here is a
@@ -180,11 +179,6 @@ export interface SubprojectFileV2 {
   /** Display name. Defaults to the slug. */
   name?: string;
   description?: string;
-  /** Standing instructions, appended to the agent's system prompt for every
-   *  session inside this subproject. Inline markdown. */
-  instructions?: string;
-  /** Repo-relative files or directories the agent is told to read first. */
-  context?: string[];
   /** Default agent for sessions started inside this subproject. Must be
    *  usable here (global, owned, or referenced); omit to fall back to
    *  `default_agent`. A default, not a binding: the person may pick any
@@ -759,24 +753,13 @@ export function rejectChannelsV2(node: unknown, path: string, issues: ManifestIs
 }
 
 /** The keys a `kortix-<slug>.yaml` may carry. Anything else is an error, so a
- *  typo (`instruction:`) cannot silently become "no instructions". */
-const SUBPROJECT_FILE_KEYS_V2 = new Set([
-  'name',
-  'description',
-  'instructions',
-  'context',
-  'agent',
-  'sessions',
-  'agents',
-]);
+ *  typo (`agnet:`) cannot silently become "no agent". */
+const SUBPROJECT_FILE_KEYS_V2 = new Set(['name', 'description', 'agent', 'sessions', 'agents']);
 
-/** A repo-relative path: non-empty, not absolute, no `..` segment. */
-function isRepoRelativePath(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  const p = value.trim();
-  if (!p || p.startsWith('/') || p.startsWith('\\')) return false;
-  return !p.split(/[\\/]/).some((segment) => segment === '..');
-}
+/** Keys this version dropped (2026-09-07). Ignored with a warning rather than
+ *  rejected: a file written when they were valid must not become unparseable,
+ *  which would take its sessions and its owned agents down with it. */
+const REMOVED_SUBPROJECT_FILE_KEYS_V2 = new Set(['instructions', 'context']);
 
 /** The agents one subproject file declares: the ones it OWNS (a block) and the
  *  ones it BORROWS (`{ from }`). Cross-file checks run on these — see
@@ -832,6 +815,14 @@ export function validateSubprojectFileV2(
   }
   for (const key of Object.keys(raw)) {
     if (key === 'kortix_version' || SUBPROJECT_FILE_KEYS_V2.has(key)) continue;
+    if (REMOVED_SUBPROJECT_FILE_KEYS_V2.has(key)) {
+      issues.push({
+        path: at(key),
+        message: `"${key}" is no longer a subproject field and is ignored — delete it.`,
+        severity: 'warning',
+      });
+      continue;
+    }
     issues.push({
       path: at(key),
       message: `"${key}" is not a subproject field (allowed: ${[...SUBPROJECT_FILE_KEYS_V2].join(', ')}).`,
@@ -841,7 +832,6 @@ export function validateSubprojectFileV2(
 
   expectStringOrAbsent(raw.name, at('name'), issues);
   expectStringOrAbsent(raw.description, at('description'), issues);
-  expectStringOrAbsent(raw.instructions, at('instructions'), issues);
 
   if (
     raw.sessions !== undefined &&
@@ -862,27 +852,6 @@ export function validateSubprojectFileV2(
         message:
           'agent must be a non-empty string naming an agent usable in this subproject; omit it to fall back to `default_agent`.',
         severity: 'error',
-      });
-    }
-  }
-
-  if (raw.context !== undefined && raw.context !== null) {
-    if (!Array.isArray(raw.context)) {
-      issues.push({
-        path: at('context'),
-        message: 'context must be a list of repo-relative paths.',
-        severity: 'error',
-      });
-    } else {
-      raw.context.forEach((item, i) => {
-        if (!isRepoRelativePath(item)) {
-          issues.push({
-            path: at(`context[${i}]`),
-            message:
-              'each context entry must be a non-empty repo-relative path (no leading "/" and no "..").',
-            severity: 'error',
-          });
-        }
       });
     }
   }

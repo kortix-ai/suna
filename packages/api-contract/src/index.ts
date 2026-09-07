@@ -1273,9 +1273,8 @@ export const SubprojectSessionsModeSchema = z.enum(SUBPROJECT_SESSIONS_MODES);
 export type SubprojectSessionsMode = z.infer<typeof SubprojectSessionsModeSchema>;
 
 /**
- * One `kortix.yaml` → `subprojects.<slug>` block as the API serves it: a named
- * container inside a project that groups sessions, carries standing
- * instructions plus context paths, may pin a default agent, and owns the
+ * One `kortix-<slug>.yaml` as the API serves it: a named container inside a
+ * project that groups sessions, may pin a default agent, and owns the
  * triggers naming it. Who may use one is an IAM object grant
  * (`object_type = 'subproject'`), never a field here.
  */
@@ -1284,10 +1283,6 @@ export const SubprojectSchema = z.object({
   /** Display label; defaults to the slug. */
   name: z.string(),
   description: z.string().nullable(),
-  /** Standing instructions, inline markdown. */
-  instructions: z.string().nullable(),
-  /** Repo-relative files/directories the agent reads first. Always an array. */
-  context: z.array(z.string()),
   /** Default agent for sessions started here — a default, not a binding. */
   agent: z.string().nullable(),
   sessions: SubprojectSessionsModeSchema,

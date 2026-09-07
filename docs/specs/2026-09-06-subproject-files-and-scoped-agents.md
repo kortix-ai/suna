@@ -1,5 +1,8 @@
 # Subproject files and subproject-scoped agents — spec addendum (2026-09-06)
 
+> **Superseded in part (2026-09-07).** A subproject file no longer carries
+> `instructions` or `context`. See `2026-09-07-subprojects-simplified.md`.
+
 Extends `2026-09-03-subprojects.md`. Two decisions from the user on
 2026-09-06: (1) every subproject lives in its own file, `kortix-<slug>.yaml`;
 (2) an agent is either global (declared in the root `kortix.yaml`) or owned by

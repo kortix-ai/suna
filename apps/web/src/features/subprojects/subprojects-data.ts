@@ -28,7 +28,8 @@ import {
   type ProjectTrigger,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 
 /**
  * Every subproject the caller may see, sorted by slug by the API.
@@ -42,6 +43,18 @@ export function useProjectSubprojects(projectId: string, enabled = true) {
     enabled: enabled && !!projectId,
     ...contract('config'),
   });
+}
+
+/** Refetch the list AND the single-item entry after a write. Both keys move
+ *  together — the page reads one, the sidebar and the pickers read the other. */
+export function useInvalidateSubproject(projectId: string, slug: string) {
+  const queryClient = useQueryClient();
+  return useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: qk.project.subprojects(projectId) }),
+      queryClient.invalidateQueries({ queryKey: qk.project.subproject(projectId, slug) }),
+    ]);
+  }, [queryClient, projectId, slug]);
 }
 
 /** The subproject a trigger is filed under, or null. See the SDK gap above. */

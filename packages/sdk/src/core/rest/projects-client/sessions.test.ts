@@ -524,6 +524,20 @@ test('updateProjectSession PATCHes the name/metadata input', async () => {
   expect(last().body).toEqual({ name: 'Renamed' });
 });
 
+test('updateProjectSession moves a session between subprojects, and back out', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', subproject: 'marketing' } };
+  const moved = await updateProjectSession('P1', 'S1', { subproject: 'marketing' });
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ subproject: 'marketing' });
+  expect(moved.subproject).toBe('marketing');
+
+  // `null` is the move OUT — back to the project level. It has to reach the
+  // wire as `null`, not be dropped as "no change".
+  nextResponse = { status: 200, body: { session_id: 'S1', subproject: null } };
+  await updateProjectSession('P1', 'S1', { subproject: null });
+  expect(last().body).toEqual({ subproject: null });
+});
+
 test('deleteProjectSession DELETEs the session', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteProjectSession('P1', 'S1');

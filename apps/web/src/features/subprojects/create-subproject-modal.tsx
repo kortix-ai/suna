@@ -1,14 +1,11 @@
 'use client';
 
 /**
- * Declare a subproject — name, one line of description, a default agent, and
- * the standing instructions.
+ * Declare a subproject — name, one line of description, a default agent.
  *
- * Everything else a subproject owns (context files, scheduled work, who may
- * use it) is added on its page, where there is room to see what you already
- * have. This modal asks only what the manifest block cannot be written
- * without, so the sidebar's `+` is one short form and then you are on the
- * page.
+ * That is the whole file (`kortix-<slug>.yaml`). Who may use it is granted on
+ * its page; its scheduled work is filed from the project's triggers. Anything
+ * richer belongs in the file itself, written by a person or an agent.
  *
  * The slug is derived server-side from the name (`slugify`), and it is
  * immutable — that is why it is not asked for here.
@@ -34,7 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { createProjectSubproject, getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -59,7 +55,6 @@ export function CreateSubprojectModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [agent, setAgent] = useState(NO_AGENT);
-  const [instructions, setInstructions] = useState('');
 
   // The same `qk.project.detail` entry every other surface reads, so this
   // costs no extra request. `config.agents` is already narrowed server-side to
@@ -81,7 +76,6 @@ export function CreateSubprojectModal({
     setName('');
     setDescription('');
     setAgent(NO_AGENT);
-    setInstructions('');
   };
 
   const create = useMutation({
@@ -90,7 +84,6 @@ export function CreateSubprojectModal({
         name: name.trim(),
         ...(description.trim() ? { description: description.trim() } : {}),
         ...(agent !== NO_AGENT ? { agent } : {}),
-        ...(instructions.trim() ? { instructions } : {}),
       }),
     onSuccess: async (subproject) => {
       successToast(`${subproject.name} created`);
@@ -115,8 +108,8 @@ export function CreateSubprojectModal({
         <ModalHeader>
           <ModalTitle>New subproject</ModalTitle>
           <ModalDescription>
-            A named container inside this project — its own sessions, standing instructions,
-            reference files and scheduled work.
+            A named container inside this project — its own sessions, its own default agent,
+            and its own scheduled work.
           </ModalDescription>
         </ModalHeader>
 
@@ -180,24 +173,6 @@ export function CreateSubprojectModal({
               </FieldDescription>
             </Field>
 
-            <Field className="gap-1.5">
-              <FieldLabel htmlFor="subproject-instructions">
-                Instructions
-                <span className="text-muted-foreground ml-2 text-xs font-normal">optional</span>
-              </FieldLabel>
-              <Textarea
-                id="subproject-instructions"
-                value={instructions}
-                onChange={(event) => setInstructions(event.target.value)}
-                placeholder="Always write in British English."
-                minHeight={96}
-                className="text-sm"
-                disabled={create.isPending}
-              />
-              <FieldDescription>
-                Markdown, told to the agent at the start of every session in this subproject.
-              </FieldDescription>
-            </Field>
           </ModalBody>
 
           <ModalFooter className="sm:justify-between">

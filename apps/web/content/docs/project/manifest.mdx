@@ -82,17 +82,6 @@ agents:
     kortix_cli: [project.gitops.push]
     secrets: [GITHUB_AGENT_TOKEN]
 
-subprojects:
-  marketing:
-    name: Marketing
-    description: Campaign work.
-    instructions: |
-      Always write in British English.
-    context:
-      - docs/brand.md
-    agent: writer
-    sessions: private
-
 triggers:
   - slug: daily-digest
     type: cron
@@ -116,7 +105,6 @@ triggers:
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no       | sandbox image(s) and hardware                                                              |
 | `opencode.config_dir`                               | no       | default `.kortix/opencode`                                                                 |
 | `triggers`                                          | no       | list of cron, webhook, and monitor triggers                                                |
-| `subprojects`                                       | no       | slug-to-block map of named containers inside the project                                   |
 | `connectors`                                        | no       | list of connector definitions                                                              |
 | `policy.default_mode`                               | no       | `allow_all` (default) or `risk`; project-wide connector approval mode                      |
 | `agents`                                            | yes      | name-to-block governance map; must not be empty                                            |
@@ -247,17 +235,12 @@ Cron triggers need exactly one of `cron` (a 6-field expression) or `run_at` (a o
 
 ## Subprojects — `kortix-<slug>.yaml`
 
-A subproject is a named container inside the project: it groups sessions under one effort, gives the agent standing instructions and reference files, owns the triggers that name it, may declare agents of its own, and is an IAM object granted like an agent. Each subproject is **one file beside the root manifest**, named `kortix-<slug>.yaml`; the slug is the filename. There is no `subprojects:` key in `kortix.yaml` — the root validator rejects one.
+A subproject is a named container inside the project: it groups sessions under one effort, owns the triggers that name it, may declare agents of its own, and is an IAM object granted like an agent. Each subproject is **one file beside the root manifest**, named `kortix-<slug>.yaml`; the slug is the filename. There is no `subprojects:` key in `kortix.yaml` — the root validator rejects one.
 
 ```yaml
 # kortix-marketing.yaml
 name: Marketing
 description: Campaign work.
-instructions: |
-  Always write in British English.
-context:
-  - docs/brand.md
-  - .kortix/subprojects/marketing/
 agent: writer                  # default for sessions started here; must be usable here
 sessions: private
 agents:
@@ -273,13 +256,11 @@ agents:
 | _(filename)_   | —          | —         | `kortix-<slug>.yaml`, `<slug>` = `[a-z0-9][a-z0-9_-]{0,127}`, in the root manifest's directory. `.yaml` only. |
 | `name`         | string     | slug      | Display label.                                                                                           |
 | `description`  | string     | —         | One-liner shown in the picker and the subproject page.                                                   |
-| `instructions` | string     | —         | Inline markdown. Delivered to the sandbox by env and rendered into the agent's standing instructions.     |
-| `context`      | `string[]` | `[]`      | Repo-relative paths — a file, or a `dir/`. No leading `/`, no `..` segment.                              |
 | `agent`        | string     | —         | Default for sessions started here, not a binding. Must be usable here (global, owned, or referenced).    |
 | `sessions`     | string     | `private` | `private` or `shared` (see below).                                                                       |
 | `agents`       | map        | —         | Agents this subproject **owns**, in the same block shape as the root's `agents:`, or **references** as `{ from: <slug> }`. |
 
-A subproject file carries no `kortix_version`; the root's version applies and must be `2`. A `kortix.toml` (v1) project has no subprojects.
+A subproject file carries no `kortix_version`; the root's version applies and must be `2`. A `kortix.toml` (v1) project has no subprojects. `instructions:` and `context:` were removed on 2026-09-07: a file that still carries either keeps parsing, `kortix validate` warns, and the next write through the API or the app drops the key.
 
 **Global and subproject-owned agents.** An agent declared in the root `kortix.yaml` is global and usable everywhere. An agent declared in `kortix-<slug>.yaml` is owned by that subproject and usable only in sessions inside it — and in any other subproject that references it with `agents.<name>: { from: <slug> }`. A reference imports use, not governance: it names an agent the target subproject owns (never a global one, never another reference) and carries no other key. Agent names are plain and unique across the root and every subproject file; `kortix validate` reports a duplicate naming both files. `default_agent` and a trigger without a subproject must name a global agent; a trigger with `subproject: <slug>` may name what is usable there. A session that names an agent where it is not usable is refused with `400 AGENT_NOT_IN_SUBPROJECT` and the list of agents that are (`usable_agents`). The composer offers the same set: the project home lists global agents, and picking a subproject adds its own.
 
@@ -291,7 +272,9 @@ Create/edit/delete need `project.customize.write` (the manifest-editing leaf, ma
 
 **Starting a session inside one.** In the web app, the chat box on the project home carries a subproject picker in the strip under it, and a subproject's own page preselects it. From code or the CLI: `sessions.create({ subproject })`, or `kortix sessions new --subproject <slug>`.
 
-**What the sandbox receives.** A session started inside a subproject gets `KORTIX_SUBPROJECT=<slug>` and `KORTIX_SUBPROJECT_CONTEXT=<json>` (`{version, slug, name, description, instructions, context[], sessions}`; `instructions` truncated at 32 KB), read from the subproject's file at the session's ref. The sandbox daemon renders that into `/tmp/kortix/subproject.md` — heading, description, instructions, and a listed `context` — and appends it to the OpenCode `instructions` file, alongside each `context` entry (a `dir/` entry expands to every markdown file under it). The compiled agent config for the session holds the global agents plus the ones usable in that subproject. A session spawned from inside a subproject session inherits the same subproject unless it passes its own `--subproject`.
+**What the sandbox receives.** A session started inside a subproject gets `KORTIX_SUBPROJECT=<slug>`, and nothing derived from it. The compiled agent config for the session holds the global agents plus the ones usable in that subproject. A session spawned from inside a subproject session inherits the same subproject unless it passes its own `--subproject`.
+
+**Moving a session.** `PATCH /projects/:id/sessions/:sessionId {"subproject": "<slug>"}` files an existing session under a subproject; `{"subproject": null}` moves it back to the project level. In the app it is `Move to` in the session's `⋯` menu, in the sidebar and on the session page. The move is owner-governed like sharing — a `shared` subproject makes its sessions readable by everyone granted it — so it needs `can_manage_sharing`, the target subproject must be declared and granted to the caller, and the session's own agent must be usable there (`400 AGENT_NOT_IN_SUBPROJECT` otherwise). A sandbox that is already running keeps the `KORTIX_SUBPROJECT` it booted with until its next start.
 
 ## `connectors:`
 

@@ -67,7 +67,6 @@ export function ProjectHomeWelcomeBody({
   onPickSuggestion,
   hero,
   below,
-  aside,
 }: {
   projectId: string;
   /** The composer input rendered in the hero position, directly under the heading. */
@@ -82,13 +81,6 @@ export function ProjectHomeWelcomeBody({
   hero?: ProjectHomeHero;
   /** Rendered under the ask group, in the column's `gap-10` rhythm. */
   below?: ReactNode;
-  /**
-   * A column to the RIGHT of the composer on wide screens (a subproject's
-   * panel of instructions, context and schedules). The heading spans both
-   * columns; the composer and `below` share the left one. Stacks under the
-   * composer below `lg`.
-   */
-  aside?: ReactNode;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // One source for the project name — see `useProjectName`'s doc comment.
@@ -144,18 +136,16 @@ export function ProjectHomeWelcomeBody({
       <div
         className={cn(
           'flex w-full shrink-0 flex-col gap-10 py-8 sm:px-4',
-          // With a panel beside it the block pins to the TOP (`mx-auto`, not
-          // `m-auto`): the panel's sections open and close, and a vertically
-          // centred column would re-centre on every toggle — the composer
-          // sliding up and down under the cursor (user, 2026-09-06).
-          aside ? 'mx-auto max-w-5xl pt-16 lg:pt-28' : 'm-auto max-w-3xl',
+          // With content under the composer the block pins to the TOP
+          // (`mx-auto`, not `m-auto`): that content grows and shrinks — a
+          // subproject's Recents list is as long as its history — and a
+          // vertically centred column would slide the composer up and down
+          // under the cursor with it (user, 2026-09-06).
+          below ? 'mx-auto max-w-3xl pt-16 lg:pt-28' : 'm-auto max-w-3xl',
         )}
       >
         <div
-          className={cn(
-            'flex w-full flex-col gap-6',
-            aside && 'lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-x-8',
-          )}
+          className="flex w-full flex-col gap-6"
         >
           {/*
               `w-full` with no `max-w`: the line runs the full column and breaks
@@ -176,7 +166,6 @@ export function ProjectHomeWelcomeBody({
           <h1
             className={cn(
               'text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl',
-              aside && 'lg:col-span-2',
             )}
           >
             {greeting.before}{' '}
@@ -244,28 +233,15 @@ export function ProjectHomeWelcomeBody({
 
           {hero?.description ? (
             <p
-              className={cn(
-                'text-muted-foreground w-full px-4 text-base text-pretty',
-                aside && 'lg:col-span-2',
-              )}
+              className="text-muted-foreground w-full px-4 text-base text-pretty"
             >
               {hero.description}
             </p>
           ) : null}
 
-          {aside ? (
-            // With a panel beside it, the composer and what sits under it share
-            // the left column, so the panel's top lines up with the card's.
-            <div className="flex min-w-0 flex-col gap-10">
-              {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
-              {below}
-            </div>
-          ) : composer ? (
-            <div className="flex w-full flex-col gap-4">{composer}</div>
-          ) : null}
-          {aside ? <aside className="min-w-0">{aside}</aside> : null}
+          {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
         </div>
-        {aside ? null : below}
+        {below}
 
         {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
             have the chat input there & that's it"). The "Get started" setup

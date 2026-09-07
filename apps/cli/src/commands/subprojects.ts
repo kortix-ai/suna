@@ -1,30 +1,24 @@
-import { basename } from 'node:path';
-import { readFileSync } from 'node:fs';
-
 import {
   emitJson,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  takeFlagValues,
 } from '../command-helpers.ts';
 import { resolveMemberId } from './grants.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// A subproject is a named container inside a project: it groups sessions,
-// gives the agent standing context, and owns scheduled work — see
-// docs/specs/2026-09-03-subprojects.md §2, §6. The manifest (kortix.yaml) is
-// the source of truth; every write here commits to it.
+// A subproject is a named container inside a project: it groups sessions and
+// owns scheduled work — see docs/specs/2026-09-03-subprojects.md §2, §6 and the
+// 2026-09-07 simplification. Its file (`kortix-<slug>.yaml`) is the source of
+// truth; every write here commits to it.
 
-/** Wire shape — SubprojectSchema, docs/specs/2026-09-03-subprojects.md §6. */
+/** Wire shape — SubprojectSchema in @kortix/api-contract. */
 export interface Subproject {
   slug: string;
   name: string;
   description: string | null;
-  instructions: string | null;
-  context: string[];
   agent: string | null;
   sessions: 'private' | 'shared';
   path: string;
@@ -60,9 +54,8 @@ const SESSIONS_MODES = ['private', 'shared'] as const;
 const HELP = help`Usage: kortix subprojects <subcommand> [options]
 
 A subproject groups sessions under a named effort inside the project, with its
-own standing instructions, reference files, default agent, and scheduled work.
-The manifest (\`kortix.yaml\` \`subprojects.<slug>\`) is the source of truth —
-every write below commits to it.
+own default agent and scheduled work. Its file (\`kortix-<slug>.yaml\`) is the
+source of truth — every write below commits to it.
 
 Subcommands:
   ls [--json]                     List subprojects you can see.
@@ -72,9 +65,6 @@ Subcommands:
   rm <slug> [--yes]               Delete a subproject. Sessions keep their
                                   history but lose the grouping; scheduled
                                   triggers naming it are un-scoped, not deleted.
-  context add <slug> <file> [--as name]
-                                  Upload a local file as subproject context.
-  context rm <slug> <path>        Drop one context entry (never deletes the repo file).
   grant <slug> (--member <id|email> | --group <id>) [--expires YYYY-MM-DD]
                                   Let a member or group use this subproject.
   revoke <slug> (--member <id|email> | --group <id>)
@@ -85,17 +75,13 @@ Create/update options:
   --name <text>          Display name (update only — \`create <name>\` is positional).
   --description <text>
   --agent <name>         Default agent for sessions started in it.
-  --instructions-file <f|->
-                         Inline standing instructions from a file, or stdin (\`-\`).
-  --context <path>       Repo-relative context path. Repeatable. On \`update\`
-                         this REPLACES the whole context[] list.
   --sessions private|shared
                          private (default): a session is visible to its
                          creator only. shared: every session in it is visible
                          to everyone granted the subproject.
 
-On \`update\`, an empty value (\`--description=\`, \`--agent=\`,
-\`--instructions-file=\`) clears that field. \`name\` cannot be cleared.
+On \`update\`, an empty value (\`--description=\`, \`--agent=\`) clears that
+field. \`name\` cannot be cleared.
 
 Global:
   --project <id>     Operate on this project id (default: linked).
@@ -123,8 +109,6 @@ export async function runSubprojects(argv: string[]): Promise<number> {
   const f: Record<string, string | undefined> = {};
   let json = false;
   let yes = false;
-  let contextPaths: string[] = [];
-  let asName: string | undefined;
   try {
     json = takeFlagBool(rest, ['--json']);
     yes = takeFlagBool(rest, ['--yes', '-y']);
@@ -134,13 +118,10 @@ export async function runSubprojects(argv: string[]): Promise<number> {
     f.name = takeFlagValue(rest, ['--name']);
     f.description = takeFlagValue(rest, ['--description']);
     f.agent = takeFlagValue(rest, ['--agent']);
-    f.instructionsFile = takeFlagValue(rest, ['--instructions-file']);
     f.sessions = takeFlagValue(rest, ['--sessions']);
     f.member = takeFlagValue(rest, ['--member']);
     f.group = takeFlagValue(rest, ['--group']);
     f.expires = takeFlagValue(rest, ['--expires']);
-    contextPaths = takeFlagValues(rest, ['--context']);
-    asName = takeFlagValue(rest, ['--as']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -160,17 +141,14 @@ export async function runSubprojects(argv: string[]): Promise<number> {
       case 'info':
         return subprojectsShow(ctx, base, positional[0], json);
       case 'create':
-        return subprojectsCreate(ctx, base, positional[0], f, contextPaths, json);
+        return subprojectsCreate(ctx, base, positional[0], f, json);
       case 'update':
       case 'set':
-        return subprojectsUpdate(ctx, base, positional[0], f, contextPaths, json);
+        return subprojectsUpdate(ctx, base, positional[0], f, json);
       case 'rm':
       case 'remove':
       case 'delete':
         return subprojectsRm(ctx, base, positional[0], yes, json);
-      case 'context':
-        // `sub` already consumed "context"; `positional` is `['add'|'rm', slug, path]`.
-        return subprojectsContext(ctx, base, positional, asName, json);
       case 'grant':
         return subprojectsGrant(ctx, positional[0], f, json);
       case 'revoke':
@@ -203,14 +181,6 @@ export function resolveOptionalField(raw: string | undefined): FieldPatch {
   return raw === '' ? null : raw;
 }
 
-/** `--instructions-file f|-` → file/stdin content, or `null` on an explicit
- *  empty value (`--instructions-file=` clears the field on update). */
-export function readInstructionsFlag(raw: string | undefined): FieldPatch {
-  if (raw === undefined) return undefined;
-  if (raw === '') return null;
-  return raw === '-' ? readFileSync(0, 'utf-8') : readFileSync(raw, 'utf-8');
-}
-
 export function validateSessionsMode(raw: string | undefined): string | { error: string } | undefined {
   if (raw === undefined) return undefined;
   if (!(SESSIONS_MODES as readonly string[]).includes(raw)) {
@@ -226,8 +196,6 @@ export function buildCreateBody(
     slug?: string;
     description?: string;
     agent?: string;
-    instructions?: string;
-    context: string[];
     sessions?: string;
   },
 ): Record<string, unknown> {
@@ -235,8 +203,6 @@ export function buildCreateBody(
   if (opts.slug) body.slug = opts.slug;
   if (opts.description !== undefined) body.description = opts.description;
   if (opts.agent !== undefined) body.agent = opts.agent;
-  if (opts.instructions !== undefined) body.instructions = opts.instructions;
-  if (opts.context.length > 0) body.context = opts.context;
   if (opts.sessions !== undefined) body.sessions = opts.sessions;
   return body;
 }
@@ -246,16 +212,12 @@ export function buildUpdateBody(opts: {
   name?: FieldPatch;
   description?: FieldPatch;
   agent?: FieldPatch;
-  instructions?: FieldPatch;
-  context?: string[];
   sessions?: string;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (opts.name !== undefined) body.name = opts.name;
   if (opts.description !== undefined) body.description = opts.description;
   if (opts.agent !== undefined) body.agent = opts.agent;
-  if (opts.instructions !== undefined) body.instructions = opts.instructions;
-  if (opts.context !== undefined) body.context = opts.context;
   if (opts.sessions !== undefined) body.sessions = opts.sessions;
   return body;
 }
@@ -331,7 +293,6 @@ async function subprojectsShow(
     ['description', s.description ?? '—'],
     ['agent', s.agent ?? '—'],
     ['sessions', s.sessions],
-    ['context', s.context.length > 0 ? s.context.join(', ') : '—'],
     ['session_count', String(s.session_count)],
     ['trigger_count', String(s.trigger_count)],
     ['path', s.path],
@@ -342,8 +303,6 @@ async function subprojectsShow(
   for (const [label, value] of rows) {
     process.stdout.write(`  ${C.dim}${pad(label, labelW)} ${C.reset}${value}\n`);
   }
-  process.stdout.write(`\n  ${C.dim}instructions${C.reset}\n`);
-  process.stdout.write(s.instructions ? `${s.instructions}\n` : `  ${C.faded}(none)${C.reset}\n`);
   process.stdout.write('\n');
   return 0;
 }
@@ -355,27 +314,15 @@ async function subprojectsCreate(
   base: string,
   name: string | undefined,
   f: Record<string, string | undefined>,
-  contextPaths: string[],
   json: boolean,
 ): Promise<number> {
   if (!name) return missing('a name');
   const sessions = validateSessionsMode(f.sessions);
   if (sessions && typeof sessions === 'object') return fail(sessions.error);
-  let instructions: string | undefined;
-  if (f.instructionsFile !== undefined) {
-    try {
-      instructions =
-        f.instructionsFile === '-' ? readFileSync(0, 'utf-8') : readFileSync(f.instructionsFile, 'utf-8');
-    } catch (err) {
-      return fail(`Could not read ${f.instructionsFile}: ${(err as Error).message}`);
-    }
-  }
   const body = buildCreateBody(name, {
     slug: f.slug,
     description: f.description,
     agent: f.agent,
-    instructions,
-    context: contextPaths,
     sessions,
   });
   const created = await ctx.client.post<Subproject>(base, body);
@@ -394,24 +341,15 @@ async function subprojectsUpdate(
   base: string,
   slug: string | undefined,
   f: Record<string, string | undefined>,
-  contextPaths: string[],
   json: boolean,
 ): Promise<number> {
   if (!slug) return missing('a subproject slug');
   const sessions = validateSessionsMode(f.sessions);
   if (sessions && typeof sessions === 'object') return fail(sessions.error);
-  let instructions: FieldPatch;
-  try {
-    instructions = readInstructionsFlag(f.instructionsFile);
-  } catch (err) {
-    return fail(`Could not read ${f.instructionsFile}: ${(err as Error).message}`);
-  }
   const body = buildUpdateBody({
     name: resolveOptionalField(f.name),
     description: resolveOptionalField(f.description),
     agent: resolveOptionalField(f.agent),
-    instructions,
-    context: contextPaths.length > 0 ? contextPaths : undefined,
     sessions,
   });
   if (Object.keys(body).length === 0) {
@@ -463,58 +401,6 @@ async function subprojectsRm(
 
 function fail(message: string): number {
   process.stderr.write(`${status.err(message)}\n`);
-  return 2;
-}
-
-// ── context ──────────────────────────────────────────────────────────────────
-
-async function subprojectsContext(
-  ctx: ProjectCtx,
-  base: string,
-  args: string[],
-  asName: string | undefined,
-  json: boolean,
-): Promise<number> {
-  const action = args[0];
-  if (action === 'add') {
-    const slug = args[1];
-    const file = args[2];
-    if (!slug || !file) return missing('a subproject slug and a local file path');
-    let content: string;
-    try {
-      content = readFileSync(file, 'utf-8');
-    } catch (err) {
-      return fail(`Could not read ${file}: ${(err as Error).message}`);
-    }
-    const path = asName || basename(file);
-    const updated = await ctx.client.post<Subproject>(
-      `${base}/${encodeURIComponent(slug)}/context`,
-      { path, content },
-    );
-    if (json) {
-      emitJson(updated);
-      return 0;
-    }
-    process.stdout.write(
-      `${status.ok(`Added ${C.bold}${path}${C.reset} to ${slug}'s context`)} ${C.dim}(committed to kortix.yaml + .kortix/subprojects/${slug}/)${C.reset}\n`,
-    );
-    return 0;
-  }
-  if (action === 'rm' || action === 'remove' || action === 'delete') {
-    const slug = args[1];
-    const path = args[2];
-    if (!slug || !path) return missing('a subproject slug and a context path');
-    await ctx.client.delete(
-      `${base}/${encodeURIComponent(slug)}/context?path=${encodeURIComponent(path)}`,
-    );
-    if (json) {
-      emitJson({ ok: true, slug, path });
-      return 0;
-    }
-    process.stdout.write(`${status.ok(`Removed ${C.bold}${path}${C.reset} from ${slug}'s context`)}\n`);
-    return 0;
-  }
-  process.stderr.write(`${status.err('Pass `context add <slug> <file>` or `context rm <slug> <path>`.')}\n`);
   return 2;
 }
 

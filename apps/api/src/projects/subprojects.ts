@@ -1,10 +1,9 @@
 /**
  * Subprojects — the manifest half.
  *
- * A subproject is a named container INSIDE a project: it groups sessions, gives
- * the agent standing instructions plus context files, owns the triggers that
- * name it, may declare agents of its own, and is an IAM object granted exactly
- * like an agent. Each subproject is ONE FILE, `kortix-<slug>.yaml`, beside the
+ * A subproject is a named container INSIDE a project: it groups sessions, owns
+ * the triggers that name it, may declare agents of its own, and is an IAM
+ * object granted exactly like an agent. Each subproject is ONE FILE, `kortix-<slug>.yaml`, beside the
  * root manifest (spec `docs/specs/2026-09-06-subproject-files-and-scoped-agents.md`);
  * the slug is the filename. The database holds only the session join
  * (`project_sessions.subproject`) and the grants (`role_assignments`,
@@ -45,10 +44,6 @@ export interface SubprojectSpec {
   /** Display label; defaults to the slug. */
   name: string;
   description: string | null;
-  /** Standing instructions, inline markdown. Delivered to the sandbox by env. */
-  instructions: string | null;
-  /** Repo-relative files/directories the agent is told to read first. */
-  context: string[];
   /** Default agent for sessions started here. A default, not a binding. */
   agent: string | null;
   /** `private` (default) keeps the ordinary per-session model; `shared` makes
@@ -98,16 +93,6 @@ function optionalString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? value : null;
-}
-
-/** A repo-relative path: non-empty, not absolute, no `..` segment. Mirrors
- *  `isRepoRelativePath` in @kortix/manifest-schema so the API refuses exactly
- *  what the manifest validator refuses. */
-export function isRepoRelativeContextPath(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  const p = value.trim();
-  if (!p || p.startsWith('/') || p.startsWith('\\')) return false;
-  return !p.split(/[\\/]/).some((segment) => segment === '..');
 }
 
 function dirOf(filePath: string): string {
@@ -206,8 +191,6 @@ export function parseSubprojectFile(
       path: filePath,
       name: optionalString(raw.name)?.trim() ?? slug,
       description: optionalString(raw.description),
-      instructions: optionalString(raw.instructions),
-      context: Array.isArray(raw.context) ? raw.context.map((item) => String(item).trim()) : [],
       agent: optionalString(raw.agent)?.trim() ?? null,
       sessions: (raw.sessions as SubprojectSessionsMode | undefined) ?? 'private',
       agents: Object.keys(agentsRaw ?? {}),
@@ -402,14 +385,14 @@ export function agentBlocksUsableIn(
 /**
  * The file's raw object for a spec. Only non-default fields are emitted so an
  * untouched file stays byte-stable on round-trip; the `agents:` map is written
- * back exactly as it was read.
+ * back exactly as it was read. A key this version dropped (`instructions`,
+ * `context`) is not in the spec, so the first write after an edit sweeps it
+ * out of the file.
  */
 export function subprojectSpecToFileEntry(spec: SubprojectSpec): Record<string, unknown> {
   const entry: Record<string, unknown> = {};
   if (spec.name && spec.name !== spec.slug) entry.name = spec.name;
   if (spec.description) entry.description = spec.description;
-  if (spec.instructions) entry.instructions = spec.instructions;
-  if (spec.context.length > 0) entry.context = [...spec.context];
   if (spec.agent) entry.agent = spec.agent;
   if (spec.sessions !== 'private') entry.sessions = spec.sessions;
   if (spec.agentsRaw && Object.keys(spec.agentsRaw).length > 0) entry.agents = spec.agentsRaw;

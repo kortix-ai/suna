@@ -1032,12 +1032,24 @@ export async function holdSessionPrompts(
   );
 }
 
+/**
+ * Rename a session, edit its metadata, or MOVE it between subprojects.
+ *
+ * `subproject: '<slug>'` files the session under that subproject;
+ * `subproject: null` moves it back to the project level. The move is
+ * owner-governed like sharing is — everyone granted a `shared` subproject
+ * reads every session in it — and the server refuses a subproject the caller
+ * is not granted (`403 subproject_not_accessible`), one that is not declared
+ * (`400 SUBPROJECT_NOT_DECLARED`), and one where the session's own agent
+ * cannot run (`400 AGENT_NOT_IN_SUBPROJECT`).
+ */
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,
   input: {
     name?: string;
     metadata?: Record<string, unknown>;
+    subproject?: string | null;
   },
 ) {
   return unwrap(

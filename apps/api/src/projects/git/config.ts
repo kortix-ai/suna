@@ -268,8 +268,6 @@ export async function loadProjectConfig(
     description: spec.description,
     agent: spec.agent,
     sessions: spec.sessions,
-    context: spec.context,
-    has_instructions: Boolean(spec.instructions),
     agents: spec.agents,
   }));
   const opencodeDir = resolveOpencodeDir(manifest);

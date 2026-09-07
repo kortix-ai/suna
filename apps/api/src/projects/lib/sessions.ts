@@ -114,10 +114,6 @@ import {
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { buildPiWorkerSessionEnvVars, buildSessionRuntimeEnv } from './session-runtime-env';
 import {
-  loadSubprojectEnvelopeForSession,
-  type SubprojectEnvelope,
-} from './subproject-envelope';
-import {
   buildPlatformMetaOpenCodeConfig,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
@@ -498,7 +494,6 @@ export async function buildSessionSandboxEnvVars(input: {
   // wins because on create the row can still be racing this call.
   const subprojectSlug =
     input.subproject !== undefined ? input.subproject : (sessionPolicyRow?.subproject ?? null);
-  let subprojectEnvelope: SubprojectEnvelope | null = null;
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
   // config the sandbox receives sealed (see compile-agent-config.ts). `null`
@@ -532,16 +527,6 @@ export async function buildSessionSandboxEnvVars(input: {
               input.baseRef,
               subprojectOpts,
             ).catch(() => null);
-
-    // The standing instructions/description the daemon renders into
-    // /tmp/kortix/subproject.md. Resolved from the SLUG here so every caller
-    // only ever passes a slug; an undeclared one warns and yields null, and
-    // the session still boots.
-    subprojectEnvelope = await loadSubprojectEnvelopeForSession(
-      gitProject,
-      subprojectSlug,
-      input.baseRef,
-    );
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -706,7 +691,7 @@ export async function buildSessionSandboxEnvVars(input: {
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
       gitDeltaBundleRemote: input.gitDeltaBundleRemote,
       opencodeConfigDir: input.opencodeConfigDir,
-      subproject: subprojectEnvelope,
+      subproject: subprojectSlug,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the

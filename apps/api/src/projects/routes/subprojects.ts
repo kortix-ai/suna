@@ -1,5 +1,5 @@
 /**
- * Subproject CRUD — `kortix.yaml` → `subprojects.<slug>`.
+ * Subproject CRUD — one `kortix-<slug>.yaml` per subproject.
  *
  * The manifest is the source of truth, so every write here is one git commit,
  * exactly like the trigger routes next door (`routes/r4.ts`): read the manifest
@@ -38,7 +38,6 @@ import type { GitBackedProject } from '../git';
 // fixed export list must keep loading this route.
 import { readRepoFileRevision } from '../git/files';
 import {
-  isRepoRelativeContextPath,
   loadProjectSubprojects,
   stripSubprojectFromTriggers,
   subprojectPathFor,
@@ -51,9 +50,9 @@ import type { ParsedManifest } from '../triggers';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const SESSIONS_MODES: readonly SubprojectSessionsMode[] = ['private', 'shared'];
-/** UTF-8 ceiling for an uploaded context file. Big enough for a brief or a
- *  brand guide, small enough that a commit stays a commit. */
-const CONTEXT_FILE_MAX_BYTES = 256 * 1024;
+/** What a create/update body may carry. `slug` is create-only and immutable —
+ *  on a PATCH it lands here as a no-op, not as a rename. */
+const SUBPROJECT_BODY_KEYS = ['name', 'slug', 'description', 'agent', 'sessions'];
 
 const ParamsWithSlug = z.object({ projectId: z.string(), slug: z.string() });
 
@@ -71,8 +70,6 @@ function serializeSubproject(spec: SubprojectSpec, ctx: SubprojectContext) {
     slug: spec.slug,
     name: spec.name,
     description: spec.description,
-    instructions: spec.instructions,
-    context: spec.context,
     agent: spec.agent,
     sessions: spec.sessions,
     path: spec.path,
@@ -167,15 +164,20 @@ function mergeSubprojectBody(
   declaredAgents: readonly string[],
 ): SubprojectSpec | { error: string } {
   const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+  // Refuse what this version does not have rather than swallowing it. A client
+  // still sending `instructions` or `context` (both dropped 2026-09-07) has to
+  // learn that the write does nothing, not lose it silently.
+  const unknown = Object.keys(body).find((key) => !SUBPROJECT_BODY_KEYS.includes(key));
+  if (unknown) {
+    return { error: `"${unknown}" is not a subproject field (allowed: ${SUBPROJECT_BODY_KEYS.join(', ')})` };
+  }
   const spec: SubprojectSpec = existing
-    ? { ...existing, context: [...existing.context] }
+    ? { ...existing }
     : {
         slug,
         path: subprojectPathFor(manifestPath, slug),
         name: slug,
         description: null,
-        instructions: null,
-        context: [],
         agent: null,
         sessions: 'private',
         agents: [],
@@ -193,12 +195,6 @@ function mergeSubprojectBody(
   }
   // `null` clears an optional field; omitting it leaves it alone.
   if (has('description')) spec.description = normalizeString(body.description);
-  if (has('instructions')) {
-    spec.instructions =
-      typeof body.instructions === 'string' && body.instructions.trim()
-        ? body.instructions
-        : null;
-  }
   if (has('agent')) {
     const agent = normalizeString(body.agent);
     if (agent && !declaredAgents.includes(agent)) {
@@ -214,21 +210,6 @@ function mergeSubprojectBody(
       return { error: 'sessions must be "private" or "shared"' };
     }
     spec.sessions = sessions as SubprojectSessionsMode;
-  }
-  if (has('context')) {
-    if (body.context === null) spec.context = [];
-    else if (!Array.isArray(body.context)) {
-      return { error: 'context must be a list of repo-relative paths' };
-    } else {
-      const bad = body.context.find((item) => !isRepoRelativeContextPath(item));
-      if (bad !== undefined) {
-        return {
-          error:
-            'each context entry must be a non-empty repo-relative path (no leading "/" and no "..")',
-        };
-      }
-      spec.context = [...new Set(body.context.map((item) => (item as string).trim()))];
-    }
   }
   return spec;
 }
@@ -545,145 +526,6 @@ projectsApp.openapi(
       return c.json({ error: removed.error }, removed.status as 400 | 409 | 502);
     }
     return c.json({ ok: true });
-  },
-);
-
-// ─── POST /v1/projects/:projectId/subprojects/:slug/context ─────────────────
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/subprojects/{slug}/context',
-    tags: ['subprojects'],
-    summary: 'POST /:projectId/subprojects/:slug/context',
-    ...auth,
-    request: {
-      params: ParamsWithSlug,
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(SubprojectSchema, 'The subproject with the new context entry'),
-      ...errors(400, 403, 404, 409, 502),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const slug = c.req.param('slug');
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-
-    const rawPath = normalizeString(body.path);
-    if (!rawPath) return c.json({ error: 'path is required' }, 400);
-    const content = typeof body.content === 'string' ? body.content : null;
-    if (content === null) return c.json({ error: 'content is required' }, 400);
-    const byteSize = new TextEncoder().encode(content).byteLength;
-    if (byteSize > CONTEXT_FILE_MAX_BYTES) {
-      return c.json(
-        { error: `content exceeds ${CONTEXT_FILE_MAX_BYTES} bytes (got ${byteSize})` },
-        400,
-      );
-    }
-    // Only the BASENAME is used, so a caller cannot escape the subproject's own
-    // directory with `../` or an absolute path.
-    const basename = rawPath.split(/[\\/]/).pop() ?? '';
-    if (!basename || basename === '.' || basename === '..') {
-      return c.json({ error: `path "${rawPath}" has no usable file name` }, 400);
-    }
-    const repoPath = `.kortix/subprojects/${slug}/${basename}`;
-
-    // Refuse before writing a file for a subproject that does not exist.
-    const gitProject = await withProjectGitAuth(loaded.row);
-    const declared = await loadProjectSubprojects(gitProject);
-    if (!declared.specs.some((s) => s.slug === slug)) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-
-    const committed = await commitRepoFile(
-      loaded.row,
-      repoPath,
-      content,
-      `feat(subprojects): add ${basename} to ${slug}`,
-    );
-    if ('error' in committed) {
-      return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
-    }
-
-    // The upload invalidated the mirror: re-read the file's current shape
-    // before appending, so a concurrent edit is neither lost nor clobbered.
-    const current = (await loadProjectSubprojects(gitProject)).specs.find((s) => s.slug === slug);
-    if (!current) return c.json({ error: 'Not found' }, 404);
-    if (!current.context.includes(repoPath)) {
-      const written = await writeSubprojectFile(
-        loaded.row,
-        gitProject,
-        { ...current, context: [...current.context, repoPath] },
-        `feat(subprojects): context for ${slug}`,
-      );
-      if ('error' in written) {
-        return c.json({ error: written.error }, written.status as 400 | 409 | 502);
-      }
-    }
-    return c.json(await readOne(c, loaded, projectId, slug));
-  },
-);
-
-// ─── DELETE /v1/projects/:projectId/subprojects/:slug/context?path= ─────────
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}/subprojects/{slug}/context',
-    tags: ['subprojects'],
-    summary: 'DELETE /:projectId/subprojects/:slug/context',
-    ...auth,
-    request: {
-      params: ParamsWithSlug,
-      query: z.object({ path: z.string() }),
-    },
-    responses: {
-      200: json(SubprojectSchema, 'The subproject without that context entry'),
-      ...errors(400, 403, 404, 409, 502),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const slug = c.req.param('slug');
-    const path = normalizeString(c.req.query('path'));
-    if (!path) return c.json({ error: 'path is required' }, 400);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-
-    const gitProject = await withProjectGitAuth(loaded.row);
-    const current = (await loadProjectSubprojects(gitProject)).specs.find((s) => s.slug === slug);
-    if (!current) return c.json({ error: 'Not found' }, 404);
-    if (!current.context.includes(path)) {
-      return c.json({ error: `"${path}" is not a context entry` }, 404);
-    }
-    const written = await writeSubprojectFile(
-      loaded.row,
-      gitProject,
-      { ...current, context: current.context.filter((entry) => entry !== path) },
-      `chore(subprojects): context for ${slug}`,
-    );
-    if ('error' in written) {
-      return c.json({ error: written.error }, written.status as 400 | 409 | 502);
-    }
-    return c.json(await readOne(c, loaded, projectId, slug));
   },
 );
 

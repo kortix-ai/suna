@@ -2,8 +2,8 @@
  * Subprojects — named containers inside a project. Maps to spec §12b
  * (SUBP-1..6). Each subproject is its own file beside the root manifest,
  * `kortix-<slug>.yaml` (spec 2026-09-06) — the source of truth for
- * identity/instructions/context/agent/sessions-mode and for the agents it
- * owns; the database holds only the session join
+ * identity/agent/sessions-mode and for the agents it owns; the database holds
+ * only the session join
  * (`project_sessions.subproject`) and the IAM grants (generic
  * `resource-grants`, `resource_type: 'subproject'`).
  *
@@ -35,8 +35,6 @@ flow(
       'GET /v1/projects/:projectId/subprojects/:slug',
       'PATCH /v1/projects/:projectId/subprojects/:slug',
       'DELETE /v1/projects/:projectId/subprojects/:slug',
-      'POST /v1/projects/:projectId/subprojects/:slug/context',
-      'DELETE /v1/projects/:projectId/subprojects/:slug/context',
       'GET /v1/projects/:projectId/commits',
     ],
   },
@@ -62,9 +60,6 @@ flow(
         .has('$.can_manage', true)
         .has('$.path', 'kortix-marketing.yaml');
       const body = r.json<any>();
-      if (!Array.isArray(body.context) || body.context.length !== 0) {
-        throw new Error(`expected context: [] on create, got ${JSON.stringify(body.context)}`);
-      }
       if (!Array.isArray(body.agents) || body.agents.length !== 0) {
         throw new Error(`expected agents: [] on create, got ${JSON.stringify(body.agents)}`);
       }
@@ -96,16 +91,24 @@ flow(
       r.status(200).body().has('$.slug', 'marketing');
     });
 
-    await ctx.step('PATCH instructions + sessions:shared → 200, persisted', async () => {
+    await ctx.step('PATCH description + sessions:shared → 200, persisted', async () => {
       const r = await owner.patch(
         '/v1/projects/:projectId/subprojects/:slug',
-        { instructions: 'Always write in British English.', sessions: 'shared' },
+        { description: 'Campaign work.', sessions: 'shared' },
         { params: { projectId: p.id, slug: 'marketing' } },
       );
-      r.status(200)
-        .body()
-        .has('$.instructions', 'Always write in British English.')
-        .has('$.sessions', 'shared');
+      r.status(200).body().has('$.description', 'Campaign work.').has('$.sessions', 'shared');
+    });
+
+    // The 2026-09-07 simplification: neither field is a subproject field any
+    // more, and the route refuses what it does not know rather than storing it.
+    await ctx.step('PATCH instructions or context → 400 (both fields are gone)', async () => {
+      for (const body of [{ instructions: 'British English.' }, { context: ['docs/brand.md'] }]) {
+        const r = await owner.patch('/v1/projects/:projectId/subprojects/:slug', body, {
+          params: { projectId: p.id, slug: 'marketing' },
+        });
+        r.status(400);
+      }
     });
 
     await ctx.step('PATCH {} → 200, no manifest commit', async () => {
@@ -162,39 +165,6 @@ flow(
         { params: { projectId: p.id } },
       );
       r.status(400);
-    });
-
-    await ctx.step('context add → 200, basename-derived repo path appears in context', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/subprojects/:slug/context',
-        { path: 'notes/brief.md', content: 'Brand brief.' },
-        { params: { projectId: p.id, slug: 'marketing' } },
-      );
-      r.status(200);
-      const body = r.json<any>();
-      if (!body.context.includes('.kortix/subprojects/marketing/brief.md')) {
-        throw new Error(`context add did not add the expected path: ${JSON.stringify(body.context)}`);
-      }
-    });
-
-    await ctx.step('context rm removes the entry (repo file untouched)', async () => {
-      const r = await owner.del('/v1/projects/:projectId/subprojects/:slug/context', {
-        params: { projectId: p.id, slug: 'marketing' },
-        query: { path: '.kortix/subprojects/marketing/brief.md' },
-      });
-      r.status(200);
-      const body = r.json<any>();
-      if (body.context.includes('.kortix/subprojects/marketing/brief.md')) {
-        throw new Error(`context rm left the entry behind: ${JSON.stringify(body.context)}`);
-      }
-    });
-
-    await ctx.step('context rm on an unlisted path → 404', async () => {
-      const r = await owner.del('/v1/projects/:projectId/subprojects/:slug/context', {
-        params: { projectId: p.id, slug: 'marketing' },
-        query: { path: 'never/listed.md' },
-      });
-      r.status(404);
     });
 
     await ctx.step('DELETE → 200, then GET → 404', async () => {
@@ -886,5 +856,149 @@ flow(
         ok.status(201);
       },
     );
+  },
+);
+
+// ─── SUBP-7 — moving a session between subprojects ─────────────────────────
+
+flow(
+  'SUBP-7',
+  {
+    domain: 'subprojects',
+    routes: [
+      'POST /v1/projects/:projectId/subprojects',
+      'POST /v1/projects/:projectId/resource-grants',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const ownerId = ctx.P.OWNER.userId;
+    if (!ownerId) throw new Error('SUBP-7 needs the owner user id');
+    const member = await team.addMember('member');
+    const memberId = member.userId;
+    if (!memberId) throw new Error('SUBP-7 member has no user id');
+    await team.grantProjectRole(project.id, memberId, 'member');
+    const asMember = ctx.client.as(member);
+
+    await ctx.step('OWNER declares "research" and "open-desk"', async () => {
+      (
+        await owner.post(
+          '/v1/projects/:projectId/subprojects',
+          { name: 'Research' },
+          { params: { projectId: project.id } },
+        )
+      ).status(201);
+      (
+        await owner.post(
+          '/v1/projects/:projectId/subprojects',
+          { name: 'Open Desk' },
+          { params: { projectId: project.id } },
+        )
+      ).status(201);
+    });
+
+    // Seeded, not created: the local profile cannot provision a real session
+    // (SUBP-3's note). Both rows are their caller's OWN, so the sharing gate
+    // the move takes (`can_manage_sharing`) is satisfied by ownership.
+    const ownerSession = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ownerId,
+      visibility: 'private',
+    });
+    const memberSession = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: memberId,
+      visibility: 'private',
+    });
+
+    await ctx.step('PATCH {subproject:"research"} files a project-level session → 200', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId',
+        { subproject: 'research' },
+        { params: { projectId: project.id, sessionId: ownerSession } },
+      );
+      r.status(200).body().has('$.subproject', 'research');
+      const list = await owner.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+        query: { subproject: 'research' },
+      });
+      list.status(200);
+      if (!list.json<any[]>().some((s: any) => s.session_id === ownerSession)) {
+        throw new Error(`the moved session is not in ?subproject=research: ${list.text()}`);
+      }
+    });
+
+    await ctx.step('PATCH {subproject:"open-desk"} moves it between subprojects → 200', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId',
+        { subproject: 'open-desk' },
+        { params: { projectId: project.id, sessionId: ownerSession } },
+      );
+      r.status(200).body().has('$.subproject', 'open-desk');
+    });
+
+    await ctx.step('PATCH {subproject:null} moves it back to the project level → 200', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId',
+        { subproject: null },
+        { params: { projectId: project.id, sessionId: ownerSession } },
+      );
+      r.status(200).body().has('$.subproject', null);
+      const list = await owner.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+        query: { subproject: '' },
+      });
+      list.status(200);
+      if (!list.json<any[]>().some((s: any) => s.session_id === ownerSession)) {
+        throw new Error(`the session did not come back to the project level: ${list.text()}`);
+      }
+    });
+
+    await ctx.step('an undeclared subproject → 400 SUBPROJECT_NOT_DECLARED', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId',
+        { subproject: 'nope' },
+        { params: { projectId: project.id, sessionId: ownerSession } },
+      );
+      r.status(400).body().has('$.code', 'SUBPROJECT_NOT_DECLARED');
+    });
+
+    await ctx.step(
+      'a member with no grant cannot move their OWN session into a subproject → 403',
+      async () => {
+        const r = await asMember.patch(
+          '/v1/projects/:projectId/sessions/:sessionId',
+          { subproject: 'research' },
+          { params: { projectId: project.id, sessionId: memberSession } },
+        );
+        r.status(403).body().has('$.code', 'subproject_not_accessible');
+      },
+    );
+
+    await ctx.step('after the grant, the same move succeeds → 200', async () => {
+      const grant = await owner.post(
+        '/v1/projects/:projectId/resource-grants',
+        {
+          resource_type: 'subproject',
+          resource_id: 'research',
+          principal_type: 'member',
+          principal_id: memberId,
+        },
+        { params: { projectId: project.id } },
+      );
+      grant.status(201);
+      const r = await asMember.patch(
+        '/v1/projects/:projectId/sessions/:sessionId',
+        { subproject: 'research' },
+        { params: { projectId: project.id, sessionId: memberSession } },
+      );
+      r.status(200).body().has('$.subproject', 'research');
+    });
   },
 );

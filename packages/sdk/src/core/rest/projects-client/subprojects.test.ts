@@ -1,12 +1,10 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
-  addProjectSubprojectContext,
   createProjectSubproject,
   deleteProjectSubproject,
   getProjectSubproject,
   listProjectSubprojects,
-  removeProjectSubprojectContext,
   updateProjectSubproject,
 } from './index';
 
@@ -26,8 +24,6 @@ beforeEach(() => {
         slug: 'marketing',
         name: 'Marketing',
         description: null,
-        instructions: null,
-        context: [],
         agent: null,
         sessions: 'private',
         path: 'kortix-marketing.yaml',
@@ -66,8 +62,6 @@ test('createProjectSubproject posts the input body verbatim', async () => {
     name: 'Marketing',
     slug: 'marketing',
     description: 'Campaign work.',
-    instructions: 'British English.',
-    context: ['docs/brand.md'],
     agent: 'writer',
     sessions: 'shared',
   });
@@ -77,8 +71,6 @@ test('createProjectSubproject posts the input body verbatim', async () => {
     name: 'Marketing',
     slug: 'marketing',
     description: 'Campaign work.',
-    instructions: 'British English.',
-    context: ['docs/brand.md'],
     agent: 'writer',
     sessions: 'shared',
   });
@@ -95,25 +87,6 @@ test('deleteProjectSubproject deletes by slug', async () => {
   await deleteProjectSubproject('P1', 'marketing');
   expect(last().url).toBe('http://test.local/projects/P1/subprojects/marketing');
   expect(last().method).toBe('DELETE');
-});
-
-test('addProjectSubprojectContext posts path + content to the context route', async () => {
-  const result = await addProjectSubprojectContext('P1', 'marketing', {
-    path: 'brand.md',
-    content: '# Brand\n',
-  });
-  expect(last().url).toBe('http://test.local/projects/P1/subprojects/marketing/context');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ path: 'brand.md', content: '# Brand\n' });
-  expect(result.slug).toBe('marketing');
-});
-
-test('removeProjectSubprojectContext deletes with a URL-encoded ?path=', async () => {
-  await removeProjectSubprojectContext('P1', 'marketing', '.kortix/subprojects/marketing/a b.md');
-  expect(last().method).toBe('DELETE');
-  expect(last().url).toBe(
-    'http://test.local/projects/P1/subprojects/marketing/context?path=.kortix%2Fsubprojects%2Fmarketing%2Fa+b.md',
-  );
 });
 
 test('a slug with a slash-unsafe character is URL-encoded in the path', async () => {

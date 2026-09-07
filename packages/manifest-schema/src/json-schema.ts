@@ -674,8 +674,8 @@ function agentReferenceV2Schema(): JsonSchemaFragment {
   };
 }
 
-/** `kortix-<slug>.yaml` — one subproject: standing instructions, context
- *  paths, a default agent, and the agents it owns or borrows. Identity is the
+/** `kortix-<slug>.yaml` — one subproject: a default agent, its session
+ *  visibility, and the agents it owns or borrows. Identity is the
  *  FILENAME, so there is no `slug` key and no `kortix_version` (the root
  *  manifest's version applies). `agent` is cross-file (must be usable here)
  *  and left to the imperative validator. */
@@ -694,8 +694,11 @@ export function buildSubprojectFileV2Schema(): JsonSchemaFragment {
     properties: {
       name: { type: 'string' },
       description: { type: 'string' },
-      instructions: { type: 'string' },
-      context: { type: 'array', items: relativePathSchema() },
+      // Dropped 2026-09-07 — declared only so an editor keeps validating an
+      // older file instead of failing it on `additionalProperties: false`.
+      // The imperative validator warns and the loader ignores them.
+      instructions: { type: 'string', deprecated: true },
+      context: { type: 'array', items: relativePathSchema(), deprecated: true },
       agent: NON_EMPTY_STRING,
       // Literal, not the `SUBPROJECT_SESSIONS_MODES_V2` const: importing from
       // `./index.v2` here would reopen the index.ts ⇄ json-schema.ts cycle

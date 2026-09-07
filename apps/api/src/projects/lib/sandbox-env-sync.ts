@@ -1139,9 +1139,8 @@ export async function pushSessionAgentConfigToSandbox(input: {
       .select({
         agentName: projectSessions.agentName,
         metadata: projectSessions.metadata,
-        // A push must compile the SAME config the boot did — including the
-        // subproject's `context[]` as top-level `instructions` (spec §7).
-        // Without it every hot push would strip them off the running box.
+        // A push must compile the SAME config the boot did — the subproject
+        // decides which agent blocks are usable, so it has to be read here too.
         subproject: projectSessions.subproject,
       })
       .from(projectSessions)

@@ -66,7 +66,6 @@ export function ProjectHome({
   breadcrumb,
   toolbar,
   subproject,
-  aside,
 }: {
   projectId: string;
   onSend: (
@@ -85,8 +84,6 @@ export function ProjectHome({
   toolbar?: ReactNode;
   /** The subproject this page IS (a subproject page) — the picker's default. */
   subproject?: Subproject | null;
-  /** A column beside the composer on wide screens — see `ProjectHomeWelcomeBody`. */
-  aside?: ReactNode;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const sidebarCollapsed = useSidebar().state === 'collapsed';
@@ -282,7 +279,6 @@ export function ProjectHome({
         onPickSuggestion={applySuggestion}
         hero={hero}
         below={below}
-        aside={aside}
         composer={
           <ComposerChatInput
             onSend={handleSend}

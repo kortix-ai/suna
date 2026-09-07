@@ -6,12 +6,15 @@
  *
  * Same wallpaper, same greeting shape, same composer, same create path
  * (`useProjectHomeSend` with the slug and the default agent). What the page
- * adds is quiet: a breadcrumb floated top-left and a ghost toolbar top-right
- * (share, `⋯`). What the subproject owns — instructions, context, schedules,
- * access — opens from the `⋯` menu in a side sheet; its sessions are in the
- * sidebar, nested under its folder. Nothing under the composer —
- * the home has nothing under its composer, so everything here has to read as
- * part of that page, not as a settings form parked next to it.
+ * adds is quiet: a breadcrumb floated top-left, a ghost toolbar top-right
+ * (share, `⋯`), and the subproject's recent sessions under the composer.
+ *
+ * ONE COLUMN, deliberately (user, 2026-09-07). What a subproject is
+ * configured with now lives in its `kortix-<slug>.yaml`, written by a person
+ * or an agent, not in a settings panel beside the composer. The page is
+ * heading + composer + a list, which is also the shape a Slack-style tab strip
+ * (Chat / a dashboard / another dashboard) drops into later, under the
+ * breadcrumb: the body below it is already a single scrolling column.
  */
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
@@ -66,9 +69,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import { SubprojectAside } from './subproject-aside';
 import { SubprojectRecents } from './subproject-recents';
-import { useInvalidateSubproject } from './subproject-sections';
+import { useInvalidateSubproject } from './subprojects-data';
 
 /** The grants naming this subproject. Orphaned rows (the block was deleted)
  *  are kept — they are inert, and hiding them hides the thing to clean up. */
@@ -141,12 +143,10 @@ function SubprojectBody({
       toolbar={
         <SubprojectToolbar projectId={projectId} subproject={subproject} canManage={canManage} />
       }
-      // Two columns (user, 2026-09-06, after Claude's project page): the
-      // composer with the subproject's recent sessions under it on the left,
-      // and what it owns — instructions, context, schedules, access — as one
-      // panel on the right, no drawer.
+      // One column (user, 2026-09-07): the composer, then the subproject's
+      // recent sessions. The right-hand panel that used to carry instructions,
+      // context files, triggers and access is gone with them.
       below={<SubprojectRecents projectId={projectId} slug={subproject.slug} />}
-      aside={<SubprojectAside projectId={projectId} subproject={subproject} canManage={canManage} />}
     />
   );
 }
