@@ -416,6 +416,7 @@ export class SessionSyncController {
       })
       .finally(() => {
         this.olderRequest = undefined;
+        if (this.destroyed || this.terminal) return;
         this.update({ isLoadingOlder: false });
       });
     return this.olderRequest;
@@ -521,6 +522,7 @@ export class SessionSyncController {
       if (this.destroyed || this.terminal) return;
       this.rememberUserMessages(page.messages);
       this.options.hydrate(page.messages);
+      if (this.destroyed || this.terminal) return;
       if (!this.olderHistoryStarted) {
         this.setCursor(page.nextCursor);
       }
@@ -539,7 +541,7 @@ export class SessionSyncController {
       this.options.markLoaded();
       this.retryAttempt = 0;
     } catch (error) {
-      if (this.destroyed) return;
+      if (this.destroyed || this.terminal) return;
       // A superseded/cancelled read is not a failure and never hydrates — it
       // must not paint an error over a live transcript, and it must not retry.
       if (isAbortError(error) || this.abortController.signal.aborted) return;
@@ -584,6 +586,7 @@ export class SessionSyncController {
     reason: SessionSyncReason,
     before?: string,
   ): Promise<SessionSyncPage> {
+    if (this.destroyed || this.terminal) return { messages: [] };
     const startedAt = this.scheduler.now();
     try {
       const page = await this.options.loadPage(
@@ -604,11 +607,11 @@ export class SessionSyncController {
       });
       return page;
     } catch (error) {
-      if (!this.destroyed && error instanceof SessionNotFoundOnRuntimeError) {
+      if (!this.destroyed && !this.terminal && error instanceof SessionNotFoundOnRuntimeError) {
         this.terminal = true;
         this.stopLivenessTimer();
         this.setPaused(true);
-        this.update({ freshness: 'error' });
+        this.update({ freshness: 'error', isLoadingOlder: false });
       }
       this.options.onTelemetry?.({
         operation,
@@ -623,6 +626,7 @@ export class SessionSyncController {
 
   private async loadCompleteOlderTurn(before: string): Promise<SessionSyncPage> {
     const firstPage = await this.loadPage('older', 'manual', before);
+    if (this.destroyed || this.terminal) return firstPage;
     // Commit each page as it lands, including the page that fails. The walk
     // is up to 11 sequential reads (MAX_TURN_BACKFILL_PAGES + 1) and used to
     // commit all of them in one `.then`, so a rejection on ANY page —
@@ -631,6 +635,7 @@ export class SessionSyncController {
     // from, so the retry replayed the identical walk. `onPage` existed for
     // exactly this and was never passed.
     return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (partialPage) => {
+      if (this.destroyed || this.terminal) return;
       // `rememberUserMessages` mutates the instance-level `knownUserMessageIds`
       // Set (below), and `onPage` fires on a rejection too (the catch in
       // `loadCompleteTurn`, right before it rethrows). So a walk that fails
@@ -656,6 +661,7 @@ export class SessionSyncController {
     initialCursor?: string,
     onPage?: (pageSoFar: SessionSyncPage) => void,
   ): Promise<SessionSyncPage> {
+    if (this.destroyed || this.terminal) return firstPage;
     const messages = [...firstPage.messages];
     const knownUserMessageIds = new Set(this.knownUserMessageIds);
     const seenCursors = new Set(initialCursor ? [initialCursor] : []);
@@ -669,6 +675,7 @@ export class SessionSyncController {
     }
 
     while (
+      !this.destroyed && !this.terminal &&
       cursor &&
       // BOUNDED. Without a ceiling a turn of a few thousand messages paged the
       // whole session before anything rendered — see MAX_TURN_BACKFILL_PAGES.
@@ -692,10 +699,12 @@ export class SessionSyncController {
         // (seeded before the loop) plus every completed iteration. Commit it
         // before rethrowing so a rejection on THIS read (including the
         // loop's very first) cannot drop what was already read.
-        onPage?.({ messages: [...messages], nextCursor: cursor });
+        if (!this.destroyed && !this.terminal && !isAbortError(error)) {
+          onPage?.({ messages: [...messages], nextCursor: cursor });
+        }
         throw error;
       }
-      if (this.destroyed) return { messages, nextCursor: cursor };
+      if (this.destroyed || this.terminal) return { messages, nextCursor: cursor };
       pagesRead += 1;
       messages.unshift(...page.messages);
       for (const message of page.messages) {
@@ -714,6 +723,7 @@ export class SessionSyncController {
   }
 
   private rememberUserMessages(messages: SessionSyncMessage[]): void {
+    if (this.destroyed || this.terminal) return;
     for (const message of messages) {
       if (message.info.role === 'user') {
         this.knownUserMessageIds.add(message.info.id);
@@ -766,6 +776,7 @@ export class SessionSyncController {
   }
 
   private setCursor(cursor: string | undefined): void {
+    if (this.destroyed || this.terminal) return;
     this.nextCursor = cursor;
     this.update({ hasOlder: Boolean(cursor) });
   }

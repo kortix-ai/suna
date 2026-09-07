@@ -271,6 +271,8 @@ export function createEventHandler(deps: {
       case 'session.compacted': {
         const sessionID = event.properties.sessionID;
         if (sessionID) {
+          const sessionKey = opencodeKeys.runtimeSession(sessionID, deps.runtimeScope);
+          const sessionsKey = opencodeKeys.sessions(deps.runtimeScope);
           stopCompaction(sessionID);
           void reconcileTail(sessionID, 'compaction');
           // Refetch the individual session to clear time.compacting
@@ -292,11 +294,12 @@ export function createEventHandler(deps: {
           client.session
             .get({ sessionID })
             .then((res) => {
+              if (deps.isActive?.() === false) return;
               if (res.data) {
                 const session = res.data;
-                queryClient.setQueryData(opencodeKeys.runtimeSession(sessionID), session);
+                queryClient.setQueryData(sessionKey, session);
                 // Also update in session list
-                queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+                queryClient.setQueryData<Session[]>(sessionsKey, (old) => {
                   if (!old) return old;
                   const idx = old.findIndex((s) => s.id === sessionID);
                   if (idx < 0) return old;
@@ -306,13 +309,14 @@ export function createEventHandler(deps: {
                 });
               } else {
                 void queryClient.invalidateQueries({
-                  queryKey: opencodeKeys.runtimeSession(sessionID),
+                  queryKey: sessionKey,
                 });
               }
             })
             .catch(() => {
+              if (deps.isActive?.() === false) return;
               void queryClient.invalidateQueries({
-                queryKey: opencodeKeys.runtimeSession(sessionID),
+                queryKey: sessionKey,
               });
             });
         }

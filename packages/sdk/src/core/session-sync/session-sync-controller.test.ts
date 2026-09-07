@@ -89,6 +89,112 @@ function createScheduler() {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+describe('backfill continuation ownership', () => {
+  for (const pendingCursor of ['first', 'second']) {
+    for (const outcome of ['success', 'failure']) {
+      test(`deletion during ${pendingCursor} older page ignores late ${outcome}`, async () => {
+        const pending = deferred<SessionSyncPage>();
+        const started = deferred<void>();
+        const reads: Array<string | undefined> = [];
+        const hydrated: SessionSyncPage['messages'][] = [];
+        const controller = new SessionSyncController({
+          sessionId: 'deleted-backfill', hydrate: (messages) => hydrated.push(messages), markLoaded: () => {},
+          loadPage: async ({ before }) => {
+            reads.push(before);
+            if (!before) return page(['tail'], 'first');
+            if (before === pendingCursor) { started.resolve(); return pending.promise; }
+            if (before === 'first') return messagePage([{ id: 'a1', role: 'assistant', parentID: 'missing' }], 'second');
+            return page(['missing']);
+          },
+        });
+        await controller.reconcile();
+        const backfill = controller.loadOlder();
+        await started.promise;
+        controller.destroy();
+        hydrated.length = 0; // session.deleted removes the prior transcript.
+        const readCountAtDeletion = reads.length;
+        if (outcome === 'success') {
+          pending.resolve(messagePage([{ id: 'late', role: 'assistant', parentID: 'missing' }], 'third'));
+          await backfill;
+        } else {
+          pending.reject(new Error('late proxy failure'));
+          await expect(backfill).rejects.toThrow('late proxy failure');
+        }
+        expect(hydrated).toEqual([]);
+        expect(reads).toHaveLength(readCountAtDeletion);
+      });
+    }
+
+    test(`terminal tail during ${pendingCursor} older page stops hydration, cursor changes, and further reads`, async () => {
+      const clock = createScheduler();
+      const pending = deferred<SessionSyncPage>();
+      const started = deferred<void>();
+      const reads: Array<string | undefined> = [];
+      const hydrated: SessionSyncPage['messages'][] = [];
+      const controller = new SessionSyncController({
+        sessionId: 'terminal-backfill', scheduler: clock.scheduler,
+        hydrate: (messages) => hydrated.push(messages), markLoaded: () => {},
+        loadPage: async ({ before }) => {
+          reads.push(before);
+          if (!before && reads.length === 1) return page(['tail'], 'first');
+          if (!before) throw new errors.SessionNotFoundOnRuntimeError();
+          if (before === pendingCursor) { started.resolve(); return pending.promise; }
+          if (before === 'first') return messagePage([{ id: 'a1', role: 'assistant', parentID: 'missing' }], 'second');
+          return page(['missing']);
+        },
+      });
+      await controller.reconcile();
+      const backfill = controller.loadOlder();
+      await started.promise;
+      await controller.reconcile();
+      const terminalSnapshot = controller.getSnapshot();
+      const readCountAtTerminal = reads.length;
+      hydrated.length = 0;
+      pending.resolve(messagePage([{ id: 'late', role: 'assistant', parentID: 'missing' }], 'third'));
+      await backfill;
+      expect(hydrated).toEqual([]);
+      expect(reads).toHaveLength(readCountAtTerminal);
+      expect(controller.getSnapshot()).toEqual(terminalSnapshot);
+      expect(clock.pendingTimeouts()).toBe(0);
+      controller.destroy();
+    });
+  }
+
+  test('an older-page terminal 404 cannot become loading when a pending tail later fails with 503', async () => {
+    const clock = createScheduler();
+    const pendingTail = deferred<SessionSyncPage>();
+    let reads = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'terminal-then-waking', scheduler: clock.scheduler, hydrate: () => {}, markLoaded: () => {},
+      loadPage: async ({ before }) => {
+        reads++;
+        if (before) throw new errors.SessionNotFoundOnRuntimeError();
+        if (reads === 1) return page(['tail'], 'older');
+        return pendingTail.promise;
+      },
+    });
+    await controller.reconcile();
+    const tail = controller.reconcile();
+    await expect(controller.loadOlder()).rejects.toBeInstanceOf(errors.SessionNotFoundOnRuntimeError);
+    expect(controller.getSnapshot().freshness).toBe('error');
+    pendingTail.reject(new SandboxNotReadyError('503'));
+    await tail;
+    expect(controller.getSnapshot().freshness).toBe('error');
+    expect(clock.pendingTimeouts()).toBe(0);
+    clock.advance(60_000);
+    await controller.reconcile();
+    expect(reads).toBe(3);
+    controller.destroy();
+  });
+});
+
 describe('SessionSyncController', () => {
   test('an older-page NotFoundError terminates the tuple and prevents a concurrent tail from marking it fresh', async () => {
     const clock = createScheduler();
