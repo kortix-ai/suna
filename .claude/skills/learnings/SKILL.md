@@ -5141,3 +5141,15 @@ never repeat their side effects. Commit a release fence before subsequent execut
 Incident: Pi worker replacement discarded pending questions and required another prompt.
 Automation: `question-recovery-routes.test.ts` kills real worker processes, checks unchanged
 question IDs, single shell execution, saved answers, step limits, Stop, and another owner's queue.
+
+## Keep interactive requests until the server accepts the response
+
+Do not hide a question or discard its answer before the reply succeeds. Preserve the
+card and custom text after failure. A failed dismissal must not abort the turn.
+
+Incident: an HTTP 503 left the Pi question pending while the web composer removed
+its card and suppressed it for 15 seconds. The response handler swallowed the error.
+Automation: `question-submission.test.ts` checks acknowledgment, duplicate clicks,
+failure, and retry. Browser checks inject 503 into real session replies and assert
+that the same request remains answerable, custom text survives, and dismissal does
+not issue an abort before acceptance.

@@ -536,3 +536,15 @@ describe('choice-only question placeholders', () => {
     ).toBe('Review your answers above…');
   });
 });
+
+test('pending question submission keeps its functional placeholder', () => {
+  expect(
+    resolveEditorPlaceholder({
+      lockForApproval: false,
+      lockForQuestion: true,
+      questionPending: true,
+      questionAcceptsCustom: false,
+      placeholder: 'Message',
+    }),
+  ).toBe('Submitting…');
+});

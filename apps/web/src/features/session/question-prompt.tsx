@@ -10,14 +10,17 @@
 
 'use client';
 
+import Loading from '@/components/ui/loading';
+import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import type { QuestionAnswer, QuestionInfo, QuestionRequest } from '@/ui';
 import { CheckIcon, ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
-import React, { useCallback, useEffect, useImperativeHandle, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Close } from '../icon/icons/close';
 import { planQuestionCustomAnswer } from './question-custom-answer';
+import { createQuestionSubmission } from './question-submission';
 
 // ---------------------------------------------------------------------------
 // Lightweight markdown renderer for question text (no Shiki/KaTeX/Mermaid)
@@ -68,7 +71,7 @@ export type QuestionAction = 'send' | 'next' | 'submit' | 'add';
 /** Methods exposed via ref for parent-driven interaction. */
 export interface QuestionPromptHandle {
   /** Submit a custom answer (typed in the main chat textarea) for the current question. */
-  submitCustomAnswer: (text: string) => void;
+  submitCustomAnswer: (text: string) => Promise<boolean>;
   /** Whether the current question accepts a custom text answer. */
   acceptsCustom: boolean;
   /** What action the main send button should show/perform. */
@@ -81,10 +84,15 @@ export interface QuestionPromptHandle {
 
 interface QuestionPromptProps {
   request: QuestionRequest;
-  onReply: (requestId: string, answers: QuestionAnswer[]) => void;
-  onReject: (requestId: string) => void;
+  onReply: (requestId: string, answers: QuestionAnswer[]) => void | Promise<void>;
+  onReject: (requestId: string) => void | Promise<void>;
   /** Called whenever the question's action state changes (for syncing to the send button). */
-  onActionChange?: (action: QuestionAction, canAct: boolean, acceptsCustom: boolean) => void;
+  onActionChange?: (
+    action: QuestionAction,
+    canAct: boolean,
+    acceptsCustom: boolean,
+    pending: boolean,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +107,19 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     const [tab, setTab] = useState(0);
     const [answers, setAnswers] = useState<QuestionAnswer[]>(() => questions.map(() => []));
     const [replying, setReplying] = useState(false);
+    const runSubmission = useMemo(
+      () =>
+        createQuestionSubmission(setReplying, (error) => {
+          errorToast(
+            error instanceof Error ? error.message : 'Could not submit the response. Try again.',
+          );
+        }),
+      [],
+    );
+    const sendAnswers = useCallback(
+      (next: QuestionAnswer[]) => runSubmission(() => onReply(request.id, next)),
+      [runSubmission, onReply, request.id],
+    );
 
     const isConfirm = tab === questions.length;
     const currentQuestion = questions[tab] as QuestionInfo | undefined;
@@ -119,15 +140,14 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
         setAnswers(next);
 
         if (isSingle) {
-          setReplying(true);
-          onReply(request.id, [[answer]]);
+          void sendAnswers([[answer]]);
           return;
         }
 
         // Advance to next tab
         setTab(tab + 1);
       },
-      [answers, tab, isSingle, request.id, onReply],
+      [answers, tab, isSingle, sendAnswers],
     );
 
     const toggle = useCallback(
@@ -162,18 +182,17 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 
     /** Called by the parent (via ref) when the user types a custom answer in the main textarea and hits send. */
     const handleCustomSubmit = useCallback(
-      (value: string) => {
+      async (value: string) => {
         const plan = planQuestionCustomAnswer(questions, answers, tab, value);
-        if (plan.kind === 'ignore' || replying) return;
+        if (plan.kind === 'ignore' || replying) return false;
         setAnswers(plan.answers);
         if (plan.kind === 'reply') {
-          setReplying(true);
-          onReply(request.id, plan.answers);
-          return;
+          return sendAnswers(plan.answers);
         }
         setTab(plan.tab);
+        return true;
       },
-      [questions, answers, tab, replying, request.id, onReply],
+      [questions, answers, tab, replying, sendAnswers],
     );
 
     const advanceToNext = useCallback(() => {
@@ -191,30 +210,31 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     })();
 
     const canAct = (() => {
+      if (replying) return false;
       if (action === 'submit') return true;
       if (action === 'next') return currentAnswers.length > 0;
       return false;
     })();
 
     const submit = useCallback(() => {
-      setReplying(true);
       const finalAnswers = questions.map((_, i) => answers[i] ?? []);
-      onReply(request.id, finalAnswers);
-    }, [answers, questions, request.id, onReply]);
+      void sendAnswers(finalAnswers);
+    }, [answers, questions, sendAnswers]);
 
     const performAction = useCallback(() => {
+      if (replying) return;
       if (action === 'submit') {
         submit();
       } else if (action === 'next') {
         advanceToNext();
       }
       // 'send' is handled by SessionChatInput directly (custom answer)
-    }, [action, submit, advanceToNext]);
+    }, [replying, action, submit, advanceToNext]);
 
     // Notify parent of action state changes
     useEffect(() => {
-      onActionChange?.(action, canAct, acceptsCustom);
-    }, [action, canAct, acceptsCustom, onActionChange]);
+      onActionChange?.(action, canAct, acceptsCustom, replying);
+    }, [action, canAct, acceptsCustom, replying, onActionChange]);
 
     // Expose imperative handle for parent-driven interaction
     useImperativeHandle(
@@ -230,15 +250,8 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     );
 
     const reject = useCallback(() => {
-      setReplying(true);
-      onReject(request.id);
-    }, [request.id, onReject]);
-
-    // -----------------------------------------------------------------------
-    // Once replied, hide completely
-    // -----------------------------------------------------------------------
-
-    if (replying) return null;
+      void runSubmission(() => onReject(request.id));
+    }, [runSubmission, request.id, onReject]);
 
     // -----------------------------------------------------------------------
     // Header summary text
@@ -262,9 +275,13 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     // -----------------------------------------------------------------------
 
     return (
-      <div className="relative isolate z-10 w-full">
+      <div className="relative isolate z-10 w-full" aria-busy={replying}>
         <div className="flex w-full items-center gap-2 p-2 py-1.5">
-          <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
+          {replying ? (
+            <Loading className="text-muted-foreground size-3.5 shrink-0" />
+          ) : (
+            <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
+          )}
           <span className="text-muted-foreground min-w-0 flex-1 truncate text-left text-xs">
             {isSingle ? '' : `${questions.length} questions \u00B7 `}
             <span className="text-foreground/80 truncate font-medium">{headerSummary}</span>
@@ -273,6 +290,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
               longer scrolls the transcript out from under the question. */}
           <button
             type="button"
+            disabled={replying}
             onClick={reject}
             aria-label="Dismiss question"
             className="text-muted-foreground/40 hover:text-foreground hover:bg-muted hit-area-2 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
@@ -296,6 +314,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                   <button
                     key={q.question}
                     type="button"
+                    disabled={replying}
                     role="tab"
                     id={`${request.id}-tab-${i}`}
                     aria-selected={tab === i}
@@ -331,6 +350,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
               })}
               <button
                 type="button"
+                disabled={replying}
                 role="tab"
                 id={`${request.id}-tab-confirm`}
                 aria-selected={isConfirm}
@@ -413,6 +433,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                       <button
                         key={opt.label}
                         type="button"
+                        disabled={replying}
                         aria-pressed={isMulti ? isPicked : undefined}
                         onClick={() => selectOption(i)}
                         className={cn(

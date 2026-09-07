@@ -131,6 +131,25 @@ completion. Reload preserves the transcript. No network request fails.
 395/395 REST/CLI flows. The brand audit reports the same existing violations
 before and after this change; the change introduces no new visual values.
 
+## Failed question replies
+
+A browser-injected HTTP `503` reproduces the previous failure: the backend
+question remains pending, but the web card disappears. The question component
+now retains the card until acknowledgment, disables duplicate submissions,
+resets its controls on failure, and displays the error. The session handler
+removes the question and caches answers only after acceptance. A failed dismissal
+does not send the session abort request. A custom reply keeps its text on failure
+and clears it after success only if the draft has not changed.
+
+The frontend suite passes 9,463 tests, zero failures, and 35,528 assertions in
+32.49 seconds. Typecheck exits 0. Focused eslint reports zero errors and 37
+existing warnings. `pnpm test` passes all lanes in 47.4 seconds, including
+395/395 REST/CLI flows. Local browser verification uses the real Pi API and
+injects failures only into the reply and rejection responses. Three injected 503
+responses preserve the same question or custom text. The failed dismissal emits
+zero abort requests. Both answer retries return HTTP 200 with their exact payloads;
+reload preserves the transcript, with no unexpected network failures.
+
 ## Compatibility limits
 
 These fixes do not establish complete OpenCode replacement parity.

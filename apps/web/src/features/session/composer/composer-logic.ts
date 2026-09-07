@@ -244,6 +244,7 @@ export interface ResolveEditorPlaceholderInput {
   lockForQuestion: boolean;
   questionButtonLabel?: string | null;
   questionAcceptsCustom?: boolean;
+  questionPending?: boolean;
   /** The caller-supplied default placeholder (`SessionChatInputProps.placeholder`). */
   placeholder: string;
 }
@@ -268,10 +269,12 @@ export function resolveEditorPlaceholder({
   lockForQuestion,
   questionButtonLabel,
   questionAcceptsCustom = true,
+  questionPending = false,
   placeholder,
 }: ResolveEditorPlaceholderInput): string {
   if (lockForApproval) return 'Approve or deny the action above to continue…';
   if (lockForQuestion) {
+    if (questionPending) return 'Submitting…';
     if (!questionAcceptsCustom) {
       return questionButtonLabel === 'Submit'
         ? 'Review your answers above…'

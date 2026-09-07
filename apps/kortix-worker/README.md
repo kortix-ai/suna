@@ -113,6 +113,11 @@ use the option buttons; multiple selections advance with Next. Custom answers
 remain available when allowed. Confirm submits the collected answers without
 appending a free-form note. Normal text entry returns after the question settles.
 
+The web question card remains visible while a reply or dismissal is pending.
+A failed request leaves the card answerable and shows an error. Custom text
+survives a failed submission. A failed dismissal does not abort the turn.
+Only an accepted response removes the question from local pending state.
+
 ## Questions across worker replacement
 
 A durable question commits its native transcript and a question checkpoint

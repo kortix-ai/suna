@@ -2022,11 +2022,12 @@ export function SessionChat({
     label: string | null;
     canAct: boolean;
     acceptsCustom: boolean;
-  }>({ label: null, canAct: false, acceptsCustom: false });
+    pending: boolean;
+  }>({ label: null, canAct: false, acceptsCustom: false, pending: false });
   const handleQuestionActionChange = useCallback(
-    (action: QuestionAction, canAct: boolean, acceptsCustom: boolean) => {
+    (action: QuestionAction, canAct: boolean, acceptsCustom: boolean, pending: boolean) => {
       const label = action === 'next' ? 'Next' : action === 'submit' ? 'Submit' : null;
-      setQuestionAction({ label, canAct, acceptsCustom });
+      setQuestionAction({ label, canAct, acceptsCustom, pending });
     },
     [],
   );
@@ -3519,14 +3520,12 @@ export function SessionChat({
         sessionState?.questions.find((question) => question.id === requestId) ??
         useRuntimePendingStore.getState().questions[requestId];
 
+      if (sessionState) await sessionState.answerQuestion(requestId, answers);
+      else await replyToQuestion(requestId, answers);
       suppressQuestionFor(requestId);
-      // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
 
-      // Save the answers in the optimistic cache keyed by the tool part ID.
-      // This cache survives SSE message.part.updated events that may
-      // overwrite the tool part before the server includes metadata.answers.
-      // answeredQuestionParts reads from this cache as a fallback.
+      // Cache accepted answers while the completed tool metadata arrives.
       if (questionReq?.tool?.messageID) {
         const { messageID } = questionReq.tool;
         const parts = useSessionStateStore.getState().parts[messageID];
@@ -3535,7 +3534,8 @@ export function SessionChat({
             (p) =>
               p.type === 'tool' &&
               (p as ToolPart).tool === 'question' &&
-              (p as ToolPart).callID === questionReq.tool!.callID,
+              (p.id === questionReq.tool!.callID ||
+                (p as ToolPart).callID === questionReq.tool!.callID),
           );
           if (match) {
             optimisticAnswersCache.set(match.id, {
@@ -3545,28 +3545,16 @@ export function SessionChat({
           }
         }
       }
-
-      try {
-        if (sessionState) await sessionState.answerQuestion(requestId, answers);
-        else await replyToQuestion(requestId, answers);
-      } catch {
-        // ignore — SSE "question.replied" event will also remove it
-      }
     },
     [sessionState, removeQuestion, suppressQuestionFor],
   );
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
+      if (sessionState) await sessionState.rejectQuestion(requestId);
+      else await rejectQuestion(requestId);
       suppressQuestionFor(requestId);
-      // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
-      try {
-        if (sessionState) await sessionState.rejectQuestion(requestId);
-        else await rejectQuestion(requestId);
-      } catch {
-        // ignore — SSE "question.rejected" event will also remove it
-      }
       // Also abort the session so the "The operation was aborted." banner
       // appears. Routed through `issueSessionCancel` (T10) so this
       // cancel's `AbortSettlement` is tracked the same as every other stop
@@ -4681,7 +4669,7 @@ export function SessionChat({
   const handleCompactClick = useCallback(() => setCompactModalOpen(true), []);
 
   const handleCustomAnswer = useCallback((text: string) => {
-    questionPromptRef.current?.submitCustomAnswer(text);
+    return questionPromptRef.current?.submitCustomAnswer(text) ?? false;
   }, []);
 
   const handleQuestionAction = useCallback(() => {
@@ -5690,6 +5678,7 @@ export function SessionChat({
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionCanAct={questionAction.canAct}
                 questionAcceptsCustom={questionAction.acceptsCustom}
+                questionPending={questionAction.pending}
                 onQuestionAction={handleQuestionAction}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}

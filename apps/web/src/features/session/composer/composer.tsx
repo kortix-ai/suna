@@ -293,10 +293,11 @@ export interface SessionChatInputProps {
   onClearReply?: () => void;
   lockForQuestion?: boolean;
   lockForApproval?: boolean;
-  onCustomAnswer?: (text: string) => void;
+  onCustomAnswer?: (text: string) => boolean | void | Promise<boolean | void>;
   questionButtonLabel?: string | null;
   questionCanAct?: boolean;
   questionAcceptsCustom?: boolean;
+  questionPending?: boolean;
   onQuestionAction?: () => void;
   escCount?: number;
   parentClassName?: string;
@@ -460,6 +461,7 @@ function ComposerImpl({
   questionButtonLabel = null,
   questionCanAct = true,
   questionAcceptsCustom = true,
+  questionPending = false,
   onQuestionAction,
   escCount = 0,
   parentClassName,
@@ -548,7 +550,7 @@ function ComposerImpl({
     [agents],
   );
 
-  const questionTextDisabled = lockForQuestion && !questionAcceptsCustom;
+  const questionTextDisabled = lockForQuestion && (!questionAcceptsCustom || questionPending);
   const editorDisabled = disabled || lockForApproval || questionTextDisabled;
   const inlineUnderbar = underbarPlacement === 'inline';
 
@@ -1142,10 +1144,17 @@ function ComposerImpl({
       // typed since.
       const draft = stash ? stash.content : editorRef.current?.getContent();
       if (lockForQuestion) {
+        if (questionPending) return;
         const trimmed = (draft?.text ?? '').trim();
         if (trimmed && questionAcceptsCustom && onCustomAnswer) {
-          onCustomAnswer(trimmed);
-          if (!stash) editorRef.current?.clear();
+          const accepted = await onCustomAnswer(trimmed);
+          if (
+            accepted !== false &&
+            !stash &&
+            editorRef.current?.getContent().text === draft?.text
+          ) {
+            editorRef.current?.clear();
+          }
           return;
         }
         if (onQuestionAction) {
@@ -1317,6 +1326,7 @@ function ComposerImpl({
       lockForApproval,
       onCustomAnswer,
       questionAcceptsCustom,
+      questionPending,
       onQuestionAction,
       clearSavedDraft,
     ],
@@ -1371,6 +1381,7 @@ function ComposerImpl({
     lockForQuestion,
     questionButtonLabel,
     questionAcceptsCustom,
+    questionPending,
     placeholder,
   });
 
