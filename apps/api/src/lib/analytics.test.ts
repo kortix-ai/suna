@@ -58,7 +58,13 @@ describe('analytics.track', () => {
       {
         distinctId: 'user-1',
         event: 'prompt_sent',
-        properties: { source: 'web', model: 'anthropic/claude', attachment_count: 2, session_id: 'sess-1' },
+        properties: {
+          environment: 'unknown',
+          source: 'web',
+          model: 'anthropic/claude',
+          attachment_count: 2,
+          session_id: 'sess-1',
+        },
         groups: { account: 'acct-1', project: 'proj-1' },
       },
     ]);
@@ -136,5 +142,41 @@ describe('analytics.providerForSecretName', () => {
     expect(providerForSecretName('ANTHROPIC_API_KEY')).toBe('anthropic');
     expect(providerForSecretName('AWS_BEDROCK_API_KEY')).toBe('bedrock');
     expect(providerForSecretName('DATABASE_URL')).toBeNull();
+  });
+});
+
+describe('environment stamping', () => {
+  afterEach(() => {
+    setAnalyticsClientForTests(undefined);
+  });
+
+  test('every event says which deployment produced it, because one project holds them all', () => {
+    const fake = fakeClient();
+    setAnalyticsClientForTests(fake.client as never);
+    const previous = process.env.INTERNAL_KORTIX_ENV;
+    process.env.INTERNAL_KORTIX_ENV = 'prod';
+    try {
+      track({ event: 'prompt_sent', userId: 'user-1', properties: { source: 'web' } });
+    } finally {
+      if (previous === undefined) delete process.env.INTERNAL_KORTIX_ENV;
+      else process.env.INTERNAL_KORTIX_ENV = previous;
+    }
+    expect((fake.captured[0] as { properties: Record<string, unknown> }).properties).toMatchObject({
+      environment: 'prod',
+      source: 'web',
+    });
+  });
+
+  test('an unset deployment name is stamped as unknown, never guessed as prod', () => {
+    const fake = fakeClient();
+    setAnalyticsClientForTests(fake.client as never);
+    const previous = process.env.INTERNAL_KORTIX_ENV;
+    delete process.env.INTERNAL_KORTIX_ENV;
+    try {
+      track({ event: 'project_created', userId: 'user-1' });
+    } finally {
+      if (previous !== undefined) process.env.INTERNAL_KORTIX_ENV = previous;
+    }
+    expect((fake.captured[0] as { properties: Record<string, unknown> }).properties.environment).toBe('unknown');
   });
 });

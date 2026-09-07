@@ -3,7 +3,14 @@
  * rewrites, fixed at BUILD time) and instrumentation-client.ts (posthog.init at
  * RUNTIME). One source, so the two can never point at different regions.
  */
-export const DEFAULT_POSTHOG_HOST = 'https://eu.i.posthog.com';
+/**
+ * US, because every Kortix deployment reports to one US project (decision,
+ * 2026-09-07). It fixes the `/ingest` proxy target at build time, so a US
+ * default keeps the ad-block-resistant proxy working without a per-environment
+ * build variable. Moving to EU later means changing this and rebuilding; a
+ * runtime host in another region still works, it just bypasses the proxy.
+ */
+export const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 
 /**
  * @param {string | undefined | null} host ingest host, e.g. https://us.i.posthog.com

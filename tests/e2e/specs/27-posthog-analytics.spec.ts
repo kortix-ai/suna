@@ -356,9 +356,7 @@ test.describe.serial('27 — PostHog product analytics', { tag: '@quarantine' },
     expect(ingestStatuses.length).toBeGreaterThan(0);
     expect(ingestStatuses.every((status) => status === 200)).toBe(true);
 
-    // Session replay never runs here: every page this test opened is under
-    // /projects/, which lib/analytics/posthog-replay.ts blocks.
-    expect(captured.filter((event) => event.event === '$snapshot')).toEqual([]);
+    // Replay is no longer route-restricted; the dedicated scope test covers it.
 
     // 4. Read back from PostHog: ingestion is asynchronous, allow up to 3 minutes.
     test.skip(!posthogReadable, 'POSTHOG_HOST / POSTHOG_PROJECT_ID / POSTHOG_API_KEY not set: server-side read-back skipped.');
@@ -452,14 +450,22 @@ test.describe('27 — PostHog session replay scope', { tag: '@quarantine' }, () 
     const captured: string[] = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
-      if (request.method() === 'POST' && url.pathname.startsWith('/ingest/') && !url.pathname.startsWith('/ingest/flags')) {
+      if (request.method() !== 'POST' || !url.pathname.startsWith('/ingest/')) return;
+      if (url.pathname.startsWith('/ingest/s')) captured.push('$snapshot');
+      if (!url.pathname.startsWith('/ingest/flags')) {
         captured.push(...decodeCaptureBody(request).map((event) => event.event));
       }
     });
+    // The recorder is a lazily loaded bundle: PostHog fetches it only once
+    // startSessionRecording() has run, so its request is the signature of
+    // "replay is armed for this route" and needs no body decoding.
+    page.on('response', (response) => {
+      if (new URL(response.url()).pathname.includes('posthog-recorder')) captured.push('$recorder');
+    });
     await installBrowserSessionDirect(page, auth, route, authOptions);
     await dismissOnboarding(page);
-    const deadline = Date.now() + 25_000;
-    while (Date.now() < deadline && waitForSnapshot && !captured.includes('$snapshot')) {
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline && waitForSnapshot && !captured.includes('$recorder')) {
       await page.waitForTimeout(500);
     }
     if (!waitForSnapshot) await page.waitForTimeout(15_000); // long enough for a recorder to have started
@@ -468,16 +474,16 @@ test.describe('27 — PostHog session replay scope', { tag: '@quarantine' }, () 
   };
 
   /**
-   * The blocked half of the rule. The allowed half is the consent test below:
-   * it accepts analytics on `/` and asserts a `$snapshot` follows. A signed-in
-   * "allowed route" is not a stable target here, because `/projects` opens the
-   * account's project and lands in the workspace on its own.
+   * Replay records every route (decision, 2026-09-07), the workspace included.
+   * The anonymous half is the consent test below: it accepts analytics on `/`
+   * and asserts a `$snapshot` follows.
    */
-  test('never records the workspace', async ({ browser }) => {
-    const workspace = await openAndCollect(browser, `/projects/${projectId}`, false);
-    // Capture is alive, so the missing $snapshot is the route rule, not a dead client.
-    expect(workspace, 'workspace is still captured').toContain('$pageview');
-    expect(workspace.filter((event) => event === '$snapshot'), 'workspace is never recorded').toEqual([]);
+  test('arms the recorder on the workspace for a signed-in user', async ({ browser }) => {
+    const workspace = await openAndCollect(browser, `/projects/${projectId}`, true);
+    expect(workspace, 'workspace is captured').toContain('$pageview');
+    // Snapshot DELIVERY is asserted on `/` by the consent test; here the point
+    // is that the workspace is no longer excluded, which the recorder fetch proves.
+    expect(workspace, 'the recorder runs on the workspace').toContain('$recorder');
   });
 });
 

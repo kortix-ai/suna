@@ -2,48 +2,39 @@ import { describe, expect, test } from 'bun:test';
 import { REPLAY_BLOCKED_PREFIXES, replayAllowedForPath } from './posthog-replay';
 
 describe('replayAllowedForPath', () => {
-  test('blocks the workspace, where customer code and prompts render', () => {
-    expect(replayAllowedForPath('/projects/8f3c/sessions/1a2b')).toBe(false);
-    expect(replayAllowedForPath('/projects/8f3c')).toBe(false);
-    expect(replayAllowedForPath('/projects/8f3c/files')).toBe(false);
-    expect(replayAllowedForPath('/projects/start')).toBe(false);
-  });
-
-  test('blocks public session shares and the admin console', () => {
-    expect(replayAllowedForPath('/share/abc123')).toBe(false);
-    expect(replayAllowedForPath('/share/session/tok')).toBe(false);
-    expect(replayAllowedForPath('/admin')).toBe(false);
-    expect(replayAllowedForPath('/admin/projects')).toBe(false);
-  });
-
-  test('allows the funnel: marketing, auth, dashboard, the project list, billing', () => {
+  test('records every route, including the workspace, shares and admin', () => {
     for (const path of [
       '/',
       '/pricing',
       '/auth',
-      '/auth?redirect=%2Fdashboard',
-      '/dashboard',
       '/projects',
+      '/projects/8f3c',
+      '/projects/8f3c/sessions/1a2b',
+      '/projects/8f3c/files',
+      '/share/abc123',
+      '/share/session/tok',
+      '/admin',
+      '/admin/projects',
       '/accounts',
       '/subscription',
-      '/checkout',
-      '/legal',
     ]) {
       expect(replayAllowedForPath(path), path).toBe(true);
     }
   });
 
-  test('a missing or relative pathname is treated as not allowed', () => {
+  test('a missing or relative pathname is not a route, so it is not recorded', () => {
     expect(replayAllowedForPath(null)).toBe(false);
     expect(replayAllowedForPath(undefined)).toBe(false);
     expect(replayAllowedForPath('')).toBe(false);
     expect(replayAllowedForPath('projects/8f3c')).toBe(false);
   });
 
-  test('every blocked prefix is absolute, so a prefix can never match by accident', () => {
-    for (const prefix of REPLAY_BLOCKED_PREFIXES) {
-      expect(prefix.startsWith('/'), prefix).toBe(true);
-      expect(replayAllowedForPath(`${prefix}anything`), prefix).toBe(false);
-    }
+  test('the blocklist is empty by decision, and any prefix added to it re-blocks', () => {
+    expect(REPLAY_BLOCKED_PREFIXES).toEqual([]);
+    // The mechanism the list drives, proven independently of its current contents.
+    const blockedBy = (prefixes: readonly string[], pathname: string) =>
+      !prefixes.some((prefix) => pathname.startsWith(prefix));
+    expect(blockedBy(['/projects/'], '/projects/8f3c')).toBe(false);
+    expect(blockedBy(['/projects/'], '/projects')).toBe(true);
   });
 });

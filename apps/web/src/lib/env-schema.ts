@@ -100,7 +100,7 @@ const RuntimeEnvSchema = z.object({
   POSTHOG_KEY: z.string().default(''),
   /** PostHog ingest host, i.e. the data region. Set via
    *  KORTIX_PUBLIC_POSTHOG_HOST / NEXT_PUBLIC_POSTHOG_HOST. Default EU. */
-  POSTHOG_HOST: z.string().url().default('https://eu.i.posthog.com'),
+  POSTHOG_HOST: z.string().url().default('https://us.i.posthog.com'),
 });
 
 export type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>;

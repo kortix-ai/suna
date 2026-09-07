@@ -72,6 +72,10 @@ export function track(input: TrackInput): void {
       distinctId: input.userId,
       event: input.event,
       properties: {
+        // Dev, staging and prod share one PostHog project, so every event says
+        // which deployment produced it; without it the dashboards mix test
+        // traffic with customers. The web client registers the same property.
+        environment: process.env.INTERNAL_KORTIX_ENV?.trim() || 'unknown',
         ...cleanProperties(input.properties),
         ...(input.sessionId ? { session_id: input.sessionId } : {}),
       },

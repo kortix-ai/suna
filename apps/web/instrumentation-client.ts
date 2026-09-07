@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/nextjs';
 import posthog from 'posthog-js';
 import { getEnv } from '@/lib/env-config';
 import { captureAllowedNow } from '@/lib/analytics/posthog-consent';
+import { posthogEnvironment } from '@/lib/analytics/posthog-environment';
 import { posthogApiHost, posthogHosts } from './scripts/posthog-hosts.mjs';
 
 // Instrument client-side navigations for performance tracing
@@ -39,6 +40,10 @@ try {
       // without a deploy (client `sampleRate` would override remote config).
       session_recording: { maskAllInputs: true, maskTextSelector: '*' },
     });
+    // Dev, staging and prod share one PostHog project, so every event carries
+    // which deployment it came from. Without it the dashboards mix test traffic
+    // with customers. See lib/analytics/posthog-environment.ts.
+    posthog.register({ environment: posthogEnvironment(window.location.hostname) });
   }
 } catch {
   // Telemetry must never take the app down with it.

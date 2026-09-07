@@ -1,27 +1,25 @@
 /**
  * Which routes session replay may record.
  *
- * Replay is FAIL-CLOSED. `instrumentation-client.ts` initialises PostHog with
- * `disable_session_recording: true`, so the recorder never starts on its own,
- * and `posthog-identify.tsx` calls `startSessionRecording()` only while the
- * current route is allowed here. Nothing is captured in the frames between a
- * blocked route mounting and the first effect running, which is exactly the
- * leak a "record everything, then stop" design has.
+ * **Product decision, 2026-09-07: record every route.** The list below is
+ * empty, so replay follows consent alone. It previously blocked `/projects/`,
+ * `/share/` and `/admin`; recording those was chosen deliberately, with the
+ * masking below as the protection.
  *
- * Blocked, and why:
- *  - `/projects/…`  the workspace — prompts, transcripts, code, files, diffs and
- *                   the terminal. Also the surface with the highest DOM mutation
- *                   rate, where the recorder costs the most CPU.
- *  - `/share/…`     public session shares render the same transcripts.
- *  - `/admin…`      the operator console shows other customers' accounts.
+ * What keeps that safe: the recorder runs with `maskAllInputs: true` and
+ * `maskTextSelector: '*'` (see `instrumentation-client.ts`), so a replay shows
+ * layout, clicks, rage clicks and where someone dropped off — never prompt
+ * text, code, file contents or another customer's data. Canvas is not recorded.
  *
- * Allowed is the funnel worth watching: marketing, `/auth`, `/dashboard`, the
- * `/projects` list, onboarding, pricing and checkout. Even there the recorder
- * masks every input and every text node (`session_recording` config), so a
- * replay shows layout, clicks, rage clicks and the drop-off point — never
- * content.
+ * What it costs: the workspace streams tokens into the DOM, so the recorder
+ * does the most work there. Sampling and minimum duration live in the PostHog
+ * project settings, tunable without a deploy — turn sampling down before
+ * turning masking off.
+ *
+ * To re-block a surface, add its path prefix here; the machinery is unchanged
+ * and `posthog-identify.tsx` stops the recorder on entry to it.
  */
-export const REPLAY_BLOCKED_PREFIXES = ['/projects/', '/share/', '/admin'] as const;
+export const REPLAY_BLOCKED_PREFIXES: readonly string[] = [];
 
 export function replayAllowedForPath(pathname: string | null | undefined): boolean {
   if (!pathname || !pathname.startsWith('/')) return false;
