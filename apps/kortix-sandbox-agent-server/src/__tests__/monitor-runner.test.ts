@@ -89,6 +89,34 @@ function makeRunner(monitors: MonitorSpec[], ingest: ReturnType<typeof fakeInges
   return runner
 }
 
+function fakeTimeouts() {
+  let nextId = 1
+  const handlers = new Map<number, () => void>()
+  const timers = {
+    setTimeout: ((handler: () => void) => {
+      const id = nextId++
+      handlers.set(id, handler)
+      return id as unknown as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout,
+    clearTimeout: ((timer: ReturnType<typeof setTimeout>) => {
+      handlers.delete(timer as unknown as number)
+    }) as typeof clearTimeout,
+  }
+  return {
+    timers,
+    onlyActive(): ReturnType<typeof setTimeout> {
+      expect(handlers.size).toBe(1)
+      return handlers.keys().next().value as unknown as ReturnType<typeof setTimeout>
+    },
+    fire(timer: ReturnType<typeof setTimeout>): void {
+      const id = timer as unknown as number
+      const handler = handlers.get(id)
+      handlers.delete(id)
+      handler?.()
+    },
+  }
+}
+
 async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -320,17 +348,25 @@ describe('lifecycle events', () => {
   })
 
   test('an observed event resets the silence watchdog', async () => {
-    // Prints every ~250 ms, well inside its 1 s expectation, so it must never
-    // be reported silent.
-    script('chatty.sh', '#!/bin/bash\nfor i in $(seq 1 12); do echo "beat-$i"; sleep 0.25; done\n')
+    script('chatty.sh', '#!/bin/bash\necho "beat"\nsleep 30\n')
     const ingest = fakeIngest()
+    const clock = fakeTimeouts()
     makeRunner(
       [{ slug: 'chatty', run: './chatty.sh', mode: 'stream', intervalSeconds: null, expectEventWithinSeconds: 1 }],
       ingest,
+      { timers: clock.timers },
     ).start()
 
-    await waitFor(() => ingest.eventsFor('chatty').filter((e) => e.kind === 'event').length >= 8)
+    const initialWatchdog = clock.onlyActive()
+    await waitFor(() => ingest.eventsFor('chatty').some((event) => event.kind === 'event'))
+
+    // The observed event cancelled the watchdog armed at process start.
+    clock.fire(initialWatchdog)
     expect(ingest.eventsFor('chatty').filter((event) => event.line.event === 'silent')).toHaveLength(0)
+
+    // The replacement watchdog still reports a genuinely silent interval.
+    clock.fire(clock.onlyActive())
+    await waitFor(() => ingest.eventsFor('chatty').some((event) => event.line.event === 'silent'))
   })
 })
 
