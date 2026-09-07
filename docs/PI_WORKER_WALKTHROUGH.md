@@ -83,8 +83,10 @@ That is the intended default. Reasoning and supported remote API tools do not ne
 workspace compute. A skill that runs Python does need it. Generating a document
 through LibreOffice or a Python library also needs it; describing the document does not.
 
-The existing branch prewarms on every prompt. The pending startup-policy change
-makes this lazy by default. Explicit prewarming remains a latency option.
+The working tree defaults to lazy startup. `KORTIX_ENV_STARTUP=prewarm` explicitly
+prepares compute when the worker starts a model turn. This trades text-only compute
+cost for lower first-tool latency. The branch preview still runs the earlier policy
+until the startup-policy commit is deployed and its SHA is verified.
 
 **When does the full environment start?**
 

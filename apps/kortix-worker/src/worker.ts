@@ -167,6 +167,7 @@ export interface WorkerConfig {
   envToken?: string;
   envHeaders?: Record<string, string>;
   envTransport?: 'fetch' | 'keepalive' | 'ws';
+  environmentStartup?: 'lazy' | 'prewarm';
   /** Lazy-environment identity (P1.7): all four present → first compute tool
    *  call provisions the session's environment through the Kortix API. */
   apiUrl?: string;
@@ -185,6 +186,10 @@ export interface WorkerConfig {
 }
 
 export function configFromEnv(): WorkerConfig {
+  const environmentStartup = process.env.KORTIX_ENV_STARTUP ?? 'lazy';
+  if (environmentStartup !== 'lazy' && environmentStartup !== 'prewarm') {
+    throw new Error('KORTIX_ENV_STARTUP must be lazy or prewarm');
+  }
   const mode = (process.env.KORTIX_MODEL_MODE ?? 'faux') as 'faux' | 'real';
   const gatewayUrl = process.env.KORTIX_GATEWAY_URL ?? process.env.KORTIX_LLM_BASE_URL;
   return {
@@ -203,6 +208,7 @@ export function configFromEnv(): WorkerConfig {
     envToken: process.env.KORTIX_ENV_TOKEN,
     envHeaders: process.env.KORTIX_ENV_HEADERS ? JSON.parse(process.env.KORTIX_ENV_HEADERS) : undefined,
     envTransport: (process.env.KORTIX_ENV_TRANSPORT as any) ?? 'keepalive',
+    environmentStartup,
     systemPrompt:
       process.env.KORTIX_SYSTEM_PROMPT ??
       'You are a Kortix agent. All file and shell work happens in the environment, never locally.',
@@ -523,15 +529,9 @@ export async function startWorker(cfg = configFromEnv()) {
   // `messageID`): the worker MUST reuse it so the transcript, the API's inbox
   // placement, and the turn oracle all key on the same id.
   const publishUserMessage = (text: string, explicitId?: string): string => {
-    // Start the environment NOW, in parallel with the model's first token.
-    // Measured on pi.kortix.com: first token 4.25s, first `bash` on that same
-    // cold session 37.5s — the environment's cold start did not go away, it
-    // moved into the middle of the first answer. Kicking it here overlaps it
-    // with the model's own thinking; a session nobody prompts still provisions
-    // nothing, which is the cost argument the split is partly sold on.
-    // Fire-and-forget: a failed prewarm is the tool call's problem to report,
-    // not the prompt's.
-    if (lazy) lazy.prewarm();
+    // Explicit prewarm overlaps compute startup with the model request.
+    // Lazy mode starts compute only when a workspace tool needs it.
+    if (lazy && cfg.environmentStartup === 'prewarm') lazy.prewarm();
 
     // A new prompt COMMITS a staged rewind: this is the new path, and the
     // branch the user rewound past is now unreachable. The SDK's `rewind()`
@@ -934,7 +934,7 @@ export async function startWorker(cfg = configFromEnv()) {
   // Not awaited — the worker must be answering requests immediately, and the
   // reconcile deliberately waits out its own race window first.
   void bootReconcile.run();
-  return { server, agent, env, port, close: () => new Promise<void>((r) => server.close(() => r())) };
+  return { server, agent, env, faux, port, close: () => new Promise<void>((r) => server.close(() => r())) };
 }
 
 // No self-start guard here: src/main.ts is the bundle's sole entrypoint and
