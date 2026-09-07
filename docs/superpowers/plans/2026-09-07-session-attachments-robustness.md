@@ -664,6 +664,91 @@ npx eslint src/components/projects/project-access-boundary.tsx \
 - On the next exact-head preview, reload a valid session route and assert the project renders without `Try again`.
 - Abort the first project HTTP read once and assert the bounded retry renders the project without `Try again`.
 
+### Task 11: Complete package-test module mocks
+
+**Evidence:** The packages lane exposed eight incomplete Bun module mocks after the branch implementation passed its focused checks.
+
+**Files:**
+
+- Modify eight API test files named by commit `4f16fd234c`.
+
+**Result:**
+
+- Add the real `RUNTIME_STALE_REASON`, `toPublicStorageUrl`, and `PROJECT_ACTIONS` exports to the affected whole-module mocks.
+- Keep production code unchanged.
+- Focused verification passes 44 tests with 214 assertions.
+
+### Task 12: Synchronize merged web test contracts
+
+**Evidence:** Merging `origin/main` changed the sandbox-loading predicate and public-content timestamps. Two static web tests still asserted the old source.
+
+**Files:**
+
+- Modify: `apps/web/src/features/session/sandbox-loading-boundary.test.ts`
+- Regenerate: `apps/web/src/lib/seo/content-timestamps.json`
+
+**Result:**
+
+- Assert the guarded background-fetch predicate.
+- Regenerate the content timestamp manifest with the repository script.
+- Focused verification passes 8 tests with 21 assertions.
+- Related verification passes 68 tests with 1,992 assertions.
+
+### Task 13: Remove sandbox-agent test leakage and wall-clock assumptions
+
+**Evidence:** The packages lane exposed 15 Git failures after `refresh-stale-swap.test.ts` replaced `../git` and `../runtime-assets` process-wide. A relay test also required an upstream probe to finish within 300 ms.
+
+**Files:**
+
+- Modify: `apps/kortix-sandbox-agent-server/src/__tests__/refresh-stale-swap.test.ts`
+- Modify: `apps/kortix-sandbox-agent-server/src/egress-shim/shim.test.ts`
+
+**Result:**
+
+- Replace permanent module mocks with restored per-test spies.
+- Replace the relay wall-clock threshold with a deferred-response ordering proof.
+- The focused Git reproduction moves from 18 passes and 15 failures to 33 passes and zero failures.
+- The sandbox-agent suite passes 1,185 tests with 3,626 assertions.
+
+### Task 14: Isolate timing-sensitive package tests
+
+**Evidence:** Under full package contention, the monitor watchdog test emitted a valid `silent` event. The lifetime migration reused one container name and port across worktrees. Its successful readiness result was discarded by an immediate second probe.
+
+**Files:**
+
+- Modify: `apps/kortix-sandbox-agent-server/src/monitor-runner.ts`
+- Modify: `apps/kortix-sandbox-agent-server/src/__tests__/monitor-runner.test.ts`
+- Modify: `tests/migration/credit-lifetime-rollup.test.ts`
+
+**Result:**
+
+- Add an instance-scoped timeout seam while preserving production timeout behavior.
+- Drive the watchdog test with controlled timers.
+- Keep the first successful PostgreSQL readiness result.
+- Use a process-scoped container and bounded Docker bind retries below the host ephemeral range.
+- Two simultaneous lifetime migration runs pass 13 tests each on distinct ports.
+- The migration suite passes 28 tests with 55 assertions.
+- The sandbox-agent suite passes 1,185 tests with 3,628 assertions.
+
+### Task 15: Prove the synchronized package lane
+
+Run:
+
+```bash
+PATH="/Users/jay/.nvm/versions/node/v22.22.3/bin:$PATH" pnpm test -- --packages-only
+```
+
+**Result:**
+
+- Package quality passes in 244.0 seconds at commit `2a96334567`.
+- API passes 1,246 tests.
+- CLI passes 8,857 tests.
+- Web passes 9,512 tests.
+- Sandbox agent passes 1,185 tests.
+- Migration contracts pass 28 tests.
+- SDK typecheck, packed-install smoke, publish manifests, and all remaining package suites pass.
+- Benchmark: `tests/test-results/local/benchmark-1788810704772.json`.
+
 ## Post-plan review gate: eager attachment upload
 
 After Tasks 1–6 and preview verification, use the architectural path of `superpowers:brainstorming` with `/tmp/kortix-handoff-2026-09-07/design-eager-upload.json`.
