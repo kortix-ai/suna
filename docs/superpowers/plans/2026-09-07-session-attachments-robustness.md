@@ -37,8 +37,8 @@
 - OpenCode JSON `404 NotFoundError` is terminal for one immutable tuple. Proxy HTML and `not-running` 404 responses remain wakeable.
 - Runtime-scope ownership must cover hydration, SSE-gap rehydration, event reconciliation, prefetch, and `noteSessionSyncEvent`.
 - `session.deleted` removes the session's synchronized data and ownership metadata.
-- Abort-like `getProject` failures never become the final unavailable card.
-- Idempotent transient project reads retry with a bounded backoff before the unavailable card renders.
+- Abort-like and idempotent transient `getProject` failures retry with bounded backoff. They do not render the unavailable card while the retry budget remains.
+- After the bounded retry budget is exhausted, the existing unavailable card may render.
 - Preserve the existing 403 access-request and 404 not-found verdicts.
 - Web visual edits must use existing design-system primitives and brand tokens. Run the brand audit on changed web paths.
 - Append the new incident learning immediately below `## Register`. Do not edit prior learning entries.
