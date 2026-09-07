@@ -18,7 +18,7 @@ import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
-import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
+import { getProject, isUnreplayableError, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 
 const QUERY_KEY = 'project-access-boundary';
 
@@ -88,11 +88,12 @@ export function gateStateForError(error: unknown): AccessGateState {
 }
 
 /**
- * How many times a failure with no verdict is re-attempted before the
- * `unavailable` screen is shown. Three attempts across ~1.75s of the same
- * pending spinner the gate already renders — long enough to outlast a token
- * publish or a gateway blip, short enough that a genuinely dead backend still
- * reports itself promptly.
+ * How many times a statusless failure is re-attempted before the `unavailable`
+ * screen is shown. Three attempts across ~1.75s of the same pending spinner the
+ * gate already renders — enough to outlast a token refresh or a gateway blip.
+ * What keeps a DEAD backend prompt is not this number but the two guards around
+ * it: GATE_FETCH_TIMEOUT_MS bounds each attempt, and `isUnreplayableError`
+ * refuses to replay a deadline at all.
  */
 export const GATE_FETCH_RETRIES = 3;
 
@@ -102,33 +103,24 @@ export const GATE_FETCH_TIMEOUT_MS = 10_000;
 /**
  * Whether a failed `getProject` deserves another attempt.
  *
- * A 403 and a 404 are ANSWERS: the server looked at the request and ruled on
- * it, so those screens render on the first response and are never retried.
- * Everything else is a failure to *ask* — an `AuthError` raised client-side
- * because no token had been published yet (`code: 'NO_SESSION'`, no `status`),
- * a dropped connection, a 5xx. Asking again is exactly what those need, and
- * presenting one of them as a settled verdict about the user's access is the
- * bug this predicate exists to prevent: a signed-in user on a cold load was
- * shown "This project didn't load. / The request failed before we could check
- * your access." after a single attempt, because this query was `retry: false`.
- */
-/**
- * Failures that must never be replayed.
+ * An HTTP status is the server's ANSWER about this exact request, so replaying
+ * it only asks the same question again. 403 and 404 are the two verdicts this
+ * screen exists to render; 401 has already been through the SDK's own
+ * refresh-and-replay before it reaches here, so a 401 that survives is a real
+ * one. Only a failure with NO status is worth repeating — an `AuthError`
+ * raised before the request was ever sent, a dropped connection — plus a 5xx
+ * from a backend that may well answer on the next try.
  *
- * TIMEOUT means the SDK's own request deadline elapsed — the backend is not
- * answering, and a replay just buys another full deadline. ABORTED is the user
- * navigating away or React Query cancelling. `request_deadline` is the server
- * saying the same thing from its side. Retrying these was worth ~122s of
- * spinner against a wedged backend (4 attempts x the SDK's 30s deadline), with
- * no "Try again" button on screen because that button lives on the gate.
+ * `isUnreplayableError` is the SDK's own call on its own error codes: a request
+ * that blew a deadline or was cancelled must not be replayed. Retrying those
+ * was worth ~122s of spinner against a wedged backend (4 attempts x the SDK's
+ * request deadline) with no "Try again" button on screen, because that button
+ * lives on the very gate the retry was postponing.
  */
-const UNREPLAYABLE_CODES = new Set(['TIMEOUT', 'ABORTED', 'request_deadline']);
-
 export function shouldRetryGateFetch(failureCount: number, error: unknown): boolean {
+  if (isUnreplayableError(error)) return false;
   const status = errorStatus(error);
-  if (status === 403 || status === 404) return false;
-  const code = (error as { code?: string } | null)?.code;
-  if (code && UNREPLAYABLE_CODES.has(code)) return false;
+  if (status !== undefined && status < 500) return false;
   return failureCount < GATE_FETCH_RETRIES;
 }
 

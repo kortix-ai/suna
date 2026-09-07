@@ -79,7 +79,10 @@ function sleep(ms: number): Promise<void> {
 /**
  * The token an AUTHORITATIVE write has published, if it is still usable.
  *
- * This is the ONLY value a caller whose own fetch was overtaken may be handed.
+ * Two callers, one definition: `getSupabaseAccessToken`'s fast path, and the
+ * epoch branch that hands a value to a caller whose own fetch was overtaken.
+ * They must agree — an overtaken caller may be handed exactly what any caller
+ * arriving one microtask later would already get, and nothing more.
  * The overtaken fetch's answer belongs to the identity that existed before the
  * write and must never be committed or returned; the published token belongs
  * to whichever identity is current now, so returning it is correct — and
@@ -101,17 +104,12 @@ function publishedAuthToken(): string | null {
  * Slow path: deduplicates concurrent calls into a single auth roundtrip.
  */
 export async function getSupabaseAccessToken(): Promise<string | null> {
-  // Installer/bootstrap flow: server actions may set auth cookies without a
-  // client-side Supabase session yet. Use an injected token until the client
-  // session hydrates.
-  if (bootstrapToken) {
-    return bootstrapToken;
-  }
-
-  // Fast path: return cached token if still fresh
-  if (cachedToken && Date.now() - cachedAt < TOKEN_CACHE_TTL) {
-    return cachedToken;
-  }
+  // Fast path: whatever an authoritative write has already published — the
+  // bootstrap seed injected by a server action, or a still-fresh cached token.
+  // Identical to what the epoch branch below hands an overtaken caller, and
+  // deliberately the SAME function, so the two can never drift.
+  const published = publishedAuthToken();
+  if (published) return published;
 
   // Deduplicate: if another call is already fetching, piggyback on the
   // SAME promise. CRITICAL: piggybacking is the NORMAL case here, not an

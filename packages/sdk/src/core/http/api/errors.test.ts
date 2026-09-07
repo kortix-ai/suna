@@ -1,5 +1,6 @@
-import { test, expect } from 'bun:test';
+import { describe, test, expect } from 'bun:test';
 import {
+  API_ERROR_CODES,
   ApiError,
   AuthError,
   BillingError,
@@ -8,6 +9,7 @@ import {
   formatBillingErrorForUI,
   isBillingError,
   isFeatureDisabledError,
+  isUnreplayableError,
   parseBillingError,
 } from './errors';
 
@@ -333,4 +335,40 @@ test('isFeatureDisabledError rejects other errors', () => {
 
 test('featureDisabledKey returns null when the error is not a feature gate', () => {
   expect(featureDisabledKey(new ApiError('boom', { status: 500 }))).toBeNull();
+});
+
+/**
+ * JAY: `apps/web`'s project gate needs to know which failures are worth
+ * replaying, and was hardcoding this package's error codes as string literals
+ * (`'TIMEOUT'`, `'ABORTED'`, `'request_deadline'`). Two of those were inline
+ * literals in `api-client.ts` and the third was a module-PRIVATE const, so a
+ * host was coupled to names it could not import and a rename here would have
+ * silently stopped its retry policy working.
+ *
+ * The codes belong to the module that defines the error contract, and so does
+ * the question "may this be replayed?".
+ */
+describe('isUnreplayableError', () => {
+  test('a client deadline, an abort, and the server deadline are all unreplayable', () => {
+    for (const code of [
+      API_ERROR_CODES.TIMEOUT,
+      API_ERROR_CODES.ABORTED,
+      API_ERROR_CODES.REQUEST_DEADLINE,
+    ]) {
+      expect(isUnreplayableError(new ApiError('nope', { code }))).toBe(true);
+    }
+  });
+
+  test('an ordinary failure stays replayable', () => {
+    expect(isUnreplayableError(new ApiError('bad gateway', { status: 502 }))).toBe(false);
+    expect(isUnreplayableError(new AuthError())).toBe(false);
+    expect(isUnreplayableError(new Error('Failed to fetch'))).toBe(false);
+  });
+
+  test('never throws on the shapes a catch block actually sees', () => {
+    expect(isUnreplayableError(null)).toBe(false);
+    expect(isUnreplayableError(undefined)).toBe(false);
+    expect(isUnreplayableError('a string')).toBe(false);
+    expect(isUnreplayableError({ code: 'TIMEOUT' })).toBe(true);
+  });
 });

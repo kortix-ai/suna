@@ -1,6 +1,12 @@
 import { normalizeClientSource } from '../../platform/auth-core';
 import { getSupabaseAccessTokenWithRetry, invalidateTokenCache } from './auth';
-import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
+import {
+  API_ERROR_CODES,
+  ApiError,
+  AuthError,
+  parseBillingError,
+  RequestTooLargeError,
+} from './api/errors';
 import { platformConfig } from './config';
 import { impersonationHeaders } from './impersonation';
 
@@ -104,7 +110,7 @@ export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
  */
 export const PROVISION_IN_FLIGHT_CODE = 'provision_in_flight';
 
-const REQUEST_DEADLINE_CODE = 'request_deadline';
+const REQUEST_DEADLINE_CODE = API_ERROR_CODES.REQUEST_DEADLINE;
 const LEGACY_REQUEST_DEADLINE_MESSAGE = /^Request exceeded the \d+s server processing deadline$/;
 
 const isRequestDeadlineResponse = (
@@ -262,6 +268,20 @@ async function makeRequest<T = any>(
     // Note: X-Refresh-Token was removed to reduce header size and prevent HTTP 431 errors.
     // The backend handles token refresh via Supabase directly.
 
+    // The single place this request is actually issued. Both the
+    // transient-gateway retry loop and the 401 replay below go through it, so
+    // the request shape — spread options, credentials default, injected headers
+    // — cannot drift between them.
+    const send = (sendHeaders: Record<string, string>, signal: AbortSignal) => {
+      const fetchImpl = platformConfig().fetch ?? fetch;
+      return fetchImpl(url, {
+        ...fetchOptions,
+        headers: sendHeaders,
+        signal,
+        credentials: fetchOptions.credentials ?? 'omit',
+      });
+    };
+
     const retryableRead = isIdempotentMethod(fetchOptions.method);
     const maxAttempts = retryableRead ? TRANSIENT_READ_RETRIES + 1 : 1;
     let response!: Response;
@@ -280,13 +300,7 @@ async function makeRequest<T = any>(
       }
 
       try {
-        const fetchImpl = platformConfig().fetch ?? fetch;
-        response = await fetchImpl(url, {
-          ...fetchOptions,
-          headers,
-          signal: attemptController.signal,
-          credentials: fetchOptions.credentials ?? 'omit',
-        });
+        response = await send(headers, attemptController.signal);
       } catch (error) {
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -338,13 +352,10 @@ async function makeRequest<T = any>(
           retryController.abort();
         }, timeout);
         try {
-          const fetchImpl = platformConfig().fetch ?? fetch;
-          response = await fetchImpl(url, {
-            ...fetchOptions,
-            headers: { ...headers, Authorization: `Bearer ${freshToken}` },
-            signal: retryController.signal,
-            credentials: fetchOptions.credentials ?? 'omit',
-          });
+          response = await send(
+            { ...headers, Authorization: `Bearer ${freshToken}` },
+            retryController.signal,
+          );
         } finally {
           clearTimeout(retryTimeout);
         }
@@ -531,7 +542,7 @@ async function makeRequest<T = any>(
         return {
           error: new ApiError('Request aborted', {
             name: 'AbortError',
-            code: 'ABORTED',
+            code: API_ERROR_CODES.ABORTED,
           }),
           success: false,
         };
@@ -543,7 +554,7 @@ async function makeRequest<T = any>(
       apiError = new ApiError(
         `Request timed out after ${Math.round(timeout / 1000)}s: ${endpoint}`,
         {
-          code: 'TIMEOUT',
+          code: API_ERROR_CODES.TIMEOUT,
           url,
           endpoint,
           timeout,

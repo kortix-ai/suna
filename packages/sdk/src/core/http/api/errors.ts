@@ -1,4 +1,39 @@
 /**
+ * `ApiError.code` values this package produces for a request that did not
+ * complete. They are part of the public error contract — hosts branch on them
+ * to decide retry policy — so they live here beside the error classes rather
+ * than as literals scattered through the transport.
+ */
+export const API_ERROR_CODES = {
+  /** Our own request deadline elapsed: the backend never answered. */
+  TIMEOUT: 'TIMEOUT',
+  /** Cancelled from outside — navigation, tab close, React Query. */
+  ABORTED: 'ABORTED',
+  /** The server gave up on its side. */
+  REQUEST_DEADLINE: 'request_deadline',
+} as const;
+
+const UNREPLAYABLE_CODES: ReadonlySet<string> = new Set([
+  API_ERROR_CODES.TIMEOUT,
+  API_ERROR_CODES.ABORTED,
+  API_ERROR_CODES.REQUEST_DEADLINE,
+]);
+
+/**
+ * Whether replaying this request is pointless or wrong.
+ *
+ * A deadline elapsing is evidence the backend is not answering, so a replay
+ * only buys another full deadline — a caller that retries these turns one slow
+ * failure into several. An abort was somebody's explicit decision to stop.
+ * Everything else (a 5xx, a dropped connection, a status-less client failure)
+ * is worth asking again.
+ */
+export function isUnreplayableError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  return typeof code === 'string' && UNREPLAYABLE_CODES.has(code);
+}
+
+/**
  * Billing & API Error Classes
  *
  * Simplified from the legacy 8-class hierarchy. The backend (kortix-api)

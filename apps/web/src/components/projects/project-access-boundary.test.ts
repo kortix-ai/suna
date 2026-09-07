@@ -111,6 +111,16 @@ describe('shouldRetryGateFetch', () => {
     expect(shouldRetryGateFetch(0, null)).toBe(true);
   });
 
+  test('any 4xx is the server answering — never replayed, 401 included', () => {
+    // 401 specifically: the SDK already invalidates the host's token cache and
+    // replays once with a fresh one before this ever surfaces, so a 401 that
+    // reaches here has survived that. Retrying it here would repeat the SDK's
+    // whole recovery three more times for a session that is genuinely gone.
+    for (const status of [400, 401, 402, 403, 404, 409, 429]) {
+      expect(shouldRetryGateFetch(0, { status })).toBe(false);
+    }
+  });
+
   test('a server that failed to answer is retried', () => {
     for (const status of [500, 502, 503, 504]) {
       expect(shouldRetryGateFetch(0, { status })).toBe(true);
