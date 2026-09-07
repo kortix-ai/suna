@@ -4,6 +4,7 @@ import { ArrowSquareOutIcon, CubeIcon, GithubLogoIcon } from '@phosphor-icons/re
 import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import { cn } from '@/lib/utils';
@@ -11,11 +12,14 @@ import { connectorFor } from './connectors-catalog';
 import { TemplateCard } from './template-card';
 import { ConnectorMark } from './template-connectors';
 import { TemplateContentCard, TemplateContentTile } from './template-content-card';
+import { TemplateFileTree } from './template-file-tree';
+import { TemplateFileView } from './template-file-view';
 import { TemplateInstallCta } from './template-install-cta';
 import { TemplateSectionLabel, TemplateShell } from './template-shell';
 import { templateVisual } from './template-visual';
 import {
   type Template,
+  type TemplateFile,
   templateConnectorRows,
   templateRepoSlug,
   templateRepoUrl,
@@ -48,13 +52,25 @@ import {
 export function PublicTemplateDetail({
   template,
   otherTemplates = [],
+  files = [],
+  defaultPath = null,
+  defaultContent = null,
 }: {
   template: Template;
   /** The rest of the catalog, for cross-links at the foot of the page. */
   otherTemplates?: Template[];
+  /** The template repo's readable files at its pinned commit. */
+  files?: TemplateFile[];
+  /** The file the page opens on — its README, normally. */
+  defaultPath?: string | null;
+  /** That file's body, server-rendered so the prose is in the crawled HTML. */
+  defaultContent?: string | null;
 }) {
   const { Icon, banner, color } = templateVisual(template.slug);
   const connectors = templateConnectorRows(template);
+  // Which file the tree has selected. Undefined means "the default document",
+  // which is the one already rendered into the page.
+  const [selectedPath, setSelectedPath] = useState<string | undefined>(undefined);
 
   return (
     <TemplateShell
@@ -103,6 +119,22 @@ export function PublicTemplateDetail({
             </div>
           </div>
 
+          {files.length > 0 ? (
+            <div>
+              <TemplateSectionLabel count={files.length}>Files</TemplateSectionLabel>
+              {/* Capped and scrolled: a template repo is small, but the rail is
+                  sticky, and a tree taller than the viewport would push the
+                  provenance row out of reach on a short screen. */}
+              <div className="bg-popover max-h-72 overflow-y-auto rounded-md border py-1">
+                <TemplateFileTree
+                  paths={files.map((file) => file.path)}
+                  selected={selectedPath ?? defaultPath ?? undefined}
+                  onSelect={setSelectedPath}
+                />
+              </div>
+            </div>
+          ) : null}
+
           {/* Provenance closes the rail, the way the source block closed it on the
               old project page: who published this, and the exact commit the
               install reads. */}
@@ -133,6 +165,20 @@ export function PublicTemplateDetail({
       }
     >
       <div className="space-y-8">
+        {/* The template's own words come first — its README is what a person
+            reads to decide, and the sections below only summarize what its
+            manifest declares. */}
+        {defaultPath || selectedPath ? (
+          <section>
+            <TemplateFileView
+              slug={template.slug}
+              path={selectedPath}
+              defaultPath={defaultPath ?? undefined}
+              initialContent={defaultContent}
+            />
+          </section>
+        ) : null}
+
         {template.agents.length > 0 ? (
           <section>
             <TemplateSectionLabel count={template.agents.length}>Agents</TemplateSectionLabel>

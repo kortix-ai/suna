@@ -70,6 +70,17 @@ export const qk = {
 
     /** One template's detail, by slug. */
     detail: (slug: string) => [...qk.templates.scope(), 'detail', slug] as const,
+
+    /** One template's repository file tree. */
+    files: (slug: string) => [...qk.templates.scope(), 'files', slug] as const,
+
+    /**
+     * One file's text. The path is part of the key because it is a different
+     * SERVER request per file — and the content is immutable for the
+     * template's pinned commit, so an entry never has to be invalidated.
+     */
+    file: (slug: string, path: string) =>
+      [...qk.templates.scope(), 'file', slug, path] as const,
   },
 
   /**

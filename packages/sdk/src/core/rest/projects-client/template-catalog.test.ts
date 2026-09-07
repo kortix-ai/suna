@@ -5,6 +5,8 @@ import {
   createTemplateInstallSession,
   getTemplateBySlug,
   listTemplateCatalog,
+  listTemplateFiles,
+  readTemplateFile,
 } from './template-catalog';
 
 let calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
@@ -128,4 +130,39 @@ test('createTemplateInstallSession url-encodes the project id', async () => {
   nextResponse = { status: 201, body: { session_id: 's2' } };
   await createTemplateInstallSession('p/1', 'seo-watch');
   expect(last().url).toBe('http://test.local/projects/p%2F1/templates/install-session');
+});
+
+// ── the template's own repository ────────────────────────────────────────────
+//
+// A template IS a public repo pinned to a commit. The catalog says what it
+// declares; these two reads say what it actually contains, which is what a
+// person reads before installing it.
+
+test('listTemplateFiles reads the file tree with no Authorization header', async () => {
+  nextResponse = { status: 200, body: { files: [{ path: 'README.md', size: 12 }], default_path: 'README.md' } };
+  const listing = await listTemplateFiles('seo-watch');
+  expect(last().url).toBe('http://test.local/public/templates/seo-watch/files');
+  expect(last().headers.authorization).toBeUndefined();
+  expect(listing.files[0]?.path).toBe('README.md');
+  expect(listing.default_path).toBe('README.md');
+});
+
+test('readTemplateFile sends the path as a query parameter and unwraps the text', async () => {
+  nextResponse = { status: 200, body: { path: 'docs/a.md', content: '# hi' } };
+  expect(await readTemplateFile('seo-watch', 'docs/a.md')).toBe('# hi');
+  expect(last().url).toBe('http://test.local/public/templates/seo-watch/file?path=docs%2Fa.md');
+});
+
+test('readTemplateFile encodes a slug and a path with awkward characters', async () => {
+  nextResponse = { status: 200, body: { path: 'a b/c#d.md', content: 'x' } };
+  await readTemplateFile('a/b', 'a b/c#d.md');
+  expect(last().url).toBe('http://test.local/public/templates/a%2Fb/file?path=a%20b%2Fc%23d.md');
+});
+
+test('readTemplateFile throws a TemplateError carrying 404 for an unpublished path', async () => {
+  nextResponse = { status: 404, body: { error: 'File not found' } };
+  await expect(readTemplateFile('seo-watch', 'nope.md')).rejects.toMatchObject({
+    name: 'TemplateError',
+    status: 404,
+  });
 });

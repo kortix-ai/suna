@@ -30,9 +30,36 @@ catalog reads take no token and no flag. See [Feature flags](/docs/feature-flags
 | `templates.list(options?)` | `GET /public/templates`       | Every template; `options.q` narrows by title, description, repo or slug |
 | `templates.get(slug)`      | `GET /public/templates/:slug` | One template, or a `TemplateError` with `status: 404`                   |
 
-Both are anonymous by design. They are not built on the authenticated client,
-so a server render with `getToken: () => null` can read them, and a signed-in
-visitor's token never leaks into a cached page.
+All of these are anonymous by design. They are not built on the authenticated
+client, so a server render with `getToken: () => null` can read them, and a
+signed-in visitor's token never leaks into a cached page.
+
+## The repository — `kortix.templates.files` / `.file`
+
+A template IS a public GitHub repository pinned to a commit. The catalog says
+what it declares; these two say what it contains, which is what a person reads
+before installing it.
+
+| Method                       | Wraps                                    | What it does                                                                 |
+| ---------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `templates.files(slug)`      | `GET /public/templates/:slug/files`      | Readable files at the pinned commit, plus the `default_path` a page opens on |
+| `templates.file(slug, path)` | `GET /public/templates/:slug/file?path=` | One file's text                                                              |
+
+Three properties are worth relying on:
+
+- **Everything listed can be opened.** Binaries are absent from the listing, so
+  a file browser never offers a row it cannot render.
+- **The listing is the allowlist.** `file()` resolves only a path `files()`
+  returned; anything else — traversal, an absolute path, a real file the
+  template does not publish — is the same `404`, so the route cannot be used to
+  probe a repository.
+- **An empty listing is a normal answer, not an error.** These are the only
+  template reads that leave our process, and an unreachable repository degrades
+  to `{ files: [], default_path: null }` rather than failing the page. Render
+  the file browser only when `files.length > 0`.
+
+Content is immutable for a template's pinned commit, so a response never needs
+invalidating.
 
 ## The install — `kortix.project(id).templates`
 
@@ -61,6 +88,8 @@ const { session_id } = await kortix.project(projectId).templates.install(templat
 | `TemplateTrigger`            | `slug`, `name`, `type`, `cron`, `agent`, `enabled`                                                                                                                        |
 | `TemplateConnector`          | `slug`, `provider`, `app`                                                                                                                                                 |
 | `TemplateListing`            | `{ templates }`                                                                                                                                                           |
+| `TemplateFile`               | `path`, `size` — one readable file in the template's repository                                                                                                           |
+| `TemplateFileListing`        | `{ files, default_path }` — the README, else the manifest, else the first file                                                                                            |
 | `ListTemplateCatalogOptions` | `{ q? }`                                                                                                                                                                  |
 | `TemplateError`              | `Error` with a numeric `status` — `404` for an unknown slug, `429` when rate limited                                                                                      |
 
@@ -94,6 +123,13 @@ function Templates({ projectId }: { projectId: string }) {
 | `useTemplateCatalog(options?)`  | The catalog, keyed on `options.q`                             |
 | `useTemplate(slug)`             | One template; disabled without a slug                         |
 | `useTemplateInstall(projectId)` | A mutation over `install(slug)`; resolves to `{ session_id }` |
+| `useTemplateFiles(slug)`        | The repository file tree; disabled without a slug             |
+| `useTemplateFile(slug, path)`   | One file's text; takes `{ initialData }` for an SSR'd body    |
 
-Key factories `templateCatalogKey(options?)` and
-`templateKey(slug)` are exported for manual invalidation.
+Key factories `templateCatalogKey(options?)`, `templateKey(slug)`,
+`templateFilesKey(slug)` and `templateFileKey(slug, path)` are exported for
+manual invalidation.
+
+`useTemplateFile`'s `initialData` is how a server-rendered page hands over the
+document it already shipped — the default file must not flash a spinner on a
+page whose prose is already in the HTML.

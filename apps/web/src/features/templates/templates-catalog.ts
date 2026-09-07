@@ -1,5 +1,6 @@
 import type {
   TemplateConnector,
+  TemplateFile as SdkTemplateFile,
   Template as SdkTemplate,
 } from '@kortix/sdk';
 
@@ -17,6 +18,9 @@ import type {
 
 /** The wire shape, re-exported so components import one name. */
 export type Template = SdkTemplate;
+
+/** One readable file in the template's repository, at its pinned commit. */
+export type TemplateFile = SdkTemplateFile;
 
 /**
  * One app a template needs, as the install modal lists it.

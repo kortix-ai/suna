@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation';
 import { PublicTemplateDetail } from '@/features/templates/public-template-detail';
 import {
   loadPublicTemplate,
+  loadPublicTemplateFile,
+  loadPublicTemplateFiles,
   loadPublicTemplates,
 } from '@/features/templates/public-templates-server';
 import type { Template } from '@/features/templates/templates-catalog';
@@ -66,6 +68,13 @@ export default async function PublicTemplatePage(props: PageProps) {
   // does and it is already cached for the hour this page is.
   const otherTemplates = (await loadPublicTemplates()).filter((other) => other.slug !== slug);
 
+  // The repo's file tree, and the body of the document the page opens on. Both
+  // are server-rendered: the README is this page's primary prose, so it belongs
+  // in the HTML a crawler reads rather than behind a click. Both degrade to
+  // nothing on failure — see the loaders.
+  const fileListing = await loadPublicTemplateFiles(slug);
+  const defaultContent = await loadPublicTemplateFile(slug, fileListing.default_path);
+
   const url = `${CANONICAL_ORIGIN}/templates/${slug}`;
   const description = describe(template);
   const jsonLd = [
@@ -107,7 +116,13 @@ export default async function PublicTemplatePage(props: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
-      <PublicTemplateDetail template={template} otherTemplates={otherTemplates} />
+      <PublicTemplateDetail
+        template={template}
+        otherTemplates={otherTemplates}
+        files={fileListing.files}
+        defaultPath={fileListing.default_path}
+        defaultContent={defaultContent}
+      />
     </main>
   );
 }

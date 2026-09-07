@@ -3,8 +3,11 @@ import 'server-only';
 import {
   TemplateError,
   type Template,
+  type TemplateFileListing,
   getTemplateBySlug,
   listTemplateCatalog,
+  listTemplateFiles,
+  readTemplateFile,
 } from '@kortix/sdk';
 import { runWithKortix } from '@kortix/sdk/server';
 
@@ -42,6 +45,40 @@ function scoped<T>(read: () => Promise<T>): Promise<T> {
 export async function loadPublicTemplates(): Promise<Template[]> {
   const listing = await scoped(() => listTemplateCatalog());
   return listing.templates;
+}
+
+/**
+ * The template repository's file tree.
+ *
+ * Degrades to an empty listing on ANY failure, unlike the catalog reads above.
+ * The tree is an enrichment: the page's real content is what the template
+ * declares, which is already in hand, so an unreachable repo or a GitHub rate
+ * limit must cost the reader a file browser — not the page.
+ */
+export async function loadPublicTemplateFiles(slug: string): Promise<TemplateFileListing> {
+  try {
+    return await scoped(() => listTemplateFiles(slug));
+  } catch {
+    return { files: [], default_path: null };
+  }
+}
+
+/**
+ * One file's text, server-side, for the document the page opens on.
+ *
+ * Same rule as the listing: a file that will not load is a missing panel, never
+ * a failed render.
+ */
+export async function loadPublicTemplateFile(
+  slug: string,
+  path: string | null,
+): Promise<string | null> {
+  if (!path) return null;
+  try {
+    return await scoped(() => readTemplateFile(slug, path));
+  } catch {
+    return null;
+  }
 }
 
 /** One template by slug, or null when the API answers 404. */

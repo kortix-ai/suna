@@ -6,6 +6,24 @@ export interface AllowEntry {
 
 export const uncoveredAllow: AllowEntry[] = [
   {
+    method: "GET",
+    path: "/v1/projects/:*/git/connection",
+    reason:
+      "DEBT, not a considered exemption, and NOT introduced by the change that added this entry. The route is in apps/api/src/projects/routes/r1.ts and is absent from the manifest on main, so main's gate never saw it; it entered this branch when the manifest was regenerated against a running API. Nothing covers it — it needs a flow, and this entry keeps the gap visible instead of letting a stale manifest re-hide it.",
+  },
+  {
+    method: "GET",
+    path: "/v1/runtime-assets/entrypoint",
+    reason:
+      "Same DEBT as GET /v1/projects/:*/git/connection above: real route (apps/api/src/runtime-assets/index.ts), missing from main's manifest, surfaced by a regenerate. It serves the supervising sandbox entrypoint script to a booting guest rather than to an end-user client, so a flow would have to stand up a sandbox to exercise it.",
+  },
+  {
+    method: "HEAD",
+    path: "/v1/runtime-assets/entrypoint",
+    reason:
+      "The HEAD sibling of the GET above — the guest's cache-validation probe. Same source module, same debt, same reason it is not end-user reachable.",
+  },
+  {
     method: "POST",
     path: "/v1/admin/api/accounts/:*/members/:*/role",
     reason:

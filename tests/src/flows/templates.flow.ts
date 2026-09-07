@@ -27,7 +27,12 @@ flow(
   'TMPL-1',
   {
     domain: 'projects',
-    routes: ['GET /v1/public/templates', 'GET /v1/public/templates/:slug'],
+    routes: [
+      'GET /v1/public/templates',
+      'GET /v1/public/templates/:slug',
+      'GET /v1/public/templates/:slug/files',
+      'GET /v1/public/templates/:slug/file',
+    ],
   },
   async (ctx) => {
     let first = { slug: '', title: '', repo: '' };
@@ -89,6 +94,63 @@ flow(
     await ctx.step('an unknown slug → 404', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/public/templates/nope');
       r.status(404);
+    });
+
+    // ── the template's own repository ────────────────────────────────────────
+    //
+    // These two read GitHub at the template's pinned commit, so the CONTRACT is
+    // asserted rather than the payload: an unauthenticated or rate-limited
+    // GitHub degrades the listing to `[]` by design, and a test that demanded
+    // files would fail for a reason that is not a Kortix defect. What must hold
+    // either way is the shape, the guards and the status codes.
+
+    let firstFile: string | null = null;
+
+    await ctx.step('the file tree reads with no auth → 200 with a listing', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get(`/v1/public/templates/${first.slug}/files`);
+      r.status(200).body().exists('$.files');
+      r.headerExists('etag');
+      const files = r.json().files as Array<{ path: string; size: number }>;
+      if (!Array.isArray(files)) throw new Error('files is not an array');
+      const defaultPath = r.json().default_path as string | null;
+      if (files.length > 0) {
+        // A non-empty listing must name the document the page opens on, and
+        // that document must be one of the listed files.
+        if (!defaultPath) throw new Error('a non-empty listing named no default file');
+        if (!files.some((f) => f.path === defaultPath)) {
+          throw new Error(`default_path ${defaultPath} is not in the listing`);
+        }
+        firstFile = defaultPath;
+      }
+    });
+
+    await ctx.step('a listed file reads back as text; an unlisted one 404s', async () => {
+      if (firstFile) {
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .get(`/v1/public/templates/${first.slug}/file`, { query: { path: firstFile } });
+        r.status(200).body().has('$.path', firstFile).exists('$.content');
+      }
+      // The listing is the allowlist, so traversal and "any path" are the same
+      // answer as "does not exist" — the route cannot be used to probe a repo.
+      for (const path of ['../../../etc/passwd', '/etc/passwd', 'no/such/file.md']) {
+        const denied = await ctx.client
+          .as(ctx.P.ANON)
+          .get(`/v1/public/templates/${first.slug}/file`, { query: { path } });
+        denied.status(404);
+      }
+    });
+
+    await ctx.step('the file route needs a path, and a real template', async () => {
+      const noPath = await ctx.client
+        .as(ctx.P.ANON)
+        .get(`/v1/public/templates/${first.slug}/file`);
+      noPath.status(400);
+
+      const unknown = await ctx.client.as(ctx.P.ANON).get('/v1/public/templates/nope/files');
+      unknown.status(404);
     });
   },
 );

@@ -926,6 +926,21 @@ description, repo or slug, case-insensitively, and a nonsense query is an empty
 list, not an error. `GET /public/templates/:slug` → `200 {template}`
 for a catalog slug and `404` otherwise.
 
+The same flow covers the template's own repository, read at its pinned commit.
+`GET /public/templates/:slug/files` → `200 {files, default_path}`; when the
+listing is non-empty it names the document the page opens on, and that document
+is one of the listed files. `GET /public/templates/:slug/file?path=` → `200
+{path, content}` for a listed path, `400` with no `path`, and `404` for
+anything the listing does not carry — traversal, an absolute path and a
+nonexistent file are one answer, so the route cannot be used to probe a
+repository. Both `404` for an unknown slug.
+
+These two are the only reads here that leave the process, so the flow asserts
+the contract rather than the payload: GitHub answering slowly, anonymously or
+not at all degrades the listing to `[]` BY DESIGN — the catalog already carries
+what the template declares — and a test that demanded files would go red for
+something that is not a Kortix defect.
+
 `TMPL-2` The feature gate — with the `templates` flag off a project member's
 install answers `403 {code:'feature_disabled', feature:'templates'}`, not a
 session. Membership is checked BEFORE the flag, so a stranger gets `404` and

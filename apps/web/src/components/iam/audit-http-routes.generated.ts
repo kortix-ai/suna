@@ -556,6 +556,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|public|session-shares|:shareId|messages",
   "GET|v1|public|templates",
   "GET|v1|public|templates|:slug",
+  "GET|v1|public|templates|:slug|files",
+  "GET|v1|public|templates|:slug|file",
   "POST|v1|router|chat|completions",
   "GET|v1|router|health",
   "POST|v1|router|image-search",

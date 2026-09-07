@@ -14,7 +14,12 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { getTemplateBySlug, listTemplateCatalog } from '../templates/catalog';
+import {
+  findTemplateCatalogEntry,
+  getTemplateBySlug,
+  listTemplateCatalog,
+} from '../templates/catalog';
+import { defaultTemplateFile, listTemplateFiles, readTemplateFile } from './files';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { computeEtag, etagMatches } from '../shared/http-cache';
 import { createPublicTemplatesRateLimitMiddleware } from '../shared/rate-limit';
@@ -70,5 +75,63 @@ publicTemplatesApp.openapi(
     const template = getTemplateBySlug(c.req.param('slug'));
     if (!template) return c.json({ error: 'Template not found' }, 404);
     return cached(c, { template });
+  },
+);
+
+/**
+ * The template's own repository, read at its pinned commit.
+ *
+ * These two are the only routes here that leave the process — everything above
+ * is served from the static catalog. They exist because a template IS a repo:
+ * what it declares is in the catalog, but what it actually SAYS is in its
+ * README and its agent and skill files, and a person choosing a template wants
+ * to read that before installing it. See `./files` for the pinning, the memo
+ * and the guards.
+ */
+publicTemplatesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{slug}/files',
+    tags: ['public-templates'],
+    summary: 'GET /public/templates/:slug/files — the template repo file tree',
+    request: { params: z.object({ slug: z.string() }) },
+    responses: {
+      200: json(z.any(), 'Every readable file at the pinned commit'),
+      ...errors(404, 429),
+    },
+  }),
+  async (c: any) => {
+    const template = findTemplateCatalogEntry(c.req.param('slug'));
+    if (!template) return c.json({ error: 'Template not found' }, 404);
+    const files = await listTemplateFiles(template);
+    return cached(c, { files, default_path: defaultTemplateFile(files) ?? null });
+  },
+);
+
+publicTemplatesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{slug}/file',
+    tags: ['public-templates'],
+    summary: 'GET /public/templates/:slug/file?path= — one file, as text',
+    request: {
+      params: z.object({ slug: z.string() }),
+      query: z.object({ path: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "The file's text"),
+      ...errors(400, 404, 429),
+    },
+  }),
+  async (c: any) => {
+    const template = findTemplateCatalogEntry(c.req.param('slug'));
+    if (!template) return c.json({ error: 'Template not found' }, 404);
+    const path = (c.req.query('path') ?? '').trim();
+    if (!path) return c.json({ error: 'path is required' }, 400);
+    const content = await readTemplateFile(template, path);
+    // 404, not 403: a path this template does not publish and a path that does
+    // not exist are the same answer, so the route cannot be used to probe.
+    if (content == null) return c.json({ error: 'File not found' }, 404);
+    return cached(c, { path, content });
   },
 );

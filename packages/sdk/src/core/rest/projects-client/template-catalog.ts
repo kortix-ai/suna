@@ -135,6 +135,50 @@ export async function getTemplateBySlug(slug: string): Promise<Template> {
   return body.template;
 }
 
+/** One readable file in a template's repository, at its pinned commit. */
+export interface TemplateFile {
+  /** Repo-relative path, e.g. `.kortix/opencode/agents/sre.md`. */
+  path: string;
+  /** Bytes. */
+  size: number;
+}
+
+/** A template's file tree, plus the file its page should open on. */
+export interface TemplateFileListing {
+  files: TemplateFile[];
+  /** The README, else the manifest, else the first file. `null` when empty. */
+  default_path: string | null;
+}
+
+/**
+ * Every readable file in the template's repository, at the commit its card was
+ * derived from.
+ *
+ * Binary files are absent by construction — the listing only carries what
+ * {@link readTemplateFile} can return as text, so anything listed can be
+ * opened. An empty list is a normal answer (an unreachable repo, a rate limit),
+ * not an error: the catalog already carries what the template declares.
+ */
+export async function listTemplateFiles(slug: string): Promise<TemplateFileListing> {
+  return getJson<TemplateFileListing>(
+    catalogUrl(`/${encodeURIComponent(slug)}/files`),
+  );
+}
+
+/**
+ * One file's text.
+ *
+ * Only a path from {@link listTemplateFiles} resolves; anything else throws a
+ * {@link TemplateError} with `status: 404`, because the listing is the
+ * allowlist rather than a hint.
+ */
+export async function readTemplateFile(slug: string, path: string): Promise<string> {
+  const body = await getJson<{ path: string; content: string }>(
+    `${catalogUrl(`/${encodeURIComponent(slug)}/file`)}?path=${encodeURIComponent(path)}`,
+  );
+  return body.content;
+}
+
 /**
  * Start the agent-driven install of one template and return the session to
  * open.

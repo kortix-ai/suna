@@ -383,6 +383,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   const templates = {
     list: P.listTemplateCatalog,
     get: P.getTemplateBySlug,
+    /** The template repo's file tree at its pinned commit. */
+    files: P.listTemplateFiles,
+    /** One file's text. Only a path the listing carries resolves. */
+    file: P.readTemplateFile,
   };
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */

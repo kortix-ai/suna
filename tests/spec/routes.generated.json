@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 632,
+  "count": 634,
   "routes": [
     {
       "method": "GET",
@@ -2217,6 +2217,14 @@
     {
       "method": "GET",
       "path": "/v1/public/templates/:slug"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/templates/:slug/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/templates/:slug/file"
     },
     {
       "method": "POST",

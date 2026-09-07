@@ -102,9 +102,13 @@ export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export {
   useTemplateCatalog,
   useTemplate,
+  useTemplateFiles,
+  useTemplateFile,
   useTemplateInstall,
   templateCatalogKey,
   templateKey,
+  templateFilesKey,
+  templateFileKey,
 } from './use-templates';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
