@@ -27,6 +27,7 @@ test('the UI discovers its compiled runtime and reads the visible todo state', a
     envCwd: '/workspace',
     systemPrompt: 'Answer.',
     modelMode: 'faux',
+    modelId: 'openai/gpt-5.4',
     kortixToken: 'test',
     sessionId: 'ui-discovery',
   });
@@ -59,6 +60,9 @@ test('the UI discovers its compiled runtime and reads the visible todo state', a
     default_agent: 'review',
     model: 'kortix/openai/gpt-5.4',
   });
+  const state = await (await call('/kortix/opencode/state')).json() as any;
+  expect(state.config.value.model).toBe('kortix/openai/gpt-5.4');
+  expect(state.agents.value[0].model).toEqual({ providerID: 'kortix', modelID: 'openai/gpt-5.4' });
   expect(await (await call('/tool/ids')).json()).toEqual(
     expect.arrayContaining(['question', 'todowrite', 'todoread']),
   );

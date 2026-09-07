@@ -984,7 +984,7 @@ export class RuntimeSurface {
       color: null,
       variant: null,
       source: 'config' as const,
-      model: agentModel(agent.model ?? this.opts.defaultModel ?? undefined),
+      model: this.opts.resolvedModel ?? agentModel(agent.model ?? this.opts.defaultModel ?? undefined),
     }));
     return {
       epoch: this.bus.epoch,
@@ -1010,7 +1010,9 @@ export class RuntimeSurface {
       config: {
         known: true,
         value: {
-          model: this.opts.defaultModel ?? null,
+          model: this.opts.resolvedModel
+            ? `${this.opts.resolvedModel.providerID}/${this.opts.resolvedModel.modelID}`
+            : this.opts.defaultModel ?? null,
           small_model: null,
           default_agent: this.opts.agentName ?? null,
           permission: null,
@@ -1325,7 +1327,9 @@ export class RuntimeSurface {
       res.writeHead(200, { 'content-type': 'application/json' }).end(
         JSON.stringify({
           default_agent: this.opts.agentName ?? 'build',
-          model: this.opts.defaultModel ?? undefined,
+          model: this.opts.resolvedModel
+            ? `${this.opts.resolvedModel.providerID}/${this.opts.resolvedModel.modelID}`
+            : this.opts.defaultModel ?? undefined,
           agent: this.opts.agents ?? {},
           permission: this.opts.permissionConfig,
           lsp: false,
