@@ -1,14 +1,29 @@
 'use client';
 
-import type { SessionDisplayStatus, SessionSource } from '@/components/projects/session-label';
+import type {
+  SessionDisplayStatus,
+  SessionSource,
+  SessionSourceKind,
+} from '@/components/projects/session-label';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { LocalTime } from '@/components/ui/local-time';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
-import { CheckCircleIcon, GitDiffIcon, XCircleIcon, type Icon } from '@phosphor-icons/react';
-import type { ReactElement } from 'react';
+import {
+  CalendarDotsIcon,
+  CheckCircleIcon,
+  EnvelopeIcon,
+  GitDiffIcon,
+  WebhooksLogoIcon,
+  XCircleIcon,
+  type Icon,
+} from '@phosphor-icons/react';
+import { formatDistanceToNowStrict } from 'date-fns';
+import type { ComponentType, ReactElement } from 'react';
+import { shortRelative } from './project-session-list-helpers';
 import { SessionStatusMark } from './session-status-mark';
 
 const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
@@ -29,6 +44,17 @@ const CHANGE_REQUEST_STATUS_CLASS: Record<ChangeRequestStatus, string> = {
   open: 'text-kortix-blue',
   merged: 'text-kortix-green',
   closed: 'text-muted-foreground',
+};
+
+const SOURCE_ICONS: Record<
+  Exclude<SessionSourceKind, 'chat'>,
+  ComponentType<{ className?: string }>
+> = {
+  slack: Slack,
+  telegram: Telegram,
+  email: EnvelopeIcon,
+  schedule: CalendarDotsIcon,
+  webhook: WebhooksLogoIcon,
 };
 
 const CHANGE_REQUEST_STATUS_KEY: Record<
@@ -73,21 +99,31 @@ function SessionCreatedTime({ createdAt, className }: { createdAt: string; class
   );
 }
 
-function ChangeRequestStatus({ status }: { status: ChangeRequestStatus }) {
-  const t = useTranslations('sidebar.sessionList.brief');
-  const label = t(CHANGE_REQUEST_STATUS_KEY[status]);
+function RelativeCreatedTime({ createdAt }: { createdAt: string }) {
+  const createdDate = new Date(createdAt);
+  const relativeTime = Number.isNaN(createdDate.getTime())
+    ? '—'
+    : shortRelative(formatDistanceToNowStrict(createdDate, { addSuffix: false }));
+
+  return (
+    <time
+      dateTime={createdAt}
+      className="text-muted-foreground shrink-0 text-xs tabular-nums"
+      suppressHydrationWarning
+    >
+      {relativeTime}
+    </time>
+  );
+}
+
+function ChangeRequestStatusIcon({ status }: { status: ChangeRequestStatus }) {
   const StatusIcon = CHANGE_REQUEST_STATUS_ICON[status];
 
   return (
-    <span
-      className={cn(
-        'flex shrink-0 items-center justify-end gap-1 text-xs font-medium',
-        CHANGE_REQUEST_STATUS_CLASS[status],
-      )}
-    >
-      <StatusIcon className="size-3.5" aria-hidden />
-      {label}
-    </span>
+    <StatusIcon
+      className={cn('size-4 shrink-0', CHANGE_REQUEST_STATUS_CLASS[status])}
+      aria-hidden
+    />
   );
 }
 
@@ -99,76 +135,43 @@ function SessionBriefContent({
   changeRequests,
   changeRequestLoadState,
 }: SessionBriefProps) {
-  const t = useTranslations('sidebar.sessionList.brief');
-  const statusLabel = useStatusLabel(status);
-  const hasExternalSource = source.kind !== 'chat';
+  const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
+  const visibleChangeRequests = changeRequestLoadState === 'ready' ? changeRequests : [];
 
   return (
-    <div className="space-y-3">
-      <p className="text-foreground line-clamp-2 text-sm leading-5 font-medium">{title}</p>
-
-      <dl className="space-y-2 text-xs">
-        <div className="flex items-center gap-3">
-          <dt className="text-muted-foreground w-16 shrink-0">{t('status')}</dt>
-          <dd className="text-foreground flex min-w-0 items-center gap-1.5 font-medium">
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <p className="text-foreground truncate text-sm leading-5 font-medium">{title}</p>
+          <span className="shrink-0">
             <SessionStatusMark status={status} />
-            <span className="truncate">{statusLabel}</span>
-          </dd>
+          </span>
         </div>
-        <div className="flex items-center gap-3">
-          <dt className="text-muted-foreground w-16 shrink-0">{t('created')}</dt>
-          <dd className="text-foreground min-w-0 tabular-nums">
-            <SessionCreatedTime createdAt={createdAt} />
-          </dd>
-        </div>
-        {hasExternalSource && (
-          <div className="flex items-center gap-3">
-            <dt className="text-muted-foreground w-16 shrink-0">{t('source')}</dt>
-            <dd className="text-foreground min-w-0 truncate">
-              {source.label}
-              {source.triggerSlug ? (
-                <span className="text-muted-foreground"> · {source.triggerSlug}</span>
-              ) : null}
-            </dd>
-          </div>
-        )}
-      </dl>
-
-      <div className="border-border border-t pt-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-muted-foreground text-xs font-medium">{t('changeRequests')}</p>
-          {changeRequestLoadState === 'ready' && changeRequests.length > 0 ? (
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {changeRequests.length}
-            </span>
-          ) : null}
-        </div>
-
-        {changeRequestLoadState === 'loading' ? (
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-4/5" />
-          </div>
-        ) : changeRequestLoadState === 'error' ? (
-          <p className="text-destructive text-xs">{t('changeRequestsUnavailable')}</p>
-        ) : changeRequests.length === 0 ? (
-          <p className="text-muted-foreground text-xs">{t('noChangeRequests')}</p>
-        ) : (
-          <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
-            {changeRequests.map((changeRequest) => (
-              <li key={changeRequest.cr_id} className="flex items-start gap-2 text-xs">
-                <span className="text-muted-foreground w-7 shrink-0 font-mono tabular-nums">
-                  #{changeRequest.number}
-                </span>
-                <span className="text-foreground line-clamp-2 min-w-0 flex-1 leading-4">
-                  {changeRequest.title}
-                </span>
-                <ChangeRequestStatus status={changeRequest.status} />
-              </li>
-            ))}
-          </ul>
-        )}
+        <RelativeCreatedTime createdAt={createdAt} />
       </div>
+
+      {SourceIcon ? (
+        <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
+          <SourceIcon className="size-4 shrink-0" />
+          <span className="text-foreground min-w-0 truncate">
+            {source.label}
+            {source.triggerSlug ? (
+              <span className="text-muted-foreground"> · {source.triggerSlug}</span>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
+
+      {visibleChangeRequests.length > 0 ? (
+        <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
+          {visibleChangeRequests.map((changeRequest) => (
+            <li key={changeRequest.cr_id} className="flex min-w-0 items-center gap-2 text-xs">
+              <ChangeRequestStatusIcon status={changeRequest.status} />
+              <span className="text-foreground min-w-0 flex-1 truncate">{changeRequest.title}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -184,9 +187,9 @@ export function SessionBriefHoverCard({
         aria-hidden
         side="right"
         align="start"
-        sideOffset={8}
+        sideOffset={14}
         collisionPadding={8}
-        className="w-72 p-3 shadow-md"
+        className="w-72 p-3 shadow-xs"
       >
         <SessionBriefContent {...brief} />
       </HoverCardContent>
@@ -215,20 +218,16 @@ export function SessionBriefDescription({
       {source.kind !== 'chat'
         ? ` ${t('source')}: ${source.label}${source.triggerSlug ? `, ${source.triggerSlug}` : ''}.`
         : null}{' '}
-      {changeRequestLoadState === 'loading'
-        ? t('changeRequestsLoading')
-        : changeRequestLoadState === 'error'
-          ? t('changeRequestsUnavailable')
-          : changeRequests.length === 0
-            ? t('noChangeRequests')
-            : `${t('changeRequests')}: ${changeRequests
-                .map(
-                  (changeRequest) =>
-                    `#${changeRequest.number} ${changeRequest.title}, ${t(
-                      CHANGE_REQUEST_STATUS_KEY[changeRequest.status],
-                    )}`,
-                )
-                .join('; ')}.`}
+      {changeRequestLoadState === 'ready' && changeRequests.length > 0
+        ? `${t('changeRequests')}: ${changeRequests
+            .map(
+              (changeRequest) =>
+                `#${changeRequest.number} ${changeRequest.title}, ${t(
+                  CHANGE_REQUEST_STATUS_KEY[changeRequest.status],
+                )}`,
+            )
+            .join('; ')}.`
+        : null}
     </span>
   );
 }
