@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=56
+// EXPECTED_PASSES=60
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -164,6 +164,56 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   // the turn was over. Measured against this gateway on dev 2026-09-07: first
   // content at 2.6-5.9 s, turn complete at 5.1-7.6 s — everything between is
   // time the user spends looking at nothing.
+  // THE END OF A TURN IS TOLD TO THE CONTROL PLANE. The API opens a ledger
+  // record when it delivers a prompt and admits the next inbox row only once
+  // that record closes; kortix-worker closes it by POSTing `turn_end` to
+  // /projects/:id/turn-stream. A cell that stayed silent left the record open
+  // for its whole grant — measured on dev 2026-09-07, session b231c064: first
+  // prompt answered in 9.0 s, second `waiting / turn_active` for 240 s while
+  // the cell sat idle. Mutants this catches: dropping the relay, dropping the
+  // wire id, relaying under the wrong path or without the bearer.
+  {
+    const seen = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => { seen.push({ url: String(url), init }); return new Response("{}", { status: 200 }); };
+    try {
+      const hr = makeCell(AgentCell, {
+        ...ENV, SCRIPT: JSON.stringify([{ text: "done" }]),
+        KORTIX_API_URL: "https://api.example/v1/", KORTIX_PROJECT_ID: "proj-1", KORTIX_TOKEN: "tok",
+        KORTIX_SESSION_ID: "sess-9",
+      });
+      await hr.fetch("/session/s/prompt_async?c=s", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messageID: "msg_wire1", parts: [{ type: "text", text: "hi" }] }),
+      });
+      await hr.drain();
+      const relay = seen.find((x) => x.url.endsWith("/turn-stream"));
+      check("when a turn ends the cell POSTs turn_end to /projects/:id/turn-stream — what closes the API's record",
+        relay?.url === "https://api.example/v1/projects/proj-1/turn-stream" && relay?.init?.method === "POST",
+        JSON.stringify(seen.map((x) => x.url)));
+      const body = relay?.init?.body ? JSON.parse(relay.init.body) : {};
+      // The SESSION THE LEDGER KNOWS, not the isolate's own name: an alarm has
+      // no `?c=` to read, so a relay built from the durable object's name tells
+      // the API about a session it has no record of and the queue stays shut.
+      check("with the control plane's session id, the kind, an idle status and the wire id the prompt carried",
+        body.session_id === "sess-9" && body.kind === "turn_end" && body.status === "idle"
+          && body.opencode_session_id === "sess-9" && body.turn_message_id === "msg_wire1",
+        JSON.stringify(body));
+      check("under the session's own bearer, as the daemon sends it",
+        relay?.init?.headers?.authorization === "Bearer tok", JSON.stringify(relay?.init?.headers));
+
+      seen.length = 0;
+      const hq = makeCell(AgentCell, { ...ENV, SCRIPT: JSON.stringify([{ text: "done" }]) });
+      await hq.fetch("/session/s/prompt_async?c=s", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "hi" }] }),
+      });
+      await hq.drain();
+      check("a cell with no control-plane identity tells nobody — a bench has no ledger",
+        !seen.some((x) => x.url.endsWith("/turn-stream")), JSON.stringify(seen.map((x) => x.url)));
+    } finally { globalThis.fetch = realFetch; }
+  }
+
   {
     const res = await h.fetch("/events?c=s");
     check("GET /events is an SSE stream, as the harness serves it",

@@ -386,6 +386,9 @@ export class AgentCell {
       started_at INTEGER,
       ended_at   INTEGER
     )`);
+    // The wire id the control plane placed on the prompt, handed back when the
+    // turn ends so the ledger closes the record it opened (relayTurnEnd).
+    try { this.sql.exec("ALTER TABLE turns ADD COLUMN message_id TEXT"); } catch { /* already there */ }
     // ONE PER ISOLATE. init() is guarded by this.ready, so this counts
     // constructions of the object, not requests — the epoch the local node
     // prints to its log, made durable so it can be read over HTTP from a
@@ -399,6 +402,53 @@ export class AgentCell {
   }
 
   // Runs queued turns, one at a time, and reschedules while work remains.
+  // THE SIGNAL THAT LETS THE NEXT PROMPT IN.
+  //
+  // The control plane opens a ledger record when it delivers a prompt and
+  // admits the next inbox row only once that record closes. kortix-worker
+  // closes it by POSTing `turn_end` to /projects/:id/turn-stream
+  // (apps/kortix-worker/src/turn-end-relay.ts, the same body and bearer). A
+  // cell that ran the turn and said nothing left the record `active` for its
+  // whole grant. Measured on dev 2026-09-07, session b231c064: first prompt
+  // answered in 9.0 s, second prompt `waiting / turn_active` for 240 s while
+  // the cell sat idle with turn_in_flight:false.
+  //
+  // Awaited, not fire-and-forget: an alarm's un-awaited fetch may not outlive
+  // the alarm. Bounded per attempt, so a slow control plane cannot hold the
+  // queue either. Silent when the session carries no control-plane identity —
+  // a bench or a local cell has nobody to tell.
+  async relayTurnEnd(sessionId, turnI) {
+    const env = this.effectiveEnv();
+    const api = String(env.KORTIX_API_URL ?? "").replace(/\/+$/, "");
+    const project = env.KORTIX_PROJECT_ID, token = env.KORTIX_TOKEN;
+    if (!api || !project || !token) return;
+    // The session the CONTROL PLANE knows, which is not always what the isolate
+    // calls itself: an alarm has no request to read `?c=` from, so `sessionId`
+    // there is the durable object's own name. KORTIX_SESSION_ID is the id the
+    // ledger opened its record under, and `effectiveEnv` prefers the per-session
+    // value pushed over POST /kortix/env to the node-wide one.
+    const sid = env.KORTIX_SESSION_ID || sessionId;
+    const row = this.sql.exec("SELECT status, message_id FROM turns WHERE i=?", turnI).toArray()[0];
+    const body = JSON.stringify({
+      session_id: sid, kind: "turn_end", status: row?.status === "done" ? "idle" : "error",
+      opencode_session_id: sid,
+      ...(row?.message_id ? { turn_message_id: row.message_id } : {}),
+    });
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        const res = await fetch(`${api}/projects/${encodeURIComponent(project)}/turn-stream`, {
+          method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body, signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) this.broadcast({ type: "turn_end_relay", turn: turnI, status: res.status });
+        return;   // a non-ok answer is final, like the daemon's
+      } catch (e) {
+        if (attempt === 4) this.broadcast({ type: "turn_end_relay", turn: turnI, error: String(e?.message ?? e) });
+        else await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
+  }
+
   async alarm() {
     // The alarm is already paying for a durable write, so settling the tally
     // here is free — and it is what bounds the loss for a cell that goes quiet
@@ -508,6 +558,7 @@ export class AgentCell {
         String(e?.message ?? e), Date.now(), next.i);
       this.broadcast({ type: "turn_error", turn: next.i, error: String(e?.message ?? e) });
     }
+    await this.relayTurnEnd(sessionId, next.i);
 
     // Reschedule while anything is still pending. Immediate rather than delayed:
     // the queue is the only ordering mechanism, so a gap is latency for no gain.
@@ -1289,8 +1340,8 @@ export class AgentCell {
           .trim() || String(body?.text ?? "").trim();
         if (!text) return Response.json({ error: "no text in prompt" }, { status: 400 });
         this.sql.exec(
-          "INSERT INTO turns(text, script, window, status, created_at) VALUES (?, NULL, 0, 'pending', ?)",
-          text, Date.now(),
+          "INSERT INTO turns(text, script, window, status, created_at, message_id) VALUES (?, NULL, 0, 'pending', ?, ?)",
+          text, Date.now(), typeof body?.messageID === "string" ? body.messageID : null,
         );
         await this.state.storage.setAlarm(Date.now() + 1);
         // 204, because that is what OpenCode answers and what the delivery loop
