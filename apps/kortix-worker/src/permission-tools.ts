@@ -1,7 +1,11 @@
 import path from 'node:path';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 
-import type { PermissionAuthorization, PermissionBroker } from './permission-broker.ts';
+import {
+  PermissionApprovalUnavailableError,
+  type PermissionAuthorization,
+  type PermissionBroker,
+} from './permission-broker.ts';
 import { permissionNameForTool } from './permission-policy.ts';
 
 interface ToolPermissionRequest extends Omit<PermissionAuthorization, 'signal' | 'permission'> {
@@ -197,48 +201,67 @@ export function protectToolsWithPermissions(
   broker: PermissionBroker,
   workspace: string,
   toolContext?: (toolCallId: string) => PermissionAuthorization['tool'],
+  onPersistenceFailure?: () => void,
 ): AgentTool[] {
-  let previousSignature: string | null = null;
-  let repeatCount = 0;
-
   return tools.map((tool) => ({
     ...tool,
     async execute(toolCallId, params, signal, onUpdate) {
       const request = permissionRequest(tool.name, params, workspace);
       const context = toolContext?.(toolCallId);
-      await broker.authorize({ ...request, signal, tool: context });
+      try {
+        await broker.authorize({ ...request, signal, tool: context, toolCallId, stage: 'primary' });
 
-      const externalPaths =
-        tool.name === 'bash'
-          ? bashExternalPaths(stringField(objectInput(params), 'command') ?? '', workspace)
-          : request.externalPath
-            ? [request.externalPath]
-            : [];
-      if (externalPaths.length > 0) {
-        await broker.authorize({
-          permission: 'external_directory',
-          patterns: externalPaths,
-          always: externalPaths,
-          metadata: { tool: tool.name, paths: externalPaths },
-          tool: context,
-          signal,
-        });
+        const externalPaths =
+          tool.name === 'bash'
+            ? bashExternalPaths(stringField(objectInput(params), 'command') ?? '', workspace)
+            : request.externalPath
+              ? [request.externalPath]
+              : [];
+        if (externalPaths.length > 0) {
+          await broker.authorize({
+            permission: 'external_directory',
+            patterns: externalPaths,
+            always: externalPaths,
+            metadata: { tool: tool.name, paths: externalPaths },
+            tool: context,
+            signal,
+            toolCallId,
+            stage: 'external_directory',
+          });
+        }
+
+        const repeatCount = broker.recordToolCall(tool.name, params);
+        if (repeatCount >= 3 || broker.hasRestoredStage(toolCallId, context, 'doom_loop')) {
+          await broker.authorize({
+            permission: 'doom_loop',
+            patterns: [tool.name],
+            always: [tool.name],
+            metadata: { tool: tool.name, input: structuredClone(params) },
+            tool: context,
+            signal,
+            toolCallId,
+            stage: 'doom_loop',
+          });
+        }
+      } catch (error) {
+        if (error instanceof PermissionApprovalUnavailableError) onPersistenceFailure?.();
+        if (!signal?.aborted) {
+          try {
+            await broker.releaseTool(toolCallId, context);
+          } catch (releaseError) {
+            onPersistenceFailure?.();
+            throw releaseError;
+          }
+        }
+        throw error;
       }
-
-      const signature = `${tool.name}:${JSON.stringify(params)}`;
-      repeatCount = signature === previousSignature ? repeatCount + 1 : 1;
-      previousSignature = signature;
-      if (repeatCount >= 3) {
-        await broker.authorize({
-          permission: 'doom_loop',
-          patterns: [tool.name],
-          always: [tool.name],
-          metadata: { tool: tool.name, input: structuredClone(params) },
-          tool: context,
-          signal,
-        });
+      try {
+        await broker.releaseTool(toolCallId, context);
+      } catch (error) {
+        onPersistenceFailure?.();
+        throw error;
       }
-
+      if (signal?.aborted) throw signal.reason ?? new Error('tool was aborted');
       return tool.execute(toolCallId, params as never, signal, onUpdate as never);
     },
   })) as AgentTool[];

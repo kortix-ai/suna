@@ -480,7 +480,7 @@ export interface RuntimeSurfaceOptions {
   sessionPermission?: () => PermissionRule[];
   /** Pending user questions created by Pi's `question` tool. */
   questions?: QuestionBroker;
-  suspendedQuestions?: () => Array<{ messageId: string; toolCallId: string }>;
+  suspendedTools?: () => Array<{ messageId: string; toolCallId: string }>;
   /**
    * Stop the run in flight. Wired to `Agent.abort()` by the worker.
    *
@@ -774,7 +774,7 @@ export class RuntimeSurface {
         },
       });
       if (role === 'user') lastUserId = id;
-      const suspended = this.opts.suspendedQuestions?.().find(question => question.messageId === id);
+      const suspended = this.opts.suspendedTools?.().find(question => question.messageId === id);
       const suspendedIndex = suspended
         ? parts.findIndex(part => part.kind === 'tool' && part.call.id === suspended.toolCallId)
         : -1;

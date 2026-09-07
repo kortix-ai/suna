@@ -5169,3 +5169,20 @@ short and expired-lease storage outages. It checks stable question identity,
 no repeated side effects, automatic settlement, and a successful next prompt.
 `session-store.test.ts` distinguishes transient read failures from rejected reads
 and preserves the fail-closed barrier for uncertain writes.
+
+
+## 2026-09-07 — Persist permission continuations separately from grants
+
+A saved grant is not a recoverable blocked tool. Persist each authorization stage
+and its response before acknowledging it. Keep prior one-time responses scoped
+to the same native invocation. Commit an execution fence before running the tool.
+During recovery, restore the request even if an earlier grant write succeeded
+before the response checkpoint. Preserve completed tool results and repeat guards.
+
+Incident: worker replacement discarded pending permission requests. Durable
+“Always allow” grants alone could not restore the blocked continuation.
+Automation: `permission-recovery-routes.test.ts` kills real worker processes before
+approval, before HTTP acknowledgment, and after execution release. It checks
+primary/external-directory/doom-loop stages, saved responses, Stop, queue recovery,
+wire identity, and exact side-effect counts. Broker tests keep failed responses
+pending; checkpoint tests reject conflicting transitions and cross-tool reuse.

@@ -43,11 +43,13 @@ import { LazyKortixEnv } from './lazy-env.ts';
 import { parsePromptInput, type CompiledPromptRuntime } from './prompt-input.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { PermissionApprovalStore } from './permission-store.ts';
+import { PermissionCheckpointStore, type PermissionCheckpoint } from './permission-checkpoint.ts';
+import { completedToolCalls, installToolReplay, planToolReplay } from './tool-replay.ts';
 import type { PermissionConfig } from './permission-policy.ts';
 import { protectToolsWithPermissions } from './permission-tools.ts';
 import { QuestionBroker } from './question-broker.ts';
 import { QuestionCheckpointStore, type QuestionCheckpoint } from './question-checkpoint.ts';
-import { installQuestionReplay, planQuestionReplay } from './question-replay.ts';
+import { planQuestionReplay } from './question-replay.ts';
 import { createWebSearchTool } from './web-search-tool.ts';
 import { createTodoTools } from './todo-tools.ts';
 import { createQuestionTool } from './question-tool.ts';
@@ -676,12 +678,23 @@ export async function buildHarness(cfg: WorkerConfig) {
     : await TurnAdmissionJournal.open(journalLog);
   turnJournalRef = turnJournal;
   const resumableQuestions = new Map<string, QuestionCheckpoint>();
+  const resumablePermissions = new Map<string, PermissionCheckpoint[]>();
+  const hasResumableTurn = (id: string) => resumableQuestions.has(id) || resumablePermissions.has(id);
   const questionCheckpoints = new QuestionCheckpointStore({
     read: () => journalLog.read(),
     append: async (item) => {
       const messageId = persistenceTurnIdentity?.();
       if (!messageId || !(await turnJournal.appendTranscriptMutation(messageId, item))) {
         throw new Error('question checkpoint lost its durable turn owner');
+      }
+    },
+  });
+  const permissionCheckpoints = new PermissionCheckpointStore({
+    read: () => journalLog.read(),
+    append: async (item) => {
+      const messageId = persistenceTurnIdentity?.();
+      if (!messageId || !(await turnJournal.appendTranscriptMutation(messageId, item))) {
+        throw new TurnOwnerLeaseLostError('permission checkpoint lost its durable turn owner');
       }
     },
   });
@@ -828,12 +841,19 @@ export async function buildHarness(cfg: WorkerConfig) {
       const checkpoint = !terminal && !turnJournal.abortRequested(messageId)
         ? await questionCheckpoints.active(messageId)
         : null;
-      if (checkpoint) {
-        planQuestionReplay(restoredMessages, checkpoint);
+      const permissionStages = !terminal && !turnJournal.abortRequested(messageId)
+        ? await permissionCheckpoints.active(messageId)
+        : [];
+      if (checkpoint && permissionStages.length)
+        throw new Error('conflicting blocking interaction checkpoints');
+      if (checkpoint || permissionStages.length) {
+        if (checkpoint) planQuestionReplay(restoredMessages, checkpoint);
+        else planToolReplay(restoredMessages, permissionStages.at(-1)!);
         if (recoveryOwnerLost || !(await turnJournal.heartbeat(messageId))) {
-          throw new TurnOwnerLeaseLostError(`lost recovered question ownership for ${messageId}`);
+          throw new TurnOwnerLeaseLostError(`lost recovered interaction ownership for ${messageId}`);
         }
-        resumableQuestions.set(messageId, checkpoint);
+        if (checkpoint) resumableQuestions.set(messageId, checkpoint);
+        else resumablePermissions.set(messageId, permissionStages);
         return true;
       }
       let status: 'idle' | 'error';
@@ -992,7 +1012,7 @@ export async function buildHarness(cfg: WorkerConfig) {
   });
 
   let replayEventHandler: ((event: any) => void) | null = null;
-  const setQuestionReplayEventHandler = (handler: typeof replayEventHandler) => {
+  const setToolReplayEventHandler = (handler: typeof replayEventHandler) => {
     replayEventHandler = handler;
   };
   agent.subscribe(event => { replayEventHandler?.(event); });
@@ -1130,8 +1150,11 @@ export async function buildHarness(cfg: WorkerConfig) {
     permissionApprovals,
     questionCheckpoints,
     resumableQuestions,
+    resumablePermissions,
+    permissionCheckpoints,
+    hasResumableTurn,
     persistCurrentMessages,
-    setQuestionReplayEventHandler,
+    setToolReplayEventHandler,
     turnJournal,
     bootReconcile,
     relayTurnEnd,
@@ -1166,8 +1189,11 @@ export async function startWorker(cfg = configFromEnv()) {
     permissionApprovals,
     questionCheckpoints,
     resumableQuestions,
+    resumablePermissions,
+    permissionCheckpoints,
+    hasResumableTurn,
     persistCurrentMessages,
-    setQuestionReplayEventHandler,
+    setToolReplayEventHandler,
     turnJournal,
     bootReconcile,
     relayTurnEnd,
@@ -1239,6 +1265,22 @@ export async function startWorker(cfg = configFromEnv()) {
     permission: selectedAgentConfig?.permission,
     approved: permissionApprovals.approved(),
     saveApproval: (approval) => permissionApprovals.save(approval),
+    ...(sessionLog ? {
+      persistence: {
+        open: async (request, toolCallId, stage) => {
+          const messageId = surface.turnEndIdentity().messageId;
+          if (!messageId) throw new Error('permission requires an active turn');
+          await persistCurrentMessages();
+          return permissionCheckpoints.open(messageId, toolCallId, stage, request);
+        },
+        resolve: (requestId, resolution) => permissionCheckpoints.resolve(requestId, resolution),
+        release: (toolCallId, tool) => {
+          const messageId = surface.turnEndIdentity().messageId;
+          if (!messageId) throw new Error('permission release requires an active turn');
+          return permissionCheckpoints.release(messageId, toolCallId, tool);
+        },
+      },
+    } : {}),
     publish: (event) => surface.publishWire(event),
   });
   const questions = new QuestionBroker({
@@ -1273,6 +1315,7 @@ export async function startWorker(cfg = configFromEnv()) {
     permissions,
     cfg.envCwd,
     (toolCallId) => wireAdapter.toolContext(toolCallId),
+    () => agent.abort(),
   );
   agent.state.systemPrompt = appendRuntimeToolGuidance(agent.state.systemPrompt, agent.state.tools);
   surface = new RuntimeSurface({
@@ -1296,7 +1339,10 @@ export async function startWorker(cfg = configFromEnv()) {
       ([permission, enabled]) => ({ permission, pattern: '*', action: enabled ? 'allow' : 'deny' }),
     ),
     questions,
-    suspendedQuestions: () => [...resumableQuestions.values()].map(checkpoint => ({
+    suspendedTools: () => [
+      ...resumableQuestions.values(),
+      ...[...resumablePermissions.values()].map(stages => stages.at(-1)!),
+    ].map(checkpoint => ({
       messageId: checkpoint.request.tool!.messageID,
       toolCallId: checkpoint.toolCallId,
     })),
@@ -1421,9 +1467,9 @@ export async function startWorker(cfg = configFromEnv()) {
       if (state === 'started' && sessionLog) {
         await recoverAbandonedTurn(messageId);
         await hydrateDurableState();
-        if (resumableQuestions.has(messageId)) {
+        if (hasResumableTurn(messageId)) {
           const admission = turnJournal.admission(messageId);
-          if (!admission) throw new Error('recovered question lost its admission');
+          if (!admission) throw new Error('recovered interaction lost its admission');
           return queueAdmission(admission);
         }
         continue;
@@ -1517,10 +1563,10 @@ export async function startWorker(cfg = configFromEnv()) {
       // the control plane. No later turn may cross the model boundary until a
       // fresh process restores the durable log.
       sessionLog?.assertWritable();
-      let resumingQuestion = false;
+      let resumingInteraction = false;
       while (true) {
-        if (resumableQuestions.has(turn.messageId) && await turnJournal.heartbeat(turn.messageId)) {
-          resumingQuestion = true;
+        if (hasResumableTurn(turn.messageId) && await turnJournal.heartbeat(turn.messageId)) {
+          resumingInteraction = true;
           break;
         }
         if (await turnJournal.start(turn.messageId)) break;
@@ -1545,9 +1591,9 @@ export async function startWorker(cfg = configFromEnv()) {
         ) {
           await recoverAbandonedTurn(durableHead.messageId);
           await hydrateDurableState();
-          if (resumableQuestions.has(durableHead.messageId)) {
+          if (hasResumableTurn(durableHead.messageId)) {
             const admission = turnJournal.admission(durableHead.messageId);
-            if (!admission) throw new Error('recovered question lost its admission');
+            if (!admission) throw new Error('recovered interaction lost its admission');
             await runOwnedTurn({ ...admission, cancelBarrier: null, modelStarted: true });
           }
           continue;
@@ -1570,7 +1616,7 @@ export async function startWorker(cfg = configFromEnv()) {
         if (!(await turnJournal.heartbeat(turn.messageId))) {
           throw new TurnOwnerLeaseLostError(`turn ${turn.messageId} lost its durable owner lease`);
         }
-        if (!resumingQuestion && await rewindAcceptedInputForReplay(turn.messageId)) {
+        if (!resumingInteraction && await rewindAcceptedInputForReplay(turn.messageId)) {
           await hydrateDurableState();
           if (!(await turnJournal.heartbeat(turn.messageId))) {
             throw new TurnOwnerLeaseLostError(`turn ${turn.messageId} lost its durable owner lease`);
@@ -1661,7 +1707,7 @@ export async function startWorker(cfg = configFromEnv()) {
       let completedDurably = false;
       const originalSystemPrompt = agent.state.systemPrompt;
       const originalTools = agent.state.tools;
-      let questionReplay: ReturnType<typeof installQuestionReplay> | null = null;
+      let toolReplay: ReturnType<typeof installToolReplay> | null = null;
       if (typeof turn.options.system === 'string' && turn.options.system) {
         agent.state.systemPrompt = [originalSystemPrompt, turn.options.system]
           .filter(Boolean)
@@ -1687,15 +1733,25 @@ export async function startWorker(cfg = configFromEnv()) {
           const durableSession = sessionRef();
           if (durableSession) await durableSession.appendMessage(toDurable(userMessage) as any);
           agent.state.messages = [...agent.state.messages, userMessage as any];
-        } else if (resumingQuestion) {
-          const checkpoint = resumableQuestions.get(turn.messageId)!;
-          const plan = planQuestionReplay(agent.state.messages, checkpoint);
-          questionReplay = installQuestionReplay(agent, plan);
-          setQuestionReplayEventHandler(questionReplay.normalizeEvent);
+        } else if (resumingInteraction) {
+          const checkpoint = resumableQuestions.get(turn.messageId);
+          const stages = resumablePermissions.get(turn.messageId) ?? [];
+          const plan = checkpoint
+            ? planQuestionReplay(agent.state.messages, checkpoint)
+            : planToolReplay(agent.state.messages, stages.at(-1)!);
+          permissions.restoreCheckpoints(stages);
+          permissions.restoreToolHistory(
+            completedToolCalls(agent.state.messages.slice(0, plan.assistantIndex)),
+          );
+          toolReplay = installToolReplay(agent, plan,
+            (name, input) => permissions.recordToolCall(name, input));
+          setToolReplayEventHandler(toolReplay.normalizeEvent);
           resumeAgentSteps(plan.completedSteps);
           resumableQuestions.delete(turn.messageId);
+          resumablePermissions.delete(turn.messageId);
           await agent.continue();
         } else {
+          permissions.restoreToolHistory(completedToolCalls(agent.state.messages));
           await agent.prompt(userMessage as any);
         }
         settling = true;
@@ -1742,8 +1798,9 @@ export async function startWorker(cfg = configFromEnv()) {
         // the next worker drains by exact message id.
         relayDrain.wake();
       } finally {
-        setQuestionReplayEventHandler(null);
-        questionReplay?.close();
+        setToolReplayEventHandler(null);
+        toolReplay?.close();
+        permissions.restoreCheckpoints([]);
         agent.state.systemPrompt = originalSystemPrompt;
         agent.state.tools = originalTools;
         settling = true;
@@ -2001,7 +2058,7 @@ export async function startWorker(cfg = configFromEnv()) {
   // Replay accepted, non-terminal turns in durable acceptance order. Their
   // exact user envelopes were seeded above; old data is not emitted as news.
   for (const admission of turnJournal.started) {
-    if (resumableQuestions.has(admission.messageId)) queueAdmission(admission);
+    if (hasResumableTurn(admission.messageId)) queueAdmission(admission);
   }
   for (const admission of turnJournal.pending) queueAdmission(admission);
 

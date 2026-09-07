@@ -169,3 +169,25 @@ preview URL, and admin-browser failures. New behavior is verified on the branch
 preview. Dev and production verification do not apply before an approved merge.
 
 **Shippable to production: NOT YET.**
+
+
+## Session storage outages
+
+Commit `a2d2bad054a377c8de6ea77a153c2df48d30bc16` preserves pending interactions
+until the confirmed owner lease expires. Expired work cancels independently of
+network reads, then reconciles when storage returns without another prompt.
+`pnpm test` passes all lanes in 49.1 seconds: 395/395 REST/CLI flows and 527 worker
+tests with 2,317 assertions. Both child-process outage regressions fail before
+the fix and pass afterward.
+
+Deployment [34162712070](https://github.com/kortix-ai/suna/actions/runs/34162712070)
+succeeds, and public health serves its exact SHA. Stopping only the preview API
+for 12 seconds produces a 25.7-second restart/recovery interval. The same worker
+retains question `que_808504de2e144a399d361dc5aa58142d` and all 20 message IDs.
+Reply `[["Blue"]]` returns 200. No new error appears, active turns become zero,
+and reload preserves the transcript. All 55 failed browser requests occur during
+the deliberate outage; none is an authentication rejection. The full preview
+browser suite passes 19/19 without retries in 180.1 seconds.
+
+Replacement also settles the previously stalled test session while preserving
+its complete 18-message transcript and existing MessageAbortedError.

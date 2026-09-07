@@ -105,8 +105,22 @@ stays pending and the tool does not run. Retrying the reply uses the same
 idempotency key. Stop still cancels the blocked tool during a pending save.
 Rejected and one-time replies do not create durable grants.
 
-Pending permission continuations still require a live worker. Durable approval
-grants do not make those blocked continuations restartable.
+Pending permission continuations also survive worker replacement. Before showing
+a request, the worker saves its native tool batch, request ID, and authorization
+stage. Primary, external-directory, and repeated-tool approvals remain distinct.
+An earlier one-time approval remains scoped to its original tool invocation.
+It does not become a session grant.
+
+All permission responses commit before HTTP acknowledgment. Recovery consumes a
+saved response without asking again. A saved grant cannot bypass an unanswered
+checkpoint from an interrupted approval. The worker commits one release fence
+for the tool's authorization stages before executing it. Death after that fence
+interrupts the turn instead of repeating an uncertain side effect.
+
+Restoration reuses the shared tool-batch replay path for questions and permissions.
+Completed tool results retain their wire identities and never repeat their effects.
+Restored tool history preserves the repeated-tool guard. Stop cancels a restored
+permission, and another worker's queued prompt waits for its resolution.
 
 The web composer respects each question's `custom` flag. Choice-only questions
 use the option buttons; multiple selections advance with Next. Custom answers
@@ -158,7 +172,7 @@ active turn behind or close an unrelated prompt without a message ID. Retrying
 a cancelled message returns `409` on both prompt routes.
 
 A turn-owner lease fences transcript writes and completion. A replacement
-worker resumes accepted prompts that never started and checkpointed questions.
+worker resumes accepted prompts that never started and checkpointed interactions.
 It does not replay an uncertain model or tool boundary. Otherwise, it restores
 the committed answer or records one interruption, preserving message IDs and
 parent links.
