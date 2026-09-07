@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { SandboxNotReadyError } from '../http/opencode-errors';
+import * as errors from '../http/opencode-errors';
 import {
   SESSION_SYNC_PAGE_SIZE,
   SESSION_SYNC_TAIL_PAGE_SIZE,
@@ -75,6 +76,7 @@ function createScheduler() {
   };
   return {
     scheduler,
+    pendingTimeouts: () => timeouts.size,
     advance(ms: number) {
       now += ms;
       for (const [id, timer] of [...timeouts]) {
@@ -88,6 +90,109 @@ function createScheduler() {
 }
 
 describe('SessionSyncController', () => {
+  test('an older-page NotFoundError terminates the tuple and prevents a concurrent tail from marking it fresh', async () => {
+    const clock = createScheduler();
+    let finishTail!: (page: SessionSyncPage) => void;
+    let reads = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'deleted-between-pages', scheduler: clock.scheduler,
+      hydrate: () => {}, markLoaded: () => {},
+      loadPage: async ({ before }) => {
+        reads++;
+        if (before) throw new errors.SessionNotFoundOnRuntimeError();
+        if (reads === 1) return page(['m'], 'older');
+        return new Promise((resolve) => { finishTail = resolve; });
+      },
+    });
+    await controller.reconcile();
+    const tail = controller.reconcile();
+    await expect(controller.loadOlder()).rejects.toBeInstanceOf(errors.SessionNotFoundOnRuntimeError);
+    expect(controller.getSnapshot().freshness).toBe('error');
+    finishTail(page(['m']));
+    await tail;
+    await controller.reconcile();
+    expect(reads).toBe(3);
+    expect(controller.getSnapshot().freshness).toBe('error');
+    controller.destroy();
+  });
+
+  test('HTTP reads make OpenCode JSON 404 terminal while proxy 404 stays wakeable', async () => {
+    for (const body of [JSON.stringify({ name: 'NotFoundError', data: { message: 'Session not found' } }), '<html>Not found</html>', 'Sandbox is not running']) {
+      const clock = createScheduler();
+      let reads = 0;
+      const controller = createHttpSessionSyncController({
+        sessionId: 'missing', baseUrl: 'https://runtime.test', scheduler: clock.scheduler,
+        hydrate: () => {}, markLoaded: () => {},
+        fetch: async () => { reads++; return new Response(body, { status: 404 }); },
+      });
+      await controller.reconcile();
+      const terminal = body.startsWith('{');
+      expect(controller.getSnapshot().freshness).toBe(terminal ? 'error' : 'loading');
+      expect(clock.pendingTimeouts()).toBe(terminal ? 0 : 1);
+      clock.advance(1_100);
+      await controller.reconcile();
+      expect(reads).toBe(terminal ? 1 : 2);
+      controller.destroy();
+    }
+  });
+
+  test('paused controllers cancel armed retries and resume on an explicit read', async () => {
+    const clock = createScheduler();
+    let reads = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'paused', scheduler: clock.scheduler, hydrate: () => {}, markLoaded: () => {},
+      loadPage: async () => { reads++; throw new Error('offline'); },
+    });
+    await controller.reconcile();
+    expect(clock.pendingTimeouts()).toBe(1);
+    controller.setPaused(true);
+    expect(clock.pendingTimeouts()).toBe(0);
+    clock.advance(1_100);
+    expect(reads).toBe(1);
+    controller.setPaused(false);
+    await controller.reconcile();
+    expect(clock.pendingTimeouts()).toBe(1);
+    controller.destroy();
+  });
+
+  test('an asynchronous turn-end failure cannot arm a retry after pause', async () => {
+    const clock = createScheduler();
+    let rejectRead!: (reason: Error) => void;
+    let reads = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'late', scheduler: clock.scheduler, hydrate: () => {}, markLoaded: () => {},
+      loadPage: async () => { reads++; return new Promise((_, reject) => { rejectRead = reject; }); },
+    });
+    controller.setBusy(true);
+    controller.setPaused(true);
+    controller.setBusy(false);
+    rejectRead(new Error('late failure'));
+    await controller.reconcile('turn-end');
+    expect(clock.pendingTimeouts()).toBe(0);
+    clock.advance(60_000);
+    expect(reads).toBe(1);
+    controller.destroy();
+  });
+
+  test('a terminal tuple stays error through retries, polls, and late events', async () => {
+    const clock = createScheduler();
+    let reads = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'missing', scheduler: clock.scheduler, hydrate: () => {}, markLoaded: () => {},
+      loadPage: async () => { reads++; throw new errors.SessionNotFoundOnRuntimeError('Session not found'); },
+    });
+    controller.setBusy(true);
+    await controller.reconcile();
+    expect(controller.getSnapshot().freshness).toBe('error');
+    expect(clock.pendingTimeouts()).toBe(0);
+    clock.advance(60_000);
+    controller.noteActivity();
+    await controller.reconcile();
+    expect(controller.getSnapshot().freshness).toBe('error');
+    expect(reads).toBe(1);
+    controller.destroy();
+  });
+
   test('creates an authenticated framework-free HTTP controller for React Native', async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
     const hydrated: MessageWithParts[][] = [];

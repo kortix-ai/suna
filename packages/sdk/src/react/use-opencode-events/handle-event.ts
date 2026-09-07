@@ -41,7 +41,7 @@ export const USER_PARTS_GRACE_MS = 1_500;
 export function createEventHandler(deps: {
   queryClient: QueryClient;
   client: ReturnType<typeof getClient>;
-  applySyncEvent: (event: OpenCodeSdkEvent) => void;
+  applySyncEvent: (event: OpenCodeSdkEvent, runtimeScope?: string) => void;
   stopCompaction: (sessionID: string) => void;
   addPermission: (req: PermissionRequest) => void;
   removePermission: (requestId: string) => void;
@@ -50,7 +50,9 @@ export function createEventHandler(deps: {
   normalizeDiagnosticPaths: RefObject<NormalizeDiagnosticPaths>;
   markSessionAbortedLocally: RefObject<(sessionID: string, message?: string) => void>;
   fetchLspDiagnosticsDebounced: RefObject<() => void>;
-  reconcileSessionTail?: (sessionID: string, reason: SessionSyncReason) => Promise<void>;
+  reconcileSessionTail?: (sessionID: string, reason: SessionSyncReason, runtimeScope?: string) => Promise<void>;
+  runtimeScope?: string;
+  isActive?: () => boolean;
   /**
    * How long a USER `message.updated` may sit with no parts before the tail is
    * re-read. The runtime emits the info frame and the text part separately;
@@ -81,15 +83,23 @@ export function createEventHandler(deps: {
     projectId = null,
     userPartsGraceMs = USER_PARTS_GRACE_MS,
   } = deps;
-  const reconcileTail =
+  const reconcileBoundTail =
     deps.reconcileSessionTail ??
     (async (sessionID: string) => {
       const result = await client.session.messages({
         sessionID,
         limit: SESSION_SYNC_PAGE_SIZE,
       });
-      if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
+      if (result.data && deps.isActive?.() !== false) {
+        useSyncStore.getState().hydrate(sessionID, result.data, { runtimeScope: deps.runtimeScope });
+      }
     });
+  const reconcileTail = (sessionID: string, reason: SessionSyncReason) => {
+    if (deps.isActive?.() === false) return Promise.resolve();
+    return deps.runtimeScope
+      ? reconcileBoundTail(sessionID, reason, deps.runtimeScope)
+      : reconcileBoundTail(sessionID, reason);
+  };
 
   // Helper: look up a session title from the React Query cache for notifications
   function getSessionTitle(sessionID: string): string | undefined {
@@ -103,6 +113,7 @@ export function createEventHandler(deps: {
   }
 
   function handleEvent(event: OpenCodeEvent) {
+    if (deps.isActive?.() === false) return;
     // Sync store is the SINGLE source of truth for messages & parts.
     // This matches OpenCode's architecture where the SolidJS store is
     // the only place message/part data lives.
@@ -111,7 +122,8 @@ export function createEventHandler(deps: {
     // member (see `OpenCodeEvent`), which isn't a real wire event and doesn't
     // match any `applyEvent` case (falls through to its `default`) — the
     // assertion below just widens past that one extra union member.
-    applySyncEvent(event as OpenCodeSdkEvent);
+    if (deps.runtimeScope) applySyncEvent(event as OpenCodeSdkEvent, deps.runtimeScope);
+    else applySyncEvent(event as OpenCodeSdkEvent);
 
     switch (event.type) {
       // ---- Message events — handled by sync store only ----
@@ -260,7 +272,6 @@ export function createEventHandler(deps: {
         const sessionID = event.properties.sessionID;
         if (sessionID) {
           stopCompaction(sessionID);
-          const client = getClient();
           void reconcileTail(sessionID, 'compaction');
           // Refetch the individual session to clear time.compacting
           // (targeted refetch, not full session list invalidation). This is

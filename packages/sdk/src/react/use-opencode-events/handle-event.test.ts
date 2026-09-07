@@ -92,6 +92,18 @@ function makeCalls<Args extends unknown[]>() {
   return { fn, calls };
 }
 
+test('event application and compaction repair carry the producing runtime scope', async () => {
+  const repairs: unknown[][] = [];
+  const handler = buildHandler({
+    runtimeScope: 'runtime-a',
+    reconcileSessionTail: async (...args) => { repairs.push(args); },
+  });
+  const event = { type: 'session.compacted', properties: { sessionID: 'ses-a' } } as Parameters<typeof handler.handleEvent>[0];
+  handler.handleEvent(event);
+  expect(handler.applySyncEvent.calls).toEqual([[event, 'runtime-a']]);
+  expect(repairs).toEqual([['ses-a', 'compaction', 'runtime-a']]);
+});
+
 function buildHandler(
   overrides: {
     messagesImpl?: () => Promise<{ data?: unknown }>;
@@ -99,6 +111,7 @@ function buildHandler(
     projectId?: string;
     reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
     userPartsGraceMs?: number;
+    runtimeScope?: string;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -117,7 +130,7 @@ function buildHandler(
   // cache writes, notifications) in isolation, instead of that logic being
   // entangled with — and clobbered by — the reducer's own state writes for
   // the very same event (`applySyncEvent` runs BEFORE the switch statement).
-  const applySyncEvent = makeCalls<[unknown]>();
+  const applySyncEvent = makeCalls<[unknown, string?]>();
 
   // `session.compacted`'s targeted refetch reads the RUNTIME-CLIENT SINGLETON
   // (mocked at module scope above), not this injected `client` — set both so
@@ -145,6 +158,7 @@ function buildHandler(
     projectId: overrides.projectId,
     reconcileSessionTail: overrides.reconcileSessionTail,
     userPartsGraceMs: overrides.userPartsGraceMs,
+    runtimeScope: overrides.runtimeScope,
   });
 
   return {

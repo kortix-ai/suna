@@ -76,3 +76,8 @@ export function claimSessionCacheOwnership(
 export function resetSessionCacheOwnership(): void {
   owners.clear();
 }
+
+/** A deleted session no longer has an authoritative cache owner. */
+export function forgetSessionCacheOwnership(sessionId: string): void {
+  owners.delete(sessionId);
+}

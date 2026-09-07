@@ -559,6 +559,19 @@ React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-fre
 pagination. Mobile keeps its platform-specific event transport because React
 Native cannot consume the SDK's fetch-based SSE stream.
 
+Transcript synchronization binds each OpenCode session id to one runtime URL.
+Navigation cannot redirect an existing controller or an export's later pages.
+When the last React consumer leaves, the controller cancels automatic retries.
+A final turn-end read can finish against its original runtime. Its failure cannot
+restart retries. Opening the session again reconciles its tail.
+
+An OpenCode JSON `404` with `name: 'NotFoundError'` produces
+`SessionNotFoundOnRuntimeError`, exported from `@kortix/sdk`. That controller
+stays in `freshness: 'error'` and stops reading the missing session/runtime pair.
+A replacement runtime creates a new controller. Proxy HTML and not-running
+`404` responses remain wakeable. The React hook waits for a runtime URL before
+creating a controller; server mirror messages can render during that wait.
+
 ## Rules of the road
 
 - **No `@opencode-ai/sdk` in host code.** Import opencode types/client from

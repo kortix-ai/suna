@@ -33,6 +33,7 @@
     "SERVER_OBSERVATION_MAX_MS",
     "STREAM_OBSERVATION_MAX_MS",
     "SandboxNotReadyError",
+    "SessionNotFoundOnRuntimeError",
     "SessionNotReadyError",
     "SessionStartError",
     "TURN_END_LEDGER_LAG_MS",
@@ -1981,6 +1982,7 @@
   ],
   "./opencode-errors": [
     "SandboxNotReadyError",
+    "SessionNotFoundOnRuntimeError",
     "formatOpenCodeRuntimeError",
     "getOpenCodeConfigInvalidError",
     "isOpenCodeConfigInvalidError",
