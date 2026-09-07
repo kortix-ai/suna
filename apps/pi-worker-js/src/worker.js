@@ -165,8 +165,16 @@ function normalizeModelEnv(env) {
   const platform = Boolean(gateway);
   return {
     ...env,
+    // THE NODE'S PROVIDER IS NOT A FALLBACK EITHER, for the same reason its
+    // model id is not: `celldctl deploy` bakes the DEPLOYING MACHINE's model
+    // config into the worker's vars (syncWorkerVars), so whoever last deployed
+    // decides what every session on that worker talks to. Mine put
+    // `openai-codex` there, and the sessions dutifully spoke the Codex
+    // Responses shape at a gateway that does not (dev 2026-09-07: turns ran to
+    // `done`, empty content, zero tokens). Under a gateway the provider is the
+    // platform's or the OpenAI-compatible default the gateway serves.
     MODEL_PROVIDER: platform
-      ? pick(env.KORTIX_PROVIDER, env.MODEL_PROVIDER, key ? "openrouter" : undefined)
+      ? pick(env.KORTIX_PROVIDER, key ? "openrouter" : undefined)
       : pick(env.MODEL_PROVIDER),
     // NO NODE FALLBACK FOR THE MODEL ID when the platform is driving. The
     // node's is a bench value, and a bench value is not a smaller mistake than

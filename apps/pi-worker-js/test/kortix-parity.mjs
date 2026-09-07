@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=44
+// EXPECTED_PASSES=45
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -271,6 +271,16 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
       KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt",
     });
     const nm = await (await noModel.fetch("/model?c=s")).json();
+    // And the node's PROVIDER is not a fallback either: `celldctl deploy` bakes
+    // the deploying machine's model config into the worker's vars, so whoever
+    // deployed last would otherwise decide what every session talks to.
+    const baked = makeCell(AgentCell, {
+      ...ENV, MODEL_PROVIDER: "openai-codex", MODEL_ID: "gpt-5.6-luna",
+      KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt",
+    });
+    const bm = await (await baked.fetch("/model?c=s")).json();
+    check("a provider baked in by whoever deployed does NOT drive a gateway session",
+      bm.active?.provider !== "openai-codex", JSON.stringify(bm.active));
     check("with a gateway and no platform model, the node's bench id is NOT used",
       nm.active === "scripted" || nm.active?.id !== "gpt-5.6-luna", JSON.stringify(nm.active));
     check("the PLATFORM's model wins over the node's bench default when a gateway is driving",
