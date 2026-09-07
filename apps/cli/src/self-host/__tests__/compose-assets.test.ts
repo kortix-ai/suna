@@ -583,6 +583,16 @@ describe('full self-host Docker distribution', () => {
     expect(totalCeilingMb).toBeLessThan(12 * 1024);
   });
 
+  test('frontend ceiling stays above the Next 16 heap-crash budgets observed at 512 and 768 MiB', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { mem_limit?: string }>;
+    };
+    const limit = document.services.frontend?.mem_limit ?? '0m';
+    const limitMb = Number(limit.replace(/m$/, ''));
+
+    expect(limitMb).toBeGreaterThanOrEqual(1024);
+  });
+
   test('kortix-updater image is pinned by digest, never :latest or a bare floating :cli tag', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, { image?: string }>;

@@ -21,6 +21,12 @@ linked, not inlined.
 
 ## Register
 
+### Preview verification includes post-suite frontend liveness (2026-09-07)
+
+**Rule:** After target-full, require a real authenticated page load and a zero frontend restart delta before accepting a preview.
+**Near-miss:** The preview gate passed, then Next 16 exhausted its 249–253 MiB V8 heap twice inside a 512 MiB container. A live 768 MiB trial later exhausted its 379–396 MiB heap during the browser acceptance flow. Each restart aborted the project RSC read and rendered the manual failure card while the API stayed healthy.
+**Enforcers:** `compose-assets.test.ts` keeps the frontend ceiling at or above 1,024 MiB and the total steady-state ceiling below 12 GiB. Exact-head preview verification records the frontend restart count before and after the browser flow.
+
 ### Compatibility recovery outlives capability-cache TTL (2026-09-07)
 
 **Rule:** After its eligibility gate, issue a request the old runtime supports and retain one bounded persisted delivery grace beyond capability-cache TTL.

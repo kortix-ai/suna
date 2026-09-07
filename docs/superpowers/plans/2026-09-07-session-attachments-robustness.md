@@ -582,6 +582,85 @@ git commit -m "docs: record daemon capability incident"
 - Address all Critical and Important findings through the prescribed implementer/re-review loop.
 - Re-run the affected focused tests and the required final gate after fixes.
 
+### Task 9: Keep the preview frontend alive through post-gate browser verification
+
+**Evidence:** Exact-head preview run `34144279983` passed `pnpm test -- --target-full`. The next manual browser navigation aborted because `next-server` exhausted its V8 heap twice. The frontend container had a 512 MiB ceiling, V8 failed at 249–253 MiB, and the 16 GiB host still had 12.6 GiB available. A live 768 MiB trial later failed at a 379–396 MiB heap during the browser acceptance flow.
+
+**Files:**
+
+- Modify: `apps/cli/src/self-host/compose-assets.ts`
+- Modify: `apps/cli/src/self-host/__tests__/compose-assets.test.ts`
+- Modify append-only: `.claude/skills/learnings/SKILL.md`
+
+**Step 1: Add the RED memory-floor test**
+
+- Render the real self-host Compose document.
+- Assert the frontend ceiling is at least 1,024 MiB.
+- Name the observed Next 16 heap crash threshold in the test.
+- Run the focused test and confirm it fails at the rejected 768 MiB trial ceiling.
+
+**Step 2: Raise only the frontend ceiling**
+
+- Change the frontend ceiling from 512 MiB to 1,024 MiB.
+- Keep every other service ceiling and reservation unchanged.
+- Keep the summed steady-state ceiling below the documented 12 GiB host floor.
+
+**Step 3: Record the near-miss**
+
+- Append a rule that post-suite preview liveness must include the frontend restart count and a real page load.
+- Record the two V8 heap failures and the aborted RSC request.
+- Name the focused Compose test and exact-head browser verification as enforcers.
+
+**Step 4: Verify**
+
+```bash
+cd apps/cli
+bun test --timeout 15000 --isolate src/self-host/__tests__/compose-assets.test.ts
+pnpm typecheck
+cd ../..
+PATH="/Users/jay/.nvm/versions/node/v22.22.3/bin:$PATH" pnpm test
+```
+
+- Push the new head and wait for a new exact-head preview target-full pass.
+- Confirm the frontend restart count remains zero after target-full plus the manual browser acceptance flow.
+- Re-run final branch review for the added Task 9 diff.
+
+### Task 10: Wait for authentication before the first project read
+
+**Evidence:** With the frontend stable at a live 1 GiB ceiling, a full session-page reload rendered `This project didn't load.` No browser-side `GET /v1/projects/:id` occurred. `ProjectAccessBoundary` enabled its query from `projectId` alone. During cold auth hydration, the SDK returned `AuthError` before issuing HTTP because no token was available.
+
+**Files:**
+
+- Modify: `apps/web/src/components/projects/project-access-boundary.tsx`
+- Modify: `apps/web/src/components/projects/project-access-boundary.test.ts`
+
+**Step 1: Add the RED auth-readiness policy test**
+
+- Assert that a project id without a user id cannot enable the read.
+- Assert that both identifiers enable the read.
+- Assert that the component wires the policy into the query.
+- Run the focused test and confirm the missing export fails before implementation.
+
+**Step 2: Gate the read on the authenticated user**
+
+- Add the pure `shouldEnableProjectRead` policy.
+- Enable the project query only when `projectId` and `user.id` exist.
+- Keep the existing retry and access-verdict policy unchanged.
+
+**Step 3: Verify**
+
+```bash
+cd apps/web
+bun test src/components/projects/project-access-boundary.test.ts
+npx eslint src/components/projects/project-access-boundary.tsx \
+  src/components/projects/project-access-boundary.test.ts
+../../.claude/skills/kortix-brand-guidelines/audit.sh \
+  src/components/projects/project-access-boundary.tsx
+```
+
+- On the next exact-head preview, reload a valid session route and assert the project renders without `Try again`.
+- Abort the first project HTTP read once and assert the bounded retry renders the project without `Try again`.
+
 ## Post-plan review gate: eager attachment upload
 
 After Tasks 1–6 and preview verification, use the architectural path of `superpowers:brainstorming` with `/tmp/kortix-handoff-2026-09-07/design-eager-upload.json`.
