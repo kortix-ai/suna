@@ -30,7 +30,7 @@ test.each([null, false, 42, {}, []].map((system) => [system] as const))(
   },
 );
 
-test('provider requests append only the current prompt system and restore the compiled instructions', async () => {
+async function verifyPromptSystem(modelId: string) {
   const requests: { messages: { role: string; content: unknown }[] }[] = [];
   const provider = Bun.serve({
     port: 0,
@@ -77,7 +77,7 @@ test('provider requests append only the current prompt system and restore the co
     systemPrompt: 'Compiled agent instruction.',
     modelMode: 'real',
     providerId: 'openrouter',
-    modelId: 'openai/gpt-4.1',
+    modelId,
     gatewayUrl: provider.url.toString().replace(/\/$/, '') + '/v1',
     apiKey: 'fixture-provider-token',
     sessionId: 'prompt-system',
@@ -134,4 +134,9 @@ test('provider requests append only the current prompt system and restore the co
     'Fail convention.',
     undefined,
   ]);
-});
+}
+
+test.each(['openai/gpt-4.1', 'gpt-5.6-luna'])(
+  '%s provider requests append only the current prompt system and restore the compiled instructions',
+  verifyPromptSystem,
+);

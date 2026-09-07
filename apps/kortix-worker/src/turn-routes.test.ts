@@ -3134,6 +3134,7 @@ describe('prompt system durability', () => {
       items.find((item) => item.kind === 'journal' && item.record.type === 'accepted'),
       'accepted record',
     );
+    const systemBeforeReplay = first.agent.state.systemPrompt;
     const pending: SessionLogItem[] = [structuredClone(accepted)];
     const seen: string[] = [];
     const provider = await listen(
@@ -3181,7 +3182,8 @@ describe('prompt system durability', () => {
     await waitUntil(() =>
       pending.some((item) => item.kind === 'journal' && item.record.type === 'completed'),
     );
-    expect(seen).toEqual([`${replayed.agent.state.systemPrompt}\nSaved convention.`]);
+    expect(seen).toEqual([`${systemBeforeReplay}\nSaved convention.`]);
+    await waitUntil(() => replayed.agent.state.systemPrompt === systemBeforeReplay);
     const messages = (await (await request(replayed, `/session/${sessionID}/message`)).json()) as {
       info: { id: string; system?: string };
     }[];
