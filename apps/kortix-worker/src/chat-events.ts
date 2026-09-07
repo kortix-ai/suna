@@ -113,6 +113,12 @@ export function assistantContractFields(
   };
 }
 
+export function toolResultMetadata(details: unknown): Record<string, unknown> {
+  return details !== null && typeof details === 'object' && !Array.isArray(details)
+    ? (details as Record<string, unknown>)
+    : {};
+}
+
 export function assistantMessageError(message: {
   stopReason?: unknown;
   errorMessage?: unknown;
@@ -186,6 +192,11 @@ export class ChatEventAdapter {
 
   private nextPart(): string {
     return partId(this.currentMessageId, this.partCount++);
+  }
+
+  toolContext(toolCallId: string): { messageID: string; callID: string } | undefined {
+    const tool = this.toolIndex.get(toolCallId);
+    return tool ? { messageID: this.currentMessageId, callID: tool.partId } : undefined;
   }
 
   translate(event: any): Wire[] {
@@ -350,7 +361,7 @@ export class ChatEventAdapter {
                   input: t.input,
                   output,
                   title: t.name,
-                  metadata: {},
+                  metadata: toolResultMetadata(event.result?.details),
                   time: { start: t.startedAt, end: endedAt },
                 },
           ),

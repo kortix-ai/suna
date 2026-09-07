@@ -27,6 +27,29 @@ function piTerminalEvent(
 }
 
 describe('pi streams as deltas, not only snapshots', () => {
+  test('question parts expose their wire identity and retain answered metadata', () => {
+    const adapter = new ChatEventAdapter({ sessionID: 'ses_1', messageId: () => 'msg_1' });
+    adapter.translate({ type: 'message_start', message: { role: 'assistant' } });
+    const started = adapter.translate({
+      type: 'tool_execution_start',
+      toolCallId: 'call_1',
+      toolName: 'question',
+      args: { questions: [] },
+    });
+    expect(adapter.toolContext('call_1')).toEqual({
+      messageID: 'msg_1',
+      callID: (started[0]!.properties as any).part.callID,
+    });
+    const ended = adapter.translate({
+      type: 'tool_execution_end',
+      toolCallId: 'call_1',
+      result: {
+        content: [{ type: 'text', text: 'Database: SQLite' }],
+        details: { answers: [['SQLite']] },
+      },
+    });
+    expect((ended[0]!.properties as any).part.state.metadata).toEqual({ answers: [['SQLite']] });
+  });
   // pi's documented contract is `message_update -> assistantMessageEvent
   // .text_delta.delta`. We used to discard that delta and republish the whole
   // accumulated string as a cumulative `message.part.updated`. Correct, but it

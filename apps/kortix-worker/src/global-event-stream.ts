@@ -37,20 +37,26 @@ export function serveGlobalEventStream(
     connection: 'keep-alive',
     'x-accel-buffering': 'no',
   });
-  unsubscribe = bus.subscribe((event) => {
-    const envelope = {
-      directory,
-      payload: {
-        id: `evt_${bus.epoch}_${event.seq}`,
-        type: event.type,
-        properties: event.payload,
-      },
-    };
-    write(`id: ${event.seq}\ndata: ${JSON.stringify(envelope)}\n\n`);
-  }, { since: null, epoch: null }).unsubscribe;
-  heartbeat = setInterval(() => write(': heartbeat\n\n'), options.heartbeatMs);
+  unsubscribe = bus.subscribe(
+    (event) => {
+      const envelope = {
+        directory,
+        payload: {
+          id: `evt_${bus.epoch}_${event.seq}`,
+          type: event.type,
+          properties: event.payload,
+        },
+      };
+      write(`id: ${event.seq}\ndata: ${JSON.stringify(envelope)}\n\n`);
+    },
+    { since: null, epoch: null },
+  ).unsubscribe;
+  const transportEvent = (type: 'server.connected' | 'server.heartbeat') =>
+    write(`data: ${JSON.stringify({ directory, payload: { type, properties: {} } })}\n\n`);
+  heartbeat = setInterval(() => transportEvent('server.heartbeat'), options.heartbeatMs);
   heartbeat.unref?.();
   res.once('close', cleanup);
   res.once('error', cleanup);
   res.flushHeaders?.();
+  transportEvent('server.connected');
 }

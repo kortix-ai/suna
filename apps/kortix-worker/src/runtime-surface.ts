@@ -1,3 +1,4 @@
+import type { QuestionBroker } from './question-broker.ts';
 import { serveGlobalEventStream } from './global-event-stream.ts';
 /**
  * The Kortix Runtime API, pi-worker half — `/kortix/opencode/*` served by the
@@ -27,12 +28,20 @@ import { serveGlobalEventStream } from './global-event-stream.ts';
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { WIRE_ID_TIME_MASK, WIRE_ID_TIME_SCALE, mintWireMessageId, wireIdTime } from './wire-message-id';
-import { assistantContractFields, assistantMessageError } from './chat-events.ts';
+import { assistantContractFields, assistantMessageError, toolResultMetadata } from './chat-events.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
 // Auth — the daemon's user-context codec, verify side.
 // ---------------------------------------------------------------------------
+
+export function decodePathSegment(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
 
 export const KORTIX_USER_CONTEXT_HEADER = 'x-kortix-user-context';
 export const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
@@ -320,7 +329,65 @@ export function mintRootId(sessionId: string): string {
 export const DEFAULT_MESSAGE_PAGE = 20;
 export const MAX_MESSAGE_PAGE = 200;
 
+class RawBodyError extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 413,
+  ) {
+    super(message);
+  }
+}
+
+function readRawJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      req.off('data', onData);
+      req.off('end', onEnd);
+      req.off('error', onError);
+      req.off('aborted', onAborted);
+      fn();
+    };
+    const onData = (chunk: Buffer | string) => {
+      const next = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += next.byteLength;
+      if (bytes > maxBytes) {
+        req.resume?.();
+        finish(() => reject(new RawBodyError(`request body exceeds ${maxBytes} bytes`, 413)));
+        return;
+      }
+      chunks.push(next);
+    };
+    const onEnd = () =>
+      finish(() => {
+        try {
+          const text = Buffer.concat(chunks, bytes).toString('utf8');
+          resolve(text ? JSON.parse(text) : {});
+        } catch {
+          reject(new RawBodyError('request body must be valid JSON', 400));
+        }
+      });
+    const onError = (error: Error) => finish(() => reject(error));
+    const onAborted = () => finish(() => reject(new Error('request body was aborted')));
+
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
+    req.on('aborted', onAborted);
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      req.resume?.();
+      finish(() => reject(new RawBodyError(`request body exceeds ${maxBytes} bytes`, 413)));
+    }
+  });
+}
+
 export interface RuntimeSurfaceOptions {
+  questions?: QuestionBroker;
   sessionId: string;
   /** The worker's own KORTIX_TOKEN — service bearer AND user-context secret. */
   token?: string;
@@ -343,6 +410,7 @@ export interface RuntimeSurfaceOptions {
 }
 
 interface RestoredTranscriptMessage {
+  details?: unknown;
   role?: string;
   content?: unknown;
   timestamp?: number | string;
@@ -479,7 +547,7 @@ export class RuntimeSurface {
         this.applyToolPart(pending, {
           ...(message.isError
             ? { status: 'error', error: output }
-            : { status: 'completed', output, title: pending.tool, metadata: {} }),
+            : { status: 'completed', output, title: pending.tool, metadata: toolResultMetadata(message.details) }),
           input: pending.input,
           time: { start: pending.startedAt, end: created },
         });
@@ -843,7 +911,7 @@ export class RuntimeSurface {
       sessions: { known: true, value: [this.sessionProjection()] },
       statuses: { known: true, value: { [this.rootId]: this.status } },
       permissions: { known: true, value: [] },
-      questions: { known: true, value: [] },
+      questions: { known: true, value: this.opts.questions?.list() ?? [] },
     };
   }
 
@@ -1030,9 +1098,73 @@ export class RuntimeSurface {
       });
       return true;
     }
+    const rawQuestionMutation = url.pathname.match(/^\/question\/([^/]+)\/(reply|reject)$/);
+    if (rawQuestionMutation && req.method === 'POST') {
+      if (!this.authorized(req, url)) {
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
+        return true;
+      }
+      const requestId = decodePathSegment(rawQuestionMutation[1]!);
+      if (requestId === null) {
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'path contains malformed percent-encoding' }));
+        return true;
+      }
+      const action = rawQuestionMutation[2]!;
+      const write = (status: number, body: unknown) =>
+        res
+          .writeHead(status, { 'content-type': 'application/json' })
+          .end(JSON.stringify(body));
+      if (action === 'reject') {
+        if (!this.opts.questions?.reject(requestId)) {
+          write(404, { error: 'question request not found' });
+        } else {
+          write(200, true);
+        }
+        return true;
+      }
+      void readRawJsonBody(req)
+        .then((body) => {
+          const answers =
+            body && typeof body === 'object' && !Array.isArray(body)
+              ? (body as { answers?: unknown }).answers
+              : undefined;
+          if (!Array.isArray(answers)) {
+            write(400, { error: 'answers must be an array' });
+            return;
+          }
+          try {
+            if (!this.opts.questions?.reply(requestId, answers as string[][])) {
+              write(404, { error: 'question request not found' });
+              return;
+            }
+            write(200, true);
+          } catch (error) {
+            write(400, { error: String((error as Error)?.message ?? error) });
+          }
+        })
+        .catch((error) => {
+          write(error instanceof RawBodyError ? error.status : 400, {
+            error: String((error as Error)?.message ?? error),
+          });
+        });
+      return true;
+    }
     if (req.method !== 'GET') return false;
     if (!this.authorized(req, url)) {
       res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'unauthorized' }));
+      return true;
+    }
+    if (url.pathname === '/question') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(this.opts.questions?.list() ?? []));
+      return true;
+    }
+    if (url.pathname === '/session/status') {
+      const statuses = this.status.type === 'idle' ? {} : { [this.rootId]: this.status };
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(statuses));
       return true;
     }
     if (url.pathname === '/session') {

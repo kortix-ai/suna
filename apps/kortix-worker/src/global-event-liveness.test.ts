@@ -27,8 +27,15 @@ describe('global event stream liveness', () => {
     const port = (server.address() as { port: number }).port;
     const limited = await fetch(`http://127.0.0.1:${port}/limited`);
     const healthy = await fetch(`http://127.0.0.1:${port}/healthy`);
-    const limitedRead = limited.body!.getReader().read().catch(() => ({ done: true }));
+    const limitedReader = limited.body!.getReader();
+    expect(new TextDecoder().decode((await limitedReader.read()).value)).toContain(
+      'server.connected',
+    );
+    const limitedRead = limitedReader.read().catch(() => ({ done: true }));
     const healthyReader = healthy.body!.getReader();
+    expect(new TextDecoder().decode((await healthyReader.read()).value)).toContain(
+      'server.connected',
+    );
     bus.publish('message.part.delta', { delta: 'x'.repeat(512) });
     expect((await limitedRead).done).toBe(true);
     expect(new TextDecoder().decode((await healthyReader.read()).value)).toContain('x'.repeat(512));
@@ -48,11 +55,20 @@ describe('global event stream liveness', () => {
     const controller = new AbortController();
     cleanups.push(async () => controller.abort());
     const port = (server.address() as { port: number }).port;
-    const response = await fetch(`http://127.0.0.1:${port}/global/event`, { signal: controller.signal });
+    const response = await fetch(`http://127.0.0.1:${port}/global/event`, {
+      signal: controller.signal,
+    });
     expect(response.headers.get('content-type')).toContain('text/event-stream');
     const reader = response.body!.getReader();
+    const connected = await reader.read();
+    expect(new TextDecoder().decode(connected.value)).toContain('"type":"server.connected"');
     const heartbeat = await reader.read();
-    expect(new TextDecoder().decode(heartbeat.value)).toBe(': heartbeat\n\n');
+    expect(
+      JSON.parse(new TextDecoder().decode(heartbeat.value).split('data: ')[1]!.trim()),
+    ).toEqual({
+      directory: '/workspace',
+      payload: { type: 'server.heartbeat', properties: {} },
+    });
     bus.publish('session.status', { sessionID: 'session-1', status: { type: 'idle' } });
     let chunk = '';
     while (!chunk.includes('data: ')) {
@@ -64,7 +80,8 @@ describe('global event stream liveness', () => {
     expect(data).toEqual({
       directory: '/workspace',
       payload: {
-        id: `evt_${bus.epoch}_1`, type: 'session.status',
+        id: `evt_${bus.epoch}_1`,
+        type: 'session.status',
         properties: { sessionID: 'session-1', status: { type: 'idle' } },
       },
     });
@@ -73,9 +90,14 @@ describe('global event stream liveness', () => {
 
   test('the real worker route authenticates and streams the prompt message', async () => {
     const worker = await startWorker({
-      port: 0, envUrl: 'http://127.0.0.1:1', envUrlExplicit: true,
-      envCwd: '/workspace', systemPrompt: 'Answer.', modelMode: 'faux',
-      kortixToken: 'test-token', sessionId: 'global-route-proof',
+      port: 0,
+      envUrl: 'http://127.0.0.1:1',
+      envUrlExplicit: true,
+      envCwd: '/workspace',
+      systemPrompt: 'Answer.',
+      modelMode: 'faux',
+      kortixToken: 'test-token',
+      sessionId: 'global-route-proof',
     });
     cleanups.push(async () => {
       worker.server.closeAllConnections();
@@ -88,12 +110,15 @@ describe('global event stream liveness', () => {
     cleanups.push(async () => controller.abort());
     const stream = await fetch(`${base}/global/event`, { headers, signal: controller.signal });
     expect(stream.status).toBe(200);
-    const sessions = await (await fetch(`${base}/session`, { headers })).json() as Array<{ id: string }>;
+    const sessions = (await (await fetch(`${base}/session`, { headers })).json()) as Array<{
+      id: string;
+    }>;
     worker.faux!.setResponses([fauxAssistantMessage('Stream proof.')]);
     const reader = stream.body!.getReader();
     const first = reader.read();
     const accepted = await fetch(`${base}/session/${sessions[0]!.id}/prompt_async`, {
-      method: 'POST', headers,
+      method: 'POST',
+      headers,
       body: JSON.stringify({ parts: [{ type: 'text', text: 'GLOBAL_STREAM_PROOF' }] }),
     });
     expect(accepted.status).toBe(204);

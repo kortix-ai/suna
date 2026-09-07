@@ -1,3 +1,5 @@
+import { QuestionBroker } from './question-broker.ts';
+import { createQuestionTool } from './question-tool.ts';
 /**
  * kortix-worker (spike) — the harness, and only the harness.
  *
@@ -31,7 +33,7 @@ import { Session } from '@earendil-works/pi-agent-core';
 import { ChatEventAdapter } from './chat-events.ts';
 import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
-import { RuntimeSurface } from './runtime-surface.ts';
+import { mintRootId, RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
 import { persistNewMessages } from './durable-append.ts';
 import { type TurnEndIdentity, buildTurnEndRelay, scheduleBootReconcile } from './turn-end-relay.ts';
@@ -470,7 +472,13 @@ export async function startWorker(cfg = configFromEnv()) {
         } | null;
       }
     | undefined;
-  const surface = new RuntimeSurface({
+  let surface!: RuntimeSurface;
+  const questions = new QuestionBroker({
+    sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
+    publish: (event) => surface.publishWire(event),
+  });
+  agent.state.tools = [...agent.state.tools, createQuestionTool(questions, (id) => wireAdapter.toolContext(id))];
+  surface = new RuntimeSurface({
     sessionId: cfg.sessionId ?? 'session-local',
     token: cfg.kortixToken,
     agentName:
@@ -481,6 +489,7 @@ export async function startWorker(cfg = configFromEnv()) {
     agents: compiledPayload?.agentConfig?.agent ?? {},
     defaultModel: cfg.modelId ?? compiledPayload?.agentConfig?.model ?? null,
     workspace: cfg.envCwd,
+    questions,
     // The Stop button. `session.abort` on the runtime client is POST
     // `session/:id/abort`, which this surface answered with its catch-all 404
     // until now — so the UI showed "Interrupted" from its own optimistic
@@ -562,6 +571,7 @@ export async function startWorker(cfg = configFromEnv()) {
       type: 'message.part.updated',
       properties: {
         sessionID: surface.rootId,
+        time: Date.now(),
         part: {
           id: `${id}-p0`,
           messageID: id,
@@ -604,7 +614,7 @@ export async function startWorker(cfg = configFromEnv()) {
     if (url.pathname.startsWith('/kortix/opencode/')) {
       if (surface.handle(req, res, url)) return;
     }
-    if (url.pathname === '/global/event' || url.pathname === '/session' || url.pathname.startsWith('/session/')) {
+    if (url.pathname === '/global/event' || url.pathname === '/question' || url.pathname.startsWith('/question/') || url.pathname === '/session' || url.pathname.startsWith('/session/')) {
       if (surface.handleRawSessionList(req, res, url)) return;
     }
 
