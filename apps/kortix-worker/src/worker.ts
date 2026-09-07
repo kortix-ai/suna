@@ -515,6 +515,8 @@ export async function startWorker(cfg = configFromEnv()) {
   const wireAdapter = new ChatEventAdapter({
     sessionID: surface.rootId,
     mintMessageId: surface.mintMessageId,
+    parentMessageId: () => surface.turnEndIdentity().messageId,
+    workspace: cfg.envCwd,
   });
   agent.subscribe((event: any) => {
     try {
@@ -580,12 +582,17 @@ export async function startWorker(cfg = configFromEnv()) {
     const prev = turnChain;
     turnChain = (async () => {
       await prev.catch(() => {});
-      publishUserMessage(text, opts?.userMessageId);
-      surface.markTurn(opts?.userMessageId ?? null, true);
+      const userMessageId = publishUserMessage(text, opts?.userMessageId);
+      surface.markTurn(userMessageId, true);
       try {
-        await agent.prompt(text);
+        await agent.prompt({
+          role: 'user',
+          content: [{ type: 'text', text }],
+          timestamp: Date.now(),
+          kortixWireMessageId: userMessageId,
+        } as any);
       } finally {
-        surface.markTurn(opts?.userMessageId ?? null, false);
+        surface.markTurn(userMessageId, false);
       }
     })();
     return turnChain;

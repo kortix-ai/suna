@@ -4784,3 +4784,16 @@ list contains only the test-created resource. Prove persistence with another GET
 **Automation:** TRG-2 and TRG-3 select their trigger by slug in both the mutation
 response and the read-back response. TRG-3 also asserts the disabled state remains
 unchanged by a model-only PATCH. The strict preview suite includes seeded projects.
+
+
+### Preserve wire identity through durable transcript restoration (2026-09-07)
+
+- Incident: the Pi preview returned 15 messages before stop and 32 after resume
+  plus one new two-message turn. The correct count was 17. Restoration minted
+  new message ids, so the API merged old and restored copies.
+- Rule: persist each wire message id and assistant parent id with the Pi message.
+  Restore those ids. Give legacy entries deterministic fallback ids. Repeated
+  text is valid conversation data and must never be used as a deduplication key.
+- Enforcement: `apps/kortix-worker/src/durable-wire-identity.test.ts` posts two
+  identical turns over HTTP, restarts twice, and asserts identical message ids,
+  part ids, parent links, and the merged count. The test failed before the fix.

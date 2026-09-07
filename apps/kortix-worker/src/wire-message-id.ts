@@ -32,8 +32,8 @@ const WIRE_MESSAGE_ID_TIME = /^msg_([0-9a-f]{12})/;
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
 /** Mirrors apps/api/src/projects/wire-message-id.ts. */
-const WIRE_ID_TIME_MASK = BigInt(0xffffffffffff);
-const WIRE_ID_TIME_SCALE = BigInt(0x1000);
+export const WIRE_ID_TIME_MASK = BigInt(0xffffffffffff);
+export const WIRE_ID_TIME_SCALE = BigInt(0x1000);
 
 /** Decode the ordering clock out of a wire message id, or null. */
 export function wireIdTime(messageId: string | null | undefined): bigint | null {

@@ -26,7 +26,8 @@ import { serveGlobalEventStream } from './global-event-stream.ts';
  * disagree between the two.
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { mintWireMessageId, wireIdTime } from './wire-message-id';
+import { WIRE_ID_TIME_MASK, WIRE_ID_TIME_SCALE, mintWireMessageId, wireIdTime } from './wire-message-id';
+import { assistantContractFields, assistantMessageError } from './chat-events.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
@@ -327,6 +328,7 @@ export interface RuntimeSurfaceOptions {
   agentConfigEtag?: string | null;
   agents?: Record<string, { description?: string; model?: string }>;
   defaultModel?: string | null;
+  resolvedModel?: { providerID: string; modelID: string } | null;
   workspace?: string;
   /**
    * Stop the run in flight. Wired to `Agent.abort()` by the worker.
@@ -338,6 +340,22 @@ export interface RuntimeSurfaceOptions {
    * a surface with no agent, keeps working.
    */
   onAbort?: () => void;
+}
+
+interface RestoredTranscriptMessage {
+  role?: string;
+  content?: unknown;
+  timestamp?: number | string;
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+  model?: string;
+  provider?: string;
+  usage?: unknown;
+  stopReason?: string;
+  errorMessage?: string;
+  kortixWireMessageId?: string;
+  kortixParentMessageId?: string;
 }
 
 function agentModel(ref: string | undefined): { providerID: string; modelID: string } | null {
@@ -407,27 +425,23 @@ export class RuntimeSurface {
    * of what was said, and `/messages` reports an empty history for a session
    * the store knows is three turns deep.
    *
-   * Restored pi messages carry NO wire id (they are storage entries, not wire
-   * frames), so ids are minted here in restore order. That is safe and it is
-   * why this must run BEFORE any live turn: `mintMessageId` seeds each new id
-   * from `lastMintedTime`, so every reply after the restore sorts above the
-   * whole restored transcript rather than back inside it.
+   * Persisted messages retain their wire ids and parent links. Legacy entries
+   * without ids receive deterministic ids, so repeated restoration is stable.
+   * Seed before a live turn to advance the mint clock beyond durable history.
    *
    * Applied straight to the transcript, not through `publishWire`: history is
    * not news. Replaying it onto the bus would hand a reconnecting client a
    * burst of "new" events for messages it already has.
    */
-  seedRestoredMessages(
-    messages: Array<{
-      role?: string;
-      content?: unknown;
-      timestamp?: number | string;
-      toolCallId?: string;
-      toolName?: string;
-      isError?: boolean;
-    }>,
-  ): number {
+  seedRestoredMessages(messages: RestoredTranscriptMessage[]): number {
     let seeded = 0;
+    let lastUserId: string | null = null;
+    const fallbackModel = this.opts.resolvedModel ??
+      agentModel(this.opts.defaultModel ?? undefined) ?? {
+        providerID: 'unknown',
+        modelID: 'unknown',
+      };
+    const agent = this.opts.agentName ?? 'build';
     // A tool call and its result are TWO durable messages (the assistant's
     // `toolCall` block, then a `role: 'toolResult'` message pointing back at it
     // by `toolCallId`). The live wire shape is one `tool` part that moves from
@@ -435,11 +449,22 @@ export class RuntimeSurface {
     // created rather than become a bubble of its own — otherwise a resumed
     // session shows "Successfully wrote 4 bytes to number.txt" as something
     // the assistant SAID, and the write card it belongs to is missing.
-    const toolParts = new Map<string, { messageId: string; partId: string; tool: string; input: unknown }>();
+    const toolParts = new Map<
+      string,
+      { messageId: string; partId: string; tool: string; input: unknown; startedAt: number }
+    >();
+    let restoredClock: bigint | null = null;
 
-    for (const message of messages) {
+    for (const [messageIndex, message] of messages.entries()) {
       const blocks = Array.isArray(message.content) ? message.content : [];
-      const created = typeof message.timestamp === 'number' ? message.timestamp : Date.now();
+      const parsedTimestamp =
+        typeof message.timestamp === 'string' ? Date.parse(message.timestamp) : Number.NaN;
+      const created =
+        typeof message.timestamp === 'number' && Number.isFinite(message.timestamp)
+          ? message.timestamp
+          : Number.isFinite(parsedTimestamp)
+            ? parsedTimestamp
+            : messageIndex;
 
       if (message.role === 'toolResult') {
         const pending = message.toolCallId ? toolParts.get(message.toolCallId) : undefined;
@@ -454,48 +479,157 @@ export class RuntimeSurface {
         this.applyToolPart(pending, {
           ...(message.isError
             ? { status: 'error', error: output }
-            : { status: 'completed', output }),
+            : { status: 'completed', output, title: pending.tool, metadata: {} }),
           input: pending.input,
-          time: { start: created, end: created },
+          time: { start: pending.startedAt, end: created },
         });
         continue;
       }
 
       const role = message.role === 'user' ? 'user' : 'assistant';
-      const id = this.mintMessageId();
-      const parts: Array<{ kind: 'text'; text: string } | { kind: 'tool'; call: any }> = [];
+      const parts: Array<
+        | { kind: 'text'; text: string }
+        | { kind: 'reasoning'; text: string }
+        | { kind: 'tool'; call: any }
+      > = [];
       for (const block of blocks) {
         if (!block || typeof block !== 'object') continue;
-        const b = block as { type?: string; text?: string; id?: string; name?: string; arguments?: unknown };
-        if (typeof b.text === 'string' && b.text.length > 0) parts.push({ kind: 'text', text: b.text });
+        const b = block as {
+          type?: string;
+          text?: string;
+          thinking?: string;
+          id?: string;
+          name?: string;
+          arguments?: unknown;
+        };
+        if (b.type === 'thinking' && typeof b.thinking === 'string' && b.thinking.length > 0)
+          parts.push({ kind: 'reasoning', text: b.thinking });
+        else if (typeof b.text === 'string' && b.text.length > 0)
+          parts.push({ kind: 'text', text: b.text });
         else if (b.type === 'toolCall' && b.name) parts.push({ kind: 'tool', call: b });
       }
       // A message with nothing renderable would show as an empty bubble.
-      if (parts.length === 0) continue;
+      // Keep a terminal assistant envelope even when the provider returned no
+      // content. Its parent and error are the durable turn identity used by
+      // boot reconciliation; dropping it changes an exact provider failure
+      // into an unidentified generic idle state after restart.
+      const terminalAssistant =
+        role === 'assistant' &&
+        (message.stopReason === 'stop' ||
+          message.stopReason === 'length' ||
+          message.stopReason === 'error' ||
+          message.stopReason === 'aborted');
+      if (parts.length === 0 && !terminalAssistant) continue;
+
+      let id = message.kortixWireMessageId;
+      if (id) {
+        const encoded = wireIdTime(id);
+        if (encoded !== null && (restoredClock === null || encoded > restoredClock)) {
+          restoredClock = encoded;
+        }
+      } else {
+        const rawClock =
+          (BigInt(Math.max(0, Math.trunc(created))) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+        const encoded: bigint =
+          restoredClock !== null && rawClock <= restoredClock
+            ? restoredClock + BigInt(1)
+            : rawClock;
+        if (encoded > WIRE_ID_TIME_MASK) {
+          throw new Error('restored wire message id ordering clock is exhausted');
+        }
+        const tail = createHash('sha256')
+          .update(JSON.stringify([messageIndex, message]))
+          .digest('hex')
+          .slice(0, 14);
+        id = `msg_${encoded.toString(16).padStart(12, '0')}${tail}`;
+        restoredClock = encoded;
+      }
+      const clock = wireIdTime(id);
+      if (clock !== null && (this.lastMintedTime === null || clock > this.lastMintedTime)) {
+        this.lastMintedTime = clock;
+      }
+
+      if (role === 'assistant' && !message.kortixParentMessageId && !lastUserId) {
+        // An assistant without a user parent cannot satisfy the OpenCode v2
+        // message contract. The full active branch normally starts with a user;
+        // fail closed for corrupt or truncated legacy data instead of inventing
+        // a relationship.
+        continue;
+      }
+
+      const resolvedModel =
+        this.opts.resolvedModel ??
+        ({
+          providerID: message.provider ?? fallbackModel.providerID,
+          modelID: message.model ?? fallbackModel.modelID,
+        } as const);
+      const info =
+        role === 'user'
+          ? {
+              id,
+              role,
+              sessionID: this.rootId,
+              time: { created },
+              agent,
+              model: resolvedModel,
+            }
+          : {
+              id,
+              role,
+              sessionID: this.rootId,
+              parentID: message.kortixParentMessageId ?? lastUserId!,
+              time: { created, completed: created },
+              modelID: resolvedModel.modelID,
+              providerID: resolvedModel.providerID,
+              ...assistantContractFields(message.usage, {
+                agent,
+                mode: agent,
+                workspace: this.opts.workspace,
+              }),
+              ...(assistantMessageError(message) ? { error: assistantMessageError(message) } : {}),
+            };
 
       this.transcript.apply({
         type: 'message.updated',
         properties: {
           sessionID: this.rootId,
-          info: { id, role, sessionID: this.rootId, time: { created } },
+          info,
         },
       });
+      if (role === 'user') lastUserId = id;
       parts.forEach((part, index) => {
         const partId = `${id}-p${index}`;
-        if (part.kind === 'text') {
+        if (part.kind === 'text' || part.kind === 'reasoning') {
           this.transcript.apply({
             type: 'message.part.updated',
             properties: {
               sessionID: this.rootId,
-              part: { id: partId, messageID: id, sessionID: this.rootId, type: 'text', text: part.text },
+              part: {
+                id: partId,
+                messageID: id,
+                sessionID: this.rootId,
+                type: part.kind === 'text' ? 'text' : 'reasoning',
+                text: part.text,
+                ...(part.kind === 'reasoning' ? { time: { start: created, end: created } } : {}),
+              },
             },
           });
           return;
         }
-        const entry = { messageId: id, partId, tool: String(part.call.name), input: part.call.arguments };
+        const entry = {
+          messageId: id,
+          partId,
+          tool: String(part.call.name),
+          input: part.call.arguments,
+          startedAt: created,
+        };
         // Left 'running' on purpose when no result follows: that is exactly
         // what an interrupted turn was, and claiming it completed would be a lie.
-        this.applyToolPart(entry, { status: 'running', input: entry.input, time: { start: created } });
+        this.applyToolPart(entry, {
+          status: 'running',
+          input: entry.input,
+          time: { start: created },
+        });
         if (typeof part.call.id === 'string') toolParts.set(part.call.id, entry);
       });
       seeded++;

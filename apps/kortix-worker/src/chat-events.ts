@@ -19,6 +19,8 @@
  * Deltas are available at the Agent layer. No pi-ai tapping is required.
  */
 
+import type { AssistantMessage } from '@opencode-ai/sdk/v2';
+
 type Wire = {
   type: string;
   properties: Record<string, unknown>;
@@ -38,7 +40,10 @@ function toolOutputText(result: any): string {
   if (typeof result === 'string') return result;
   const blocks = result?.content;
   if (Array.isArray(blocks)) {
-    const text = blocks.filter((c: any) => c?.type === 'text').map((c: any) => c.text).join('');
+    const text = blocks
+      .filter((c: any) => c?.type === 'text')
+      .map((c: any) => c.text)
+      .join('');
     if (text) return text;
   }
   return result == null ? '' : JSON.stringify(result);
@@ -59,6 +64,82 @@ export interface AdapterOptions {
    * zero-padded counter.
    */
   mintMessageId?: () => string;
+  /** The user message this assistant run answers. Read once at message start. */
+  parentMessageId?: () => string | null;
+  /** Public compiled model identity. It hides the gateway's provider transport. */
+  model?: { providerID: string; modelID: string } | null;
+  agent?: string;
+  mode?: string;
+  workspace?: string;
+  /** Injectable wall clock for deterministic duration-contract tests. */
+  now?: () => number;
+}
+
+export type AssistantContractFields = Pick<
+  AssistantMessage,
+  'agent' | 'mode' | 'path' | 'cost' | 'tokens'
+>;
+
+export interface AssistantContractOptions {
+  agent?: string;
+  mode?: string;
+  workspace?: string;
+}
+
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+export function assistantContractFields(
+  usage: any,
+  options: AssistantContractOptions = {},
+): AssistantContractFields {
+  const agent = options.agent ?? 'build';
+  const workspace = options.workspace ?? '/workspace';
+  return {
+    agent,
+    mode: options.mode ?? agent,
+    path: { cwd: workspace, root: workspace },
+    cost: finiteNumber(usage?.cost?.total),
+    tokens: {
+      input: finiteNumber(usage?.input),
+      output: finiteNumber(usage?.output),
+      reasoning: finiteNumber(usage?.reasoning),
+      cache: {
+        read: finiteNumber(usage?.cacheRead),
+        write: finiteNumber(usage?.cacheWrite),
+      },
+    },
+  };
+}
+
+export function assistantMessageError(message: {
+  stopReason?: unknown;
+  errorMessage?: unknown;
+}): AssistantMessage['error'] | undefined {
+  const detail =
+    typeof message.errorMessage === 'string' && message.errorMessage.trim()
+      ? message.errorMessage
+      : null;
+  if (message.stopReason === 'aborted') {
+    return {
+      name: 'MessageAbortedError',
+      data: { message: detail ?? 'The message was aborted' },
+    };
+  }
+  if (message.stopReason === 'error') {
+    return {
+      name: 'UnknownError',
+      data: { message: detail ?? 'The model request failed' },
+    };
+  }
+  if (message.stopReason === 'length') {
+    return {
+      name: 'MessageOutputLengthError',
+      data: {},
+    };
+  }
+  return undefined;
 }
 
 /**
@@ -71,16 +152,36 @@ export interface AdapterOptions {
 export class ChatEventAdapter {
   private readonly sessionID: string;
   private readonly mint?: () => string;
+  private readonly fixedMessageId?: () => string;
+  private readonly parent?: () => string | null;
+  private readonly model: { providerID: string; modelID: string } | null;
+  private readonly agent: string;
+  private readonly mode: string;
+  private readonly workspace: string;
+  private readonly now: () => number;
   private messageSeq = 0;
   private currentMessageId = '';
+  private currentParentId: string | null = null;
+  private currentMessageCreatedAt = 0;
   private textIndex = new Map<string, number>();
-  private toolIndex = new Map<string, { partId: string; name: string; input: unknown }>();
+  private toolIndex = new Map<
+    string,
+    { partId: string; name: string; input: unknown; startedAt: number }
+  >();
   private accum = new Map<string, string>();
   private partCount = 0;
+  private partStartedAt = new Map<string, number>();
 
   constructor(opts: AdapterOptions) {
     this.sessionID = opts.sessionID;
     this.mint = opts.mintMessageId;
+    this.fixedMessageId = opts.messageId;
+    this.parent = opts.parentMessageId;
+    this.model = opts.model ?? null;
+    this.agent = opts.agent ?? 'build';
+    this.mode = opts.mode ?? this.agent;
+    this.workspace = opts.workspace ?? '/workspace';
+    this.now = opts.now ?? now;
   }
 
   private nextPart(): string {
@@ -106,10 +207,14 @@ export class ChatEventAdapter {
         // messages are already carried as tool PARTS on the assistant message
         // (dev session 7f218b0a rendered a stray toolResult row).
         if ((event.message?.role ?? 'assistant') !== 'assistant') return [];
-        this.currentMessageId = this.mint ? this.mint() : `msg-${++this.messageSeq}`;
+        this.currentMessageId =
+          this.fixedMessageId?.() ?? (this.mint ? this.mint() : `msg-${++this.messageSeq}`);
+        this.currentParentId = this.parent?.() ?? null;
+        this.currentMessageCreatedAt = this.now();
         this.partCount = 0;
         this.textIndex.clear();
         this.accum.clear();
+        this.partStartedAt.clear();
         return [
           {
             type: 'message.updated',
@@ -119,9 +224,15 @@ export class ChatEventAdapter {
                 id: this.currentMessageId,
                 role: event.message?.role ?? 'assistant',
                 sessionID,
-                time: { created: now() },
-                modelID: event.message?.model,
-                providerID: event.message?.provider,
+                ...(this.currentParentId ? { parentID: this.currentParentId } : {}),
+                time: { created: this.currentMessageCreatedAt },
+                modelID: this.model?.modelID ?? event.message?.model,
+                providerID: this.model?.providerID ?? event.message?.provider,
+                ...assistantContractFields(event.message?.usage, {
+                  agent: this.agent,
+                  mode: this.mode,
+                  workspace: this.workspace,
+                }),
               },
             },
           },
@@ -132,12 +243,17 @@ export class ChatEventAdapter {
         const inner = event.assistantMessageEvent;
         if (!inner) return [];
         // text ------------------------------------------------------------
-        if (inner.type === 'text_start' || inner.type === 'text_delta' || inner.type === 'text_end') {
+        if (
+          inner.type === 'text_start' ||
+          inner.type === 'text_delta' ||
+          inner.type === 'text_end'
+        ) {
           const key = `text:${inner.contentIndex ?? 0}`;
           if (!this.textIndex.has(key)) this.textIndex.set(key, this.partCount++);
           const id = partId(this.currentMessageId, this.textIndex.get(key)!);
           const prev = this.accum.get(id) ?? '';
-          const next = inner.type === 'text_delta' ? prev + (inner.delta ?? '') : (inner.text ?? prev);
+          const next =
+            inner.type === 'text_delta' ? prev + (inner.delta ?? '') : (inner.content ?? prev);
           this.accum.set(id, next);
           return this.streamingTextFrames({
             id,
@@ -149,12 +265,19 @@ export class ChatEventAdapter {
           });
         }
         // thinking ---------------------------------------------------------
-        if (inner.type === 'thinking_start' || inner.type === 'thinking_delta' || inner.type === 'thinking_end') {
+        if (
+          inner.type === 'thinking_start' ||
+          inner.type === 'thinking_delta' ||
+          inner.type === 'thinking_end'
+        ) {
           const key = `think:${inner.contentIndex ?? 0}`;
           if (!this.textIndex.has(key)) this.textIndex.set(key, this.partCount++);
           const id = partId(this.currentMessageId, this.textIndex.get(key)!);
+          const partStart = this.partStartedAt.get(id) ?? this.now();
+          this.partStartedAt.set(id, partStart);
           const prev = this.accum.get(id) ?? '';
-          const next = inner.type === 'thinking_delta' ? prev + (inner.delta ?? '') : (inner.thinking ?? prev);
+          const next =
+            inner.type === 'thinking_delta' ? prev + (inner.delta ?? '') : (inner.content ?? prev);
           this.accum.set(id, next);
           return this.streamingTextFrames({
             id,
@@ -163,6 +286,10 @@ export class ChatEventAdapter {
             field: 'text',
             full: next,
             delta: inner.type === 'thinking_delta' ? (inner.delta ?? '') : null,
+            time: {
+              start: partStart,
+              ...(inner.type === 'thinking_end' ? { end: this.now() } : {}),
+            },
           });
         }
         return [];
@@ -170,14 +297,32 @@ export class ChatEventAdapter {
 
       case 'tool_execution_start': {
         const id = this.nextPart();
-        this.toolIndex.set(event.toolCallId, { partId: id, name: event.toolName, input: event.args });
-        return [this.toolPart(id, event.toolName, { status: 'running', input: event.args, time: { start: now() } })];
+        const startedAt = this.now();
+        this.toolIndex.set(event.toolCallId, {
+          partId: id,
+          name: event.toolName,
+          input: event.args,
+          startedAt,
+        });
+        return [
+          this.toolPart(id, event.toolName, {
+            status: 'running',
+            input: event.args,
+            time: { start: startedAt },
+          }),
+        ];
       }
 
       case 'tool_execution_update': {
         const t = this.toolIndex.get(event.toolCallId);
         if (!t) return [];
-        return [this.toolPart(t.partId, t.name, { status: 'running', input: t.input, time: { start: now() } })];
+        return [
+          this.toolPart(t.partId, t.name, {
+            status: 'running',
+            input: t.input,
+            time: { start: t.startedAt },
+          }),
+        ];
       }
 
       case 'tool_execution_end': {
@@ -188,20 +333,42 @@ export class ChatEventAdapter {
         // own output, so hand them the text — a JSON envelope would render as
         // a blob where stdout belongs.
         const output = toolOutputText(event.result);
+        const endedAt = this.now();
         return [
           this.toolPart(
             t.partId,
             t.name,
             event.isError
-              ? { status: 'error', input: t.input, error: output, time: { start: now(), end: now() } }
-              : { status: 'completed', input: t.input, output, time: { start: now(), end: now() } },
+              ? {
+                  status: 'error',
+                  input: t.input,
+                  error: output,
+                  time: { start: t.startedAt, end: endedAt },
+                }
+              : {
+                  status: 'completed',
+                  input: t.input,
+                  output,
+                  title: t.name,
+                  metadata: {},
+                  time: { start: t.startedAt, end: endedAt },
+                },
           ),
         ];
       }
 
       case 'message_end': {
         if ((event.message?.role ?? 'assistant') !== 'assistant') return [];
+        // These two JSON fields travel with Pi's durable message. They let a
+        // restarted worker rebuild the exact wire transcript instead of
+        // minting new ids and breaking parent relationships on every boot.
+        if (event.message && typeof event.message === 'object') {
+          event.message.kortixWireMessageId = this.currentMessageId;
+          if (this.currentParentId) event.message.kortixParentMessageId = this.currentParentId;
+        }
         const stop = event.message?.stopReason;
+        const terminalError = assistantMessageError(event.message ?? {});
+        const completedAt = this.now();
         const out: Wire[] = [
           {
             type: 'message.updated',
@@ -211,16 +378,27 @@ export class ChatEventAdapter {
                 id: this.currentMessageId,
                 role: event.message?.role ?? 'assistant',
                 sessionID,
-                time: { created: now(), completed: now() },
-                tokens: event.message?.usage,
+                ...(this.currentParentId ? { parentID: this.currentParentId } : {}),
+                time: { created: this.currentMessageCreatedAt, completed: completedAt },
+                modelID: this.model?.modelID ?? event.message?.model,
+                providerID: this.model?.providerID ?? event.message?.provider,
+                ...assistantContractFields(event.message?.usage, {
+                  agent: this.agent,
+                  mode: this.mode,
+                  workspace: this.workspace,
+                }),
+                ...(terminalError ? { error: terminalError } : {}),
               },
             },
           },
         ];
-        if (stop === 'error') {
+        if (stop === 'error' || stop === 'length') {
           out.push({
             type: 'session.error',
-            properties: { sessionID, error: { name: 'ProviderError', data: { message: event.message?.errorMessage } } },
+            properties: {
+              sessionID,
+              error: terminalError,
+            },
           });
         }
         return out;
@@ -271,17 +449,20 @@ export class ChatEventAdapter {
     field: string;
     full: string;
     delta: string | null;
+    time?: { start: number; end?: number };
   }): Wire[] {
     const snapshot: Wire = {
       type: 'message.part.updated',
       properties: {
         sessionID: input.sessionID,
+        time: now(),
         part: {
           id: input.id,
           messageID: this.currentMessageId,
           sessionID: input.sessionID,
           type: input.partType,
           text: input.full,
+          ...(input.time ? { time: input.time } : {}),
         },
       },
     };
@@ -306,7 +487,16 @@ export class ChatEventAdapter {
       type: 'message.part.updated',
       properties: {
         sessionID: this.sessionID,
-        part: { id, messageID: this.currentMessageId, sessionID: this.sessionID, type: 'tool', tool, callID: id, state },
+        time: now(),
+        part: {
+          id,
+          messageID: this.currentMessageId,
+          sessionID: this.sessionID,
+          type: 'tool',
+          tool,
+          callID: id,
+          state,
+        },
       },
     };
   }
