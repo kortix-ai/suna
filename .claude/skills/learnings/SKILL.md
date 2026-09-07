@@ -4797,3 +4797,15 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
 - Enforcement: `apps/kortix-worker/src/durable-wire-identity.test.ts` posts two
   identical turns over HTTP, restarts twice, and asserts identical message ids,
   part ids, parent links, and the merged count. The test failed before the fix.
+
+
+### Verify both lockfiles for worker dependency changes (2026-09-07)
+
+- Near-miss: preview run 34100612923 rejected the Pi worker image because its
+  package manifest added a type dependency but its standalone Bun lockfile did not.
+  The pnpm workspace tests passed. The previous deployment remained available.
+- Rule: worker dependency changes update `pnpm-lock.yaml` and
+  `apps/kortix-worker/bun.lock`. Verify `bun install --frozen-lockfile` in a
+  standalone directory containing only that worker manifest and Bun lockfile.
+- Enforcement: the API Dockerfile uses the standalone frozen Bun install.
+  The corrected lockfile passed that install locally with 103 packages.
