@@ -25,10 +25,10 @@ catalog reads take no token and no flag. See [Feature flags](/docs/feature-flags
 
 ## The catalog — `kortix.templates`
 
-| Method                       | Wraps                                     | What it does                                                            |
-| ---------------------------- | ----------------------------------------- | ----------------------------------------------------------------------- |
+| Method                     | Wraps                         | What it does                                                            |
+| -------------------------- | ----------------------------- | ----------------------------------------------------------------------- |
 | `templates.list(options?)` | `GET /public/templates`       | Every template; `options.q` narrows by title, description, repo or slug |
-| `templates.get(slug)`      | `GET /public/templates/:slug` | One template, or a `TemplateError` with `status: 404`                |
+| `templates.get(slug)`      | `GET /public/templates/:slug` | One template, or a `TemplateError` with `status: 404`                   |
 
 Both are anonymous by design. They are not built on the authenticated client,
 so a server render with `getToken: () => null` can read them, and a signed-in
@@ -36,8 +36,8 @@ visitor's token never leaks into a cached page.
 
 ## The install — `kortix.project(id).templates`
 
-| Method                      | Wraps                                             | What it does                                                                      |
-| --------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Method                    | Wraps                                           | What it does                                                                      |
+| ------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
 | `templates.install(slug)` | `POST /projects/:pid/templates/install-session` | Starts the agent session that installs the template; resolves to `{ session_id }` |
 
 `install` returns a **session id**, not a result. The agent inside that session
@@ -54,15 +54,15 @@ const { session_id } = await kortix.project(projectId).templates.install(templat
 
 ## Types
 
-| Type                              | Shape                                                                                                                                                                     |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Template`             | `slug`, `title`, `description`, `repo` (`owner/repo`), `repo_owner`, `repo_name`, `git_ref`, `resolved_sha`, `agents`, `triggers`, `connectors`, `skills`, `env_required` |
-| `TemplateAgent`        | `name`, `description`                                                                                                                                                     |
-| `TemplateTrigger`      | `slug`, `name`, `type`, `cron`, `agent`, `enabled`                                                                                                                        |
-| `TemplateConnector`    | `slug`, `provider`, `app`                                                                                                                                                 |
-| `TemplateListing`      | `{ templates }`                                                                                                                                                           |
+| Type                         | Shape                                                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Template`                   | `slug`, `title`, `description`, `repo` (`owner/repo`), `repo_owner`, `repo_name`, `git_ref`, `resolved_sha`, `agents`, `triggers`, `connectors`, `skills`, `env_required` |
+| `TemplateAgent`              | `name`, `description`                                                                                                                                                     |
+| `TemplateTrigger`            | `slug`, `name`, `type`, `cron`, `agent`, `enabled`                                                                                                                        |
+| `TemplateConnector`          | `slug`, `provider`, `app`                                                                                                                                                 |
+| `TemplateListing`            | `{ templates }`                                                                                                                                                           |
 | `ListTemplateCatalogOptions` | `{ q? }`                                                                                                                                                                  |
-| `TemplateError`                | `Error` with a numeric `status` — `404` for an unknown slug, `429` when rate limited                                                                                      |
+| `TemplateError`              | `Error` with a numeric `status` — `404` for an unknown slug, `429` when rate limited                                                                                      |
 
 `resolved_sha` is the commit the card was derived from and the commit the
 install reads. A template's trigger `enabled` values describe the source
@@ -89,11 +89,11 @@ function Templates({ projectId }: { projectId: string }) {
 }
 ```
 
-| Hook                                | What it does                                                  |
-| ----------------------------------- | ------------------------------------------------------------- |
-| `useTemplateCatalog(options?)` | The catalog, keyed on `options.q`                             |
-| `useTemplate(slug)`      | One template; disabled without a slug                         |
-| `useTemplateInstall(projectId)`  | A mutation over `install(slug)`; resolves to `{ session_id }` |
+| Hook                            | What it does                                                  |
+| ------------------------------- | ------------------------------------------------------------- |
+| `useTemplateCatalog(options?)`  | The catalog, keyed on `options.q`                             |
+| `useTemplate(slug)`             | One template; disabled without a slug                         |
+| `useTemplateInstall(projectId)` | A mutation over `install(slug)`; resolves to `{ session_id }` |
 
 Key factories `templateCatalogKey(options?)` and
 `templateKey(slug)` are exported for manual invalidation.
