@@ -508,18 +508,18 @@ export class AgentCell {
     this.skillsCache ??= new Map();
     if (this.skillsCache.has(sessionId) && !reload) return this.skillsCache.get(sessionId);
     const loaded = await loadWorkspaceSkills(
-      this.env,
-      (opId) => executionEnvFor(this.env, sessionId, opId),
+      this.effectiveEnv(),
+      (opId) => executionEnvFor(this.effectiveEnv(), sessionId, opId),
     );
     this.skillsCache.set(sessionId, loaded);
     return loaded;
   }
 
   buildAgent(sessionId, script, systemPrompt = SYSTEM_PROMPT) {
-    const configured = modelConfig(this.env);
+    const configured = modelConfig(this.effectiveEnv());
     const streamFn = configured
       ? configured.streamFn
-      : scriptedStream(script ?? JSON.parse(this.env.SCRIPT ?? "[]"));
+      : scriptedStream(script ?? JSON.parse(this.effectiveEnv().SCRIPT ?? "[]"));
 
     const agent = new Agent({
       streamFn,
@@ -528,7 +528,7 @@ export class AgentCell {
       initialState: {
         systemPrompt,
         model: configured?.model ?? SCRIPTED_MODEL,
-        tools: toolsFor(this.env, sessionId, this.sql),
+        tools: toolsFor(this.effectiveEnv(), sessionId, this.sql),
         messages: this.loadMessages(),
       },
     });
@@ -592,7 +592,7 @@ export class AgentCell {
     // suite less likely to finish.
     const n = Number(perRequest ?? 0);
     if (n > 0) return n;
-    const override = Number(this.env.CONTEXT_WINDOW ?? 0);
+    const override = Number(this.effectiveEnv().CONTEXT_WINDOW ?? 0);
     return override > 0 ? override : (model?.contextWindow ?? 200_000);
   }
 
@@ -672,6 +672,34 @@ export class AgentCell {
     try { ws.close(code, reason); } catch { /* already gone */ }
   }
 
+  /**
+   * THE ENVIRONMENT THIS SESSION ACTUALLY RUNS WITH.
+   *
+   * A cell's `env` is the NODE's, not the session's. celld hands every
+   * CELLD_VAR_X on the node process to the worker as env.X — and a celld node
+   * hosts many cells, so anything set that way is identical for all of them.
+   * Infrastructure belongs there (PT_S3_*, set by the host agent); a session's
+   * configuration cannot, because its token, its gateway, its store URL and its
+   * own id differ for every cell on the node.
+   *
+   * The control plane already knows this and pushes a session's environment
+   * over HTTP once the box is up — that is what POST /kortix/env is, and what
+   * the API's `env-sync` step does (632 ms in a proxy timeline, dev
+   * 2026-09-07). This cell STORED that and then read the node's env anyway, so
+   * a real session arrived fully configured and ran with none of it. Measured
+   * the same day, session ccaea567: the isolate's env held AGENT, MODEL_*,
+   * SCRIPT, TOOL_DAEMON_URL and PT_S3_* — not one KORTIX_* name — while the
+   * sandbox carried fourteen of them.
+   *
+   * Session values win: they are the specific ones, and the node's are the
+   * defaults a bench or a suite sets.
+   */
+  effectiveEnv() {
+    const session = this.sessionEnv;
+    if (!session || Object.keys(session).length === 0) return this.env ?? {};
+    return { ...(this.env ?? {}), ...session };
+  }
+
   /** Bump a meter. One statement, so a concurrent request cannot lose a count. */
   meter(key, by = 1) {
     this.sql.exec(
@@ -742,6 +770,14 @@ export class AgentCell {
         initMs: this.initMs ?? null,     // null until something has run init()
         ready: this.ready,
         ageMs: Date.now() - this.bornAt,
+        // WHAT THIS ISOLATE CAN SEE, by NAME only — never a value. Twice now a
+        // session has arrived correctly configured and behaved as if it had
+        // not, and the only way to tell "the platform did not send it" from
+        // "the cell did not read it" was to guess. A cell's env comes from
+        // CELLD_VAR_* on the sandbox, and whether the prefix survives into the
+        // isolate is exactly the kind of thing that is easier to read than to
+        // reason about.
+        envKeys: Object.keys(this.env ?? {}).sort(),
       });
     }
     this.init();
@@ -757,7 +793,7 @@ export class AgentCell {
     const pathSession = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
     const sessionId = url.searchParams.get("c")
       ?? (pathSession ? decodeURIComponent(pathSession[1]) : null)
-      ?? this.env?.KORTIX_SESSION_ID
+      ?? this.effectiveEnv().KORTIX_SESSION_ID
       ?? this.state.id?.toString?.()
       ?? "default";
 
@@ -885,7 +921,7 @@ export class AgentCell {
         repo_ready: true,
         boot_error: null,
         store_error: null,
-        model_mode: normalizeModelEnv(this.env ?? {}).MODEL_API_KEY ? "live" : "scripted",
+        model_mode: normalizeModelEnv(this.effectiveEnv()).MODEL_API_KEY ? "live" : "scripted",
         model_error: null,
         opencode_session_id: sessionId,
         opencode_session_required: false,
@@ -980,7 +1016,7 @@ export class AgentCell {
         // No parentID: this cell IS the root. A parent would make it
         // unpickable and the session would never leave `booting`.
         parentID: null,
-        directory: this.env?.PT_WORKSPACE_CWD ?? "/workspace",
+        directory: this.effectiveEnv().PT_WORKSPACE_CWD ?? "/workspace",
         time: { created, updated },
         version: "pi",
         // The cell's own document, alongside rather than instead of it.
@@ -1156,19 +1192,20 @@ export class AgentCell {
     // Diagnostics: which model this cell would actually call, and everything it
     // could be pointed at without a code change.
     if (url.pathname === "/model") {
-      const c = modelConfig(this.env);
+      const e = this.effectiveEnv();
+      const c = modelConfig(e);
       // Length and segment count only — never the credential itself. Enough to
       // tell "the token did not arrive intact" from "the token is rejected",
       // which are the two failures that look identical from the outside.
-      const key = this.env.MODEL_API_KEY ?? "";
+      const key = e.MODEL_API_KEY ?? "";
       let claimOk = null;
       try {
         claimOk = !!JSON.parse(atob(key.split(".")[1]))?.["https://api.openai.com/auth"]?.chatgpt_account_id;
       } catch (e) { claimOk = `decode failed: ${e.message}`; }
       return Response.json({
-        tools: (this.env.PT_API_URL && this.env.PT_SANDBOX_KEY && this.env.PT_WORKSPACE_ID)
-          ? { backend: "platinum", api: this.env.PT_API_URL, workspace: this.env.PT_WORKSPACE_ID }
-          : { backend: "daemon", url: this.env.TOOL_DAEMON_URL },
+        tools: (e.PT_API_URL && e.PT_SANDBOX_KEY && e.PT_WORKSPACE_ID)
+          ? { backend: "platinum", api: e.PT_API_URL, workspace: e.PT_WORKSPACE_ID }
+          : { backend: "daemon", url: e.TOOL_DAEMON_URL },
         active: c ? { provider: c.model.provider, id: c.model.id, api: c.model.api, baseUrl: c.model.baseUrl } : "scripted",
         credential: { length: key.length, segments: key.split(".").length, accountIdClaim: claimOk },
         available: supportedProviders(),
@@ -1177,7 +1214,7 @@ export class AgentCell {
 
     // What the transcript costs right now, and whether pi would compact it.
     if (url.pathname === "/context") {
-      const c = modelConfig(this.env);
+      const c = modelConfig(this.effectiveEnv());
       const model = c?.model ?? pricedModel(this.env);
       const st = compactionState(this.loadMessages(), this.contextWindowFor(model, url.searchParams.get("window")));
       // THE TRANSCRIPT IS THE BILL, so show it in money as well as tokens.

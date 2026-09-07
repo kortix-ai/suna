@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=38
+// EXPECTED_PASSES=41
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -247,6 +247,33 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     });
     check("and an explicit MODEL_* pin beats the platform's names",
       (await (await pinned.fetch("/kortix/health?c=s")).json()).model_mode === "live", "explicit pin lost");
+  }
+
+  // THE SESSION'S ENVIRONMENT IS THE ONE PUSHED OVER HTTP, not the node's.
+  //
+  // A celld node hosts many cells and hands every CELLD_VAR_X on its process to
+  // the worker as env.X, so anything set that way is identical for all of them.
+  // A session's token, gateway, store URL and id cannot travel that way, and
+  // the control plane does not try: it POSTs /kortix/env once the box is up.
+  // This cell stored that and read the node's env anyway. Measured on dev
+  // 2026-09-07, session ccaea567: the isolate's env held AGENT, MODEL_*,
+  // SCRIPT, TOOL_DAEMON_URL and PT_S3_* and not one KORTIX_* name, while the
+  // sandbox carried fourteen of them — so the session ran scripted, with no
+  // token and no store.
+  {
+    const hs = makeCell(AgentCell, ENV);
+    check("before any sync, the cell is scripted — the node's env has no session in it",
+      (await (await hs.fetch("/kortix/health?c=s")).json()).model_mode === "scripted", "expected scripted");
+    await hs.fetch("/kortix/env?c=s", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ env: { KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt", KORTIX_MODEL: "glm-5.3-flash" } }),
+    });
+    check("AFTER the sync it runs live — the pushed environment is the one that counts",
+      (await (await hs.fetch("/kortix/health?c=s")).json()).model_mode === "live", "env sync did not reach the model");
+    // And the node's values are still the defaults underneath, not erased.
+    const model = await (await hs.fetch("/model?c=s")).json();
+    check("the node's env survives underneath the session's",
+      model.tools?.backend === "daemon", JSON.stringify(model.tools));
   }
 
   check("the worker answers /kortix/health with no session named", r.status === 200 && body.ok === true, JSON.stringify(body));
