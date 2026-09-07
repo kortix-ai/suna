@@ -1017,6 +1017,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 stage={authLoading || !user ? 'provisioning' : startStage}
                 boundAgentName={boundAgentName}
                 onSubmit={() => setSubmittedOnShell(true)}
+                // The chat underneath owns the prompt from here; the shell's
+                // copy would otherwise dissolve over it for the whole fade.
+                hasTranscript={hasTranscript}
               />
             ) : (
               <HeaderlessSessionSurface>

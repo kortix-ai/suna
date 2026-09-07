@@ -282,11 +282,20 @@ export async function readSessionPromptsInbox(
   cached: readonly SessionPrompt[] | undefined,
 ): Promise<SessionPrompt[]> {
   if (!projectId || !sessionId) return [...(cached ?? [])];
-  // The SESSION-OPEN BUNDLE first. Two hooks mount this list on a session route
-  // and the open path reads it before either can, so the first reads of an open
-  // collapse onto one server answer. A claim only succeeds while a bundle is in
-  // flight or seconds old; every poll after it reads the endpoint.
-  const claimed = claimOpenBundle(projectId, sessionId);
+  // The SESSION-OPEN BUNDLE first — but ONLY for the open burst, i.e. a read
+  // issued before this tab holds any rows. Two hooks mount this list on a
+  // session route and the open path reads it before either can, so those first
+  // reads collapse onto one server answer.
+  //
+  // It used to be claimed by EVERY read inside the bundle's share window, and
+  // that is a window in which the queue changes: the drain re-mints the prompt
+  // and hands it to the runtime, the runtime echoes it under the new id, the
+  // transcript gains a bubble — and the poll, AND the repair refetch that new
+  // bubble fires, both got the pre-delivery snapshot back and drew the prompt
+  // twice for the rest of the window (measured 2026-09-08, on video: no
+  // `/prompts` request left the tab for 5s while the duplicate sat on screen).
+  // A read that already holds rows is a poll, and a poll asks the server.
+  const claimed = cached === undefined ? claimOpenBundle(projectId, sessionId) : null;
   if (claimed) {
     const bundle = await claimed;
     const bundled = bundle ? openBundleQueue(bundle) : null;

@@ -46,7 +46,7 @@ describe('the waiting row has a fallback when no turn owns it', () => {
   test('it never stacks with the boot stand-in, which draws its own row', () => {
     const row = between(chat, '{isBusy &&\n                      !someTurnDrawsBusyRow', '/>\n                      )}');
     expect(row).toContain(
-      '!(showFirstPromptPreview && firstPromptPreview && queuedMessages.length === 0 && turns.length === 0)',
+      '!(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0)',
     );
     // The stand-in's own gate is unchanged — it is the one that decides
     // whether the boot row is on screen at all.
@@ -93,24 +93,34 @@ describe('the status phrase is gated at its source', () => {
  * the copy was forgotten on that first frame, the bubble had one source left
  * and blanked as soon as that source flickered.
  */
-describe('the first-prompt preview is kept until the prompt is settled', () => {
-  test('settled means answered, or the session is finished with it', () => {
+describe("the first prompt's text outlives the store's copy, locally", () => {
+  // Two readers, two lifetimes. The boot shell (and the route that pins it)
+  // must lose the copy the frame the transcript shows the prompt, or the
+  // shell's bubble dissolves over the real one for the length of the
+  // crossfade. This component needs the TEXT for longer — the runtime's echo
+  // lands part-less on the project-home path — so it keeps its own snapshot.
+  test('the STORE is cleared the frame the transcript carries the prompt — the original rule', () => {
+    const clear = between(chat, 'if (!projectSessionId || !firstPromptPreview) return;', '}, [');
+    expect(clear).toContain('if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);');
+    expect(clear).not.toContain('firstPromptSettled');
+  });
+
+  test('the LOCAL copy is what the stand-in and the hand-over read', () => {
+    expect(chat).toContain('const firstPromptSource = firstPromptPreview ?? firstPromptKeep;');
+    expect(chat).toContain('hasPreview: !!firstPromptSource,');
+    expect(chat).toContain('return { text: firstPromptSource.text, attachments };');
+    expect(chat).toContain('firstPromptSource.text,\n                                firstPromptSource.files,');
+  });
+
+  test('settled means answered, or the session is finished with it — and that clears the local copy', () => {
     expect(chat).toContain(
       'const firstPromptSettled =\n    turns.length > 0 &&\n    (turns[0].assistantMessages.length > 0 || (!isBusy && promptInbox.prompts.length === 0));',
     );
+    expect(chat).toContain('if (firstPromptSettled) {\n    if (firstPromptKeep) setFirstPromptKeep(null);');
   });
 
-  test('the clear waits for it', () => {
-    const clear = between(chat, 'if (!projectSessionId || !firstPromptPreview) return;', '}, [');
-    expect(clear).toContain('if (transcriptCarriesFirstPromptFiles && firstPromptSettled) {');
-  });
-
-  test('leaving the session ends the copy too, once the transcript has shown it', () => {
-    // Otherwise an unfinished first turn leaves the in-memory copy behind, and
-    // the route reads its presence as "brand-new session" — painting the boot
-    // shell over a transcript that has been there for minutes.
-    const unmount = between(chat, 'const firstPromptReleasedRef = useRef(firstPromptReleased);', 'const handleEditCancel');
-    expect(unmount).toContain('if (firstPromptReleasedRef.current) clearFirstPromptPreview(projectSessionId);');
+  test('nothing on unmount — local state dies with the component', () => {
+    expect(chat).not.toContain('firstPromptReleasedRef');
   });
 
   test('an empty transcript is reported to the handover, so the stand-in can come back', () => {

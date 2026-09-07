@@ -447,6 +447,30 @@ describe('readSessionPromptsInbox and the open bundle', () => {
     expect(prompts).toEqual([row] as never);
   });
 
+  test('a read that already holds rows never answers from the bundle — it asks', async () => {
+    // THE STALE-BUNDLE WINDOW (measured 2026-09-08, on video). The bundle is
+    // claimable for OPEN_BUNDLE_SHARE_MS after it lands, and every read inside
+    // that window — the 1s poll AND the repair refetch a new user bubble
+    // fires — re-claimed it and got the same pre-delivery row back. Meanwhile
+    // the drain re-minted the prompt and the runtime echoed it under the new
+    // id: the transcript showed the message under M while the "fresh" list
+    // still named W, and the prompt was on screen twice until the window
+    // expired. The bundle collapses the OPEN burst — reads issued before this
+    // tab holds any rows. A read that already has rows is a poll, and a poll
+    // asks the server.
+    resetSessionOpenBundles();
+    const stale = { prompt_id: 'p1', state: 'queued', text: 'hi', message_id: 'msg_W' };
+    const urls = mockFetch((url) =>
+      url.includes('/snapshot')
+        ? bundle({ known: true, prompts: [stale], held: false })
+        : { prompts: [], observed_at: '2026-08-26T12:00:01.000Z' },
+    );
+    openSessionBundle('P1', 'S1');
+    const prompts = await readSessionPromptsInbox('P1', 'S1', [stale as never]);
+    expect(urls.filter((u) => u.endsWith('/prompts'))).toHaveLength(1);
+    expect(prompts).toEqual([]);
+  });
+
   test('the bundled rows still feed the working projection', async () => {
     resetSessionOpenBundles();
     useSessionWorkingStore.getState().clearSession('S1');

@@ -2845,27 +2845,35 @@ export function SessionChat({
     return ids;
   }, [messages, sessionId, promptInbox.prompts]);
   /**
-   * The transcript's ONE user message, when there is exactly one, this tab did
-   * not paint it, and nothing has answered it yet — the only shape in which a
-   * row can be claimed by elimination. See `claimFirstTurnRow`.
+   * The transcript's ONE user message, when there is exactly one and this tab
+   * did not paint it — the only shape in which a row can be claimed by
+   * elimination. See `claimFirstTurnRow`.
+   *
+   * Whether it has been ANSWERED does not matter, and briefly requiring that it
+   * had not was wrong: the stale cached row this exists for outlives the start
+   * of the answer by exactly the window the user can see (the row is gone from
+   * the server the moment the turn is accepted; the tab learns that one poll
+   * later), so the claim has to hold through the first tokens.
    */
-  const onlyUnansweredUserMessage = useMemo(() => {
+  const onlyUserMessage = useMemo(() => {
     const store = useSessionStateStore.getState();
-    let only: { id: string } | null = null;
+    let only: { id: string; text: string } | null = null;
     let users = 0;
-    let answered = false;
     for (const message of messages ?? []) {
-      if (message.info.role === 'assistant') {
-        answered = true;
-        continue;
-      }
       if (message.info.role !== 'user') continue;
       users += 1;
-      only = store.isOptimisticMessage(sessionId, message.info.id)
-        ? null
-        : { id: message.info.id };
+      if (store.isOptimisticMessage(sessionId, message.info.id)) {
+        only = null;
+        continue;
+      }
+      // The bubble's own words: the non-synthetic text parts, joined.
+      const text = message.parts
+        .filter((part) => part.type === 'text' && !(part as { synthetic?: boolean }).synthetic)
+        .map((part) => (part as { text?: string }).text ?? '')
+        .join('\n');
+      only = { id: message.info.id, text };
     }
-    return users === 1 && !answered ? only : null;
+    return users === 1 ? only : null;
   }, [messages, sessionId]);
   /**
    * The row whose message is on screen under an id the row has not reported
@@ -2876,10 +2884,10 @@ export function SessionChat({
     () =>
       claimFirstTurnRow({
         prompts: promptInbox.prompts,
-        onlyUserMessage: onlyUnansweredUserMessage,
+        onlyUserMessage,
         claimedIds: transcriptUserMessageIds,
       }),
-    [promptInbox.prompts, onlyUnansweredUserMessage, transcriptUserMessageIds],
+    [promptInbox.prompts, onlyUserMessage, transcriptUserMessageIds],
   );
   /**
    * The claim's row ids folded into the SAME set every id-matching consumer
@@ -3421,8 +3429,46 @@ export function SessionChat({
   // Once released, the real turn owns the prompt — see
   // `resolveFirstPromptHandover`.
   const [firstPromptReleased, setFirstPromptReleased] = useState(false);
+  /**
+   * THIS COMPONENT'S OWN COPY of the first prompt, kept past the store's.
+   *
+   * Two things read `useFirstPromptPreviewStore`, and they need it for
+   * different lengths of time. The BOOT SHELL (and the route, which pins the
+   * shell while a preview exists) needs it only until the transcript shows the
+   * prompt — one frame longer and the shell's copy dissolves over the real
+   * bubble during the crossfade, two bubbles for the length of the fade
+   * (measured 2026-09-08: both stand-ins at full opacity, ~200 ms). This
+   * component needs the TEXT for longer: the runtime's echo arrives as an info
+   * frame with its text part following separately, and on the project-home
+   * path nothing bridges the two (the producer POSTed a durable row, not an
+   * optimistic message), so the bubble drew nothing for that gap — the blank
+   * thread on the 2026-09-06 recording.
+   *
+   * So the store keeps its original, short life — cleared the frame the
+   * transcript carries the prompt — and the longer life is local: a snapshot
+   * this component holds until the prompt is SETTLED (answered, or the session
+   * is finished with it: idle, nothing left in the inbox). Local state cannot
+   * pin the route's shell, cannot outlive a navigation, and is invisible to
+   * every other reader of the store.
+   */
+  // SETTLED: answered, or the session is finished with it (idle, nothing left
+  // in the inbox — Stop, a failure, a delivery that never ran).
+  const firstPromptSettled =
+    turns.length > 0 &&
+    (turns[0].assistantMessages.length > 0 || (!isBusy && promptInbox.prompts.length === 0));
+  // Guarded render-phase updates, the same shape as `contentPainted` below:
+  // mirror the store's copy while the prompt is live, drop it once settled. The
+  // mirror is suppressed once settled, or the two would re-adopt and re-drop
+  // each other on every render.
+  const [firstPromptKeep, setFirstPromptKeep] = useState<typeof firstPromptPreview>(null);
+  if (firstPromptSettled) {
+    if (firstPromptKeep) setFirstPromptKeep(null);
+  } else if (firstPromptPreview && firstPromptKeep !== firstPromptPreview) {
+    setFirstPromptKeep(firstPromptPreview);
+  }
+  const firstPromptSource = firstPromptPreview ?? firstPromptKeep;
   const handover = resolveFirstPromptHandover({
-    hasPreview: !!firstPromptPreview,
+    hasPreview: !!firstPromptSource,
     transcriptShowsText: transcriptShowsFirstPrompt,
     transcriptCarriesFiles: transcriptCarriesFirstPromptFiles,
     releasedBefore: firstPromptReleased,
@@ -3432,71 +3478,28 @@ export function SessionChat({
     if (handover.released && !firstPromptReleased) setFirstPromptReleased(true);
   }, [handover.released, firstPromptReleased]);
   const showFirstPromptPreview = handover.showStandIn;
-  /**
-   * WHEN THE PRODUCER'S COPY IS FORGOTTEN — and why it is no longer the frame
-   * the transcript first shows the text.
-   *
-   * Forgetting there left the prompt with exactly one source, the transcript's
-   * own parts, during the window where the transcript is least reliable: the
-   * runtime's echo arrives as an info frame and its text part follows
-   * separately, and on this path nothing bridges the two (the producer POSTed a
-   * durable row rather than an optimistic message, so there are no optimistic
-   * parts to bridge FROM). The bubble drew nothing for that gap — the blank
-   * thread on the 2026-09-06 recording.
-   *
-   * So the copy lives until this prompt is SETTLED: answered, or the session is
-   * finished with it (idle, nothing left in the inbox — Stop, a failure, a
-   * delivery that never ran). `handOverToRealTurn` is unchanged and still goes
-   * false the moment the transcript carries text AND files, so a live preview
-   * adds nothing to a bubble that is already complete; it only comes back if
-   * that bubble loses its content again.
-   */
-  const firstPromptSettled =
-    turns.length > 0 &&
-    (turns[0].assistantMessages.length > 0 || (!isBusy && promptInbox.prompts.length === 0));
+  // The STORE's copy is forgotten the frame the transcript carries the prompt —
+  // the original rule, and the one the shell's crossfade depends on.
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
-    if (transcriptCarriesFirstPromptFiles && firstPromptSettled) {
-      clearFirstPromptPreview(projectSessionId);
-    }
-  }, [
-    projectSessionId,
-    firstPromptPreview,
-    transcriptCarriesFirstPromptFiles,
-    firstPromptSettled,
-    clearFirstPromptPreview,
-  ]);
-  // Leaving the session ends the copy's job too. It is in-memory and keyed by
-  // session, so a preview kept past an unfinished turn would otherwise still be
-  // there on the next visit — and the route reads its presence as "this is a
-  // brand-new session", painting the boot shell over a transcript that has been
-  // sitting there since. Only once the transcript has actually shown the
-  // prompt: before that the copy is the only thing that has it.
-  const firstPromptReleasedRef = useRef(firstPromptReleased);
-  useEffect(() => {
-    firstPromptReleasedRef.current = firstPromptReleased;
-  }, [firstPromptReleased]);
-  useEffect(() => {
-    if (!projectSessionId) return;
-    return () => {
-      if (firstPromptReleasedRef.current) clearFirstPromptPreview(projectSessionId);
-    };
-  }, [projectSessionId, clearFirstPromptPreview]);
+    if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
+  }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
+
   /** What the real first turn is handed once the stand-in has stepped aside:
    *  the prompt's text and its files' names, so it keeps drawing the bubble
    *  and the pending tiles through any frame where its own parts are still
    *  streaming. Nothing once the transcript carries the files itself. */
   const firstTurnHandover = useMemo(
     (): { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> } | undefined => {
-      if (!firstPromptPreview || !handover.handOverToRealTurn) return undefined;
-      const attachments = firstPromptPreview.files.map((file) =>
+      if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
+      const attachments = firstPromptSource.files.map((file) =>
         file.kind === 'local'
           ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
           : { filename: file.filename, mime: file.mime },
       );
-      return { text: firstPromptPreview.text, attachments };
+      return { text: firstPromptSource.text, attachments };
     },
-    [firstPromptPreview, handover.handOverToRealTurn],
+    [firstPromptSource, handover.handOverToRealTurn],
   );
 
   /**
@@ -5494,12 +5497,12 @@ export function SessionChat({
                         were crossfading into each other. The waiting row is suppressed
                         only when a turn is already drawing its own. */}
                         {showFirstPromptPreview &&
-                          firstPromptPreview &&
+                          firstPromptSource &&
                           queuedMessages.length === 0 && (
                             <OptimisticTurn
                               text={buildOptimisticPromptTextWithUploads(
-                                firstPromptPreview.text,
-                                firstPromptPreview.files,
+                                firstPromptSource.text,
+                                firstPromptSource.files,
                               )}
                               // The bytes are still being written to the box
                               // chunk by chunk; without this the strip's
@@ -5763,7 +5766,7 @@ export function SessionChat({
                         (`OptimisticTurn busy`), or the two would stack. */}
                     {isBusy &&
                       !someTurnDrawsBusyRow &&
-                      !(showFirstPromptPreview && firstPromptPreview && queuedMessages.length === 0 && turns.length === 0) && (
+                      !(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0) && (
                         <SessionBusyIndicator
                           sessionId={sessionId}
                           // Matches the stand-in's row spacing under a bubble

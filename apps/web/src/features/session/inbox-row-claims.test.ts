@@ -5,6 +5,8 @@ import { claimFirstTurnRow } from './inbox-row-claims';
 
 const W = 'msg_wire0000001';
 const M = 'msg_remint000001';
+const TEXT = 'ok just testing to show weird behavior';
+const only = (over: Partial<{ id: string; text: string }> = {}) => ({ id: M, text: TEXT, ...over });
 
 const prompt = (over: Partial<SessionPrompt> = {}): SessionPrompt =>
   ({
@@ -30,7 +32,7 @@ describe('claimFirstTurnRow', () => {
     expect(
       claimFirstTurnRow({
         prompts: [prompt()],
-        onlyUserMessage: { id: M },
+        onlyUserMessage: only(),
         claimedIds: new Set<string>(),
       }),
     ).toEqual({
@@ -46,7 +48,7 @@ describe('claimFirstTurnRow', () => {
     expect(
       claimFirstTurnRow({
         prompts: [prompt()],
-        onlyUserMessage: { id: W },
+        onlyUserMessage: only({ id: W }),
         claimedIds: new Set([W]),
       }),
     ).toBeNull();
@@ -72,32 +74,57 @@ describe('claimFirstTurnRow', () => {
     expect(
       claimFirstTurnRow({
         prompts: [prompt({ state: 'waiting', reason: 'held', attempts: 1 })],
-        onlyUserMessage: { id: M },
+        onlyUserMessage: only(),
         claimedIds: new Set<string>(),
       }),
     ).toBeNull();
   });
 
-  test('a row that was never POSTed cannot own anything on screen', () => {
-    // `attempts` is incremented when the drain claims a row, so a queued row at
-    // zero attempts has never been handed over. Without this guard a prompt
-    // waiting behind a running turn would claim the PREVIOUS turn's message and
-    // disappear from the queue.
+  test('a STALE row — still reading queued, zero attempts — is claimed when the words match', () => {
+    // The case that was actually on screen (2026-09-08, on video): the cached
+    // row came from the session-open bundle, taken before the drain touched
+    // it, so it read `queued`/`attempts: 0` for seconds after the runtime had
+    // echoed the prompt under a re-minted id. A guard that trusted those
+    // fields refused the claim on exactly the data it existed to correct.
+    // The words are the one thing the two copies always share.
     expect(
       claimFirstTurnRow({
         prompts: [prompt({ state: 'queued', attempts: 0 })],
-        onlyUserMessage: { id: M },
+        onlyUserMessage: only(),
+        claimedIds: new Set<string>(),
+      })?.promptId,
+    ).toBe('p1');
+  });
+
+  test('a row with DIFFERENT words never claims — a prompt waiting behind another turn', () => {
+    // A second device queues a new prompt while this tab shows the previous
+    // turn's message: the row is not that message, and claiming it would make
+    // the queued bubble vanish from this tab.
+    expect(
+      claimFirstTurnRow({
+        prompts: [prompt({ text: 'something else entirely' })],
+        onlyUserMessage: only(),
         claimedIds: new Set<string>(),
       }),
     ).toBeNull();
   });
 
-  test('a queued row that HAS been attempted still counts', () => {
-    // Delivery failed and it is going back out; its message can be on screen.
+  test('the row carries a 2000-char PREVIEW, so a longer message still matches on its prefix', () => {
+    const long = 'x'.repeat(2500);
     expect(
       claimFirstTurnRow({
-        prompts: [prompt({ state: 'queued', attempts: 1 })],
-        onlyUserMessage: { id: M },
+        prompts: [prompt({ text: long.slice(0, 2000) })],
+        onlyUserMessage: only({ text: long }),
+        claimedIds: new Set<string>(),
+      })?.promptId,
+    ).toBe('p1');
+  });
+
+  test('whitespace differences between the row and the message do not matter', () => {
+    expect(
+      claimFirstTurnRow({
+        prompts: [prompt({ text: '  ok just   testing to show weird behavior\n' })],
+        onlyUserMessage: only(),
         claimedIds: new Set<string>(),
       })?.promptId,
     ).toBe('p1');
@@ -107,7 +134,7 @@ describe('claimFirstTurnRow', () => {
     expect(
       claimFirstTurnRow({
         prompts: [prompt({ state: 'failed' })],
-        onlyUserMessage: { id: M },
+        onlyUserMessage: only(),
         claimedIds: new Set<string>(),
       }),
     ).toBeNull();
@@ -117,7 +144,7 @@ describe('claimFirstTurnRow', () => {
     expect(
       claimFirstTurnRow({
         prompts: [prompt({ prompt_id: 'optimistic:c1' })],
-        onlyUserMessage: { id: M },
+        onlyUserMessage: only(),
         claimedIds: new Set<string>(),
       }),
     ).toBeNull();
@@ -125,14 +152,14 @@ describe('claimFirstTurnRow', () => {
 
   test('an empty inbox claims nothing', () => {
     expect(
-      claimFirstTurnRow({ prompts: [], onlyUserMessage: { id: M }, claimedIds: new Set<string>() }),
+      claimFirstTurnRow({ prompts: [], onlyUserMessage: only(), claimedIds: new Set<string>() }),
     ).toBeNull();
   });
 
-  test('the FIRST deliverable row is the one that went out — the inbox is FIFO', () => {
+  test('with two rows of the same words, the FIRST is the one that went out — the inbox is FIFO', () => {
     const claim = claimFirstTurnRow({
       prompts: [prompt(), prompt({ prompt_id: 'p2', message_id: 'msg_other000001' })],
-      onlyUserMessage: { id: M },
+      onlyUserMessage: only(),
       claimedIds: new Set<string>(),
     });
     expect(claim?.promptId).toBe('p1');

@@ -49,14 +49,15 @@ export function claimFirstTurnRow(input: {
   prompts: readonly SessionPrompt[];
   /**
    * The transcript's ONLY user message — and only when it is not this tab's
-   * own optimistic paint and nothing has answered it yet. Null otherwise.
+   * own optimistic paint. Null otherwise. `text` is its visible text: the
+   * non-synthetic text parts, joined.
    *
    * One message, because with two the mapping is a guess: two rows and two
    * messages can pair either way round, and pairing them wrongly attaches the
    * X and the "Queued" label to the wrong bubble. The reported bug is the
    * first prompt of a session, where there is exactly one.
    */
-  onlyUserMessage: { id: string } | null;
+  onlyUserMessage: { id: string; text: string } | null;
   /** `transcriptUserMessageIds` as built from ids alone. */
   claimedIds: ReadonlySet<string>;
 }): FirstTurnClaim | null {
@@ -65,21 +66,30 @@ export function claimFirstTurnRow(input: {
   // A row already owns it by id — the ordinary path, nothing to infer.
   if (input.claimedIds.has(message.id)) return null;
 
+  // THE WORDS are what the two copies always share. Nothing else on the row can
+  // be trusted for this decision: the row on this tab may be a snapshot taken
+  // before the drain touched it (the session-open bundle is served for seconds
+  // after it lands), still reading `queued` and `attempts: 0` while the
+  // runtime has already echoed the prompt. A guard on those fields refused the
+  // claim on exactly the data it existed to correct (measured 2026-09-08).
+  //
+  // What the words protect against: a second device queues a NEW prompt while
+  // this tab shows the previous turn's message. Different words, no claim, and
+  // that queued bubble stays where the user can see it.
+  //
+  // First match wins — the inbox is FIFO, so of two rows with the same words
+  // the older is the one that went out.
   const row = input.prompts.find(
-    (prompt) => !isOptimisticSessionPrompt(prompt) && prompt.state !== 'failed',
+    (prompt) =>
+      !isOptimisticSessionPrompt(prompt) &&
+      prompt.state !== 'failed' &&
+      // HELD is the user's own Stop: deliberately not going out, so the message
+      // on screen cannot be it, and its bubble is the only control the user
+      // has to release it.
+      prompt.reason !== 'held' &&
+      promptTextMatches(prompt.text, message.text),
   );
   if (!row) return null;
-  // HELD is the user's own Stop. The row is deliberately not going out, so the
-  // message on screen cannot be it, and its bubble is the only control the
-  // user has to release it.
-  if (row.reason === 'held') return null;
-  // THE LOAD-BEARING GUARD: proof the row was actually handed over. The drain
-  // increments `attempts` when it claims a row, and an admission refusal gives
-  // it back — so `attempts === 0` with a state that is not `delivering` means
-  // this row has never been POSTed, and no message of its can be on screen.
-  // Without this a prompt still waiting behind a running turn would claim the
-  // PREVIOUS turn's message and vanish from the queue.
-  if (row.state !== 'delivering' && row.attempts === 0) return null;
   // Already hidden by one of its own ids; the caller has nothing to add.
   if (
     (row.message_id && input.claimedIds.has(row.message_id)) ||
@@ -95,4 +105,23 @@ export function claimFirstTurnRow(input: {
     ...(row.wire_message_id ? { rowWireMessageId: row.wire_message_id } : {}),
     ...(row.client_message_id ? { rowClientMessageId: row.client_message_id } : {}),
   };
+}
+
+/** The row carries a PREVIEW of the text (`PROMPT_TEXT_PREVIEW_CHARS`, 2000),
+ *  so a longer message matches on its prefix. Whitespace is normalised on both
+ *  sides: the row's text is the flattened parts, the message's is the joined
+ *  parts, and neither owes the other its exact spacing. */
+const PROMPT_TEXT_PREVIEW_CHARS = 2000;
+
+function normalise(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+export function promptTextMatches(rowText: string, messageText: string): boolean {
+  const row = normalise(rowText);
+  if (!row) return false;
+  const message = normalise(messageText);
+  if (row === message) return true;
+  // A preview-capped row: compare what it could carry.
+  return rowText.length >= PROMPT_TEXT_PREVIEW_CHARS - 1 && message.startsWith(row);
 }
