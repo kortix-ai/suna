@@ -402,9 +402,13 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     check("AFTER the sync it runs live — the pushed environment is the one that counts",
       (await (await hs.fetch("/kortix/health?c=s")).json()).model_mode === "live", "env sync did not reach the model");
     // And the node's values are still the defaults underneath, not erased.
+    // And a platform session with no sandbox gets the CELL's own filesystem —
+    // the daemon at host.docker.internal:7070 does not exist on the platform,
+    // and a session that fell through to it could answer questions but never
+    // touch a file (dev 2026-09-07).
     const model = await (await hs.fetch("/model?c=s")).json();
-    check("the node's env survives underneath the session's",
-      model.tools?.backend === "daemon", JSON.stringify(model.tools));
+    check("a synced platform session runs its tools on the cell's own filesystem",
+      model.tools?.backend === "cell" && model.tools?.cwd === "/work", JSON.stringify(model.tools));
   }
 
   check("the worker answers /kortix/health with no session named", r.status === 200 && body.ok === true, JSON.stringify(body));

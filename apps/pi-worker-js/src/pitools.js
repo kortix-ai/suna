@@ -21,6 +21,7 @@
 //      outcome — done, error, never a stranded 'running' — after.
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-agent-core";
 import { remoteExecutionEnv } from "./execenv.js";
+import { cellExecutionEnv } from "./execenv.cell.js";
 import { platinumExecutionEnv } from "./execenv.platinum.js";
 import { grepTool, listTool } from "./fstools.js";
 
@@ -270,4 +271,17 @@ export function piToolsPlatinum(env, sessionId, sql, extras = []) {
     ...TOOLSET().map((t) => adapt(t, () => execEnv, log, inflight)),
     ...extras,
   ];
+}
+
+/**
+ * The same six tools over the CELL'S OWN filesystem and shell — no microVM,
+ * no daemon. `cell` is the cellFs() instance the AgentCell holds, so the tree
+ * and the shell outlive one tool call and one turn, and go to storage with
+ * the transcript. See execenv.cell.js for why this exists and what it costs.
+ */
+export function piToolsCell(env, sessionId, sql, cell, extras = []) {
+  const execEnv = cellExecutionEnv(cell);
+  const log = ledger(sql);
+  const inflight = new Map();
+  return [...TOOLSET().map((t) => adapt(t, () => execEnv, log, inflight)), ...extras];
 }

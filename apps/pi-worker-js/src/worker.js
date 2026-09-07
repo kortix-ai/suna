@@ -44,7 +44,8 @@ globalThis.atob = (input) => {
 };
 
 import { Agent } from "@earendil-works/pi-agent-core";
-import { executionEnvFor, piTools, piToolsPlatinum } from "./pitools.js";
+import { cellFs } from "./execenv.cell.js";
+import { executionEnvFor, piTools, piToolsCell, piToolsPlatinum } from "./pitools.js";
 import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
 // through the ExecutionEnv in execenv.platinum.js (see pitools.js). The module
@@ -89,8 +90,24 @@ const SCRIPTED_MODEL = { id: "scripted", api: "anthropic-messages", provider: "s
 // Defaulting to platinum when its three variables are present, rather than to a
 // config flag, so a deployment that HAS a scoped key cannot accidentally keep
 // talking to a daemon that is not there.
-function toolsFor(env, sessionId, sql) {
+function toolsFor(env, sessionId, sql, owner) {
   const wantsPlatinum = env.PT_API_URL && env.PT_SANDBOX_KEY && env.PT_WORKSPACE_ID;
+  // A PLATFORM SESSION WITH NO WORKSPACE GETS THE CELL'S OWN FILESYSTEM.
+  //
+  // Measured on dev 2026-09-07: a Kortix session's cell carried fourteen
+  // KORTIX_* variables and no PT_*, so tools fell through to a daemon at
+  // host.docker.internal:7070 that does not exist on the platform — every
+  // bash call failed with "error sending request", and the session could
+  // answer questions but never touch a file. The cell can now carry its own
+  // tree and shell (execenv.cell.js), so that fallback is the right default
+  // whenever a gateway is driving and nobody handed the session a sandbox.
+  // Explicit TOOLS_BACKEND=cell asks for it anywhere; a bench with a daemon is
+  // unchanged.
+  const platform = Boolean(normalizeModelEnv(env).MODEL_BASE_URL) || Boolean(env.KORTIX_SESSION_ID);
+  if (!wantsPlatinum && owner && (env.TOOLS_BACKEND === "cell" || (platform && !env.TOOL_DAEMON_URL_FORCE))) {
+    owner.cellFs ??= cellFs(sql);
+    return piToolsCell(env, sessionId, sql, owner.cellFs);
+  }
   // The daemon backend now runs pi's OWN tools over an ExecutionEnv — bash,
   // read, write and, the one that matters, edit. The hand-rolled set is
   // retired: it maintained three tools worse than pi does and had no edit at
@@ -650,7 +667,7 @@ export class AgentCell {
       initialState: {
         systemPrompt,
         model: configured?.model ?? SCRIPTED_MODEL,
-        tools: toolsFor(this.effectiveEnv(), sessionId, this.sql),
+        tools: toolsFor(this.effectiveEnv(), sessionId, this.sql, this),
         messages: this.loadMessages(),
       },
     });
@@ -1441,7 +1458,14 @@ export class AgentCell {
       return Response.json({
         tools: (e.PT_API_URL && e.PT_SANDBOX_KEY && e.PT_WORKSPACE_ID)
           ? { backend: "platinum", api: e.PT_API_URL, workspace: e.PT_WORKSPACE_ID }
-          : { backend: "daemon", url: e.TOOL_DAEMON_URL },
+          : (this.cellFs || e.TOOLS_BACKEND === "cell" || normalizeModelEnv(e).MODEL_BASE_URL || e.KORTIX_SESSION_ID)
+            // `files` is what is DURABLE — rows in the cell's SQLite — not the
+            // in-memory tree, which carries just-bash's 181-path skeleton.
+            // The table is made by cellFs() on the first tool build, so before
+            // any turn there is nothing to count — and asking SQLite threw
+            // "no such table" out of a read-only status route (kparity, 2026-09-07).
+            ? { backend: "cell", cwd: "/work", files: this.cellFs ? (this.sql.exec("SELECT COUNT(*) AS n FROM files").toArray()[0]?.n ?? 0) : 0 }
+            : { backend: "daemon", url: e.TOOL_DAEMON_URL },
         active: c ? { provider: c.model.provider, id: c.model.id, api: c.model.api, baseUrl: c.model.baseUrl } : "scripted",
         credential: { length: key.length, segments: key.split(".").length, accountIdClaim: claimOk },
         available: supportedProviders(),
