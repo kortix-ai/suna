@@ -597,7 +597,7 @@ export async function startWorker(cfg = configFromEnv()) {
     if (url.pathname.startsWith('/kortix/opencode/')) {
       if (surface.handle(req, res, url)) return;
     }
-    if (url.pathname === '/session' || url.pathname.startsWith('/session/')) {
+    if (url.pathname === '/global/event' || url.pathname === '/session' || url.pathname.startsWith('/session/')) {
       if (surface.handleRawSessionList(req, res, url)) return;
     }
 

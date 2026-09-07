@@ -1,3 +1,4 @@
+import { serveGlobalEventStream } from './global-event-stream.ts';
 /**
  * The Kortix Runtime API, pi-worker half — `/kortix/opencode/*` served by the
  * WORKER so the product's session surface renders a pi session unchanged.
@@ -810,6 +811,18 @@ export class RuntimeSurface {
    * auth posture as the namespace routes.
    */
   handleRawSessionList(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+    if (url.pathname === '/global/event' && req.method === 'GET') {
+      if (!this.authorized(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
+        return true;
+      }
+      serveGlobalEventStream(res, this.bus, this.opts.workspace ?? '/workspace', {
+        heartbeatMs: EVENT_HEARTBEAT_MS,
+      });
+      return true;
+    }
+
     // POST /session/:id/abort — the Stop button's REAL path.
     //
     // There is a second abort handler under `/kortix/opencode/`, and it is not

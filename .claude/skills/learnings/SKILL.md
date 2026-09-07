@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Verify the event route that the installed client actually opens (2026-09-07)
+
+**When:** adding a replacement conversation runtime.
+**Incident:** Pi preview clients repeatedly parked their SSE connection; the committed worker returned `404` for `/global/event`.
+**Rule:** serve the client's authenticated stream and envelope. Send idle heartbeats and bound each subscriber's buffered output.
+**Enforcer:** `global-event-liveness.test.ts` exercises the real prompt route, idle delivery, and independent subscriber limits.
+
 ### Sign proxy requests with the target runtime's credential (2026-09-07)
 
 **When:** looking up an environment for files, terminals, or preview requests.
