@@ -5112,3 +5112,22 @@ that a mutation failed or authorize another submission.
 
 Automation: the existing account-authentication browser journey checks the real
 POST, delivered email, new user, sign-out, and subsequent login.
+
+
+## 2026-09-07 — Capture live identities before replacing a legacy worker
+
+A read-only upgrade check found that the reported Pi session had ten native
+messages but no saved wire IDs. Replaying its log preserved text while changing
+all ten message IDs. Stopping the old process first would discard those IDs.
+
+Capture the full idle transcript before stopping a legacy worker. Bind each
+message and part identity to its native entry fingerprint. Store the complete
+checkpoint in one append, after verifying that the stopped source has not
+changed. Reject mismatched content, foreign sessions, duplicate IDs, conflicting
+checkpoints, and unsettled tools. Never reconstruct random live IDs by guessing.
+
+Automation: `legacy-wire-identity.test.ts` validates capture and replay failures.
+`legacy-wire-restore.test.ts` starts the real worker, preserves message and part
+IDs and creation times, sends another prompt, and verifies a second replacement.
+The reported session's saved log also replays locally with all ten identities
+and no native-log writes.

@@ -25,6 +25,13 @@
  * production incident on a different surface.
  */
 
+import { createHash } from 'node:crypto';
+
+export function mintRootId(sessionId: string): string {
+  const digest = createHash('sha256').update(`pi-root\0${sessionId}`).digest('hex');
+  return `ses_pi${digest.slice(0, 24)}`;
+}
+
 /** `msg_` + 12 lowercase hex clock chars + 14 base62 chars. */
 export const WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 

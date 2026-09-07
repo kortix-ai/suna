@@ -29,6 +29,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { InMemorySessionStorage } from '@earendil-works/pi-agent-core';
+import { applyLegacyWireIdentities } from './legacy-wire-identity.ts';
 
 export interface SessionLogLeaseFence {
   stream: string;
@@ -308,7 +309,7 @@ export class DurableSessionStorage {
     const inner = new InMemorySessionStorage(metadata);
     const durable = new DurableSessionStorage(inner, log, true);
     const items = await log.read();
-    for (const item of items) {
+    for (const item of applyLegacyWireIdentities(items, metadata.id)) {
       switch (item.kind) {
         case 'lane_create':
           await inner.createLane(item.lane, item.at);

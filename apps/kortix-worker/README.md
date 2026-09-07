@@ -28,6 +28,31 @@ The artifact self-describes: line 2 is a `// kortix-manifest-base64url:` marker,
 `node artifact.mjs --manifest` prints it, and baked identity env vars fail
 closed (exit 78) on mismatch.
 
+## Upgrading workers without saved wire IDs
+
+An early Pi worker saved native messages but kept its OpenCode message IDs only
+in memory. Those random live IDs cannot be reconstructed from the native log.
+Capture them before that old process stops.
+
+`captureLegacyWireIdentities(sessionId, branchEntries, liveMessages)` validates
+ordered messages, text, reasoning, settled tools, and part ownership. It returns
+one atomic journal checkpoint. Each identity is bound to the native entry by a
+canonical SHA-256 fingerprint. The checkpoint contains IDs and timestamps;
+it does not duplicate or rewrite message content.
+
+For an upgrade, save the complete native log and live transcript while the
+session has no active or queued turns, questions, or permission requests.
+Preflight the checkpoint against the 512 KiB log-item limit. Stop the worker,
+confirm the native log still matches the capture, then append the checkpoint
+with a stable idempotency key before starting the new worker. Do not append a
+checkpoint if the capture changed. Keep the saved capture until the restored
+message IDs, part IDs, timestamps, and content match it.
+
+Replay rejects stale fingerprints, foreign sessions, reused IDs, and conflicting
+checkpoints. Existing entries remain unchanged. Subsequent messages use the
+normal durable admission path. Workers that already persist wire IDs do not
+need this checkpoint.
+
 ## Config precedence
 
 `main.ts` reads `globalThis.__KORTIX_COMPILED__` (the bake) and overlays env:

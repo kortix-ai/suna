@@ -41,6 +41,7 @@ import {
   WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
   WIRE_MESSAGE_ID,
+  mintRootId,
   mintWireMessageId,
   wireIdTime,
 } from './wire-message-id';
@@ -348,11 +349,7 @@ export class WireTranscript {
 // The surface.
 // ---------------------------------------------------------------------------
 
-/** Deterministic, opencode-shaped, never a project-session UUID. */
-export function mintRootId(sessionId: string): string {
-  const digest = createHash('sha256').update(`pi-root\0${sessionId}`).digest('hex');
-  return `ses_pi${digest.slice(0, 24)}`;
-}
+export { mintRootId } from './wire-message-id';
 
 export const DEFAULT_MESSAGE_PAGE = 20;
 export const MAX_MESSAGE_PAGE = 200;
@@ -522,6 +519,8 @@ interface RestoredTranscriptMessage {
   errorMessage?: string;
   kortixWireMessageId?: string;
   kortixParentMessageId?: string;
+  kortixWireCreatedAt?: number;
+  kortixWirePartIds?: string[];
 }
 
 interface RestoredWireMessage {
@@ -639,11 +638,12 @@ export class RuntimeSurface {
       const parsedTimestamp =
         typeof message.timestamp === 'string' ? Date.parse(message.timestamp) : Number.NaN;
       const created =
-        typeof message.timestamp === 'number' && Number.isFinite(message.timestamp)
+        message.kortixWireCreatedAt ??
+        (typeof message.timestamp === 'number' && Number.isFinite(message.timestamp)
           ? message.timestamp
           : Number.isFinite(parsedTimestamp)
             ? parsedTimestamp
-            : messageIndex;
+            : messageIndex);
 
       if (message.role === 'toolResult') {
         const pending = message.toolCallId ? toolParts.get(message.toolCallId) : undefined;
@@ -774,7 +774,7 @@ export class RuntimeSurface {
       });
       if (role === 'user') lastUserId = id;
       parts.forEach((part, index) => {
-        const partId = `${id}-p${index}`;
+        const partId = message.kortixWirePartIds?.[index] ?? `${id}-p${index}`;
         if (part.kind === 'text' || part.kind === 'reasoning') {
           this.transcript.apply({
             type: 'message.part.updated',
