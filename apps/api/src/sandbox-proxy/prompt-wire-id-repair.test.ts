@@ -4,12 +4,64 @@ import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../projects/wire
 import {
   isPromptWireIdRepairPath,
   promptTranscriptReadPath,
+  readPromptTranscript,
   repairPromptWireId,
 } from './prompt-wire-id-repair';
 
 const NOW = 1_770_000_000_000;
 const enc = (obj: unknown) => new TextEncoder().encode(JSON.stringify(obj)).buffer as ArrayBuffer;
 const dec = (buf: ArrayBuffer) => JSON.parse(new TextDecoder().decode(buf)) as Record<string, any>;
+
+describe('readPromptTranscript', () => {
+  test.each([
+    { status: 200, body: '[]', header: 'durable-message-id-v1', durable: true },
+    { status: 200, body: '[]', header: 'unknown-v2', durable: false },
+    { status: 200, body: '[]', header: '', durable: false },
+    {
+      status: 503,
+      body: '[]',
+      header: 'durable-message-id-v1',
+      durable: false,
+    },
+    {
+      status: 200,
+      body: '{}',
+      header: 'durable-message-id-v1',
+      durable: false,
+    },
+    {
+      status: 200,
+      body: 'invalid',
+      header: 'durable-message-id-v1',
+      durable: false,
+    },
+  ])('validates the current runtime response: %j', async ({ status, body, header, durable }) => {
+    const result = await readPromptTranscript({
+      url: 'http://runtime.test/session/ses_1/message',
+      headers: {},
+      fetchImpl: (async () =>
+        new Response(body, {
+          status,
+          headers: { 'x-kortix-prompt-admission': header },
+        })) as unknown as typeof fetch,
+    });
+    expect(result).toEqual({
+      newestKnownTime: null,
+      durableMessageIds: durable,
+    });
+  });
+
+  test('a failed read does not authorize redelivery', async () => {
+    const result = await readPromptTranscript({
+      url: 'http://runtime.test/session/ses_1/message',
+      headers: {},
+      fetchImpl: (async () => {
+        throw new Error('connection reset');
+      }) as unknown as typeof fetch,
+    });
+    expect(result).toEqual({ newestKnownTime: null, durableMessageIds: false });
+  });
+});
 
 describe('isPromptWireIdRepairPath', () => {
   test('prompt_async and message carry a client wire id; command and summarize do not', () => {
@@ -23,7 +75,7 @@ describe('isPromptWireIdRepairPath', () => {
 });
 
 describe('promptTranscriptReadPath', () => {
-  test('rewrites the delivery path to the same session\'s newest-N read, prefix preserved', () => {
+  test("rewrites the delivery path to the same session's newest-N read, prefix preserved", () => {
     expect(promptTranscriptReadPath('/session/ses_1/prompt_async', 8)).toBe(
       '/session/ses_1/message?limit=8',
     );
@@ -36,7 +88,11 @@ describe('promptTranscriptReadPath', () => {
 describe('repairPromptWireId', () => {
   test('a body with no messageID is forwarded untouched — OpenCode mints its own', () => {
     const body = enc({ parts: [{ type: 'text', text: 'hi' }] });
-    const result = repairPromptWireId({ body, newestKnownTime: null, nowMs: NOW });
+    const result = repairPromptWireId({
+      body,
+      newestKnownTime: null,
+      nowMs: NOW,
+    });
     expect(result.outcome).toBe('none');
     expect(result.body).toBe(body);
     expect(result.effectiveMessageId).toBeNull();
@@ -46,7 +102,11 @@ describe('repairPromptWireId', () => {
     const older = mintWireMessageId({ nowMs: NOW - 60_000 });
     const client = mintWireMessageId({ nowMs: NOW });
     const body = enc({ messageID: client.id, parts: [] });
-    const result = repairPromptWireId({ body, newestKnownTime: older.time, nowMs: NOW });
+    const result = repairPromptWireId({
+      body,
+      newestKnownTime: older.time,
+      nowMs: NOW,
+    });
     expect(result.outcome).toBe('kept');
     expect(result.body).toBe(body);
     expect(result.effectiveMessageId).toBe(client.id);
@@ -59,8 +119,15 @@ describe('repairPromptWireId', () => {
     // read it as already answered and the turn never ran.
     const tip = mintWireMessageId({ nowMs: NOW - 1_000 });
     const stale = mintWireMessageId({ nowMs: NOW - 120_000 });
-    const body = enc({ messageID: stale.id, parts: [{ type: 'text', text: 'stop looping' }] });
-    const result = repairPromptWireId({ body, newestKnownTime: tip.time, nowMs: NOW });
+    const body = enc({
+      messageID: stale.id,
+      parts: [{ type: 'text', text: 'stop looping' }],
+    });
+    const result = repairPromptWireId({
+      body,
+      newestKnownTime: tip.time,
+      nowMs: NOW,
+    });
 
     expect(result.outcome).toBe('reminted');
     const forwarded = dec(result.body);
@@ -73,8 +140,15 @@ describe('repairPromptWireId', () => {
   });
 
   test('a malformed client id is re-minted rather than forwarded for OpenCode to misorder', () => {
-    const body = enc({ messageID: 'msg_1a01deadbeef0000000000000000', parts: [] });
-    const result = repairPromptWireId({ body, newestKnownTime: null, nowMs: NOW });
+    const body = enc({
+      messageID: 'msg_1a01deadbeef0000000000000000',
+      parts: [],
+    });
+    const result = repairPromptWireId({
+      body,
+      newestKnownTime: null,
+      nowMs: NOW,
+    });
     expect(result.outcome).toBe('reminted');
     expect(dec(result.body).messageID).toMatch(WIRE_MESSAGE_ID);
   });
@@ -85,14 +159,22 @@ describe('repairPromptWireId', () => {
     // is wrong".
     const client = mintWireMessageId({ nowMs: NOW - 300_000 });
     const body = enc({ messageID: client.id, parts: [] });
-    const result = repairPromptWireId({ body, newestKnownTime: null, nowMs: NOW });
+    const result = repairPromptWireId({
+      body,
+      newestKnownTime: null,
+      nowMs: NOW,
+    });
     expect(result.outcome).toBe('kept');
     expect(result.effectiveMessageId).toBe(client.id);
   });
 
   test('an unparseable body is forwarded untouched for OpenCode to reject', () => {
     const body = new TextEncoder().encode('{not json').buffer as ArrayBuffer;
-    const result = repairPromptWireId({ body, newestKnownTime: null, nowMs: NOW });
+    const result = repairPromptWireId({
+      body,
+      newestKnownTime: null,
+      nowMs: NOW,
+    });
     expect(result.outcome).toBe('none');
     expect(result.body).toBe(body);
   });

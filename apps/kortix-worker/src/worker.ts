@@ -1811,6 +1811,7 @@ export async function startWorker(cfg = configFromEnv()) {
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
+    if (sessionLog) res.setHeader('x-kortix-prompt-admission', 'durable-message-id-v1');
 
     if (url.pathname.startsWith('/kortix/opencode/')) {
       if (surface.handle(req, res, url)) return;

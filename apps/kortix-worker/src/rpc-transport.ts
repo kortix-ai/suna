@@ -193,14 +193,15 @@ export class FetchTransport implements RpcTransport {
       headers: { 'content-type': 'application/json', ...this.headers },
       body: JSON.stringify({ op, args, cwd, requestId }),
       signal: requestController.signal,
+    }).then(async (res) => {
+      if (res.status === 401) throw new RpcUnauthorizedBeforeExecutionError();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
     });
-    const res = await withCancellation(response, signal, async () => {
+    return withCancellation(response, signal, async () => {
       requestController.abort();
       await cancelRpc(this.baseUrl, this.headers, requestId);
     });
-    if (res.status === 401) throw new RpcUnauthorizedBeforeExecutionError();
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
   }
   async close() {}
 }
@@ -245,6 +246,10 @@ export class KeepAliveTransport implements RpcTransport {
           res.on('end', () => {
             if (res.statusCode === 401) {
               reject(new RpcUnauthorizedBeforeExecutionError());
+              return;
+            }
+            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+              reject(new Error(`HTTP ${res.statusCode ?? 'unknown'}`));
               return;
             }
             try {

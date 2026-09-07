@@ -4904,3 +4904,23 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
 - Enforcement: `apps/kortix-worker/src/turn-routes.test.ts` blocks reconciliation
   after fencing a stale append. It asserts busy through HTTP and SSE, releases
   the barrier, then asserts message removal precedes idle and stale text is absent.
+
+### Preserve durable prompt identity through compatibility proxies (2026-09-07)
+
+**When:** forwarding prompts to runtimes with durable admission.
+**Incident:** the Pi preview returned the proxy's `200` duplicate response instead of the worker's
+`204` retry or `409` conflict. Wire-ID repair could also turn a persisted retry into a new prompt.
+**Rule:** read the current runtime's explicit admission capability before forwarding a duplicate.
+Preserve its message ID. Keep legacy deduplication when capability evidence is absent or invalid.
+**Enforcer:** proxy delivery tests cover stable IDs, exact retries, conflicts, and legacy runtimes;
+`RUN-2` checks the same contract through the live proxy and reads back the original user message.
+
+### Keep RPC cancellation active until the response body finishes (2026-09-07)
+
+**When:** awaiting an environment RPC response.
+**Incident:** FetchTransport removed cancellation after receiving headers, so an incomplete JSON
+body ignored Stop. KeepAliveTransport accepted a `503` response whose JSON resembled success.
+**Rule:** cover body parsing with cancellation and reject unsuccessful HTTP status codes before
+interpreting an RPC result. Never replay an ambiguous mutation to recover its response.
+**Enforcer:** `rpc-response.test.ts` uses real HTTP servers to hold a partial body and return a
+misleading `503`; it requires acknowledged cancellation and explicit status rejection.

@@ -309,7 +309,7 @@ All under `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sandboxId` = 
 Preview upstream authentication uses the target runtime's own credential. An environment lookup reads `session_environments.config.serviceKey`; it never signs with the worker's credential. Authenticated file reads through the environment proxy return the same persisted content that the worker's remote file tools read.
 
 `RUN-1` `POST /p/<sbx>/8000/session` → create OpenCode conversation → returns `{id}`.
-`RUN-2` `POST /p/<sbx>/8000/session/<ocId>/prompt_async {parts:[{type:text,text}]}` → **204** (async; agent runs in background).
+`RUN-2` `POST /p/<sbx>/8000/session/<ocId>/prompt_async {parts:[{type:text,text}]}` → **204** (async; agent runs in background). A runtime that advertises `x-kortix-prompt-admission: durable-message-id-v1` owns admission by `messageID`: an exact retry without `Idempotency-Key` returns **204**, changed input under that ID returns **409**, and only one user message persists. The proxy preserves that ID. Runtimes without this capability retain the proxy’s **200** duplicate response. An explicit `Idempotency-Key` retains proxy deduplication.
 `RUN-3` `GET /p/<sbx>/8000/event` (SSE) → stream message/part deltas + `session.updated`; assert text streamed.
 `RUN-4` busy/idle — `GET /p/<sbx>/8000/session/<ocId>` → `status.type ∈ busy|retry` ⇒ busy.
 `RUN-5` `POST /p/<sbx>/8000/session/<ocId>/abort` → stop a running agent.

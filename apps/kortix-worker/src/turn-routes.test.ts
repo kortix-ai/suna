@@ -833,6 +833,8 @@ describe('raw OpenCode turn routes', () => {
     const worker = await start();
     await prime(worker, ['only answer']);
     const sessionID = await rootId(worker);
+    const transcript = await request(worker, `/session/${sessionID}/message`);
+    expect(transcript.headers.get('x-kortix-prompt-admission')).toBeNull();
     const messageID = 'msg_01990f4ca015abcdefghijklmn';
     const send = (text: string) =>
       request(worker, `/session/${sessionID}/message`, {
@@ -1138,6 +1140,8 @@ describe('raw OpenCode turn routes', () => {
     });
     workers.push(worker);
     const sessionID = await rootId(worker);
+    const transcript = await request(worker, `/session/${sessionID}/message`);
+    expect(transcript.headers.get('x-kortix-prompt-admission')).toBe('durable-message-id-v1');
     let settled = 0;
     const prompt = () =>
       request(worker, `/session/${sessionID}/prompt_async`, {

@@ -56,6 +56,12 @@ starts prompts in durable acceptance order. Retrying the same `messageID` and
 input reuses the first admission. Reusing that ID with different input returns
 `409`. Cancelling a queued message commits before removing it from the UI.
 
+Durable workers advertise `x-kortix-prompt-admission: durable-message-id-v1`.
+The API reads this capability from the current transcript response. It preserves
+`messageID` and forwards retries to the durable journal. Older runtimes keep
+proxy duplicate protection. An explicit `Idempotency-Key` continues to use the
+proxy contract. The capability check adds no read to a normal browser prompt.
+
 A turn-owner lease fences transcript writes and completion. A replacement
 worker resumes accepted prompts that never started. It does not replay a turn
 that could have executed a tool. It restores the committed answer or records

@@ -560,14 +560,58 @@ flow(
   async (ctx) => {
     const { sandboxId } = await bootSandbox(ctx);
     const ocId = await createOcConversation(ctx, sandboxId);
+    const messageID = `msg_${((BigInt(Date.now()) * 4096n) & 0xffffffffffffn).toString(16).padStart(12, '0')}${crypto.randomUUID().replaceAll('-', '').slice(0, 14)}`;
+    const prompt = {
+      messageID,
+      parts: [{ type: 'text', text: 'Reply with the single word: pong' }],
+    };
+    let durableAdmission = false;
+    let effectiveMessageID = messageID;
     await ctx.step('POST .../session/<ocId>/prompt_async → 204', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: 'Reply with the single word: pong' }],
-        });
-      r.status([200, 202, 204]);
+        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), prompt);
+      r.status(204);
+      durableAdmission = r.header('x-kortix-prompt-admission') === 'durable-message-id-v1';
+      effectiveMessageID = r.header('x-kortix-effective-message-id') ?? messageID;
     });
+    await ctx.step('repeating the messageID preserves the runtime admission contract', async () => {
+      const retry = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), prompt);
+      retry.status(durableAdmission ? 204 : 200);
+      if (!durableAdmission) retry.body().has('$.deduplicated', true);
+    });
+    await ctx.step(
+      'changed content under the same messageID cannot create a second prompt',
+      async () => {
+        const conflict = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
+            ...prompt,
+            parts: [{ type: 'text', text: 'This conflicting input must not run.' }],
+          });
+        conflict.status(durableAdmission ? 409 : 200);
+        if (!durableAdmission) conflict.body().has('$.deduplicated', true);
+        const transcript = await ctx.client
+          .as(ctx.P.OWNER)
+          .get(ocPath(sandboxId, `/session/${ocId}/message`));
+        transcript.status(200);
+        const messages = transcript.json<
+          Array<{ info: { role: string; id: string }; parts: Array<{ text?: string }> }>
+        >();
+        const users = messages.filter(
+          (message) => message.info.role === 'user' && message.info.id === effectiveMessageID,
+        );
+        if (
+          users.length !== 1 ||
+          !users[0]?.parts.some((part) => part.text === prompt.parts[0].text) ||
+          messages.some((message) => message.parts.some((part) => part.text?.includes('conflicting input')))
+        ) {
+          throw new Error('prompt retry must persist exactly one original user message');
+        }
+      },
+    );
   },
 );
 

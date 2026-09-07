@@ -83,7 +83,7 @@ import {
   isPromptWireIdRepairPath,
   promptBodyMessageId,
   promptTranscriptReadPath,
-  readNewestWireIdTime,
+  readPromptTranscript,
   repairPromptWireId,
 } from '../prompt-wire-id-repair';
 import {
@@ -1022,6 +1022,12 @@ export async function forwardToSandbox(
   // prompt is silently lost.
   let promptDedupeKey: string | null = null;
   const idempotencyKey = incomingHeaders.get('idempotency-key');
+  let duplicatePrompt = false;
+  const canUseDurableMessageAdmission =
+    promptDelivery &&
+    isPromptWireIdRepairPath(remainingPath) &&
+    promptBodyMessageId(requestBody) !== null &&
+    !idempotencyKey?.trim();
   // Non-idempotent (never re-sent by us) and dedupe-claimed (a later lookalike
   // is short-circuited) are DIFFERENT guarantees — see
   // `shouldClaimPromptDelivery`. A command body has no client-unique field, so
@@ -1034,7 +1040,11 @@ export async function forwardToSandbox(
       body: requestBody,
     });
     if (!claimPromptDelivery(promptDedupeKey)) {
-      return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+      if (!canUseDurableMessageAdmission) {
+        return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+      }
+      duplicatePrompt = true;
+      promptDedupeKey = null;
     }
     // Stamped HERE, and only here: past the dedupe claim, so a re-sent prompt
     // cannot double-count, and outside the retry loop below, so a wake retry
@@ -1042,10 +1052,11 @@ export async function forwardToSandbox(
     // unlike the opencode_sessions snapshot scheduled further down, it needs no
     // sandbox round-trip, so a session stays correctly dated even when the box
     // is unreachable. See projects/session-activity.ts.
-    void recordSessionActivity({
-      sessionId: record.sessionId,
-      projectId: record.projectId,
-    });
+    if (!duplicatePrompt)
+      void recordSessionActivity({
+        sessionId: record.sessionId,
+        projectId: record.projectId,
+      });
   }
 
   // `deadline_at` is the idle-stop clock. This separate record is the durable
@@ -1263,13 +1274,14 @@ export async function forwardToSandbox(
       // read keeps the client's id); runs after every refusal point and before
       // the ledger begins, so the identity recorded is the one delivered. Once
       // per request: a retry attempt keeps the placement the first computed.
+      // Durable runtimes own identity and conflicts. Read their capability from
+      // this same response; never infer it from an engine name or cached boot.
       if (
         promptDelivery &&
-        !sandboxAuthored &&
         effectiveMessageId === null &&
         isPromptWireIdRepairPath(remainingPath) &&
-        // The inbox drain already placed it — one fewer round-trip.
-        incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1' &&
+        (canUseDurableMessageAdmission ||
+          (!sandboxAuthored && incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1')) &&
         // No client id, nothing to place — OpenCode mints, and the read is
         // skipped entirely so a plain body pays nothing.
         promptBodyMessageId(requestBody) !== null
@@ -1277,13 +1289,28 @@ export async function forwardToSandbox(
         const readUrl =
           previewUrl.replace(/\/$/, '') +
           promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
-        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
-        ptl.mark('wire-id-read');
-        const placed = repairPromptWireId({
-          body: requestBody,
-          newestKnownTime,
-          nowMs: Date.now(),
+        const transcript = await readPromptTranscript({
+          url: readUrl,
+          headers: authHeaders,
         });
+        ptl.mark('wire-id-read');
+        const durableAdmission = canUseDurableMessageAdmission && transcript.durableMessageIds;
+        if (duplicatePrompt && !durableAdmission) {
+          return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+        }
+        const keepIdentity =
+          durableAdmission || sandboxAuthored || incomingHeaders.get(WIRE_ID_PLACED_HEADER) === '1';
+        const placed = keepIdentity
+          ? {
+              body: requestBody,
+              effectiveMessageId: promptBodyMessageId(requestBody),
+              outcome: 'kept' as const,
+            }
+          : repairPromptWireId({
+              body: requestBody,
+              newestKnownTime: transcript.newestKnownTime,
+              nowMs: Date.now(),
+            });
         if (placed.outcome === 'reminted') {
           console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
             sandboxId,

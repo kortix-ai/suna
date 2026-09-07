@@ -154,6 +154,10 @@ test('an always reply persists through the real log protocol and worker replacem
       () => read(`/session/${session.id}/message`),
       (value) => value.some((m) => m.parts.some((p: any) => p.text === `COMPLETE_${round}`)),
     );
+    await until(
+      async () => Object.values(await (await call('/session/status')).json()),
+      (statuses) => statuses.length === 0,
+    );
     await worker.close();
     workers.splice(workers.indexOf(worker), 1);
   }
