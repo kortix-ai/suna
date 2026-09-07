@@ -2,6 +2,7 @@
 
 import {
   getConnectStatus,
+  listConnectToolkitSections,
   listConnectToolkits,
   listDiscoverConnectors,
   listPipedreamApps,
@@ -192,6 +193,49 @@ export async function listConnectCatalogPage(input: {
   };
 }
 
+export async function listConnectCatalogSections(input: {
+  projectId: string;
+  provider: 'composio' | 'pipedream';
+  perCategory: number;
+  maxCategories: number;
+}): Promise<{ sections: CatalogSection[]; categories: PipedreamCategory[] }> {
+  if (input.provider === 'pipedream') {
+    const page = await listPipedreamSections(input.projectId, input);
+    return {
+      sections: page.sections.map((section) => ({
+        key: section.key,
+        label: section.label,
+        total: section.total,
+        items: section.apps.map(catalogEntryFromEasyConnect),
+      })),
+      categories: page.categories,
+    };
+  }
+  const page = await listConnectToolkitSections(input.projectId, input);
+  return {
+    sections: page.sections.map((section) => ({
+      key: section.key,
+      label: section.label,
+      total: section.total,
+      items: section.toolkits.map((toolkit) =>
+        catalogEntryFromEasyConnect({
+          slug: toolkit.slug,
+          name: toolkit.name,
+          description: toolkit.description ?? null,
+          imgSrc: toolkit.logo,
+          authType: toolkit.isNoAuth ? 'none' : 'oauth',
+          categories: toolkit.categories ?? [],
+          hasActions: true,
+          hasTriggers: false,
+          featuredWeight: 0,
+          provider: 'composio',
+        }),
+      ),
+    })),
+    categories: page.categories,
+  };
+}
+
 /**
  * The catalogue behind the Discovery and All tabs, from whichever of the two
  * sources this project actually has.
@@ -288,19 +332,16 @@ export function useCatalog(
   // an open category are each a single flat result set, so fetching sections
   // for them would be work against a grid that will not render them.
   const sectionsQuery = useQuery({
-    queryKey: ['easy-connect-sections', projectId],
+    queryKey: ['easy-connect-sections', projectId, easyConnectProvider],
     queryFn: () =>
-      listPipedreamSections(projectId, {
+      listConnectCatalogSections({
+        projectId,
+        provider: easyConnectProvider,
         perCategory: SECTION_CARD_COUNT,
         maxCategories: SECTION_COUNT,
       }),
     staleTime: 5 * 60_000,
-    enabled:
-      opts.enabled &&
-      easyConnectRunnable &&
-      easyConnectProvider === 'pipedream' &&
-      !searching &&
-      category === null,
+    enabled: opts.enabled && easyConnectRunnable && !searching && category === null,
   });
 
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
@@ -374,40 +415,17 @@ export function useCatalog(
         items: section.items.slice(0, SECTION_CARD_COUNT),
       }));
     }
-    if (easyConnectProvider === 'pipedream') {
-      return (sectionsQuery.data?.sections ?? []).map((section) => ({
-        key: section.key,
-        label: localizedSectionTitle(section.label, tI18nComplete),
-        total: section.total,
-        items: section.apps.map(catalogEntryFromEasyConnect),
-      }));
-    }
-    // Composio serves each section's "View all" from its own catalogue, filtered
-    // by this key. Curated keys are ours and it does not have them — asking for
-    // `sales-marketing` answers zero, which the grid renders as an empty
-    // catalogue. Keying by the provider's slug keeps the heading and the grid
-    // behind it describing the same set.
-    return catalogSections(entries, {
-      popularCap: SECTION_CARD_COUNT,
-      rawCategoryKeys: easyConnectProvider === 'composio',
-    }).map((section) => ({
-      key: section.category,
-      label: localizedSectionTitle(section.category, tI18nComplete),
-      total: section.items.length,
-      items: section.items.slice(0, SECTION_CARD_COUNT),
+    return (sectionsQuery.data?.sections ?? []).map((section) => ({
+      ...section,
+      label: localizedSectionTitle(section.label, tI18nComplete),
     }));
-  }, [
-    searching,
-    category,
-    source,
-    entries,
-    sectionsQuery.data,
-    easyConnectProvider,
-    tI18nComplete,
-  ]);
+  }, [searching, category, source, entries, sectionsQuery.data, tI18nComplete]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
-  const categories = source === 'easy-connect' ? (easyConnectPage?.categories ?? []) : [];
+  const categories =
+    source === 'easy-connect'
+      ? (easyConnectPage?.categories ?? sectionsQuery.data?.categories ?? [])
+      : [];
 
   const excludedNoActions = easyConnectPage?.excludedNoActions ?? 0;
 
@@ -418,11 +436,7 @@ export function useCatalog(
 
   // The browse page is loading until its own request lands — the paged query
   // behind it says nothing about whether the sections are ready.
-  const showingSections =
-    !searching &&
-    category === null &&
-    source === 'easy-connect' &&
-    easyConnectProvider === 'pipedream';
+  const showingSections = !searching && category === null && source === 'easy-connect';
 
   return {
     entries,

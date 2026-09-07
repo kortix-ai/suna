@@ -105,6 +105,24 @@ export const uncoveredAllow: AllowEntry[] = [
     reason:
       "DEBT, not a considered exemption. Route shipped with the fast-git-boot work (#6976) but the manifest was not regenerated then; the canonical regen for the session-environment routes surfaced it. Nothing covers it — this entry keeps the gap visible instead of re-hiding it behind a stale manifest.",
   },
+  {
+    method: "GET",
+    path: "/v1/projects/:*/git/connection",
+    reason:
+      "DEBT, not a considered exemption. The route existed before the Composio catalogue manifest regeneration surfaced it. Nothing covers it — this entry keeps the gap visible instead of re-hiding it behind a stale manifest.",
+  },
+  {
+    method: "GET",
+    path: "/v1/runtime-assets/entrypoint",
+    reason:
+      "DEBT, not a considered exemption. The runtime entrypoint route existed before the Composio catalogue manifest regeneration surfaced it. Nothing covers it — this entry keeps the gap visible instead of re-hiding it behind a stale manifest.",
+  },
+  {
+    method: "HEAD",
+    path: "/v1/runtime-assets/entrypoint",
+    reason:
+      "DEBT, not a considered exemption. This is the HEAD sibling of the pre-existing runtime entrypoint route. Nothing covers it — this entry keeps the gap visible instead of re-hiding it behind a stale manifest.",
+  },
 ];
 
 export const externalRoutes: AllowEntry[] = [

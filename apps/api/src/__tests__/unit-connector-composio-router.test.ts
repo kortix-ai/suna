@@ -110,6 +110,25 @@ describe('connector router provider-neutral connect routes', () => {
     expect(await res.json()).toEqual({ provider: 'composio', projectId: PROJECT, input: { q: 'remote', category: 'productivity', cursor: 'next', limit: 25 } });
   });
 
+  test('toolkit discovery sections forward fixed browse limits', async () => {
+    const app = createConnectorRouter(
+      deps({
+        listConnectToolkitSections: async (input) => ({ sections: [], categories: [], input }),
+      }),
+    );
+    const res = await request(
+      app,
+      `/projects/${PROJECT}/connect/sections?perCategory=6&maxCategories=12`,
+      { headers: ADMIN },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      sections: [],
+      categories: [],
+      input: { perCategory: 6, maxCategories: 12 },
+    });
+  });
+
   test('connect and finalize call provider-neutral deps with connection selector', async () => {
     const calls: string[] = [];
     const connectionId = '11111111-1111-4111-8111-111111111111';

@@ -417,6 +417,7 @@ export interface ConnectorRouterDeps {
   ): Promise<Array<{ slug: string; app: string; provider: string; connected: boolean }>>;
   connectStatus?(): Promise<{ configured: boolean; provider: string | null; providers?: string[] }>;
   listConnectToolkits?(projectId: string, input: { q?: string; category?: string; cursor?: string; limit?: number }): Promise<unknown | null>;
+  listConnectToolkitSections?(input: { perCategory?: number; maxCategories?: number }): Promise<unknown | null>;
   /**
    * Pipedream webhook: verify sig + finalize. `ok:false` = the signature (or the
    * connector/authorization binding the id names) did not check out → 401.
@@ -1403,6 +1404,37 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
       });
       return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
+    },
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connect/sections',
+      tags: ['connector'],
+      summary: 'Browse complete easy-connect toolkit sections',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({
+          perCategory: z.coerce.number().int().positive().max(100).optional(),
+          maxCategories: z.coerce.number().int().positive().max(100).optional(),
+        }),
+      },
+      responses: { 200: json(OpaqueSchema, 'Easy-connect toolkit sections'), ...errors(403, 501) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listConnectToolkitSections) return featureNotSupportedResponse(c, 'connect_toolkit_sections');
+      const perCategory = Number(c.req.query('perCategory'));
+      const maxCategories = Number(c.req.query('maxCategories'));
+      const result = await deps.listConnectToolkitSections({
+        ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
+        ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
+      });
+      return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkit_sections');
     },
   );
 

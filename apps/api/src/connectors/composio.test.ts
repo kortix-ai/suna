@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import {
   composioCatalogPage,
+  composioCatalogSections,
   composioConnectUrl,
   composioSessionTools,
   composioUserId,
@@ -539,59 +540,48 @@ test('executeComposio rejects an empty Composio log id', async () => {
   ).rejects.toThrow('composio execution returned no log id');
 });
 
-test('composioCatalogPage uses a discovery-only identity and session.toolkits pagination', async () => {
+test('composioCatalogPage uses the complete toolkit index instead of a discovery session', async () => {
   const calls: Array<Record<string, unknown>> = [];
-  const created = session({
-    toolkit: {
-      slug: 'composio_search',
-      name: 'Composio Search',
-      isNoAuth: true,
-    },
-  });
-  created.toolkits = async (options) => {
-    calls.push({ type: 'toolkits', options });
-    return {
-      items: [{ slug: 'composio_search', name: 'Composio Search', isNoAuth: true }],
-      cursor: 'next-page',
-      totalPages: 2,
-    };
-  };
-
   const result = await composioCatalogPage({
     projectId: 'project-1',
     q: 'search',
-    cursor: 'cursor-1',
     limit: 20,
-    runtime: fakeRuntime({ created, calls }),
+    catalogClient: {
+      toolkits: {
+        async list(query) {
+          calls.push(query);
+          return {
+            items: [
+              {
+                slug: 'composio_search',
+                name: 'Composio Search',
+                no_auth: true,
+                meta: { description: 'Search', categories: [] },
+              },
+            ],
+          };
+        },
+      },
+    },
   });
 
-  // Enriched even with no metadata available: the fields are part of the page's
-  // contract now, so the client's category bucketing reads `[]` rather than
-  // `undefined` and cannot fork on which branch answered.
   expect(result).toEqual({
-    items: [
+    provider: 'composio',
+    toolkits: [
       {
         slug: 'composio_search',
         name: 'Composio Search',
-        isNoAuth: true,
-        description: null,
+        logo: null,
+        description: 'Search',
         categories: [],
+        isNoAuth: true,
+        connected: false,
       },
     ],
-    cursor: 'next-page',
-    totalPages: 2,
+    total: 1,
+    hasMore: false,
   });
-  expect(calls).toEqual([
-    {
-      type: 'create',
-      userId: 'kortix-discovery:project-1',
-      config: { manageConnections: false, sandbox: { enable: false } },
-    },
-    {
-      type: 'toolkits',
-      options: { search: 'search', cursor: 'cursor-1', limit: 20 },
-    },
-  ]);
+  expect(calls).toEqual([{ limit: 1000, sort_by: 'usage' }]);
 });
 
 test('composioCatalogPage applies category filtering to the provider catalogue', async () => {
@@ -600,26 +590,31 @@ test('composioCatalogPage applies category filtering to the provider catalogue',
     projectId: 'project-1',
     q: 'mail',
     category: 'productivity',
-    cursor: 'cursor-1',
     limit: 20,
-    runtime: fakeRuntime({
-      calls,
-      catalogPage: [
-        {
-          slug: 'gmail',
-          name: 'Gmail',
-          noAuth: false,
-          meta: {
-            logo: 'https://cdn.example.test/gmail.svg',
-            description: 'Email',
-            categories: [{ slug: 'productivity', name: 'Productivity' }],
-          },
+    catalogClient: {
+      toolkits: {
+        async list(query) {
+          calls.push(query);
+          return {
+            items: [
+              {
+                slug: 'gmail',
+                name: 'Gmail',
+                no_auth: false,
+                meta: {
+                  logo: 'https://cdn.example.test/gmail.svg',
+                  description: 'Email',
+                  categories: [{ id: 'productivity', name: 'Productivity' }],
+                },
+              },
+            ],
+          };
         },
-      ],
-    }),
+      },
+    },
   });
 
-  expect(calls).toEqual([{ type: 'catalog', query: { category: 'productivity', limit: 1000 } }]);
+  expect(calls).toEqual([{ limit: 1000, sort_by: 'usage' }]);
   expect(result).toEqual({
     provider: 'composio',
     toolkits: [
@@ -738,58 +733,82 @@ test('gateway executes Composio with selected-row metadata and never exposes a s
   expect(JSON.stringify(executions)).not.toContain('COMPOSIO_API_KEY');
 });
 
-test('composioCatalogPage enriches the paged catalogue with the metadata that page omits', async () => {
-  // `session.toolkits()` returns no description and no categories, so every card
-  // fell into the client's synthetic "Other" bucket and opening it asked for
-  // `category=Other` — a category no provider has. The page then reported the
-  // catalogue as unavailable while showing it.
+test('Composio discovery indexes every provider page before filtering and pagination', async () => {
   const calls: Array<Record<string, unknown>> = [];
-  const created = session({ toolkit: { slug: 'gmail', name: 'Gmail', isNoAuth: false } });
-  created.toolkits = async (options) => {
-    calls.push({ type: 'toolkits', options });
-    return {
-      items: [
-        { slug: 'gmail', name: 'Gmail', isNoAuth: false },
-        { slug: 'beyond_the_metadata_cap', name: 'Uncatalogued', isNoAuth: true },
-      ],
-      totalPages: 1,
-    };
+  const item = (slug: string, category: string) => ({
+    slug,
+    name: slug,
+    meta: { description: slug, categories: [{ id: category, name: category }] },
+  });
+  const catalogClient = {
+    toolkits: {
+      async list(query: Record<string, unknown>) {
+        calls.push(query);
+        return query.cursor === 'provider-page-2'
+          ? { items: [item('notion', 'productivity')] }
+          : {
+              items: [item('slack', 'team-chat'), item('gmail', 'productivity')],
+              next_cursor: 'provider-page-2',
+            };
+      },
+    },
   };
-
-  const result = await composioCatalogPage({
+  const first = await composioCatalogPage({
     projectId: 'project-1',
-    runtime: fakeRuntime({
-      created,
-      calls,
-      catalogPage: [
-        {
-          slug: 'gmail',
-          name: 'Gmail',
-          noAuth: false,
-          meta: {
-            description: 'Google email',
-            categories: [
-              { slug: 'email', name: 'email' },
-              { slug: 'productivity', name: 'productivity' },
-            ],
-          },
-        },
-      ],
-    }),
+    limit: 1,
+    catalogClient,
   });
+  expect(first.toolkits.map((toolkit) => toolkit.slug)).toEqual(['gmail']);
+  expect(first.total).toBe(2);
+  expect(first.hasMore).toBe(true);
+  expect(first.nextCursor).toBeString();
 
-  if (!('items' in result)) throw new Error('expected the paged browse shape');
-  const items = result.items;
-  expect(items[0]).toMatchObject({
-    slug: 'gmail',
-    description: 'Google email',
-    categories: ['email', 'productivity'],
+  const second = await composioCatalogPage({
+    projectId: 'project-1',
+    limit: 1,
+    cursor: first.nextCursor,
+    catalogClient,
   });
-  // Past the provider's 1000-toolkit metadata cap there is nothing to enrich
-  // with. The card still ships, uncategorized, rather than being dropped.
-  expect(items[1]).toMatchObject({
-    slug: 'beyond_the_metadata_cap',
-    description: null,
-    categories: [],
+  expect(second.toolkits.map((toolkit) => toolkit.slug)).toEqual(['notion']);
+  expect(second.hasMore).toBe(false);
+  expect(calls).toEqual([
+    { limit: 1000, sort_by: 'usage' },
+    { limit: 1000, sort_by: 'usage', cursor: 'provider-page-2' },
+  ]);
+});
+
+test('Composio discovery sections expose complete counts and no Team Chat toolkits', async () => {
+  const item = (slug: string, category: string) => ({
+    slug,
+    name: slug,
+    meta: { description: slug, categories: [{ id: category, name: category }] },
   });
+  const result = await composioCatalogSections({
+    perCategory: 1,
+    maxCategories: 12,
+    catalogClient: {
+      toolkits: {
+        async list() {
+          return {
+            items: [
+              item('slack', 'team-chat'),
+              item('gmail', 'productivity'),
+              item('notion', 'productivity'),
+            ],
+          };
+        },
+      },
+    },
+  });
+  expect(result.sections).toEqual([
+    {
+      key: 'productivity',
+      label: 'productivity',
+      total: 2,
+      toolkits: [expect.objectContaining({ slug: 'gmail' })],
+    },
+  ]);
+  expect(result.categories).toEqual([{ key: 'productivity', label: 'productivity', count: 2 }]);
+  expect(JSON.stringify(result)).not.toContain('slack');
+  expect(JSON.stringify(result)).not.toContain('team-chat');
 });

@@ -4,6 +4,7 @@ import {
   type ToolRouterSessionExecuteResponse,
   type ToolkitConnectionsDetails,
 } from '@composio/core';
+import ComposioClient from '@composio/client';
 import { HTTPException } from 'hono/http-exception';
 import type { ExecResult } from './call';
 import type { ComposioToolLike } from './types';
@@ -90,6 +91,7 @@ export interface ComposioFinalizeResult {
 }
 
 let runtime: ComposioRuntime | null = null;
+let catalogClient: ComposioCatalogClient | null = null;
 
 export function composioConfigured(): boolean {
   return !!process.env.COMPOSIO_API_KEY;
@@ -119,8 +121,19 @@ export function getComposioRuntime(): ComposioRuntime {
   return runtime;
 }
 
+function getComposioCatalogClient(): ComposioCatalogClient {
+  if (!composioConfigured()) throw new Error('Composio is not configured (set COMPOSIO_API_KEY)');
+  if (!catalogClient) {
+    catalogClient = new ComposioClient({
+      apiKey: process.env.COMPOSIO_API_KEY,
+    }) as ComposioCatalogClient;
+  }
+  return catalogClient;
+}
+
 export function setComposioRuntimeForTest(next: ComposioRuntime | null): void {
   runtime = next;
+  if (next === null) catalogClient = null;
 }
 
 function directSessionConfig(toolkit: string, connectedAccountId?: string | null): ToolRouterCreateSessionConfig {
@@ -164,72 +177,146 @@ function activeConnectedAccountId(
   return state.connection?.isActive === true ? state.connection.connectedAccount?.id : undefined;
 }
 
-/**
- * Description + categories for every toolkit, keyed by slug.
- *
- * The paged browse endpoint (`session.toolkits()`) returns only
- * `{slug, name, logo, isNoAuth, connection}` — no description and no
- * categories. The catalogue page grouped those items into sections by category,
- * so every toolkit fell into the client's synthetic "Other" bucket, and opening
- * it asked this route for `category=Other`, which is not a Composio category and
- * answered zero. The page then said "Catalogue unavailable" over a catalogue
- * that had just rendered.
- *
- * `toolkits.get()` carries both fields, so the page is enriched from it rather
- * than served by it: that endpoint caps at 1000 toolkits while the catalogue is
- * ~1400, and it publishes no cursor, so it cannot page.
- *
- * Cached per runtime because it is one 800ms request for data that changes when
- * Composio adds an app, not per user. A failure resolves to an empty map and
- * leaves the page unenriched — a card with no description beats no card.
- */
-interface ToolkitMeta {
-  description: string | null;
-  categories: string[];
+interface ComposioCatalogToolkit {
+  slug: string;
+  name: string;
+  no_auth?: boolean;
+  meta: {
+    logo?: string | null;
+    description?: string | null;
+    categories?: Array<{ id: string; name: string }>;
+  };
 }
 
-/**
- * The paged browse response, plus the two fields the provider's paged endpoint
- * omits. Declared rather than inferred so a caller that groups by `categories`
- * cannot compile against a page that never carries them.
- */
-export type EnrichedToolkitConnectionsPage = Omit<ToolkitConnectionsDetails, 'items'> & {
-  items: Array<ToolkitConnectionsDetails['items'][number] & ToolkitMeta>;
-};
+interface ComposioCatalogPage {
+  items: ComposioCatalogToolkit[];
+  next_cursor?: string | null;
+}
 
-const TOOLKIT_META_TTL_MS = 6 * 60 * 60_000;
+export interface ComposioCatalogClient {
+  toolkits: {
+    list(query: {
+      limit: number;
+      sort_by: 'usage';
+      cursor?: string;
+    }): Promise<ComposioCatalogPage>;
+  };
+}
 
-const toolkitMetaCache = new WeakMap<
-  ComposioRuntime,
-  { at: number; bySlug: Promise<Map<string, ToolkitMeta>> }
+export interface ComposioCatalogEntry {
+  slug: string;
+  name: string;
+  logo: string | null;
+  description: string | null;
+  categories: string[];
+  isNoAuth: boolean;
+  connected: false;
+}
+
+export interface ComposioCatalogCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+interface ComposioCatalogSnapshot {
+  toolkits: ComposioCatalogEntry[];
+  categoryLabels: Map<string, string>;
+}
+
+const COMPOSIO_CATALOG_TTL_MS = 6 * 60 * 60_000;
+const TEAM_CHAT_CATEGORY = 'team-chat';
+const catalogCache = new WeakMap<
+  ComposioCatalogClient,
+  { at: number; snapshot: Promise<ComposioCatalogSnapshot> }
 >();
 
-async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, ToolkitMeta>> {
-  const cached = toolkitMetaCache.get(runtime);
-  if (cached && Date.now() - cached.at < TOOLKIT_META_TTL_MS) return cached.bySlug;
-  if (!runtime.toolkits) return new Map();
+function normalizeCatalogToolkit(toolkit: ComposioCatalogToolkit): ComposioCatalogEntry {
+  return {
+    slug: toolkit.slug,
+    name: toolkit.name,
+    logo: toolkit.meta.logo ?? null,
+    description: toolkit.meta.description ?? null,
+    categories: (toolkit.meta.categories ?? []).map((category) => category.id),
+    isNoAuth: toolkit.no_auth === true,
+    connected: false,
+  };
+}
 
-  const bySlug = (async () => {
-    const page = await runtime.toolkits!.get({ limit: 1000 });
-    const map = new Map<string, ToolkitMeta>();
-    for (const toolkit of page) {
-      map.set(toolkit.slug.toLowerCase(), {
-        description: toolkit.meta?.description ?? null,
-        categories: (toolkit.meta?.categories ?? []).map((category) => category.slug),
-      });
-    }
-    return map;
-  })();
-  toolkitMetaCache.set(runtime, { at: Date.now(), bySlug });
-  try {
-    return await bySlug;
-  } catch (err) {
-    // Drop the poisoned entry so the next request retries instead of serving the
-    // rejection for the whole TTL.
-    toolkitMetaCache.delete(runtime);
-    console.warn('[composio] toolkit metadata unavailable, serving catalogue unenriched:', err);
-    return new Map();
+async function buildCatalogSnapshot(
+  client: ComposioCatalogClient,
+): Promise<ComposioCatalogSnapshot> {
+  const raw: ComposioCatalogToolkit[] = [];
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await client.toolkits.list({
+      limit: 1000,
+      sort_by: 'usage',
+      ...(cursor ? { cursor } : {}),
+    });
+    raw.push(...page.items);
+    const next = page.next_cursor?.trim() || undefined;
+    if (next && cursors.has(next)) throw new Error('Composio toolkit catalogue repeated a cursor');
+    if (next) cursors.add(next);
+    cursor = next;
+  } while (cursor);
+
+  const categoryLabels = new Map<string, string>();
+  const seen = new Set<string>();
+  const toolkits: ComposioCatalogEntry[] = [];
+  for (const toolkit of raw) {
+    const categories = toolkit.meta.categories ?? [];
+    if (categories.some((category) => category.id.toLowerCase() === TEAM_CHAT_CATEGORY)) continue;
+    const slug = toolkit.slug.toLowerCase();
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    for (const category of categories) categoryLabels.set(category.id, category.name);
+    toolkits.push(normalizeCatalogToolkit(toolkit));
   }
+  return { toolkits, categoryLabels };
+}
+
+async function composioCatalogSnapshot(
+  client: ComposioCatalogClient,
+): Promise<ComposioCatalogSnapshot> {
+  const cached = catalogCache.get(client);
+  if (cached && Date.now() - cached.at < COMPOSIO_CATALOG_TTL_MS) return cached.snapshot;
+  const snapshot = buildCatalogSnapshot(client);
+  catalogCache.set(client, { at: Date.now(), snapshot });
+  try {
+    return await snapshot;
+  } catch (error) {
+    catalogCache.delete(client);
+    throw error;
+  }
+}
+
+function catalogCursor(offset: number): string {
+  return Buffer.from(String(offset)).toString('base64url');
+}
+
+function catalogOffset(cursor?: string): number {
+  if (!cursor) return 0;
+  try {
+    const value = Buffer.from(cursor, 'base64url').toString('utf8');
+    return /^\d+$/.test(value) ? Number(value) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function filterCatalog(toolkits: ComposioCatalogEntry[], input: { q?: string; category?: string }) {
+  const query = input.q?.trim().toLowerCase();
+  const category = input.category?.trim().toLowerCase();
+  return toolkits.filter((toolkit) => {
+    if (category && !toolkit.categories.some((item) => item.toLowerCase() === category))
+      return false;
+    return (
+      !query ||
+      `${toolkit.name} ${toolkit.slug} ${toolkit.description ?? ''}`.toLowerCase().includes(query)
+    );
+  });
 }
 
 export async function composioCatalogPage(input: {
@@ -239,81 +326,65 @@ export async function composioCatalogPage(input: {
   cursor?: string;
   limit?: number;
   runtime?: ComposioRuntime;
-}): Promise<
-  | EnrichedToolkitConnectionsPage
-  | {
-      provider: 'composio';
-      toolkits: Array<{
-        slug: string;
-        name: string;
-        logo: string | null;
-        description: string | null;
-        categories: string[];
-        isNoAuth: boolean;
-        connected: boolean;
-      }>;
-      total: number;
-      hasMore: false;
-    }
-> {
-  const runtime = input.runtime ?? getComposioRuntime();
-  const category = input.category?.trim();
-  if (category) {
-    if (!runtime.toolkits) throw new Error('Composio toolkit catalogue is unavailable');
-    const page = await runtime.toolkits.get({
-      category,
-      // The core SDK intentionally drops the provider cursor from this endpoint.
-      // Fetch the complete category so "View all" never becomes a first-page slice.
-      limit: 1000,
-    });
-    const search = input.q?.trim().toLowerCase();
-    const toolkits = search
-      ? page.filter((toolkit) =>
-          `${toolkit.name} ${toolkit.slug} ${toolkit.meta.description ?? ''}`
-            .toLowerCase()
-            .includes(search),
-        )
-      : page;
-    return {
-      provider: 'composio',
-      toolkits: toolkits.map((toolkit) => ({
-        slug: toolkit.slug,
-        name: toolkit.name,
-        logo: toolkit.meta.logo ?? null,
-        description: toolkit.meta.description ?? null,
-        categories: (toolkit.meta.categories ?? []).map((item) => item.slug),
-        isNoAuth: toolkit.noAuth === true,
-        connected: false,
-      })),
-      total: toolkits.length,
-      hasMore: false,
-    };
-  }
-  const session = await runtime.sessions.create(`kortix-discovery:${input.projectId}`, {
-    manageConnections: false,
-    sandbox: { enable: false },
-  });
-  const [page, meta] = await Promise.all([
-    session.toolkits({
-      ...(input.q?.trim() ? { search: input.q.trim() } : {}),
-      ...(input.cursor ? { cursor: input.cursor } : {}),
-      ...(input.limit != null ? { limit: input.limit } : {}),
-    }),
-    toolkitMetaBySlug(runtime),
-  ]);
-  // Enriched in place so the paged shape (`items` + `cursor`) is unchanged and
-  // the SDK's existing normalization still applies. A toolkit past the 1000-item
-  // metadata cap keeps the empty values it already had.
+  catalogClient?: ComposioCatalogClient;
+}): Promise<{
+  provider: 'composio';
+  toolkits: ComposioCatalogEntry[];
+  total: number;
+  nextCursor?: string;
+  hasMore: boolean;
+}> {
+  const snapshot = await composioCatalogSnapshot(input.catalogClient ?? getComposioCatalogClient());
+  const matches = filterCatalog(snapshot.toolkits, input);
+  const limit = Math.min(Math.max(input.limit ?? 48, 1), 100);
+  const offset = Math.min(catalogOffset(input.cursor), matches.length);
+  const nextOffset = offset + limit;
+  const hasMore = nextOffset < matches.length;
   return {
-    ...page,
-    items: page.items.map((item) => {
-      const enrichment = meta.get(item.slug.toLowerCase());
-      return {
-        ...item,
-        description: enrichment?.description ?? null,
-        categories: enrichment?.categories ?? [],
-      };
-    }),
+    provider: 'composio',
+    toolkits: matches.slice(offset, nextOffset),
+    total: matches.length,
+    ...(hasMore ? { nextCursor: catalogCursor(nextOffset) } : {}),
+    hasMore,
+  };
+}
+
+export async function composioCatalogSections(
+  input: {
+    perCategory?: number;
+    maxCategories?: number;
+    catalogClient?: ComposioCatalogClient;
+  } = {},
+): Promise<{
+  sections: Array<{ key: string; label: string; total: number; toolkits: ComposioCatalogEntry[] }>;
+  categories: ComposioCatalogCategory[];
+}> {
+  const snapshot = await composioCatalogSnapshot(input.catalogClient ?? getComposioCatalogClient());
+  const buckets = new Map<string, ComposioCatalogEntry[]>();
+  for (const toolkit of snapshot.toolkits) {
+    for (const category of toolkit.categories) {
+      const bucket = buckets.get(category) ?? [];
+      bucket.push(toolkit);
+      buckets.set(category, bucket);
+    }
+  }
+  const categories = [...buckets.entries()]
+    .map(([key, toolkits]) => ({
+      key,
+      label: snapshot.categoryLabels.get(key) ?? key,
+      count: toolkits.length,
+    }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  const perCategory = Math.min(Math.max(input.perCategory ?? 6, 1), 100);
+  const maxCategories = Math.min(Math.max(input.maxCategories ?? 12, 1), 100);
+  return {
+    sections: categories.slice(0, maxCategories).map((category) => ({
+      key: category.key,
+      label: category.label,
+      total: category.count,
+      toolkits: (buckets.get(category.key) ?? []).slice(0, perCategory),
+    })),
+    categories,
   };
 }
 

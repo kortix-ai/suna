@@ -1259,6 +1259,25 @@ export interface ConnectToolkitsQuery {
   limit?: number;
 }
 
+export interface ConnectToolkitSection {
+  key: string;
+  label: string;
+  /** The category's complete size. `toolkits` is a fixed browse-page slice. */
+  total: number;
+  toolkits: ConnectToolkit[];
+}
+
+export interface ConnectToolkitCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface ConnectToolkitSectionsPage {
+  sections: ConnectToolkitSection[];
+  categories: ConnectToolkitCategory[];
+}
+
 interface ConnectToolkitsWirePage {
   items: ConnectToolkit[];
   cursor?: string | null;
@@ -1292,6 +1311,22 @@ export async function listConnectToolkits(
     nextCursor,
     hasMore: Boolean(nextCursor),
   };
+}
+
+/** Load fixed Composio Discovery sections from the complete server-side index. */
+export async function listConnectToolkitSections(
+  projectId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<ConnectToolkitSectionsPage>(
+      `/connectors/projects/${projectId}/connect/sections${qs ? `?${qs}` : ''}`,
+    ),
+  );
 }
 
 export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli';

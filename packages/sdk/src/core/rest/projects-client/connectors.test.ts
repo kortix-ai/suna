@@ -17,6 +17,7 @@ import {
   getDiscoverConnector,
   listAllConnections,
   listConnections,
+  listConnectToolkitSections,
   listConnectToolkits,
   listConnectors,
   listDiscoverConnectors,
@@ -683,6 +684,24 @@ test('listConnectToolkits GETs the Composio-first toolkit catalog with paginatio
   expect(result.toolkits[0]?.slug).toBe('gmail');
   expect(result.nextCursor).toBe('cursor-2');
   expect(result.hasMore).toBe(true);
+});
+
+test('listConnectToolkitSections GETs complete Composio discovery sections', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      sections: [{ key: 'productivity', label: 'Productivity', total: 207, toolkits: [] }],
+      categories: [{ key: 'productivity', label: 'Productivity', count: 207 }],
+    },
+  };
+  const result = await listConnectToolkitSections('P1', {
+    perCategory: 6,
+    maxCategories: 12,
+  });
+  expect(last().url).toContain('/connectors/projects/P1/connect/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  expect(result.sections[0]?.total).toBe(207);
 });
 
 test('listPipedreamApps GETs with q + cursor as query params when given', async () => {

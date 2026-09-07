@@ -922,6 +922,7 @@ flow(
     routes: [
       'GET /v1/connectors/connect-status',
       'GET /v1/connectors/projects/:projectId/connect/toolkits',
+      'GET /v1/connectors/projects/:projectId/connect/sections',
       'POST /v1/connectors/projects/:projectId/connectors',
       'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
       'POST /v1/connectors/projects/:projectId/connectors/:slug/connect',
@@ -996,22 +997,75 @@ flow(
           }
           return;
         }
-        r.status(200).body().exists('$.items').exists('$.totalPages');
+        r.status(200)
+          .body()
+          .has('$.provider', 'composio')
+          .exists('$.toolkits')
+          .exists('$.total')
+          .exists('$.hasMore');
         const body = r.json<{
-          items: Array<{ slug?: string; name?: string; isNoAuth?: boolean }>;
+          toolkits: Array<{ slug?: string; name?: string; isNoAuth?: boolean }>;
         }>();
         if (
-          !body.items.some(
+          !body.toolkits.some(
             (item) =>
               item.slug === toolkit && item.name === 'Composio Search' && item.isNoAuth === true,
           )
         ) {
           throw new Error(
-            `Composio toolkit catalog omitted ${toolkit}: ${JSON.stringify(body.items.slice(0, 10))}`,
+            `Composio toolkit catalog omitted ${toolkit}: ${JSON.stringify(body.toolkits.slice(0, 10))}`,
           );
         }
       },
     );
+
+    await ctx.step(
+      'Composio Discovery sections use complete counts and exclude Team Chat',
+      async () => {
+        if (!composioConfigured) return;
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/connect/sections', {
+            params: { projectId: p.id },
+            query: { perCategory: '6', maxCategories: '12' },
+          });
+        r.status(200).body().exists('$.sections').exists('$.categories');
+        const body = r.json<{
+          sections: Array<{
+            key: string;
+            total: number;
+            toolkits: Array<{ slug: string; categories?: string[] }>;
+          }>;
+          categories: Array<{ key: string; count: number }>;
+        }>();
+        if (!body.sections.length) throw new Error('Composio Discovery returned no sections');
+        if (body.categories.some((category) => category.key === 'team-chat')) {
+          throw new Error('Composio Discovery exposed the Team Chat category');
+        }
+        if (!body.sections.some((section) => section.total > section.toolkits.length)) {
+          throw new Error('Composio Discovery section totals only describe the displayed slice');
+        }
+        const forbidden = body.sections
+          .flatMap((section) => section.toolkits)
+          .find((item) => item.categories?.includes('team-chat'));
+        if (forbidden)
+          throw new Error(`Composio Discovery exposed Team Chat toolkit ${forbidden.slug}`);
+      },
+    );
+
+    await ctx.step('Composio excludes Team Chat before category filtering', async () => {
+      if (!composioConfigured) return;
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/connect/toolkits', {
+          params: { projectId: p.id },
+          query: { category: 'team-chat', limit: '100' },
+        });
+      r.status(200).body().has('$.provider', 'composio').has('$.total', 0).has('$.hasMore', false);
+      if (r.json<{ toolkits: unknown[] }>().toolkits.length !== 0) {
+        throw new Error('Team Chat category returned toolkits');
+      }
+    });
 
     await ctx.step(
       'project REST rejects an accidental Pipedream declaration and persists nothing',
@@ -1082,7 +1136,7 @@ flow(
     );
 
     await ctx.step(
-      'Composio category filtering is provider-side and returns the complete category',
+      'Composio category filtering paginates the complete server-side index',
       async () => {
         if (!composioConfigured) return;
         const r = await ctx.client
@@ -1091,18 +1145,16 @@ flow(
             params: { projectId: p.id },
             query: { category: 'developer-tools', limit: '20' },
           });
-        r.status(200)
-          .body()
-          .has('$.provider', 'composio')
-          .has('$.hasMore', false)
-          .exists('$.toolkits');
+        r.status(200).body().has('$.provider', 'composio').exists('$.toolkits');
         const body = r.json<{
           toolkits: Array<{ slug?: string; categories?: string[] }>;
-          total?: number;
+          total: number;
+          hasMore: boolean;
+          nextCursor?: string;
         }>();
-        if (body.total !== body.toolkits.length) {
+        if (body.total < body.toolkits.length) {
           throw new Error(
-            `category total ${body.total} did not match ${body.toolkits.length} returned toolkits`,
+            `category total ${body.total} is smaller than ${body.toolkits.length} returned toolkits`,
           );
         }
         if (!body.toolkits.some((item) => item.slug === toolkit)) {
@@ -1112,6 +1164,9 @@ flow(
           throw new Error(
             'Composio returned an item outside the requested developer-tools category',
           );
+        }
+        if (body.hasMore && !body.nextCursor) {
+          throw new Error('Composio category page has more results but omitted nextCursor');
         }
       },
     );

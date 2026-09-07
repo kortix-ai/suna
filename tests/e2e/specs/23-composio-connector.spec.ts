@@ -104,6 +104,13 @@ test.describe("23 — Composio managed connector", () => {
         response.url().endsWith("/v1/connectors/connect-status") &&
         response.request().method() === "GET",
     );
+    const sectionsResponse = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .includes(`/v1/connectors/projects/${project.id}/connect/sections`) &&
+        response.request().method() === "GET",
+    );
     await page.goto(`/projects/${project.id}/customize/connectors`, {
       waitUntil: "domcontentloaded",
     });
@@ -120,6 +127,32 @@ test.describe("23 — Composio managed connector", () => {
       return;
     }
 
+    const sectionsHttp = await sectionsResponse;
+    expect(sectionsHttp.status()).toBe(200);
+    const sectionsBody = (await sectionsHttp.json()) as {
+      sections: Array<{
+        key: string;
+        total: number;
+        toolkits: Array<{ slug: string; categories?: string[] }>;
+      }>;
+      categories: Array<{ key: string; count: number }>;
+    };
+    expect(sectionsBody.sections.length).toBeGreaterThan(0);
+    expect(
+      sectionsBody.sections.some(
+        (section) => section.total > section.toolkits.length,
+      ),
+    ).toBe(true);
+    expect(
+      sectionsBody.categories.map((category) => category.key),
+    ).not.toContain("team-chat");
+    expect(
+      sectionsBody.sections
+        .flatMap((section) => section.toolkits)
+        .some((toolkit) => toolkit.categories?.includes("team-chat")),
+    ).toBe(false);
+    await expect(page.getByText(/^Team chat(?:\s|·|$)/i)).toHaveCount(0);
+
     const toolkitResponse = page.waitForResponse(
       (response) =>
         response
@@ -134,9 +167,9 @@ test.describe("23 — Composio managed connector", () => {
     expect(toolkitHttp.status()).toBe(200);
     const toolkitBody = (await toolkitHttp.json()) as {
       provider?: string;
-      items?: Array<{ slug?: string; name?: string; isNoAuth?: boolean }>;
+      toolkits?: Array<{ slug?: string; name?: string; isNoAuth?: boolean }>;
     };
-    expect(toolkitBody.items).toContainEqual(
+    expect(toolkitBody.toolkits).toContainEqual(
       expect.objectContaining({
         slug: "composio_search",
         name: "Composio Search",
@@ -167,10 +200,11 @@ test.describe("23 — Composio managed connector", () => {
       .click();
     const createRequest = await createRequestPromise;
     const createBody = createRequest.postDataJSON() as Record<string, unknown>;
+    const createdSlug = String(createBody.slug ?? "");
+    expect(createdSlug).toMatch(/^composio-search(?:-[a-z0-9]+)?$/);
     expect(createBody).toEqual(
       expect.objectContaining({
         name: "Composio Search",
-        slug: "composio-search",
         provider: "composio",
         app: "composio_search",
         authorization_strategy: "project",
@@ -183,7 +217,7 @@ test.describe("23 — Composio managed connector", () => {
     expect((await createResponsePromise).status()).toBe(200);
 
     await expect(page).toHaveURL(new RegExp(`[?&]scope=connected(?:&|$)`));
-    await expect(page).toHaveURL(new RegExp(`[?&]c=composio-search(?:&|$)`));
+    await expect(page).toHaveURL(new RegExp(`[?&]c=${createdSlug}(?:&|$)`));
     const detail = page.getByRole("dialog", { name: "Composio Search" });
     await expect(detail).toBeVisible();
     await expect(
@@ -195,7 +229,7 @@ test.describe("23 — Composio managed connector", () => {
         request
           .url()
           .endsWith(
-            `/v1/connectors/projects/${project.id}/connectors/composio-search/connect`,
+            `/v1/connectors/projects/${project.id}/connectors/${createdSlug}/connect`,
           ) && request.method() === "POST",
     );
     const connectResponsePromise = page.waitForResponse(
@@ -203,7 +237,7 @@ test.describe("23 — Composio managed connector", () => {
         response
           .url()
           .endsWith(
-            `/v1/connectors/projects/${project.id}/connectors/composio-search/connect`,
+            `/v1/connectors/projects/${project.id}/connectors/${createdSlug}/connect`,
           ) && response.request().method() === "POST",
     );
     await detail.getByRole("button", { name: "Connect", exact: true }).click();
@@ -240,7 +274,7 @@ test.describe("23 — Composio managed connector", () => {
     );
     const connection = connections.connections.find(
       (item) =>
-        item.connector_alias === "composio-search" &&
+        item.connector_alias === createdSlug &&
         item.owner_type === "project" &&
         item.is_default,
     );

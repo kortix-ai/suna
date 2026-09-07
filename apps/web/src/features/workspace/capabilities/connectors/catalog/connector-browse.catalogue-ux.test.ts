@@ -179,6 +179,7 @@ describe('the catalogue reaches the whole catalogue', () => {
     // "Marketing · 207" over six cards; deriving it from `items.length` would
     // put the loaded count back on the heading.
     expect(catalog).toContain('listPipedreamSections');
+    expect(catalog).toContain('listConnectToolkitSections');
     expect(browse).toContain('section.total');
     expect(browse).toContain('section.total > section.items.length');
   });
