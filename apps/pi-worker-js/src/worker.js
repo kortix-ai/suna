@@ -134,6 +134,11 @@ function toolsFor(env, sessionId, sql) {
  * Explicit MODEL_* always wins, so a bench, a suite or an operator can pin a
  * model without the platform's names getting in the way.
  */
+// The model a gateway session falls back to when the platform names none.
+// Measured against the dev gateway on 2026-09-07: this one answers 200 with a
+// completion, and an empty model answers 400 `model_not_found`.
+const GATEWAY_FALLBACK_MODEL = "glm-5.3-flash";
+
 function normalizeModelEnv(env) {
   // `??` IS THE WRONG OPERATOR HERE, and it cost a whole session.
   //
@@ -176,15 +181,25 @@ function normalizeModelEnv(env) {
     MODEL_PROVIDER: platform
       ? pick(env.KORTIX_PROVIDER, key ? "openrouter" : undefined)
       : pick(env.MODEL_PROVIDER),
-    // NO NODE FALLBACK FOR THE MODEL ID when the platform is driving. The
-    // node's is a bench value, and a bench value is not a smaller mistake than
-    // none — `gpt-5.6-luna` resolves to provider `openai-codex` and the Codex
-    // Responses API, which the Kortix gateway does not speak, so the turn ran
-    // and returned empty content and zero tokens (dev 2026-09-07, sessions
-    // 6342be82 and 84d46f1e). Unset lets the gateway choose, which is what
-    // kortix-worker does: `modelId: process.env.KORTIX_MODEL`, and nothing
-    // else.
-    MODEL_ID: platform ? pick(env.KORTIX_MODEL) : pick(env.MODEL_ID),
+    // NO NODE FALLBACK FOR THE MODEL ID when the platform is driving — the
+    // node's is a bench value, and `gpt-5.6-luna` resolves to the Codex
+    // Responses API, which the gateway does not speak (dev 2026-09-07: turns
+    // ran to `done` with empty content and zero tokens).
+    //
+    // BUT UNSET IS NOT A CHOICE THE GATEWAY ACCEPTS. Asked directly with a
+    // session's own credential it answers 400 `"" is not a recognized model`,
+    // and with a model it answers 200 and a completion. So "let the gateway
+    // decide" was not an option that existed; it was an empty string in a
+    // required field, and the turn came back empty because the request was
+    // refused before it ever reached a model.
+    //
+    // The platform's model is used when it names one. When it does not, this
+    // names one the gateway serves rather than sending nothing — overridable,
+    // because which model a deployment defaults to is a product decision and
+    // not this file's to fix forever.
+    MODEL_ID: platform
+      ? pick(env.KORTIX_MODEL, env.KORTIX_DEFAULT_MODEL, GATEWAY_FALLBACK_MODEL)
+      : pick(env.MODEL_ID),
     MODEL_BASE_URL: gateway,
     MODEL_API_KEY: key,
   };

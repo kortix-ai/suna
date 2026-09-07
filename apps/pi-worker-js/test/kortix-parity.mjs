@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=47
+// EXPECTED_PASSES=48
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -302,6 +302,13 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
       bm.active?.provider !== "openai-codex", JSON.stringify(bm.active));
     check("with a gateway and no platform model, the node's bench id is NOT used",
       nm.active === "scripted" || nm.active?.id !== "gpt-5.6-luna", JSON.stringify(nm.active));
+    // AND IT IS NEVER EMPTY. Asked directly with a session's credential the
+    // gateway answers 400 `"" is not a recognized model` — so "let the gateway
+    // decide" was an empty string in a required field, and every turn came back
+    // empty because the request was refused before it reached a model
+    // (dev 2026-09-07).
+    check("a gateway session always NAMES a model — an empty one is a 400, not a default",
+      typeof nm.active?.id === "string" && nm.active.id.length > 0, JSON.stringify(nm.active));
     check("the PLATFORM's model wins over the node's bench default when a gateway is driving",
       m.active?.id === "glm-5.3-flash", JSON.stringify(m.active));
     check("and its provider does too, so the call is the shape the gateway speaks",
