@@ -1,6 +1,53 @@
 import { expect, test } from 'bun:test';
 import { fixture, questions } from './interactive-recovery-fixture.ts';
 
+test('a later question with a reused native call ID receives a new answer and survives replacement', async () => {
+  const f = await fixture({ repeatedQuestionCallId: true });
+  try {
+    const first = await f.start();
+    await first.call(`/session/${f.sessionID}/prompt_async`, {
+      parts: [{ type: 'text', text: 'Ask twice.' }],
+    });
+    const [earlier] = await f.until(
+      () => first.read('/question'),
+      (value) => value.length === 1,
+    );
+    expect(
+      (await first.call(`/question/${earlier.id}/reply`, { answers: [['Blue']] })).status,
+    ).toBe(200);
+    const [later] = await f.until(
+      () => first.read('/question'),
+      (value) => value.length === 1 && value[0].id !== earlier.id,
+    );
+    expect(later.tool.messageID).not.toBe(earlier.tool.messageID);
+    expect(f.providerRequests).toHaveLength(2);
+    first.child.kill('SIGKILL');
+    await first.child.exited;
+    const replacement = await f.start();
+    expect(
+      await f.until(
+        () => replacement.read('/question'),
+        (value) => value.length === 1,
+      ),
+    ).toEqual([later]);
+    expect(
+      (await replacement.call(`/question/${later.id}/reply`, { answers: [['Green']] })).status,
+    ).toBe(200);
+    const messages = await f.until(
+      () => replacement.read(`/session/${f.sessionID}/message`),
+      (value) => value.some((m: any) => m.parts.some((p: any) => p.text === 'QUESTION_RECOVERED')),
+    );
+    const tools = messages
+      .flatMap((m: any) => m.parts)
+      .filter((p: any) => p.type === 'tool' && p.tool === 'question');
+    expect(tools.map((p: any) => p.state.metadata.answers)).toEqual([[['Blue']], [['Green']]]);
+    expect(f.effects).toEqual(['BEFORE_QUESTION', 'AFTER_QUESTION']);
+    expect(f.providerRequests).toHaveLength(3);
+  } finally {
+    await f.cleanup();
+  }
+}, 15000);
+
 test('a killed worker restores the question without repeating the preceding shell action or model request', async () => {
   const f = await fixture();
   try {

@@ -18,6 +18,22 @@ const request = {
   ],
   tool: { messageID: 'msg_assistant', callID: 'msg_assistant-p0' },
 };
+
+test('a later assistant batch can reuse a native question call ID without reusing the old answer', async () => {
+  const { store } = setup();
+  await store.open('msg_user', 'native_call', request);
+  await store.resolve(request.id, { answers: [['Blue']] });
+  await store.release(request.id);
+  const later = {
+    ...request,
+    id: 'que_later',
+    tool: { messageID: 'msg_later', callID: 'msg_later-p0' },
+  };
+  expect(await store.open('msg_user', 'native_call', later)).toMatchObject({
+    request: later,
+    resolution: null,
+  });
+});
 function setup(items: SessionLogItem[] = []) {
   const log = {
     read: async () => structuredClone(items),

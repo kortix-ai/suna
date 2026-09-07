@@ -191,3 +191,32 @@ browser suite passes 19/19 without retries in 180.1 seconds.
 
 Replacement also settles the previously stalled test session while preserving
 its complete 18-message transcript and existing MessageAbortedError.
+
+
+## Pending permissions across replacement
+
+Commit `0e9551eb73857ee9c31f81773b87b2f977b4ce88` persists each permission stage
+and its response before acknowledgment. The local root command passes all lanes
+in 57.6 seconds: 395/395 REST/CLI flows and 549 worker tests across 67 files, with
+2,876 worker assertions. Eleven child-process crash scenarios cover staged
+approvals, saved once/always/reject responses, Stop, another worker's queue,
+repeated-tool guards, and an uncertain release write.
+
+Deployment [34164573615](https://github.com/kortix-ai/suna/actions/runs/34164573615)
+succeeds and public health serves that SHA. In session
+`75e1d343-af9b-4d82-a824-83e06da724ac`, a primary command approval commits before
+an external-directory permission blocks the same invocation. Restart returns
+202. A different owner restores request `per_6c866490dcc3487b8a1db637c0d87c7a`
+after 72.5 seconds, preserving both message IDs and the earlier one-time approval.
+
+The file remains absent before approval and after replacement. The browser
+posts `{ "reply": "once" }` with HTTP 200. The resulting file contains exactly
+one marker, the tool completes, and active turns become zero. Reload preserves
+the exact transcript. All 34 failed browser requests occur during the deliberate
+restart; none is an authentication rejection.
+
+The first browser attempt needed a specific selector because permission controls
+appear in both the tool result and the composer. The next attempt exposed a
+wildcard mismatch for a literal newline. Approval of that primary request then
+verified recovery of the following external-directory stage. The wildcard
+regression fails locally before its follow-up fix and passes afterward.

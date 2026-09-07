@@ -5186,3 +5186,18 @@ approval, before HTTP acknowledgment, and after execution release. It checks
 primary/external-directory/doom-loop stages, saved responses, Stop, queue recovery,
 wire identity, and exact side-effect counts. Broker tests keep failed responses
 pending; checkpoint tests reject conflicting transitions and cross-tool reuse.
+
+
+## 2026-09-08 — Match runtime identity and permission rules at their actual scope
+
+Scope a native tool-call ID to its assistant message, not the whole user turn.
+A provider can reuse a call ID in a later response. Preserve a separate request
+and answer for that new invocation. Permission wildcard rules must match line
+breaks, normalize separators, and accept the bare command for a trailing ` *`.
+
+Incident: checkpoint replay rejected a later question whose provider reused an
+ID. A live permission recovery test also asked for bash approval despite an
+allow-all rule because the command contained a literal newline.
+Automation: checkpoint and child-process HTTP tests restore the second question
+with a distinct answer. `permission-wildcard.test.ts` covers multiline allow and
+deny rules, rule precedence, command arguments, separators, and literal regex text.

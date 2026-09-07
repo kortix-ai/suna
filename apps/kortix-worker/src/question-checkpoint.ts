@@ -116,7 +116,10 @@ export class QuestionCheckpointStore {
       const request = requestValue(input);
       const values = reduce(await this.log.read());
       const previous = [...values.values()].find(
-        (value) => value.turnMessageId === turnMessageId && value.toolCallId === toolCallId,
+        (value) =>
+          value.turnMessageId === turnMessageId &&
+          value.toolCallId === toolCallId &&
+          isDeepStrictEqual(value.request.tool, request.tool),
       );
       if (previous) {
         if (

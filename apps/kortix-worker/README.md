@@ -105,6 +105,11 @@ stays pending and the tool does not run. Retrying the reply uses the same
 idempotency key. Stop still cancels the blocked tool during a pending save.
 Rejected and one-time replies do not create durable grants.
 
+Permission wildcards match multiline commands and normalize path separators.
+A rule ending in ` *` matches its bare command as well as its arguments. Rule
+ordering remains significant: the last matching rule wins. These semantics
+match [OpenCode's wildcard implementation](https://github.com/anomalyco/opencode/blob/v1.18.23/packages/opencode/src/util/wildcard.ts).
+
 Pending permission continuations also survive worker replacement. Before showing
 a request, the worker saves its native tool batch, request ID, and authorization
 stage. Primary, external-directory, and repeated-tool approvals remain distinct.
@@ -150,6 +155,10 @@ fence precedes the next tool or model boundary. A crash after release uses the
 ordinary interrupted-turn recovery; it never repeats an uncertain side effect.
 A crash before an answer's HTTP acknowledgment restores the committed answer
 without asking the user again. Invalid or conflicting checkpoints fail closed.
+
+A native tool-call ID is scoped to its assistant message. A later provider
+response can reuse that ID; its question receives a new request and answer.
+Recovery preserves both questions instead of reusing the earlier response.
 
 ## Turn admission and recovery
 

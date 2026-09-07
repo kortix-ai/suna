@@ -27,13 +27,18 @@ function isPermissionAction(value: unknown): value is PermissionAction {
 }
 
 export function wildcardMatch(value: string, pattern: string): boolean {
+  const normalized = pattern.replaceAll('\\', '/');
+  const optionalArguments = normalized.endsWith(' *');
   let source = '^';
-  for (const character of pattern) {
+  for (const character of optionalArguments ? normalized.slice(0, -2) : normalized) {
     if (character === '*') source += '.*';
     else if (character === '?') source += '.';
     else source += character.replace(/[\\^$+?.()|{}[\]]/g, '\\$&');
   }
-  return new RegExp(`${source}$`, 'u').test(value);
+  if (optionalArguments) source += '(?: .*)?';
+  return new RegExp(`${source}$`, process.platform === 'win32' ? 'si' : 's').test(
+    value.replaceAll('\\', '/'),
+  );
 }
 
 export function permissionRulesFromConfig(config: PermissionConfig): PermissionRule[] {

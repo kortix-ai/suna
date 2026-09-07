@@ -20,6 +20,7 @@ export async function fixture(
     pause?: 'resolved' | 'released';
     steps?: number;
     repeatedCallId?: boolean;
+    repeatedQuestionCallId?: boolean;
     secondQuestion?: boolean;
     continuedDoom?: boolean;
     rejectPermissionRelease?: boolean;
@@ -84,7 +85,9 @@ export async function fixture(
         }
         if (options.secondQuestion) calls.push(['question', { questions }]);
         const first = providerRequests.length === 1;
-        const repeat = options.repeatedCallId && providerRequests.length === 2;
+        const repeat =
+          (options.repeatedCallId || options.repeatedQuestionCallId) &&
+          providerRequests.length === 2;
         const delta = first
           ? {
               role: 'assistant',
@@ -101,11 +104,15 @@ export async function fixture(
                 tool_calls: [
                   {
                     index: 0,
-                    id: 'call_0',
+                    id: options.repeatedQuestionCallId ? 'call_1' : 'call_0',
                     type: 'function',
                     function: {
-                      name: 'bash',
-                      arguments: JSON.stringify({ command: 'NEW_BOUNDARY' }),
+                      name: options.repeatedQuestionCallId ? 'question' : 'bash',
+                      arguments: JSON.stringify(
+                        options.repeatedQuestionCallId
+                          ? { questions }
+                          : { command: 'NEW_BOUNDARY' },
+                      ),
                     },
                   },
                 ],
