@@ -3968,8 +3968,35 @@ describe("a part frame that beats its message frame never invents a role", () =>
 		// The net exists for a real assistant part that outran its own message
 		// frame, and that case is untouched: nothing here is waiting for an
 		// echo, so there is nothing the part could be mistaken for.
+		//
+		// A user message has to exist first. An assistant part is a REPLY, so a
+		// session with nothing to reply to cannot be what this net is for — see
+		// the empty-session test below.
+		useSyncStore.getState().applyEvent(infoFrame("msg_user00000001") as never);
 		useSyncStore.getState().applyEvent(partFrame("msg_assistant0001") as never);
-		expect(rolesById()).toEqual(["assistant:msg_assistant0001"]);
+		expect(rolesById()).toEqual(["user:msg_user00000001", "assistant:msg_assistant0001"]);
+	});
+
+	test("a part for an unknown message never opens a session with an assistant", () => {
+		// The project-home route: the prompt is a server-created inbox row, so
+		// this tab paints no optimistic message and `awaitsUserEcho` has nothing
+		// to see. The transcript is EMPTY, and the first thing to arrive is a
+		// part of the re-minted echo — carrying the USER's text. Inventing an
+		// assistant for it put the prompt on screen in the agent's voice beside
+		// its own queued bubble.
+		//
+		// A session cannot begin with an assistant turn. `message.part.delta`
+		// has guarded on exactly this since it was written ("only if the session
+		// already has a user message"); this is the same rule on the frame that
+		// actually creates the message.
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById()).toEqual([]);
+
+		// Not lost — the part is stored, and the info frame brings it in.
+		useSyncStore.getState().applyEvent(infoFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${REMINT}`]);
+		const parts = useSyncStore.getState().getMessages(S)[0]?.parts ?? [];
+		expect(parts.map((p) => (p as TextPart).text)).toEqual([TEXT]);
 	});
 
 	test("a send already confirmed does not keep suppressing the net", () => {

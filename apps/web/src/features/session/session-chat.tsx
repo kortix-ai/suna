@@ -83,6 +83,7 @@ import {
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
 import {
   resolveFirstPromptHandover,
   transcriptCarriesFirstPrompt,
@@ -2843,6 +2844,57 @@ export function SessionChat({
     }
     return ids;
   }, [messages, sessionId, promptInbox.prompts]);
+  /**
+   * The transcript's ONE user message, when there is exactly one, this tab did
+   * not paint it, and nothing has answered it yet — the only shape in which a
+   * row can be claimed by elimination. See `claimFirstTurnRow`.
+   */
+  const onlyUnansweredUserMessage = useMemo(() => {
+    const store = useSessionStateStore.getState();
+    let only: { id: string } | null = null;
+    let users = 0;
+    let answered = false;
+    for (const message of messages ?? []) {
+      if (message.info.role === 'assistant') {
+        answered = true;
+        continue;
+      }
+      if (message.info.role !== 'user') continue;
+      users += 1;
+      only = store.isOptimisticMessage(sessionId, message.info.id)
+        ? null
+        : { id: message.info.id };
+    }
+    return users === 1 && !answered ? only : null;
+  }, [messages, sessionId]);
+  /**
+   * The row whose message is on screen under an id the row has not reported
+   * yet — the re-mint window. Claimed by elimination, never by id; every
+   * refusal is documented in `claimFirstTurnRow`.
+   */
+  const firstTurnClaim = useMemo(
+    () =>
+      claimFirstTurnRow({
+        prompts: promptInbox.prompts,
+        onlyUserMessage: onlyUnansweredUserMessage,
+        claimedIds: transcriptUserMessageIds,
+      }),
+    [promptInbox.prompts, onlyUnansweredUserMessage, transcriptUserMessageIds],
+  );
+  /**
+   * The claim's row ids folded into the SAME set every id-matching consumer
+   * reads, so one decision reaches all of them: `queuedSyntheticMessages` stops
+   * minting a second bubble, and `projectQueueRows` stops listing the row.
+   * Nothing downstream needed changing.
+   */
+  const transcriptClaimedIds = useMemo(() => {
+    if (!firstTurnClaim) return transcriptUserMessageIds;
+    const ids = new Set(transcriptUserMessageIds);
+    ids.add(firstTurnClaim.rowMessageId);
+    if (firstTurnClaim.rowWireMessageId) ids.add(firstTurnClaim.rowWireMessageId);
+    if (firstTurnClaim.rowClientMessageId) ids.add(firstTurnClaim.rowClientMessageId);
+    return ids;
+  }, [transcriptUserMessageIds, firstTurnClaim]);
   // The row names the re-minted id, and it is the ONLY thing that does: the
   // runtime's echo carries no client id, and this tab strips the part ids that
   // would otherwise correlate it. So every prompt in the inbox announces its
@@ -2880,20 +2932,27 @@ export function SessionChat({
         if (wireEcho) byId.set(wireEcho, prompt);
       }
     }
+    // The bubble claimed by elimination carries its row's chrome too — the X,
+    // send-now, retry and any error. Hiding the duplicate must not cost the
+    // surviving copy the controls the row is the only source of.
+    if (firstTurnClaim) {
+      const claimed = promptInbox.prompts.find((p) => p.prompt_id === firstTurnClaim.promptId);
+      if (claimed) byId.set(firstTurnClaim.messageId, claimed);
+    }
     return byId;
     // `messages` is a dependency because the aliases this reads are registered
     // by the effect above, i.e. AFTER the render that first sees a row. The
     // store write that follows changes `messages`, which is what brings this
     // map back for the ids the alias just added.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promptInbox.prompts, sessionId, messages]);
+  }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
   const queueRows = useMemo(
     () =>
       projectQueueRows({
         prompts: promptInbox.prompts,
-        transcriptMessageIds: transcriptUserMessageIds,
+        transcriptMessageIds: transcriptClaimedIds,
       }),
-    [promptInbox.prompts, transcriptUserMessageIds],
+    [promptInbox.prompts, transcriptClaimedIds],
   );
   const queuedMessages = queueRows.queued;
   const failedQueuedMessages = queueRows.failed;
@@ -3238,8 +3297,8 @@ export function SessionChat({
     for (const prompt of promptInbox.prompts) {
       if (prompt.state === 'failed') continue;
       if (!prompt.text.trim()) continue;
-      if (prompt.message_id && transcriptUserMessageIds.has(prompt.message_id)) continue;
-      if (prompt.wire_message_id && transcriptUserMessageIds.has(prompt.wire_message_id)) continue;
+      if (prompt.message_id && transcriptClaimedIds.has(prompt.message_id)) continue;
+      if (prompt.wire_message_id && transcriptClaimedIds.has(prompt.wire_message_id)) continue;
       if (isOptimisticSessionPrompt(prompt)) continue; // painted by this tab already
       const id = prompt.message_id || `queued-${prompt.prompt_id}`;
       const sentAt =
@@ -3267,7 +3326,7 @@ export function SessionChat({
       } as unknown as NonNullable<typeof messages>[number]);
     }
     return out;
-  }, [promptInbox.prompts, transcriptUserMessageIds, sessionId]);
+  }, [promptInbox.prompts, transcriptClaimedIds, sessionId]);
   const rawTurns = useMemo(
     () =>
       messages || queuedSyntheticMessages.length > 0
@@ -3482,8 +3541,11 @@ export function SessionChat({
       if (prompt.message_id) ids.add(prompt.message_id);
       if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
     }
+    // …and the id the claimed row is actually on screen under, or the surviving
+    // bubble would read as running while the server still holds the prompt.
+    if (firstTurnClaim) ids.add(firstTurnClaim.messageId);
     return ids;
-  }, [promptInbox.prompts]);
+  }, [promptInbox.prompts, firstTurnClaim]);
   const workingTurn = useMemo(
     () => resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds }),
     [turns, working.turnId, unrunTurnIds],

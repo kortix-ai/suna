@@ -2506,12 +2506,29 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// miss on a list that is not id-sorted.
 				const exists = existingMsgs?.some((m) => m.id === part.messageID);
 				// The net for a part that outran its own message frame — but never
-				// over a send still waiting for its echo. `role: "assistant"` is a
-				// guess, and for the echo of a re-minted prompt it is a guess that
-				// puts the user's own words on screen twice, the second time in the
-				// agent's voice. See `awaitsUserEcho`. The part is stored either
-				// way; only the invented message waits for the frame that knows.
-				if (!exists && resolvedSessionID && !awaitsUserEcho(resolvedSessionID, part.messageID)) {
+				// over a send still waiting for its echo, and never as the FIRST
+				// message of a session. `role: "assistant"` is a guess, and for the
+				// echo of a re-minted prompt it is a guess that puts the user's own
+				// words on screen twice, the second time in the agent's voice.
+				//
+				// `awaitsUserEcho` catches that when this tab painted the prompt.
+				// It cannot on the project-home route, where the prompt is a
+				// server-created inbox row and there is no optimistic message to
+				// see — so the second condition carries it: an assistant part is a
+				// REPLY, and a session with nothing to reply to yet is not what
+				// this net is for. `message.part.delta` below has guarded on
+				// exactly this since it was written; this is the same rule on the
+				// frame that actually creates the message.
+				//
+				// The part is stored either way; only the invented message waits
+				// for the frame that knows.
+				const sessionHasUserMessage = existingMsgs?.some((m) => m.role === "user") ?? false;
+				if (
+					!exists &&
+					resolvedSessionID &&
+					sessionHasUserMessage &&
+					!awaitsUserEcho(resolvedSessionID, part.messageID)
+				) {
 					store.upsertMessage(resolvedSessionID, {
 						id: part.messageID,
 						sessionID: resolvedSessionID,
