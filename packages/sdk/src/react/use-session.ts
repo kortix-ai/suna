@@ -44,6 +44,7 @@ import { isSessionFresh } from '../core/http/fresh-sessions';
 import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
 import {
   type SessionStartResult,
+  isPiWorkerRuntimeMetadata,
   isSessionStartError,
   sessionStartKey,
   startProjectSession,
@@ -940,9 +941,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       getSandboxUrlForExternalId(sandbox.external_id),
       sandbox.external_id,
       sandbox.sandbox_id,
-      (sandbox.metadata as Record<string, unknown> | undefined)?.sandbox_slug === 'pi-worker'
-        ? 'environment'
-        : 'worker',
+      isPiWorkerRuntimeMetadata(sandbox.metadata) ? 'environment' : 'worker',
     );
     setSwitchedSandboxId(sandbox.sandbox_id);
   }, [startReady, sandbox, switchedSandboxId]);

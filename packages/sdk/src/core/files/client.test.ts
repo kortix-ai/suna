@@ -1,6 +1,6 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
 import { configureKortix } from '../http/config';
-import { setCurrentRuntime } from '../session/current-runtime';
+import { setCurrentRuntime, setCurrentWorkspaceRuntime } from '../session/current-runtime';
 import * as F from './client';
 import { ApiError } from '../http/api/errors';
 import { RuntimeNotReadyError } from '../runtime/client';
@@ -35,7 +35,7 @@ beforeEach(() => {
   configureKortix({ backendUrl: 'http://sbx.test', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
     calls.push({
-      url: String(input),
+      url: input instanceof Request ? input.url : String(input),
       method: init.method ?? 'GET',
       body: typeof init.body === 'string' ? init.body : undefined,
       // Multipart bodies (FormData) are objects, not strings — keep the raw
@@ -141,6 +141,15 @@ test('files namespace exposes the full surface', () => {
   for (const k of ['list','read','readBlob','status','findFiles','findText','upload','create','copy','remove','mkdir','rename','currentProject','health','isReachable']) {
     expect(typeof (F.files as Record<string, unknown>)[k]).toBe('function');
   }
+});
+
+test('currentProject targets the environment runtime for a split Pi session', async () => {
+  setCurrentRuntime('http://worker.test', 'worker-test', null, 'environment');
+  setCurrentWorkspaceRuntime('http://environment.test', 'environment-test');
+
+  await F.getCurrentProject();
+
+  expect(last().url).toBe('http://environment.test/project/current');
 });
 
 // ── typed errors (P0 fix: every op used to throw a bare `Error`; now every
@@ -684,4 +693,3 @@ test('a trailing-slash path with a pathological slash run normalises in linear t
   await F.writeFile(hostile, new Blob(['x'])).catch(() => undefined);
   expect(performance.now() - started).toBeLessThan(1_000);
 });
-

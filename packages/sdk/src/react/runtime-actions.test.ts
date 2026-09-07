@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realRuntimeClient from '../core/runtime/client';
 
 const calls: Array<[string, unknown?]> = [];
+const workspaceCalls: Array<[string, unknown?]> = [];
 
 const client = {
   project: {
@@ -55,20 +57,51 @@ const client = {
   },
 };
 
+const workspaceClient = {
+  project: {
+    current: async () => {
+      workspaceCalls.push(['project.current']);
+      return { data: { worktree: '/workspace' } };
+    },
+  },
+  path: {
+    get: async () => {
+      workspaceCalls.push(['path.get']);
+      return { data: { directory: '/workspace', worktree: '/workspace' } };
+    },
+  },
+  file: {
+    read: async (input: unknown) => {
+      workspaceCalls.push(['file.read', input]);
+      return { data: 'content' };
+    },
+  },
+};
+
 mock.module('../core/runtime/client', () => ({
+  ...realRuntimeClient,
   getClient: () => client,
+  getWorkspaceClient: () => workspaceClient,
 }));
 
 const actions = await import('./runtime-actions');
 
 describe('runtime actions', () => {
-  beforeEach(() => calls.splice(0));
+  beforeEach(() => {
+    calls.splice(0);
+    workspaceCalls.splice(0);
+  });
 
   test('owns runtime project, path, and file operations', async () => {
     expect((await actions.getRuntimeProjectInfo()).worktree).toBe('/workspace');
     expect((await actions.getRuntimePathInfo()).directory).toBe('/workspace');
     expect(await actions.readRuntimeTextFile('src/index.ts')).toBe('content');
-    expect(calls).toContainEqual(['file.read', { path: 'src/index.ts' }]);
+    expect(workspaceCalls).toEqual([
+      ['project.current'],
+      ['path.get'],
+      ['file.read', { path: 'src/index.ts' }],
+    ]);
+    expect(calls).toEqual([]);
   });
 
   test('owns provider authentication and refresh operations', async () => {

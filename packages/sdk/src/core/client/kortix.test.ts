@@ -1437,7 +1437,7 @@ test('pi session files use the environment while messages stay on the worker', a
     if (url.includes('/sessions/FILES-PI/start')) {
       return jsonResponse({
         ...sessionStartPayload('worker-files-pi', 'ocs-files-pi'),
-        sandbox: { external_id: 'worker-files-pi', metadata: { sandbox_slug: 'pi-worker' } },
+        sandbox: { external_id: 'worker-files-pi', metadata: { pi_worker_boot: true } },
       });
     }
     if (url.endsWith('/sessions/FILES-PI/environment/ensure')) {

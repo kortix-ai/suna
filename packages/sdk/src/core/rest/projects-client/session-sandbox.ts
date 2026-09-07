@@ -126,6 +126,23 @@ export interface SessionStartResult {
 }
 
 /**
+ * Detect the server-owned Pi runtime markers across inventory, `/start`, and
+ * provisioned sandbox payloads. Each surface exposes a different metadata
+ * projection, so consumers must not depend on one field being copied through.
+ */
+export function isPiWorkerRuntimeMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const record = metadata as Record<string, unknown>;
+  if (record.sandbox_slug === 'pi-worker' || record.pi_worker_boot === true) return true;
+  const artifact = record.runtimeArtifact;
+  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) return false;
+  const runtimeArtifact = artifact as Record<string, unknown>;
+  return (
+    runtimeArtifact.runtimeProfile === 'pi-worker' || runtimeArtifact.sandboxSlug === 'pi-worker'
+  );
+}
+
+/**
  * Convert a server-reported running inventory row into an optimistic readiness
  * seed. The session route renders it immediately, then its normal `/start`
  * query revalidates the server state.
@@ -242,8 +259,9 @@ export async function startProjectSession(
       opencodeSessionId: result.opencode_session_id,
       runtimeUrl: getSandboxUrlForExternalId(externalId),
       sandboxId: externalId,
-      dataRuntimeKind:
-        result.sandbox?.metadata?.sandbox_slug === 'pi-worker' ? 'environment' : 'worker',
+      dataRuntimeKind: isPiWorkerRuntimeMetadata(result.sandbox?.metadata)
+        ? 'environment'
+        : 'worker',
     });
   }
   return result;

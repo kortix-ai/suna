@@ -58,6 +58,22 @@ await connectors.uploadAttachment(bytes, {
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
 
+## Worker and environment routing
+
+A Pi session has two runtimes. The worker owns messages and events. The environment
+owns workspace files, project paths, Git operations, terminals, and preview ports.
+`session.files` resolves the environment through the control plane on demand.
+
+React hosts mount `useSessionWorkspace(projectId, sessionId)` when a workspace
+surface opens. Wait for `phase: 'ready'` before requesting files or project data.
+The SDK recognizes the server-owned Pi metadata on `/start`, including
+`pi_worker_boot` and `runtimeArtifact`. Hosts do not infer the runtime from its URL.
+
+The compatibility helper `getWorkspaceClient()` selects the active workspace.
+It throws `RuntimeNotReadyError` while a Pi environment is pending. It never
+sends workspace requests to the Pi worker. Project and Git query caches use the
+workspace identity, so replacing an environment cannot reuse another workspace's data.
+
 ## No bundler, no framework
 
 The published package ships a browser IIFE bundle alongside its ESM `dist/` —

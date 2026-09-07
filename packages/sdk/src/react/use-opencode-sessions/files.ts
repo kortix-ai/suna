@@ -1,4 +1,4 @@
-import { getClient } from '../../core/runtime/client';
+import { getWorkspaceClient } from '../../core/runtime/client';
 import { unwrap } from './shared';
 
 // ============================================================================
@@ -20,7 +20,7 @@ let mentionDirScanCache:
   | undefined;
 
 export async function findOpenCodeFiles(query: string): Promise<string[]> {
-  const client = getClient();
+  const client = getWorkspaceClient();
   const normalizedQuery = query.trim();
   const ql = normalizedQuery.toLowerCase();
 

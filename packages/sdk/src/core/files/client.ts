@@ -3,11 +3,11 @@
  * the SDK. The host never calls `authenticatedFetch('/file/...')` itself.
  *
  * Read (list/content/status/find) and write (upload/delete/mkdir/rename) all hit
- * the in-sandbox daemon for the active server; project/health go through the
- * control client. DOM-bound helpers (download / zip) stay in the host UI and
- * consume `readBlob`/`list` from here.
+ * the in-sandbox daemon for the active workspace; project reads use that same
+ * workspace runtime, while health uses the control runtime. DOM-bound helpers
+ * (download / zip) stay in the host UI and consume `readBlob`/`list` from here.
  */
-import { getClient, RuntimeNotReadyError } from '../runtime/client';
+import { getClient, getWorkspaceClient, RuntimeNotReadyError } from '../runtime/client';
 import { getActiveWorkspaceUrl } from '../session/server-store/active';
 import { authenticatedFetch } from '../http/auth';
 import { ApiError } from '../http/api/errors';
@@ -668,7 +668,7 @@ export async function renameFile(from: string, to: string, baseUrl?: string): Pr
 
 // ── project / health (via opencode client) ────────────────────────────────────
 export async function getCurrentProject(): Promise<OpenCodeProjectInfo> {
-  return unwrap(await getClient().project.current()) as OpenCodeProjectInfo;
+  return unwrap(await getWorkspaceClient().project.current()) as OpenCodeProjectInfo;
 }
 
 export async function getServerHealth(): Promise<ServerHealth> {

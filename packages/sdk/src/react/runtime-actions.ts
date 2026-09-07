@@ -10,7 +10,7 @@ import type {
   ProviderAuthAuthorization,
   ProviderAuthMethod,
 } from '../core/runtime/client';
-import { getClient } from '../core/runtime/client';
+import { getClient, getWorkspaceClient } from '../core/runtime/client';
 import { deriveSubdomainOpts, getActiveOpenCodeUrl } from '../browser/stores/server-store';
 import type { SubdomainUrlOptions } from '../core/session/url';
 import {
@@ -38,15 +38,15 @@ function unwrapRuntimeResult<T>(result: RuntimeResult<T>): T {
 }
 
 export function getRuntimeProjectInfo(): Promise<RuntimeProjectInfo> {
-  return getClient().project.current().then(unwrapRuntimeResult);
+  return getWorkspaceClient().project.current().then(unwrapRuntimeResult);
 }
 
 export function getRuntimePathInfo(): Promise<RuntimePathInfo> {
-  return getClient().path.get().then(unwrapRuntimeResult);
+  return getWorkspaceClient().path.get().then(unwrapRuntimeResult);
 }
 
 export function readRuntimeTextFile(path: string): Promise<string | FileContent> {
-  return getClient().file.read({ path }).then(unwrapRuntimeResult);
+  return getWorkspaceClient().file.read({ path }).then(unwrapRuntimeResult);
 }
 
 export function getRuntimeProviderAuthMethods(): Promise<Record<string, ProviderAuthMethod[]>> {
@@ -161,10 +161,16 @@ export function getActiveStaticFileHealthUrl(): string {
 
 export function useRuntimeProjectInfo(options?: { enabled?: boolean }) {
   const runtimeReady = useOpenCodeRuntimeReady();
+  const workspaceUrl = useCurrentRuntime((state) => state.workspaceUrl);
+  const dataRuntimeKind = useCurrentRuntime((state) => state.dataRuntimeKind);
+  const serverId = useCurrentRuntime(
+    (state) => state.workspaceSandboxId ?? state.sandboxId,
+  ) ?? undefined;
+  const workspaceReady = dataRuntimeKind !== 'environment' || Boolean(workspaceUrl);
   return useQuery<RuntimeProjectInfo>({
-    queryKey: opencodeKeys.currentProject(),
+    queryKey: opencodeKeys.currentProject(serverId),
     queryFn: getRuntimeProjectInfo,
-    enabled: runtimeReady && options?.enabled !== false,
+    enabled: runtimeReady && workspaceReady && options?.enabled !== false,
     staleTime: Infinity,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,

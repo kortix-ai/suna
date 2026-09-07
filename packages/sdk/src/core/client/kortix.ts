@@ -1025,11 +1025,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           opencodeSessionId: started.opencode_session_id,
           runtimeUrl,
           sandboxId: externalId,
-          dataRuntimeKind:
-            (started.sandbox.metadata as Record<string, unknown> | undefined)?.sandbox_slug ===
-            'pi-worker'
-              ? 'environment'
-              : 'worker',
+          dataRuntimeKind: P.isPiWorkerRuntimeMetadata(started.sandbox.metadata)
+            ? 'environment'
+            : 'worker',
         };
       })();
       const start: InFlightRuntimeStart = { promise: startPromise };

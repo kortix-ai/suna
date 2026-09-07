@@ -60,6 +60,15 @@ function Terminal({ projectId, sessionId }: { projectId: string; sessionId: stri
 React Query entry. The hook never redirects chat or event traffic away from the
 control runtime.
 
+For Pi sessions, wait for workspace readiness before requesting files, project
+paths, or Git data. These requests use the environment. Messages and events use
+the worker. The SDK recognizes each server-owned Pi metadata projection and
+keeps project and Git caches scoped to the workspace identity.
+
+`getWorkspaceClient()` is a compatibility helper for existing OpenCode-style
+calls. It throws `RuntimeNotReadyError` until the environment URL exists. New
+integrations should use the session-scoped SDK methods and hooks above.
+
 ### Returns
 
 | Field | Type | What it holds |
