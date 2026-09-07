@@ -39,6 +39,14 @@ request. Explicit zero values are preserved. Omitted fields retain provider
 defaults. OpenAI-compatible requests use Pi sampling options. Native Anthropic
 requests retain Pi's temperature handling and add `top_p` to the provider payload.
 
+The selected agent's `steps` limits model iterations per prompt. The final
+iteration requests a text summary with completed work, unfinished tasks, and
+the next action. `steps: 1` requests that summary immediately. Tools are absent
+from the final provider request. A provider that still requests a tool receives
+a blocked tool result, and the loop stops without executing it. A new prompt
+resets the budget. Omitted `steps` retains the unrestricted loop. The limit
+does not alter the saved system prompt or tool discovery.
+
 The configured gateway URL overrides the endpoint for catalog models and new
 model references alike. Catalog membership must never bypass the gateway or
 send the session credential to a provider's public endpoint.

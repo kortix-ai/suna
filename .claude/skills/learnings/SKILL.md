@@ -4973,3 +4973,21 @@ frames as well as ledger reads. A new send clears the receipt. An unanswered Sto
 must still expire at the existing 15-second bound.
 **Enforcer:** `core/session/working.test.ts` covers the complete working → Stop →
 working sequence, late events, post-acknowledgement output, and timeout recovery.
+
+
+### 2026-09-07 — Enforce compiled agent step limits in the runtime
+
+The Pi migration exposed `steps` in discovery but ignored it during execution.
+An agent configured with two steps made four provider requests and executed
+three tool iterations. A visible configuration value is not proof that the
+runtime applies it.
+
+Reserve the final configured iteration for a text summary. Remove tools from
+that provider request, reject tool calls that ignore the restriction, and stop
+the loop at the limit. Reset the budget for each accepted prompt. Preserve the
+omitted-setting behavior.
+
+`apps/kortix-worker/src/agent-steps-routes.test.ts` verifies actual provider HTTP
+payloads, persisted todo side effects, repeated prompts, `steps: 1`, an omitted
+limit, and a provider that ignores the tool restriction. Three tests fail on
+the unbounded runtime and pass with the limit.

@@ -1,4 +1,5 @@
 import { applyGenerationSettings } from './generation-settings.ts';
+import { applyAgentSteps } from './agent-steps.ts';
 import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
 /**
  * kortix-worker (spike) — the harness, and only the harness.
@@ -14,7 +15,7 @@ import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
  *
  * Two model modes:
  *   faux  — a scripted provider. No credentials, no network. Used by the proof.
- *   real  — a normal provider; KORTIX_GATEWAY_URL sets ModelAuth.baseUrl so
+ *   real  — a normal provider; KORTIX_GATEWAY_URL sets the model endpoint so
  *           traffic goes through the Kortix LLM gateway rather than direct.
  */
 import { createServer, type IncomingMessage } from 'node:http';
@@ -1184,6 +1185,7 @@ export async function startWorker(cfg = configFromEnv()) {
   let surface!: RuntimeSurface;
   const selectedAgentConfig = compiledPayload?.agentConfig?.agent?.[runtimeAgent];
   applyGenerationSettings(agent, selectedAgentConfig);
+  applyAgentSteps(agent, selectedAgentConfig?.steps);
   const permissions = new PermissionBroker({
     sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
     permission: selectedAgentConfig?.permission,
