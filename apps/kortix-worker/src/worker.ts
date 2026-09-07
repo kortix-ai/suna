@@ -805,7 +805,9 @@ export async function buildHarness(cfg: WorkerConfig) {
           ['stop', 'length', 'error', 'aborted'].includes(String(message.stopReason)),
         );
       let status: 'idle' | 'error';
-      if (terminal) {
+      if (admission.options.noReply === true) {
+        status = 'idle';
+      } else if (terminal) {
         status = terminalAgentStatus([terminal]);
       } else {
         // A stopped owner can leave a tool-call assistant without its result.
@@ -1408,11 +1410,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   };
 
-  type PromptOptions = { system?: string };
+  type PromptOptions = { system?: string; noReply?: boolean };
   const admissionOptions = (options: PromptOptions): JsonObject => ({
     ...(effectiveRuntime.agent ? { agent: effectiveRuntime.agent } : {}),
     ...(effectiveRuntime.model ? { model: effectiveRuntime.model } : {}),
     ...(options.system === undefined ? {} : { system: options.system }),
+    ...(options.noReply === true ? { noReply: true } : {}),
   });
   const turns = new Map<string, WorkerTurn>();
   const removeCancelledTurn = (messageId: string): TurnCompletion => {
@@ -1481,11 +1484,11 @@ export async function startWorker(cfg = configFromEnv()) {
           }
         }
       }
-      turn.modelStarted = true;
+      turn.modelStarted = turn.options.noReply !== true;
       // The at-most-once boundary committed above. A process that restarts with
-      // this state leaves the turn interrupted instead of replaying unknown
-      // tool side effects.
-      if (lazy && cfg.environmentStartup === 'prewarm') lazy.prewarm();
+      // this state interrupts model turns instead of replaying unknown tool
+      // side effects. Context-only turns can finish storing their user input.
+      if (turn.modelStarted && lazy && cfg.environmentStartup === 'prewarm') lazy.prewarm();
       surface.markTurn(turn.messageId, true);
       lastAgentEndStatus = 'idle';
       const heartbeatMs = Math.max(1, cfg.turnOwnerHeartbeatMs ?? DEFAULT_TURN_OWNER_HEARTBEAT_MS);
@@ -1558,14 +1561,22 @@ export async function startWorker(cfg = configFromEnv()) {
           (turn.wireUserMessage.info.time as { created?: unknown } | undefined)?.created ??
             Date.now(),
         );
-        await agent.prompt({
+        const userMessage = {
           role: 'user',
           content: [{ type: 'text', text: turn.text }],
           timestamp: Number.isFinite(created) ? created : Date.now(),
           // Persisted with Pi's own message entry. The restore projection uses
           // it instead of inventing a different wire id after every restart.
           kortixWireMessageId: turn.messageId,
-        } as any);
+        };
+        if (turn.options.noReply === true) {
+          bootReconcile.noteTurnStarted();
+          const durableSession = sessionRef();
+          if (durableSession) await durableSession.appendMessage(toDurable(userMessage) as any);
+          agent.state.messages = [...agent.state.messages, userMessage as any];
+        } else {
+          await agent.prompt(userMessage as any);
+        }
         settling = true;
         clearInterval(heartbeatTimer);
         clearInterval(abortPollTimer);
@@ -2115,6 +2126,7 @@ export async function startWorker(cfg = configFromEnv()) {
           try {
             const admitted = await admitTurn(parsed.value.text, parsed.value.messageID, {
               system: parsed.value.system,
+              noReply: parsed.value.noReply,
             });
             if (m[2] === 'prompt_async') {
               // The acceptance append has committed. Execution continues on
@@ -2145,6 +2157,12 @@ export async function startWorker(cfg = configFromEnv()) {
                   error:
                     'turn outcome is unknown after restart; send a new message with a new messageID',
                 }),
+              );
+              return;
+            }
+            if (admitted.admission.options.noReply === true) {
+              res.writeHead(200, { 'content-type': 'application/json' }).end(
+                JSON.stringify(admitted.admission.wireUserMessage),
               );
               return;
             }

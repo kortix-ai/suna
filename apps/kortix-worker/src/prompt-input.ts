@@ -9,11 +9,12 @@ export interface PromptInput {
   messageID?: string;
   text: string;
   system?: string;
+  noReply?: boolean;
 }
 
 export type PromptInputResult = { ok: true; value: PromptInput } | { ok: false; error: string };
 
-const SUPPORTED_FIELDS = new Set(['messageID', 'model', 'agent', 'parts', 'system']);
+const SUPPORTED_FIELDS = new Set(['messageID', 'model', 'agent', 'parts', 'system', 'noReply']);
 const SUPPORTED_TEXT_PART_FIELDS = new Set(['type', 'text']);
 
 function own(value: Record<string, unknown>, field: string): boolean {
@@ -45,6 +46,9 @@ export function parsePromptInput(
 
   if (own(body, 'system') && typeof body.system !== 'string') {
     return { ok: false, error: 'system must be a string' };
+  }
+  if (own(body, 'noReply') && typeof body.noReply !== 'boolean') {
+    return { ok: false, error: 'noReply must be a boolean' };
   }
 
   if (own(body, 'agent')) {
@@ -133,6 +137,7 @@ export function parsePromptInput(
       ...(typeof body.messageID === 'string' ? { messageID: body.messageID } : {}),
       text: text.join(''),
       ...(typeof body.system === 'string' ? { system: body.system } : {}),
+      ...(typeof body.noReply === 'boolean' ? { noReply: body.noReply } : {}),
     },
   };
 }

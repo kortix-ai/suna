@@ -113,13 +113,13 @@ describe('parsePromptInput', () => {
     },
   );
 
-  test.each(['variant', 'noReply', 'tools', 'format', 'temperature', 'modle'])(
+  test.each(['variant', 'tools', 'format', 'temperature', 'modle'])(
     'rejects unsupported %s instead of acknowledging and ignoring it',
     (field) => {
       const result = parsePromptInput(
         JSON.stringify({
           parts: [{ type: 'text', text: 'ship' }],
-          [field]: field === 'noReply' ? true : 'x',
+          [field]: 'x',
         }),
         runtime,
       );

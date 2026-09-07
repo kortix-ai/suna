@@ -99,12 +99,22 @@ An authentication rejection before execution allows one credential refresh and
 retry. A disconnected mutation is never replayed because its side effect can
 already have committed. Read operations can retry after reconnecting.
 
-Prompt routes currently accept text parts, `messageID`, `system`, and the compiled
+Prompt routes accept text parts, `messageID`, `system`, `noReply`, and the compiled
 agent and model. A prompt's `system` string appends to the compiled instructions
 for that prompt. It survives queued delivery and accepted-only replay. A retry
 must preserve it; changing it under the same `messageID` returns `409`. The
 worker restores the compiled instructions after completion or failure. An empty
 string adds no instructions and remains an explicit field in the saved message.
+
+`noReply: true` stores a user message without calling the model or starting the
+environment. The synchronous route returns that user message with `200`; the
+asynchronous route returns `204` after durable admission. Context follows the
+normal queue order and enters the next model prompt. Replacement workers finish
+partially stored context without adding an interruption. Exact retries return
+the same message. `false` and an omitted `noReply` both request a model response.
+Changing between context-only and model execution under one `messageID` returns
+`409`. A context-only input does not apply its `system` to later prompts.
+
 Unsupported fields return `400` before admission. The body and each
 durable log item are limited to 512 KiB. Attachments and the remaining OpenCode
 prompt options are still compatibility gaps.

@@ -89,7 +89,10 @@ async function listen(server: ReturnType<typeof createServer>): Promise<string> 
   return `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 }
 
-async function sharedStore(items: SessionLogItem[]): Promise<string> {
+async function sharedStore(
+  items: SessionLogItem[],
+  rejectAppend?: (item: SessionLogItem) => number | undefined,
+): Promise<string> {
   const byKey = new Map<string, SessionLogItem>();
   return listen(
     createServer(async (req, res) => {
@@ -100,6 +103,11 @@ async function sharedStore(items: SessionLogItem[]): Promise<string> {
       let body = '';
       for await (const chunk of req) body += chunk;
       const item = JSON.parse(body) as SessionLogItem;
+      const rejected = rejectAppend?.(item);
+      if (rejected) {
+        res.writeHead(rejected).end();
+        return;
+      }
       const key = String(req.headers['idempotency-key'] ?? '');
       const existing = key ? byKey.get(key) : undefined;
       if (existing) {
@@ -3190,5 +3198,282 @@ describe('prompt system durability', () => {
     expect(messages.find((message) => message.info.id === body.messageID)?.info.system).toBe(
       'Saved convention.',
     );
+  });
+});
+
+describe('context-only prompts', () => {
+  async function fixture(
+    items: SessionLogItem[] = [],
+    options: {
+      beforeProvider?: () => Promise<void>;
+      rejectAppend?: (item: SessionLogItem) => number | undefined;
+    } = {},
+  ) {
+    const requests: any[] = [];
+    const provider = await listen(
+      createServer(async (req, res) => {
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        requests.push(JSON.parse(raw));
+        await options.beforeProvider?.();
+        res.writeHead(200, { 'content-type': 'text/event-stream' }).end(
+          'data: ' +
+            JSON.stringify({
+              id: 'context-response',
+              model: 'openai/gpt-4.1',
+              choices: [
+                {
+                  index: 0,
+                  delta: { role: 'assistant', content: 'Replied.' },
+                  finish_reason: 'stop',
+                },
+              ],
+            }) +
+            '\n\ndata: [DONE]\n\n',
+        );
+      }),
+    );
+    const config = {
+      port: 0,
+      envUrl: 'http://127.0.0.1:1',
+      envUrlExplicit: true,
+      envCwd: '/workspace',
+      systemPrompt: 'Compiled instructions.',
+      modelMode: 'real' as const,
+      providerId: 'openrouter',
+      modelId: 'openai/gpt-4.1',
+      gatewayUrl: provider + '/v1',
+      apiKey: 'fixture-provider-token',
+      kortixToken: 'runtime-token',
+      sessionId: 'context-only',
+      storeUrl: await sharedStore(items, options.rejectAppend),
+      turnOwnerLeaseMs: 5,
+    };
+    const worker = await startWorker(config);
+    workers.push(worker);
+    const sessionID = await rootId(worker);
+    const send = (target: typeof worker, body: unknown, endpoint = 'message') =>
+      request(target, `/session/${sessionID}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    return { worker, config, requests, sessionID, send };
+  }
+
+  test('stores and retries a user message without a model call and includes it in the next prompt after replacement', async () => {
+    const { worker, config, requests, sessionID, send } = await fixture();
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() }).id,
+      noReply: true,
+      system: 'This system applies only to this context-only input.',
+      parts: [{ type: 'text', text: 'The fixture convention is violet.' }],
+    };
+    const response = await send(worker, body);
+    expect(response.status).toBe(200);
+    const saved = (await response.json()) as any;
+    expect(saved.info.role).toBe('user');
+    expect(saved.info.id).toBe(body.messageID);
+    expect(saved.parts.map((part: any) => part.text)).toEqual([
+      'The fixture convention is violet.',
+    ]);
+    expect(requests).toEqual([]);
+    const repeated = await send(worker, body);
+    expect(repeated.status).toBe(200);
+    expect(await repeated.json()).toEqual(saved);
+    expect((await send(worker, { ...body, noReply: false })).status).toBe(409);
+    worker.server.closeAllConnections();
+    await worker.close();
+    workers.splice(workers.indexOf(worker), 1);
+    const restored = await startWorker(config);
+    workers.push(restored);
+    expect(requests).toEqual([]);
+    const restoredMessages = (await (
+      await request(restored, `/session/${sessionID}/message`)
+    ).json()) as any[];
+    expect(restoredMessages).toEqual([saved]);
+    const next = await send(restored, {
+      parts: [{ type: 'text', text: 'Apply the convention.' }],
+    });
+    expect(next.status).toBe(200);
+    expect(((await next.json()) as any).info.role).toBe('assistant');
+    expect(requests).toHaveLength(1);
+    expect(
+      requests[0].messages.filter((m: any) => m.role === 'user').map((m: any) => m.content),
+    ).toEqual([
+      [{ type: 'text', text: 'The fixture convention is violet.' }],
+      [{ type: 'text', text: 'Apply the convention.' }],
+    ]);
+    expect(requests[0].messages.find((m: any) => m.role === 'system').content).not.toContain(
+      body.system,
+    );
+  });
+
+  test.each(['accepted', 'started', 'persisted'] as const)(
+    'recovers a %s context-only prompt without fabricating an interruption or calling the model',
+    async (phase) => {
+      const items: SessionLogItem[] = [];
+      const { worker, config, requests, sessionID, send } = await fixture(items);
+      const body = {
+        messageID: mintWireMessageId({ nowMs: Date.now() }).id,
+        noReply: true,
+        parts: [{ type: 'text', text: 'Saved context.' }],
+      };
+      expect((await send(worker, body)).status).toBe(200);
+      worker.server.closeAllConnections();
+      await worker.close();
+      workers.splice(workers.indexOf(worker), 1);
+      const accepted = requireValue(
+        items.find((item) => item.kind === 'journal' && item.record.type === 'accepted'),
+        'accepted record',
+      );
+      const started = requireValue(
+        items.find((item) => item.kind === 'journal' && item.record.type === 'started'),
+        'started record',
+      );
+      const userEntry = requireValue(
+        items.find((item) => item.kind === 'entry' && item.entry.type === 'message'),
+        'user entry',
+      );
+      const boundary = phase === 'accepted' ? accepted : phase === 'started' ? started : userEntry;
+      const seed = structuredClone(items.slice(0, items.indexOf(boundary) + 1));
+      const restored = await startWorker({
+        ...config,
+        storeUrl: await sharedStore(seed),
+      });
+      workers.push(restored);
+      const retry = await send(restored, body);
+      expect(retry.status).toBe(200);
+      expect(((await retry.json()) as any).info.role).toBe('user');
+      const messages = (await (
+        await request(restored, `/session/${sessionID}/message`)
+      ).json()) as any[];
+      expect(messages).toHaveLength(1);
+      expect(messages[0].info.id).toBe(body.messageID);
+      expect(requests).toEqual([]);
+      expect(
+        restored.agent.state.messages.filter(
+          (m: any) => m.role === 'user' && m.kortixWireMessageId === body.messageID,
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  test('acknowledges async context after admission and publishes one saved user message', async () => {
+    const items: SessionLogItem[] = [];
+    const { worker, requests, sessionID, send } = await fixture(items);
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() }).id,
+      noReply: true,
+      parts: [{ type: 'text', text: 'Async context.' }],
+    };
+    const event = waitForGlobalEvent(worker, 'message.updated', body.messageID);
+    const response = await send(worker, body, 'prompt_async');
+    expect(response.status).toBe(204);
+    expect(items.some((item) => item.kind === 'journal' && item.record.type === 'accepted')).toBe(
+      true,
+    );
+    expect(await event).toContain(body.messageID);
+    expect((await send(worker, body, 'prompt_async')).status).toBe(204);
+    await waitUntil(() =>
+      items.some((item) => item.kind === 'journal' && item.record.type === 'completed'),
+    );
+    const saved = (await (await request(worker, `/session/${sessionID}/message`)).json()) as any[];
+    expect(saved).toHaveLength(1);
+    expect(saved[0].info.id).toBe(body.messageID);
+    expect(requests).toHaveLength(0);
+  });
+
+  test('queues context behind the active model turn and includes it once in the following prompt', async () => {
+    const items: SessionLogItem[] = [];
+    const hold = deferred();
+    const { worker, requests, send } = await fixture(items, {
+      beforeProvider: () => hold.promise,
+    });
+    expect(
+      (await send(worker, { parts: [{ type: 'text', text: 'First prompt.' }] }, 'prompt_async'))
+        .status,
+    ).toBe(204);
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() + 1_000 }).id,
+      noReply: true,
+      parts: [{ type: 'text', text: 'Queued convention.' }],
+    };
+    try {
+      await waitUntil(() => requests.length === 1);
+      expect((await send(worker, body, 'prompt_async')).status).toBe(204);
+      expect(
+        worker.agent.state.messages.some((m: any) => m.kortixWireMessageId === body.messageID),
+      ).toBe(false);
+    } finally {
+      hold.resolve();
+    }
+    expect((await send(worker, body)).status).toBe(200);
+    expect(requests).toHaveLength(1);
+    expect(
+      (
+        await send(worker, {
+          parts: [{ type: 'text', text: 'Use the convention.' }],
+        })
+      ).status,
+    ).toBe(200);
+    expect(requests).toHaveLength(2);
+    expect(
+      requests[1].messages.filter((m: any) => m.role === 'user').map((m: any) => m.content),
+    ).toEqual(
+      ['First prompt.', 'Queued convention.', 'Use the convention.'].map((text) => [
+        { type: 'text', text },
+      ]),
+    );
+  });
+
+  test('treats false and omitted noReply as the same normal model prompt', async () => {
+    const { worker, requests, send } = await fixture();
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() }).id,
+      parts: [{ type: 'text', text: 'Normal reply.' }],
+    };
+    const response = await send(worker, { ...body, noReply: false });
+    expect(response.status).toBe(200);
+    const answer = (await response.json()) as any;
+    expect(answer.info.role).toBe('assistant');
+    const retry = await send(worker, body);
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual(answer);
+    expect(requests).toHaveLength(1);
+  });
+
+  test('does not acknowledge failed context persistence and recovers it without a model call', async () => {
+    const items: SessionLogItem[] = [];
+    let reject = true;
+    const { worker, config, requests, sessionID, send } = await fixture(items, {
+      rejectAppend: (item) =>
+        reject && item.kind === 'entry' && item.entry.type === 'message' ? 403 : undefined,
+    });
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() }).id,
+      noReply: true,
+      parts: [{ type: 'text', text: 'Recover this context.' }],
+    };
+    expect((await send(worker, body)).status).toBe(503);
+    expect(items.some((item) => item.kind === 'journal' && item.record.type === 'completed')).toBe(
+      false,
+    );
+    expect(requests).toHaveLength(0);
+    worker.server.closeAllConnections();
+    await worker.close();
+    workers.splice(workers.indexOf(worker), 1);
+    reject = false;
+    const restored = await startWorker(config);
+    workers.push(restored);
+    const retry = await send(restored, body);
+    expect(retry.status).toBe(200);
+    expect(((await retry.json()) as any).info.role).toBe('user');
+    const messages = (await (
+      await request(restored, `/session/${sessionID}/message`)
+    ).json()) as any[];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].info.id).toBe(body.messageID);
+    expect(requests).toHaveLength(0);
   });
 });
