@@ -7,7 +7,7 @@
  * for side-effect by the root provider so it runs before any SDK call.
  */
 import { configureKortix, parseFlagOverride } from '@kortix/sdk';
-import { getSupabaseAccessToken } from '@/lib/auth-token';
+import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
 import { handleApiError } from '@/lib/error-handler';
@@ -28,7 +28,7 @@ export function ensureKortixConfigured(): void {
 
   configureKortix({
     backendUrl: getEnv().BACKEND_URL,
-    getToken: () => getSupabaseAccessToken(),
+    getToken: () => getSupabaseAccessTokenWithRetry({ invalidateBetweenAttempts: false }),
     clientSource: 'web',
     getUserId: async () => {
       try {

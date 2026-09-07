@@ -20,7 +20,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 - Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/servers/*`, `/v1/tunnel/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
 - Project authz gate `loadProjectForUser(c, id, level)`: `read`→`PROJECT_READ` (any project role), `write`→`PROJECT_WRITE` (manager), `manage`→`PROJECT_DELETE` (manager only). Account owner/admin get implicit `manager` on every project.
 
-Browser authentication bootstrap preserves a cached session when validation is aborted, rate-limited, or temporarily unavailable. It clears confirmed invalid credentials. The Apps browser journey aborts `/auth/v1/user`, verifies that no logout request occurs and the JWT remains valid, then reloads the page successfully.
+Browser authentication bootstrap preserves a cached session when validation is aborted, rate-limited, or temporarily unavailable. It clears confirmed invalid credentials. SDK token acquisition retries a read superseded by auth hydration without clearing the newly seeded token; a hard reload must not cache a synthetic unauthorized project-access result during that handoff. The Apps browser journey aborts `/auth/v1/user`, verifies that no logout request occurs and the JWT remains valid, then reloads the page successfully.
 
 ### Principals (fixtures every run must provision)
 
