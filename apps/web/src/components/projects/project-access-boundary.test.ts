@@ -13,6 +13,8 @@ import {
   isForbiddenState,
   resolveGateState,
   shouldPollForApproval,
+  shouldRetryProjectRead,
+  projectReadRetryDelay,
   type AccessGateState,
 } from './project-access-boundary';
 
@@ -76,6 +78,48 @@ describe('gateStateForError', () => {
     }
     expect(gateStateForError(new Error('offline'))).toBe('unavailable');
     expect(gateStateForError(null)).toBe('unavailable');
+  });
+});
+
+describe('project read retries', () => {
+  test('retries abort and network failures from browser and SDK error shapes', () => {
+    for (const error of [
+      new DOMException('The operation was aborted.', 'AbortError'),
+      { name: 'AbortError', code: 'ABORTED' },
+      { code: 'ERR_ABORTED' },
+      new Error('net::ERR_ABORTED'),
+      new TypeError('Failed to fetch'),
+      { name: 'TypeError', message: 'NetworkError when attempting to fetch resource.' },
+      new TypeError('Load failed'),
+      { code: 'TIMEOUT' },
+    ]) expect(shouldRetryProjectRead(0, error)).toBe(true);
+  });
+
+  test('retries only transient HTTP statuses, preserving authorization and not-found verdicts', () => {
+    for (const status of [408, 429, 500, 502, 503, 504, 599]) {
+      expect(shouldRetryProjectRead(0, { status })).toBe(true);
+      expect(shouldRetryProjectRead(0, { response: { status } })).toBe(true);
+    }
+    for (const status of [400, 401, 402, 403, 404, 409, 422]) {
+      expect(shouldRetryProjectRead(0, { status, message: 'Failed to fetch' })).toBe(false);
+    }
+    expect(gateStateForError({ status: 403 })).toBe('request');
+    expect(gateStateForError({ status: 404 })).toBe('notFound');
+    expect(gateStateForError({ status: 422 })).toBe('unavailable');
+  });
+
+  test('does not retry unknown errors or programming failures', () => {
+    for (const error of [null, undefined, new Error('unexpected'), new SyntaxError('Invalid JSON'), new TypeError('Cannot read properties of undefined')]) {
+      expect(shouldRetryProjectRead(0, error)).toBe(false);
+    }
+  });
+
+  test('uses three deterministic exponential delays and then stops', () => {
+    const error = { name: 'AbortError' };
+    expect([0, 1, 2, 3, 4, 100].map((count) => shouldRetryProjectRead(count, error)))
+      .toEqual([true, true, true, false, false, false]);
+    expect([0, 1, 2, 3, 100].map(projectReadRetryDelay)).toEqual([250, 500, 1000, 1000, 1000]);
+    expect(projectReadRetryDelay(1)).toBe(projectReadRetryDelay(1));
   });
 });
 

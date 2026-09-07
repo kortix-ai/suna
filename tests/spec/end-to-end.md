@@ -227,6 +227,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 `PROJ-4` `POST /projects/create-repo {name,private?}` (new GitHub repo) → `PROJECT_CREATE` → 201; no account GitHub App install → 409 + `install_url`; auto-dedupes name collision.
 `PROJ-14` `POST /projects/provision-stream {name,provider?:github}` uses the same provision core as `PROJ-3`. An authorized request returns `200 text/event-stream` with data-only JSON frames. It emits ordered `phase` frames and exactly one terminal `done` or `error` frame. An unsupported provider emits `phase:validating`, then `error` with `status:400`, before any external call. ANON → 401 before the stream opens.
 `PROJ-5` `GET /projects/:id` → `read` → 200 (bumps `last_opened_at`); archived → 404; `NONMEMBER` → 403.
+Browser reload contract (`27-project-reload-recovery.spec.ts`): an authenticated user reloads a readable project's sessions page. An aborted project read recovers automatically and renders the project shell. The access boundary retries only transient reads, with three delays of 250/500/1000 ms. Exhaustion exposes manual Retry. A 403 still offers an access request; a 404 still reports the project as gone.
 `PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.yaml` (agents/skills/env) + file list.
 `PROJ-7` `PATCH /projects/:id {name,default_branch,manifest_path}` → `manage` (M_MANAGER/OWNER/ADMIN) → 200; M_EDITOR/M_VIEWER → 403.
 `PROJ-8` `DELETE /projects/:id` → `manage` → 200 status `archived`; M_EDITOR → 403.

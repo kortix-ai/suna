@@ -75,9 +75,28 @@ export function errorStatus(error: unknown): number | undefined {
   );
 }
 
+/** Only the idempotent getProject read uses this policy, never access-request writes. */
+export function shouldRetryProjectRead(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 3) return false;
+  const status = errorStatus(error);
+  if (status !== undefined) return status === 408 || status === 429 || (status >= 500 && status < 600);
+  if (!error || typeof error !== 'object') return false;
+
+  const { name, code, message } = error as { name?: string; code?: string; message?: string };
+  if (name === 'AbortError' || name === 'AbortSignal') return true;
+  if (code === 'ABORTED' || code === 'ERR_ABORTED' || code === 'TIMEOUT') return true;
+  return typeof message === 'string' &&
+    /ERR_ABORTED|^Failed to fetch$|^Load failed$|^NetworkError when attempting to fetch resource\.?$/.test(message);
+}
+
+/** Three retries add at most 1.75s of query backoff, in addition to SDK read attempts. */
+export function projectReadRetryDelay(attempt: number): number {
+  return Math.min(250 * 2 ** attempt, 1_000);
+}
+
 /**
  * Maps a failed `getProject` to the screen it should show. 403 is the only
- * status that leads to the request form — every other failure is terminal, so
+ * status that leads to the request form. Called after query retries exhaust;
  * an unknown status must never render a form whose request cannot succeed.
  */
 export function gateStateForError(error: unknown): AccessGateState {
@@ -190,7 +209,11 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
     queryKey: [QUERY_KEY, projectId],
     queryFn: () => getProject(projectId, { showErrors: false }),
     enabled: !!projectId,
-    retry: false,
+    // A cancelled read is not an access verdict. The SDK deliberately returns
+    // AbortError without retrying; this mounted boundary owns recovery while
+    // the user still wants the project. Query teardown cancels pending retries.
+    retry: shouldRetryProjectRead,
+    retryDelay: projectReadRetryDelay,
   });
 
   const { refetch } = query;
@@ -245,7 +268,7 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
   // carries no footer, so keeping it would flash Terms/Privacy for the length
   // of one fetch on every project open. The gate screens below still show it:
   // they are terminal, and there they are the whole page.
-  if (query.isLoading) return <AuthPendingScreen footer={false} />;
+  if (query.isPending || (!waiting && query.isFetching)) return <AuthPendingScreen footer={false} />;
 
   return (
     <AccessGateScreen
