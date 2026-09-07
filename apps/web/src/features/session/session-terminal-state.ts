@@ -1,11 +1,6 @@
 /** Raw `/start` stage, or `null` while the first `/start` is still in flight. */
 export type SessionStartStageValue =
-  | 'provisioning'
-  | 'starting'
-  | 'ready'
-  | 'stopped'
-  | 'failed'
-  | null;
+  'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed' | null;
 
 export interface SessionTerminalState {
   /** Raw `/start` stage — the ONLY server-declared terminal signal. */

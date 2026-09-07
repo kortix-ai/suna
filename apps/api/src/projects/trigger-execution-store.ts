@@ -331,8 +331,12 @@ export async function markTriggerExecutionFailed(input: {
   row: TriggerExecutionRow;
   failedAt: Date;
   error: string;
+  /** Force immediate dead-letter (no retry). Used for PERMANENT rejections —
+   *  a billing-gate "out of credits" / "no subscription" fire will fail
+   *  identically on every retry, so retrying only delays the terminal state. */
+  terminal?: boolean;
 }): Promise<'queued' | 'dead_lettered'> {
-  const terminal = input.row.attempts >= 5;
+  const terminal = input.terminal || input.row.attempts >= 5;
   const retryDelayMs = Math.min(60_000, 2 ** Math.max(0, input.row.attempts - 1) * 2_000);
   await db
     .update(projectTriggerExecutions)
@@ -347,6 +351,76 @@ export async function markTriggerExecutionFailed(input: {
     })
     .where(ownedRunningExecution(input.row));
   return terminal ? 'dead_lettered' : 'queued';
+}
+
+/**
+ * Reflect a DELIVERED trigger prompt back onto the trigger runtime row.
+ *
+ * A `session_mode = "reuse" | "pinned" | "keyed"` fire enqueues a durable
+ * `continue_session` command and immediately records `last_status = "queued"`
+ * (`markGitTriggerFired(..., 'queued')`). The command is delivered later, on
+ * the scheduler's drain tick — and that settlement never wrote back to the
+ * runtime row, so `last_status` stayed `queued` forever and monitoring could
+ * not tell a healthy reuse fire from a wedged one. Flipping to `fired` on
+ * delivery makes `queued` strictly the transient in-flight state, so a queue-age
+ * alarm only fires on a real stall. Does NOT advance `last_fired_at` (already
+ * advanced at fire time).
+ */
+export async function markTriggerRuntimeDelivered(input: {
+  projectId: string;
+  slug: string;
+  when: Date;
+}): Promise<void> {
+  await db
+    .insert(projectTriggerRuntime)
+    .values({
+      projectId: input.projectId,
+      slug: input.slug,
+      lastStatus: 'fired',
+      lastError: null,
+      lastAttemptAt: input.when,
+      updatedAt: input.when,
+    })
+    .onConflictDoUpdate({
+      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      set: {
+        lastStatus: 'fired',
+        lastError: null,
+        lastAttemptAt: input.when,
+        updatedAt: input.when,
+      },
+    });
+}
+
+/**
+ * Reflect a DEAD-LETTERED trigger prompt back onto the trigger runtime row.
+ *
+ * `markCommandFailed` already parks the target session `failed` (so the next
+ * `reuse` fire self-heals to a fresh session); this makes the failure VISIBLE in
+ * the triggers API (`last_status: "failed"`, `last_error`) instead of leaving
+ * `last_status` frozen at `queued` — the "monitoring blind" gap this closes.
+ */
+export async function markTriggerRuntimeDeliveryFailed(input: {
+  projectId: string;
+  slug: string;
+  when: Date;
+  error: string;
+}): Promise<void> {
+  const lastError = input.error.slice(0, 1000);
+  await db
+    .insert(projectTriggerRuntime)
+    .values({
+      projectId: input.projectId,
+      slug: input.slug,
+      lastStatus: 'failed',
+      lastError,
+      lastAttemptAt: input.when,
+      updatedAt: input.when,
+    })
+    .onConflictDoUpdate({
+      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      set: { lastStatus: 'failed', lastError, lastAttemptAt: input.when, updatedAt: input.when },
+    });
 }
 
 export async function countUncatalogedTriggerProjects(): Promise<number> {

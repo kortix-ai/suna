@@ -23,9 +23,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
 import { formatCredits, formatCreditsWithSign } from '@kortix/shared';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 /** One `credit_ledger` row, normalized across the two endpoints. */
 export interface CreditTransactionRow {
@@ -90,8 +92,14 @@ function formatDate(value: string | null): string {
 export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[] }) {
   // Two headers are translated (the rest of this table was never localized).
   // Keeping the same keys keeps the customer surface byte-identical in all
-  // eight locales; the admin console renders under the same I18nProvider.
+  // nine locales; the admin console renders under the same I18nProvider.
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const transactionBadges = localizeUiCatalog(
+    TRANSACTION_BADGES,
+    tI18nComplete,
+    APP_REGISTRY_TRANSLATION_KEYS,
+  );
 
   // `Table` already renders the `bg-popover rounded-md border` surface, so
   // there is no second bordered box around it — that was a doubled 1px ring at
@@ -100,13 +108,17 @@ export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[]
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[180px]">Date</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Description</TableHead>
+          <TableHead className="w-[180px]">
+            {tHardcodedUi.raw('i18nComplete.text99c40ab40592')}
+          </TableHead>
+          <TableHead>{tHardcodedUi.raw('i18nComplete.textbaaddf70fb5d')}</TableHead>
+          <TableHead>{tHardcodedUi.raw('i18nComplete.text526e0087cc3f')}</TableHead>
           <TableHead className="text-center">
             {tHardcodedUi.raw('componentsBillingCreditTransactions.line198JsxTextCreditType')}
           </TableHead>
-          <TableHead className="text-right">Credits</TableHead>
+          <TableHead className="text-right">
+            {tHardcodedUi.raw('i18nComplete.text2a6b24ad2872')}
+          </TableHead>
           <TableHead className="text-right">
             {tHardcodedUi.raw('componentsBillingCreditTransactions.line200JsxTextCreditsAfter')}
           </TableHead>
@@ -114,7 +126,7 @@ export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[]
       </TableHeader>
       <TableBody>
         {rows.map((row) => {
-          const badge = creditTransactionBadge(row.type);
+          const badge = transactionBadges[row.type] ?? creditTransactionBadge(row.type);
           return (
             <TableRow key={row.id}>
               <TableCell className="font-mono text-xs">{formatDate(row.createdAt)}</TableCell>
@@ -123,7 +135,9 @@ export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[]
                   {badge.label}
                 </Badge>
               </TableCell>
-              <TableCell className="text-sm">{row.description || 'No description'}</TableCell>
+              <TableCell className="text-sm">
+                {row.description || tHardcodedUi.raw('i18nComplete.textbcd8cc53f40e')}
+              </TableCell>
               <TableCell className="text-center">
                 {row.isExpiring !== undefined && (
                   <span className="text-muted-foreground text-xs">

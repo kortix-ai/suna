@@ -2,8 +2,8 @@
 // same `credit_ledger` rows with different field names and different types
 // (admin ships numeric strings). This mapping is the whole adapter, so the admin
 // sheet can render the customer-facing table instead of a second list.
-import { describe, expect, test } from 'bun:test';
 import type { AdminLedgerEntry } from '@/hooks/admin/use-admin-accounts';
+import { describe, expect, test } from 'bun:test';
 import { adminLedgerRows } from './ledger-rows';
 
 const entry = (over: Partial<AdminLedgerEntry> = {}): AdminLedgerEntry => ({

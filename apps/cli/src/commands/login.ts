@@ -318,7 +318,12 @@ async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<str
   const deviceLabel = encodeURIComponent(safeHostname());
   const url =
     `${dashUrl}/cli/authorize` +
-    `?callback=${encodeURIComponent(`http://127.0.0.1:${session.port}/callback`)}` +
+    // `cli.localhost`, never a bare `127.0.0.1`/`localhost`: the Cloudflare WAF
+    // in front of every non-prod origin 403s a query string carrying either of
+    // those hosts, so the authorize page never rendered and `kortix login`
+    // could not complete against dev or staging at all. A `.localhost`
+    // subdomain is loopback by RFC 6761 and clears the rule.
+    `?callback=${encodeURIComponent(`http://cli.localhost:${session.port}/callback`)}` +
     `&state=${session.state}` +
     `&label=${deviceLabel}`;
 

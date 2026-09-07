@@ -4,8 +4,9 @@ import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motio
 import { cn } from '@/lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { thread } from './content';
+import { getLocalizedChannelsContent } from './content';
 
 /**
  * `/channels` hero scene — one thread, bound to one session.
@@ -32,17 +33,17 @@ import { thread } from './content';
  * MOTION — one pass on mount, then rest.
  */
 
-const { mock } = thread;
-const TURNS = mock.turns;
-
 export function ChannelsHeroVisual(): ReactNode {
   const reduceMotion = useReducedMotion() ?? false;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { mock } = getLocalizedChannelsContent(tI18nComplete).thread;
+  const turns = mock.turns;
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label={`A ${mock.channel} thread bound to one session, ending in a change request offered for approval.`}
+      aria-label={tI18nComplete('text464cf293fd24', { channel: mock.channel })}
     >
       <div className="relative h-[24rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
         {/* ── the channel, cut by the top edge ────────────────────────── */}
@@ -81,8 +82,8 @@ export function ChannelsHeroVisual(): ReactNode {
         </m.span>
 
         {/* ── the pile ────────────────────────────────────────────────── */}
-        {TURNS.map((turn, i) => {
-          const back = TURNS.length - 1 - i; // 2 = furthest back
+        {turns.map((turn, i) => {
+          const back = turns.length - 1 - i; // 2 = furthest back
           return (
             <m.div
               key={turn.id}
@@ -131,7 +132,7 @@ export function ChannelsHeroVisual(): ReactNode {
 
         {/* ── the decision ────────────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute right-[2%] bottom-[3%] left-[8%] z-30 rounded-xl border p-5 "
+          className="border-border/70 bg-card absolute right-[2%] bottom-[3%] left-[8%] z-30 rounded-xl border p-5"
           {...panel(reduceMotion)}
         >
           <p className="text-foreground text-[14.5px] leading-snug font-medium text-pretty">

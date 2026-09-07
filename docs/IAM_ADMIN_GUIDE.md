@@ -139,7 +139,7 @@ Two deliberate design points:
 
 ## 3. Projects & membership
 
-**UI:** project → **Customize → Members** (deep link `/projects/{id}/customize/members`),
+**UI:** project → **Customize → Members** (the link in the Customize tab bar; `/projects/{id}/members` redirects to the account Access hub),
 tabs **People** and **Invite**.
 
 ### Adding people
@@ -730,8 +730,8 @@ Per-trigger scope: `trigger.read/update/delete/fire`.
 | SAML SSO + SCIM cards, Enterprise demo, PAT policy, Service accounts, Audit webhooks | account **Settings** tab |
 | Group detail | `/accounts/{accountId}/groups/{groupId}` |
 | Member detail | `/accounts/{accountId}/members/{userId}` |
-| Project members / group grants / custom-role bindings / resource access | `/projects/{id}/customize/members` |
-| Agent access scope | `/projects/{id}/customize/agents` |
+| Project members / group grants / custom-role bindings / resource access | `/accounts/{accountId}?tab=access-projects&project={id}` (the **Members** link in the Customize tab bar) |
+| Agent access scope, triggers, grants, who can use it | `/projects/{id}/customize/agents/{agentName}` (Customize → Agents → the agent) |
 | Repo files (gated `project.file.read`) | `/projects/{id}/files` |
 | Sign-in (SSO domain routing) | `/auth` |
 

@@ -1,8 +1,9 @@
 // The guided SSO wizard must keep encoding the battle-tested IdP gotchas
 // (found setting up a real Entra tenant) and stay wired end-to-end: provider
 // picker → per-provider steps → copyable SP values → INLINE metadata import.
+import { testUiTranslator } from '@/i18n/test-translator';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 import { PROVIDER_GUIDES, SCIM_PROVIDER_GUIDES, getProviderGuide, getScimGuide } from './guides';
 
@@ -49,7 +50,7 @@ describe('provider guides', () => {
   });
 
   test('the Entra guide encodes the live-tested gotchas', () => {
-    const entra = getProviderGuide('entra')!;
+    const entra = getProviderGuide('entra', testUiTranslator)!;
     const text = JSON.stringify(entra.steps);
     // Empty user.mail on onmicrosoft.com accounts → email claim must be UPN.
     expect(text).toContain('user.userprincipalname');
@@ -65,35 +66,37 @@ describe('provider guides', () => {
   // IdPs and a wrong one silently breaks group sync. Entra live-verified;
   // Okta/Google per official docs.
   test('per-provider config: group claim names', () => {
-    expect(getProviderGuide('entra')!.config.groupClaimName).toBe('memberOf');
-    expect(getProviderGuide('okta')!.config.groupClaimName).toBe('groups');
-    expect(getProviderGuide('google')!.config.groupClaimName).toBe('groups');
-    expect(getProviderGuide('custom')!.config.groupClaimName).toBe('groups');
+    expect(getProviderGuide('entra', testUiTranslator)!.config.groupClaimName).toBe('memberOf');
+    expect(getProviderGuide('okta', testUiTranslator)!.config.groupClaimName).toBe('groups');
+    expect(getProviderGuide('google', testUiTranslator)!.config.groupClaimName).toBe('groups');
+    expect(getProviderGuide('custom', testUiTranslator)!.config.groupClaimName).toBe('groups');
   });
 
   test('per-provider config: group VALUE formats (GUIDs vs names)', () => {
-    expect(getProviderGuide('entra')!.config.groupValueHint).toContain('GUIDs');
-    expect(getProviderGuide('okta')!.config.groupValueHint).toContain('NAMES');
-    expect(getProviderGuide('google')!.config.groupValueHint).toContain('NAMES');
+    expect(getProviderGuide('entra', testUiTranslator)!.config.groupValueHint).toContain('GUIDs');
+    expect(getProviderGuide('okta', testUiTranslator)!.config.groupValueHint).toContain('NAMES');
+    expect(getProviderGuide('google', testUiTranslator)!.config.groupValueHint).toContain('NAMES');
     // Google only sends explicitly selected groups, capped at 75.
-    expect(getProviderGuide('google')!.config.groupValueHint).toContain('75');
+    expect(getProviderGuide('google', testUiTranslator)!.config.groupValueHint).toContain('75');
   });
 
   test('per-provider config: metadata form (Google is XML-download only)', () => {
-    expect(getProviderGuide('entra')!.config.preferredMetadata).toBe('url');
-    expect(getProviderGuide('okta')!.config.preferredMetadata).toBe('url');
-    expect(getProviderGuide('google')!.config.preferredMetadata).toBe('xml');
-    expect(getProviderGuide('google')!.config.metadataSource).toContain('does not host');
+    expect(getProviderGuide('entra', testUiTranslator)!.config.preferredMetadata).toBe('url');
+    expect(getProviderGuide('okta', testUiTranslator)!.config.preferredMetadata).toBe('url');
+    expect(getProviderGuide('google', testUiTranslator)!.config.preferredMetadata).toBe('xml');
+    expect(getProviderGuide('google', testUiTranslator)!.config.metadataSource).toContain(
+      'does not host',
+    );
   });
 
   test('the Okta guide adds an explicit email attribute statement', () => {
-    const text = JSON.stringify(getProviderGuide('okta')!.steps);
+    const text = JSON.stringify(getProviderGuide('okta', testUiTranslator)!.steps);
     expect(text).toContain('user.email');
   });
 
   test('unknown provider ids resolve to null (wizard falls back to the picker)', () => {
-    expect(getProviderGuide('bogus')).toBeNull();
-    expect(getProviderGuide(null)).toBeNull();
+    expect(getProviderGuide('bogus', testUiTranslator)).toBeNull();
+    expect(getProviderGuide(null, testUiTranslator)).toBeNull();
   });
 });
 
@@ -150,7 +153,7 @@ describe('directory sync (SCIM) guides', () => {
   });
 
   test('the Entra guide encodes the live-tested provisioning run', () => {
-    const entra = getScimGuide('entra')!;
+    const entra = getScimGuide('entra', testUiTranslator)!;
     const text = JSON.stringify(entra.steps);
     expect(text).toContain('Provision on demand');
     expect(text).toContain('Block sign in');
@@ -167,8 +170,8 @@ describe('directory sync (SCIM) guides', () => {
   });
 
   test('unknown ids resolve to null (wizard falls back to the picker)', () => {
-    expect(getScimGuide('bogus')).toBeNull();
-    expect(getScimGuide(null)).toBeNull();
+    expect(getScimGuide('bogus', testUiTranslator)).toBeNull();
+    expect(getScimGuide(null, testUiTranslator)).toBeNull();
   });
 });
 
@@ -219,24 +222,24 @@ describe('schematic figures (WorkOS-informed content, our own rendering)', () =>
 
   test('schematics are declarative data on the guide step, not JSX baked into guides.ts', () => {
     expect(guidesSource).toContain('export interface StepSchematic');
-    expect(guidesSource).not.toMatch(/<[A-Z]\w*[\s/>]/); // no JSX tags in the data file
+    expect(guidesSource).not.toMatch(/<[A-Z]\w*(?:\s+[a-z][\w-]*=|\/?>)/); // no JSX tags in the data file
   });
 
   test('every provider with a console (Entra, Okta, Google) has at least one schematic', () => {
     for (const id of ['entra', 'okta', 'google']) {
-      const guide = getProviderGuide(id)!;
+      const guide = getProviderGuide(id, testUiTranslator)!;
       const text = JSON.stringify(guide.steps);
       expect(text).toContain('"schematic"');
     }
     for (const id of ['entra', 'okta']) {
-      const guide = getScimGuide(id)!;
+      const guide = getScimGuide(id, testUiTranslator)!;
       const text = JSON.stringify(guide.steps);
       expect(text).toContain('"schematic"');
     }
   });
 
   test('the flagship Entra schematic names the exact screen the user asked to see', () => {
-    const entraScim = getScimGuide('entra')!;
+    const entraScim = getScimGuide('entra', testUiTranslator)!;
     const text = JSON.stringify(entraScim.steps);
     expect(text).toContain('Entra → Provisioning → Admin Credentials');
     expect(text).toContain('Tenant URL');
@@ -247,24 +250,24 @@ describe('schematic figures (WorkOS-informed content, our own rendering)', () =>
 
 describe('WorkOS-informed guide content, adopted per provider (not copied assets)', () => {
   test('Entra SCIM: the default objectId → externalId mapping is called out (not just userName)', () => {
-    const text = JSON.stringify(getScimGuide('entra')!.steps);
+    const text = JSON.stringify(getScimGuide('entra', testUiTranslator)!.steps);
     expect(text).toContain('objectId');
     expect(text).toContain('externalId');
   });
 
   test('Okta SAML: the wizard-only "internal app" feedback step is documented', () => {
-    const text = JSON.stringify(getProviderGuide('okta')!.steps);
+    const text = JSON.stringify(getProviderGuide('okta', testUiTranslator)!.steps);
     expect(text).toContain('This is an internal app that we have created');
   });
 
   test('Okta SCIM: Push Groups uses the exact click path (Find groups by name, Push Immediately)', () => {
-    const text = JSON.stringify(getScimGuide('okta')!.steps);
+    const text = JSON.stringify(getScimGuide('okta', testUiTranslator)!.steps);
     expect(text).toContain('Find groups by name');
     expect(text).toContain('Push Immediately');
   });
 
   test('Google Workspace: attribute mapping and the 24-hour propagation gotcha are documented', () => {
-    const google = getProviderGuide('google')!;
+    const google = getProviderGuide('google', testUiTranslator)!;
     const stepIds = google.steps.map((s) => s.id);
     expect(stepIds).toContain('attribute-mapping');
     const text = JSON.stringify(google.steps);
@@ -272,7 +275,7 @@ describe('WorkOS-informed guide content, adopted per provider (not copied assets
   });
 
   test('Google Workspace has no SCIM guide — there is no first-party directory to sync', () => {
-    expect(getScimGuide('google')).toBeNull();
+    expect(getScimGuide('google', testUiTranslator)).toBeNull();
   });
 
   // Providers that appear in the SAML picker but genuinely CANNOT do outbound
@@ -282,13 +285,13 @@ describe('WorkOS-informed guide content, adopted per provider (not copied assets
   // SCIM is closed-beta API-only). Auth0: inbound-only (its SCIM URL points INTO
   // Auth0). SAML JIT + group auto-provision is the path for all three.
   test('no SCIM guide for providers without generic outbound SCIM (cloudflare, auth0)', () => {
-    expect(getScimGuide('cloudflare')).toBeNull();
-    expect(getScimGuide('auth0')).toBeNull();
+    expect(getScimGuide('cloudflare', testUiTranslator)).toBeNull();
+    expect(getScimGuide('auth0', testUiTranslator)).toBeNull();
   });
 
   test('the added SCIM guides (OneLogin, JumpCloud, PingOne) paste our base URL + token', () => {
     for (const id of ['onelogin', 'jumpcloud', 'pingone']) {
-      const text = JSON.stringify(getScimGuide(id)!.steps);
+      const text = JSON.stringify(getScimGuide(id, testUiTranslator)!.steps);
       // Each connects by pointing the IdP at the minted Tenant URL + secret.
       expect(text).toContain('Tenant URL');
       // And each pins userName to the email Kortix correlates on.
@@ -306,10 +309,14 @@ describe('SCIM last-sync indicator', () => {
       expect(g.config.syncCadenceHint, `${g.id} missing syncCadenceHint`).toBeTruthy();
     }
     // Entra is the one with a real scheduled cycle; the hint must say so.
-    expect(getScimGuide('entra')!.config.syncCadenceHint).toContain('40 minutes');
-    expect(getScimGuide('entra')!.config.syncCadenceHint).toContain('Provision on demand');
+    expect(getScimGuide('entra', testUiTranslator)!.config.syncCadenceHint).toContain('40 minutes');
+    expect(getScimGuide('entra', testUiTranslator)!.config.syncCadenceHint).toContain(
+      'Provision on demand',
+    );
     // Event-driven IdPs must NOT imply a cycle to wait for.
-    expect(getScimGuide('okta')!.config.syncCadenceHint).toContain('as they happen');
+    expect(getScimGuide('okta', testUiTranslator)!.config.syncCadenceHint).toContain(
+      'as they happen',
+    );
   });
 
   test('the wizard verify panel shows last sync activity from active-token usage', () => {
@@ -353,13 +360,13 @@ describe('identity page progressive disclosure', () => {
     expect(cardSource).toContain('Service provider values');
     expect(cardSource).toContain('DisclosureTrigger');
     // Not-connected leads with a call-to-action, not a wall of URLs.
-    expect(cardSource).toContain('Not connected yet');
+    expect(cardSource).toContain("raw('text898569356612')");
     // Group mappings collapse too, with a count chip in the trigger.
     expect(cardSource).toContain('{mappings.length}');
   });
 
   test('the SCIM card leads with a status chip and collapses setup values + tokens', () => {
-    expect(scimCardSource).toContain('Setup values');
+    expect(scimCardSource).toContain("raw('text59a5ff1b6b64')");
     expect(scimCardSource).toContain('DisclosureTrigger');
     // Amber only for the one genuinely wrong state: minted but never called.
     expect(scimCardSource).toContain('waiting for IdP');
@@ -386,16 +393,22 @@ describe('SCIM start-sync guides', () => {
     for (const g of SCIM_PROVIDER_GUIDES) {
       expect(g.config.startSyncHint, `${g.id} missing startSyncHint`).toBeTruthy();
     }
-    expect(getScimGuide('entra')!.config.startSyncHint).toContain('Start provisioning');
+    expect(getScimGuide('entra', testUiTranslator)!.config.startSyncHint).toContain(
+      'Start provisioning',
+    );
     // PingOne's double switch — the fact-checked blocker (connection AND rule).
-    expect(getScimGuide('pingone')!.config.startSyncHint).toContain('CONNECTION toggle');
-    expect(getScimGuide('pingone')!.config.startSyncHint).toContain('Active');
+    expect(getScimGuide('pingone', testUiTranslator)!.config.startSyncHint).toContain(
+      'CONNECTION toggle',
+    );
+    expect(getScimGuide('pingone', testUiTranslator)!.config.startSyncHint).toContain('Active');
     // OneLogin's silent pending-queue trap.
-    expect(getScimGuide('onelogin')!.config.startSyncHint).toContain('Require admin approval');
+    expect(getScimGuide('onelogin', testUiTranslator)!.config.startSyncHint).toContain(
+      'Require admin approval',
+    );
   });
 
   test('the SCIM card renders the cheat sheet with deep links into each guide', () => {
-    expect(scimCardSource).toContain('Start automatic sync in your IdP');
+    expect(scimCardSource).toContain("raw('textc8f3dd364de4')");
     expect(scimCardSource).toContain('startSyncHint');
     expect(scimCardSource).toContain('scim-setup?provider=');
   });
@@ -403,7 +416,7 @@ describe('SCIM start-sync guides', () => {
 
 describe('SCIM scope trade-off copy (live confusion: "why only assigned?")', () => {
   test('the Entra configure step explains "sync only assigned" vs "sync all" in plain terms', () => {
-    const text = JSON.stringify(getScimGuide('entra')!.steps);
+    const text = JSON.stringify(getScimGuide('entra', testUiTranslator)!.steps);
     expect(text).toContain('your allowlist');
     expect(text).toContain('roll out team-by-team');
     expect(text).toContain('rarely what a company tenant wants on day one');
@@ -417,14 +430,12 @@ describe('SCIM scope trade-off copy (live confusion: "why only assigned?")', () 
 
 describe('domain field explains its consequence in the guided wizard (live incident)', () => {
   test('states that every sign-in from the domain routes to the IdP instead of password login', () => {
-    expect(flatWizardSource).toContain(
-      'Every sign-in from this domain is routed to this identity provider instead of password login',
-    );
+    expect(flatWizardSource).toContain("raw('texte6c1f062119d')");
   });
 
   test("warns when the entered domain matches the current admin's own email domain", () => {
     expect(wizardSource).toContain('adminEmailDomain');
-    expect(flatWizardSource).toContain('this will route YOUR next sign-in to the IdP');
+    expect(flatWizardSource).toContain("raw('textcd93ff59e7c2')");
   });
 });
 
@@ -457,7 +468,7 @@ describe('guide screenshots ship with the guides', () => {
 // Novice-walkthrough regressions — each pins a real gap the audit found.
 describe('novice-walkthrough fixes stay fixed', () => {
   test('the SAML test step reconciles with the auto-provision default (no flat "must hand-map")', () => {
-    const entra = getProviderGuide('entra')!;
+    const entra = getProviderGuide('entra', testUiTranslator)!;
     const test = entra.steps.find((s) => s.id === 'test')!;
     const groupBullet = (test.bullets ?? []).join(' ');
     // Must acknowledge auto-provision being ON (the connect-step default),
@@ -466,7 +477,7 @@ describe('novice-walkthrough fixes stay fixed', () => {
   });
 
   test('the SAML test step has a failure/troubleshooting path', () => {
-    const test = getProviderGuide('entra')!.steps.find((s) => s.id === 'test')!;
+    const test = getProviderGuide('entra', testUiTranslator)!.steps.find((s) => s.id === 'test')!;
     expect(test.warning).toBeTruthy();
     expect(test.warning!.toLowerCase()).toContain('fail');
   });
@@ -476,7 +487,7 @@ describe('novice-walkthrough fixes stay fixed', () => {
   });
 
   test('Google shows its own field labels (ACS URL), not Entra defaults', () => {
-    const google = getProviderGuide('google')!;
+    const google = getProviderGuide('google', testUiTranslator)!;
     const basic = google.steps.find((s) => s.id === 'basic-saml')!;
     const sp = (basic.content ?? []).find((b) => b.kind === 'sp-values') as
       { acsLabel?: string; acsFirst?: boolean } | undefined;
@@ -502,15 +513,15 @@ describe('setup polish stays fixed', () => {
 
   test('a returning admin with a prior token gets an explanation + a skip', () => {
     expect(wizardSource).toContain('listScimTokens');
-    expect(wizardSource).toContain('Continue without minting');
+    expect(wizardSource).toContain("raw('texte80f2760aa78')");
   });
 
   test('the already-connected import state is not a dead end', () => {
-    expect(wizardSource).toContain('Continue to testing');
+    expect(wizardSource).toContain("raw('textc75bd371076e')");
   });
 
   test('the Free-tier group-claim path restates the memberOf rename', () => {
-    const entra = getProviderGuide('entra')!;
+    const entra = getProviderGuide('entra', testUiTranslator)!;
     const group = entra.steps.find((s) => s.id === 'group-claim')!;
     expect(group.warning).toContain('memberOf');
     expect(group.warning).toContain('Advanced options');
@@ -525,7 +536,7 @@ describe('setup polish stays fixed', () => {
   });
 
   test('every Entra SSO console step carries a breadcrumb', () => {
-    const entra = getProviderGuide('entra')!;
+    const entra = getProviderGuide('entra', testUiTranslator)!;
     for (const step of entra.steps) {
       if (step.kind === undefined) {
         // instructions steps happen in the IdP console — they need the
@@ -559,7 +570,7 @@ describe('review fixes stay fixed', () => {
 // Google SAML novice-walkthrough pins.
 describe('Google SAML guide is novice-complete', () => {
   test('every Google IdP step has a where badge + breadcrumb', () => {
-    const google = getProviderGuide('google')!;
+    const google = getProviderGuide('google', testUiTranslator)!;
     for (const step of google.steps) {
       if (step.kind === 'import' || step.kind === 'test') continue; // Kortix-side
       expect(step.menuPath, `google step ${step.id} missing menuPath`).toBeTruthy();
@@ -567,7 +578,7 @@ describe('Google SAML guide is novice-complete', () => {
   });
 
   test('the Cloudflare guide brokers via Access with a required policy + groups JSONata', () => {
-    const cf = getProviderGuide('cloudflare')!;
+    const cf = getProviderGuide('cloudflare', testUiTranslator)!;
     const text = JSON.stringify(cf.steps);
     expect(cf.name).toContain('Cloudflare');
     expect(text).toContain('groups'); // group attribute
@@ -582,7 +593,9 @@ describe('Google SAML guide is novice-complete', () => {
   });
 
   test('the metadata step tells the admin to click Google’s own Continue', () => {
-    const meta = getProviderGuide('google')!.steps.find((s) => s.id === 'metadata')!;
+    const meta = getProviderGuide('google', testUiTranslator)!.steps.find(
+      (s) => s.id === 'metadata',
+    )!;
     expect(meta.intro).toContain('Continue');
   });
 
@@ -601,7 +614,7 @@ describe('change-provider guard', () => {
   test('Change provider confirms and clears in-progress state', () => {
     expect(wizardSource).toContain("setConfirmAction('change')");
     expect(wizardSource).toContain('Change provider?');
-    expect(wizardSource).toContain('only one identity provider per account');
+    expect(wizardSource).toContain("raw('textfb77a2e0d116')");
     // the confirm actually resets the current provider's progress + stash + token
     expect(wizardSource).toContain('clearCurrentProgress');
     expect(flatWizardSource).toContain('window.localStorage.removeItem(metadataStashKey(');

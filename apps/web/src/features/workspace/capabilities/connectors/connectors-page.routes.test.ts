@@ -21,7 +21,9 @@ describe('connector card routes', () => {
 
   test('CatalogCard renders a prefetchable Next link when href is present', () => {
     expect(card).toContain('href?: string');
-    expect(card).toContain('return href ?');
+    expect(card).toContain('if (href) {');
     expect(card).toContain('<Link');
+    // Without `prefetch` the card is a link that still costs a cold navigation.
+    expect(card).toContain('prefetch');
   });
 });

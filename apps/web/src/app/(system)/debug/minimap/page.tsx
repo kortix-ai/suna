@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useRef } from 'react';
 
 import { ChatMinimap } from '@/features/session/chat-minimap';
@@ -23,7 +24,13 @@ let n = 0;
 const nextId = () => `prt_dbg_${(n += 1)}`;
 
 function text(value: string): Part {
-  return { id: nextId(), messageID: 'msg_dbg', sessionID: 'ses_dbg', type: 'text', text: value } as unknown as Part;
+  return {
+    id: nextId(),
+    messageID: 'msg_dbg',
+    sessionID: 'ses_dbg',
+    type: 'text',
+    text: value,
+  } as unknown as Part;
 }
 
 function file(filename: string): Part {
@@ -54,7 +61,9 @@ const TURNS: Turn[] = [
   ]),
   turn('u2', [text('no bro u need to make the Kortix marketing update land this week, not next')]),
   turn('u3', [
-    text('GO ahead and build it plz plan approved @Marketing Agent\n<agent_ref name="Marketing Agent" />'),
+    text(
+      'GO ahead and build it plz plan approved @Marketing Agent\n<agent_ref name="Marketing Agent" />',
+    ),
   ]),
   turn('u4', [
     text('you can stop now the qa and just stop i will further review it myself tomorrow'),
@@ -75,16 +84,17 @@ const TURNS: Turn[] = [
 ];
 
 export default function DebugMinimapPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="bg-background flex h-screen flex-col">
       <header className="border-b px-6 py-3">
-        <h1 className="text-foreground text-sm font-medium">/debug/minimap</h1>
-        <p className="text-muted-foreground text-xs">
-          Hover the rail on the left. The dash taper follows the pointer; the card glides.
-        </p>
+        <h1 className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('text52e30cc313a7')}
+        </h1>
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text127337c48cdc')}</p>
       </header>
 
       <div className="relative min-h-0 flex-1">

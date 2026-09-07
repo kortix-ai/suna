@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,11 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { AgentEditorPanel } from '@/features/workspace/customize/sections/view/agent-editor';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import {
   newConfigPrompt,
@@ -30,50 +30,46 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
 import {
   getProjectDetail,
+  listProjectResourceGrants,
+  listProjectTriggers,
   type ProjectConfigSummary,
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords } from '@kortix/shared';
 import {
+  CaretRightIcon,
   MagnifyingGlassIcon,
-  PlusIcon,
   RobotIcon,
   StarIcon as StarSolid,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { agentHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
-import {
-  CatalogEmptyNote,
-  CatalogNoMatch,
-} from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
+import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
-import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
-import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
 
-import { AgentDetailAside } from './agent-detail-aside';
-import { type AgentMode, filterAgents } from './agent-filter';
+import { filterAgents } from './agent-filter';
 
 type Agent = ProjectConfigSummary['agents'][number];
-type ModeFilter = AgentMode | 'all';
-
-const MODE_FILTERS: ReadonlyArray<{ value: ModeFilter; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'primary', label: 'Primary' },
-  { value: 'subagent', label: 'Subagents' },
-];
 
 /**
- * /projects/[id]/agent — the standalone Agents catalog, and the same page body
- * shape as Skills: header + search + filter tabs, a card grid, and a detail
- * modal. It replaces the Customize overlay's master-detail Agents section,
- * which packed a list, a source pane and a settings aside into one fixed
- * three-column shell.
+ * /projects/[id]/agent — the Agents list, and the landing page of Customize.
+ *
+ * Customize is agent-centric (Marko, 2026-09-01). An agent is the one object
+ * a project manager grants a person or a group — every other resource is
+ * reached THROUGH an agent — so it is the object this whole surface is built
+ * around, and this list is where the sidebar's Customize row lands. Each card
+ * is a link to that agent's page (`agentHref`): its instructions, model,
+ * triggers, grants and who may use it, on one routed screen. The cards used to
+ * open a detail modal with the editor swapped into its source pane; a modal
+ * has no URL and buried the editor two clicks deep.
  *
  * Reads `config.agents` off the shared `['project-detail', projectId]` query,
  * so this page and everything else showing a project's agents cannot disagree
@@ -81,27 +77,24 @@ const MODE_FILTERS: ReadonlyArray<{ value: ModeFilter; label: string }> = [
  * `undefined` for a repo-less / capability-gated / config-build-failure
  * project, and `.filter` on that throws into prod Sentry.
  *
- * Card click opens `EntityDetailModal` on that agent: its markdown source in
- * the middle, its assignments + configuration cards in the aside.
- * `selectedPath` is looked up against the unfiltered `agents` list, not
- * `filtered` — so typing into search while the modal is open cannot yank it
- * shut. See `shared/detail-selection.ts` for why `open` follows the selection
- * alone.
+ * The trigger count on each card comes from the same `qk.project.triggers`
+ * list the Triggers tab reads — one request, counted per agent name.
  */
 export function AgentsPage({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE, { accountId }).allowed === true;
+  const canReadTriggers =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_READ, { accountId }).allowed === true;
+  const canManageMembers =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { accountId }).allowed ===
+    true;
   const configure = useConfigureThread(projectId);
 
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState<ModeFilter>('all');
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  // When set, the detail modal's source pane is swapped for the agent
-  // configuration editor (`paneOverride`) — a pane, not a modal on a modal.
-  const [editorOpen, setEditorOpen] = useState(false);
 
   const detailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -110,44 +103,54 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   });
   const config = detailQuery.data?.config ?? null;
 
+  const triggersQuery = useQuery({
+    queryKey: qk.project.triggers(projectId),
+    queryFn: () => listProjectTriggers(projectId),
+    enabled: canReadTriggers,
+    ...contract('config'),
+  });
+  // A trigger stored as `default` counts for the project's default agent —
+  // see `triggerStartsAgent`.
+  const triggerCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const fallback = config?.open_code_default_agent ?? null;
+    for (const trigger of triggersQuery.data?.triggers ?? []) {
+      const owner = trigger.agent === 'default' && fallback ? fallback : trigger.agent;
+      counts.set(owner, (counts.get(owner) ?? 0) + 1);
+    }
+    return counts;
+  }, [triggersQuery.data, config]);
+
+  // Who is granted each agent — the card's "N people" fact. Same key the
+  // agent page's People section reads, manager-gated like it.
+  const grantsQuery = useQuery({
+    queryKey: qk.project.resourceGrants(projectId),
+    queryFn: () => listProjectResourceGrants(projectId),
+    enabled: canManageMembers,
+    retry: false,
+    ...contract('inventory'),
+  });
+  const grantCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const grant of grantsQuery.data?.grants ?? []) {
+      if (grant.resource_type !== 'agent') continue;
+      counts.set(grant.resource_id, (counts.get(grant.resource_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [grantsQuery.data]);
+
   const agents = useMemo(() => toArray(config?.agents), [config]);
 
-  const modeArg = mode === 'all' ? null : mode;
-  const filtered = useMemo(
-    () => filterAgents(agents, { mode: modeArg, query }),
-    [agents, modeArg, query],
-  );
-
-  // Unfiltered lookup (see the component doc comment above) — deliberately not
-  // `filtered.find(...)`.
-  const detail = detailSelection({
-    selection: selectedPath,
-    record: agents.find((agent) => agent.path === selectedPath),
-    isSuccess: detailQuery.isSuccess,
-  });
-
-  // The one honest auto-close: the config came back and this agent is not in
-  // it, so it really was deleted or renamed.
-  useEffect(() => {
-    if (detail.isMissing) setSelectedPath(null);
-  }, [detail.isMissing]);
-
-  // Switching agents (or closing the modal) always drops back to the source
-  // pane — an editor left open for agent A must never frame agent B's files.
-  // Adjusted during render: React's documented alternative to a
-  // setState-in-effect reset (same trick, no cascading render).
-  const [prevPath, setPrevPath] = useState(selectedPath);
-  if (prevPath !== selectedPath) {
-    setPrevPath(selectedPath);
-    setEditorOpen(false);
-  }
+  // No mode filter (Marko, 2026-09-03): the list is the manifest's `agents:`
+  // map, and whether one is a subagent is a chip on its card, not a lens on
+  // the list — three agents do not need a tab bar.
+  const filtered = useMemo(() => filterAgents(agents, { mode: null, query }), [agents, query]);
 
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero agents vs. agents exist but this filter/search hid all of
   // them. Telling the user "No agents yet" in the second case is false and
   // points at the wrong fix (clear the filter, not create an agent).
   const emptyKind = catalogEmptyKind(agents.length, filtered.length);
-  const modeLabel = MODE_FILTERS.find((filter) => filter.value === mode)?.label ?? 'All';
   const defaultAgent = config?.open_code_default_agent ?? null;
 
   // One control, two labels — same rule as the Skills page. The header has a
@@ -159,25 +162,21 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // mismatched on a row that is centred, so both edges were off.
   const createButton = (label: string) =>
     canWrite ? (
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => configure.start(newConfigPrompt('agent'))}
-        disabled={configure.pending}
-      >
-        {configure.pending ? (
-          <Loading className="size-4 shrink-0" />
-        ) : (
-          <PlusIcon className="size-4" />
-        )}
-        {label}
-      </Button>
+      <NewEntityMenu
+        label={label}
+        pending={configure.pending}
+        onChat={() => configure.start(newConfigPrompt('agent'))}
+        manual={{
+          description: tI18nComplete.raw('text5210c5acc2cd'),
+          href: `/projects/${projectId}/files`,
+        }}
+      />
     ) : null;
 
   return (
     <CapabilityPageShell
-      title="Agents"
-      description="Who does the work — each one's instructions, model, and access."
+      title={tI18nComplete.raw('text279b44d2ab4b')}
+      description={tI18nComplete.raw('text636453e23d69')}
       action={createButton('New')}
       search={
         <InputGroupSearch>
@@ -185,7 +184,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
-            placeholder="Search agents"
+            placeholder={tI18nComplete.raw('text212fd04a1d20')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             variant="popover"
@@ -195,40 +194,33 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         </InputGroupSearch>
       }
       filters={
-        <>
-          <Tabs value={mode} onValueChange={(value) => setMode(value as ModeFilter)}>
-            <TabsList>
-              {MODE_FILTERS.map((filter) => (
-                <TabsTrigger key={filter.value} value={filter.value}>
-                  {filter.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          {config ? (
+        config ? (
+          <>
+            <p className="text-muted-foreground text-xs">
+              {agents.length} {agents.length === 1 ? 'agent' : 'agents'}{' '}
+              {tI18nComplete.raw('text582967534d0f')}{' '}
+              <span className="font-mono">{tI18nComplete.raw('text1965f383021e')}</span>
+            </p>
             <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
-          ) : null}
-        </>
+          </>
+        ) : undefined
       }
     >
       <CatalogGrid
         isLoading={detailQuery.isLoading}
         isError={detailQuery.isError}
+        error={detailQuery.error}
         onRetry={() => detailQuery.refetch()}
         isEmpty={emptyKind !== null}
         empty={
           emptyKind === 'no-match' ? (
-            query.trim() ? (
-              <CatalogNoMatch query={query} />
-            ) : (
-              <CatalogEmptyNote>No matches in {modeLabel}.</CatalogEmptyNote>
-            )
+            <CatalogNoMatch query={query} />
           ) : (
             <EmptyState
               icon={RobotIcon}
               size="sm"
-              title="No agents yet"
-              description="Create an agent to customize how sessions run."
+              title={tI18nComplete.raw('text971b61f8cb4d')}
+              description={tI18nComplete.raw('textc4e4294c6777')}
               action={createButton('Create an agent')}
               secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
@@ -237,7 +229,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Docs
+                    {tI18nComplete.raw('text7af023c43013')}
                   </a>
                 </Button>
               }
@@ -248,55 +240,79 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         {filtered.map((agent) => (
           <CatalogCard
             key={agent.path}
+            href={agentHref(projectId, agent.name)}
             title={capitalizeWords(agent.name)}
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
-            onClick={() => setSelectedPath(agent.path)}
+            meta={
+              <AgentCardFacts
+                agent={agent}
+                triggerCount={triggerCounts.get(agent.name) ?? 0}
+                peopleCount={canManageMembers ? (grantCounts.get(agent.name) ?? 0) : null}
+              />
+            }
+            trailing={
+              <CaretRightIcon
+                aria-hidden
+                className="text-muted-foreground/40 group-hover:text-muted-foreground mt-0.5 size-4 transition-colors"
+              />
+            }
           />
         ))}
       </CatalogGrid>
-      <EntityDetailModal
-        projectId={projectId}
-        entity={detail.record}
-        kind="agent"
-        open={detail.open}
-        isResolving={detail.isResolving}
-        meta={
-          detail.record && config ? <AgentDetailMeta agent={detail.record} config={config} /> : null
-        }
-        aside={
-          detail.record && config ? (
-            <AgentDetailAside
-              projectId={projectId}
-              agent={detail.record}
-              config={config}
-              onEditConfig={() => setEditorOpen(true)}
-            />
-          ) : null
-        }
-        paneOverride={
-          editorOpen && detail.record && config ? (
-            <AgentEditorPanel
-              projectId={projectId}
-              agentName={detail.record.name}
-              skillsOptions={toArray(config.skills).map((skill) => ({
-                id: skill.name,
-                label: skill.name,
-              }))}
-              onClose={() => setEditorOpen(false)}
-            />
-          ) : null
-        }
-        onOpenChange={(next) => {
-          if (!next) setSelectedPath(null);
-        }}
-      />
     </CapabilityPageShell>
   );
 }
 
 /**
- * Card badges — mode, and the default-agent star.
+ * The card's facts line: what the agent runs on, what starts it, and who may
+ * use it — the three things a person configuring access wants to know before
+ * opening the page. Model falls back to the project default rather than
+ * printing nothing; triggers and people print their count, including zero,
+ * so every card has the same three slots and the eye can compare down a
+ * column. People is omitted for a reader who cannot see grants.
+ */
+function AgentCardFacts({
+  agent,
+  triggerCount,
+  peopleCount,
+}: {
+  agent: Agent;
+  triggerCount: number;
+  peopleCount: number | null;
+}) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const model = agent.model ? agent.model.split('/').pop() : null;
+  const sep = (
+    <span aria-hidden className="text-muted-foreground/40">
+      ·
+    </span>
+  );
+  return (
+    <>
+      <span className={cn('truncate', model && 'font-mono')}>
+        {model ?? tI18nComplete.raw('text3840d9d29421')}
+      </span>
+      {sep}
+      <span className="tabular-nums">
+        {triggerCount} {triggerCount === 1 ? 'trigger' : 'triggers'}
+      </span>
+      {peopleCount !== null ? (
+        <>
+          {sep}
+          <span className="tabular-nums">
+            {peopleCount === 0
+              ? tI18nComplete.raw('textb6c70926c1aa')
+              : `${peopleCount} ${peopleCount === 1 ? 'grant' : 'grants'}`}
+          </span>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Card badges — mode, the default-agent star, disabled.
  *
  * `mode` is omitted when it is the implicit `primary`: every agent would
  * otherwise carry the same badge, which distinguishes nothing and just adds
@@ -304,6 +320,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
  * worth marking.
  */
 function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolean }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const mode = agent.mode?.toLowerCase();
   return (
     <>
@@ -315,48 +332,13 @@ function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolea
       {isDefault ? (
         <StarSolid
           weight="fill"
-          aria-label="Default agent"
+          aria-label={tI18nComplete.raw('text94da52ecd6c5')}
           className="text-kortix-orange size-3.5 shrink-0"
         />
       ) : null}
       {agent.enabled === false ? (
         <Badge variant="muted" size="xs">
-          Disabled
-        </Badge>
-      ) : null}
-    </>
-  );
-}
-
-/**
- * Status chips beside the modal title. Only states worth flagging:
- *
- *  - mode, when it is NOT the implicit `primary` — a "Primary" chip on every
- *    agent distinguishes nothing.
- *  - default, disabled — both are exceptions by definition.
- *
- * The declaring file is deliberately absent. It was a `kortix.yaml` chip, but
- * a file is a value, not a status, and the modal now prints the real source
- * path under the title — which says the same thing and is clickable-accurate.
- */
-function AgentDetailMeta({ agent, config }: { agent: Agent; config: ProjectConfigSummary }) {
-  const mode = agent.mode?.toLowerCase();
-  return (
-    <>
-      {mode && mode !== 'primary' ? (
-        <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
-          {formatMode(agent.mode ?? '')}
-        </Badge>
-      ) : null}
-      {config.open_code_default_agent === agent.name ? (
-        <Badge variant="outline" size="sm" className="text-muted-foreground gap-1 font-medium">
-          <StarSolid weight="fill" className="text-kortix-orange size-3.5 shrink-0" />
-          Default
-        </Badge>
-      ) : null}
-      {agent.enabled === false ? (
-        <Badge variant="muted" size="sm">
-          Disabled
+          {tI18nComplete.raw('text75081b593d15')}
         </Badge>
       ) : null}
     </>
@@ -380,6 +362,7 @@ function DefaultAgentSelector({
   config: ProjectConfigSummary;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const isV2 = detectManifestVersion(config.manifest_raw) === 2;
   const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
@@ -387,28 +370,36 @@ function DefaultAgentSelector({
   const mutation = useMutation({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {
-      successToast(`${capitalizeWords(result.default_agent)} is now the project default`);
+      successToast(
+        tI18nComplete('text0bb557895b32', { value0: capitalizeWords(result.default_agent) }),
+      );
       // One invalidation, not two: the project CONFIG is a `select` projection
       // over this same `qk.project.detail(id)` entry (`useProjectConfig`), not
       // its own fetch. The retired standalone `['project-config', id]` slot no
       // longer exists, so a second call for it would invalidate nothing.
       await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
   });
 
   if (!isV2 || availableAgents.length === 0 || !current) return null;
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <span className="text-muted-foreground hidden text-xs sm:block">Default</span>
+      <span className="text-muted-foreground hidden text-xs sm:block">
+        {tI18nComplete.raw('text21b111cbfe6e')}
+      </span>
       {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
       <Select
         value={current}
         onValueChange={(agentName) => mutation.mutate(agentName)}
         disabled={!canWrite || mutation.isPending}
       >
-        <SelectTrigger aria-label="Default agent" className="w-44 shrink-0" size="sm">
+        <SelectTrigger
+          aria-label={tI18nComplete.raw('text94da52ecd6c5')}
+          className="w-44 shrink-0"
+          size="sm"
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="end">

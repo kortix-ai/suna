@@ -150,7 +150,7 @@ export function formatItemAge(iso: string, now = Date.now()): string {
 }
 
 /** Longer relative age with a trailing "ago" — the detail-modal idiom (see
- *  `rel` in review-detail-modal.tsx). */
+ *  `rel` in review-detail.tsx). */
 export function formatItemAgeLong(iso: string, now = Date.now()): string {
   const mins = Math.max(1, Math.round((now - new Date(iso).getTime()) / 60_000));
   if (mins < 60) return `${mins}m ago`;

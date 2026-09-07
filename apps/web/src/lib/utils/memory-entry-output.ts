@@ -137,8 +137,14 @@ function parseObservationReport(text: string): ParsedObservationMemory | null {
     if (tokenTool) {
       tool = tokenTool;
     } else {
-      const toolMatch = remainder.match(/Tool:\s*([\s\S]*?)(?=\s+\|\s*Prompt\s*#|\s+Prompt\s*#|\s+Session:|\s+Created:|\s+Concepts:|\s+Files read:|$)/i);
-      tool = toolMatch?.[1]?.replace(/\bTool:\s*/gi, ' ').replace(/\s+/g, ' ').trim() || null;
+      const toolMatch = remainder.match(
+        /Tool:\s*([\s\S]*?)(?=\s+\|\s*Prompt\s*#|\s+Prompt\s*#|\s+Session:|\s+Created:|\s+Concepts:|\s+Files read:|$)/i,
+      );
+      tool =
+        toolMatch?.[1]
+          ?.replace(/\bTool:\s*/gi, ' ')
+          .replace(/\s+/g, ' ')
+          .trim() || null;
     }
   }
 
@@ -166,7 +172,8 @@ function parseObservationReport(text: string): ParsedObservationMemory | null {
   }
 
   if (concepts.length === 0) {
-    const compactConcepts = remainder.match(/Concepts:\s*([\s\S]*?)(?=\s+Files read:|$)/i)?.[1] ?? '';
+    const compactConcepts =
+      remainder.match(/Concepts:\s*([\s\S]*?)(?=\s+Files read:|$)/i)?.[1] ?? '';
     concepts = compactConcepts
       .split(',')
       .map((item) => item.trim())
@@ -246,7 +253,9 @@ function parseLtmEntry(text: string): ParsedLtmMemory | null {
   const session = fields.get('Session:') || null;
   const createdAndUpdated = fields.get('Created:') ?? '';
   const created = createdAndUpdated.split('|')[0]?.trim() || null;
-  let updated = createdAndUpdated.includes('|') ? createdAndUpdated.split('|')[1]?.trim() || null : null;
+  let updated = createdAndUpdated.includes('|')
+    ? createdAndUpdated.split('|')[1]?.trim() || null
+    : null;
   while (updated?.toLowerCase().startsWith('updated:')) {
     updated = updated.slice('updated:'.length).trim() || null;
   }

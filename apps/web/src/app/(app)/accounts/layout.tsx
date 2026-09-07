@@ -1,13 +1,18 @@
 'use client';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { AppHeader } from '@/features/layout/app-header';
+import { AccountSettingsShell } from '@/features/accounts/hub/account-settings-shell';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import React from 'react';
 
 type LayoutProps = { children: React.ReactNode };
 
+/**
+ * Every `/accounts/**` route renders inside the settings shell — sidebar on
+ * the left, breadcrumb bar and content on the right. The auth gate sits here
+ * so no child route paints its frame for a signed-out visitor.
+ */
 const Layout = ({ children }: LayoutProps) => {
   const { user, isLoading } = useAuth();
 
@@ -17,14 +22,7 @@ const Layout = ({ children }: LayoutProps) => {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
   }
 
-  return (
-    <div className="flex min-h-screen flex-col">
-      <div className="w-full border-b">
-        <AppHeader user={user} breadcrumb="Accounts" />
-      </div>
-      <main className="bg-background px-mobile flex-1 py-10 sm:py-12">{children}</main>
-    </div>
-  );
+  return <AccountSettingsShell>{children}</AccountSettingsShell>;
 };
 
 export default Layout;

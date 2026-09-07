@@ -10,7 +10,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Plus } from '@/features/icon/icons/plus';
 import { cn } from '@/lib/utils';
 import { KortixAccount } from '@kortix/sdk';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 const NewProjectControl = ({
   viewAll,

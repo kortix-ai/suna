@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import React, { useRef, useState } from 'react';
 
 interface SpotlightCardProps {
   children: React.ReactNode;
@@ -9,11 +9,7 @@ interface SpotlightCardProps {
   spotlightColor?: string;
 }
 
-export function SpotlightCard({
-  children,
-  className,
-  spotlightColor,
-}: SpotlightCardProps) {
+export function SpotlightCard({ children, className, spotlightColor }: SpotlightCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isHovered, setIsHovered] = useState(false);
@@ -76,8 +72,7 @@ export function SpotlightCard({
             opacity: isHovered ? 1 : 0,
             ...(borderGlowBg && { background: borderGlowBg }),
             mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-            WebkitMask:
-              'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
             maskComposite: 'exclude',
             WebkitMaskComposite: 'xor',
             padding: '1px',

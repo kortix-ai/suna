@@ -22,9 +22,7 @@
 export const DEFAULT_TIME_BUDGET_MS = 2000;
 
 export type BudgetOutcome<T> =
-  | { status: 'settled'; value: T }
-  | { status: 'failed'; error: unknown }
-  | { status: 'timeout' };
+  { status: 'settled'; value: T } | { status: 'failed'; error: unknown } | { status: 'timeout' };
 
 /**
  * Resolve when `work` settles, or when `budgetMs` elapses — whichever is first.

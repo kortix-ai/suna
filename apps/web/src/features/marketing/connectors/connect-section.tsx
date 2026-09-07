@@ -3,7 +3,8 @@
 import { Reveal } from '@/components/home/reveal';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
-import { connect } from './content';
+import { useTranslations } from '@/i18n/use-translations';
+import { getLocalizedConnectorsContent } from './content';
 import { Eyebrow, ProductShot, Section } from './shared';
 
 /**
@@ -12,6 +13,8 @@ import { Eyebrow, ProductShot, Section } from './shared';
  * click" is worth nothing next to a mock, and worth a lot next to the actual UI.
  */
 export function ConnectSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { connect } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <Section id="connect">
       <SectionHeader eyebrow={connect.eyebrow} title={connect.title} description={connect.sub} />

@@ -2,6 +2,7 @@
 
 import { CreditCardIcon, KeyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -24,6 +25,7 @@ export function ModelConnectionGate({
   size?: 'sm' | 'default';
   className?: string;
 }) {
+  const t = useTranslations('sessionUi.modelGate');
   const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
     useModelConnectionGate(EMPTY_MODELS);
 
@@ -34,22 +36,18 @@ export function ModelConnectionGate({
         className={className}
         icon={KeyIcon}
         size={size}
-        title="Connect a model to start chatting"
-        description={
-          showUpgradeOption
-            ? "This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider."
-            : 'This session needs an LLM connected before it can respond. Bring your own API key from any provider.'
-        }
+        title={t('title')}
+        description={showUpgradeOption ? t('upgradeDescription') : t('description')}
         action={
           showUpgradeOption ? (
             <Button type="button" size="sm" onClick={openUpgrade}>
               <CreditCardIcon className="size-3.5" />
-              Upgrade
+              {t('upgrade')}
             </Button>
           ) : (
             <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
               <KeyIcon className="size-3.5" />
-              Bring your own key
+              {t('bringKey')}
             </Button>
           )
         }
@@ -62,7 +60,7 @@ export function ModelConnectionGate({
               onClick={() => openConnectProvider('providers')}
             >
               <KeyIcon className="size-3.5" />
-              Bring your own key
+              {t('bringKey')}
             </Button>
           ) : undefined
         }
@@ -84,10 +82,29 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
  * disabled by `modelUnavailable`). Left side says what's wrong, right side
  * offers the same two ways out as the full gate.
  *
+ * ## It is a TRAY, not a box below the composer
+ *
+ * This renders as the card's next sibling and pulls itself UP behind it
+ * (`-mt-4` on the clipper, cancelled by `pt-4` on the strip), so the card —
+ * `isolate z-10`, opaque `bg-sidebar` — paints over the overlap. What is left
+ * is one surface: the composer, with a deeper strip hanging off its bottom
+ * edge and showing through the card's own rounded bottom corners.
+ *
+ * The overlap is why the card needs NO conditional radius. A flush seam would
+ * have meant `rounded-b-none` on the card while this is mounted, and the card
+ * would snap its corners back the instant `show` flipped — 350ms of square
+ * corner sitting above a strip that is still animating out. Here the card is
+ * untouched and only the tray moves.
+ *
+ * `-mt-4` lives on the clipper, never on the strip inside it: the clipper is
+ * `overflow-hidden` for the height animation, so a negative margin on its
+ * child would be clipped away instead of overlapping anything.
+ *
  * `show` must only flip on settled data (see `entitlementsPending`) — the
  * animation assumes it renders once with the final answer, not per-query.
  */
 export function ModelConnectionBar({ show }: { show: boolean }) {
+  const t = useTranslations('sessionUi.modelGate');
   const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
     useModelConnectionGate(EMPTY_MODELS);
   const reduceMotion = useReducedMotion();
@@ -110,40 +127,36 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                 ? { opacity: 0, transition: { duration: 0.15 } }
                 : { height: 0, transition: BAR_EXIT }
             }
-            className="relative z-0 overflow-hidden"
+            className="relative z-0 -mt-4 overflow-hidden"
           >
             <m.div
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
-              className="border-border bg-muted my-2 rounded-md border"
+              // `border-t-0`: the card's own bottom border is the seam. Drawing
+              // one here too would put a second hairline under a card that
+              // already has one. `rounded-b-xl` matches the card's radius so
+              // the two share one silhouette; the top corners are square
+              // because they live behind the card and are never seen.
+              className="border-border bg-muted rounded-b-xl border border-t-0 pt-4"
             >
-              <div className="flex items-center justify-between gap-3  p-1 px-3">
+              <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
                   <KeyIcon className="size-3.5 shrink-0" />
                   <span className="truncate">
-                    No model connected
-                    <span className="hidden sm:inline"> — connect one to start chatting</span>
+                    {t('barTitle')}
+                    <span className="hidden sm:inline"> — {t('barDescription')}</span>
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {showUpgradeOption && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      onClick={openUpgrade}
-                    >
+                    <Button type="button" variant="ghost" size="xs" onClick={openUpgrade}>
                       <CreditCardIcon className="size-3.5 shrink-0" />
-                      Upgrade
+                      {t('upgrade')}
                     </Button>
                   )}
-                  <Button
-                    type="button"
-                    size="xs"
-                    onClick={() => openConnectProvider('providers')}
-                  >
-                    Connect model
+                  <Button type="button" size="xs" onClick={() => openConnectProvider('providers')}>
+                    {t('connectModel')}
                   </Button>
                 </div>
               </div>

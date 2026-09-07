@@ -104,9 +104,9 @@ describe('/new: the onboarding param owns the page', () => {
     // A reload of `/new?onboarding=<id>` restarts the create hook at
     // `status: 'idle'`, so `submitting` alone would paint the form — <input
     // autoFocus> and all — while `getProjectDetail` is still in flight.
-    const swap = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
-    expect(swap).not.toBeNull();
-    const [, handoffBranch, formBranch] = swap ?? [];
+    expect(code).toContain('{handingOff ? (');
+    const handoffBranch = code.slice(code.indexOf('key="handoff"'), code.indexOf('key="form"'));
+    const formBranch = code.slice(code.indexOf('key="form"'), code.indexOf('</AnimatePresence>'));
     expect(handoffBranch).toContain('<WorkspaceHandoff');
     expect(handoffBranch).not.toContain('<form');
     expect(formBranch).toContain('<form');

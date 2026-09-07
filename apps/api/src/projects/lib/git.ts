@@ -32,8 +32,8 @@ import type { RequestContext } from '../../iam/actor';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { accountRoleFor } from '../../iam/read-models';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
+import type { GitPrincipal } from '../../git-proxy/ref-policy';
 import {
-  sessionWorkspaceAllowsRepositoryAccess,
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
 
@@ -740,7 +740,7 @@ export async function resolveProjectUpstream(
 
 
 export type GitProxyAuth =
-  | { ok: true; project: ProjectRow }
+  | { ok: true; project: ProjectRow; principal: GitPrincipal }
   | { ok: false; status: number; message: string };
 
 /**
@@ -867,18 +867,41 @@ async function authorizeGitProxyUncached(
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
-    if (
-      result.sessionId &&
-      !(await sessionWorkspaceAllowsRepositoryAccess({
-        sessionId: result.sessionId,
-        accountId: result.accountId,
-        projectId,
-      }))
-    ) {
-      return {
-        ok: false,
-        status: 403,
-        message: 'session workspace does not allow repository access',
+    // A SESSION-scoped PAT is an agent credential wearing a different prefix:
+    // the `kortix` CLI inside a sandbox authenticates with one. It must land on
+    // the same principal as the sandbox token, or the ref allowlist would be a
+    // one-line bypass (swap the credential, keep the push).
+    let sessionPrincipal: GitPrincipal | null = null;
+    if (result.sessionId) {
+      const [sessionRow] = await db
+        .select({
+          sessionId: projectSessions.sessionId,
+          branchName: projectSessions.branchName,
+          sessionMetadata: projectSessions.metadata,
+        })
+        .from(projectSessions)
+        .where(
+          and(
+            eq(projectSessions.sessionId, result.sessionId),
+            eq(projectSessions.accountId, result.accountId),
+            eq(projectSessions.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!sessionRow || !workspaceMetadataAllowsRepositoryAccess(sessionRow.sessionMetadata)) {
+        return {
+          ok: false,
+          status: 403,
+          message: 'session workspace does not allow repository access',
+        };
+      }
+      if (!sessionRow.branchName) {
+        return { ok: false, status: 403, message: 'session has no branch to push' };
+      }
+      sessionPrincipal = {
+        kind: 'session',
+        sessionId: sessionRow.sessionId,
+        branch: sessionRow.branchName,
       };
     }
     if (result.accountId !== project.accountId) {
@@ -888,7 +911,16 @@ async function authorizeGitProxyUncached(
         return { ok: false, status: 403, message: 'token is not authorized for this project' };
       }
     }
-    return { ok: true, project };
+    return {
+      ok: true,
+      project,
+      principal:
+        sessionPrincipal ?? {
+          kind: 'user',
+          userId: result.userId ?? null,
+          tokenId: result.tokenId ?? null,
+        },
+    };
   }
 
   if (tokenCheck.kind === 'kortix') {
@@ -903,6 +935,8 @@ async function authorizeGitProxyUncached(
       const [sandbox] = await db
         .select({
           sandboxId: sessionSandboxes.sandboxId,
+          sessionId: projectSessions.sessionId,
+          branchName: projectSessions.branchName,
           sessionMetadata: projectSessions.metadata,
         })
         .from(sessionSandboxes)
@@ -932,13 +966,28 @@ async function authorizeGitProxyUncached(
           accountId: result.accountId,
           sandboxId: result.sandboxId,
         });
-        if (monitorBox) return { ok: true, project };
+        if (monitorBox) return { ok: true, project, principal: { kind: 'monitor' } };
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
         return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
       }
-      return { ok: true, project };
+      // A session's git authority is its own branch and nothing else — see
+      // git-proxy/ref-policy.ts. Refuse rather than widen if the row somehow
+      // carries no branch: an unnamed branch would make the allowlist empty in
+      // one direction and unbounded in the other, depending on how it is read.
+      if (!sandbox.branchName) {
+        return { ok: false, status: 403, message: 'session has no branch to push' };
+      }
+      return {
+        ok: true,
+        project,
+        principal: {
+          kind: 'session',
+          sessionId: sandbox.sessionId,
+          branch: sandbox.branchName,
+        },
+      };
     }
     // Account-scoped user API key. No per-project fallback here: an API key
     // carries no user identity, so there is no principal to evaluate project
@@ -946,7 +995,7 @@ async function authorizeGitProxyUncached(
     if (result.accountId !== project.accountId) {
       return { ok: false, status: 403, message: 'token does not own this project' };
     }
-    return { ok: true, project };
+    return { ok: true, project, principal: { kind: 'user', userId: null } };
   }
 
   return { ok: false, status: 401, message: 'git proxy requires a Kortix token' };

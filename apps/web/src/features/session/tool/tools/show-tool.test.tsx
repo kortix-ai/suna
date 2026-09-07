@@ -1,13 +1,9 @@
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ToolPart } from '@/ui';
+import { ArrowSquareOutIcon, FileCsvIcon, FilePdfIcon } from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
-import {
-  ArrowSquareOutIcon,
-  FileCsvIcon,
-  FilePdfIcon,
-} from '@phosphor-icons/react';
+import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 

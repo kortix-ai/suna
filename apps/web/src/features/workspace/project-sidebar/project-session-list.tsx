@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import {
@@ -8,7 +8,6 @@ import {
   isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
-  SESSION_DISPLAY_STATUS_LABELS,
   sessionDisplayStatus,
   sessionIsShared,
   sessionSource,
@@ -167,8 +166,8 @@ function ProjectSessionListSkeleton() {
 }
 
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
   const { holdPeek } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
@@ -226,11 +225,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       restartProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
-      successToast(`Restarting "${label}"…`);
+      successToast(tI18nComplete('textdd465809683b', { value0: label }));
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (err) => {
-      errorToast(err instanceof Error ? err.message : 'Failed to restart session');
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text1604d2906a45'));
     },
   });
 
@@ -238,11 +237,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       stopProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
-      successToast(`"${label}" stopped`);
+      successToast(tI18nComplete('textb86777c5ad5c', { value0: label }));
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (err) => {
-      errorToast(err instanceof Error ? err.message : 'Failed to stop session');
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('texte0e30badc30c'));
     },
   });
 
@@ -255,7 +254,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // only applies the two ANDed multi-select facets from the store.
   const visibleSessions = sessions.filter(
     (session) =>
-      matchesStatusFilters(session, statusFilters) && matchesSourceFilters(session, sourceFilters),
+      matchesStatusFilters(session, statusFilters) &&
+      matchesSourceFilters(session, sourceFilters, tI18nComplete),
   );
 
   const viewState = resolveSessionListViewState({
@@ -277,11 +277,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       const message = error instanceof Error ? error.message : undefined;
       return (
         <div className="space-y-1.5 px-2 py-2">
-          <p className="text-destructive/80 text-xs">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
-            )}
-          </p>
+          <p className="text-destructive/80 text-xs">{t('sessionList.loadError')}</p>
           {message && (
             <p className="text-muted-foreground/70 truncate text-xs" title={message}>
               {message}
@@ -293,7 +289,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             className="h-6 px-2 text-xs"
             onClick={() => refetch()}
           >
-            Retry
+            {t('retry')}
           </Button>
         </div>
       );
@@ -302,7 +298,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     if (viewState === 'empty') {
       return (
         <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-          {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
+          {t('sessionList.empty')}
         </div>
       );
     }
@@ -310,9 +306,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     if (viewState === 'no-matches') {
       return (
         <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-          {tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0',
-          )}
+          {t('sessionList.noMatches')}
         </div>
       );
     }
@@ -320,12 +314,16 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // Below the early returns: grouping is only ever read by the content state,
     // and computing it above meant every loading/error/empty render paid for a
     // result it threw away.
-    const grouped = groupSessions(visibleSessions, {
-      mode: groupMode,
-      order: orderMode,
-      reviewCountBySession: reviewSummary.needsYouBySession,
-      hiddenSections,
-    });
+    const grouped = groupSessions(
+      visibleSessions,
+      {
+        mode: groupMode,
+        order: orderMode,
+        reviewCountBySession: reviewSummary.needsYouBySession,
+        hiddenSections,
+      },
+      tI18nComplete,
+    );
 
     // `resolveSessionListViewState` only sees counts before filtering by
     // `hiddenSections` — it has no way to know every section got hidden. Catch
@@ -333,7 +331,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // no explanation.
     if (grouped.sections.length === 0) {
       return (
-        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">All sections hidden.</div>
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {t('allSectionsHidden')}
+        </div>
       );
     }
 
@@ -492,6 +492,7 @@ function SessionListHeader({
   reviewCountBySession: Record<string, number>;
   onMenuOpenChange: (open: boolean) => void;
 }) {
+  const t = useTranslations('sidebar');
   return (
     <div
       className={cn(
@@ -503,7 +504,7 @@ function SessionListHeader({
         href={`/projects/${projectId}/sessions`}
         className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
       >
-        <span className="truncate">Sessions</span>
+        <span className="truncate">{t('sessions')}</span>
       </HoverPrefetchLink>
       {sessions.length > 0 && (
         <DropdownMenu onOpenChange={onMenuOpenChange}>
@@ -518,7 +519,7 @@ function SessionListHeader({
               variant="ghost"
               size="icon-xs"
               type="button"
-              aria-label="Session view options"
+              aria-label={t('sessionViewOptions')}
               className={SESSION_MENU_TRIGGER_CLASS}
             >
               <DotsThreeIcon className="size-4" />
@@ -560,6 +561,24 @@ function SessionListSection({
   onOpenChange,
   children,
 }: SessionListSectionProps) {
+  const t = useTranslations('sidebar.filter.section');
+  const sectionTranslationKeys = {
+    'needs-you': 'needsYou',
+    running: 'running',
+    recent: 'recent',
+    today: 'today',
+    yesterday: 'yesterday',
+    week: 'week',
+    older: 'older',
+    chat: 'chat',
+    slack: 'slack',
+    telegram: 'telegram',
+    email: 'email',
+    schedule: 'scheduled',
+    webhook: 'webhook',
+    all: 'all',
+  } as const;
+  const sectionKey = sectionTranslationKeys[section.id as keyof typeof sectionTranslationKeys];
   if (!showHeader) {
     return <div className="space-y-px">{children}</div>;
   }
@@ -578,10 +597,10 @@ function SessionListSection({
             SESSION_ROW_HEIGHT_CLASS,
           )}
         >
-          <span className="truncate">{section.label}</span>
+          <span className="truncate">{sectionKey ? t(sectionKey) : section.label}</span>
           <CaretRightIcon
             aria-hidden
-            className="size-3 shrink-0 opacity-0 transition-transform duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+            className="duration-normal size-3 shrink-0 opacity-0 transition-transform ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
           />
           <SessionSectionMenu
             projectId={projectId}
@@ -617,6 +636,7 @@ function SessionSectionMenu({
   sessions: ProjectSession[];
   reviewCountBySession: Record<string, number>;
 }) {
+  const t = useTranslations('sidebar');
   const [open, setOpen] = useState(false);
 
   return (
@@ -626,7 +646,7 @@ function SessionSectionMenu({
           variant="secondary"
           size="icon-xs"
           type="button"
-          aria-label="Section options"
+          aria-label={t('sectionOptions')}
           className={cn(
             SESSION_MENU_TRIGGER_CLASS,
             'relative ml-auto opacity-0',
@@ -695,7 +715,8 @@ function ProjectSessionRow({
   reviewCount = 0,
   nested = false,
 }: ProjectSessionRowProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
   const [menuOpen, setMenuOpen] = useState(false);
 
   const deferAfterClose = (fn: () => void) => {
@@ -703,7 +724,7 @@ function ProjectSessionRow({
     requestAnimationFrame(() => fn());
   };
 
-  const source = sessionSource(session);
+  const source = sessionSource(session, tI18nComplete);
   const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
   const isMeta = isMetaCoordinatorSession(session);
   const spawnedBy = spawnedBySessionId(session);
@@ -747,7 +768,7 @@ function ProjectSessionRow({
           </div>
 
           {isMeta && (
-            <Hint side="top" label="Meta coordinator">
+            <Hint side="top" label={t('metaCoordinator')}>
               <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
                 <MetaFolder className="size-3.5" weight="fill" />
               </span>
@@ -757,7 +778,7 @@ function ProjectSessionRow({
           <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
 
           {/* Same pill the Review row wears (project-change-requests-nav.tsx):
-              `Badge` at `size="tabular"` — rounded-[5px], min-w-5, mono tabular
+              `Badge` at `size="tabular"` — a small radius, min-w-5, mono tabular
               figures. It was a hand-rolled `rounded-full` span, which is the one
               badge shape this system does not use, so a subagent count and a
               review count rendered as two different objects while meaning the
@@ -803,7 +824,10 @@ function ProjectSessionRow({
             data-session-indicators="true"
           >
             {showSpawnedBy && spawnedBy && (
-              <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
+              <Hint
+                side="top"
+                label={tI18nComplete('text4d67694a7607', { value0: spawnedBy.slice(0, 8) })}
+              >
                 <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
                   <SpawnedBy className="size-3" />
                 </span>
@@ -853,9 +877,7 @@ function ProjectSessionRow({
               variant="ghost"
               size="icon"
               type="button"
-              aria-label={tHardcodedUi.raw(
-                'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
-              )}
+              aria-label={t('sessionList.actions')}
               className={cn(
                 SESSION_MENU_TRIGGER_CLASS,
                 'absolute top-1/2 right-1 z-10 -translate-y-1/2',
@@ -879,7 +901,7 @@ function ProjectSessionRow({
               onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
             >
               <PencilSimpleIcon />
-              Rename
+              {tI18nComplete.raw('text3064d79a295c')}
             </DropdownMenuItem>
             {/* Shown to everyone who can open the session: the owner
                 changes access here, everyone else reads who has it. */}
@@ -888,7 +910,9 @@ function ProjectSessionRow({
               onSelect={() => deferAfterClose(() => onShare(session))}
             >
               <Share />
-              {session.can_manage_sharing !== false ? 'Share' : 'Who has access'}
+              {session.can_manage_sharing !== false
+                ? 'Share'
+                : tI18nComplete.raw('textadc01d813da0')}
             </DropdownMenuItem>
             <DropdownMenuItem
               className="cursor-pointer"
@@ -896,7 +920,7 @@ function ProjectSessionRow({
               onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
             >
               {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
-              Restart
+              {tI18nComplete.raw('text6b983a81e5e8')}
             </DropdownMenuItem>
             {/* Lifecycle, not sharing: a project manager keeps Stop on a
                 session they did not create. */}
@@ -907,7 +931,7 @@ function ProjectSessionRow({
                 onSelect={() => deferAfterClose(() => onStop(session.session_id, displayTitle))}
               >
                 {isStopping ? <Loading className="size-4 shrink-0" /> : <Square />}
-                Stop
+                {tI18nComplete.raw('textcae7d57bc067')}
               </DropdownMenuItem>
             )}
             <DropdownMenuItem
@@ -915,7 +939,7 @@ function ProjectSessionRow({
               onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
             >
               <TrashIcon />
-              Delete
+              {tI18nComplete.raw('texte2d0a54968ea')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -991,13 +1015,20 @@ function SessionStatusDot({
   session: ProjectSession;
   reviewCount?: number;
 }) {
+  const t = useTranslations('sidebar.sessionList');
   const display = sessionDisplayStatus(session, reviewCount);
   const style = STATUS_DOT_STYLE[display];
+  const statusKeys: Record<SessionDisplayStatus, Parameters<typeof t>[0]> = {
+    'needs-you': 'status.needsYou',
+    starting: 'status.starting',
+    running: 'status.running',
+    done: 'status.done',
+    stopped: 'status.stopped',
+    failed: 'status.failed',
+    legacy: 'status.legacy',
+  };
   const label =
-    display === 'needs-you'
-      ? `${reviewCount} awaiting your review`
-      : SESSION_DISPLAY_STATUS_LABELS[display];
-
+    display === 'needs-you' ? t('reviewCount', { count: reviewCount }) : t(statusKeys[display]);
 
   return (
     <Hint side="right" label={<span className="text-xs">{label}</span>}>

@@ -1,10 +1,10 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
-import { useEffect, useMemo, useState } from 'react';
-import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import type { Stage } from '@/components/dashboard/connecting-screen';
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
+import { useEffect, useMemo, useState } from 'react';
 
 /**
  * /debug/connecting
@@ -80,7 +80,10 @@ export default function DebugConnectingPage() {
     return () => clearInterval(id);
   }, [variant]);
 
-  const screen = useMemo(() => renderVariant(variant, animatedPct, tHardcodedUi), [variant, animatedPct, tHardcodedUi]);
+  const screen = useMemo(
+    () => renderVariant(variant, animatedPct, tHardcodedUi),
+    [variant, animatedPct, tHardcodedUi],
+  );
 
   const groups = Array.from(new Set(VARIANTS.map((v) => v.group)));
 
@@ -89,16 +92,20 @@ export default function DebugConnectingPage() {
       {screen}
 
       {/* Control panel — fixed, out of the way of the centered content */}
-      <div className="pointer-events-auto fixed right-5 top-5 z-[100] w-[260px] overflow-hidden rounded-2xl border border-border/50 bg-background/95 shadow-2xl shadow-black/20 backdrop-blur-xl">
-        <div className="border-b border-border/40 px-4 py-3">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/60">{tHardcodedUi.raw('appDebugConnectingPage.line93JsxTextConnectingScreen')}</p>
-          <p className="mt-0.5 text-sm font-medium text-foreground">{tHardcodedUi.raw('appDebugConnectingPage.line96JsxTextDebugHarness')}</p>
+      <div className="border-border/50 bg-background/95 pointer-events-auto fixed top-5 right-5 z-[100] w-[260px] overflow-hidden rounded-2xl border shadow-2xl shadow-black/20 backdrop-blur-xl">
+        <div className="border-border/40 border-b px-4 py-3">
+          <p className="text-muted-foreground/60 text-xs font-medium tracking-[0.18em] uppercase">
+            {tHardcodedUi.raw('appDebugConnectingPage.line93JsxTextConnectingScreen')}
+          </p>
+          <p className="text-foreground mt-0.5 text-sm font-medium">
+            {tHardcodedUi.raw('appDebugConnectingPage.line96JsxTextDebugHarness')}
+          </p>
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto p-2">
           {groups.map((group) => (
             <div key={group} className="mb-2 last:mb-0">
-              <p className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground/45">
+              <p className="text-muted-foreground/45 px-2 pt-2 pb-1 text-xs font-semibold tracking-[0.15em] uppercase">
                 {group}
               </p>
               {VARIANTS.filter((v) => v.group === group).map((v) => (
@@ -116,9 +123,7 @@ export default function DebugConnectingPage() {
                   <span
                     className={
                       'h-1.5 w-1.5 shrink-0 rounded-full transition-colors ' +
-                      (variant === v.id
-                        ? 'bg-foreground/80'
-                        : 'bg-foreground/15')
+                      (variant === v.id ? 'bg-foreground/80' : 'bg-foreground/15')
                     }
                   />
                   <span className="truncate">{v.label}</span>
@@ -128,11 +133,14 @@ export default function DebugConnectingPage() {
           ))}
         </div>
 
-        <div className="border-t border-border/40 px-4 py-3">
-          <p className="text-xs leading-relaxed text-muted-foreground/50">{tHardcodedUi.raw('appDebugConnectingPage.line135JsxTextNotLinkedFromTheAppVisit')}{' '}
-            <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs">
+        <div className="border-border/40 border-t px-4 py-3">
+          <p className="text-muted-foreground/50 text-xs leading-relaxed">
+            {tHardcodedUi.raw('appDebugConnectingPage.line135JsxTextNotLinkedFromTheAppVisit')}{' '}
+            <code className="bg-foreground/[0.06] rounded px-1 font-mono text-xs">
               /debug/connecting
-            </code>{' '}{tHardcodedUi.raw('appDebugConnectingPage.line139JsxTextAnyTime')}</p>
+            </code>{' '}
+            {tHardcodedUi.raw('appDebugConnectingPage.line139JsxTextAnyTime')}
+          </p>
         </div>
       </div>
     </>
@@ -145,11 +153,27 @@ function renderVariant(
   tHardcodedUi: ReturnType<typeof useTranslations>,
 ): React.ReactNode {
   const MOCK_STAGES = [
-    { id: 'server_creating', progress: 5, message: 'Booting machine' },
-    { id: 'cloud_init_running', progress: 35, message: 'Pulling image' },
-    { id: 'services_starting', progress: 60, message: 'Starting services' },
-    { id: 'services_ready', progress: 85, message: 'Waiting for health' },
-    { id: 'connecting', progress: 98, message: 'Finalizing' },
+    {
+      id: 'server_creating',
+      progress: 5,
+      message: tHardcodedUi.raw('i18nComplete.text27bcbc3624db'),
+    },
+    {
+      id: 'cloud_init_running',
+      progress: 35,
+      message: tHardcodedUi.raw('i18nComplete.texta6a8f4387a75'),
+    },
+    {
+      id: 'services_starting',
+      progress: 60,
+      message: tHardcodedUi.raw('i18nComplete.text688ed737c588'),
+    },
+    {
+      id: 'services_ready',
+      progress: 85,
+      message: tHardcodedUi.raw('i18nComplete.text3f4bc921bd3a'),
+    },
+    { id: 'connecting', progress: 98, message: tHardcodedUi.raw('i18nComplete.textc25c44464d12') },
   ];
 
   const MOCK_MACHINE = {
@@ -160,9 +184,7 @@ function renderVariant(
 
   switch (variant) {
     case 'connecting':
-      return (
-        <ConnectingScreen forceConnecting labelOverride="sandbox-83e1c69c-3" />
-      );
+      return <ConnectingScreen forceConnecting labelOverride="sandbox-83e1c69c-3" />;
     case 'connecting-with-title':
       return (
         <ConnectingScreen
@@ -181,9 +203,21 @@ function renderVariant(
       return <ConnectingScreen forceConnecting overrideStage={'restoring' as Stage} />;
 
     case 'minimal-signing-in':
-      return <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appDebugConnectingPage.line185JsxAttrTitleSigningIn')} />;
+      return (
+        <ConnectingScreen
+          forceConnecting
+          minimal
+          title={tHardcodedUi.raw('appDebugConnectingPage.line185JsxAttrTitleSigningIn')}
+        />
+      );
     case 'minimal-authorizing':
-      return <ConnectingScreen forceConnecting minimal title="Authorizing" />;
+      return (
+        <ConnectingScreen
+          forceConnecting
+          minimal
+          title={tHardcodedUi.raw('appCliAuthorizePage.line249JsxTextAuthorizing')}
+        />
+      );
     case 'minimal-no-title':
       return <ConnectingScreen forceConnecting minimal />;
 
@@ -191,10 +225,12 @@ function renderVariant(
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title={tHardcodedUi.raw('appDebugConnectingPage.line195JsxAttrTitleProvisioningWorkspace')}
+          title={tHardcodedUi.raw(
+            'appDebugConnectingPage.line195JsxAttrTitleProvisioningWorkspace',
+          )}
           provisioning={{
             progress: 0,
-            stageLabel: 'Preparing workspace',
+            stageLabel: tHardcodedUi.raw('i18nComplete.texta9558a530537'),
           }}
         />
       );
@@ -202,16 +238,18 @@ function renderVariant(
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title={tHardcodedUi.raw('appDebugConnectingPage.line206JsxAttrTitleProvisioningWorkspace')}
+          title={tHardcodedUi.raw(
+            'appDebugConnectingPage.line206JsxAttrTitleProvisioningWorkspace',
+          )}
           provisioning={{
             progress: animatedPct,
             stageLabel:
               animatedPct < 25
-                ? 'Booting machine'
+                ? tHardcodedUi.raw('i18nComplete.text27bcbc3624db')
                 : animatedPct < 50
-                  ? 'Pulling image'
+                  ? tHardcodedUi.raw('i18nComplete.texta6a8f4387a75')
                   : animatedPct < 75
-                    ? 'Starting services'
+                    ? tHardcodedUi.raw('i18nComplete.text688ed737c588')
                     : 'Finalizing',
           }}
         />
@@ -220,10 +258,12 @@ function renderVariant(
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title={tHardcodedUi.raw('appDebugConnectingPage.line224JsxAttrTitleProvisioningWorkspace')}
+          title={tHardcodedUi.raw(
+            'appDebugConnectingPage.line224JsxAttrTitleProvisioningWorkspace',
+          )}
           provisioning={{
             progress: 42,
-            stageLabel: 'Installing runtime',
+            stageLabel: tHardcodedUi.raw('i18nComplete.textce3b4016393e'),
             machineInfo: MOCK_MACHINE,
           }}
         />
@@ -232,7 +272,9 @@ function renderVariant(
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title={tHardcodedUi.raw('appDebugConnectingPage.line236JsxAttrTitleProvisioningWorkspace')}
+          title={tHardcodedUi.raw(
+            'appDebugConnectingPage.line236JsxAttrTitleProvisioningWorkspace',
+          )}
           provisioning={{
             progress: 60,
             stages: MOCK_STAGES,
@@ -247,8 +289,7 @@ function renderVariant(
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
           error={{
-            message:
-              'Image pull failed: manifest unknown: registry returned 404 for tag v1.42.0.',
+            message: tHardcodedUi.raw('i18nComplete.text4dde127923ec'),
           }}
         />
       );
@@ -257,8 +298,7 @@ function renderVariant(
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
           error={{
-            message:
-              'Out of capacity in region. Please try again or select a different server type.',
+            message: tHardcodedUi.raw('i18nComplete.text7469c60783db'),
             serverType: 'cpx21',
             location: 'hil',
           }}
@@ -266,9 +306,7 @@ function renderVariant(
       );
 
     case 'stopped':
-      return (
-        <ConnectingScreen stopped={{ name: 'sandbox-83e1c69c-3' }} />
-      );
+      return <ConnectingScreen stopped={{ name: 'sandbox-83e1c69c-3' }} />;
 
     case 'unreachable':
       // Simulate unreachable by rendering with provisioning? No — we need the
@@ -280,8 +318,7 @@ function renderVariant(
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
           error={{
-            message:
-              "Can't reach this instance. It may be starting up or temporarily offline. Retrying automatically…",
+            message: tHardcodedUi.raw('i18nComplete.textb931b468ad1a'),
           }}
         />
       );

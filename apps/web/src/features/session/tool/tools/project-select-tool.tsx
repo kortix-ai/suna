@@ -1,4 +1,5 @@
 'use client';
+
 import {
   BasicTool,
   isErrorOutput,
@@ -10,11 +11,13 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { FolderIcon as Folder } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useMemo } from 'react';
 
 import { parseProjectSelectOutput } from '@/lib/utils/kortix-tool-output';
 
 export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
@@ -38,7 +41,7 @@ export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
     return (
       <BasicTool
         icon={<Folder />}
-        trigger={{ title: 'Workspace', subtitle: name || 'failed' }}
+        trigger={{ title: tI18nComplete.raw('text87bb59ba2f92'), subtitle: name || 'failed' }}
         defaultOpen={defaultOpen}
         forceOpen={forceOpen}
       >
@@ -51,7 +54,7 @@ export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
     <BasicTool
       icon={<Folder />}
       trigger={{
-        title: 'Workspace Active',
+        title: tI18nComplete.raw('text53c7e72de3cf'),
         subtitle: name,
       }}
       onClick={navigationEnabled ? handleOpenWorkspace : undefined}

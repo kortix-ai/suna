@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { QueryClient } from '@tanstack/react-query';
 import { qk } from '@kortix/sdk/react';
+import { QueryClient } from '@tanstack/react-query';
+import { describe, expect, test } from 'bun:test';
 
 import { renameOnError, renameOnMutate, renameOnSettled } from './project-rename-cache';
 
@@ -32,9 +32,7 @@ describe('renameOnMutate', () => {
     const context = renameOnMutate(qc, ID, 'New');
 
     expect(context).toBeDefined();
-    expect(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([
-      { project_id: ID, name: 'New' },
-    ]);
+    expect(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'New' }]);
     expect(qc.getQueryData(qk.project.detail(ID))).toEqual({
       project: { project_id: ID, name: 'New' },
     });
@@ -156,9 +154,7 @@ describe('the full success and failure round trips', () => {
 
     // The optimistic value is still what's rendered; invalidation only marks
     // it stale for the next observed refetch, it doesn't overwrite it.
-    expect(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([
-      { project_id: ID, name: 'New' },
-    ]);
+    expect(qc.getQueryData(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'New' }]);
     expect(qc.getQueryState(qk.projects.list('acct_1'))?.isInvalidated).toBe(true);
   });
 

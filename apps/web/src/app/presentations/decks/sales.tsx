@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The Kortix deck — content & structure follow the official "Kortix pres ENG"
  * sales narrative (origin → what it is → interface → shared machine →
@@ -30,6 +30,7 @@ import {
   WalletIcon as Wallet,
 } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
+import type { SlideDef } from '../engine/deck';
 import {
   Bullets,
   Dim,
@@ -44,7 +45,6 @@ import {
   Shot,
   Slide,
 } from '../engine/parts';
-import type { SlideDef } from '../engine/deck';
 
 // SlideDef is the engine's contract — see engine/deck.tsx.
 
@@ -120,7 +120,7 @@ export function useSlides(): SlideDef[] {
     /* 1 — COVER ─────────────────────────────────────────────────────────── */
     {
       id: 'cover',
-      label: 'Cover',
+      label: tI18nHardcoded.raw('i18nComplete.textfa8d84566676'),
       node: (
         <Slide className="overflow-hidden">
           <LetterBg seed={3382} />
@@ -149,7 +149,7 @@ export function useSlides(): SlideDef[] {
     /* 2 — ORIGIN STORY ──────────────────────────────────────────────────── */
     {
       id: 'origin',
-      label: 'Origin',
+      label: tI18nHardcoded.raw('i18nComplete.textd3e1c5f8a6e2'),
       node: (
         <Slide>
           <SectionHead
@@ -159,10 +159,14 @@ export function useSlides(): SlideDef[] {
             title={tI18nHardcoded.raw(
               'autoAppPresentationSlidesEngJsxAttrTitleApril2025We5a8b8958',
             )}
-            lead={tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxAttrLeadTheFirstOpen5ca53ab1')}
+            lead={tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxAttrLeadTheFirstOpen3002ec16')}
           />
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatBlock icon={Users} value="400K+" label="Users" />
+            <StatBlock
+              icon={Users}
+              value="400K+"
+              label={tI18nHardcoded.raw('i18nComplete.text6b0cc904d081')}
+            />
             <StatBlock
               icon={Star}
               value="~20K"
@@ -190,7 +194,7 @@ export function useSlides(): SlideDef[] {
     /* 3 — WHAT IS KORTIX TODAY ───────────────────────────────────────────── */
     {
       id: 'what',
-      label: 'What is Kortix',
+      label: tI18nHardcoded.raw('i18nComplete.text72e8173b2408'),
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
@@ -208,13 +212,16 @@ export function useSlides(): SlideDef[] {
               </Lead>
               <Bullets
                 items={[
-                  'Connect the tools your company runs on',
-                  'Invite the team — people and agents are principals',
-                  'Agents work on your internal data, in one place',
+                  tI18nHardcoded.raw('i18nComplete.text1ae67a503b12'),
+                  tI18nHardcoded.raw('i18nComplete.texta708f749f4ec'),
+                  tI18nHardcoded.raw('i18nComplete.text2069eac0aa93'),
                 ]}
               />
             </div>
-            <Shot src={`${SHOT}/01-command-center.png`} alt="The Kortix command center" />
+            <Shot
+              src={`${SHOT}/01-command-center.png`}
+              alt={tI18nHardcoded.raw('i18nComplete.text0cc8e13decfa')}
+            />
           </div>
         </Slide>
       ),
@@ -223,7 +230,7 @@ export function useSlides(): SlideDef[] {
     /* 4 — PLATFORM INTERFACE OVERVIEW ────────────────────────────────────── */
     {
       id: 'platform',
-      label: 'Platform overview',
+      label: tI18nHardcoded.raw('i18nComplete.text111ec5778725'),
       node: (
         <Slide>
           <SectionHead
@@ -235,9 +242,12 @@ export function useSlides(): SlideDef[] {
           <div className="mt-10 grid gap-6 lg:grid-cols-3">
             {(
               [
-                ['01 · Primary agent interface', `${SHOT}/01-command-center.png`],
-                ['02 · Workspace settings', `${SHOT}/02-team.png`],
-                ['03 · Agent configuration', `${SHOT}/05-agents.png`],
+                [
+                  tI18nHardcoded.raw('i18nComplete.textbfca5e70d80a'),
+                  `${SHOT}/01-command-center.png`,
+                ],
+                [tI18nHardcoded.raw('i18nComplete.textc7fd29b5b470'), `${SHOT}/02-team.png`],
+                [tI18nHardcoded.raw('i18nComplete.text538b028ecabf'), `${SHOT}/05-agents.png`],
               ] as [string, string][]
             ).map(([label, src]) => (
               <div key={label} className="space-y-3">
@@ -253,7 +263,7 @@ export function useSlides(): SlideDef[] {
     /* 5 — A SHARED MACHINE ───────────────────────────────────────────────── */
     {
       id: 'shared-machine',
-      label: 'A shared machine',
+      label: tI18nHardcoded.raw('i18nComplete.text897f2d169693'),
       node: (
         <Slide>
           <SectionHead
@@ -296,7 +306,7 @@ export function useSlides(): SlideDef[] {
                 {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextAnAgentForEvery428d6526')}
               </h3>
               <Lead className="text-[15px]">
-                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextOnTopOfThisc9248b98')}
+                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextOnTopOfThisfa9706fd')}
               </Lead>
             </Panel>
           </div>
@@ -307,7 +317,7 @@ export function useSlides(): SlideDef[] {
     /* 6 — CONNECT · CONFIGURE · DEPLOY ───────────────────────────────────── */
     {
       id: 'how',
-      label: 'Connect · Configure · Deploy',
+      label: tI18nHardcoded.raw('i18nComplete.text7de7224be293'),
       node: (
         <Slide>
           <SectionHead
@@ -326,7 +336,7 @@ export function useSlides(): SlideDef[] {
                 'autoAppPresentationSlidesEngJsxAttrTitleYouConnectCompany944f7b6f',
               )}
               body={tI18nHardcoded.raw(
-                'autoAppPresentationSlidesEngJsxAttrBodyEmailCRMERP925457da',
+                'autoAppPresentationSlidesEngJsxAttrBodyEmailCRMERP153082eb',
               )}
             />
             <IconFeature
@@ -359,7 +369,7 @@ export function useSlides(): SlideDef[] {
     /* 7 — NO MODEL LOCK-IN ──────────────────────────────────────────────── */
     {
       id: 'models',
-      label: 'No model lock-in',
+      label: tI18nHardcoded.raw('i18nComplete.text45faa0a369e4'),
       node: (
         <Slide>
           <SectionHead
@@ -368,12 +378,12 @@ export function useSlides(): SlideDef[] {
               'autoAppPresentationSlidesEngJsxAttrTitleNoModelLock5cbe3d84',
             )}
             lead={tI18nHardcoded.raw(
-              'autoAppPresentationSlidesEngJsxAttrLeadTheCompanyChoosesd934d520',
+              'autoAppPresentationSlidesEngJsxAttrLeadTheCompanyChooses2dee2da2',
             )}
           />
           <div className="mt-10 grid gap-4 md:grid-cols-3">
             <MiniCard
-              label="Configuration"
+              label={tI18nHardcoded.raw('i18nComplete.textb332c3492d5e')}
               title={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesEngJsxAttrTitlePickYourProvider8452d8cd',
               )}
@@ -382,7 +392,7 @@ export function useSlides(): SlideDef[] {
               )}
             />
             <MiniCard
-              label="Flexibility"
+              label={tI18nHardcoded.raw('i18nComplete.text52f61ed0009a')}
               title={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesEngJsxAttrTitleSwitchInReal9708c591',
               )}
@@ -391,7 +401,7 @@ export function useSlides(): SlideDef[] {
               )}
             />
             <MiniCard
-              label="Costs"
+              label={tI18nHardcoded.raw('i18nComplete.textb88fc5fc4765')}
               title={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesEngJsxAttrTitleYourTokensOr58f6d79d',
               )}
@@ -400,9 +410,15 @@ export function useSlides(): SlideDef[] {
           </div>
           <div className="mt-8 flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-              Bring
+              {tI18nHardcoded.raw('i18nComplete.textd75025a6a12f')}
             </span>
-            {['OpenAI', 'Anthropic', 'Google', 'Your own keys', 'On-prem'].map((p) => (
+            {[
+              'OpenAI',
+              'Anthropic',
+              'Google',
+              tI18nHardcoded.raw('i18nComplete.textb13524d6225f'),
+              'On-prem',
+            ].map((p) => (
               <Pill key={p}>
                 <Cpu className="size-3.5" /> {p}
               </Pill>
@@ -415,7 +431,7 @@ export function useSlides(): SlideDef[] {
     /* 8 — WHERE KORTIX LIVES ────────────────────────────────────────────── */
     {
       id: 'lives',
-      label: 'Where Kortix lives',
+      label: tI18nHardcoded.raw('i18nComplete.text64e8222cd578'),
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
@@ -429,10 +445,10 @@ export function useSlides(): SlideDef[] {
                 )}
               </h2>
               <Lead>
-                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextInstallKortixAsA355cd3e1')}
+                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextInstallKortixAsA60d3eb87')}
               </Lead>
               <div className="flex flex-wrap gap-2">
-                <Pill>Slack</Pill>
+                <Pill>{tI18nHardcoded.raw('i18nComplete.textb27fb38ba323')}</Pill>
                 <Pill>
                   {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextMicrosoftTeams5bea06db')}
                 </Pill>
@@ -441,7 +457,10 @@ export function useSlides(): SlideDef[] {
                 </Pill>
               </div>
             </div>
-            <Shot src={`${SHOT}/06-channels.png`} alt="Kortix inside Slack and Teams" />
+            <Shot
+              src={`${SHOT}/06-channels.png`}
+              alt={tI18nHardcoded.raw('i18nComplete.text4aea922cfd21')}
+            />
           </div>
         </Slide>
       ),
@@ -450,7 +469,7 @@ export function useSlides(): SlideDef[] {
     /* 9 — USE CASES ─────────────────────────────────────────────────────── */
     {
       id: 'use-cases',
-      label: 'Use cases',
+      label: tI18nHardcoded.raw('i18nComplete.textff27a991e855'),
       node: (
         <Slide>
           <SectionHead
@@ -501,7 +520,7 @@ export function useSlides(): SlideDef[] {
     /* 10 — CLOSING ──────────────────────────────────────────────────────── */
     {
       id: 'closing',
-      label: 'Thank you',
+      label: tI18nHardcoded.raw('i18nComplete.text268bc1833e83'),
       node: (
         <Slide className="overflow-hidden">
           <div className="pointer-events-none absolute inset-0 z-0 mask-y-from-80% mask-x-from-90% opacity-60">
@@ -509,7 +528,9 @@ export function useSlides(): SlideDef[] {
           </div>
           <div className="relative z-10 space-y-8">
             <KortixLogo variant="symbol" size={44} className="text-foreground" />
-            <h2 className="text-foreground text-6xl font-medium tracking-tight">Grazie.</h2>
+            <h2 className="text-foreground text-6xl font-medium tracking-tight">
+              {tI18nHardcoded.raw('i18nComplete.textfdac955a2fcf')}
+            </h2>
             <div className="space-y-3">
               <Eyebrow>
                 {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextGetInTouchf319cf34')}
@@ -521,7 +542,9 @@ export function useSlides(): SlideDef[] {
                 </Mono>{' '}
                 {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextOrOnLinkedIn13b1c035')}
               </p>
-              <p className="text-muted-foreground font-mono text-sm">kortix.com</p>
+              <p className="text-muted-foreground font-mono text-sm">
+                {tI18nHardcoded.raw('i18nComplete.text97eb27bdb657')}
+              </p>
             </div>
           </div>
         </Slide>

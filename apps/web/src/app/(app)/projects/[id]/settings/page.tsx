@@ -16,8 +16,8 @@
  * behind it, not a blank page.
  */
 
-import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';

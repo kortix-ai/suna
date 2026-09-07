@@ -21,7 +21,7 @@ describe('WorkspaceMenuSection reaches account settings two ways', () => {
   test('renders an "Account settings" row that navigates to the resolved account', () => {
     // Comments are stripped above, so this file's own prose about the row —
     // and the component's — cannot satisfy the match.
-    expect(code).toContain('Account settings');
+    expect(code).toContain("t('workspace.accountSettings')");
     // An anchor, not a handler. A menu row that calls `router.push` runs the
     // RSC fetch cold at click time, and Next turns that fetch into a full
     // document load whenever it answers wrong — an auth bounce, a build-id

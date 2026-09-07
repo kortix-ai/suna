@@ -1,3 +1,5 @@
+import { buildPreviewGuardInstall } from './preview-guard';
+
 export type SandboxPreviewProvider = 'auto' | 'platinum' | 'daytona';
 
 export interface SandboxPreviewInput {
@@ -38,6 +40,14 @@ export interface PreviewSandboxRecord {
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
+
+/**
+ * The image the self-healing guard runs from: the same docker:cli the
+ * self-host updater already pins, so it is present on a warm sandbox and
+ * installing the guard never needs a pull.
+ */
+export const PREVIEW_DOCKER_CLI_IMAGE =
+  'docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b';
 
 export function buildPreviewBootstrapScript(input: {
   repository: string;
@@ -104,8 +114,26 @@ actual_sha="$(git -C "$ROOT" rev-parse HEAD)"
 test "$actual_sha" = "${input.sha}"
 
 cd "$ROOT"
+# A persistent branch environment keeps the rootfs it was created with. A new
+# template therefore does not update Node in an existing sandbox. Repair that
+# floor in place before pnpm reads dependency engine constraints. The archive
+# checksum comes from Node's v22.22.2 SHASUMS256.txt.
+if [ "$(node --version)" != "v22.22.2" ]; then
+  node_archive=/tmp/node-v22.22.2-linux-x64.tar.xz
+  curl -fsSL https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz -o "$node_archive"
+  printf '%s  %s\n' '88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a' "$node_archive" | sha256sum -c -
+  tar -xJf "$node_archive" -C /usr/local --strip-components=1
+  rm -f "$node_archive"
+fi
+test "$(node --version)" = "v22.22.2"
 corepack enable
-pnpm install --offline --frozen-lockfile
+# A reused branch sandbox keeps the rootfs of the template it was created
+# from, so its pnpm store can predate a dependency the branch has since added.
+# Offline is the fast path; when the store is short of a tarball, repair it
+# from the frozen lockfile instead of failing the deploy at checkout — which is
+# how every pi-worker deploy died on @earendil-works/pi-agent-core on
+# 2026-09-04 while the stack behind the public name stayed down.
+pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile
 
 printf 'docker\n' > "$PHASE"
 for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do
@@ -118,6 +146,10 @@ if ! docker info >/dev/null 2>&1; then
 fi
 docker info >/dev/null
 
+# The self-healing guard, installed before anything below can fail so that a
+# deploy which dies at configure or stack still leaves a watcher behind. See
+# tests/src/core/preview-guard.ts.
+${buildPreviewGuardInstall({ stateDir: state, instance, dockerCliImage: PREVIEW_DOCKER_CLI_IMAGE })}
 printf 'configure\n' > "$PHASE"
 bun apps/cli/src/index.ts self-host init --yes --local-images --no-restrict-account-creation --instance ${instance}
 PREVIEW_INSTANCE_DIR=${shellQuote(instanceDir)} \
@@ -128,12 +160,44 @@ PREVIEW_SECRETS_FILE="$SECRETS" \
 bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
+
+# Reclaim BEFORE pulling. A full disk is precisely the state in which the
+# stack cannot become healthy — supabase-db crash-loops on \`could not write
+# lock file "postmaster.pid": No space left on device\` — and every deploy adds
+# ~2.5 GB of images that nothing else removes. \`image prune -af\` spares any
+# image a container references (running, created or exited), so the stack
+# standing here keeps everything it needs; only superseded deploys go.
+# Measured on the pi-worker branch environment 2026-09-04: 34 GB of images, 25 GB unreferenced,
+# 0 bytes free, every container in Created.
+used="$(df --output=pcent / | tail -1 | tr -dc '0-9')"
+echo "disk before pull: \${used:-?}%" >&2
+if [ "\${used:-0}" -ge 70 ]; then
+  docker image prune -af >/dev/null 2>&1 || true
+  docker builder prune -af >/dev/null 2>&1 || true
+  df -h / | tail -1 >&2
+fi
+
+# When the NEW stack cannot come up, put the LAST GOOD one back rather than
+# leaving nothing serving. The image tags live in the instance .env, and the
+# health check below saves a copy of the .env that last proved healthy; a
+# failed deploy then restores it and brings that stack up before reporting
+# failure, so the public name keeps answering on the previous commit. The
+# deploy still fails — this is a fallback, not a pass.
+restore_last_good() {
+  if [ -f "$STATE/last-good.env" ]; then
+    echo "stack failed on this commit; restoring the last good image set" >&2
+    cp "$STATE/last-good.env" ${shellQuote(`${instanceDir}/.env`)}
+    ${compose} up -d --wait --wait-timeout 300 >&2 || true
+  fi
+  exit 1
+}
+
 ${compose} pull --policy always frontend kortix-api llm-gateway preview-edge mailpit
 for stack_attempt in 1 2; do
   if ${compose} up -d --wait --wait-timeout 300; then
     break
   fi
-  test "$stack_attempt" -lt 2
+  test "$stack_attempt" -lt 2 || restore_last_good
 
   # WHY THE STACK FAILED, in the log, before anything retries.
   #
@@ -188,6 +252,8 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 curl -fsS --max-time 10 "$HEALTH" | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .environment == "preview" and .commit == $sha' >/dev/null
+# This image set is proven; it is what restore_last_good falls back to.
+cp ${shellQuote(`${instanceDir}/.env`)} "$STATE/last-good.env"
 
 ${
     input.runTests === false

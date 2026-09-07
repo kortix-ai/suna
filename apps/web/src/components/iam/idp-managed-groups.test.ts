@@ -12,7 +12,7 @@
 // `components/iam/group-access-panel.tsx`, and the old standalone route is a
 // redirect that keeps bookmarks working.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const pageSource = readFileSync(join(import.meta.dir, 'group-access-panel.tsx'), 'utf8');
@@ -33,29 +33,28 @@ describe('IdP-managed groups — detail panel', () => {
     // The "Add members" button and the row kebab both gate on canMutate,
     // not canManage.
     expect(flatPageSource).toContain('canMutate ? ( <Button');
-    expect(flatPageSource).toContain("label: 'Remove from group'");
+    expect(flatPageSource).toContain("label: tI18nComplete.raw('text035edd9bd720')");
     expect(flatPageSource).toContain('kebab={ canMutate ?');
-    expect(flatPageSource).toContain(
-      'Membership is synced from your identity provider — add or remove people there.',
-    );
+    expect(flatPageSource).toContain("raw('text58dc708c6651')");
   });
 
   test('the name field locks with a why + where hint; description stays editable', () => {
     expect(flatPageSource).toContain('updateMutation.isPending || idpManaged');
-    expect(flatPageSource).toContain('rename the group there');
+    expect(flatPageSource).toContain("raw('text51621a0469f5')");
     // Only the NAME input carries the idpManaged lock — one occurrence.
     const locks = pageSource.match(/isPending \|\| idpManaged/g) ?? [];
     expect(locks.length).toBe(1);
   });
 
   test('deletion stays allowed but warns the next sync recreates the group', () => {
-    expect(flatPageSource).toContain('the next sync recreates it');
+    expect(flatPageSource).toContain("tI18nComplete('text956146906c59'");
     // Both delete confirms — list row and Settings danger zone — are
     // destructive-styled. The Settings one used to fall back to the default.
-    expect(flatPageSource).toContain('confirmLabel="Delete group" confirmVariant="destructive"');
-    expect(tabSource.replace(/\s+/g, ' ')).toContain(
-      'confirmLabel="Delete group" confirmVariant="destructive"',
-    );
+    expect(flatPageSource).toContain("raw('text3f7374ac08ea')");
+    expect(flatPageSource).toContain('confirmVariant="destructive"');
+    expect(tabSource).toContain("raw('i18nComplete.text3f7374ac08ea')");
+    expect(tabSource).toContain("tHardcodedUi('i18nComplete.text44db009e7d12'");
+    expect(tabSource.replace(/\s+/g, ' ')).toContain('confirmVariant="destructive"');
   });
 
   test('the header badges IdP-synced groups', () => {
@@ -65,7 +64,8 @@ describe('IdP-managed groups — detail panel', () => {
 
 describe('IdP-managed groups — groups tab', () => {
   test('scim-sourced rows read "Synced from IdP" instead of a raw enum value', () => {
-    expect(tabSource).toContain("g.source === 'scim' ? 'Synced from IdP' : g.source");
+    expect(tabSource).toContain("g.source === 'scim'");
+    expect(tabSource).toContain("tHardcodedUi.raw('i18nComplete.text2d83971aa73e')");
   });
 });
 
@@ -98,12 +98,12 @@ describe('groups surface consumes the shared access primitives', () => {
     }
     // A group's project role is now editable in place (updateProjectGroupGrant
     // via AccessDialog) instead of detach + re-attach.
-    expect(pageSource).toContain("label: 'Edit access'");
+    expect(pageSource).toContain("label: tI18nComplete.raw('texta514a684676a')");
   });
 
   test('"Attach to project" is permission-gated like every other mutating control', () => {
     expect(flatPageSource).toContain('canManage ? ( <Button');
-    expect(flatPageSource).toContain('Attach to project');
+    expect(flatPageSource).toContain("raw('textc3f348ffaf7a')");
   });
 
   test('the group page still keeps CreateGroupDialog local to the tab — it defines a group', () => {
@@ -115,7 +115,8 @@ describe('the group detail renders inside the account hub, not on its own route'
   test('the panel is the hub chrome: back "All groups", no tabs', () => {
     // Same shell + breadcrumb pattern as the project access panel, so the
     // left rail never disappears underneath a drill-down.
-    expect(flatPageSource).toContain("back={{ label: 'All groups', onClick: onBack }}");
+    expect(flatPageSource).toContain("raw('text1b492be77224')");
+    expect(flatPageSource).toContain('onClick: onBack');
     // The three-tab Members / Access / Settings split is gone — the sections
     // stack, and renaming is a modal off the header kebab.
     expect(pageSource).not.toContain('TabsContent');

@@ -1,6 +1,7 @@
 import type { ConnectorAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import { filterActions, groupToolsByRisk, toolRowText } from './tool-groups';
 
 const action = (path: string, risk: ConnectorAction['risk']): ConnectorAction => ({
@@ -13,44 +14,56 @@ const action = (path: string, risk: ConnectorAction['risk']): ConnectorAction =>
 
 describe('groupToolsByRisk', () => {
   test('read actions group separately from write and destructive', () => {
-    const groups = groupToolsByRisk([
-      action('get_issue', 'read'),
-      action('create_issue', 'write'),
-      action('delete_issue', 'destructive'),
-    ]);
+    const groups = groupToolsByRisk(
+      [
+        action('get_issue', 'read'),
+        action('create_issue', 'write'),
+        action('delete_issue', 'destructive'),
+      ],
+      testUiTranslator,
+    );
     expect(groups.map((g) => g.key)).toEqual(['read', 'write']);
     expect(groups[0]?.actions.map((a) => a.path)).toEqual(['get_issue']);
     expect(groups[1]?.actions.map((a) => a.path)).toEqual(['create_issue', 'delete_issue']);
   });
 
   test('an empty group is omitted, not rendered blank', () => {
-    expect(groupToolsByRisk([action('get_issue', 'read')]).map((g) => g.key)).toEqual(['read']);
+    expect(
+      groupToolsByRisk([action('get_issue', 'read')], testUiTranslator).map((g) => g.key),
+    ).toEqual(['read']);
   });
 
   test('read-only group comes first — it is the safe default reading order', () => {
-    const groups = groupToolsByRisk([action('a', 'destructive'), action('b', 'read')]);
+    const groups = groupToolsByRisk(
+      [action('a', 'destructive'), action('b', 'read')],
+      testUiTranslator,
+    );
     expect(groups[0]?.key).toBe('read');
   });
 
   test('labels are the user-facing wording', () => {
-    const groups = groupToolsByRisk([action('a', 'read'), action('b', 'write')]);
+    const groups = groupToolsByRisk([action('a', 'read'), action('b', 'write')], testUiTranslator);
     expect(groups.map((g) => g.label)).toEqual(['Read-only tools', 'Write tools']);
   });
 
   test('actions keep their input order inside a group', () => {
-    const groups = groupToolsByRisk([action('z', 'read'), action('a', 'read')]);
+    const groups = groupToolsByRisk([action('z', 'read'), action('a', 'read')], testUiTranslator);
     expect(groups[0]?.actions.map((a) => a.path)).toEqual(['z', 'a']);
   });
 
   test('no actions at all — no groups, so the tools tab shows one empty state', () => {
-    expect(groupToolsByRisk([])).toEqual([]);
+    expect(groupToolsByRisk([], testUiTranslator)).toEqual([]);
   });
 });
 
 describe('toolRowText', () => {
   test('name, path and description are all distinct — all three are kept', () => {
     expect(
-      toolRowText({ ...action('send_email', 'write'), name: 'Send email', description: 'Sends it' }),
+      toolRowText({
+        ...action('send_email', 'write'),
+        name: 'Send email',
+        description: 'Sends it',
+      }),
     ).toEqual({ title: 'Send email', path: 'send_email', description: 'Sends it' });
   });
 
@@ -74,11 +87,13 @@ describe('toolRowText', () => {
   });
 
   test('no name — the path becomes the title and is not printed twice', () => {
-    expect(toolRowText({ ...action('get_thing', 'read'), name: '', description: 'Reads' })).toEqual({
-      title: 'get_thing',
-      path: null,
-      description: 'Reads',
-    });
+    expect(toolRowText({ ...action('get_thing', 'read'), name: '', description: 'Reads' })).toEqual(
+      {
+        title: 'get_thing',
+        path: null,
+        description: 'Reads',
+      },
+    );
   });
 
   test('no description at all', () => {

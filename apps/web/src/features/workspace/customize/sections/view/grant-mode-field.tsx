@@ -1,5 +1,7 @@
 'use client';
 
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * All · Pick · None — the one governance grant-mode machine, parameterized so
  * both a flat checklist (skills/connectors/secrets) and a grouped catalog
@@ -14,7 +16,27 @@ import { CheckIcon } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
 import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
 
-type GrantMode = 'all' | 'pick' | 'none';
+export type GrantMode = 'all' | 'pick' | 'none';
+
+/** Summarize a grant set — "All", "None", "3 picked" — for a card header. */
+export function grantSummary(
+  v: AgentGrantSetV2 | undefined,
+  tI18nComplete?: UiTranslator,
+): {
+  label: string;
+  tone: 'muted' | 'outline';
+} {
+  if (v === 'all')
+    return { label: tI18nComplete?.raw('texta52ace420f21') ?? 'All', tone: 'outline' };
+  if (v === undefined || v === 'none' || (Array.isArray(v) && v.length === 0))
+    return { label: tI18nComplete?.raw('textdc937b598926') ?? 'None', tone: 'muted' };
+  return {
+    label:
+      tI18nComplete?.('text8b168cb79501', { value0: (v as string[]).length }) ??
+      `${(v as string[]).length} picked`,
+    tone: 'outline',
+  };
+}
 
 const GRANT_MODES: { value: GrantMode; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -22,19 +44,28 @@ const GRANT_MODES: { value: GrantMode; label: string }[] = [
   { value: 'none', label: 'None' },
 ];
 
-function GrantModeField({
+export function GrantModeField({
   value,
   onChange,
   allLabel,
   noneLabel,
+  alwaysRender = false,
   children,
 }: {
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
   allLabel: string;
   noneLabel: string;
-  children: (ctx: { selected: Set<string>; toggle: (id: string) => void }) => React.ReactNode;
+  /** Render `children` in every mode, not only Pick — for a catalog that
+   *  stays on screen and shows each card as included / excluded. */
+  alwaysRender?: boolean;
+  children: (ctx: {
+    selected: Set<string>;
+    toggle: (id: string) => void;
+    mode: GrantMode;
+  }) => React.ReactNode;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const mode: GrantMode =
     value === 'all' ? 'all' : value === 'none' || value === undefined ? 'none' : 'pick';
   const [wantPick, setWantPick] = useState(() => Array.isArray(value) && value.length > 0);
@@ -63,7 +94,7 @@ function GrantModeField({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <Tabs value={effectiveMode} onValueChange={(m) => pick(m as GrantMode)} className="w-fit">
-          <TabsListCompact type="default" aria-label="Grant mode">
+          <TabsListCompact type="default" aria-label={tI18nComplete.raw('text74009e6664f5')}>
             {GRANT_MODES.map((m) => (
               <TabsTriggerCompact key={m.value} value={m.value}>
                 {m.label}
@@ -78,13 +109,27 @@ function GrantModeField({
           <span className="text-muted-foreground text-xs">{noneLabel}</span>
         )}
       </div>
-      {effectiveMode === 'pick' ? children({ selected, toggle }) : null}
+      {effectiveMode === 'pick' || alwaysRender
+        ? children({ selected, toggle, mode: effectiveMode })
+        : null}
     </div>
   );
 }
 
 /** All · Pick · None, with a checklist of the project's declared items when
  *  in Pick mode. The one governance control reused for skills/connectors/secrets. */
+/** One pickable row: the id the grant stores, and what a person needs to
+ *  recognise it — a name, a second line, a status chip. */
+export interface GrantOption {
+  id: string;
+  label: string;
+  /** A second line under the label — a skill's description, a connector's
+   *  slug, a secret's purpose. */
+  description?: string;
+  /** At the row's right edge — a `Badge` for a connector that needs auth. */
+  trailing?: ReactNode;
+}
+
 export function GrantSetField({
   value,
   onChange,
@@ -95,7 +140,7 @@ export function GrantSetField({
 }: {
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
-  options: { id: string; label: string }[];
+  options: GrantOption[];
   emptyLabel: string;
   allLabel: string;
   /** Optional control rendered BESIDE each granted row (e.g. the connectors
@@ -105,16 +150,17 @@ export function GrantSetField({
    *  sibling. Fields that pass nothing render exactly as before. */
   rowAccessory?: (id: string, isSelected: boolean) => ReactNode;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <GrantModeField
       value={value}
       onChange={onChange}
       allLabel={allLabel}
-      noneLabel="Deny — nothing granted."
+      noneLabel={tI18nComplete.raw('text765b240c2900')}
     >
       {({ selected, toggle }) => {
         const optionIds = new Set(options.map((o) => o.id));
-        const orphans: { id: string; label: string }[] = [];
+        const orphans: GrantOption[] = [];
         for (const id of selected) {
           if (!optionIds.has(id)) orphans.push({ id, label: id });
         }
@@ -122,7 +168,7 @@ export function GrantSetField({
         return rows.length === 0 ? (
           <p className="text-muted-foreground text-xs">{emptyLabel}</p>
         ) : (
-          <div className="border-border/60 max-h-44 overflow-y-auto rounded-md border p-1">
+          <div className="border-border/60 max-h-80 overflow-y-auto rounded-md border p-1">
             {rows.map((o) => {
               const isSel = selected.has(o.id);
               const isOrphan = !optionIds.has(o.id);
@@ -134,7 +180,8 @@ export function GrantSetField({
                   aria-pressed={isSel}
                   onClick={() => toggle(o.id)}
                   className={cn(
-                    'flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-[color,background-color,transform] active:scale-[0.96]',
+                    'flex items-center gap-2.5 rounded px-2 text-left text-xs transition-[color,background-color,transform] active:scale-[0.98]',
+                    o.description ? 'py-2' : 'py-1.5',
                     accessory ? 'min-w-0 flex-1' : 'w-full',
                     isSel ? 'bg-secondary' : 'hover:bg-muted/50',
                   )}
@@ -149,8 +196,20 @@ export function GrantSetField({
                   >
                     {isSel ? <CheckIcon className="size-2.5" /> : null}
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
-                  {isOrphan && <span className="text-kortix-orange shrink-0">missing</span>}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-mono">{o.label}</span>
+                    {o.description ? (
+                      <span className="text-muted-foreground block truncate text-xs leading-4">
+                        {o.description}
+                      </span>
+                    ) : null}
+                  </span>
+                  {o.trailing ? <span className="shrink-0">{o.trailing}</span> : null}
+                  {isOrphan && (
+                    <span className="text-kortix-orange shrink-0">
+                      {tI18nComplete.raw('textffa63583dfa6')}
+                    </span>
+                  )}
                 </button>
               );
               return accessory ? (
@@ -177,12 +236,13 @@ export function KortixCliField({
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <GrantModeField
       value={value}
       onChange={onChange}
-      allLabel="Everything the person who started the session can do."
-      noneLabel="Deny — nothing granted."
+      allLabel={tI18nComplete.raw('text75a5e3a6d5d3')}
+      noneLabel={tI18nComplete.raw('text765b240c2900')}
     >
       {({ selected, toggle }) => (
         <div className="border-border/60 max-h-64 space-y-3 overflow-y-auto rounded-md border p-2.5">

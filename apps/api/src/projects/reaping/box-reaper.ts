@@ -33,6 +33,7 @@
  * billed while stopped" an invariant rather than a best-effort.
  */
 
+import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
@@ -46,6 +47,7 @@ import {
   requeueAbandonedPrompt,
 } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
   type SandboxTurnDeliveryReconciliation,
   type SandboxTurnObservation,
@@ -102,6 +104,7 @@ export const EMPTY_REAP_RESULT: ReapResult = {
 };
 
 export interface SandboxReaperDependencies {
+  scheduleLegacyRuntimeBootstrap: typeof scheduleLegacyRuntimeBootstrap;
   renewActiveSandboxTurn: typeof renewActiveSandboxTurn;
   observeSandboxTurn: typeof observeSandboxTurn;
   reconcileSandboxTurnDelivery: typeof reconcileSandboxTurnDelivery;
@@ -109,9 +112,12 @@ export interface SandboxReaperDependencies {
   finalizeHuskTurn: typeof finalizeHuskTurn;
   extendUnconfirmedTurnDeadline: typeof extendUnconfirmedTurnDeadline;
   requeueAbandonedPrompt: typeof requeueAbandonedPrompt;
+  promoteNextInboxRow: typeof promoteNextInboxRow;
+  drainSessionLifecycleQueue: (input: { idempotencyKey: string }) => Promise<unknown>;
 }
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
+  scheduleLegacyRuntimeBootstrap,
   renewActiveSandboxTurn,
   observeSandboxTurn,
   reconcileSandboxTurnDelivery,
@@ -119,6 +125,11 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   finalizeHuskTurn,
   extendUnconfirmedTurnDeadline,
   requeueAbandonedPrompt,
+  promoteNextInboxRow,
+  drainSessionLifecycleQueue: async (input) => {
+    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/engine');
+    return drainSessionLifecycleQueue(input);
+  },
 };
 
 /**
@@ -193,6 +204,45 @@ async function redeliverAbandonedPrompt(
   }
 }
 
+/** Release one durable queue row after terminal evidence removed turn authority. */
+async function releaseQueuedPromptAfterTerminalTurn(
+  dependencies: SandboxReaperDependencies,
+  row: { sessionId: string | null; sandboxId: string },
+  turn: { token: string },
+): Promise<void> {
+  if (!row.sessionId) return;
+  try {
+    const promotedPromptId = await dependencies.promoteNextInboxRow(row.sessionId);
+    console.info('[reaper] terminal turn queue settlement', {
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      turnToken: turn.token,
+      queuePromoted: promotedPromptId !== null,
+      promotedPromptId,
+    });
+    if (promotedPromptId) {
+      void dependencies
+        .drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId })
+        .catch((error) =>
+          console.warn('[reaper] targeted queue drain failed', {
+            sandboxId: row.sandboxId,
+            sessionId: row.sessionId,
+            turnToken: turn.token,
+            promotedPromptId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+    }
+  } catch (error) {
+    console.warn('[reaper] terminal turn queue promotion failed', {
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      turnToken: turn.token,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export interface SandboxReaperScope {
   /** Optional operational/test scope. Production maintenance omits it. */
   sandboxIds?: readonly string[];
@@ -258,6 +308,19 @@ export async function reapAndReconcileSandboxes(
               err instanceof Error ? err.message : err,
             ),
           );
+          // A running box whose daemon predates runtime convergence can never
+          // update itself; give it a supervisor and a current daemon from here.
+          // Fire-and-forget behind its own gates (legacy-runtime-bootstrap.ts):
+          // one health probe per box per 6 h on a converged fleet, never under
+          // a busy OpenCode, bounded attempts per API build.
+          dependencies.scheduleLegacyRuntimeBootstrap({
+            sandboxId: row.sandboxId,
+            sessionId: row.sessionId ?? null,
+            accountId: row.accountId ?? null,
+            provider: row.provider,
+            externalId: row.externalId,
+            metadata: (row.metadata ?? null) as Record<string, unknown> | null,
+          });
           // A running box has answered the pending-stop question. Dropping the
           // marker here is what keeps the confirmation about THIS provider
           // transition: an aged marker left on a healthy box would let the next
@@ -409,6 +472,7 @@ export async function reapAndReconcileSandboxes(
                   // falls back to `abandoned`, which is what "the delivery was
                   // never confirmed by anyone" means.
                   await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
+                  await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
                 } else if (
                   reconciliation === 'deferred' &&
                   // The same delivery-scoped bound as the grace above, for the
@@ -471,7 +535,7 @@ export async function reapAndReconcileSandboxes(
                 // Its own `turn_end` is the authority; failing that, a husk
                 // this pass had to force-close is a turn that did NOT finish;
                 // failing both, the honest record is that nobody can say.
-                await dependencies.clearSandboxTurn(
+                const cleared = await dependencies.clearSandboxTurn(
                   row.sandboxId,
                   turn.token,
                   undefined,
@@ -507,6 +571,9 @@ export async function reapAndReconcileSandboxes(
                   turnAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS
                 ) {
                   await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
+                }
+                if (cleared) {
+                  await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
                 }
               } else if (row.deadlineAt.getTime() <= now.getTime()) {
                 // Unreadable daemon plus an expired deadline: the runtime is

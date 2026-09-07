@@ -22,10 +22,7 @@ import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
-import {
-  ProjectCustomizeNavItem,
-  useSettingsKeyboardShortcut,
-} from '@/features/workspace/project-sidebar/project-settings-nav';
+import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
@@ -35,7 +32,7 @@ import {
   NavigationArrowIcon,
   SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
@@ -46,7 +43,8 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(na
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
   const { state, setOpenMobile, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
@@ -74,9 +72,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       <span className="shrink-0">
         <NavigationArrowIcon className="rotate-90" />
       </span>
-      <span>
-        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491')}
-      </span>
+      <span>{t('newSession')}</span>
       <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/menu-button:opacity-100">
         <Kbd>{modSymbol}</Kbd>
         <Kbd>J</Kbd>
@@ -91,8 +87,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     if (isMobile) setOpenMobile(false);
     openCommandPalette();
   }, [isMobile, setOpenMobile]);
-
-  useSettingsKeyboardShortcut();
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -120,7 +114,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       // square fill behind the flyout card and it showed at all four corners.
       className="[scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
-      <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
+      <SidebarHeader
+        className="space-y-2"
+        style={{ paddingTop: "max(calc(var(--spacing) * 2), env(safe-area-inset-top, 0px))" }}
+      >
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
             single layout. Three controls on one 240px row, all 32px tall: the
             merged brand/switcher control, search, and the panel's own collapse
@@ -149,7 +146,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               side="bottom"
               label={
                 <span className="flex items-center gap-1.5">
-                  Search
+                  {t('search')}
                   <KbdGroup>
                     <Kbd className="font-mono">{modSymbol}</Kbd>
                     <Kbd className="font-mono">K</Kbd>
@@ -159,11 +156,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             >
               <Button
                 type="button"
-                aria-label="Search"
+                aria-label={t('search')}
                 variant="ghost"
                 size="icon"
                 onClick={handleOpenSearch}
-                className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-transform duration-100 ease-out active:scale-[0.96]"
+                className="shrink-0"
               >
                 <MagnifyingGlassIcon className="size-4" />
               </Button>
@@ -178,7 +175,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
                 label={
                   <span className="flex items-center gap-1.5">
-                    {isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                    {isExpanded ? t('collapse') : t('pin')}
                     <KbdGroup>
                       <Kbd className="font-mono">{modSymbol}</Kbd>
                       <Kbd className="font-mono">B</Kbd>
@@ -188,11 +185,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               >
                 <Button
                   type="button"
-                  aria-label={isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                  aria-label={isExpanded ? t('collapse') : t('pin')}
                   variant="ghost"
                   size="icon"
                   onClick={toggleSidebar}
-                  className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-transform duration-100 ease-out active:scale-[0.96]"
+                  className="shrink-0"
                 >
                   <PanelLeft className="cn-rtl-flip" />
                 </Button>
@@ -210,14 +207,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   <SidebarMenuButton
                     disabled
                     aria-busy
-                    className="group/menu-button text-muted-foreground hover:text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+                    className="group/menu-button text-sidebar-foreground relative"
                   >
                     {newSessionRowBody}
                   </SidebarMenuButton>
                 ) : (
                   <SidebarMenuButton
                     asChild
-                    className="group/menu-button text-muted-foreground hover:text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+                    className="group/menu-button text-sidebar-foreground relative"
                   >
                     <Link href={`/projects/${projectId}`} prefetch onClick={handleNewSessionClick}>
                       {newSessionRowBody}
@@ -225,63 +222,34 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   </SidebarMenuButton>
                 )}
               </SidebarMenuItem>
+
               <ProjectCustomizeNavItem />
-              {/* Apps belongs with Customize, not down in the bottom group: it
-                  is a project surface you configure and operate, not a
-                  late-arriving alert. Self-hides until the `apps` flag is on. */}
               <ProjectAppsNavItem />
             </SidebarMenu>
           </SidebarGroup>
 
-          {/* Sessions are always expanded — no collapse toggle. The `Sessions`
-              header (label + ⋯ filter menu) now lives inside ProjectSessionList
-              so it shares that component's data and horizontal padding. */}
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             <ProjectSessionList projectId={projectId} />
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">
-            <SidebarMenu>
+            <SidebarMenu className="gap-1">
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
-              {/* Sits directly above Files so a still-on-v1 manifest is
-                  impossible to miss — one click starts the migration session
-                  end-to-end. Self-hides once the project is on v2. */}
               <ProjectManifestUpgradeAlert projectId={projectId} />
-              {/* Billing sits ABOVE the permanent nav on purpose. This group is
-                  bottom-anchored (mt-auto), so it grows upward as items appear:
-                  anything below a late-arriving item gets shoved up the moment
-                  billing state lands. Keeping the async items on top means
-                  Files/Connect never move — only the session list above them
-                  gives up the space. */}
               <SidebarBalanceWarning accountId={accountId} />
-              <SidebarUpgradeButton accountId={accountId} />
-              {/* Files used to live on the collapsed icon rail; with the rail
-                  gone (offcanvas + hover flyout) it needs a docked entry.
-                  Connectors, Skills, Commands, and Customize used to follow it
-                  here — one Settings entry, on the Customize row's old line,
-                  replaced all four. That entry is gone now too (Jay,
-                  2026-08-17): it opened the exact same User Settings overlay
-                  the workspace switcher's "User Settings" row already opens
-                  one click above, on the header identity control — a second
-                  row to the same destination earned no more than the keycap
-                  it carried, and Cmd+, still works with no visible row at all
-                  (`useSettingsKeyboardShortcut`). */}
               <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              {/* Last (Jay, 2026-09-03). It is the only paid call to action in
+                  this group, and above the nav rows it put a sell between the
+                  user and the links they actually use. */}
+              <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
         </div>
       </SidebarContent>
 
-      {/* No footer control. This menu moved to the header, where it is now the
-          single control carrying identity AND the workspace directory; a copy
-          down here would put the same dropdown at both ends of one panel. */}
-
-      {/* Drag-to-resize handle on the panel's trailing edge (double-click or
-          Home resets to 16rem). It self-hides while collapsed — there is
-          nothing to resize, and that edge belongs to the hover-peek zone. */}
-      <SidebarRail />
+      <SidebarRail aria-label={t('resize')} title={t('resizeHelp')} />
     </Sidebar>
   );
 }

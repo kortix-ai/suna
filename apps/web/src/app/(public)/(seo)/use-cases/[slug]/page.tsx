@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getTranslations } from '@/i18n/get-translations';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -103,6 +104,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
 }
 
 export default async function UseCasePage(props: PageProps) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   if (process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false') notFound();
   const { slug } = await props.params;
   const page = useCasesSource.getPage([slug]);
@@ -228,10 +230,11 @@ export default async function UseCasePage(props: PageProps) {
               <div className="border-border/60 bg-popover rounded-md border px-4 py-5">
                 {templatesEnabled && data.template ? (
                   <>
-                    <p className="text-foreground text-sm font-medium">Run this yourself</p>
+                    <p className="text-foreground text-sm font-medium">
+                      {tI18nComplete.raw('text5bad1b115369')}
+                    </p>
                     <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-                      Install this exact setup — agent, connectors, schedule, and guardrails — in a
-                      guided flow.
+                      {tI18nComplete.raw('text512241b9824c')}
                     </p>
                     <UseTemplateButton
                       templateId={data.template}
@@ -241,13 +244,14 @@ export default async function UseCasePage(props: PageProps) {
                   </>
                 ) : (
                   <>
-                    <p className="text-foreground text-sm font-medium">Build your own</p>
+                    <p className="text-foreground text-sm font-medium">
+                      {tI18nComplete.raw('text8887e9d916d6')}
+                    </p>
                     <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-                      Put a workforce of AI agents to work on your own systems — connected, guarded,
-                      and reviewed.
+                      {tI18nComplete.raw('text31c48dd4f15a')}
                     </p>
                     <Button asChild size="sm" className="mt-4 w-full">
-                      <Link href="/">Get started</Link>
+                      <Link href="/">{tI18nComplete.raw('text61e8d44ad423')}</Link>
                     </Button>
                   </>
                 )}
@@ -261,7 +265,7 @@ export default async function UseCasePage(props: PageProps) {
         <section className="border-border border-t">
           <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
             <h2 className="text-muted-foreground mb-10 font-mono text-xs tracking-wider uppercase">
-              More use cases
+              {tI18nComplete.raw('text564e4ace86b3')}
             </h2>
             <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
               {more.map((item) => (

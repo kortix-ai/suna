@@ -1,8 +1,7 @@
+import { SHARE_FILE_IFRAME_CLASS } from '@/app/(public)/share/session/[token]/share-layout';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { HtmlPreview } from './html-preview';
-import { HTML_PREVIEW_IFRAME_CLASS } from './html-preview';
-import { SHARE_FILE_IFRAME_CLASS } from '@/app/(public)/share/session/[token]/share-layout';
+import { HTML_PREVIEW_IFRAME_CLASS, HtmlPreview } from './html-preview';
 
 // An HTML preview appears on three surfaces — the session panel, the files
 // viewer, and a public share link. They must agree about what framing an HTML

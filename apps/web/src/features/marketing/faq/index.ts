@@ -8,5 +8,5 @@
  * concedes anything. `faq-section.tsx` records why it is a slab and not an
  * accordion; `content.ts` carries the copy and its accuracy gate.
  */
-export { FaqSection } from './faq-section';
 export { faq, type FaqItem } from './content';
+export { FaqSection } from './faq-section';

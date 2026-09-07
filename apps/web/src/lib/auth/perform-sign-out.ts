@@ -1,7 +1,7 @@
 'use client';
 
-import { runSignOut, SIGN_OUT_DESTINATION } from '@/lib/auth/sign-out-sequence';
 import { finalizeServerSignOut } from '@/lib/auth/sign-out-actions';
+import { runSignOut, SIGN_OUT_DESTINATION } from '@/lib/auth/sign-out-sequence';
 import { createClient } from '@/lib/supabase/client';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { resetClientState } from '@/lib/utils/reset-client-state';

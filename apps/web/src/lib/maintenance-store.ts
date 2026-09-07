@@ -44,17 +44,17 @@ const DEFAULT_CONFIG: MaintenanceConfig = {
   updatedAt: new Date(0).toISOString(),
 };
 
-const AUTOMATIC_MAINTENANCE: MaintenanceConfig = {
-  ...DEFAULT_CONFIG,
-  level: 'blocking',
-  title: 'Service maintenance',
-  message: 'Kortix is temporarily unavailable. Service will resume automatically.',
-};
-
 const EDGE_CONFIG_KEY = 'maintenance_config';
 
 let edgeClient: EdgeConfigClient | null = null;
 let memoryStore: MaintenanceConfig = { ...DEFAULT_CONFIG };
+/**
+ * The last value `getEdgeMaintenanceConfig` actually read out of Edge Config.
+ * It exists so a transient read failure can serve the state an admin really
+ * set instead of inventing one. Per runtime instance; a cold instance has none
+ * and falls back to normal operation.
+ */
+let lastKnownEdgeConfig: MaintenanceConfig | null = null;
 
 function getEdgeClient(): EdgeConfigClient | null {
   if (edgeClient) return edgeClient;
@@ -128,6 +128,11 @@ let inFlight: Promise<MaintenanceConfig> | null = null;
 function invalidateMaintenanceCache(): void {
   cachedConfig = null;
   inFlight = null;
+}
+
+/** Test-only. Clears the last-known Edge Config value. */
+export function __resetEdgeMaintenanceMemoryForTests(): void {
+  lastKnownEdgeConfig = null;
 }
 
 /** Test-only. Clears the TTL cache so each test starts from a cold cache. */
@@ -208,21 +213,47 @@ async function readMaintenanceConfig(): Promise<MaintenanceConfig> {
 }
 
 /**
- * Return only the independent Edge Config state for the Cloudflare write gate.
+ * Return only the independent Edge Config state for the Cloudflare write gate
+ * (`infra/cloudflare/workers/api-router`, `MAINTENANCE_STATE_URL`).
+ *
+ * FAILS OPEN, for the same reason `readMaintenanceConfig` above does. This
+ * function used to return a synthetic `blocking` config whenever the Edge
+ * Config read returned nothing or threw. The api-router worker reads this
+ * route, sees `level: 'blocking'`, and answers EVERY non-read-only request to
+ * `api.kortix.com` with a 503 whose body carries that config's `message`. So a
+ * missing `maintenance_config` key — or one failed network call from a Vercel
+ * instance to Edge Config — locked production writes and surfaced to every user
+ * as `ApiError: Kortix is temporarily unavailable. Service will resume
+ * automatically.` (Better Stack, Kortix Frontend prod: 1,000+ occurrences).
+ * Nothing an admin did produced it.
+ *
+ * The two outcomes are now separated:
+ *
+ * - Key ABSENT (`readEdgeConfig()` resolves null): the store holds no admin
+ *   state at all. That is normal operation, never a lockdown -> `none`.
+ * - Read THREW: the state is unknown. Serve the last value this instance
+ *   actually read, so a genuine admin `blocking` survives a blip; with no such
+ *   value (cold instance), fall back to normal operation.
+ *
+ * A lockdown that must hold even while Vercel is unreachable does not depend on
+ * this path: the cutover workflow sets `MAINTENANCE_LEVEL_OVERRIDE=blocking`
+ * directly on the worker (`.github/workflows/cutover-prod-us-east-2.yml`),
+ * which is evaluated before the state URL is ever fetched.
  */
 export async function getEdgeMaintenanceConfig(): Promise<MaintenanceConfig> {
   if (!process.env.EDGE_CONFIG) return { ...memoryStore };
 
   try {
-    return (
-      (await readEdgeConfig()) ?? {
-        ...AUTOMATIC_MAINTENANCE,
-        updatedAt: new Date().toISOString(),
-      }
-    );
+    const config = await readEdgeConfig();
+    if (config) {
+      lastKnownEdgeConfig = config;
+      return config;
+    }
+    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
   } catch (error) {
     console.error('[maintenance-store] independent Edge Config read failed:', error);
-    return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+    if (lastKnownEdgeConfig) return lastKnownEdgeConfig;
+    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
   }
 }
 

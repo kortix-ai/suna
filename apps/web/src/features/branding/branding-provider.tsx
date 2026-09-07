@@ -125,7 +125,6 @@ export function useAppName(): string {
   return useBranding()?.app_name ?? 'Kortix';
 }
 
-
 // ─── Document effect: favicon + title ───────────────────────────────────────
 
 /** What Next rendered for each icon link before we touched it, kept OFF the
@@ -170,7 +169,10 @@ function BrandingDocumentEffect({ branding }: { branding: AccountBranding | null
     // is not a contract.
     const stash = (link: HTMLLinkElement) => {
       if (originals.has(link)) return;
-      originals.set(link, { href: link.getAttribute('href') ?? '', media: link.getAttribute('media') });
+      originals.set(link, {
+        href: link.getAttribute('href') ?? '',
+        media: link.getAttribute('media'),
+      });
     };
     const apply = (link: HTMLLinkElement, href: string | null) => {
       stash(link);
@@ -251,4 +253,3 @@ function BrandingDocumentEffect({ branding }: { branding: AccountBranding | null
 
   return null;
 }
-

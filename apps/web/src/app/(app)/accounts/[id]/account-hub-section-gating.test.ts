@@ -1,7 +1,7 @@
 // What a plain ACCOUNT MEMBER sees of the account hub.
 //
 // The bug this pins: `sectionVisible.roles` was hard-coded `true` "for
-// discoverability", so every plain member got a Roles rail item that opened
+// discoverability", so every plain member got a Roles nav item that opened
 // straight into "Failed to load roles — You don't have permission
 // (role.read)". `role.read` lives in ADMIN_EXTRAS (`apps/api/src/iam/
 // role-perms.ts`), and `GET .../iam/roles` asserts it
@@ -10,34 +10,51 @@
 // unconditional — they happen to be in the member baseline today, but nothing
 // said so and nothing would have caught it changing.
 //
-// The rule these tests hold: a rail item is visible when the probe for the
+// The rule these tests hold: a nav item is visible when the probe for the
 // leaf its own list route asserts came back `true`. Nothing else.
+//
+// Where the rule lives moved on 2026-09-01: the sidebar left `page.tsx` for
+// `accounts/layout.tsx` (so every `/accounts/**` route shares it), and a
+// layout cannot read a page's constants. The probe list, the visibility rule
+// and the fallback now sit in `features/accounts/hub/use-account-hub-access.ts`;
+// the page and the sidebar both read that ONE hook. Each assertion below reads
+// the file the rule actually lives in.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+const hubDir = join(import.meta.dir, '../../../../features/accounts/hub');
 const source = readFileSync(join(import.meta.dir, 'page.tsx'), 'utf8');
-// Line comments FIRST: this file has `//` comments that themselves contain
+const accessSource = readFileSync(join(hubDir, 'use-account-hub-access.ts'), 'utf8');
+const membersSource = readFileSync(join(hubDir, 'use-account-members.ts'), 'utf8');
+const sidebarSource = readFileSync(join(hubDir, 'account-settings-sidebar.tsx'), 'utf8');
+
+// Line comments FIRST: these files have `//` comments that themselves contain
 // `/*`, and stripping block comments first makes one of those open a match
 // that runs to the next `*/` far below, swallowing real code with it.
-const code = source.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+const strip = (text: string) =>
+  text.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+const code = strip(source);
+const access = strip(accessSource);
+const membersHook = strip(membersSource);
+const sidebar = strip(sidebarSource);
 
-const probes = code.slice(
-  code.indexOf('const ACCOUNT_PERMISSION_PROBES'),
-  code.indexOf('];', code.indexOf('const ACCOUNT_PERMISSION_PROBES')),
+const probes = access.slice(
+  access.indexOf('const ACCOUNT_PERMISSION_PROBES'),
+  access.indexOf('];', access.indexOf('const ACCOUNT_PERMISSION_PROBES')),
 );
-const sectionVisible = code.slice(
-  code.indexOf('const sectionVisible: Record<AccountSection, boolean> = {'),
-  code.indexOf('};', code.indexOf('const sectionVisible: Record<AccountSection, boolean> = {')),
+const sectionVisible = access.slice(
+  access.indexOf('const sectionVisible: Record<AccountSection, boolean> = {'),
+  access.indexOf('};', access.indexOf('const sectionVisible: Record<AccountSection, boolean> = {')),
 );
-const destructure = code.slice(
-  code.indexOf('const [\n    { allowed: canReadMembers }'),
-  code.indexOf('] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);'),
+const destructure = access.slice(
+  access.indexOf('const [\n    { allowed: canReadMembers }'),
+  access.indexOf('] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);'),
 );
 
 describe('account hub — the read probes exist and are ordered', () => {
   // The batch is positional: `usePermissions` returns results in the order the
-  // probes went out, and the page destructures them by position. A probe
+  // probes went out, and the hook destructures them by position. A probe
   // inserted without moving its binding silently hands `role.read`'s answer to
   // `canWriteAccount`.
   test('probe list and destructure agree, name for name, position for position', () => {
@@ -78,12 +95,22 @@ describe('account hub — the read probes exist and are ordered', () => {
   });
 
   test('one batched request, not one GET per leaf', () => {
-    expect(code).toContain('usePermissions(accountId, ACCOUNT_PERMISSION_PROBES)');
-    expect((code.match(/usePermissions\(/g) ?? []).length).toBe(1);
+    expect(access).toContain('usePermissions(accountId, ACCOUNT_PERMISSION_PROBES)');
+    expect((access.match(/usePermissions\(/g) ?? []).length).toBe(1);
+  });
+
+  // The page and the sidebar are two consumers of the SAME verdict. Neither
+  // may re-probe: a second `usePermissions` with a different list would be a
+  // second request AND a second, drifting copy of the rule.
+  test('the page and the sidebar read the hook, never a probe of their own', () => {
+    expect(code).toContain('useAccountHubSection(accountId)');
+    expect(sidebar).toContain('useAccountHubSection(accountId)');
+    expect(code).not.toContain('usePermissions(');
+    expect(sidebar).not.toContain('usePermissions(');
   });
 });
 
-describe('account hub — every Access rail item maps to its own READ probe', () => {
+describe('account hub — every Access nav item maps to its own READ probe', () => {
   // The mapping, one line per section. `access-projects` and `help` are the
   // only two without an account leaf, and both have a stated reason.
   test('members/groups/roles/audit each gate on their own read probe', () => {
@@ -109,7 +136,7 @@ describe('account hub — every Access rail item maps to its own READ probe', ()
   // an empty list, never a 403 — so there is no account leaf to gate on.
   test('access-projects stays visible, and says why', () => {
     expect(sectionVisible).toContain("'access-projects': true");
-    expect(source).toContain('No account-level leaf of its own');
+    expect(accessSource).toContain('No account-level leaf of its own');
   });
 
   test('help stays visible for everyone — reference copy, no fetch', () => {
@@ -124,13 +151,17 @@ describe('account hub — every Access rail item maps to its own READ probe', ()
   });
 });
 
-describe('account hub — nothing renders into a section the rail hides', () => {
+describe('account hub — nothing renders into a section the nav hides', () => {
   // Members is no longer unconditionally visible, so it cannot be the blanket
   // fallback for an unknown/denied `?tab=`: a caller denied `member.read`
-  // would land on a section the rail does not list and stare at an empty pane.
+  // would land on a section the nav does not list and stare at an empty pane.
   test('the fallback is the first VISIBLE section, not a hard-coded members', () => {
-    expect(code).toContain("NAV_GROUPS.flatMap((group) => group.items).find((item) => sectionVisible[item.id])?.id ?? 'help'");
-    expect(code).toContain('sectionVisible[requestedTab]\n    ? requestedTab\n    : firstVisibleSection');
+    // Whitespace-insensitive: prettier is free to wrap either expression.
+    const flat = access.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "NAV_GROUPS.flatMap((group) => group.items).find((item) => sectionVisible[item.id])?.id ?? 'help'",
+    );
+    expect(flat).toContain('sectionVisible[requestedTab] ? requestedTab : firstVisibleSection');
   });
 
   test('each gated pane re-checks its own visibility before rendering', () => {
@@ -139,20 +170,33 @@ describe('account hub — nothing renders into a section the rail hides', () => 
     expect(code).toContain("activeSection === 'roles' && sectionVisible.roles");
   });
 
-  // `members` is `[]` when the query never runs, and "0 members" on an account
-  // the viewer is demonstrably a member of is a lie, not a placeholder.
-  test('the rail member count is suppressed when the member list is unreadable', () => {
-    expect(code).toContain('{sectionVisible.members && !membersQuery.isLoading ? (');
+  // The sidebar lists only the sections the verdict allows — the same filter
+  // the fallback walks, so "listed" and "openable" stay one set.
+  test('the sidebar lists a section only when the verdict allows it', () => {
+    expect(sidebar).toContain('group.items.filter((item) => sectionVisible[item.id])');
+  });
+
+  // `members` is `[]` when the query never runs, and "0" beside Members on an
+  // account the viewer is demonstrably a member of is a lie, not a placeholder.
+  test('the nav member count is suppressed when the member list is unreadable', () => {
+    expect(sidebar).toContain('sectionVisible.members && !membersQuery.isLoading ?');
   });
 
   // Optimistic (`!== false`, not `=== true`): an in-flight probe must not
-  // delay the list for someone who does hold the leaf.
+  // delay the list for someone who does hold the leaf. One hook, read by the
+  // page and the sidebar, so the list is fetched once for both.
   test('the member list waits for its read probe before firing', () => {
-    const query = code.slice(
-      code.indexOf("queryKey: ['account-members', accountId]"),
-      code.indexOf('staleTime: 20_000'),
+    const query = membersHook.slice(
+      membersHook.indexOf("queryKey: ['account-members', accountId]"),
+      membersHook.indexOf('staleTime: 20_000'),
     );
     expect(query).toContain('canReadMembers !== false');
+    expect(code).toContain('useAccountMembers(accountId, canReadMembers)');
+    expect(sidebar).toContain('useAccountMembers(accountId, canReadMembers)');
+    // The page still NAMES the key when it invalidates after a mutation; what
+    // it must not do is run a list query of its own.
+    expect(code).not.toContain('listAccountMembers(');
+    expect(sidebar).not.toContain('listAccountMembers(');
   });
 });
 
@@ -207,9 +251,7 @@ describe('account hub — the members-list IAM reads need entitlement AND permis
 // its roles read on NOTHING at all.
 describe('account hub — the drill-down panels need entitlement AND permission too', () => {
   const readPanel = (file: string) =>
-    readFileSync(join(import.meta.dir, '../../../../components/iam', file), 'utf8')
-      .replace(/^[ \t]*\/\/.*$/gm, '')
-      .replace(/\/\*[\s\S]*?\*\//g, '');
+    strip(readFileSync(join(import.meta.dir, '../../../../components/iam', file), 'utf8'));
 
   const memberPanel = readPanel('member-access-panel.tsx');
   const groupPanel = readPanel('group-access-panel.tsx');
@@ -251,7 +293,7 @@ describe('account hub — the drill-down panels need entitlement AND permission 
   // `role.read` (`apps/api/src/accounts/iam/assignments.ts`). Both rendered
   // unconditionally, so a plain member drilling into `?member=<id>` took a 403
   // and got an empty grid. Gating the QUERY alone is not enough here — an empty
-  // "What they can do" section is the "pane that can only fail" the rail rule
+  // "What they can do" section is the "pane that can only fail" the nav rule
   // exists to prevent — so the surfaces themselves are gone for that viewer.
   test('the capabilities grid and the View-as simulator need role.read', () => {
     expect(memberPanel).toContain('{member && canReadRoles ? (');
@@ -263,7 +305,7 @@ describe('account hub — the drill-down panels need entitlement AND permission 
   // `RolesTab` reads the same catalog plus `listRoles`, and needs no prop: the
   // hub only mounts it when `sectionVisible.roles`, which IS `canReadRoles`.
   // Pinned so a future "show it for discoverability" edit has to face this.
-  test('the Roles tab stays gated by its rail entry, not mounted and left to 403', () => {
+  test('the Roles tab stays gated by its nav entry, not mounted and left to 403', () => {
     expect(code).toContain("activeSection === 'roles' && sectionVisible.roles");
     expect(sectionVisible).toContain('roles: canReadRoles === true');
   });

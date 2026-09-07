@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 import type { DependencyItem, ItemCapabilities, MarketplaceItem } from '@/lib/marketplace-client';
 import { typeMeta } from './marketplace-meta';
 
@@ -14,7 +15,9 @@ export function emptyReadmeCopy(type: string): string {
 
 /** Type-aware meta-line count label for a card/detail (e.g. "3 items" for a
  *  bundle's member count, "12 files" for everything else). */
-export function itemCountLabel(item: Pick<MarketplaceItem, 'type' | 'dependencies' | 'fileCount'>): {
+export function itemCountLabel(
+  item: Pick<MarketplaceItem, 'type' | 'dependencies' | 'fileCount'>,
+): {
   count: number;
   unit: string;
 } {
@@ -90,7 +93,10 @@ const MEMBER_TYPE_LABELS: Record<string, string> = {
 
 /** Bucket bundle/project members by registry type in a stable order, with an
  *  "Other" bucket for anything unrecognized (or a null type). */
-export function groupBundleMembersByType(members: BundleMember[]): TypedMemberGroup[] {
+export function groupBundleMembersByType(
+  members: BundleMember[],
+  tI18nComplete: UiTranslator,
+): TypedMemberGroup[] {
   const byType = new Map<string, BundleMember[]>();
   for (const m of members) {
     const key = m.type ?? 'other';
@@ -105,7 +111,8 @@ export function groupBundleMembersByType(members: BundleMember[]): TypedMemberGr
     byType.delete(type);
   }
   const rest = [...byType.values()].flat();
-  if (rest.length) groups.push({ type: 'other', label: 'Other', members: rest });
+  if (rest.length)
+    groups.push({ type: 'other', label: tI18nComplete.raw('textf97e9da0e3b8'), members: rest });
   return groups;
 }
 
@@ -121,13 +128,16 @@ export interface CapabilityGroup {
 /** Groups an item's `capabilities` into labeled sections for the detail
  *  view's scannable badge rows, dropping empty groups. Includes `network`,
  *  which existing detail views silently omitted. */
-export function groupCapabilities(caps: ItemCapabilities | undefined | null): CapabilityGroup[] {
+export function groupCapabilities(
+  caps: ItemCapabilities | undefined | null,
+  tI18nComplete: UiTranslator,
+): CapabilityGroup[] {
   if (!caps) return [];
   const groups: CapabilityGroup[] = [
-    { kind: 'secret', label: 'Secrets', items: caps.secrets },
-    { kind: 'connector', label: 'Connectors', items: caps.connectors },
-    { kind: 'tool', label: 'Tools', items: caps.tools },
-    { kind: 'network', label: 'Network', items: caps.network },
+    { kind: 'secret', label: tI18nComplete.raw('textd8707d411d99'), items: caps.secrets },
+    { kind: 'connector', label: tI18nComplete.raw('textc3d2e79ebdd0'), items: caps.connectors },
+    { kind: 'tool', label: tI18nComplete.raw('textea93d6a262ec'), items: caps.tools },
+    { kind: 'network', label: tI18nComplete.raw('text1744b96470b5'), items: caps.network },
   ];
   return groups.filter((g) => g.items.length > 0);
 }

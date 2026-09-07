@@ -1,3 +1,4 @@
+import { testUiTranslator } from '@/i18n/test-translator';
 import { describe, expect, test } from 'bun:test';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 
@@ -96,7 +97,7 @@ describe('sendBlockerMessage', () => {
       'session_working',
       'runtime_waking',
     ] as const) {
-      const copy = sendBlockerMessage(blocker);
+      const copy = sendBlockerMessage(blocker, testUiTranslator);
       expect(copy.message.length).toBeGreaterThan(0);
       // No blocker may report itself with the enum name.
       expect(copy.message).not.toContain('_');
@@ -106,11 +107,13 @@ describe('sendBlockerMessage', () => {
   test('the working refusal names what to do about it', () => {
     // "Refused" with no way forward is how a composer becomes a wall. The
     // command runs the moment the turn ends, and the copy has to say so.
-    expect(sendBlockerMessage('session_working').description ?? '').toContain('turn');
+    expect(sendBlockerMessage('session_working', testUiTranslator).description ?? '').toContain(
+      'turn',
+    );
   });
 
   test('the waking refusal says the wait is short and the text is kept', () => {
-    const copy = sendBlockerMessage('runtime_waking');
+    const copy = sendBlockerMessage('runtime_waking', testUiTranslator);
     expect(copy.message.toLowerCase()).toContain('waking');
     expect((copy.description ?? '').toLowerCase()).toContain('again');
   });

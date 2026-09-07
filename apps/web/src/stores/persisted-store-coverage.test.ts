@@ -20,10 +20,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import {
-  isAppOwnedStorageKey,
-  isKeptStorageKey,
-} from '@/lib/utils/clear-local-storage';
+import { isAppOwnedStorageKey, isKeptStorageKey } from '@/lib/utils/clear-local-storage';
 
 const STORES_DIR = resolve(import.meta.dir);
 
@@ -111,8 +108,7 @@ function extractExportedHookName(source: string): string | null {
 function storeSourceFiles(): string[] {
   return readdirSync(STORES_DIR, { withFileTypes: true })
     .filter(
-      (entry) =>
-        entry.isFile() && /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name),
+      (entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name),
     )
     .map((entry) => entry.name)
     .sort();
@@ -200,9 +196,9 @@ describe('extractRegisteredNames resolves both spellings a registerPersistedStor
   });
 
   test('a file with no registerPersistedStore() call yields no names', () => {
-    expect(extractRegisteredNames(`export const useFoo = create(() => ({}));`, 'fixture.ts')).toEqual(
-      [],
-    );
+    expect(
+      extractRegisteredNames(`export const useFoo = create(() => ({}));`, 'fixture.ts'),
+    ).toEqual([]);
   });
 });
 

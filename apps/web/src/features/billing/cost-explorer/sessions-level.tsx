@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 import type { SessionCostSort, SessionCostsPage, SessionCostSummary } from '@kortix/sdk';
@@ -31,10 +32,10 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCostSummary } from '@/hooks/billing/use-cost-explorer';
 import { SESSION_COST_PAGE_SIZE, useSessionCosts } from '@/hooks/billing/use-session-costs';
 
+import { formatSessionCostUsd } from '../session-cost-format';
 import { CostExportButton, type SessionCostExportFilters } from './cost-export-button';
 import { CostLevelShell } from './cost-level-shell';
 import { CostSortHeader } from './cost-sort-header';
-import { formatSessionCostUsd } from '../session-cost-format';
 
 export interface SessionOwnerOption {
   id: string;
@@ -132,9 +133,7 @@ const SESSION_OWNER_CATALOG_LIMIT = 100;
  * a name, not an address — and a session with no owner contributes nothing.
  * Sorted alphabetically so the list is scannable rather than activity-order.
  */
-export function collectOwnerOptions(
-  sessions: readonly SessionCostSummary[],
-): SessionOwnerOption[] {
+export function collectOwnerOptions(sessions: readonly SessionCostSummary[]): SessionOwnerOption[] {
   const labelById = new Map<string, string>();
   for (const session of sessions) {
     if (!session.owner_id) continue;
@@ -287,9 +286,10 @@ export function SessionsLevelTable({
   onPreviousPage,
   onNextPage,
 }: SessionsLevelTableProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (error) {
     return (
-      <InfoBanner tone="destructive" title="Failed to load sessions">
+      <InfoBanner tone="destructive" title={tI18nComplete.raw('textda6efefb0490')}>
         {error.message}
       </InfoBanner>
     );
@@ -308,7 +308,7 @@ export function SessionsLevelTable({
   // the loading state, never an empty one.
   if (isLoading || !data) {
     return (
-      <div className="space-y-2" aria-label="Loading sessions">
+      <div className="space-y-2" aria-label={tI18nComplete.raw('textd8f2d0579d1a')}>
         {Array.from({ length: 5 }, (_, index) => (
           <Skeleton key={index} className="h-12 w-full rounded-md" />
         ))}
@@ -327,8 +327,8 @@ export function SessionsLevelTable({
       <EmptyState
         size="sm"
         icon={ReceiptText}
-        title="No sessions"
-        description="Session cost records appear after sessions are created."
+        title={tI18nComplete.raw('textf857df8f5587')}
+        description={tI18nComplete.raw('textbe326ab70883')}
       />
     );
   }
@@ -343,16 +343,16 @@ export function SessionsLevelTable({
                 `recent`, which orders by the last-activity line inside that
                 same cell. Owner, Requests, LLM and Compute stay plain. */}
             <CostSortHeader
-              label="Session"
+              label={tI18nComplete.raw('text6959b4159575')}
               direction={sessionSortDirection(sort, 'session')}
               onSort={() => onSort('session')}
             />
-            <TableHead>Owner</TableHead>
-            <TableHead className="text-right">Requests</TableHead>
+            <TableHead>{tI18nComplete.raw('text4b1b8aa3608a')}</TableHead>
+            <TableHead className="text-right">{tI18nComplete.raw('textada27592c957')}</TableHead>
             <TableHead className="text-right">LLM</TableHead>
-            <TableHead className="text-right">Compute</TableHead>
+            <TableHead className="text-right">{tI18nComplete.raw('textcedc516df056')}</TableHead>
             <CostSortHeader
-              label="Total"
+              label={tI18nComplete.raw('textc9b3c38247f7')}
               align="right"
               direction={sessionSortDirection(sort, 'total')}
               onSort={() => onSort('total')}
@@ -365,7 +365,7 @@ export function SessionsLevelTable({
             return (
               <TableRow
                 key={session.session_id}
-                className="cursor-pointer hover:bg-accent"
+                className="hover:bg-accent cursor-pointer"
                 onClick={() => onSelectSession(session.session_id)}
               >
                 <TableCell className="max-w-[200px]">
@@ -412,7 +412,7 @@ export function SessionsLevelTable({
                 Two quantities that are not the same quantity do not get the
                 same label. */}
             <TableCell colSpan={2} className="font-medium">
-              Page total
+              {tI18nComplete.raw('text420aaa63cba7')}
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
               {sumBy(sessions, (session) => session.request_count).toLocaleString('en-US')}
@@ -433,7 +433,8 @@ export function SessionsLevelTable({
       {total > 0 ? (
         <div className="flex items-center justify-between gap-3">
           <p className="text-muted-foreground text-xs tabular-nums">
-            Showing {start}-{end} of {total} sessions
+            {tI18nComplete.raw('textd604310a789a')} {start}-{end}{' '}
+            {tI18nComplete.raw('text28391d3bc64e')} {total} {tI18nComplete.raw('text1225ae6c1ae6')}
           </p>
           <div className="flex items-center gap-2">
             <Button
@@ -443,7 +444,7 @@ export function SessionsLevelTable({
               disabled={offset === 0}
               onClick={onPreviousPage}
             >
-              Previous
+              {tI18nComplete.raw('texta57b08a480b8')}
             </Button>
             <Button
               type="button"
@@ -452,7 +453,7 @@ export function SessionsLevelTable({
               disabled={data.next_offset == null}
               onClick={onNextPage}
             >
-              Next
+              {tI18nComplete.raw('text1ff57a29d7c9')}
             </Button>
           </div>
         </div>
@@ -480,6 +481,7 @@ export function SessionsLevel({
   onRangeChange,
   onSelectSession,
 }: SessionsLevelProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [filters, setFilters] = useState<SessionsLevelFilters>(DEFAULT_FILTERS);
 
   // A stale offset would page past the end of a different project's (usually
@@ -514,16 +516,16 @@ export function SessionsLevel({
           }))
         }
       >
-        <Hint
-          label="Reflects the top-spending sessions in this window — an owner whose sessions never rank there may not be listed."
-          side="bottom"
-        >
-          <SelectTrigger className="h-8 w-[180px]" aria-label="Filter sessions by owner">
-            <SelectValue placeholder="All owners" />
+        <Hint label={tI18nComplete.raw('text2831b9b51f86')} side="bottom">
+          <SelectTrigger
+            className="h-8 w-[180px]"
+            aria-label={tI18nComplete.raw('text71655137ac4e')}
+          >
+            <SelectValue placeholder={tI18nComplete.raw('text5f198db25a77')} />
           </SelectTrigger>
         </Hint>
         <SelectContent>
-          <SelectItem value="all">All owners</SelectItem>
+          <SelectItem value="all">{tI18nComplete.raw('text5f198db25a77')}</SelectItem>
           {ownerOptions.map((option) => (
             <SelectItem key={option.id} value={option.id}>
               {option.label}

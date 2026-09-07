@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -55,15 +56,53 @@ const unavailable: SessionScopeSelectionCatalog = {
   connector_connections: { status: 'unavailable' },
 };
 
+const messages = {
+  sessionScope: {
+    resetDefault: 'Reset to default',
+    secrets: {
+      unavailableTitle: 'Secret access is unavailable',
+      unavailableDescription: 'The current secret selection stays unchanged.',
+      useProjectDefault: 'Use the project default',
+      empty: 'No secrets are available for this agent.',
+    },
+    connectors: {
+      unavailableTitle: 'Connector access is unavailable',
+      unavailableDescription: 'The current connector selection stays unchanged.',
+      empty: 'No connectors are available for this agent.',
+      private: 'Private',
+      project: 'Project',
+      required: 'Required — connect to continue',
+      notConnected: 'Not connected',
+      connectBeforeReply:
+        'Nothing is connected to {connector} yet. This session will ask you to connect it before its next reply.',
+      connectionAria: 'Connection for {connector}',
+      currentConnection: 'Current connection',
+      default: 'Default',
+    },
+  },
+};
+
+function withTranslations(children: React.ReactNode) {
+  return (
+    <NextIntlClientProvider locale="en" messages={messages} onError={() => {}}>
+      {children}
+    </NextIntlClientProvider>
+  );
+}
+
 function renderSecrets(draft: SessionScopeDraft, scopeCatalog = catalog) {
   return renderToStaticMarkup(
-    <SessionSecretsEditor draft={draft} catalog={scopeCatalog} onChange={() => {}} />,
+    withTranslations(
+      <SessionSecretsEditor draft={draft} catalog={scopeCatalog} onChange={() => {}} />,
+    ),
   );
 }
 
 function renderConnectors(draft: SessionScopeDraft, scopeCatalog = catalog) {
   return renderToStaticMarkup(
-    <SessionConnectorsEditor draft={draft} catalog={scopeCatalog} onChange={() => {}} />,
+    withTranslations(
+      <SessionConnectorsEditor draft={draft} catalog={scopeCatalog} onChange={() => {}} />,
+    ),
   );
 }
 

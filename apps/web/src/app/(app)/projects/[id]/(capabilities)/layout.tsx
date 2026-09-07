@@ -6,7 +6,7 @@ import { CapabilityTabs } from '@/features/workspace/capabilities/shared/capabil
 
 /**
  * Shared shell for /projects/[id]/{agent,connectors,skills,triggers,models,
- * secrets,members,config,customize}. `channels` is under this group too, but
+ * secrets,review,members,customize}. `channels` is under this group too, but
  * only as a redirect into `connectors?scope=channels` — it is not a tab. `customize` (the index/hub page, and
  * its legacy `[section]` redirect) lives under this group too, on purpose —
  * the bar stays visible even on the page that introduces every tab in it, so

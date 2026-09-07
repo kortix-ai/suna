@@ -6,6 +6,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { CheckIcon as Check } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { AgentMessageTool } from '@/features/session/tool/tools/agent-message-tool';
 import { AgentSpawnTool } from '@/features/session/tool/tools/agent-spawn-tool';
@@ -13,6 +14,7 @@ import { AgentStopTool } from '@/features/session/tool/tools/agent-stop-tool';
 import { TaskDoneTool } from '@/features/session/tool/tools/task-done-tool';
 
 export function AgentTaskUpdateTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const action = (input.action as string) || '';
   switch (action) {
@@ -28,7 +30,7 @@ export function AgentTaskUpdateTool({ part, defaultOpen, forceOpen }: ToolProps)
         <BasicTool
           icon={<Check className={cn('size-3.5 shrink-0', STATUS_TEXT.success)} />}
           trigger={{
-            title: 'Update task',
+            title: tI18nComplete.raw('text4b8fa0516b54'),
             subtitle: taskId ? taskId.slice(-12) : undefined,
             args: ['approved'],
           }}

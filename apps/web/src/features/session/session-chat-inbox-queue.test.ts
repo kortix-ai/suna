@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 // Source assertions, for the same reason as `session-chat-queued-retry-id.test.ts`:
@@ -114,7 +114,7 @@ describe('"send now" addresses the thing that actually holds the row', () => {
       'const handleQueueSendNow = useCallback(',
       '// ---- Triple-ESC to stop ----',
     );
-    expect(sendNow).toContain('promptInbox.retry(id)');
+    expect(sendNow).toMatch(/promptInbox\s*\.retry\(id\)/);
     expect(sendNow).not.toContain('promptInbox.hold(');
     expect(sendNow).not.toContain('queueDrain');
   });
@@ -154,7 +154,7 @@ describe('"send now" addresses the thing that actually holds the row', () => {
       '// Associate stashed command info',
     );
     expect(retry).not.toContain('localIds');
-    expect(retry).toContain('promptInbox.retry(id)');
+    expect(retry).toMatch(/promptInbox\s*\.retry\(id\)/);
   });
 });
 
@@ -166,8 +166,12 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     // transcript from the first frame under the id the inbox row carries;
     // its turn renders dimmed until the agent reaches it (`pending`).
     const send = between(chat, "playSound('send');", 'anchorTurn(messageID);');
-    expect(send).toContain('const messageID = mintSessionWireMessageId(sessionId, clientMessageId);');
-    expect(send).toContain('beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);');
+    expect(send).toContain(
+      'const messageID = mintSessionWireMessageId(sessionId, clientMessageId);',
+    );
+    expect(send).toContain(
+      'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);',
+    );
     expect(send).not.toContain('willWaitInInbox');
     expect(chat).not.toContain('willWaitInInbox');
   });
@@ -178,13 +182,37 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     expect(send).toContain('recoverFromSendFailure(sessionId, messageID, cause');
     // Marked in the SAME tick as the paint, before the first await: an idle
     // frame from a short previous turn used to sweep the bubble mid-send.
-    const paint = between(chat, 'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);', 'const sendingIntoRunningTurn');
+    const paint = between(
+      chat,
+      'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);',
+      'const sendingIntoRunningTurn',
+    );
     expect(paint).toContain('markOptimisticSendInboxBacked(sessionId, messageID);');
   });
 
   test('a row already on screen — by id or by re-mint alias — is never a queued bubble', () => {
     expect(chat).toContain('store.optimisticOriginOf(sessionId, message.info.id)');
     expect(chat).toContain('transcriptMessageIds: transcriptUserMessageIds');
+  });
+
+  test('the re-mint alias is announced from an EFFECT, never from the memo that reads it', () => {
+    // `registerOptimisticEcho` writes to the sync store: it retires the bubble
+    // the row names when the runtime's echo has already landed unmatched,
+    // which a burst of queued prompts makes the ordinary case. Called from a
+    // `useMemo`, that write lands during render and re-renders every
+    // subscriber mid-render.
+    const effect = between(
+      chat,
+      'const store = useSessionStateStore.getState();\n    for (const prompt of promptInbox.prompts) {',
+      '}, [promptInbox.prompts, sessionId]);',
+    );
+    expect(effect).toContain('store.registerOptimisticEcho(');
+    const rowsByMessageId = between(
+      chat,
+      'const inboxRowsByMessageId = useMemo(() => {',
+      'const queueRows = useMemo(',
+    );
+    expect(rowsByMessageId).not.toContain('registerOptimisticEcho');
   });
 
   test('the turn is keyed by the id the bubble was FIRST painted under — uniquely', () => {
@@ -232,7 +260,11 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
   });
 
   test('a PROMPT is never refused for being mid-turn — the server orders it', () => {
-    const promptBranch = between(composer, 'const reset = resolveComposerResetOnSend(', '} catch {');
+    const promptBranch = between(
+      composer,
+      'const reset = resolveComposerResetOnSend(',
+      '} catch {',
+    );
     expect(promptBranch).toContain('await onSend(trimmed, filesToSend, mentionsToSend)');
     expect(promptBranch).not.toContain('onQueueMessage(');
     // The shared blocker set has no `session_working` member for a prompt:
@@ -260,11 +292,17 @@ describe('the boot shell never swallows what the user typed', () => {
     // never got.
     const send = between(shell, 'const handleSend = useCallback(', "playSound('send');");
     expect(send).toContain('await startSessionWithPrompt(projectId, sessionId');
-    expect(send).toContain('attachedFilesToDataUrlParts(files)');
+    expect(send).toContain('stageFirstPromptAttachments(files)');
     expect(send).toContain('throw error;');
     expect(shell).not.toContain('useMessageQueueStore');
     expect(shell).not.toContain('carryDraft(');
     expect(shell).not.toContain('Still starting this session');
+  });
+
+  test('ready-session sends retain the workspace upload path', () => {
+    expect(chat).toContain(
+      'buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile)',
+    );
   });
 
   test('the stash carries ONLY the picks — the prompt travels as the row', () => {

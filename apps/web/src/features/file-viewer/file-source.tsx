@@ -88,9 +88,7 @@ export function FileSourceProvider({
 export function useFileSource(): FileSource {
   const ctx = useContext(FileSourceContext);
   if (!ctx) {
-    throw new Error(
-      'useFileSource: a <FileSourceProvider> must wrap <FileContentRenderer>',
-    );
+    throw new Error('useFileSource: a <FileSourceProvider> must wrap <FileContentRenderer>');
   }
   return ctx;
 }

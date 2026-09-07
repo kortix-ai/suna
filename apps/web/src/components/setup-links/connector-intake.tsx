@@ -14,7 +14,7 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   PlugIcon as Plug,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 import { nextConnectorPollDelay } from './connector-poll';
 import { setupLinkApiBase } from './util';
@@ -171,7 +171,7 @@ export function ConnectorIntake({
   if (phase === 'error') {
     return (
       <div className="text-muted-foreground py-6 text-center text-sm">
-        {error || 'This link is invalid or has expired.'}
+        {error || tI18nHardcoded.raw('i18nComplete.text5998ac369aec')}
       </div>
     );
   }
@@ -182,10 +182,11 @@ export function ConnectorIntake({
         <span className="bg-kortix-green/15 flex size-9 items-center justify-center rounded-sm">
           <Check weight="fill" className="text-kortix-green size-5" />
         </span>
-        <p className="text-foreground text-sm font-medium">Connected</p>
+        <p className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw('i18nComplete.text22965568d22a')}
+        </p>
         <p className="text-muted-foreground max-w-xs text-xs">
-          {appLabel} is connected to this project. You can close this window and return to your
-          session — the agent has been notified.
+          {appLabel} {tI18nHardcoded.raw('i18nComplete.text27fd394a8fbd')}
         </p>
       </div>
     );
@@ -227,7 +228,7 @@ export function ConnectorIntake({
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
       <Button className="w-full" onClick={connect} disabled={starting}>
         {starting ? <Loading className="mr-2 h-4 w-4" /> : <Plug className="mr-2 h-4 w-4" />}
-        {starting ? 'Opening…' : `Connect ${appLabel}`}
+        {starting ? tI18nHardcoded.raw('i18nComplete.textc926c2c50e65') : `Connect ${appLabel}`}
       </Button>
     </div>
   );

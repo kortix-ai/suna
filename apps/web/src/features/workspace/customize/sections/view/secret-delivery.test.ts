@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   SIGNING_CREDENTIAL_NOTE,
   buildEnforcedPolicy,
@@ -120,9 +121,9 @@ describe('secretDeliveryTarget', () => {
     // `kortix secrets call` addresses it by that pair, and its stored policy
     // carries a `kortix_fetch` backend the egress validator rejects — so
     // rewriting the pair would 400 the save, not migrate the secret.
-    expect(secretDeliveryTarget('enforced', { strategy: 'broker', consumer: 'http_broker' })).toEqual(
-      { strategy: 'broker', consumer: 'http_broker' },
-    );
+    expect(
+      secretDeliveryTarget('enforced', { strategy: 'broker', consumer: 'http_broker' }),
+    ).toEqual({ strategy: 'broker', consumer: 'http_broker' });
   });
 
   test('the same legacy row moved off enforced writes the new pair', () => {
@@ -441,7 +442,7 @@ describe('shouldWarnMissingAgentGrant', () => {
 
 describe('missingAgentGrantNotice', () => {
   test('names the identifier, the manifest fix, and rejects the "all" shorthand', () => {
-    const notice = missingAgentGrantNotice('ENFORCED_TEST');
+    const notice = missingAgentGrantNotice('ENFORCED_TEST', testUiTranslator);
     expect(notice.title).toBe('No agent can receive this secret');
     expect(notice.body).toContain('ENFORCED_TEST');
     expect(notice.body).toContain('kortix.yaml');
@@ -482,7 +483,7 @@ describe('secret delivery sync', () => {
   });
 
   test('warns with the session count and the first failure reason verbatim', () => {
-    expect(secretDeliverySyncWarning('ENFORCED_TEST', sync())).toEqual({
+    expect(secretDeliverySyncWarning('ENFORCED_TEST', sync(), testUiTranslator)).toEqual({
       message: 'Saved ENFORCED_TEST, but it is not applied to 1 running session',
       description: 'sandbox unreachable: 502',
     });
@@ -496,6 +497,7 @@ describe('secret delivery sync', () => {
             { session_id: 'ses_2', sandbox_id: 'sbx_2', reason: 'second reason' },
           ],
         }),
+        testUiTranslator,
       ),
     ).toEqual({
       message: 'Saved ENFORCED_TEST, but it is not applied to 2 running sessions',
@@ -504,12 +506,22 @@ describe('secret delivery sync', () => {
   });
 
   test('falls back to the targeted count and a plain reason when the block is thin', () => {
-    expect(secretDeliverySyncWarning('ENFORCED_TEST', sync({ failed: 0, failures: [] }))).toEqual({
+    expect(
+      secretDeliverySyncWarning(
+        'ENFORCED_TEST',
+        sync({ failed: 0, failures: [] }),
+        testUiTranslator,
+      ),
+    ).toEqual({
       message: 'Saved ENFORCED_TEST, but it is not applied to 2 running sessions',
       description: 'No failure reason was reported.',
     });
     expect(
-      secretDeliverySyncWarning('ENFORCED_TEST', sync({ targeted: 0, failed: 0, failures: [] })),
+      secretDeliverySyncWarning(
+        'ENFORCED_TEST',
+        sync({ targeted: 0, failed: 0, failures: [] }),
+        testUiTranslator,
+      ),
     ).toEqual({
       message: 'Saved ENFORCED_TEST, but it is not applied to the running sessions',
       description: 'No failure reason was reported.',
@@ -517,9 +529,15 @@ describe('secret delivery sync', () => {
   });
 
   test('stays silent on a successful sync and on a response without the block', () => {
-    expect(secretDeliverySyncWarning('ENFORCED_TEST', sync({ ok: true, failed: 0 }))).toBeNull();
-    expect(secretDeliverySyncWarning('ENFORCED_TEST', { delivery_sync: null })).toBeNull();
-    expect(secretDeliverySyncWarning('ENFORCED_TEST', { identifier: 'ENFORCED_TEST' })).toBeNull();
+    expect(
+      secretDeliverySyncWarning('ENFORCED_TEST', sync({ ok: true, failed: 0 }), testUiTranslator),
+    ).toBeNull();
+    expect(
+      secretDeliverySyncWarning('ENFORCED_TEST', { delivery_sync: null }, testUiTranslator),
+    ).toBeNull();
+    expect(
+      secretDeliverySyncWarning('ENFORCED_TEST', { identifier: 'ENFORCED_TEST' }, testUiTranslator),
+    ).toBeNull();
   });
 });
 
@@ -689,9 +707,7 @@ describe('buildEnforcedPolicy', () => {
   test('builds a host allow-list and nothing else', () => {
     // §6: the policy collapses to hosts. No header, no template, no method,
     // no path — the agent's own client already carries the handle in place.
-    expect(
-      buildEnforcedPolicy({ hosts: 'api.anthropic.com\napi.openai.com' }),
-    ).toEqual({
+    expect(buildEnforcedPolicy({ hosts: 'api.anthropic.com\napi.openai.com' })).toEqual({
       rules: [{ host: 'api.anthropic.com' }, { host: 'api.openai.com' }],
       on_no_match: 'deny',
       tls: 'terminate',
@@ -746,16 +762,21 @@ describe('parseEnforcedHosts', () => {
 
 describe('legacyInjectionDetail', () => {
   test('reports nothing for a substitution-only policy', () => {
-    expect(legacyInjectionDetail({ rules: [{ host: 'api.example.com' }] })).toBeNull();
-    expect(legacyInjectionDetail(null)).toBeNull();
-    expect(legacyInjectionDetail(undefined)).toBeNull();
+    expect(
+      legacyInjectionDetail({ rules: [{ host: 'api.example.com' }] }, testUiTranslator),
+    ).toBeNull();
+    expect(legacyInjectionDetail(null, testUiTranslator)).toBeNull();
+    expect(legacyInjectionDetail(undefined, testUiTranslator)).toBeNull();
   });
 
   test('spells out a stored header slot, template included', () => {
-    const detail = legacyInjectionDetail({
-      rules: [{ host: 'api.example.com' }],
-      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
-    });
+    const detail = legacyInjectionDetail(
+      {
+        rules: [{ host: 'api.example.com' }],
+        inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+      },
+      testUiTranslator,
+    );
     expect(detail?.lines).toEqual(['Header: authorization', 'Value: Bearer {{secret}}']);
     expect(detail?.body).toContain('Remove it');
   });
@@ -764,26 +785,35 @@ describe('legacyInjectionDetail', () => {
     // The stored default is `{{secret}}`; showing nothing would read as "no
     // value", which is the opposite of what the broker does.
     expect(
-      legacyInjectionDetail({
-        rules: [{ host: 'api.example.com' }],
-        inject: { kind: 'header', name: 'x-api-key' },
-      })?.lines,
+      legacyInjectionDetail(
+        {
+          rules: [{ host: 'api.example.com' }],
+          inject: { kind: 'header', name: 'x-api-key' },
+        },
+        testUiTranslator,
+      )?.lines,
     ).toEqual(['Header: x-api-key', 'Value: {{secret}}']);
   });
 
   test('query and JSON-body slots, plus the method and path filters, are all reported', () => {
     expect(
-      legacyInjectionDetail({
-        backend: 'kortix_fetch',
-        rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
-        inject: { kind: 'query', name: 'api_key' },
-      })?.lines,
+      legacyInjectionDetail(
+        {
+          backend: 'kortix_fetch',
+          rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+          inject: { kind: 'query', name: 'api_key' },
+        },
+        testUiTranslator,
+      )?.lines,
     ).toEqual(['Query parameter: api_key', 'Methods: POST', 'Path: /v1/*']);
     expect(
-      legacyInjectionDetail({
-        rules: [{ host: 'api.example.com' }],
-        inject: { kind: 'json_body_field', path: 'auth.api_key' },
-      })?.lines,
+      legacyInjectionDetail(
+        {
+          rules: [{ host: 'api.example.com' }],
+          inject: { kind: 'json_body_field', path: 'auth.api_key' },
+        },
+        testUiTranslator,
+      )?.lines,
     ).toEqual(['JSON body field: auth.api_key']);
   });
 });
@@ -799,38 +829,38 @@ describe('legacyInjectionDetail', () => {
  */
 describe('enforcedEchoNotice', () => {
   test('names the redacted echo and denies the wrong conclusion', () => {
-    const notice = enforcedEchoNotice('api.stripe.com');
+    const notice = enforcedEchoNotice('api.stripe.com', testUiTranslator);
     expect(notice.title).toContain('[REDACTED]');
     expect(notice.body).toContain('[REDACTED]');
     expect(notice.body).toContain('a real failure');
   });
 
   test('the retired provider-edge symptom appears nowhere', () => {
-    const notice = enforcedEchoNotice('api.stripe.com');
+    const notice = enforcedEchoNotice('api.stripe.com', testUiTranslator);
     const text = `${notice.title} ${notice.body} ${notice.probe}`;
     expect(text).not.toContain('curl: (52) Empty reply from server');
     expect(text.toLowerCase()).not.toContain('network boundary');
   });
 
   test('probes the first declared host with a credential-consuming request', () => {
-    const notice = enforcedEchoNotice('API.Stripe.com\nuploads.stripe.com');
+    const notice = enforcedEchoNotice('API.Stripe.com\nuploads.stripe.com', testUiTranslator);
     expect(notice.probe).toContain('https://api.stripe.com/');
     expect(notice.probe).toContain('never one that echoes headers');
     expect(notice.probe).toContain('200 = the real value was substituted. 401 = it was not.');
   });
 
   test('falls back to a placeholder host before anything is typed', () => {
-    expect(enforcedEchoNotice('').probe).toContain('https://api.example.com/');
+    expect(enforcedEchoNotice('', testUiTranslator).probe).toContain('https://api.example.com/');
   });
 
   test('points at the two-probe procedure in the docs', () => {
-    const notice = enforcedEchoNotice('api.stripe.com');
+    const notice = enforcedEchoNotice('api.stripe.com', testUiTranslator);
     expect(notice.docsHref).toBe('/docs/project/secrets#verify-it-with-two-probes');
     expect(notice.docsLabel).toBe('Verify it with two probes');
   });
 
   test('never suggests looking for the value in the sandbox', () => {
-    const notice = enforcedEchoNotice('api.stripe.com');
+    const notice = enforcedEchoNotice('api.stripe.com', testUiTranslator);
     const text = `${notice.title} ${notice.body} ${notice.probe}`;
     expect(text).not.toContain('env ');
     expect(text).not.toContain('{{secret}}');

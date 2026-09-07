@@ -17,7 +17,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { getDirectory } from '@/ui';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -45,14 +45,14 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     <BasicTool
       icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Searched',
+        title: tHardcodedUi.raw('i18nComplete.text9fc7f1166869'),
         subtitle: directory,
         args: [
           ...args,
           ...(hasResults
             ? [`${grepResult.groups.length} ${grepResult.groups.length === 1 ? 'file' : 'files'}`]
             : isNoResults
-              ? ['no matches']
+              ? [tHardcodedUi.raw('i18nComplete.text0ed6af34915f')]
               : []),
         ],
       }}

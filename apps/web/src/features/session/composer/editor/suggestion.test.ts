@@ -1,13 +1,13 @@
 import { Editor } from '@tiptap/core';
 import type { PluginKey } from '@tiptap/pm/state';
-import { findSuggestionMatch } from '@tiptap/suggestion';
 import { PluginKey as PMPluginKey } from '@tiptap/pm/state';
+import { findSuggestionMatch } from '@tiptap/suggestion';
 import { describe, expect, test } from 'bun:test';
 
 import { baseExtensions } from './extensions';
 import { MentionNode } from './mention-node';
-import { baseSuggestion } from './suggestion';
 import type { MenuController } from './suggestion';
+import { baseSuggestion } from './suggestion';
 
 /**
  * Pins the two headline spec fixes this task exists for, DIRECTLY against
@@ -51,7 +51,7 @@ function matchFor(char: string, pluginKey: PluginKey, text: string) {
   });
 }
 
-describe('baseSuggestion(\'@\', ...) — allowedPrefixes: [\' \', \'\\n\'] keeps emails out', () => {
+describe("baseSuggestion('@', ...) — allowedPrefixes: [' ', '\\n'] keeps emails out", () => {
   const key = new PMPluginKey('t-mention');
 
   test('user@example.com never opens the mention menu — "@" is mid-word, not after whitespace', () => {

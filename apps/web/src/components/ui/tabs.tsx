@@ -278,7 +278,7 @@ function TabsTrigger({
             : 'data-[state=active]:bg-input'),
         // Outline: bordered active chip — matches Button `outline` (border + transparent fill).
         isOutline &&
-          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground relative z-10 bg-transparent data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground data-[state=active]:border-border relative z-10 bg-transparent data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
         isVertical && 'w-full justify-start text-left',
         className,
       )}
@@ -404,7 +404,7 @@ function TabsTriggerCompact({
             ? 'data-[state=active]:bg-transparent'
             : 'data-[state=active]:bg-input'),
         isOutline &&
-          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground rounded-[calc(var(--radius)-3px)] bg-transparent transition-[color,background-color,border-color] duration-150 data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground data-[state=active]:border-border rounded-[calc(var(--radius)-3px)] bg-transparent transition-[color,background-color,border-color] duration-150 data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
         'disabled:pointer-events-none disabled:opacity-50',
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
@@ -463,10 +463,4 @@ export {
   tabsTriggerTextVariants,
 };
 
-export type {
-  TabsListType,
-  TabsSize,
-  TabsTriggerSize,
-  TabsTriggerVariant,
-  TabsUnderlineSize,
-};
+export type { TabsListType, TabsSize, TabsTriggerSize, TabsTriggerVariant, TabsUnderlineSize };

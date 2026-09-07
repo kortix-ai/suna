@@ -118,6 +118,8 @@ describe('authorizeGitProxy — CLI PAT', () => {
     };
     sandboxRow = {
       sandboxId: 'sandbox-1',
+      sessionId: 'sandbox-1',
+      branchName: 'sandbox-1',
       sessionMetadata: { workspace_mode: 'runtime' },
     };
 
@@ -241,6 +243,8 @@ describe('authorizeGitProxy — sandbox token', () => {
   test('runtime sessions cannot read Git objects', async () => {
     sandboxRow = {
       sandboxId: 'sandbox-1',
+      sessionId: 'sandbox-1',
+      branchName: 'sandbox-1',
       sessionMetadata: { workspace_mode: 'runtime' },
     };
 
@@ -256,6 +260,8 @@ describe('authorizeGitProxy — sandbox token', () => {
   test('branch sessions retain Git access', async () => {
     sandboxRow = {
       sandboxId: 'sandbox-1',
+      sessionId: 'sandbox-1',
+      branchName: 'sandbox-1',
       sessionMetadata: { workspace_mode: 'branch' },
     };
 
@@ -265,7 +271,7 @@ describe('authorizeGitProxy — sandbox token', () => {
   });
 
   test('legacy sessions without a workspace mode retain Git access', async () => {
-    sandboxRow = { sandboxId: 'sandbox-1', sessionMetadata: {} };
+    sandboxRow = { sandboxId: 'sandbox-1', sessionId: 'sandbox-1', branchName: 'sandbox-1', sessionMetadata: {} };
 
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
 

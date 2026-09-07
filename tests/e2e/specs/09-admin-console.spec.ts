@@ -17,18 +17,17 @@ const authOptions = { supabaseUrl, password, envFiles: ["apps/api/.env"] };
 /**
  * Load `/admin` until the platform-admin guard actually lets the page through.
  *
- * `admin-shell.tsx:34` gates the whole route on `useAdminRole()`. It renders
- * three different things and only one of them contains a single word this spec
+ * `admin-shell.tsx` gates the whole route on `useAdminRole()`. It renders
+ * three different things and only one of them contains the heading this spec
  * asserts:
- *   - resolving        → a bare `<Skeleton>`, no text at all (`:40-46`)
- *   - not an admin     → `<h1>Admin access required</h1>` (`:56-58`)
- *   - admin            → the overview
+ *   - resolving        → the route loader, no page text at all
+ *   - not an admin     → an `EmptyState` reading "Admin access required"
+ *   - admin            → the overview, whose page heading is "Overview"
  * `useAdminRole` is a plain query with no `throwOnError`, so a 503 from the
  * role probe — which is exactly what staging-api was returning during release
  * runs 32240074477 and 32231251280 — resolves to "not an admin" and renders
- * the refusal screen. The old code then failed on
- * `expect(getByText('Admin overview')).toBeVisible()`, which names neither the
- * guard nor the 503.
+ * the refusal screen. A sentinel that named neither the guard nor the 503 (the
+ * old `getByText('Admin overview')`) failed on the refusal instead of retrying.
  *
  * The grant itself can also lag: the spec inserts `platform_user_roles`
  * directly, and the replica serving the probe need not see it on the first
@@ -40,10 +39,8 @@ async function openAdminOverview(page: Page, path: string): Promise<void> {
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     await page.goto(path, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL((url) => url.pathname === path);
-    const overview = page.getByText("Admin overview").first();
-    const refused = page.getByRole("heading", {
-      name: "Admin access required",
-    });
+    const overview = page.getByRole("heading", { name: "Overview" }).first();
+    const refused = page.getByText("Admin access required").first();
     // Resolve the guard's skeleton into one of its two terminal states first,
     // so a slow probe is a wait and not a failure.
     await expect(overview.or(refused).first()).toBeVisible({ timeout: 60_000 });
@@ -150,7 +147,7 @@ on conflict (account_id) do update set role = excluded.role;
       );
 
       await assertAdminRouteClean(page, "/admin", [
-        "Admin overview",
+        "Overview",
         "Accounts",
         "Projects",
         "Sandboxes",

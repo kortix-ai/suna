@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `AppPreview` — the running thing, opened.
  *
@@ -114,6 +115,7 @@ export function AppPreview({
    *  shows only Retry, exactly as before. */
   onSendToAgent?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The app runs on localhost *inside the sandbox*, which the browser cannot
   // reach. The proxy is what makes it openable at all.
   const { proxyUrl } = useSandboxProxy();
@@ -334,13 +336,13 @@ export function AppPreview({
     <div className="bg-background flex h-full min-h-0 min-w-0 flex-col">
       <div className="border-border flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
         <DetailSidebarToggle />
-        <Hint label="Back" side="bottom">
+        <Hint label={tI18nComplete.raw('text76900f1bfd16')} side="bottom">
           <Button variant="ghost" size="icon" onClick={goBack} disabled={!hasPreview || !canGoBack}>
             <ArrowLeft className="size-4" />
           </Button>
         </Hint>
 
-        <Hint label="Forward" side="bottom">
+        <Hint label={tI18nComplete.raw('textf1c65e14817e')} side="bottom">
           <Button
             variant="ghost"
             size="icon"
@@ -351,7 +353,7 @@ export function AppPreview({
           </Button>
         </Hint>
 
-        <Hint label="Refresh" side="bottom">
+        <Hint label={tI18nComplete.raw('text0e9161011702')} side="bottom">
           <Button variant="ghost" size="icon" onClick={reload} disabled={!hasPreview}>
             <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
           </Button>
@@ -387,7 +389,7 @@ export function AppPreview({
                   addressRef.current?.blur();
                 }
               }}
-              placeholder="Type a port, e.g. 3000"
+              placeholder={tI18nComplete.raw('text878abd024f27')}
               className={cn(
                 'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none',
                 urlParts && 'text-transparent',
@@ -406,7 +408,9 @@ export function AppPreview({
               </span>
             )}
             {addressError && (
-              <span className="text-kortix-red ml-2 shrink-0 text-xs">Sandbox ports only</span>
+              <span className="text-kortix-red ml-2 shrink-0 text-xs">
+                {tI18nComplete.raw('textce1e609b7bf5')}
+              </span>
             )}
           </div>
         </form>
@@ -430,7 +434,7 @@ export function AppPreview({
               }}
             >
               <ArrowSquareOutIcon />
-              Open in a new tab
+              {tI18nComplete.raw('text306ef19c8ac3')}
             </DropdownMenuItem>
           }
         />
@@ -445,7 +449,7 @@ export function AppPreview({
           <div className="bg-background/80 absolute inset-0 z-10 flex items-center justify-center">
             <div className="text-muted-foreground flex flex-col items-center gap-2">
               <Loading className="size-4" />
-              <p className="text-xs">Loading preview…</p>
+              <p className="text-xs">{tI18nComplete.raw('textc4cf2b2ccb5d')}</p>
             </div>
           </div>
         )}
@@ -455,7 +459,7 @@ export function AppPreview({
             icon={WarningIcon}
             size="sm"
             className="bg-background absolute inset-0 z-10"
-            title={`Couldn't load ${name}`}
+            title={tI18nComplete('textba601cdb484b', { value0: name })}
             /* The single most common cause, said plainly: the agent started the
                server a moment ago and it isn't listening yet. Only a SETTLED
                `dead` verdict earns the stopped-workspace wording — see
@@ -463,14 +467,14 @@ export function AppPreview({
             description={previewErrorReason({ sandbox: sandboxHealth, port })}
             action={
               <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
             secondaryAction={
               onSendToAgent ? (
                 <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
                   <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
-                  Send to agent
+                  {tI18nComplete.raw('text77a860cbc585')}
                 </Button>
               ) : null
             }
@@ -484,7 +488,9 @@ export function AppPreview({
             <div className="h-full overflow-y-auto">
               <div className="mx-auto w-full max-w-md px-6 py-12">
                 <section className="space-y-3">
-                  <h3 className="text-muted-foreground px-2 text-sm">Recents</h3>
+                  <h3 className="text-muted-foreground px-2 text-sm">
+                    {tI18nComplete.raw('text41a86988751a')}
+                  </h3>
                   <ul className="space-y-1">
                     {localhostRecents.map((recent) => (
                       <li key={recent.url}>
@@ -513,7 +519,7 @@ export function AppPreview({
             <div className="flex h-full items-center justify-center">
               <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
                 <Globe className="size-12 opacity-20" />
-                <p className="text-sm">Search a URL or port</p>
+                <p className="text-sm">{tI18nComplete.raw('text2f883b75cd2d')}</p>
               </div>
             </div>
           )

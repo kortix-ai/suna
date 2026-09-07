@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 /**
  * "Use your own Slack app" — the self-hosted / custom-scoped install path,
  * rebuilt as a guided three-step wizard in a Modal.
@@ -51,7 +53,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { ManifestCopyBlock } from '@/features/workspace/customize/sections/component/manifest-copy-block';
 import {
   Stepper,
   StepperIndicator,
@@ -61,6 +62,7 @@ import {
   StepperTrigger,
 } from '@/components/ui/stepper';
 import { successToast } from '@/components/ui/toast';
+import { ManifestCopyBlock } from '@/features/workspace/customize/sections/component/manifest-copy-block';
 import { useConnectSlack, useSlackManifest } from '@/hooks/channels/use-channels-installations';
 import { cn } from '@/lib/utils';
 import { CheckIcon, ArrowSquareOutIcon as ExternalLinkIcon, LockIcon } from '@phosphor-icons/react';
@@ -98,6 +100,8 @@ export function SlackByoWizard({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const steps = useLocalizedUiCatalog(STEPS);
   const [step, setStep] = useState<StepNumber>(1);
   const [botToken, setBotToken] = useState('');
   const [signingSecret, setSigningSecret] = useState('');
@@ -115,7 +119,7 @@ export function SlackByoWizard({
       { projectId, bot_token: botToken.trim(), signing_secret: signingSecret.trim() },
       {
         onSuccess: () => {
-          successToast('Slack connected');
+          successToast(tI18nComplete.raw('text1bfa15228ca8'));
           onOpenChange(false);
         },
         onError: (e) => setError(e instanceof Error ? e.message : 'Could not connect Slack'),
@@ -127,22 +131,19 @@ export function SlackByoWizard({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="lg:max-w-xl">
         <ModalHeader>
-          <ModalTitle>Use your own Slack app</ModalTitle>
-          <ModalDescription>
-            Takes about three minutes. You&apos;ll create an app in Slack, install it, then paste
-            two values back here.
-          </ModalDescription>
+          <ModalTitle>{tI18nComplete.raw('text260f0001800b')}</ModalTitle>
+          <ModalDescription>{tI18nComplete.raw('text36e35c306f96')}</ModalDescription>
         </ModalHeader>
 
         <ModalBody className="max-h-[65vh] overflow-y-auto">
           <Stepper
             orientation="vertical"
-            count={STEPS.length}
+            count={steps.length}
             value={step}
             onValueChange={(v) => setStep(v as StepNumber)}
             className="flex w-full flex-col"
           >
-            {STEPS.map(({ step: n, title }) => {
+            {steps.map(({ step: n, title }) => {
               const active = n === step;
               return (
                 <div key={n} className="flex gap-3">
@@ -181,9 +182,7 @@ export function SlackByoWizard({
                           <StepCreateApp
                             manifestText={manifestText}
                             loading={manifest.isLoading}
-                            error={
-                              manifest.error instanceof Error ? manifest.error.message : null
-                            }
+                            error={manifest.error instanceof Error ? manifest.error.message : null}
                             onNext={() => setStep(2)}
                           />
                         ) : null}
@@ -214,11 +213,15 @@ export function SlackByoWizard({
         {step === 3 ? (
           <ModalFooter className="sm:justify-between">
             <Button type="button" variant="outline-ghost" onClick={() => setStep(2)}>
-              Back
+              {tI18nComplete.raw('text76900f1bfd16')}
             </Button>
-            <Button type="button" onClick={submit} disabled={connect.isPending || !credentialsFilled}>
+            <Button
+              type="button"
+              onClick={submit}
+              disabled={connect.isPending || !credentialsFilled}
+            >
               {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Connect Slack
+              {tI18nComplete.raw('textaa665ddf2727')}
             </Button>
           </ModalFooter>
         ) : null}
@@ -238,10 +241,11 @@ function StepCreateApp({
   error: string | null;
   onNext: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       <p className="text-muted-foreground text-sm leading-relaxed">
-        Slack can build the whole app from one setup file — you never fill in a form.
+        {tI18nComplete.raw('text9cdca2543fde')}
       </p>
 
       {/* The block IS both the copy control and the file preview. It replaced
@@ -258,7 +262,7 @@ function StepCreateApp({
       <div className="flex flex-col items-start gap-2">
         <Button size="sm" variant="outline" className="gap-1.5" asChild>
           <Link href={SLACK_NEW_APP_URL} target="_blank" rel="noopener noreferrer">
-            Open Slack
+            {tI18nComplete.raw('text4ddf02a36df5')}
             <ExternalLinkIcon className="size-3.5 shrink-0" />
           </Link>
         </Button>
@@ -266,15 +270,16 @@ function StepCreateApp({
 
       <ol className="list-decimal space-y-1.5 pl-5">
         <SubStep>
-          Choose <SlackUiLabel>From a manifest</SlackUiLabel>.
+          {tI18nComplete.raw('textc7f937836f5d')}{' '}
+          <SlackUiLabel>{tI18nComplete.raw('text41a4294b3596')}</SlackUiLabel>.
         </SubStep>
-        <SubStep>Pick the workspace you want the agent in.</SubStep>
-        <SubStep>Paste the setup file, then confirm.</SubStep>
+        <SubStep>{tI18nComplete.raw('text31e88533abff')}</SubStep>
+        <SubStep>{tI18nComplete.raw('text35a932c5a252')}</SubStep>
       </ol>
 
       <div className="flex justify-end">
         <Button size="sm" variant="secondary" onClick={onNext}>
-          I created the app
+          {tI18nComplete.raw('textbf16dc964c99')}
         </Button>
       </div>
     </>
@@ -282,30 +287,35 @@ function StepCreateApp({
 }
 
 function StepInstall({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       <p className="text-muted-foreground text-sm leading-relaxed">
-        Slack asks you to approve what the agent can do before it can join a channel.
+        {tI18nComplete.raw('textf88927a8173f')}
       </p>
 
       <ol className="list-decimal space-y-1.5 pl-5">
         <SubStep>
-          In your new app, open <SlackUiLabel>Install App</SlackUiLabel> in the left sidebar.
+          {tI18nComplete.raw('textf2da697d0ec4')}{' '}
+          <SlackUiLabel>{tI18nComplete.raw('text7f717f55d7c2')}</SlackUiLabel>{' '}
+          {tI18nComplete.raw('text3ccc48a02ff4')}
         </SubStep>
         <SubStep>
-          Click <SlackUiLabel>Install to Workspace</SlackUiLabel>.
+          {tI18nComplete.raw('text95ba4ed9329f')}{' '}
+          <SlackUiLabel>{tI18nComplete.raw('text52141cfb5b12')}</SlackUiLabel>.
         </SubStep>
         <SubStep>
-          Review the permissions, then click <SlackUiLabel>Allow</SlackUiLabel>.
+          {tI18nComplete.raw('text3022f99399d7')}{' '}
+          <SlackUiLabel>{tI18nComplete.raw('texte213c161d5ce')}</SlackUiLabel>.
         </SubStep>
       </ol>
 
       <div className="flex items-center justify-between">
         <Button variant="ghost" size="sm" onClick={onBack}>
-          Back
+          {tI18nComplete.raw('text76900f1bfd16')}
         </Button>
         <Button size="sm" variant="secondary" onClick={onNext}>
-          I installed it
+          {tI18nComplete.raw('texta695ac413d60')}
         </Button>
       </div>
     </>
@@ -325,27 +335,29 @@ function StepCredentials({
   onSigningSecretChange: (v: string) => void;
   error: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       <div className="space-y-1.5">
-        <Label htmlFor="slack-bot-token">Bot token</Label>
+        <Label htmlFor="slack-bot-token">{tI18nComplete.raw('text5bb9aecca021')}</Label>
         <Input
           id="slack-bot-token"
-          placeholder="xoxb-…"
+          placeholder={tI18nComplete.raw('text154c1feb869c')}
           value={botToken}
           onChange={(e) => onBotTokenChange(e.target.value)}
           autoComplete="off"
           spellCheck={false}
         />
         <p className="text-muted-foreground text-xs leading-relaxed">
-          In Slack: <SlackUiLabel>OAuth &amp; Permissions</SlackUiLabel> →{' '}
-          <SlackUiLabel>Bot User OAuth Token</SlackUiLabel>. It starts with{' '}
-          <code className="font-mono text-xs">xoxb-</code>.
+          {tI18nComplete.raw('text74783b066cae')}{' '}
+          <SlackUiLabel>{tI18nComplete.raw('textd4caa96c198f')}</SlackUiLabel> →{' '}
+          <SlackUiLabel>{tI18nComplete.raw('textd6b64bf5e951')}</SlackUiLabel>
+          {tI18nComplete.raw('text640cb1c5ea06')} <code className="font-mono text-xs">xoxb-</code>.
         </p>
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="slack-signing-secret">Signing secret</Label>
+        <Label htmlFor="slack-signing-secret">{tI18nComplete.raw('texte7ee22e117a1')}</Label>
         <Input
           id="slack-signing-secret"
           placeholder="••••••••"
@@ -356,23 +368,23 @@ function StepCredentials({
           spellCheck={false}
         />
         <p className="text-muted-foreground text-xs leading-relaxed">
-          In Slack: <SlackUiLabel>Basic Information</SlackUiLabel> →{' '}
-          <SlackUiLabel>App Credentials</SlackUiLabel> →{' '}
-          <SlackUiLabel>Signing Secret</SlackUiLabel>. Click{' '}
-          <SlackUiLabel>Show</SlackUiLabel> to reveal it.
+          {tI18nComplete.raw('text74783b066cae')}{' '}
+          <SlackUiLabel>{tI18nComplete.raw('textd094b334d809')}</SlackUiLabel> →{' '}
+          <SlackUiLabel>{tI18nComplete.raw('texta489d605af5a')}</SlackUiLabel> →{' '}
+          <SlackUiLabel>{tI18nComplete.raw('textf5e81453d0e9')}</SlackUiLabel>
+          {tI18nComplete.raw('text438812ba8432')}{' '}
+          <SlackUiLabel>{tI18nComplete.raw('text0df6f1cad36c')}</SlackUiLabel>{' '}
+          {tI18nComplete.raw('text9a91c10f08c8')}
         </p>
       </div>
 
       <div className="text-muted-foreground flex items-start gap-2 text-xs leading-relaxed">
         <LockIcon className="mt-0.5 size-3.5 shrink-0" />
-        <span>
-          Both values are encrypted and stored with this workspace&apos;s secrets. Only your agent
-          can read them.
-        </span>
+        <span>{tI18nComplete.raw('texte4fbfdfe7290')}</span>
       </div>
 
       {error ? (
-        <InfoBanner tone="destructive" title="Could not connect">
+        <InfoBanner tone="destructive" title={tI18nComplete.raw('text8630b4dd33f2')}>
           {error}
         </InfoBanner>
       ) : null}

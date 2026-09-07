@@ -2,11 +2,16 @@ import {
   ArrowCircleUpIcon as ArrowUpCircle,
   ShippingContainerIcon as Container,
   FlaskIcon as Flask,
+  GitBranchIcon as GitBranch,
   TrayIcon as Inbox,
   GearSixIcon as Settings,
   type Icon,
 } from '@phosphor-icons/react';
 
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import type { CustomizeSection } from '@/lib/project-actions';
 
 /**
@@ -48,11 +53,7 @@ import type { CustomizeSection } from '@/lib/project-actions';
  * at the key below that replaced it.
  */
 export type ProjectSettingsSectionKey =
-  | 'general'
-  | 'sandbox'
-  | 'review'
-  | 'feature-flags'
-  | 'upgrades';
+  'general' | 'git' | 'sandbox' | 'review' | 'feature-flags' | 'upgrades';
 
 /**
  * **One flat list, no headings.** The sub-nav used to carry the rail's three
@@ -86,6 +87,16 @@ const STATIC_SECTIONS: readonly ProjectSettingsSection[] = [
     key: 'general',
     label: 'General',
     icon: Settings,
+    gate: 'settings',
+  },
+  // Its own section since 2026-09-03 (Marko): the repository, its status,
+  // the base branch, the manifest file and who can reach the repo are one
+  // subject, and they were a long tail under General.
+  {
+    key: 'git',
+    label: 'Git repo',
+    icon: GitBranch,
+    description: 'The repository this workspace runs from, and who can reach it.',
     gate: 'settings',
   },
   {
@@ -125,7 +136,7 @@ const UPGRADES_SECTION: ProjectSettingsSection = {
   gate: 'upgrade',
 };
 
-const REVIEW_SECTION: ProjectSettingsSection = {
+export const REVIEW_SECTION: ProjectSettingsSection = {
   key: 'review',
   label: 'Review',
   icon: Inbox,
@@ -137,6 +148,13 @@ export interface ProjectSettingsSectionFlags {
   reviewEnabled: boolean;
 }
 
+const PROJECT_SETTINGS_SOURCE = {
+  staticSections: STATIC_SECTIONS,
+  featureFlagsSection: FEATURE_FLAGS_SECTION,
+  upgradesSection: UPGRADES_SECTION,
+  reviewSection: REVIEW_SECTION,
+};
+
 /**
  * The sub-nav, composed from the static sections plus every flag-gated one.
  * Marketplace is gone for good — not a flag, removed from the product. Review
@@ -147,10 +165,19 @@ export interface ProjectSettingsSectionFlags {
  */
 export function projectSettingsSections(
   flags: ProjectSettingsSectionFlags,
+  tI18nComplete?: UiTranslator,
 ): readonly ProjectSettingsSection[] {
-  const sections = [...STATIC_SECTIONS];
-  if (flags.reviewEnabled) sections.push(REVIEW_SECTION);
-  sections.push(FEATURE_FLAGS_SECTION, UPGRADES_SECTION);
+  const source = tI18nComplete
+    ? localizeUiCatalog(PROJECT_SETTINGS_SOURCE, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS)
+    : PROJECT_SETTINGS_SOURCE;
+  const sections = [...source.staticSections];
+  // Review is NOT a section here any more: it is a capability tab of its own
+  // (`capability-tab-routes.ts`, 2026-09-02). Listing it twice — as a tab and
+  // as a Settings section — was the leftover of restoring this page. The flag
+  // still gates the tab; `REVIEW_SECTION` stays exported for the legacy
+  // `?section=review` redirect target and the pane switch.
+  void flags.reviewEnabled;
+  sections.push(source.featureFlagsSection, source.upgradesSection);
   return sections;
 }
 
@@ -179,8 +206,8 @@ export function projectSettingsSectionHref(
   key: ProjectSettingsSectionKey,
 ): string {
   return key === DEFAULT_PROJECT_SETTINGS_SECTION
-    ? `/projects/${projectId}/config`
-    : `/projects/${projectId}/config?section=${key}`;
+    ? capabilityTabHref(projectId, 'config')
+    : `${capabilityTabHref(projectId, 'config')}?section=${key}`;
 }
 
 /** The copy for one section, independent of any flag — used by pane headings. */

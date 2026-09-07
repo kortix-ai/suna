@@ -1,7 +1,7 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -31,6 +31,7 @@ export function OtpVerification({
   showExistingOptions = false,
   challengeId,
 }: OtpVerificationProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('auth.phoneVerification');
   const [otp, setOtp] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -80,7 +81,7 @@ export function OtpVerification({
 
     if (otp.length !== 6) {
       setLocalError(t('pleaseEnterSixDigitCode'));
-      errorToast(t('pleaseEnterSixDigitCode'));
+      errorToast(tI18nComplete('text2d32975062a5'));
       return;
     }
 
@@ -150,9 +151,7 @@ export function OtpVerification({
                   {t('resendCode')}
                 </button>
               ) : (
-                <span className="tabular-nums">
-                  {t('resendInSeconds', { seconds: countdown })}
-                </span>
+                <span className="tabular-nums">{t('resendInSeconds', { seconds: countdown })}</span>
               )}
             </p>
           </>

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { AccessList, AccessRow, ACCESS_ROW_CLASS } from './access-row';
+import { ACCESS_ROW_CLASS, AccessList, AccessRow } from './access-row';
 
 /** Static markup assertions only — the idiom used by
  *  `settings-nav-context.test.tsx` and `components/ui/*.test.tsx`. */
@@ -14,7 +14,9 @@ describe('AccessRow anatomy', () => {
     const html = render(<AccessRow title="alice@corp.com" />);
     expect(html).toContain(ACCESS_ROW_CLASS.split(' ')[0]);
     expect(html).toContain('alice@corp.com');
-    expect(ACCESS_ROW_CLASS).toBe('bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5');
+    expect(ACCESS_ROW_CLASS).toBe(
+      'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5',
+    );
   });
 
   test('metaParts render through InlineMeta', () => {
@@ -93,7 +95,12 @@ describe('AccessRow anatomy', () => {
     const html = render(
       <AccessRow
         title="a"
-        selectable={{ checked: false, onCheckedChange: () => {}, label: 'Select a', reserveSpace: true }}
+        selectable={{
+          checked: false,
+          onCheckedChange: () => {},
+          label: 'Select a',
+          reserveSpace: true,
+        }}
       />,
     );
     expect(html).not.toContain('type="checkbox"');
@@ -203,4 +210,4 @@ describe('AccessRow linked variant', () => {
     expect(html).not.toContain('role="button"');
     expect(html).not.toContain('<a ');
   });
-})
+});

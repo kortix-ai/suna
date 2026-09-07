@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The project sidebar's one control: which workspace you are in, and everything
  * you can do from here.
@@ -45,6 +46,7 @@ import {
   DropdownMenuItem,
   DropdownMenuPortal,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -59,6 +61,7 @@ import {
 } from '@/components/ui/sidebar';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
+import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { cn } from '@/lib/utils';
@@ -79,6 +82,7 @@ import * as React from 'react';
 import { useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
+  const t = useI18nTranslations('sidebar');
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -136,9 +140,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
-                aria-label="Switch workspace"
+                aria-label={t('workspace.switch')}
                 className={cn(
-                  'group/workspace relative hover:bg-card flex cursor-pointer items-center gap-2 rounded-md px-1',
+                  'group/workspace hover:bg-card relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
                 )}
               >
@@ -147,8 +151,21 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     shape that swaps content the moment the query lands. The
                     control keeps its size either way — the row is a fixed
                     `h-8` — so the empty state is a quiet gap, not a jump. */}
+                {/* `glyph` BEFORE `emoji` below, matching EntityAvatar's own
+                    precedence. Both are required: a project's icon is a union —
+                    an emoji XOR a named glyph — so passing only `emoji` renders
+                    a glyph project's chalk INITIAL here, while the projects grid
+                    (`projects/project-card.tsx`) and ⌘K
+                    (`workspace/command-palette.tsx`) both draw its glyph. The
+                    sidebar is where a person looks at their workspace all day,
+                    so that gap read as "I picked an icon and nothing changed". */}
                 {project ? (
-                  <EntityAvatar label={project.name} emoji={project.icon} size="sm" />
+                  <EntityAvatar
+                    label={project.name}
+                    glyph={project.icon_glyph}
+                    emoji={project.icon}
+                    size="sm"
+                  />
                 ) : null}
 
                 <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-medium tracking-tight group-data-[collapsible=icon]:hidden">
@@ -168,7 +185,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <ArrowsLeftRightIcon weight="fill" />
-                  Switch Workspace
+                  {t('workspace.switchMenu')}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
                   <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
@@ -186,7 +203,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
                       <Link href="/new" prefetch>
                         <PlusIcon />
-                        Create a workspace…
+                        {t('workspace.create')}
                       </Link>
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
@@ -207,7 +224,21 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   header `UserMenu` has no such renderer and must navigate. */}
               <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
                 <CogOne />
-                User Settings
+                {t('workspace.settings')}
+                {/* The keycap sits on this row because this row is what the
+                    keystroke does — `useSettingsKeyboardShortcut` calls the
+                    same `openSettings()`. It is the only row in the app that
+                    opens the overlay, so it is the only honest place to
+                    advertise Mod+, (the old sidebar Settings row that carried
+                    it was removed on 2026-08-17, and the shortcut has been
+                    undiscoverable since). The symbol follows the platform;
+                    the handler accepts Cmd and Ctrl on all of them.
+
+                    `DropdownMenuShortcut` (plain muted text, `MENU_SHORTCUT`)
+                    rather than `<Kbd>` chips: this is a menu row, and that is
+                    the recipe every menu row in the design system uses for a
+                    trailing keystroke. */}
+                <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
               {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits
@@ -216,7 +247,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
                 <Link href="/download" prefetch>
                   <DownloadSimple />
-                  Download App
+                  {t('workspace.downloadApp')}
                 </Link>
               </DropdownMenuItem>
 
@@ -231,7 +262,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
               <DropdownMenuItem onClick={openLogoutConfirm} size="sm">
                 <LogOut />
-                Log out
+                {t('workspace.logOut')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

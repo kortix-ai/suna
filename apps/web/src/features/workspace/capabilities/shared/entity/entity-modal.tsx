@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { type ReactNode, useMemo, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
@@ -165,10 +166,13 @@ export function EntityDetailModal({
  * name for the whole time it is open, including this window.
  */
 function EntityModalSkeleton({ kind }: { kind: EntityKind }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       <ModalHeader className="border-border/60 space-y-1 border-b pb-4">
-        <ModalTitle className="sr-only">Loading {kind}</ModalTitle>
+        <ModalTitle className="sr-only">
+          {tI18nComplete.raw('textdc380888c4e2')} {kind}
+        </ModalTitle>
         <Skeleton className="h-5 w-48 rounded-sm" aria-hidden />
       </ModalHeader>
 
@@ -208,6 +212,7 @@ function EntityModalBody({
   meta?: ReactNode;
   paneOverride?: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const configure = useConfigureThread(projectId);
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
@@ -271,22 +276,23 @@ function EntityModalBody({
           ) : (
             <PencilSimpleIcon className="size-3.5 shrink-0" />
           )}
-          Edit source
+          {tI18nComplete.raw('text4314a9413ab7')}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Are you sure you want to send?</AlertDialogTitle>
+          <AlertDialogTitle>{tI18nComplete.raw('textdc0a04e35f6e')}</AlertDialogTitle>
           <AlertDialogDescription>
-            This starts a new chat to edit {entity.name}'s source.
+            {tI18nComplete.raw('text60c72685917f')} {entity.name}
+            {tI18nComplete.raw('text412cc9a16edd')}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>{tI18nComplete.raw('text19766ed6ccb2')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
           >
-            Send
+            {tI18nComplete.raw('textf6f4688ff23d')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -317,7 +323,7 @@ function EntityModalBody({
         rootClassName="h-auto min-h-0 flex-1"
         className="overscroll-contain"
       >
-        <FileTree title="Files">
+        <FileTree title={tI18nComplete.raw('textabc7e9892806')}>
           {nodes.length > 0 ? (
             <nav aria-label={`${entity.name} files`} className="space-y-0.5">
               {nodes.map((node) => (
@@ -344,13 +350,13 @@ function EntityModalBody({
 
         {filesQuery.isError ? (
           <p className="text-muted-foreground mt-4 text-xs text-pretty">
-            Couldn’t list the other files here.{' '}
+            {tI18nComplete.raw('text881c0bd6449b')}{' '}
             <button
               type="button"
               onClick={() => void filesQuery.refetch()}
               className="text-foreground underline underline-offset-2"
             >
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </button>
           </p>
         ) : null}
@@ -432,6 +438,7 @@ function EntityFilePane({
   error: unknown;
   onRetry: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       {isLoading ? (
@@ -446,15 +453,13 @@ function EntityFilePane({
         <div className="p-4">
           <ErrorState
             size="sm"
-            title="Couldn't load file"
+            title={tI18nComplete.raw('textf27a58a42762')}
             description={
-              error instanceof Error
-                ? error.message
-                : 'You may not have permission to read this file.'
+              error instanceof Error ? error.message : tI18nComplete.raw('text553d1ec7c9e6')
             }
             action={
               <Button variant="outline" size="sm" onClick={onRetry}>
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
           />

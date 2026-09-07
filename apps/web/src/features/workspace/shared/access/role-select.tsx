@@ -1,5 +1,9 @@
 'use client';
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 // RoleSelect — THE role picker for every access surface.
 //
 // One `Select` renders both halves of the role model: the built-in roles
@@ -16,9 +20,9 @@
 // role `Select`, and `CreateAssignmentDialog`'s custom-role-only `Select`.
 // `role-select-item.tsx` folds into this file.
 
-import Link from 'next/link';
 import { menuRow } from '@/components/ui/menu-recipe';
 import { ArrowRightIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 import { useMemo } from 'react';
 
 import {
@@ -72,52 +76,68 @@ interface RoleDescriptor {
  */
 export const ACCOUNT_ROLE_DESCRIPTORS: Record<AccountRole, RoleDescriptor> = {
   owner: {
-    label: 'Owner',
-    blurb: 'Full control. Can transfer ownership, delete the account, and manage billing.',
+    label: 'Account owner',
+    blurb: 'Full control of the account: billing, members, transfer or delete it.',
     summary:
-      'Full control of the account. Can transfer ownership, delete the account, and manage billing — and is Manager on every project.',
+      'Full control of the account — billing, members, transferring ownership, deleting it. Project admin on every project.',
   },
   admin: {
-    label: 'Admin',
+    label: 'Account admin',
     blurb: 'Everything except deleting the account or transferring ownership.',
     summary:
-      'Everything an owner can do except deleting the account or transferring ownership. Also Manager on every project.',
+      'Everything an owner can do except deleting the account or transferring ownership. Project admin on every project.',
   },
   member: {
-    label: 'Member',
-    blurb:
-      "No implicit project access. Sees only projects they've been added to (directly or via a group).",
+    label: 'Account member',
+    blurb: 'Sees only the projects they are added to, and only the agents granted there.',
     summary:
-      "The floor role for the account. No implicit project access — they see only the projects they've been added to, directly or via a group.",
+      'The floor role for the account. Sees only the projects they are added to, directly or through a group, and uses only the agents granted to them there.',
   },
 };
 
+/**
+ * The two project roles, and the whole difference between them (Marko,
+ * 2026-09-03): a member USES agents — the ones they are granted — and a
+ * project admin CONFIGURES the project, which is Customize. Nothing in
+ * between. The keys stay `member` / `manager` (they are the API's role
+ * keys and the URL vocabulary); only what a person reads changed.
+ */
 export const PROJECT_ROLE_DESCRIPTORS: Record<OfferedProjectRole, RoleDescriptor> = {
   member: {
-    label: 'Member',
-    blurb: 'Read, run sessions, and fire triggers — no editing or config.',
+    label: 'Project member',
+    blurb: 'Starts and works in sessions with the agents they are granted. No Customize.',
     summary:
-      'Read, run sessions, and fire triggers — no editing or config. The project floor role.',
+      'Starts and works in sessions with the agents they are granted — nothing else. No access to Customize. The project floor role.',
   },
   manager: {
-    label: 'Manager',
-    blurb: 'Full project control — edit, deploy, triggers, members, delete.',
-    summary: 'Full project control — edit, deploy, triggers, members, delete.',
+    label: 'Project admin',
+    blurb: 'Customize and everything in it — every agent, skill, connector, secret, trigger, and member.',
+    summary:
+      'Customize and everything in it — every agent, skill, connector, secret and trigger, plus members and the project itself.',
   },
 };
 
 export function builtinRoleDescriptor(
   scope: RoleScope,
   role: AccountRole | ProjectRole,
+  tI18nComplete?: UiTranslator,
 ): RoleDescriptor | undefined {
-  return scope === 'account'
-    ? ACCOUNT_ROLE_DESCRIPTORS[role as AccountRole]
-    : PROJECT_ROLE_DESCRIPTORS[role as OfferedProjectRole];
+  const descriptor =
+    scope === 'account'
+      ? ACCOUNT_ROLE_DESCRIPTORS[role as AccountRole]
+      : PROJECT_ROLE_DESCRIPTORS[role as OfferedProjectRole];
+  return descriptor && tI18nComplete
+    ? localizeUiCatalog(descriptor, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS)
+    : descriptor;
 }
 
 /** "Manager", "Owner" — the display name of a built-in role. */
-export function builtinRoleLabel(scope: RoleScope, role: AccountRole | ProjectRole): string {
-  return builtinRoleDescriptor(scope, role)?.label ?? role;
+export function builtinRoleLabel(
+  scope: RoleScope,
+  role: AccountRole | ProjectRole,
+  tI18nComplete?: UiTranslator,
+): string {
+  return builtinRoleDescriptor(scope, role, tI18nComplete)?.label ?? role;
 }
 
 // ─── RoleValue ─────────────────────────────────────────────────────────────
@@ -174,7 +194,8 @@ export function selectValueToRoleValue(raw: string): RoleValue {
   if (raw.startsWith(BUILTIN_PREFIX)) {
     return { kind: 'builtin', role: raw.slice(BUILTIN_PREFIX.length) as AccountRole | ProjectRole };
   }
-  if (raw.startsWith(CUSTOM_PREFIX)) return { kind: 'custom', roleId: raw.slice(CUSTOM_PREFIX.length) };
+  if (raw.startsWith(CUSTOM_PREFIX))
+    return { kind: 'custom', roleId: raw.slice(CUSTOM_PREFIX.length) };
   return ROLE_NONE;
 }
 
@@ -187,8 +208,9 @@ export function roleValueLabel(
   scope: RoleScope,
   value: RoleValue,
   roles?: readonly IamRole[],
+  tI18nComplete?: UiTranslator,
 ): string {
-  if (value.kind === 'builtin') return builtinRoleLabel(scope, value.role);
+  if (value.kind === 'builtin') return builtinRoleLabel(scope, value.role, tI18nComplete);
   if (value.kind === 'custom') {
     return roles?.find((r) => r.role_id === value.roleId)?.name ?? 'Custom role';
   }
@@ -262,6 +284,7 @@ export function RoleSelect({
   className,
   placeholder = 'Choose a role',
 }: RoleSelectProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const rolesQuery = useAccountRoles(accountId, rbacEnabled);
   const builtins = useMemo(() => {
     const offered = builtinRoles ?? builtinRolesForScope(scope);
@@ -301,14 +324,14 @@ export function RoleSelect({
       <SelectContent>
         {allowNone ? <SelectItem value={NONE_VALUE}>{noneLabel}</SelectItem> : null}
         {builtins.map((role) => {
-          const descriptor = builtinRoleDescriptor(scope, role);
+          const descriptor = builtinRoleDescriptor(scope, role, tI18nComplete);
           return (
             <SelectItem
               key={role}
               value={`${BUILTIN_PREFIX}${role}`}
               description={descriptor?.blurb}
             >
-              <span className="font-medium">{builtinRoleLabel(scope, role)}</span>
+              <span className="font-medium">{builtinRoleLabel(scope, role, tI18nComplete)}</span>
             </SelectItem>
           );
         })}
@@ -317,9 +340,11 @@ export function RoleSelect({
           <>
             <SelectSeparator />
             <SelectGroup>
-              <SelectLabel>Custom</SelectLabel>
+              <SelectLabel>{tI18nComplete.raw('text494ca78f7374')}</SelectLabel>
               {selectedMissingCustom && value.kind === 'custom' ? (
-                <SelectItem value={`${CUSTOM_PREFIX}${value.roleId}`}>Custom role</SelectItem>
+                <SelectItem value={`${CUSTOM_PREFIX}${value.roleId}`}>
+                  {tI18nComplete.raw('text5b58e07ead9f')}
+                </SelectItem>
               ) : null}
               {customRoles.map((role) => (
                 <SelectItem
@@ -344,7 +369,7 @@ export function RoleSelect({
               className={menuRow('md', 'default', 'text-muted-foreground hover:text-foreground')}
             >
               <span className="flex w-full items-center justify-between gap-2">
-                <span>Create a custom role</span>
+                <span>{tI18nComplete.raw('text6dd06b2529d4')}</span>
                 <ArrowRightIcon className="size-3.5 shrink-0" aria-hidden />
               </span>
             </Link>

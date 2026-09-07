@@ -9,7 +9,7 @@ import {
   CopyIcon as Copy,
   ShareNetworkIcon as Share2,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 import { errorToast, successToast } from '../ui/toast';
 
@@ -22,6 +22,7 @@ interface ReferralCodeSectionProps {
 }
 
 export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSectionProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.referrals');
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -29,9 +30,9 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
     if (await copyToClipboard(text)) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
-      successToast(t('linkCopied'));
+      successToast(tI18nComplete('textc9b756fdf6c2'));
     } else {
-      errorToast('Failed to copy');
+      errorToast(tI18nComplete.raw('textb7fdaed41e1a'));
     }
   };
 
@@ -41,7 +42,7 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Join Kortix with my referral link',
+          title: tI18nComplete.raw('text7db7002fa9e9'),
           text: 'Get 400 free credits when you sign up with my referral link!',
           url: referralCode.referral_url,
         });

@@ -8,6 +8,7 @@ import {
 } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
 import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
+import { settleCredits } from './settle-credits';
 import { MINIMUM_CREDIT_FOR_RUN, TOKEN_PRICE_MULTIPLIER } from './tiers';
 import { getManagedModel } from '@kortix/llm-catalog';
 import { calculateCost as calculateGatewayCost } from '@kortix/llm-gateway';
@@ -163,7 +164,17 @@ export async function deductForLlmUsage(opts: {
 }) {
   if (opts.costUsd <= 0) return { success: true, cost: 0, newBalance: 0, transactionId: null };
   const description = `LLM · ${opts.provider ? `${opts.provider}/` : ''}${opts.model}`;
-  const result = await deductCredits(opts.accountId, opts.costUsd, description, 'llm_debit');
+  // SETTLEMENT, not admission: these tokens are already generated and already
+  // cost us money upstream. `deductCredits` would refuse this on a drained
+  // wallet and the spend would simply disappear from the ledger — which is
+  // exactly what happened for a full billing period.
+  const result = await settleCredits(
+    opts.accountId,
+    opts.costUsd,
+    description,
+    'llm_debit',
+    opts.usageEventId ? `llm:${opts.usageEventId}` : undefined,
+  );
   if (
     result.success &&
     result.transactionId &&

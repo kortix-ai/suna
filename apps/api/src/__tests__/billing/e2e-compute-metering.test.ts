@@ -145,12 +145,16 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
   getComputeUsageSince: async () => ({ totalCostUsd: 0, sessionCount: 0 }),
 }));
 
-// Override the credits mock to actually capture the type tag.
-mock.module('../../billing/services/credits', () => ({
-  calculateTokenCost: () => 0,
-  getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
-  getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
-  deductCredits: async (accountId: string, amount: number, description: string, ledgerType = 'usage') => {
+// Compute settles through its own module (billing/services/settle-credits),
+// which exists precisely so this stub cannot delete an export that nine other
+// test files' partial `credits` factories rely on.
+mock.module('../../billing/services/settle-credits', () => ({
+  settleCredits: async (
+    accountId: string,
+    amount: number,
+    description: string,
+    ledgerType = 'usage',
+  ) => {
     debitCalls.push({ accountId, amount, description, ledgerType });
     if (holdFirstDebit && debitCalls.length === 1) {
       signalFirstDebitStarted?.();
@@ -158,7 +162,19 @@ mock.module('../../billing/services/credits', () => ({
         releaseFirstDebit = resolve;
       });
     }
-    return { success: true, cost: amount, newBalance: 0, transactionId: 'tx_test' };
+    return { success: true, cost: amount, newBalance: 0, overdraft: false, transactionId: 'tx_test' };
+  },
+}));
+
+// The credits module keeps its ORIGINAL stub surface — compute metering no
+// longer calls into it, and a `deductCredits` here would be an admission, which
+// settling already-consumed seconds must never take.
+mock.module('../../billing/services/credits', () => ({
+  calculateTokenCost: () => 0,
+  getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
+  getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
+  deductCredits: async () => {
+    throw new Error('compute metering must SETTLE, never take an admission deduct');
   },
   deductForLlmUsage: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: null }),
   refreshDailyCredits: async () => null,

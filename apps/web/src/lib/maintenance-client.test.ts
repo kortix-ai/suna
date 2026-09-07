@@ -1,11 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { automaticMaintenanceConfig, isMaintenanceProductRoute } from './maintenance-client';
+import { isMaintenanceProductRoute, unknownMaintenanceConfig } from './maintenance-client';
 
 describe('maintenance client fallback', () => {
-  test('activates blocking maintenance after a status request failure', () => {
-    expect(automaticMaintenanceConfig()).toMatchObject({
-      level: 'blocking',
-      title: 'Service maintenance',
+  test('stays out of maintenance after a status request failure', () => {
+    // Fail open. `MaintenanceBannerHost` navigates to /maintenance on
+    // `blocking`, so returning it here ejected users from a healthy app on one
+    // failed poll.
+    expect(unknownMaintenanceConfig()).toMatchObject({
+      level: 'none',
+      title: '',
+      message: '',
     });
   });
 

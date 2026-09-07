@@ -1,6 +1,7 @@
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
@@ -58,7 +59,7 @@ const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
 
 describe('normalising the two catalogues', () => {
   test('Computer Tunnels is a native connector catalogue entry', () => {
-    const entry = computersCatalogEntry();
+    const entry = computersCatalogEntry(testUiTranslator);
     expect(entry).toMatchObject({
       source: 'computer',
       slug: 'computers',
@@ -123,7 +124,7 @@ describe('connected join', () => {
     const keys = connectedCatalogKeys([
       conn({ provider: 'computer', slug: 'studio-machines', name: 'Studio' }),
     ]);
-    expect(isCatalogEntryConnected(computersCatalogEntry(), keys)).toBe(true);
+    expect(isCatalogEntryConnected(computersCatalogEntry(testUiTranslator), keys)).toBe(true);
   });
 
   // A connector with a blank name must not index the empty string, or every

@@ -1,8 +1,10 @@
 'use client';
 
 import { CtaSection } from '@/features/marketing/landing/cta-section';
+import { FOOTER_TRANSLATION_KEYS } from '@/i18n/footer-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { ThemeToggle } from './theme-toggle';
 
@@ -109,6 +111,8 @@ function FooterLink({ label, href, external }: FooterLinkItem) {
 
 const Footer = () => {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const footerSections = localizeUiCatalog(FOOTER_SECTIONS, tI18nComplete, FOOTER_TRANSLATION_KEYS);
   const currentYear = new Date().getFullYear();
 
   return (
@@ -119,7 +123,7 @@ const Footer = () => {
         <div className="mx-auto mb-12 max-w-7xl px-6">
           <nav>
             <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-5">
-              {FOOTER_SECTIONS.map((section) => (
+              {footerSections.map((section) => (
                 <div key={section.title} className="min-w-0 space-y-2">
                   <h3 className="text-foreground text-sm">{section.title}</h3>
                   <ul className="space-y-0">
@@ -142,7 +146,7 @@ const Footer = () => {
           <div className="text-muted-foreground flex items-center gap-3 text-base">
             <small>
               {tI18nHardcoded.raw('autoComponentsHomeFooterJsxTextCopye99743e8')}
-              {currentYear} Kortix
+              {currentYear} {tI18nHardcoded.raw('i18nComplete.textab54cf5e1d9d')}
             </small>
           </div>
 

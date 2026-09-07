@@ -8,6 +8,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import SectionHeader from '@/features/marketing/component/section-header';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { ReactNode } from 'react';
 import { faq, type FaqItem } from './content';
 
@@ -17,23 +18,23 @@ type FaqSectionProps = {
   items?: readonly FaqItem[];
 };
 
-export function FaqSection({
-  eyebrow = faq.eyebrow,
-  title = faq.title,
-  items = faq.items,
-}: FaqSectionProps): ReactNode {
+export function FaqSection({ eyebrow, title, items }: FaqSectionProps): ReactNode {
+  const localizedFaq = useLocalizedUiCatalog(faq);
+  const resolvedEyebrow = eyebrow ?? localizedFaq.eyebrow;
+  const resolvedTitle = title ?? localizedFaq.title;
+  const resolvedItems = items ?? localizedFaq.items;
   return (
     <section
       id="faq"
       className="mx-auto grid w-full max-w-7xl grid-cols-1 px-6 py-24 md:py-30 lg:grid-cols-[35%_minmax(0,1fr)] lg:gap-x-12"
     >
       <div className="w-full min-w-0">
-        <SectionHeader eyebrow={eyebrow} title={title} />
+        <SectionHeader eyebrow={resolvedEyebrow} title={resolvedTitle} />
       </div>
 
       <Reveal delay={0.06} className="mt-10 w-full min-w-0 lg:mt-0">
         <Accordion type="single" collapsible className="flex w-full flex-col gap-1 border-0">
-          {items.map((item) => (
+          {resolvedItems.map((item) => (
             <AccordionItem
               key={item.id}
               value={item.id}

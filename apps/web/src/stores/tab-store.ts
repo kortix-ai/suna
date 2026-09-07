@@ -1,16 +1,27 @@
 'use client';
 
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk';
 import { safeLocalStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
+import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type TabType = 'session' | 'file' | 'dashboard' | 'settings' | 'project' | 'page' | 'preview' | 'terminal' | 'services' | 'browser' | 'desktop';
+export type TabType =
+  | 'session'
+  | 'file'
+  | 'dashboard'
+  | 'settings'
+  | 'project'
+  | 'page'
+  | 'preview'
+  | 'terminal'
+  | 'services'
+  | 'browser'
+  | 'desktop';
 
 /** The permanent dashboard/home tab. Always pinned, always first. */
 export const DASHBOARD_TAB_ID = 'page:/dashboard';
@@ -174,9 +185,10 @@ export const useTabStore = create<TabState>()(
         const { tabs, tabOrder, activeTabId, tabFocusHistory } = get();
 
         // Record current active tab in focus history before switching
-        const newHistory = activeTabId && activeTabId !== tabInput.id
-          ? pushFocusHistory(tabFocusHistory, activeTabId)
-          : tabFocusHistory;
+        const newHistory =
+          activeTabId && activeTabId !== tabInput.id
+            ? pushFocusHistory(tabFocusHistory, activeTabId)
+            : tabFocusHistory;
 
         // If tab already exists, update its metadata (URL may have changed) and activate it.
         // Important: do NOT force-refresh preview tabs here. Re-opening or
@@ -203,10 +215,10 @@ export const useTabStore = create<TabState>()(
           openedAt: Date.now(),
         };
 
-        const updated = ensureDashboardTab(
-          { ...tabs, [newTab.id]: newTab },
-          [...tabOrder, newTab.id],
-        );
+        const updated = ensureDashboardTab({ ...tabs, [newTab.id]: newTab }, [
+          ...tabOrder,
+          newTab.id,
+        ]);
 
         set({
           ...updated,
@@ -282,10 +294,10 @@ export const useTabStore = create<TabState>()(
           return tabToReopen;
         }
 
-        const updated = ensureDashboardTab(
-          { ...tabs, [tabToReopen.id]: tabToReopen },
-          [...tabOrder, tabToReopen.id],
-        );
+        const updated = ensureDashboardTab({ ...tabs, [tabToReopen.id]: tabToReopen }, [
+          ...tabOrder,
+          tabToReopen.id,
+        ]);
 
         set({
           ...updated,
@@ -299,9 +311,10 @@ export const useTabStore = create<TabState>()(
       setActiveTab: (tabId) => {
         const { tabs, activeTabId, tabFocusHistory } = get();
         if (!tabs[tabId]) return;
-        const newHistory = activeTabId && activeTabId !== tabId
-          ? pushFocusHistory(tabFocusHistory, activeTabId)
-          : tabFocusHistory;
+        const newHistory =
+          activeTabId && activeTabId !== tabId
+            ? pushFocusHistory(tabFocusHistory, activeTabId)
+            : tabFocusHistory;
         set({ activeTabId: tabId, tabFocusHistory: newHistory });
       },
 
@@ -378,13 +391,11 @@ export const useTabStore = create<TabState>()(
         if (index === -1) return;
 
         const remainingSet = new Set<string>();
-        const newOrder = tabOrder.filter(
-          (id, i) => {
-            const keep = i <= index || tabs[id]?.pinned || id === DASHBOARD_TAB_ID;
-            if (keep) remainingSet.add(id);
-            return keep;
-          }
-        );
+        const newOrder = tabOrder.filter((id, i) => {
+          const keep = i <= index || tabs[id]?.pinned || id === DASHBOARD_TAB_ID;
+          if (keep) remainingSet.add(id);
+          return keep;
+        });
         const remainingTabs: Record<string, Tab> = {};
         for (const id of newOrder) {
           remainingTabs[id] = tabs[id];
@@ -421,7 +432,7 @@ export const useTabStore = create<TabState>()(
         set({
           ...ensured,
           activeTabId: ensured.tabOrder[0] || null,
-          tabFocusHistory: [],  // All non-pinned tabs are gone, clear history
+          tabFocusHistory: [], // All non-pinned tabs are gone, clear history
         });
       },
 
@@ -453,8 +464,12 @@ export const useTabStore = create<TabState>()(
           ...p,
           tabs: p.tabs && typeof p.tabs === 'object' ? p.tabs : current.tabs,
           tabOrder: Array.isArray(p.tabOrder) ? p.tabOrder : current.tabOrder,
-          tabFocusHistory: Array.isArray(p.tabFocusHistory) ? p.tabFocusHistory : current.tabFocusHistory,
-          recentlyClosedTabs: Array.isArray(p.recentlyClosedTabs) ? p.recentlyClosedTabs : current.recentlyClosedTabs,
+          tabFocusHistory: Array.isArray(p.tabFocusHistory)
+            ? p.tabFocusHistory
+            : current.tabFocusHistory,
+          recentlyClosedTabs: Array.isArray(p.recentlyClosedTabs)
+            ? p.recentlyClosedTabs
+            : current.recentlyClosedTabs,
         };
       },
       // On rehydration, ensure dashboard tab is always present
@@ -474,8 +489,8 @@ export const useTabStore = create<TabState>()(
           }
         }
       },
-    }
-  )
+    },
+  ),
 );
 
 // Registers this store for `resetClientState()`'s sign-out sweep without
@@ -487,7 +502,19 @@ registerPersistedStore('kortix-tabs', () => resetPersistedStore(useTabStore));
 // ============================================================================
 
 /** Tab types rendered via pre-mounted CSS show/hide (use pushState, not router). */
-const PRE_MOUNTED_TAB_TYPES: ReadonlySet<TabType> = new Set(['session', 'file', 'preview', 'terminal', 'settings', 'page', 'project', 'dashboard', 'services', 'browser', 'desktop']);
+const PRE_MOUNTED_TAB_TYPES: ReadonlySet<TabType> = new Set([
+  'session',
+  'file',
+  'preview',
+  'terminal',
+  'settings',
+  'page',
+  'project',
+  'dashboard',
+  'services',
+  'browser',
+  'desktop',
+]);
 
 /**
  * Open (or activate) a tab AND navigate the browser to it.

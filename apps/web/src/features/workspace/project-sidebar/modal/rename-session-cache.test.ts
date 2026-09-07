@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
+import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession } from '@kortix/sdk';
 import {

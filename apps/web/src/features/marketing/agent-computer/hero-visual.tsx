@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 /**
@@ -72,13 +73,14 @@ function YamlLine({ line }: { line: string }): ReactNode {
 }
 
 export function AgentComputerHeroVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion() ?? false;
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label="A monitor showing one session's workspace: the project repo, kortix.yaml open, and a shell."
+      aria-label={tI18nComplete.raw('textd83085ac907e')}
     >
       <m.div
         className="flex w-full max-w-[38rem] flex-col items-center"
@@ -96,14 +98,14 @@ export function AgentComputerHeroVisual(): ReactNode {
                   className="text-muted-foreground/70 font-mono text-[11px]"
                   {...reveal(0.18, reduceMotion)}
                 >
-                  /workspace
+                  {tI18nComplete.raw('textc52ddf65534b')}
                 </m.span>
                 <m.span
                   className="text-muted-foreground/45 flex items-center gap-1.5 font-mono text-[10px] tracking-widest uppercase"
                   {...reveal(0.22, reduceMotion)}
                 >
                   <span className="bg-foreground/60 size-1.5 rounded-full" />
-                  session
+                  {tI18nComplete.raw('text3f3af1ecebbd')}
                 </m.span>
               </div>
 
@@ -136,7 +138,7 @@ export function AgentComputerHeroVisual(): ReactNode {
                     {...reveal(0.26, reduceMotion)}
                   >
                     <span className="border-border/50 text-foreground/85 border-r px-3 py-1.5 font-mono text-[11px]">
-                      kortix.yaml
+                      {tI18nComplete.raw('text1965f383021e')}
                     </span>
                   </m.div>
 
@@ -165,7 +167,9 @@ export function AgentComputerHeroVisual(): ReactNode {
                 {...reveal(0.66, reduceMotion)}
               >
                 <span className="text-foreground">$</span>
-                <span className="text-muted-foreground/60">kortix</span>
+                <span className="text-muted-foreground/60">
+                  {tI18nComplete.raw('text388f7968512c')}
+                </span>
                 <span
                   className={cn(
                     'bg-foreground inline-block h-3 w-[0.35rem]',

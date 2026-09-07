@@ -34,6 +34,10 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { ShareOption, SubjectPicker } from '@/features/workspace/shared/sharing-picker';
+import { localizeUiCatalog, translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
 import {
@@ -115,10 +119,12 @@ export const DEPLOYMENT_COPY: Record<
  */
 export function deployNotice(
   latest: AppDeployment | undefined,
+  tI18nComplete: UiTranslator,
 ): { label: string; tone: DeploymentTone } | null {
   if (!latest || latest.status === 'ready' || latest.status === 'cancelled') return null;
-  if (latest.status === 'failed') return { label: 'Update failed', tone: 'destructive' };
-  return { label: 'Updating', tone: 'warning' };
+  if (latest.status === 'failed')
+    return { label: tI18nComplete.raw('texte58282fd73fb'), tone: 'destructive' };
+  return { label: tI18nComplete.raw('text0b5260e1b405'), tone: 'warning' };
 }
 
 function appCommand(app: App): string {
@@ -152,13 +158,20 @@ export function appHost(url: string): string {
  * `active_deployment_id` first, and it does so here rather than in each of the
  * three places that used to re-derive it.
  */
-function appStatus(app: App): { deployed: boolean; live: boolean; label: string; dot: string } {
+function appStatus(
+  app: App,
+  tI18nComplete: UiTranslator,
+): { deployed: boolean; live: boolean; label: string; dot: string } {
   const deployed = Boolean(app.active_deployment_id);
   const live = deployed && app.desired_state === 'running';
   return {
     deployed,
     live,
-    label: !deployed ? 'Not deployed' : live ? 'Running' : 'Suspended',
+    label: translateUiCatalogText(
+      !deployed ? 'Not deployed' : live ? 'Running' : 'Suspended',
+      tI18nComplete,
+      PRODUCT_CATALOG_TRANSLATION_KEYS,
+    ),
     // Three states, three weights of the same neutral-vs-green pair: running is
     // the only one that earns colour.
     dot: live ? 'bg-kortix-green' : deployed ? 'bg-muted-foreground/50' : 'bg-muted-foreground/25',
@@ -293,6 +306,7 @@ export function AppPreviewOverlay({
   failed: boolean;
   slow: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // A failure is never worth waiting to report — `onError` means the frame is
   // done and it is not going to paint.
   if (!failed && (loaded || !slow)) return null;
@@ -300,7 +314,9 @@ export function AppPreviewOverlay({
     <div className="bg-background/95 absolute inset-0 flex items-center justify-center px-6 text-center backdrop-blur-sm">
       <div className="text-muted-foreground flex items-center gap-2 text-xs">
         {failed ? null : <Loading className="size-4 shrink-0" />}
-        <span>{failed ? 'Preview unavailable. Open the App to retry.' : 'Loading preview'}</span>
+        <span>
+          {failed ? tI18nComplete.raw('texte89cabb62100') : tI18nComplete.raw('text8f624e45d6bf')}
+        </span>
       </div>
     </div>
   );
@@ -446,6 +462,19 @@ export const APP_GRID_COLUMN_OPTIONS: Record<
   },
 };
 
+function localizedAppCopy(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    {
+      deployment: DEPLOYMENT_COPY,
+      access: ACCESS_COPY,
+      viewerScope: VIEWER_SCOPE_COPY,
+      grid: APP_GRID_COLUMN_OPTIONS,
+    },
+    tI18nComplete,
+    PRODUCT_CATALOG_TRANSLATION_KEYS,
+  );
+}
+
 /** Left to right in the control: biggest tile first, densest last. */
 export const APP_GRID_COLUMN_ORDER = [3, 4] as const;
 
@@ -490,8 +519,10 @@ function subscribeAppGridColumns(onChange: () => void) {
 function readAppGridColumns(): AppGridColumns {
   if (blockedStorageColumns) return blockedStorageColumns;
   try {
-    return parseAppGridColumns(window.localStorage.getItem(APP_GRID_COLUMNS_STORAGE_KEY)) ??
-      APP_GRID_DEFAULT_COLUMNS;
+    return (
+      parseAppGridColumns(window.localStorage.getItem(APP_GRID_COLUMNS_STORAGE_KEY)) ??
+      APP_GRID_DEFAULT_COLUMNS
+    );
   } catch {
     return APP_GRID_DEFAULT_COLUMNS;
   }
@@ -601,6 +632,7 @@ export function AppPreview({
   interactive: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const slow = useSlowPreview(!loaded && !failed);
@@ -622,7 +654,7 @@ export function AppPreview({
         )}
         data-testid="app-preview-empty"
       >
-        Deploy to see a live preview.
+        {tI18nComplete.raw('text3efdcf91931a')}
       </div>
     );
   }
@@ -637,11 +669,11 @@ export function AppPreview({
         data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}
       >
         {accessError ? (
-          'You do not have access to preview this App.'
+          tI18nComplete.raw('texteccce15347a4')
         ) : (
           <span className="flex items-center gap-2">
             <Loading className="size-4 shrink-0" />
-            Preparing preview
+            {tI18nComplete.raw('text2158038765cc')}
           </span>
         )}
       </div>
@@ -653,7 +685,7 @@ export function AppPreview({
       <iframe
         key={app.active_deployment_id}
         src={url}
-        title={`${app.name} live preview`}
+        title={tI18nComplete('text04132f84d7c3', { value0: app.name })}
         style={
           interactive
             ? undefined
@@ -717,10 +749,12 @@ function AppGridColumnsControl({
   value: AppGridColumns;
   onChange: (next: AppGridColumns) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const appCopy = localizedAppCopy(tI18nComplete);
   return (
-    <ButtonGroup aria-label="Tiles per row">
+    <ButtonGroup aria-label={tI18nComplete.raw('texte39d334ebb3c')}>
       {APP_GRID_COLUMN_ORDER.map((key) => {
-        const option = APP_GRID_COLUMN_OPTIONS[key];
+        const option = appCopy.grid[key];
         const Glyph = option.icon;
         const active = value === key;
         return (
@@ -758,6 +792,7 @@ function AppsHeader({
    */
   showColumns: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const sidebar = useOptionalSidebar();
 
   return (
@@ -767,7 +802,9 @@ function AppsHeader({
     >
       <SidebarToggle />
       <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3">
-        <h1 className="text-foreground shrink-0 text-sm font-medium">Apps</h1>
+        <h1 className="text-foreground shrink-0 text-sm font-medium">
+          {tI18nComplete.raw('text89dd748442c1')}
+        </h1>
       </div>
       {showColumns ? (
         <div className="flex shrink-0 items-center pr-1">
@@ -781,7 +818,7 @@ function AppsHeader({
         prefetch={false}
         className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors"
       >
-        Docs
+        {tI18nComplete.raw('text7af023c43013')}
         <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
       </Link>
     </div>
@@ -789,6 +826,7 @@ function AppsHeader({
 }
 
 export function AppsView({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // One gating primitive, fail-closed. Apps NEVER enables itself from here:
   // activation lives only in Customize → Feature flags, so this page has no
   // mutation and no self-enable button.
@@ -816,8 +854,10 @@ export function AppsView({ projectId }: { projectId: string }) {
     if (!app) return;
     void createAppAccessSession(projectId, app.app_id)
       .then((session) => window.location.replace(session.url))
-      .catch((error) => errorToast(error instanceof Error ? error.message : 'App access denied'));
-  }, [apps.data, projectId, searchParams]);
+      .catch((error) =>
+        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta68c25790cbe')),
+      );
+  }, [apps.data, projectId, searchParams, tI18nComplete]);
 
   return (
     // `h-svh`, for the same reason the `(capabilities)` layout carries it:
@@ -833,7 +873,9 @@ export function AppsView({ projectId }: { projectId: string }) {
       <AppsHeader
         columns={gridColumns}
         onColumnsChange={setGridColumns}
-        showColumns={appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))}
+        showColumns={
+          appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))
+        }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -853,7 +895,7 @@ export function AppsView({ projectId }: { projectId: string }) {
             take their natural height and stay at the top, unaffected. */}
         <div
           className={cn(
-            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 md:px-8 py-6 pb-20',
+            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20 md:px-8',
             APP_GRID_CONTAINER,
           )}
         >
@@ -862,18 +904,18 @@ export function AppsView({ projectId }: { projectId: string }) {
           ) : !appsGate.enabled ? (
             <FeatureGateScreen
               featureName="Apps"
-              description="Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Each App wakes on its next request and suspends after its idle timeout."
+              description={tI18nComplete.raw('text3387c31a18b3')}
             />
           ) : apps.isLoading ? (
             <AppGridSkeleton columns={gridColumns} />
           ) : apps.isError ? (
             <ErrorState
               size="sm"
-              title="Failed to load Apps"
+              title={tI18nComplete.raw('text17168ad2af4a')}
               description={(apps.error as Error).message}
               action={
                 <Button size="sm" variant="outline" onClick={() => apps.refetch()}>
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />
@@ -952,17 +994,19 @@ function AppGridSkeleton({ columns }: { columns: AppGridColumns }) {
  * this screen to a card.
  */
 function AppsEmptyState() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <EmptyState
       icon={GlobeIcon}
-      title="No Apps yet"
-      description="Deploy a static site, JavaScript bundle, Dockerfile, or OCI image from your project directory. It shows up here the moment it goes live."
+      title={tI18nComplete.raw('text7aaec6fe02f0')}
+      description={tI18nComplete.raw('text4b2e1a2b9cbc')}
       action={<DeployCommand code={FIRST_DEPLOY_COMMAND} />}
     />
   );
 }
 
 function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // SESSION only, and only when the viewer may actually open this App. The
   // access POLICY is an administrative read that 403s for an ordinary member,
   // and the card never renders it — the detail modal asks. The SESSION 403s for
@@ -970,7 +1014,7 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
   // reports up front instead of leaving the card to discover it by failing.
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess });
-  const status = appStatus(app);
+  const status = appStatus(app, tI18nComplete);
 
   return (
     <li>
@@ -990,7 +1034,7 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
             caption under a picture, and the picture is the object. */}
         <div
           className={cn(
-            'relative overflow-hidden rounded-lg border transition-transform duration-150 ease-out group-hover:-translate-y-1',
+            'duration-normal relative overflow-hidden rounded-lg border transition-transform ease-out group-hover:-translate-y-1',
           )}
         >
           <AppPreview
@@ -1048,6 +1092,7 @@ function AppDetailModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const apps = useProjectApps(projectId);
   const deployments = useAppDeployments(projectId, app.app_id);
   const canAccess = app.viewer_can_access !== false;
@@ -1056,8 +1101,8 @@ function AppDetailModal({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const latest = deployments.data?.[0];
-  const status = appStatus(app);
-  const notice = deployNotice(latest);
+  const status = appStatus(app, tI18nComplete);
+  const notice = deployNotice(latest, tI18nComplete);
   const running = app.desired_state === 'running';
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
@@ -1067,9 +1112,15 @@ function AppDetailModal({
       await (action === 'start'
         ? apps.start.mutateAsync(app.app_id)
         : apps.stop.mutateAsync(app.app_id));
-      successToast(`${app.name} ${action === 'start' ? 'is ready' : 'suspended'}`);
+      successToast(
+        `${app.name} ${action === 'start' ? tI18nComplete.raw('text61659f74fe37') : tI18nComplete.raw('textde2d423ac039')}`,
+      );
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : `Failed to ${action} App`);
+      errorToast(
+        error instanceof Error
+          ? error.message
+          : tI18nComplete('textdf6cab363226', { value0: action }),
+      );
     }
   };
 
@@ -1137,14 +1188,22 @@ function AppDetailModal({
               <ButtonGroup>
                 {canDeploy ? (
                   <Hint
-                    label={running ? 'Put this App to sleep' : 'Wake this App up'}
+                    label={
+                      running
+                        ? tI18nComplete.raw('text6f50fb1f4f46')
+                        : tI18nComplete.raw('text971ed7129524')
+                    }
                     side="bottom"
                   >
                     <Button
                       size="icon"
                       variant="outline"
                       disabled={busy || !status.deployed}
-                      aria-label={running ? 'Put this App to sleep' : 'Wake this App up'}
+                      aria-label={
+                        running
+                          ? tI18nComplete.raw('text6f50fb1f4f46')
+                          : tI18nComplete.raw('text971ed7129524')
+                      }
                       onClick={() => lifecycle(running ? 'stop' : 'start')}
                     >
                       {busy ? (
@@ -1157,13 +1216,16 @@ function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                <Hint label={`Open ${appHost(app.url)} in a new tab`} side="bottom">
+                <Hint
+                  label={tI18nComplete('text06ce842278f6', { value0: appHost(app.url) })}
+                  side="bottom"
+                >
                   <Button asChild size="icon" variant="outline">
                     <a
                       href={liveUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      aria-label="Open in a new tab"
+                      aria-label={tI18nComplete.raw('text306ef19c8ac3')}
                     >
                       <ArrowSquareOutIcon className="size-4 shrink-0" />
                     </a>
@@ -1176,7 +1238,11 @@ function AppDetailModal({
                     looking for something else. */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="outline" aria-label="More actions">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      aria-label={tI18nComplete.raw('textf8d46c2570e7')}
+                    >
                       <DotsThreeIcon className="size-4 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -1184,23 +1250,31 @@ function AppDetailModal({
                     {canWrite ? (
                       <DropdownMenuItem onClick={() => setAccessOpen(true)}>
                         <LockKeyIcon className="size-3.5 shrink-0" />
-                        Who can open this
+                        {tI18nComplete.raw('text407951d1c2e0')}
                         {/* The current value, on the row that changes it. */}
                         <span className="text-muted-foreground ml-auto pl-3 text-xs">
-                          {ACCESS_COPY[app.access_mode].label}
+                          {
+                            localizeUiCatalog(
+                              ACCESS_COPY[app.access_mode],
+                              tI18nComplete,
+                              PRODUCT_CATALOG_TRANSLATION_KEYS,
+                            ).label
+                          }
                         </span>
                       </DropdownMenuItem>
                     ) : null}
                     <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
                       <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
-                      {versionsOpen ? 'Hide earlier versions' : 'Earlier versions'}
+                      {versionsOpen
+                        ? tI18nComplete.raw('text26b1a7703eac')
+                        : tI18nComplete.raw('text401dc1a55cb9')}
                     </DropdownMenuItem>
                     {canWrite ? (
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
                           <TrashIcon className="size-3.5 shrink-0" />
-                          Delete App
+                          {tI18nComplete.raw('textd1b0a6e3985a')}
                         </DropdownMenuItem>
                       </>
                     ) : null}
@@ -1208,11 +1282,11 @@ function AppDetailModal({
                 </DropdownMenu>
               </ButtonGroup>
 
-              <Hint label="Close" side="bottom">
+              <Hint label={tI18nComplete.raw('text7d9eb7acb13e')} side="bottom">
                 <Button
                   size="icon"
                   variant="ghost"
-                  aria-label="Close"
+                  aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
                   onClick={() => onOpenChange(false)}
                 >
                   <XIcon className="size-4 shrink-0" />
@@ -1260,16 +1334,24 @@ function AppDetailModal({
                       onRollback={async () => {
                         try {
                           await deployments.rollback.mutateAsync(deployment.deployment_id);
-                          successToast(`Rolled back to version ${deployment.version}`);
+                          successToast(
+                            tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
+                          );
                         } catch (error) {
-                          errorToast(error instanceof Error ? error.message : 'Rollback failed');
+                          errorToast(
+                            error instanceof Error
+                              ? error.message
+                              : tI18nComplete.raw('text147cd182c820'),
+                          );
                         }
                       }}
                     />
                   ))}
                 </div>
               ) : (
-                <p className="text-muted-foreground text-xs">No deployments yet.</p>
+                <p className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('textf1fc77ca3b24')}
+                </p>
               )}
             </div>
           ) : null}
@@ -1279,9 +1361,9 @@ function AppDetailModal({
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete App"
-        description={`Delete ${app.name} and every runtime? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={tI18nComplete.raw('textd1b0a6e3985a')}
+        description={tI18nComplete('textb7ddab3f7df8', { value0: app.name })}
+        confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
         confirmVariant="destructive"
         isPending={apps.remove.isPending}
         onConfirm={async () => {
@@ -1291,9 +1373,11 @@ function AppDetailModal({
             // The App this modal is about no longer exists — close it, or the
             // frame keeps rendering a deleted App behind a dead action bar.
             onOpenChange(false);
-            successToast(`${app.name} deleted`);
+            successToast(tI18nComplete('text84a4a73df826', { value0: app.name }));
           } catch (error) {
-            errorToast(error instanceof Error ? error.message : 'Failed to delete App');
+            errorToast(
+              error instanceof Error ? error.message : tI18nComplete.raw('texted3ae8cdf028'),
+            );
           }
         }}
       />
@@ -1323,13 +1407,15 @@ function AppAccessModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Modal open={open} onOpenChange={(value) => !access.update.isPending && onOpenChange(value)}>
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>App access</ModalTitle>
+          <ModalTitle>{tI18nComplete.raw('text869903a43092')}</ModalTitle>
           <ModalDescription>
-            Choose who can open {app.name}. Apps are private by default.
+            {tI18nComplete.raw('text2395784386a5')} {app.name}
+            {tI18nComplete.raw('text56000ae371ac')}
           </ModalDescription>
         </ModalHeader>
         {access.policy.isLoading ? (
@@ -1341,18 +1427,18 @@ function AppAccessModal({
             <ModalBody>
               <ErrorState
                 size="sm"
-                title="Failed to load App access"
+                title={tI18nComplete.raw('textac7f89823c42')}
                 description={(access.policy.error as Error).message}
                 action={
                   <Button size="sm" variant="outline" onClick={() => access.policy.refetch()}>
-                    Retry
+                    {tI18nComplete.raw('text942087cc2d41')}
                   </Button>
                 }
               />
             </ModalBody>
             <ModalFooter>
               <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
-                Close
+                {tI18nComplete.raw('text7d9eb7acb13e')}
               </Button>
             </ModalFooter>
           </>
@@ -1381,6 +1467,7 @@ function AppAccessForm({
   update: ReturnType<typeof useAppAccess>['update'];
   onSaved: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [mode, setMode] = useState<AppAccessMode>(policy.mode);
   const [memberIds, setMemberIds] = useState<string[]>(policy.member_ids);
   const [groupIds, setGroupIds] = useState<string[]>(policy.group_ids);
@@ -1401,10 +1488,10 @@ function AppAccessForm({
         ...(mode === 'password' && password ? { password } : {}),
         ...(hasSignedInViewer ? { viewer_token_scope: viewerScope } : {}),
       });
-      successToast('App access updated');
+      successToast(tI18nComplete.raw('text0e76da589934'));
       onSaved();
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Failed to update App access');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text7df8a0fb4684'));
     }
   };
 
@@ -1420,8 +1507,20 @@ function AppAccessForm({
             <ShareOption
               key={value}
               value={value}
-              label={ACCESS_COPY[value].label}
-              desc={ACCESS_COPY[value].desc}
+              label={
+                localizeUiCatalog(
+                  ACCESS_COPY[value],
+                  tI18nComplete,
+                  PRODUCT_CATALOG_TRANSLATION_KEYS,
+                ).label
+              }
+              desc={
+                localizeUiCatalog(
+                  ACCESS_COPY[value],
+                  tI18nComplete,
+                  PRODUCT_CATALOG_TRANSLATION_KEYS,
+                ).desc
+              }
             />
           ))}
         </RadioGroup>
@@ -1439,7 +1538,13 @@ function AppAccessForm({
         {mode === 'password' ? (
           <div className="space-y-2">
             <Label htmlFor="app-access-password">
-              {policy.password_configured ? 'Replace password' : 'Password'}
+              {policy.password_configured
+                ? tI18nComplete.raw('textd96a37fc02f0')
+                : translateUiCatalogText(
+                    'Password',
+                    tI18nComplete,
+                    PRODUCT_CATALOG_TRANSLATION_KEYS,
+                  )}
             </Label>
             <Input
               id="app-access-password"
@@ -1450,14 +1555,14 @@ function AppAccessForm({
               autoComplete="new-password"
               placeholder={
                 policy.password_configured
-                  ? 'Leave blank to keep the current password'
-                  : 'At least 8 characters'
+                  ? tI18nComplete.raw('text985a580ee200')
+                  : tI18nComplete.raw('text977f3b2676a9')
               }
             />
           </div>
         ) : null}
         <div className="space-y-2">
-          <Label id="app-viewer-identity-label">Viewer identity</Label>
+          <Label id="app-viewer-identity-label">{tI18nComplete.raw('text5562d6d4c826')}</Label>
           {hasSignedInViewer ? (
             <RadioGroup
               aria-labelledby="app-viewer-identity-label"
@@ -1469,23 +1574,35 @@ function AppAccessForm({
                 <ShareOption
                   key={value}
                   value={value}
-                  label={VIEWER_SCOPE_COPY[value].label}
-                  desc={VIEWER_SCOPE_COPY[value].desc}
+                  label={
+                    localizeUiCatalog(
+                      VIEWER_SCOPE_COPY[value],
+                      tI18nComplete,
+                      PRODUCT_CATALOG_TRANSLATION_KEYS,
+                    ).label
+                  }
+                  desc={
+                    localizeUiCatalog(
+                      VIEWER_SCOPE_COPY[value],
+                      tI18nComplete,
+                      PRODUCT_CATALOG_TRANSLATION_KEYS,
+                    ).desc
+                  }
                 />
               ))}
             </RadioGroup>
           ) : (
             <p className="text-muted-foreground text-xs">
               {mode === 'public'
-                ? 'A public App has no signed-in Kortix viewer.'
-                : 'A password-protected App has no signed-in Kortix viewer.'}
+                ? tI18nComplete.raw('textd3e9c765c2a3')
+                : tI18nComplete.raw('text44332adbd9d2')}
             </p>
           )}
         </div>
       </ModalBody>
       <ModalFooter className="sm:justify-between">
         <Button variant="outline-ghost" size="sm" onClick={onSaved} disabled={update.isPending}>
-          Cancel
+          {tI18nComplete.raw('text19766ed6ccb2')}
         </Button>
         <Button
           size="sm"
@@ -1493,7 +1610,7 @@ function AppAccessForm({
           disabled={update.isPending || incomplete || passwordMissing}
         >
           {update.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          Save
+          {tI18nComplete.raw('text1509f561f241')}
         </Button>
       </ModalFooter>
     </>
@@ -1513,6 +1630,7 @@ function DeploymentRow({
   rollbackPending: boolean;
   onRollback: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="hover:bg-muted/40 flex items-center gap-3 rounded-md px-2 py-1.5">
       <span className="text-foreground w-8 shrink-0 font-mono text-xs tabular-nums">
@@ -1522,7 +1640,11 @@ function DeploymentRow({
           rest report their own build outcome. Showing both — a `ready` badge
           and a separate "Live" word on the same row — said one thing twice. */}
       <Badge size="xs" variant={active ? 'success' : DEPLOYMENT_COPY[deployment.status].tone}>
-        {active ? 'Live' : DEPLOYMENT_COPY[deployment.status].label}
+        {translateUiCatalogText(
+          active ? 'Live' : DEPLOYMENT_COPY[deployment.status].label,
+          tI18nComplete,
+          PRODUCT_CATALOG_TRANSLATION_KEYS,
+        )}
       </Badge>
       {/* Age, not `hosting_provider`. That field is the name of the sandbox
           fleet the build landed on ("daytona", "platinum") — infrastructure
@@ -1544,7 +1666,7 @@ function DeploymentRow({
           ) : (
             <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
           )}
-          Restore
+          {tI18nComplete.raw('texta76e13b98392')}
         </Button>
       ) : null}
     </div>

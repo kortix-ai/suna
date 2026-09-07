@@ -17,7 +17,7 @@ import type { ProjectSession } from '@kortix/sdk';
 import { updateProjectSession } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 import {
@@ -83,13 +83,19 @@ export function RenameSessionModal({
       queryClient.setQueryData<ProjectSession[]>(sessionsQueryKey, (sessions) =>
         sessions ? applyRenameResponse(sessions, updated) : sessions,
       );
-      successToast(name ? `Renamed to "${name}"` : 'Session renamed');
+      successToast(
+        name
+          ? tI18nHardcoded('i18nComplete.textac667905c07f', { value0: name })
+          : tI18nHardcoded.raw('i18nComplete.text84af5fd8082c'),
+      );
       onSaved?.();
       onOpenChange(false);
     },
     onError: (err, _name, context) => {
       rollbackOptimisticRename(queryClient, sessionsQueryKey, context?.previous);
-      errorToast(err instanceof Error ? err.message : 'Failed to rename session');
+      errorToast(
+        err instanceof Error ? err.message : tI18nHardcoded.raw('i18nComplete.text8d0a49d459d7'),
+      );
     },
     onSettled: () => {
       // The server stays authoritative: this refetch reconciles the cache
@@ -155,7 +161,7 @@ export function RenameSessionModal({
             onClick={() => onOpenChange(false)}
             disabled={renameMutation.isPending}
           >
-            Cancel
+            {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
           </Button>
           <Button
             size="sm"
@@ -164,7 +170,7 @@ export function RenameSessionModal({
             disabled={renameMutation.isPending || isUnchanged}
           >
             {renameMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            Save
+            {tI18nHardcoded.raw('i18nComplete.text1509f561f241')}
           </Button>
         </ModalFooter>
       </ModalContent>

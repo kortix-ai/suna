@@ -3,7 +3,6 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -16,6 +15,7 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
+import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
@@ -26,24 +26,24 @@ import {
   useCreatePerSeatCheckout,
   useCreatePortalSession,
 } from '@/hooks/billing';
-import type { AccountState, BillingState } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   accountHasLiveSubscription,
+  billingModalCopy,
   billingStateNeedsTopUp,
   resolveBillingState,
 } from '@/lib/billing/billing-gate-state';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
-import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import type { AccountState, BillingState } from '@kortix/sdk';
+import { formatCredits } from '@kortix/shared';
 import {
   ArrowRightIcon as ArrowRight,
   CreditCardIcon as CreditCardPlusSolid,
   UserPlusIcon as UserPlus,
 } from '@phosphor-icons/react';
-import { formatCredits } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
 
 export interface UpgradePlansModalProps {
@@ -77,6 +77,7 @@ export function UpgradePlansModal({
   accountLoading,
 }: UpgradePlansModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const createPerSeat = useCreatePerSeatCheckout();
   const openDemo = useRequestDemo();
   const billingReturnUrl = useBillingReturnUrl();
@@ -132,14 +133,15 @@ export function UpgradePlansModal({
         className="w-full"
         onClick={() => onOpenChange(false)}
       >
-        Continue on Free
+        {tI18nHardcoded.raw('i18nComplete.text73a7da68c3bf')}
       </Button>
     ),
     team_seat: canManageBilling ? (
       <div className="space-y-2">
         {hasSeatMath && (
           <p className="text-muted-foreground text-center text-xs tabular-nums">
-            {seatCount} {seatCount === 1 ? 'seat' : 'seats'} × ${pricePerSeat} = ${monthlyTotal}/mo
+            {seatCount} {seatCount === 1 ? 'seat' : 'seats'} × ${pricePerSeat} = ${monthlyTotal}
+            {tI18nHardcoded.raw('i18nComplete.textdcc954337afd')}
           </p>
         )}
         <Button
@@ -159,8 +161,8 @@ export function UpgradePlansModal({
           ) : (
             <>
               {hasSeatMath
-                ? `Subscribe — $${monthlyTotal}/mo`
-                : `Subscribe — $${pricePerSeat}/seat`}
+                ? tI18nComplete('text1614f84867d4', { value0: monthlyTotal })
+                : tI18nComplete('text289aec13d5aa', { value0: pricePerSeat })}
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </>
           )}
@@ -173,7 +175,7 @@ export function UpgradePlansModal({
       </div>
     ) : (
       <Button type="button" variant="outline" className="w-full" disabled>
-        Owner subscription required
+        {tI18nHardcoded.raw('i18nComplete.text160ecadfebc2')}
       </Button>
     ),
   };
@@ -196,8 +198,7 @@ export function UpgradePlansModal({
             )}
           </ModalTitle>
           <ModalDescription className="text-base">
-            Simple per-seat pricing. Free includes 200 credits each month for sandbox compute;
-            upgrade when you want the latest AI models and 2,500 pooled credits per seat.
+            {tI18nHardcoded.raw('i18nComplete.text5a0b692095be')}
           </ModalDescription>
         </ModalHeader>
 
@@ -216,7 +217,7 @@ export function UpgradePlansModal({
           </div>
 
           <p className="text-muted-foreground text-center text-xs">
-            Need SSO, on-prem, or volume pricing?{' '}
+            {tI18nHardcoded.raw('i18nComplete.textff2b8e88c520')}{' '}
             <button
               type="button"
               onClick={() => {
@@ -225,7 +226,7 @@ export function UpgradePlansModal({
               }}
               className="text-foreground underline-offset-4 hover:underline"
             >
-              Contact sales
+              {tI18nHardcoded.raw('i18nComplete.text604abea32b49')}
             </button>
           </p>
 
@@ -285,10 +286,20 @@ function CreditTopUpModal({
   billingState,
   accountLoading,
 }: CreditTopUpModalProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const createPortal = useCreatePortalSession();
-  // Never tell a customer whose payment is failing that their plan "is
-  // unaffected" — that was the same class of lie as the gate copy.
-  const paymentFailed = billingState === 'payment_failed';
+  // Copy is DERIVED, never written here. The title used to be hardcoded
+  // `'Out of credits'` with a single `payment_failed` branch, so this modal
+  // announced an emergency to every account that opened it — including one
+  // topping up voluntarily with a healthy balance — and promised "your Team
+  // plan and seats are unaffected" to accounts that have no seats.
+  const copy = billingModalCopy(
+    billingState ?? null,
+    {
+      isPerSeat: accountState?.billing_model === 'per_seat',
+    },
+    tI18nComplete,
+  );
 
   // Trust the LIVE account state as the source of truth (same field the Plan
   // page reads) — the 402's `balance` is only a pre-load hint. Using `??` on the
@@ -313,13 +324,9 @@ function CreditTopUpModal({
               <CreditCardPlusSolid className="text-kortix-orange size-5" />
             </span>
             <div className="space-y-0.5">
-              <ModalTitle className="text-lg font-medium tracking-tight">
-                {paymentFailed ? 'Payment issue on your plan' : 'Out of credits'}
-              </ModalTitle>
+              <ModalTitle className="text-lg font-medium tracking-tight">{copy.title}</ModalTitle>
               <ModalDescription className="text-sm text-balance">
-                {paymentFailed
-                  ? 'Your last payment didn’t go through. Update your payment method under Manage billing, or top up to keep running in the meantime.'
-                  : 'Top up to keep compute and the latest AI models running — your Team plan and seats are unaffected.'}
+                {copy.description}
               </ModalDescription>
             </div>
           </div>
@@ -328,7 +335,9 @@ function CreditTopUpModal({
         <ModalBody className="space-y-4 pt-4">
           {/* Available balance — the concrete "why" behind the block. */}
           <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
-            <span className="text-muted-foreground text-sm">Available balance</span>
+            <span className="text-muted-foreground text-sm">
+              {tI18nComplete.raw('text3ab7dd8428d1')}
+            </span>
             {showBalanceSkeleton ? (
               <Skeleton className="h-6 w-24 rounded-md" />
             ) : (
@@ -343,7 +352,7 @@ function CreditTopUpModal({
                 </span>
                 {isNegative && (
                   <span className="text-muted-foreground text-xs tabular-nums">
-                    {creditsLabel} owed
+                    {creditsLabel} {tI18nComplete.raw('text4fef65587333')}
                   </span>
                 )}
               </span>
@@ -356,7 +365,9 @@ function CreditTopUpModal({
               supplies the border and the hairline and nothing repeats. */}
           <div className="bg-popover rounded-md border">
             <section className="space-y-3 px-4 py-4">
-              <h3 className="text-foreground text-sm font-medium">Add credits</h3>
+              <h3 className="text-foreground text-sm font-medium">
+                {tI18nComplete.raw('textd22feb61298b')}
+              </h3>
               <CreditTopupSection />
             </section>
             <div className="border-t px-4 py-4">
@@ -375,7 +386,7 @@ function CreditTopUpModal({
             onClick={() => createPortal.mutate({ return_url: window.location.href })}
           >
             {createPortal.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            Manage billing
+            {tI18nComplete.raw('text7ea27c63aff1')}
           </Button>
         </ModalFooter>
       </ModalContent>

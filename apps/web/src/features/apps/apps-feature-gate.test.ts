@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
@@ -66,11 +66,10 @@ test('the Apps page cannot enable Apps — activation lives only in Feature flag
   expect(view).not.toContain('updateFeatureFlag');
   expect(view).not.toContain('Enable Apps');
 
-  // The shared screen links to the one place a flag can be flipped. `main`
-  // authored this against the Customize overlay (`openCustomize('feature-
-  // flags')`); that overlay is gone, the settings overlay's Experimental tab
-  // that replaced it is gone too, and the single control is now a section of
-  // the Customize bar's Settings tab. A real link, not a store call.
+  // The shared screen links to the one place a flag can be flipped: the
+  // Customize bar's Settings tab, Feature flags section — through the shared
+  // href builder, so the route can move without this link going stale. A
+  // real link, not a store call.
   expect(gate).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
   expect(gate).not.toContain('useCustomizeStore');
   expect(gate).not.toContain('useSettingsPanelStore');
@@ -141,9 +140,12 @@ test('an App card shows the App, not a stock glyph standing in for it', () => {
   expect(view).toContain("dot: live ? 'bg-kortix-green'");
 });
 
-test('a card caption is the App\'s name and its state — not its hostname', () => {
+test("a card caption is the App's name and its state — not its hostname", () => {
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
-  const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
+  const card = view.slice(
+    view.indexOf('function AppCard('),
+    view.indexOf('function AppDetailModal('),
+  );
 
   // Every App's URL is the same `<key>.apps.<domain>` shape, so a column of
   // them differs only in a random token nobody reads or types — a third of the
@@ -183,7 +185,12 @@ test('the Apps row matches the row contract of the group it sits in', () => {
     'utf8',
   );
 
-  const ROW = 'group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!';
+  // Restyled by 973ca118aa (2026-09-02): the group's rows dropped the explicit
+  // padding/size utilities and now inherit them from `SidebarMenuButton`, so
+  // the shared string is just the group hook, the foreground token, and the
+  // positioning context. Both rows moved together; only this constant lagged,
+  // which is exactly the drift the assertion below exists to catch.
+  const ROW = 'group/menu-button text-sidebar-foreground relative';
   // The same string the sibling rows in this group use — if that contract is
   // ever restyled, this fails rather than letting Apps silently drift out.
   expect(customize).toContain(ROW);
@@ -221,8 +228,10 @@ test('an active App never looks undeployed while its signed preview URL loads', 
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
   expect(view).toContain('if (!app.active_deployment_id)');
-  expect(view).toContain("data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}");
-  expect(view).toContain('Preparing preview');
+  expect(view).toContain(
+    "data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}",
+  );
+  expect(view).toContain("raw('text2158038765cc')");
   expect(view).not.toContain('if (!app.active_deployment_id || !url)');
 });
 
@@ -249,7 +258,7 @@ test('the App detail header is a title bar, not a debug readout', () => {
   expect(header.match(/\{status\.label\}/g)).toHaveLength(2);
 });
 
-test('the header separates the App\'s actions from the window\'s Close', () => {
+test("the header separates the App's actions from the window's Close", () => {
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
@@ -257,7 +266,7 @@ test('the header separates the App\'s actions from the window\'s Close', () => {
   // App" and "shut this panel" read as peers. It sits outside now, and it is
   // ghost rather than outline because it is chrome, not an action.
   const groupEndsAt = header.indexOf('</ButtonGroup>');
-  const closeAt = header.indexOf('aria-label="Close"');
+  const closeAt = header.indexOf('text7d9eb7acb13e');
   expect(groupEndsAt).toBeGreaterThan(-1);
   expect(closeAt).toBeGreaterThan(groupEndsAt);
   expect(header.slice(groupEndsAt)).toContain('variant="ghost"');
@@ -269,7 +278,7 @@ test('Delete lives in the header menu, never buried in the version drawer', () =
 
   // A destructive action reachable only by first opening a history panel is an
   // action you find by looking for something else.
-  expect(header).toContain('Delete App');
+  expect(header).toContain("raw('textd1b0a6e3985a')");
   expect(header).toContain('variant="destructive"');
   // …and it still goes through the confirm step.
   expect(view).toContain('<ConfirmDialog');
@@ -292,7 +301,10 @@ test('internal infrastructure names are not shown to App owners', () => {
 
 test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', () => {
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
-  const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
+  const card = view.slice(
+    view.indexOf('function AppCard('),
+    view.indexOf('function AppDetailModal('),
+  );
 
   // The grid and the skeleton read the SAME chosen ladder, so nothing reflows
   // when data lands under a non-default choice. The skeleton takes it as a
@@ -308,7 +320,10 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // A picker over the feature gate, the error state or the empty state is a
   // dead switch, so the header takes an explicit flag rather than always
   // rendering it.
-  const header = view.slice(view.indexOf('function AppsHeader('), view.indexOf('export function AppsView('));
+  const header = view.slice(
+    view.indexOf('function AppsHeader('),
+    view.indexOf('export function AppsView('),
+  );
   expect(header).toContain('showColumns');
   expect(header).toContain('{showColumns ? (');
 
@@ -319,7 +334,7 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // VIEWPORT rather than the container: it is this element's own padding, and
   // this element IS `@container/apps`, so it cannot query itself. The column
   // ladder inside it stays container-based.
-  expect(view).toContain('max-w-7xl flex-col px-4 md:px-8 py-6 pb-20');
+  expect(view).toContain('max-w-7xl flex-col px-4 py-6 pb-20 md:px-8');
   expect(view).not.toContain('max-w-5xl flex-col');
   expect(view).toContain('APP_GRID_CONTAINER,');
   expect(view).toContain("export const APP_GRID_CONTAINER = '@container/apps';");

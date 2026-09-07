@@ -20,8 +20,7 @@
  * refreshes from Supabase.
  */
 
-import { createClient } from "@/lib/supabase/client";
-
+import { createClient } from '@/lib/supabase/client';
 
 /** Max retries for token acquisition (getSession + refreshSession fallback) */
 const TOKEN_MAX_RETRIES = 2;
@@ -71,7 +70,7 @@ let inflightEpoch = 0;
 let fetchTokenImpl: () => Promise<string | null> = () => fetchToken();
 
 function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -81,89 +80,89 @@ function sleep(ms: number): Promise<void> {
  * Slow path: deduplicates concurrent calls into a single auth roundtrip.
  */
 export async function getSupabaseAccessToken(): Promise<string | null> {
-	// Installer/bootstrap flow: server actions may set auth cookies without a
-	// client-side Supabase session yet. Use an injected token until the client
-	// session hydrates.
-	if (bootstrapToken) {
-		return bootstrapToken;
-	}
+  // Installer/bootstrap flow: server actions may set auth cookies without a
+  // client-side Supabase session yet. Use an injected token until the client
+  // session hydrates.
+  if (bootstrapToken) {
+    return bootstrapToken;
+  }
 
-	// Fast path: return cached token if still fresh
-	if (cachedToken && Date.now() - cachedAt < TOKEN_CACHE_TTL) {
-		return cachedToken;
-	}
+  // Fast path: return cached token if still fresh
+  if (cachedToken && Date.now() - cachedAt < TOKEN_CACHE_TTL) {
+    return cachedToken;
+  }
 
-	// Deduplicate: if another call is already fetching, piggyback on the
-	// SAME promise. CRITICAL: piggybacking is the NORMAL case here, not an
-	// edge case (see the dedup note in the module doc comment — "5+
-	// parallel Supabase auth roundtrips" collapsed to one). The old code
-	// returned the raw in-flight promise directly to a piggybacker
-	// (`if (inflight) return inflight;`), which bypassed the epoch check
-	// below entirely for every caller except whichever one happened to
-	// start the fetch: a piggybacker awaiting that raw promise got the
-	// stale token STRING even when an invalidation landed while it waited.
-	// Every caller — starter and piggybacker alike — now runs the same
-	// epoch check against the SAME captured `inflightEpoch`.
-	if (!inflight) {
-		// Captured BEFORE the fetch starts: if an authoritative write
-		// (setCachedAuthToken / setBootstrapAuthToken) lands while this
-		// fetch is still in flight, the epoch below will have moved by the
-		// time it resolves, and this call's result is stale relative to
-		// whatever that write established.
-		inflightEpoch = authEpoch;
-		inflight = fetchTokenImpl();
-	}
-	const epochAtStart = inflightEpoch;
-	const pending = inflight;
+  // Deduplicate: if another call is already fetching, piggyback on the
+  // SAME promise. CRITICAL: piggybacking is the NORMAL case here, not an
+  // edge case (see the dedup note in the module doc comment — "5+
+  // parallel Supabase auth roundtrips" collapsed to one). The old code
+  // returned the raw in-flight promise directly to a piggybacker
+  // (`if (inflight) return inflight;`), which bypassed the epoch check
+  // below entirely for every caller except whichever one happened to
+  // start the fetch: a piggybacker awaiting that raw promise got the
+  // stale token STRING even when an invalidation landed while it waited.
+  // Every caller — starter and piggybacker alike — now runs the same
+  // epoch check against the SAME captured `inflightEpoch`.
+  if (!inflight) {
+    // Captured BEFORE the fetch starts: if an authoritative write
+    // (setCachedAuthToken / setBootstrapAuthToken) lands while this
+    // fetch is still in flight, the epoch below will have moved by the
+    // time it resolves, and this call's result is stale relative to
+    // whatever that write established.
+    inflightEpoch = authEpoch;
+    inflight = fetchTokenImpl();
+  }
+  const epochAtStart = inflightEpoch;
+  const pending = inflight;
 
-	try {
-		const token = await pending;
-		if (authEpoch !== epochAtStart) {
-			// Invalidated (or reseeded) mid-flight. This result's provenance
-			// can't be trusted against whichever identity is current now —
-			// never commit it to the cache, and never hand it back either.
-			// Applies to EVERY caller waiting on this fetch, not just the
-			// one that started it.
-			return null;
-		}
-		cachedToken = token;
-		cachedAt = Date.now();
-		return token;
-	} finally {
-		// Guarded, not unconditional: if a LATER caller already started a
-		// NEW fetch (its own `if (!inflight)` branch, after an
-		// invalidation) while this one was still resolving, clearing
-		// `inflight` unconditionally here would clobber that newer
-		// in-flight promise and make the next caller after THIS one start
-		// a redundant third fetch instead of joining the newer one.
-		if (inflight === pending) inflight = null;
-	}
+  try {
+    const token = await pending;
+    if (authEpoch !== epochAtStart) {
+      // Invalidated (or reseeded) mid-flight. This result's provenance
+      // can't be trusted against whichever identity is current now —
+      // never commit it to the cache, and never hand it back either.
+      // Applies to EVERY caller waiting on this fetch, not just the
+      // one that started it.
+      return null;
+    }
+    cachedToken = token;
+    cachedAt = Date.now();
+    return token;
+  } finally {
+    // Guarded, not unconditional: if a LATER caller already started a
+    // NEW fetch (its own `if (!inflight)` branch, after an
+    // invalidation) while this one was still resolving, clearing
+    // `inflight` unconditionally here would clobber that newer
+    // in-flight promise and make the next caller after THIS one start
+    // a redundant third fetch instead of joining the newer one.
+    if (inflight === pending) inflight = null;
+  }
 }
 
 /**
  * Retry token acquisition for initial auth hydration / stale cache recovery.
  */
 export async function getSupabaseAccessTokenWithRetry(options?: {
-	attempts?: number;
-	baseDelayMs?: number;
-	invalidateBetweenAttempts?: boolean;
+  attempts?: number;
+  baseDelayMs?: number;
+  invalidateBetweenAttempts?: boolean;
 }): Promise<string | null> {
-	const {
-		attempts = TOKEN_HYDRATION_RETRIES,
-		baseDelayMs = TOKEN_HYDRATION_BASE_DELAY,
-		invalidateBetweenAttempts = true,
-	} = options ?? {};
+  const {
+    attempts = TOKEN_HYDRATION_RETRIES,
+    baseDelayMs = TOKEN_HYDRATION_BASE_DELAY,
+    invalidateBetweenAttempts = true,
+  } = options ?? {};
 
-	let token = await getSupabaseAccessToken();
-	for (let attempt = 0; !token && attempt < attempts; attempt++) {
-		await sleep(baseDelayMs * 2 ** attempt);
-		if (invalidateBetweenAttempts) {
-			invalidateTokenCache();
-		}
-		token = await getSupabaseAccessToken();
-	}
+  let token = await getSupabaseAccessToken();
+  for (let attempt = 0; !token && attempt < attempts; attempt++) {
+    await sleep(baseDelayMs * 2 ** attempt);
+    if (invalidateBetweenAttempts) {
+      invalidateTokenCache();
+    }
+    token = await getSupabaseAccessToken();
+  }
 
-	return token;
+  return token;
 }
 
 /**
@@ -171,7 +170,7 @@ export async function getSupabaseAccessTokenWithRetry(options?: {
  * The next getSupabaseAccessToken() call will fetch fresh.
  */
 export function invalidateTokenCache(): void {
-	setCachedAuthToken(null);
+  setCachedAuthToken(null);
 }
 
 /**
@@ -185,12 +184,12 @@ export function invalidateTokenCache(): void {
  * a promise that predates this invalidation.
  */
 export function setCachedAuthToken(token: string | null): void {
-	authEpoch++;
-	cachedToken = token;
-	cachedAt = token ? Date.now() : 0;
-	if (!token) {
-		inflight = null;
-	}
+  authEpoch++;
+  cachedToken = token;
+  cachedAt = token ? Date.now() : 0;
+  if (!token) {
+    inflight = null;
+  }
 }
 
 /**
@@ -198,11 +197,11 @@ export function setCachedAuthToken(token: string | null): void {
  * before the browser Supabase client has established local session state.
  */
 export function setBootstrapAuthToken(token: string | null): void {
-	authEpoch++;
-	bootstrapToken = token;
-	if (token) {
-		setCachedAuthToken(token);
-	}
+  authEpoch++;
+  bootstrapToken = token;
+  if (token) {
+    setCachedAuthToken(token);
+  }
 }
 
 /**
@@ -212,7 +211,7 @@ export function setBootstrapAuthToken(token: string | null): void {
  * `mock.module('@/lib/supabase/client', ...)`.
  */
 export function __setFetchTokenForTests(impl?: () => Promise<string | null>): void {
-	fetchTokenImpl = impl ?? (() => fetchToken());
+  fetchTokenImpl = impl ?? (() => fetchToken());
 }
 
 /**
@@ -221,13 +220,13 @@ export function __setFetchTokenForTests(impl?: () => Promise<string | null>): vo
  * so each test that exercises the cache needs a clean slate.
  */
 export function __resetAuthTokenCacheForTests(): void {
-	cachedToken = null;
-	cachedAt = 0;
-	bootstrapToken = null;
-	authEpoch = 0;
-	inflight = null;
-	inflightEpoch = 0;
-	fetchTokenImpl = () => fetchToken();
+  cachedToken = null;
+  cachedAt = 0;
+  bootstrapToken = null;
+  authEpoch = 0;
+  inflight = null;
+  inflightEpoch = 0;
+  fetchTokenImpl = () => fetchToken();
 }
 
 /**
@@ -236,57 +235,55 @@ export function __resetAuthTokenCacheForTests(): void {
  * the server be the judge rather than discard a token we simply can't read.
  */
 function isJwtExpired(token: string, skewSeconds = 30): boolean {
-	try {
-		const payload = token.split('.')[1];
-		if (!payload) return false;
-		const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-		if (typeof json.exp !== 'number') return false;
-		return Date.now() / 1000 >= json.exp - skewSeconds;
-	} catch {
-		return false;
-	}
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return false;
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    if (typeof json.exp !== 'number') return false;
+    return Date.now() / 1000 >= json.exp - skewSeconds;
+  } catch {
+    return false;
+  }
 }
 
 /** Internal: actually fetch the token from Supabase with retries. */
 async function fetchToken(): Promise<string | null> {
-	const supabase = createClient();
+  const supabase = createClient();
 
-	for (let attempt = 0; attempt <= TOKEN_MAX_RETRIES; attempt++) {
-		try {
-			const {
-				data: { session },
-			} = await supabase.auth.getSession();
+  for (let attempt = 0; attempt <= TOKEN_MAX_RETRIES; attempt++) {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-			// A present, non-expired token is good to use directly.
-			if (session?.access_token && !isJwtExpired(session.access_token)) {
-				return session.access_token;
-			}
+      // A present, non-expired token is good to use directly.
+      if (session?.access_token && !isJwtExpired(session.access_token)) {
+        return session.access_token;
+      }
 
-			// getSession() returns the STORED session even when its access_token
-			// has already expired — it does not refresh here. Handing that dead
-			// token to a caller produces a 401; on surfaces with no 401-recovery
-			// (e.g. the PTY WebSocket) that becomes an endless 1006 reconnect loop.
-			// So an expired-but-present session must be refreshed explicitly — the
-			// old code only refreshed when the session was entirely null.
-			if (attempt <= 1) {
-				const {
-					data: { session: refreshed },
-				} = await supabase.auth.refreshSession();
-				if (refreshed?.access_token) return refreshed.access_token;
-			}
-		} catch {
-			// Network error or Supabase internal failure — retry after delay
-		}
+      // getSession() returns the STORED session even when its access_token
+      // has already expired — it does not refresh here. Handing that dead
+      // token to a caller produces a 401; on surfaces with no 401-recovery
+      // (e.g. the PTY WebSocket) that becomes an endless 1006 reconnect loop.
+      // So an expired-but-present session must be refreshed explicitly — the
+      // old code only refreshed when the session was entirely null.
+      if (attempt <= 1) {
+        const {
+          data: { session: refreshed },
+        } = await supabase.auth.refreshSession();
+        if (refreshed?.access_token) return refreshed.access_token;
+      }
+    } catch {
+      // Network error or Supabase internal failure — retry after delay
+    }
 
-		// Don't delay after the last attempt
-		if (attempt < TOKEN_MAX_RETRIES) {
-			await new Promise((r) =>
-				setTimeout(r, TOKEN_RETRY_BASE_DELAY * 2 ** attempt),
-			);
-		}
-	}
+    // Don't delay after the last attempt
+    if (attempt < TOKEN_MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, TOKEN_RETRY_BASE_DELAY * 2 ** attempt));
+    }
+  }
 
-	return null;
+  return null;
 }
 
 /**
@@ -300,9 +297,9 @@ export async function getAuthToken(): Promise<string | null> {
 }
 
 export async function getAuthTokenWithRetry(options?: {
-	attempts?: number;
-	baseDelayMs?: number;
-	invalidateBetweenAttempts?: boolean;
+  attempts?: number;
+  baseDelayMs?: number;
+  invalidateBetweenAttempts?: boolean;
 }): Promise<string | null> {
-	return getSupabaseAccessTokenWithRetry(options);
+  return getSupabaseAccessTokenWithRetry(options);
 }

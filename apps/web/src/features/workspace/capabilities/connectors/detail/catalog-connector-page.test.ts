@@ -21,7 +21,7 @@ describe('catalogue connector detail route', () => {
     expect(page).toContain('listDiscoverConnectors(projectId, slug)');
     expect(page).toContain('getDiscoverConnector(projectId, discoverEntry.connector.id)');
     expect(page).toContain('listPipedreamApps(projectId, slug)');
-    expect(page).toContain('computersCatalogEntry()');
+    expect(page).toContain('computersCatalogEntry(tI18nComplete)');
     expect(page).toContain('<ConnectorDetailLayout');
     expect(page).toContain('<ConnectorAdvanced');
     expect(page).toContain('Kortix connector docs');

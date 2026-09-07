@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  ACCOUNT_SCOPED_SETTINGS_TABS,
-  isSettingsTabAllowed,
-} from './settings-panel';
+import { ACCOUNT_SCOPED_SETTINGS_TABS, isSettingsTabAllowed } from './settings-panel';
 import { DEFAULT_SETTINGS_TAB } from './settings-tabs';
 import {
   resolveSettingsExitPath,
@@ -50,14 +47,12 @@ describe('STANDALONE_DEFAULT_SETTINGS_TAB', () => {
     // A project-scoped default would be filtered straight out of the rail and
     // the panel would bounce off it on the first frame.
     expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(STANDALONE_DEFAULT_SETTINGS_TAB);
-    expect(
-      isSettingsTabAllowed(STANDALONE_DEFAULT_SETTINGS_TAB, { hasProject: false }),
-    ).toBe(true);
+    expect(isSettingsTabAllowed(STANDALONE_DEFAULT_SETTINGS_TAB, { hasProject: false })).toBe(true);
   });
 
   test('the project-scoped default is reachable with no project too', () => {
     // The two constants converged when project configuration left the overlay
-    // for `/projects/[id]/config`: `DEFAULT_SETTINGS_TAB` was `general`, the
+    // for `/projects/[id]/customize/settings`: `DEFAULT_SETTINGS_TAB` was `general`, the
     // project workspace tab, and is `profile` now. They stay separate
     // constants because they answer different questions — what the panel opens
     // on, and what the project-less route opens on — and a future

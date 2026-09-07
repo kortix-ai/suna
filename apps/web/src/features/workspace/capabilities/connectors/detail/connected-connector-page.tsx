@@ -16,6 +16,8 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -102,6 +104,7 @@ function ConnectedConnectorSkeleton({ projectId }: { projectId: string }) {
 }
 
 export function ConnectedConnectorPage({ projectId, slug }: { projectId: string; slug: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const pathname = usePathname();
   const search = useSearchParams();
   const queryClient = useQueryClient();
@@ -141,8 +144,8 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
   const oauth2Error = search?.get('oauth2_error');
   useEffect(() => {
     if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
-    if (oauth2Result === 'connected') successToast('OAuth 2.0 connection completed');
-    else errorToast(oauth2Error || 'OAuth 2.0 connection failed');
+    if (oauth2Result === 'connected') successToast(tI18nComplete.raw('text75586c42e862'));
+    else errorToast(oauth2Error || tI18nComplete.raw('texta6fac795d6d6'));
     invalidate();
     const params = new URLSearchParams(search?.toString() ?? '');
     params.delete('oauth2');
@@ -153,7 +156,7 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
       '',
       suffix ? `${pathname}?${suffix}` : pathname,
     );
-  }, [invalidate, oauth2Error, oauth2Result, pathname, search]);
+  }, [invalidate, oauth2Error, oauth2Result, pathname, search, tI18nComplete]);
 
   if (connectorsQuery.isLoading) return <ConnectedConnectorSkeleton projectId={projectId} />;
 

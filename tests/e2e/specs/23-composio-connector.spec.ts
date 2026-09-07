@@ -94,7 +94,7 @@ test.describe("23 — Composio managed connector", () => {
     await installBrowserSessionDirect(
       page,
       session,
-      `/projects/${project.id}/connectors`,
+      `/projects/${project.id}/customize/connectors`,
       authOptions,
     );
     await selectAccountForUi(page, accountId);
@@ -104,7 +104,7 @@ test.describe("23 — Composio managed connector", () => {
         response.url().endsWith("/v1/connectors/connect-status") &&
         response.request().method() === "GET",
     );
-    await page.goto(`/projects/${project.id}/connectors`, {
+    await page.goto(`/projects/${project.id}/customize/connectors`, {
       waitUntil: "domcontentloaded",
     });
     await dismissOnboarding(page);

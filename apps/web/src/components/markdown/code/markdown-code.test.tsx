@@ -1,8 +1,5 @@
 import { KATEX_FENCE_LANGUAGES } from '@/components/markdown/katex-markdown';
-import {
-  probeFileAvailability,
-  resetFileAvailability,
-} from '@/features/session/file-availability';
+import { probeFileAvailability, resetFileAvailability } from '@/features/session/file-availability';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -23,8 +20,7 @@ const render = (props: MarkdownCodeProps) => renderToStaticMarkup(<MarkdownCode 
  * rather than returning `''`, because a selector that has stopped matching must
  * fail the test, not quietly assert about an empty string.
  */
-const LANGUAGE_CHIP =
-  /<span\b[^>]*\bdata-testid="code-block-language"[^>]*>([^<]*)<\/span>/;
+const LANGUAGE_CHIP = /<span\b[^>]*\bdata-testid="code-block-language"[^>]*>([^<]*)<\/span>/;
 const labelOf = (html: string) => {
   const found = html.match(LANGUAGE_CHIP);
   if (!found) throw new Error('no [data-testid="code-block-language"] span in the rendered card');
@@ -141,18 +137,18 @@ describe('MarkdownCode — inline code', () => {
     }
   });
 
-/**
- * The `<code>` chip's own class attribute.
- *
- * The chip and the swatch inside it have separate alignment rules — the chip
- * takes the paragraph's baseline, the swatch takes the chip's — so a
- * whole-markup match would let one element's classes answer for the other.
- */
-function chipClass(html: string): string {
-  const found = html.match(/<code\b[^>]*\bclass="([^"]*)"/);
-  if (!found) throw new Error('no <code> chip with a class in the rendered markup');
-  return found[1];
-}
+  /**
+   * The `<code>` chip's own class attribute.
+   *
+   * The chip and the swatch inside it have separate alignment rules — the chip
+   * takes the paragraph's baseline, the swatch takes the chip's — so a
+   * whole-markup match would let one element's classes answer for the other.
+   */
+  function chipClass(html: string): string {
+    const found = html.match(/<code\b[^>]*\bclass="([^"]*)"/);
+    if (!found) throw new Error('no <code> chip with a class in the rendered markup');
+    return found[1];
+  }
 
   test('the chip sits ON the line — no vertical-align, no flex box', () => {
     // Both knocked it out of the sentence. `align-middle` centres the box on
@@ -169,7 +165,7 @@ function chipClass(html: string): string {
     }
   });
 
-  test('the swatch stands on the baseline, sized in the text\'s own em', () => {
+  test("the swatch stands on the baseline, sized in the text's own em", () => {
     // The baseline is the anchor: an inline-block whose `overflow` is not
     // `visible` takes its baseline from the bottom margin edge, so the square
     // and the hex beside it start on the same line. Roobert Mono's capHeight

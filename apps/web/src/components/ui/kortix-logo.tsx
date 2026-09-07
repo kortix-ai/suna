@@ -6,8 +6,10 @@ import type { ComponentPropsWithoutRef } from 'react';
 
 export type KortixLogoVariant = 'icon' | 'brandmark';
 
-interface KortixLogoProps
-  extends Omit<ComponentPropsWithoutRef<'svg'>, 'width' | 'height' | 'viewBox'> {
+interface KortixLogoProps extends Omit<
+  ComponentPropsWithoutRef<'svg'>,
+  'width' | 'height' | 'viewBox'
+> {
   /** Pixel height. The brandmark scales its width to match; the icon is square. */
   size?: number;
   /** `icon` = the Kortix symbol alone; `brandmark` = symbol + wordmark lockup. */
@@ -65,7 +67,7 @@ export function KortixLogo({
           src={lightSrc}
           alt={alt}
           draggable={false}
-          className={cn('shrink-0 select-none object-contain', darkSrc && 'dark:hidden', className)}
+          className={cn('shrink-0 object-contain select-none', darkSrc && 'dark:hidden', className)}
           style={imgStyle}
           {...imgProps}
         />
@@ -75,7 +77,7 @@ export function KortixLogo({
             src={darkSrc}
             alt={alt}
             draggable={false}
-            className={cn('hidden shrink-0 select-none object-contain dark:block', className)}
+            className={cn('hidden shrink-0 object-contain select-none dark:block', className)}
             style={imgStyle}
             {...imgProps}
           />

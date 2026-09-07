@@ -22,13 +22,18 @@ import type {
 } from '@/features/workspace/new/new-workspace-form';
 import { newWorkspaceReturnPath } from '@/features/workspace/new/source-param';
 import { useDebounce } from '@/hooks/use-debounce';
-import { githubInstallationLabel, isGitHubAppInstallationId, rememberGitHubSetupReturn } from '@/lib/github-installations';
+import {
+  githubInstallationLabel,
+  isGitHubAppInstallationId,
+  rememberGitHubSetupReturn,
+} from '@/lib/github-installations';
 import {
   listGitHubInstallations,
   listGitHubRepositories,
   listGitHubRepositoryBranches,
 } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -43,16 +48,10 @@ import { useEffect, useState } from 'react';
  * so the two surfaces never diverge while both exist — "workspace" replaces
  * "project" in the managed line only, the other two already say neither word.
  */
-const SOURCE_DESCRIPTIONS: Record<RepositorySource, string> = {
-  managed: 'Kortix creates and manages a private repository for this workspace.',
-  'github-create': 'Kortix creates a private repository in your GitHub account.',
-  'github-import': 'Select an existing repository from your GitHub account.',
-};
-
-const SOURCE_LABELS: Record<RepositorySource, string> = {
-  managed: 'Kortix managed',
-  'github-create': 'Create in GitHub',
-  'github-import': 'Import from GitHub',
+const SOURCE_KEYS: Record<RepositorySource, 'managed' | 'githubCreate' | 'githubImport'> = {
+  managed: 'managed',
+  'github-create': 'githubCreate',
+  'github-import': 'githubImport',
 };
 
 /**
@@ -83,21 +82,22 @@ function ConnectGitHubNote({
   accountId: string | null;
   source: RepositorySource;
 }) {
+  const t = useTranslations('newWorkspace');
   const href = accountId
     ? `/github/setup?account_id=${encodeURIComponent(accountId)}`
     : '/github/setup';
 
   return (
     <p className="text-muted-foreground text-xs">
-      No GitHub account is connected to this workspace's account yet.{' '}
+      {t('repository.noGitHubAccount')}{' '}
       <Link
         href={href}
         onClick={() => rememberGitHubSetupReturn(newWorkspaceReturnPath(source))}
         className="text-foreground underline underline-offset-2"
       >
-        Connect a GitHub account
+        {t('repository.connectGitHub')}
       </Link>{' '}
-      to use this option.
+      {t('repository.connectGitHubSuffix')}
     </p>
   );
 }
@@ -120,6 +120,8 @@ function GitHubSourceFields({
   accountId: string | null;
   onChange: (next: NewWorkspaceFormState) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('newWorkspace');
   const [repoSearch, setRepoSearch] = useState('');
   // The repositories route takes `search` as a server-side filter, so every
   // keystroke would otherwise be a request. `RepositoryPicker` also filters
@@ -194,7 +196,7 @@ function GitHubSourceFields({
     return (
       <p className="text-muted-foreground flex items-center gap-2 text-xs">
         <Loading className="size-3.5 shrink-0" />
-        Loading GitHub accounts…
+        {t('repository.loadingGitHubAccounts')}
       </p>
     );
   }
@@ -202,7 +204,9 @@ function GitHubSourceFields({
   if (installationsQuery.isError) {
     return (
       <p className="text-destructive text-xs">
-        Could not load GitHub accounts: {(installationsQuery.error as Error).message}
+        {t('repository.loadGitHubAccountsError', {
+          error: (installationsQuery.error as Error).message,
+        })}
       </p>
     );
   }
@@ -214,7 +218,7 @@ function GitHubSourceFields({
   return (
     <>
       <div className="flex flex-col space-y-3">
-        <Label htmlFor="workspace-installation">GitHub account</Label>
+        <Label htmlFor="workspace-installation">{t('repository.githubAccount')}</Label>
         <Select
           value={installationId ?? ''}
           onValueChange={(value) =>
@@ -225,7 +229,7 @@ function GitHubSourceFields({
           }
         >
           <SelectTrigger id="workspace-installation" className="w-full" size="md">
-            <SelectValue placeholder="Select a GitHub account" />
+            <SelectValue placeholder={t('repository.selectGitHubAccount')} />
           </SelectTrigger>
           <SelectContent>
             {selectable.map((installation) => (
@@ -233,10 +237,7 @@ function GitHubSourceFields({
                 key={installation.installation_id ?? ''}
                 value={installation.installation_id ?? ''}
               >
-                {githubInstallationLabel(
-                  installation.installation_id,
-                  installation.owner_login,
-                )}
+                {githubInstallationLabel(installation.installation_id, installation.owner_login)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -247,14 +248,16 @@ function GitHubSourceFields({
           // result before the create is what stops that being a surprise
           // discovered in the repository list afterwards.
           <p className="text-muted-foreground text-xs">
-            Creates <span className="font-mono">{plannedPath}</span>
+            {t.rich('repository.createsPath', {
+              path: () => <span className="font-mono">{plannedPath}</span>,
+            })}
           </p>
         ) : null}
       </div>
 
       {state.source === 'github-import' ? (
         <div className="flex flex-col space-y-3">
-          <Label htmlFor="workspace-repository">Repository</Label>
+          <Label htmlFor="workspace-repository">{tI18nComplete.raw('text13d6ff07b8a5')}</Label>
           <RepositoryPicker
             value={state.repoFullName ?? ''}
             repos={repos}
@@ -277,7 +280,9 @@ function GitHubSourceFields({
           />
           {reposQuery.isError ? (
             <p className="text-destructive text-xs">
-              Could not load repositories: {(reposQuery.error as Error).message}
+              {t('repository.loadRepositoriesError', {
+                error: (reposQuery.error as Error).message,
+              })}
             </p>
           ) : null}
         </div>
@@ -299,26 +304,31 @@ export function AdvancedFields({
   accountId: string | null;
   onChange: (next: NewWorkspaceFormState) => void;
 }) {
+  const t = useTranslations('newWorkspace');
   return (
     <>
       <div className="flex flex-col space-y-3">
-        <Label htmlFor="workspace-source">Repository</Label>
+        <Label htmlFor="workspace-source">{t('repository.label')}</Label>
         <Select
           value={state.source}
-          onValueChange={(value) => onChange(withRepositorySource(state, value as RepositorySource))}
+          onValueChange={(value) =>
+            onChange(withRepositorySource(state, value as RepositorySource))
+          }
         >
           <SelectTrigger id="workspace-source" className="w-full" size="md">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(Object.keys(SOURCE_LABELS) as RepositorySource[]).map((source) => (
+            {(Object.keys(SOURCE_KEYS) as RepositorySource[]).map((source) => (
               <SelectItem key={source} value={source}>
-                {SOURCE_LABELS[source]}
+                {t(`repository.sources.${SOURCE_KEYS[source]}.label`)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <p className="text-muted-foreground text-xs">{SOURCE_DESCRIPTIONS[state.source]}</p>
+        <p className="text-muted-foreground text-xs">
+          {t(`repository.sources.${SOURCE_KEYS[state.source]}.description`)}
+        </p>
       </div>
 
       {isGitHubSource(state.source) ? (
@@ -334,12 +344,12 @@ export function AdvancedFields({
           yet and so has no branches to list. */}
       {state.source === 'github-create' ? null : state.source === 'github-import' ? (
         <div className="flex flex-col space-y-3">
-          <Label htmlFor="workspace-branch">Default branch</Label>
+          <Label htmlFor="workspace-branch">{t('repository.defaultBranch')}</Label>
           <ImportBranchField state={state} accountId={accountId} onChange={onChange} />
         </div>
       ) : (
         <div className="flex flex-col space-y-3">
-          <Label htmlFor="workspace-branch">Default branch</Label>
+          <Label htmlFor="workspace-branch">{t('repository.defaultBranch')}</Label>
           <Input
             id="workspace-branch"
             size="md"
@@ -371,12 +381,7 @@ function ImportBranchField({
   onChange: (next: NewWorkspaceFormState) => void;
 }) {
   const branchesQuery = useQuery({
-    queryKey: [
-      'github-repository-branches',
-      accountId,
-      state.installationId,
-      state.repoFullName,
-    ],
+    queryKey: ['github-repository-branches', accountId, state.installationId, state.repoFullName],
     queryFn: () =>
       listGitHubRepositoryBranches(
         accountId as string,

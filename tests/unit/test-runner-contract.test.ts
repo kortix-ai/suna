@@ -73,7 +73,9 @@ describe('local test runner contract', () => {
     expect(source).toContain("'--no-sort'");
     expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
     expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
-    expect(source).toContain("['@kortix/cli', '@kortix/sandbox-agent-server']");
+    expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
+    expect(source).toContain("await runWorkspaceTests(['@kortix/sandbox-agent-server'], 1)");
+    expect(source).not.toContain("['@kortix/cli', '@kortix/sandbox-agent-server']");
     expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
     expect(source).toContain('Promise.allSettled(tasks)');
     expect(source.match(/await runAll\(\[/g)).toHaveLength(5);
@@ -113,9 +115,13 @@ describe('local test runner contract', () => {
   });
 
   it('runs browser fixture SQL through the Node client without a host psql binary', () => {
-    const source = readFileSync(resolve(root, 'tests/e2e/helpers/database.ts'), 'utf8');
+    const databaseSource = readFileSync(resolve(root, 'tests/e2e/helpers/database.ts'), 'utf8');
+    const manifestSource = readFileSync(
+      resolve(root, 'tests/e2e/helpers/manifest-project.ts'),
+      'utf8',
+    );
 
-    expect(source).toContain('new Client');
-    expect(source).not.toContain('execFileSync("psql"');
+    expect(databaseSource).toContain('new Client');
+    expect(`${databaseSource}\n${manifestSource}`).not.toMatch(/\bpsql\b/);
   });
 });

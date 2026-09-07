@@ -4,6 +4,7 @@ import {
   type ToolRouterSessionExecuteResponse,
   type ToolkitConnectionsDetails,
 } from '@composio/core';
+import { HTTPException } from 'hono/http-exception';
 import type { ExecResult } from './call';
 import type { ComposioToolLike } from './types';
 
@@ -388,6 +389,55 @@ export async function executeComposio(
   return response.error ? { ok: false, status: 502, data } : { ok: true, status: 200, data };
 }
 
+/** Composio's `ConnectedAccount_BadRequest` for a reused alias. */
+function isAliasConflict(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /alias .*already in use/i.test(message);
+}
+
+/**
+ * `session.authorize` with the connector slug as the connected-account alias,
+ * retried once under a fresh alias when Composio refuses the slug.
+ *
+ * Incident 2026-09-03 (local dev, GitHub): an earlier Connect attempt left a
+ * non-ACTIVE connected account aliased `github` on this entity. Nothing above
+ * treats that as connected (`activeConnectedAccountId` wants `isActive`), so
+ * the next Connect re-authorized under the same alias and Composio answered
+ * 400 "Alias \"github\" is already in use by another connection for this
+ * entity" — which the API surfaced as an opaque 500. The alias is a label on
+ * Composio's side only (finalize binds through `session.toolkits()`, never
+ * by alias), so a suffixed alias loses nothing. Any other refusal is
+ * re-thrown as a 502 carrying Composio's message, not a 500 hiding it.
+ */
+async function authorizeWithFreshAlias(
+  session: ComposioSessionLike,
+  toolkit: string,
+  slug: string,
+  callbackUrl: string | undefined,
+): Promise<ComposioConnectionRequestLike> {
+  const base = callbackUrl ? { callbackUrl } : {};
+  try {
+    return await session.authorize(toolkit, { ...base, alias: slug });
+  } catch (error) {
+    if (!isAliasConflict(error)) throw upstreamRefusal(error);
+    try {
+      return await session.authorize(toolkit, {
+        ...base,
+        alias: `${slug}-${Date.now().toString(36)}`,
+      });
+    } catch (retryError) {
+      throw upstreamRefusal(retryError);
+    }
+  }
+}
+
+function upstreamRefusal(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new HTTPException(502, {
+    message: `Composio refused the authorization: ${message.split('\n')[0]}`,
+  });
+}
+
 export async function composioConnectUrl(input: {
   projectId: string;
   slug: string;
@@ -425,10 +475,7 @@ export async function composioConnectUrl(input: {
     };
   }
 
-  const request = await session.authorize(input.app, {
-    ...(input.redirects?.success ? { callbackUrl: input.redirects.success } : {}),
-    alias: input.slug,
-  });
+  const request = await authorizeWithFreshAlias(session, input.app, input.slug, input.redirects?.success);
   const requestState = request.toJSON ? request.toJSON() : request;
   const connectUrl = requestState.redirectUrl ?? '';
   if (!connectUrl) throw new Error('composio authorize returned no redirect url');

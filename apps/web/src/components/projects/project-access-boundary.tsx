@@ -2,7 +2,7 @@
 
 import { ShieldWarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 

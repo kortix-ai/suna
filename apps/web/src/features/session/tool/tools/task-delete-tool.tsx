@@ -9,7 +9,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TrashIcon as Trash2 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
@@ -24,7 +24,10 @@ export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
   return (
     <BasicTool
       icon={<Trash2 className="size-3.5 shrink-0" />}
-      trigger={{ title: 'Delete task', subtitle: isError ? 'failed' : undefined }}
+      trigger={{
+        title: tHardcodedUi.raw('i18nComplete.text3baf55478483'),
+        subtitle: isError ? 'failed' : undefined,
+      }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >

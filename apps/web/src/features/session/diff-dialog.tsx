@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Modal, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { SessionDiffViewer } from '@/features/session/session-diff-viewer';

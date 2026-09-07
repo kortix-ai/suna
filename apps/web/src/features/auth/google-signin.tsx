@@ -6,7 +6,7 @@ import { errorToast } from '@/components/ui/toast';
 import { NewGoogle } from '@/features/icon/icons/new-google';
 import { authRedirectUrl } from '@/lib/desktop';
 import { createClient } from '@/lib/supabase/client';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 interface GoogleSignInProps {
@@ -20,6 +20,7 @@ export default function GoogleSignIn({
   referralCode,
   mobileCallbackState,
 }: GoogleSignInProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [isLoading, setIsLoading] = useState(false);
   const supabase = createClient();
   const t = useTranslations('auth');
@@ -55,7 +56,7 @@ export default function GoogleSignIn({
       }
     } catch (error: any) {
       console.error('Google sign-in error:', error);
-      errorToast(error.message || 'Failed to sign in with Google');
+      errorToast(error.message || tI18nComplete.raw('textfcbc94634f1f'));
       setIsLoading(false);
     }
   };

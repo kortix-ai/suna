@@ -1266,6 +1266,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
 		trackId(deltaActiveParts, sessionID, partID);
+		let applied = false;
 		set((s) => {
 			const list = s.parts[messageID];
 			if (!list) return s;
@@ -1304,8 +1305,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				| undefined;
 			(part as Record<string, unknown>)[field] = (existing ?? "") + delta;
 			next[result.index] = part as Part;
+			applied = true;
 			return { parts: { ...s.parts, [messageID]: next } };
 		});
+		// The delta changed the visible transcript. This is the runtime itself
+		// producing output, so it refreshes the activity evidence used by
+		// `projectWorking`. Stamp only after a real apply: reconnect replays with
+		// an already-consumed event id are history, not current activity.
+		if (applied) get().noteSessionActivity(sessionID);
 	},
 
 	setStatus: (sessionID, status, origin = "wire") =>
@@ -1512,6 +1519,40 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			: optimisticEchoes.get(sessionID)?.get(optimisticID);
 		if (!live || live === echoID || !isOptimistic(sessionID, live)) return;
 		recordOptimisticEcho(sessionID, live, echoID);
+
+		// THE ECHO MAY ALREADY BE ON SCREEN. The row is read on a poll, and the
+		// runtime echoes a delivered prompt within milliseconds of the drain
+		// writing the re-mint — so the frame usually wins the race, and with a
+		// burst in flight it lands unmatched (see `message.updated`) and is
+		// placed as an ordinary message. Registering the alias and stopping
+		// there would leave the user's text on screen twice, forever: one
+		// bubble the runtime will never confirm again, beside the message it
+		// already confirmed. So the pairing is honoured whichever side arrives
+		// second — the alias retires the bubble here exactly as the echo would
+		// have retired it there.
+		if (!get().messages[sessionID]?.some((m) => m.id === echoID)) return;
+		releaseConfirmedOptimisticId(sessionID, live, echoID);
+		set((s) => {
+			const list = s.messages[sessionID] ?? [];
+			if (!list.some((m) => m.id === live)) return s;
+			// The echo keeps its own place: it was inserted by time, and the
+			// bubble it replaces carried no server position to inherit.
+			let next = list.filter((m) => m.id !== live);
+			// A `session.error` stub keyed to the bubble follows it onto the
+			// real id, or its error detaches from the turn — same rule as the
+			// SSE swap above.
+			next = rekeyStubParent(sessionID, next, live, echoID);
+			const newParts = { ...s.parts };
+			const bridge = newParts[live];
+			delete newParts[live];
+			// Bridge the typed text until the server's own part frame lands, so
+			// the bubble never blinks empty across the swap.
+			if (bridge?.length && !newParts[echoID]?.length) {
+				newParts[echoID] = bridge;
+				trackId(bridgedPartIds, sessionID, echoID);
+			}
+			return { messages: { ...s.messages, [sessionID]: next }, parts: newParts };
+		});
 	},
 
 	reclaimRemovedMessage: (sessionID, messageID) => {
@@ -2302,10 +2343,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						// The ordinal guess is only safe when there is exactly ONE
 						// in-flight send it could be. With a burst in flight, a
 						// part-less echo that matches neither a part id nor a
-						// registered alias WAITS: the hydrate that follows carries
-						// the parts (identity match), and consuming the oldest
-						// bubble here handed one message's echo another message's
-						// text (measured: the first bubble of a burst vanished).
+						// registered alias consumes NOTHING: taking the oldest
+						// bubble handed one message's echo another message's text
+						// (measured: the first bubble of a burst vanished).
+						//
+						// Consuming nothing is not the same as DISCARDING the echo,
+						// and this branch used to `return` on it — dropping the
+						// server's own message on the floor. Nothing re-reads a
+						// healthy stream, so the delivered prompt stayed missing
+						// until a reload, and the `message.part.updated` behind it
+						// re-created the id as an ASSISTANT message: the user's
+						// words in the agent's voice, with the real reply
+						// re-parented onto whichever bubble happened to sort last.
+						// That is the whole "only the first queued prompt shows up"
+						// report. The echo is placed like any other message now; the
+						// bubble it belongs to is retired the moment the inbox row
+						// names the pairing (`registerOptimisticEcho`), one poll
+						// behind at worst.
 						const eligible = optimisticUsers.filter(
 							(m) =>
 								isDispatched(info.sessionID, m.id) &&
@@ -2315,7 +2369,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						);
 						const matched =
 							byPartId ?? byAlias ?? (eligible.length === 1 ? eligible[0] : undefined);
-						if (!matched && eligible.length > 1) return;
 						const optIds = matched ? [matched.id] : [];
 						if (optIds.length > 0) {
 							// Clean up optimistic tracking, remembering the runtime id
@@ -2387,15 +2440,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.part.updated": {
 				const part = (event.properties as { part: Part }).part;
 				if (!part?.messageID) return;
-				// The runtime just produced output. This is the evidence
-				// `projectWorking` trusts above every observer — see
-				// `sessionActivityAt`.
-				{
-					const sid =
-						part.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid);
-				}
-
 				const eventSessionID =
 					(event.properties as { sessionID?: string })?.sessionID;
 				let resolvedSessionID: string | undefined =
@@ -2410,6 +2454,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						}
 					}
 				}
+
+				// The runtime just produced output. This is the evidence
+				// `projectWorking` trusts above every observer — see
+				// `sessionActivityAt`. Stamp AFTER the message-id fallback: some
+				// producers omit sessionID from the part while still updating a
+				// known message, and that visible output is runtime activity too.
+				if (resolvedSessionID) get().noteSessionActivity(resolvedSessionID);
 
 				const existingMsgs = resolvedSessionID
 					? get().messages[resolvedSessionID]

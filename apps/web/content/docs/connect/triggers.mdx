@@ -3,8 +3,6 @@ title: Triggers
 description: A trigger starts a session on a schedule, from a webhook, or from a monitor.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-
 A trigger starts a [session](/docs/work/sessions) with no person present. Use a trigger to automate recurring or event-driven work.
 
 ## Trigger types
@@ -23,9 +21,7 @@ Creating, updating, or deleting a trigger through the API, SDK, or dashboard wri
 
 <Steps>
 
-<Step>
-### Add the trigger
-
+<Step title="Add the trigger">
 ```sh
 kortix triggers add daily-digest --type cron \
   --cron "0 0 9 * * 1-5" --timezone America/Los_Angeles \
@@ -35,9 +31,7 @@ kortix triggers add daily-digest --type cron \
 `cron` is a 6-field expression: second, minute, hour, day, month, weekday. This command edits your local `kortix.yaml` only.
 </Step>
 
-<Step>
-### Ship it
-
+<Step title="Ship it">
 ```sh
 kortix ship
 ```
@@ -45,9 +39,7 @@ kortix ship
 `kortix ship` commits `kortix.yaml` and pushes it. The schedule goes live once this lands on your project's default branch.
 </Step>
 
-<Step>
-### Confirm it runs
-
+<Step title="Confirm it runs">
 ```sh
 kortix triggers ls
 ```
@@ -63,9 +55,7 @@ A webhook trigger needs a secret. Kortix uses it to check the signature on every
 
 <Steps>
 
-<Step>
-### Add the secret
-
+<Step title="Add the secret">
 ```sh
 kortix secrets set WEBHOOK_SECRET=<a-random-value>
 ```
@@ -73,9 +63,7 @@ kortix secrets set WEBHOOK_SECRET=<a-random-value>
 See [Secrets](/docs/project/secrets) for more on secrets.
 </Step>
 
-<Step>
-### Add the trigger
-
+<Step title="Add the trigger">
 ```sh
 kortix triggers add new-lead --type webhook \
   --secret-env WEBHOOK_SECRET \
@@ -85,17 +73,13 @@ kortix triggers add new-lead --type webhook \
 `--secret-env` names the secret that signs requests to this trigger.
 </Step>
 
-<Step>
-### Ship it
-
+<Step title="Ship it">
 ```sh
 kortix ship
 ```
 </Step>
 
-<Step>
-### Send it a request
-
+<Step title="Send it a request">
 Kortix builds the webhook URL from your project id and the trigger's slug:
 
 ```
@@ -124,9 +108,7 @@ Four rules define the contract:
 
 <Steps>
 
-<Step>
-### Add the monitor
-
+<Step title="Add the monitor">
 ```sh
 kortix triggers add checkout-errors --type monitor \
   --run "./monitors/checkout-errors.ts" \
@@ -137,9 +119,7 @@ kortix triggers add checkout-errors --type monitor \
 `--mode poll` re-runs the command every `--interval` and expects it to exit. `--mode stream` runs it once and keeps it alive; a stream takes no `--interval`. Both shapes produce lines, and nothing downstream can tell them apart. `cron`, `run_at`, `timezone`, and `secret_env` are rejected on a monitor.
 </Step>
 
-<Step>
-### Ship it
-
+<Step title="Ship it">
 ```sh
 kortix ship
 ```
@@ -147,9 +127,7 @@ kortix ship
 The platform starts the monitor box once this lands on the default branch.
 </Step>
 
-<Step>
-### Confirm it runs
-
+<Step title="Confirm it runs">
 ```sh
 kortix triggers ls
 kortix triggers info checkout-errors

@@ -7,8 +7,7 @@ const source = readFileSync(
   'utf8',
 );
 
-const code = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('CapabilityTabs sidebar toggle', () => {
   // The panel's own header carries collapse (ProjectSidebar) and the desktop
@@ -80,12 +79,15 @@ describe('CapabilityTabs carries no capability-specific control', () => {
  */
 describe('CapabilityTabs right-aligns Settings', () => {
   test('the trailing group is exactly Settings', () => {
+    // `/projects/<id>/config` was retired on 2026-09-02 and came back on
+    // 2026-09-03 (Marko): it trails the row, after Members, in the one list.
     const body = code(source);
     const trailingStart = body.indexOf('TRAILING_TABS');
     expect(trailingStart).toBeGreaterThan(-1);
     const trailingDecl = body.slice(trailingStart, body.indexOf(';', trailingStart));
     expect(trailingDecl).toContain("'config'");
     expect(trailingDecl).not.toContain("'members'");
+    expect(body).toContain('{trailing.map(renderTab)}');
   });
 
   test('ml-auto lands on MembersLaunchLink, the first trailing element, inside the one shared TabsList', () => {

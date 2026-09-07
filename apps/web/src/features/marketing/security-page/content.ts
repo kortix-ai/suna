@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SECURITY_SELFHOST_TRANSLATION_KEYS } from '@/i18n/security-selfhost-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/security` copy — the page a security reviewer reads.
  *
@@ -437,3 +441,22 @@ export const closing = {
   ctaSecondary: 'See enterprise',
   ctaSecondaryHref: '/enterprise',
 } as const;
+
+export function getLocalizedSecurityContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    {
+      hero,
+      isolation,
+      credentials,
+      identity,
+      control,
+      landing,
+      audit,
+      posture,
+      disclosure,
+      closing,
+    },
+    tI18nComplete,
+    SECURITY_SELFHOST_TRANSLATION_KEYS,
+  );
+}

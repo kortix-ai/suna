@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The rows two different menus both need: Theme, Help, and the log-out flow.
  *
@@ -39,7 +41,6 @@ import { openExternalRoute } from '@/lib/desktop';
 import {
   ArticleIcon,
   BookOpenIcon,
-  HeadsetIcon,
   LifebuoyIcon,
   MonitorIcon,
   Moon,
@@ -76,12 +77,14 @@ export type MenuLink = {
  * the sidebar and the header, so this render path is not rare.
  */
 export const HELP_LINKS: MenuLink[] = [
-  { label: 'Help center', href: '/help', Icon: LifebuoyIcon },
+  // One support row, not two. This menu used to open with "Help center" (/help)
+  // and close with "Support" (/support) — two destinations for one intent, and
+  // the /help one was the weaker page. The help centre is now part of /support.
+  { label: 'Support', href: '/support', Icon: LifebuoyIcon },
   { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
   { label: 'Blog', href: '/blog', Icon: ArticleIcon },
   { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
   { label: 'Contact', href: '/contact', Icon: PaperPlaneTiltIcon },
-  { label: 'Support', href: '/support', Icon: HeadsetIcon },
 ];
 
 /** Kept separate so a divider can hold the legal pages apart from the rest. */
@@ -112,17 +115,19 @@ export const THEME_OPTIONS = [
  * answer to "what am I looking at right now".
  */
 export function ThemeSubmenu() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const themeOptions = useLocalizedUiCatalog(THEME_OPTIONS);
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
         {resolvedTheme === 'dark' ? <Moon /> : <Sun />}
-        Appearance
+        {tI18nComplete.raw('text3907fa7f8072')}
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
           <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
-            {THEME_OPTIONS.map(({ value, label, Icon }) => (
+            {themeOptions.map(({ value, label, Icon }) => (
               <DropdownMenuRadioItem key={value} value={value}>
                 <Icon />
                 {label}
@@ -151,6 +156,9 @@ export function ThemeSubmenu() {
  * cancelled to avoid opening the page twice.
  */
 export function HelpSubmenu({ onClose }: { onClose: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const helpLinks = useLocalizedUiCatalog(HELP_LINKS);
+  const legalLinks = useLocalizedUiCatalog(LEGAL_LINKS);
   const renderMenuLink = ({ label, href, Icon, internal }: MenuLink) =>
     internal ? (
       // An anchor, exactly like the external branch below. `router.push` from a
@@ -184,15 +192,15 @@ export function HelpSubmenu({ onClose }: { onClose: () => void }) {
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
         <QuestionIcon />
-        Help
+        {tI18nComplete.raw('textb79cac926e0b')}
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
-          {HELP_LINKS.map(renderMenuLink)}
+          {helpLinks.map(renderMenuLink)}
 
           <DropdownMenuSeparator />
 
-          {LEGAL_LINKS.map(renderMenuLink)}
+          {legalLinks.map(renderMenuLink)}
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>
@@ -209,6 +217,7 @@ export function HelpSubmenu({ onClose }: { onClose: () => void }) {
  * "Log out".
  */
 export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, setPending] = useState(false);
 
@@ -237,16 +246,18 @@ export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
     <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Log out of your account?</AlertDialogTitle>
-          <AlertDialogDescription>
-            You&apos;ll need to sign in again to get back to your workspaces.
-          </AlertDialogDescription>
+          <AlertDialogTitle>{tI18nComplete.raw('texted31daf7d840')}</AlertDialogTitle>
+          <AlertDialogDescription>{tI18nComplete.raw('textcf8f4cd95840')}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>
+            {tI18nComplete.raw('text19766ed6ccb2')}
+          </AlertDialogCancel>
           <AlertDialogAction variant="destructive" disabled={pending} onClick={performLogout}>
             {pending ? <Loading className="size-4 shrink-0" /> : null}
-            {pending ? 'Signing out' : 'Log out'}
+            {pending
+              ? tI18nComplete.raw('textca9c32c53e90')
+              : tI18nComplete.raw('text49616145514e')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

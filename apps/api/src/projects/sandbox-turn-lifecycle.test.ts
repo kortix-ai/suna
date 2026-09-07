@@ -57,6 +57,7 @@ const {
   renewActiveSandboxTurn,
   storedSandboxTurn,
   storedSandboxTurns,
+  turnCompletionAllowsQueuePromotion,
 } = await import('./sandbox-turn-lifecycle');
 
 beforeEach(() => {
@@ -285,6 +286,104 @@ describe('control-plane active-turn state', () => {
 });
 
 describe('terminal turn handling', () => {
+  test.each([
+    ['closed', true],
+    ['already_closed', true],
+    ['no_active_turn', true],
+    ['identity_mismatch', false],
+    ['non_terminal', false],
+  ] as const)('%s queue promotion is %s', (outcome, expected) => {
+    expect(turnCompletionAllowsQueuePromotion({ outcome })).toBe(expected);
+  });
+
+  test('an exact terminal identity reports closed', async () => {
+    executeResults = [
+      [
+        {
+          ended_turns: [
+            {
+              token: 'turn-token',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: 1_700_000_000_000,
+            },
+          ],
+          active_turn_count: 1,
+          completed: true,
+        },
+      ],
+    ];
+
+    expect(
+      await completeSandboxTurn('sess-1', 'idle', {
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_turn_1',
+      }),
+    ).toEqual({ outcome: 'closed', activeTurnCount: 1, closedTurnCount: 1 });
+  });
+
+  test('a sandbox row with a different active turn reports identity_mismatch', async () => {
+    executeResults = [
+      [
+        {
+          ended_turns: [],
+          active_turn_count: 1,
+          completed: true,
+        },
+      ],
+    ];
+
+    expect(
+      await completeSandboxTurn('sess-1', 'idle', {
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_stale',
+      }),
+    ).toEqual({
+      outcome: 'identity_mismatch',
+      activeTurnCount: 1,
+      closedTurnCount: 0,
+    });
+  });
+
+  test('a repeated terminal identity reports already_closed', async () => {
+    executeResults = [
+      [{ ended_turns: [], active_turn_count: 0, completed: true }],
+      [{ already_ended: true }],
+    ];
+
+    expect(
+      await completeSandboxTurn('sess-1', 'idle', {
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_turn_1',
+      }),
+    ).toEqual({ outcome: 'already_closed', activeTurnCount: 0, closedTurnCount: 0 });
+  });
+
+  test('a closed identity stays already_closed while a newer turn is active', async () => {
+    executeResults = [
+      [{ ended_turns: [], active_turn_count: 1, completed: true }],
+      [{ already_ended: true }],
+    ];
+
+    expect(
+      await completeSandboxTurn('sess-1', 'idle', {
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_old',
+      }),
+    ).toEqual({ outcome: 'already_closed', activeTurnCount: 1, closedTurnCount: 0 });
+  });
+
+  test('terminal evidence with no live or historical turn reports no_active_turn', async () => {
+    executeResults = [[{ ended_turns: [], active_turn_count: 0, completed: true }], []];
+
+    expect(
+      await completeSandboxTurn('sess-1', 'idle', {
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_unknown',
+      }),
+    ).toEqual({ outcome: 'no_active_turn', activeTurnCount: 0, closedTurnCount: 0 });
+  });
+
   test('idle clears the matching message and shortens to the idle timeout', async () => {
     await completeSandboxTurn('sess-1', 'idle', {
       opencodeSessionId: 'ses_root',
@@ -324,12 +423,14 @@ describe('terminal turn handling', () => {
   });
 
   test('a retryable model error does not clear or shorten the turn', async () => {
-    await completeSandboxTurn(
-      'sess-1',
-      'error',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
-      { isRetryable: true },
-    );
+    expect(
+      await completeSandboxTurn(
+        'sess-1',
+        'error',
+        { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { isRetryable: true },
+      ),
+    ).toEqual({ outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 });
 
     expect(executed).toEqual([]);
   });

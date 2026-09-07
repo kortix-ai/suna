@@ -33,9 +33,9 @@ describe('older-history autoload', () => {
   test('an explicit pull is never budgeted — only the sentinel is', () => {
     // The manual control calls `loadOlder` directly; the budget lives on the
     // automatic path so a reader who asks for more always gets it.
-    expect(olderAutoloadExhausted({ hasOlder: true, autoLoadedPages: OLDER_AUTOLOAD_MAX_PAGES })).toBe(
-      true,
-    );
+    expect(
+      olderAutoloadExhausted({ hasOlder: true, autoLoadedPages: OLDER_AUTOLOAD_MAX_PAGES }),
+    ).toBe(true);
     expect(olderAutoloadExhausted({ hasOlder: false, autoLoadedPages: 99 })).toBe(false);
     expect(olderAutoloadExhausted({ hasOlder: true, autoLoadedPages: 0 })).toBe(false);
   });
@@ -98,11 +98,15 @@ describe('older-history re-arm debounce', () => {
   });
 
   test('staying in the zone after a pull keeps it disarmed — no chained pull', () => {
-    expect(nextOlderAutoloadArm({ armed: false, isIntersecting: true, didPull: false })).toBe(false);
+    expect(nextOlderAutoloadArm({ armed: false, isIntersecting: true, didPull: false })).toBe(
+      false,
+    );
   });
 
   test('leaving the zone re-arms it', () => {
-    expect(nextOlderAutoloadArm({ armed: false, isIntersecting: false, didPull: false })).toBe(true);
+    expect(nextOlderAutoloadArm({ armed: false, isIntersecting: false, didPull: false })).toBe(
+      true,
+    );
   });
 
   test('re-entering the zone while armed keeps it armed', () => {

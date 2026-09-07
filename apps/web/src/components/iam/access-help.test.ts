@@ -5,7 +5,7 @@
 // every section present, linkable, and sourced from the shared role
 // descriptors instead of a second copy of the copy.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'access-help.tsx'), 'utf8');
@@ -13,17 +13,17 @@ const flat = source.replace(/\s+/g, ' ');
 
 describe('access help page', () => {
   test('renders every section of the unified model', () => {
-    for (const title of [
-      'The model',
-      'Account roles',
-      'Project roles',
-      'Custom roles',
-      'Groups',
-      'Agents',
-      'Override rule',
+    for (const key of [
+      'text1ba70b3e6cfc',
+      'text49c8061192c7',
+      'text31b7c5d19327',
+      'textc703c7f9cbe6',
+      'text29f30b14dfba',
     ]) {
-      expect(flat).toContain(`title="${title}"`);
+      expect(flat).toContain(`raw('${key}')`);
     }
+    expect(flat).toContain("raw('text39bbb719fa2b')");
+    expect(flat).toContain("raw('text279b44d2ab4b')");
   });
 
   test('role copy comes from the shared descriptors, not a local copy', () => {
@@ -47,18 +47,19 @@ describe('access help page', () => {
   // that is the manifest's Kortix CLI scopes. Same wording as
   // `content/docs/accounts.mdx`'s "one vocabulary, two bindings".
   test('it states the one-vocabulary-two-bindings rule', () => {
-    expect(flat).toContain('One vocabulary, two bindings.');
-    expect(flat).toContain(
-      'People, groups and agents get roles on an account, a project, or a single resource.',
-    );
-    expect(flat).toContain('Agents additionally carry Kortix CLI scopes in');
-    expect(flat).toContain('a session can only do what both allow.');
+    expect(flat).toContain("raw('textec56dc3a282b')");
+    expect(flat).toContain("raw('textfe384b93382f')");
   });
 
   // Every noun the model uses appears, once, on the page that teaches it.
   test('it names the four nouns of the model', () => {
-    for (const noun of ['Principal', 'Role', 'Scope', 'Assignment']) {
-      expect(flat).toContain(`>${noun}</p>`);
+    for (const key of [
+      'textafc19f1734c1',
+      'text14736a2eb9f4',
+      'textb073f6c68ef8',
+      'text153cdaaec561',
+    ]) {
+      expect(flat).toContain(`raw('${key}')`);
     }
   });
 

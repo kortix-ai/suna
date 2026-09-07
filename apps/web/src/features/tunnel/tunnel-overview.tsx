@@ -7,7 +7,7 @@ import {
   PlugsConnectedIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useState } from 'react';
 
 import { Checkbox } from '@/components/ui/checkbox';
@@ -117,7 +117,7 @@ export function ComputerTunnelManager({
   const handleDelete = async (tunnelId: string) => {
     try {
       await deleteMutation.mutateAsync(tunnelId);
-      successToast('Computer Tunnel deleted');
+      successToast(tHardcodedUi.raw('i18nComplete.text9eac6691c9ff'));
       setDeleteTarget(null);
       if (selectable && selected.has(tunnelId)) {
         onSelectedIdsChange(selectedIds.filter((id) => id !== tunnelId));
@@ -127,7 +127,9 @@ export function ComputerTunnelManager({
         setSettingsOpen(false);
       }
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Failed to delete Computer Tunnel');
+      errorToast(
+        error instanceof Error ? error.message : tHardcodedUi.raw('i18nComplete.textfaf3dbdfe9c6'),
+      );
     }
   };
 
@@ -175,10 +177,9 @@ export function ComputerTunnelManager({
                 <EmptyMedia variant="icon">
                   <PlugsConnectedIcon />
                 </EmptyMedia>
-                <EmptyTitle>Pair a computer</EmptyTitle>
+                <EmptyTitle>{tHardcodedUi.raw('i18nComplete.text60f8288e33f9')}</EmptyTitle>
                 <EmptyDescription>
-                  Run the Agent Tunnel command on a Mac, Windows PC, or Linux machine. Approve the
-                  device code in your browser to add it to this profile.
+                  {tHardcodedUi.raw('i18nComplete.text34285d12cfa2')}
                 </EmptyDescription>
               </EmptyHeader>
               {canWrite ? (
@@ -189,18 +190,23 @@ export function ComputerTunnelManager({
             </Empty>
           ) : filtered.length === 0 && searchQuery ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              No Computer Tunnels match{' '}
+              {tHardcodedUi.raw('i18nComplete.text097beb410b92')}{' '}
               <span className="text-foreground font-mono">{searchQuery}</span>.
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  {selectable ? <TableHead className="w-10" aria-label="Assigned" /> : null}
+                  {selectable ? (
+                    <TableHead
+                      className="w-10"
+                      aria-label={tHardcodedUi.raw('i18nComplete.text8191888dd97c')}
+                    />
+                  ) : null}
                   <TableHead className="size-8 p-0" />
-                  <TableHead>Name</TableHead>
-                  <TableHead>Host</TableHead>
-                  <TableHead>Last seen</TableHead>
+                  <TableHead>{tHardcodedUi.raw('i18nComplete.textdcd1d5223f73')}</TableHead>
+                  <TableHead>{tHardcodedUi.raw('i18nComplete.text4a823118b9ba')}</TableHead>
+                  <TableHead>{tHardcodedUi.raw('i18nComplete.text21fd79c7de52')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -289,15 +295,15 @@ export function ComputerTunnelManager({
       <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete Computer Tunnel"
+        title={tHardcodedUi.raw('i18nComplete.text829ca9d98457')}
         description={
           <>
-            This permanently disconnects{' '}
-            <span className="text-foreground font-medium">{deleteTarget?.name}</span> and revokes
-            its active permissions. Existing audit events remain available.
+            {tHardcodedUi.raw('i18nComplete.text9e1d0bd6290f')}{' '}
+            <span className="text-foreground font-medium">{deleteTarget?.name}</span>{' '}
+            {tHardcodedUi.raw('i18nComplete.text18ffe0b80305')}
           </>
         }
-        confirmLabel="Delete"
+        confirmLabel={tHardcodedUi.raw('i18nComplete.texte2d0a54968ea')}
         confirmVariant="destructive"
         confirmIcon={<TrashIcon className="size-3.5 shrink-0" weight="fill" />}
         isPending={deleteMutation.isPending}
@@ -310,10 +316,11 @@ export function ComputerTunnelManager({
 }
 
 export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <CustomizeSectionWrapper
-      title="Computer Tunnels"
-      description="Pair Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel. Open a machine to control its permissions and review its audit history."
+      title={tI18nComplete.raw('textb99e0e68a55a')}
+      description={tI18nComplete.raw('text57ba29c7d550')}
     >
       <ComputerTunnelManager canWrite={canWrite} />
     </CustomizeSectionWrapper>

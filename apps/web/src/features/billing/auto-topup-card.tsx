@@ -25,6 +25,7 @@ import {
 } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 /**
  * Parse + clamp the raw string field values to the same integers the server
@@ -90,6 +91,9 @@ export function AutoTopupCard({
   onChange,
   configRef,
 }: AutoTopupCardProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('billing.autoTopup');
+  const locale = useLocale();
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -150,7 +154,10 @@ export function AutoTopupCard({
   const { threshold: thresholdNum, amount: amountNum } = clampAutoTopupValues(threshold, amount);
   const bufferError =
     enabled && amountNum < thresholdNum + AUTO_TOPUP_MIN_BUFFER
-      ? `Reload amount must be at least $${AUTO_TOPUP_MIN_BUFFER} above the threshold — enter $${thresholdNum + AUTO_TOPUP_MIN_BUFFER} or more.`
+      ? t('bufferError', {
+          buffer: formatWholeUsd(AUTO_TOPUP_MIN_BUFFER, locale),
+          minimum: formatWholeUsd(thresholdNum + AUTO_TOPUP_MIN_BUFFER, locale),
+        })
       : null;
 
   const handleSave = useCallback(async () => {
@@ -162,7 +169,7 @@ export function AutoTopupCard({
     // default told customers with a working, already-charged payment method
     // that they had none — and auto top-up then never fired for them.
     if (enabled && setupStatus && !setupStatus.has_payment_method) {
-      errorToast('Add a payment method before turning on auto top-up.');
+      errorToast(tI18nComplete('textb51caac9816a'));
       return;
     }
 
@@ -178,14 +185,24 @@ export function AutoTopupCard({
       queryClient.invalidateQueries({ queryKey: ['accountState'] });
       queryClient.invalidateQueries({ queryKey: ['auto-topup-setup-status'] });
       setDirty(false);
-      successToast('Auto top-up saved');
+      successToast(tI18nComplete('textd81c55f49c5b'));
     } catch (err: unknown) {
       const error = err as { message?: string; error?: string };
-      errorToast(error?.message || error?.error || 'Failed to update auto top-up');
+      errorToast(error?.message || error?.error || tI18nComplete('textdd2d120a9ea9'));
     } finally {
       setSaving(false);
     }
-  }, [enabled, threshold, amount, bufferError, setupStatus, queryClient, accountId]);
+  }, [
+    bufferError,
+    threshold,
+    amount,
+    enabled,
+    setupStatus,
+    t,
+    tI18nComplete,
+    accountId,
+    queryClient,
+  ]);
 
   const showMissingCardWarning = enabled && setupStatus && !setupStatus.has_payment_method;
 
@@ -204,26 +221,24 @@ export function AutoTopupCard({
           tone="warning"
           action={
             <Button size="sm" variant="outline" onClick={() => refetchSettings()}>
-              Retry
+              {t('retry')}
             </Button>
           }
         >
-          Couldn&apos;t load your current settings. Showing defaults.
+          {t('settingsLoadFailed')}
         </InfoBanner>
       )}
 
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-foreground text-sm font-medium">Auto top-up</p>
+          <p className="text-foreground text-sm font-medium">{t('title')}</p>
           <p className="text-muted-foreground text-xs">
-            {enabled
-              ? 'Your card is charged only when the balance drops below the limit.'
-              : 'Agents pause when the balance reaches zero.'}
+            {enabled ? t('enabledDescription') : t('disabledDescription')}
           </p>
         </div>
         <Switch
           checked={enabled}
-          aria-label="Auto top-up"
+          aria-label={t('title')}
           onCheckedChange={(value) => {
             setEnabled(value);
             setDirty(true);
@@ -242,21 +257,21 @@ export function AutoTopupCard({
             className="overflow-hidden"
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-2 pt-1 text-xs">
-              <span className="text-muted-foreground">Add</span>
+              <span className="text-muted-foreground">{t('add')}</span>
               <MoneyInput
                 value={amount}
                 min={AUTO_TOPUP_MIN_AMOUNT}
-                label="Top-up amount in dollars"
+                label={t('amountLabel')}
                 onChange={(next) => {
                   setAmount(next);
                   setDirty(true);
                 }}
               />
-              <span className="text-muted-foreground">when the balance drops below</span>
+              <span className="text-muted-foreground">{t('whenBelow')}</span>
               <MoneyInput
                 value={threshold}
                 min={AUTO_TOPUP_MIN_THRESHOLD}
-                label="Top-up threshold in dollars"
+                label={t('thresholdLabel')}
                 onChange={(next) => {
                   setThreshold(next);
                   setDirty(true);
@@ -279,7 +294,7 @@ export function AutoTopupCard({
                       className="gap-1.5 transition-transform active:scale-[0.96]"
                     >
                       {saving ? <Loading className="size-3.5 shrink-0" /> : null}
-                      Save
+                      {t('save')}
                     </Button>
                   </m.div>
                 )}
@@ -289,9 +304,7 @@ export function AutoTopupCard({
             {bufferError && <p className="text-destructive mt-2.5 text-xs">{bufferError}</p>}
 
             {!bufferError && showMissingCardWarning && (
-              <p className="text-kortix-orange mt-2.5 text-xs">
-                Add a payment method for auto top-up to run.
-              </p>
+              <p className="text-kortix-orange mt-2.5 text-xs">{t('paymentNeeded')}</p>
             )}
           </m.div>
         )}
@@ -307,11 +320,20 @@ export function AutoTopupCard({
           className="gap-1.5 transition-transform active:scale-[0.96]"
         >
           {saving ? <Loading className="size-3.5 shrink-0" /> : null}
-          Save
+          {t('save')}
         </Button>
       )}
     </div>
   );
+}
+
+function formatWholeUsd(amount: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 /** A dollar field sized to its content — these sit inside a sentence, so a
@@ -343,7 +365,7 @@ function MoneyInput({
         aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="text-foreground h-full w-[3.75rem] bg-transparent pr-2 pl-5 text-xs font-medium tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className="text-foreground h-full w-[3.75rem] [appearance:textfield] bg-transparent pr-2 pl-5 text-xs font-medium tabular-nums outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
       />
     </span>
   );

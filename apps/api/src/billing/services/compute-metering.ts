@@ -52,7 +52,7 @@ import {
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
-import { deductCredits } from './credits';
+import { settleCredits } from './settle-credits';
 import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   clampComputeRateMultiplier,
@@ -257,10 +257,15 @@ async function settleComputeWindow(
 
   if (windowCost <= 0) return 'settled';
 
-  // Debit the wallet. deductCredits already triggers auto-topup as a
-  // fire-and-forget after a deduction (services/credits.ts:79).
+  // Settle the wallet. These seconds are already consumed — the sandbox ran —
+  // so this is a SETTLEMENT, not an admission, and it records even when the
+  // wallet cannot cover it (see settleCredits). Auto-topup still fires.
+  //
+  // The release path below is now a genuine error path rather than the steady
+  // state it used to be: a drained account no longer bounces every window
+  // forever, it records the overdraft once and blocks the next admission.
   try {
-    await deductCredits(
+    await settleCredits(
       row.accountId,
       windowCost,
       // The multiplier is named in the description only when it is not list
@@ -278,9 +283,10 @@ async function settleComputeWindow(
       `compute:${row.id}:${claimedEnd.toISOString()}`,
     );
   } catch (err) {
-    // Out of credits + no auto-topup. Hand the window back so the next tick can
-    // retry the same seconds once the wallet can pay — the accrual must never
-    // outrun the ledger.
+    // No longer reachable for a merely-drained wallet (settlement overdrafts
+    // instead of refusing). Retained for the real failures that remain — a
+    // missing credit row, an RPC/transport error — where handing the window
+    // back is still right: the accrual must never outrun the ledger.
     const released = await releaseComputeWindow({
       id: row.id,
       claimedLastBilledAt: claimedEnd.toISOString(),

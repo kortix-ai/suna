@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 export interface AnnouncementData {
   component: string;
@@ -40,7 +40,10 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
 
       closeAnnouncement: () => {
         const { currentAnnouncement, dismissedAnnouncements } = get();
-        if (currentAnnouncement && !dismissedAnnouncements.includes(currentAnnouncement.component)) {
+        if (
+          currentAnnouncement &&
+          !dismissedAnnouncements.includes(currentAnnouncement.component)
+        ) {
           set({
             isOpen: false,
             currentAnnouncement: null,
@@ -60,7 +63,7 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
         if (isOpen) return;
 
         const pending = PENDING_ANNOUNCEMENTS.find(
-          (a) => !dismissedAnnouncements.includes(a.component)
+          (a) => !dismissedAnnouncements.includes(a.component),
         );
 
         if (pending) {
@@ -77,8 +80,8 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
       name: 'kortix.announcements-v2',
       storage: createSafeJSONStorage(),
       partialize: (state) => ({ dismissedAnnouncements: state.dismissedAnnouncements }),
-    }
-  )
+    },
+  ),
 );
 
 // Registers this store for `resetClientState()`'s sign-out sweep without

@@ -1,3 +1,4 @@
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The inline-code chip, and the one piece of markdown that draws something
  * other than text.
@@ -92,6 +93,7 @@ const CHECKER =
  * swatch with no edge disappears into exactly the background it matches.
  */
 export function HexColorCode({ hex, children }: { hex: string; children: React.ReactNode }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <code title={hex} className={cn(INLINE_CODE, 'space-y-0 py-0')}>
       {/* The square sits ON the baseline, so its bottom edge and the text's
@@ -120,8 +122,8 @@ export function HexColorCode({ hex, children }: { hex: string; children: React.R
         className="text-muted-foreground/30 ring-foreground/15 relative mr-1 inline-block size-[0.8em] overflow-hidden rounded-[3px] align-baseline ring-1 ring-inset"
         style={{
           backgroundImage: CHECKER,
-          backgroundSize: '10px 10px',
-          backgroundPosition: '0 0, 5px 5px',
+          backgroundSize: "10px 10px",
+          backgroundPosition: "0 0, 5px 5px",
         }}
       >
         <span className="absolute inset-0" style={{ backgroundColor: hex }} />

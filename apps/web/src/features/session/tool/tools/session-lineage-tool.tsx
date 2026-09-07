@@ -1,4 +1,5 @@
 'use client';
+
 import {
   BasicTool,
   isErrorOutput,
@@ -10,11 +11,13 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TreeStructureIcon as ListTree } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 const NO_ARGS: string[] = [];
 
 export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const sessionId = (input.session_id as string) || '';
@@ -34,7 +37,7 @@ export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: Too
     <BasicTool
       icon={<ListTree className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Session history',
+        title: tI18nComplete.raw('textc1c80b037867'),
         subtitle: sid,
         args,
       }}

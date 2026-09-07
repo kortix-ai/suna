@@ -10,8 +10,7 @@ import type { AttachedFile } from '../types';
  * Both ids are UUIDs, so the two families can never collide.
  */
 export type DraftScope =
-  | { kind: 'project'; projectId: string }
-  | { kind: 'session'; sessionId: string };
+  { kind: 'project'; projectId: string } | { kind: 'session'; sessionId: string };
 
 /**
  * The only attachment shape that can cross a reload. A `local` AttachedFile

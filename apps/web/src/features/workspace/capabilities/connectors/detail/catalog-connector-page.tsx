@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
@@ -116,6 +117,7 @@ export function CatalogConnectorPage({
   sourceValue: string;
   slug: string;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const source = parseCatalogSource(sourceValue);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -167,7 +169,7 @@ export function CatalogConnectorPage({
       : null;
   const entry =
     source === 'computer'
-      ? computersCatalogEntry()
+      ? computersCatalogEntry(tI18nComplete)
       : source === 'discover'
         ? discoverEntry
         : source === 'easy-connect'

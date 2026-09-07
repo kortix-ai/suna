@@ -22,6 +22,7 @@ import {
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
   selectCollapsedSections,
@@ -176,6 +177,7 @@ function SessionsSection({
 }
 
 export function ProjectSessionsView({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -234,7 +236,10 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
 
   // Built once per session list, not once per keystroke — see
   // `buildSessionSearchIndex`.
-  const searchIndex = useMemo(() => buildSessionSearchIndex(sessions), [sessions]);
+  const searchIndex = useMemo(
+    () => buildSessionSearchIndex(sessions, tI18nComplete),
+    [sessions, tI18nComplete],
+  );
 
   // Grouping, ordering, the two multi-select facets, hidden and collapsed
   // sections all come from the SAME per-project store the sidebar writes, via
@@ -257,19 +262,37 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
 
   const visibleSessions = useMemo(
     () =>
-      filterProjectSessions(sessions, statusFilters, sourceFilters, deferredSearch, searchIndex),
-    [sessions, statusFilters, sourceFilters, deferredSearch, searchIndex],
+      filterProjectSessions(
+        sessions,
+        statusFilters,
+        sourceFilters,
+        deferredSearch,
+        tI18nComplete,
+        searchIndex,
+      ),
+    [sessions, statusFilters, sourceFilters, deferredSearch, tI18nComplete, searchIndex],
   );
 
   const grouped = useMemo(
     () =>
-      groupSessions(visibleSessions, {
-        mode: groupMode,
-        order: orderMode,
-        reviewCountBySession: reviewSummary.needsYouBySession,
-        hiddenSections,
-      }),
-    [visibleSessions, groupMode, orderMode, reviewSummary.needsYouBySession, hiddenSections],
+      groupSessions(
+        visibleSessions,
+        {
+          mode: groupMode,
+          order: orderMode,
+          reviewCountBySession: reviewSummary.needsYouBySession,
+          hiddenSections,
+        },
+        tI18nComplete,
+      ),
+    [
+      visibleSessions,
+      groupMode,
+      orderMode,
+      reviewSummary.needsYouBySession,
+      hiddenSections,
+      tI18nComplete,
+    ],
   );
 
   // Keyed on `sessions` alone, deliberately NOT on the search query: this is
@@ -339,22 +362,22 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       restartProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
-      successToast(`Restarting "${label}"…`);
+      successToast(tI18nComplete('textdd465809683b', { value0: label }));
       invalidateSessions();
     },
     onError: (error) =>
-      errorToast(error instanceof Error ? error.message : 'Failed to restart session'),
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text1604d2906a45')),
   });
 
   const stopMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       stopProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
-      successToast(`"${label}" stopped`);
+      successToast(tI18nComplete('textb86777c5ad5c', { value0: label }));
       invalidateSessions();
     },
     onError: (error) =>
-      errorToast(error instanceof Error ? error.message : 'Failed to stop session'),
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texte0e30badc30c')),
   });
 
   const bulkDeleteMutation = useMutation({
@@ -371,7 +394,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           }
         },
       );
-      return summarizeBulkDelete(results);
+      return summarizeBulkDelete(results, tI18nComplete);
     },
     onSuccess: (summary) => {
       // Partial failure is a real outcome, not an error. Reporting "Deleted 7"
@@ -385,7 +408,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       invalidateSessions();
     },
     onError: (error) => {
-      errorToast(error instanceof Error ? error.message : 'Failed to delete sessions');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text928228f0f221'));
       setBulkConfirmOpen(false);
     },
   });
@@ -461,7 +484,9 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           )}
         >
           <div className="space-y-1">
-            <h2 className="text-foreground text-xl font-medium">Sessions</h2>
+            <h2 className="text-foreground text-xl font-medium">
+              {tI18nComplete.raw('text6fa3cbf451b2')}
+            </h2>
           </div>
           <div className="mt-2 shrink-0 sm:mt-0">{header}</div>
         </header>
@@ -472,13 +497,13 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           ) : sessionsQuery.isError ? (
             <ErrorState
               size="sm"
-              title="Sessions could not be loaded"
+              title={tI18nComplete.raw('textb6d85433a7ee')}
               description={
                 sessionsQuery.error instanceof Error ? sessionsQuery.error.message : undefined
               }
               action={
                 <Button variant="outline" size="sm" onClick={() => sessionsQuery.refetch()}>
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />
@@ -486,8 +511,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             <EmptyState
               size="sm"
               icon={ChatIcon}
-              title="No sessions yet"
-              description="Start a session to give this project its first task."
+              title={tI18nComplete.raw('textf502267deff4')}
+              description={tI18nComplete.raw('text93e404732659')}
               action={
                 // The composer route is known at render time, so this is an
                 // anchor whose payload Next already holds — the first control a
@@ -495,13 +520,13 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                 creatingSession ? (
                   <Button variant="outline" size="sm" className="gap-1.5" disabled aria-busy>
                     <PlusIcon className="size-3.5 shrink-0" />
-                    New session
+                    {tI18nComplete.raw('textcffdba22adf2')}
                   </Button>
                 ) : (
                   <Button asChild variant="outline" size="sm" className="gap-1.5">
                     <Link href={`/projects/${projectId}`} prefetch>
                       <PlusIcon className="size-3.5 shrink-0" />
-                      New session
+                      {tI18nComplete.raw('textcffdba22adf2')}
                     </Link>
                   </Button>
                 )
@@ -515,11 +540,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
             <EmptyState
               size="sm"
               icon={MagnifyingGlassIcon}
-              title="No matching sessions"
+              title={tI18nComplete.raw('text2732406e3be5')}
               description={
                 visibleSessions.length > 0
-                  ? 'Every section is hidden. Re-enable one from Show in the view menu.'
-                  : 'Try another search or clear the current filter.'
+                  ? tI18nComplete.raw('text67f2187d81d7')
+                  : tI18nComplete.raw('text2749b54ef956')
               }
               action={
                 <Button
@@ -530,7 +555,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                     setSearch('');
                   }}
                 >
-                  Clear filters
+                  {tI18nComplete.raw('text7179ea0035fc')}
                 </Button>
               }
             />
@@ -610,8 +635,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       <ConfirmDialog
         open={bulkConfirmOpen}
         onOpenChange={(open) => !bulkDeleteMutation.isPending && setBulkConfirmOpen(open)}
-        title={`Delete ${visibleSelection.size} ${visibleSelection.size === 1 ? 'session' : 'sessions'}?`}
-        description="This permanently destroys each session's branch and sandbox. It cannot be undone."
+        title={tI18nComplete('text7ed6733a3900', {
+          value0: visibleSelection.size,
+          value1: visibleSelection.size === 1 ? 'session' : 'sessions',
+        })}
+        description={tI18nComplete.raw('textac371f652a2d')}
         confirmLabel={`Delete ${visibleSelection.size}`}
         confirmVariant="destructive"
         isPending={bulkDeleteMutation.isPending}

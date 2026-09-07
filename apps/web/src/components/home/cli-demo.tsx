@@ -1,10 +1,12 @@
 'use client';
 
 import { useCopy } from '@/hooks/use-copy';
+import type { UiTranslator } from '@/i18n/translator';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -256,20 +258,17 @@ const PALETTE: { cmd: string; desc: string }[] = [
   { cmd: 'kortix cr open', desc: 'open a change request' },
 ];
 
-const INSTALL_CTA_MESSAGE =
-  'Install the CLI to start an agent from your terminal, give it the right tools, and review every change before you merge.';
-
-function demoResponse(cmd: string, installCmd: string): Block {
+function demoResponse(cmd: string, installCmd: string, tI18nComplete: UiTranslator): Block {
   return {
     cmd: [t('$ ', 'faded'), t(cmd, 'kortix')],
     out: [
       [],
       // [t('demo response', 'amber')],
-      [t('This preview can’t run commands from the browser.', 'amber')],
+      [t(tI18nComplete.raw('text7040ecc689ea'), 'amber')],
       [],
     ],
     installCta: {
-      message: INSTALL_CTA_MESSAGE,
+      message: tI18nComplete.raw('texte0f335bdf966'),
       command: installCmd,
     },
   };
@@ -321,13 +320,11 @@ function ReasoningView() {
     <div className="text-muted-foreground flex items-center gap-2 py-0.5">
       <KortixAsterisk
         index={0}
-        parentClass={tI18nHardcoded.raw(
-          'autoComponentsHomeCliDemoJsxAttrParentClassMt0Animateaddcd0bb',
-        )}
+        parentClass={"mt-0 animate-spin"}
       />
       <div className="inline-flex items-center gap-0">
         {/* <span className="text-primary text-sm font-medium">Reasoning</span> */}
-        <TextShimmer>Reasoning...</TextShimmer>
+        <TextShimmer>{tI18nHardcoded.raw('i18nComplete.textfa7428f1ff6b')}</TextShimmer>
       </div>
     </div>
   );
@@ -355,6 +352,8 @@ function InstallCtaView({ cta }: { cta: InstallCta }) {
 
 export function CliDemo() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const palette = useLocalizedUiCatalog(PALETTE);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -377,7 +376,7 @@ export function CliDemo() {
 
   const paletteOpen = focused && !wizard && draft.startsWith('/');
   const paletteItems = paletteOpen
-    ? PALETTE.filter((p) => p.cmd.toLowerCase().includes(draft.slice(1).trim().toLowerCase()))
+    ? palette.filter((p) => p.cmd.toLowerCase().includes(draft.slice(1).trim().toLowerCase()))
     : [];
   const installCmd = KORTIX_CLI_INSTALL_COMMAND;
 
@@ -596,7 +595,7 @@ export function CliDemo() {
       startInitWizard();
       return;
     }
-    respond(demoResponse(cmd, installCmd));
+    respond(demoResponse(cmd, installCmd, tI18nComplete));
     inputRef.current?.focus();
   };
 
@@ -610,7 +609,7 @@ export function CliDemo() {
     } else if (/^kortix\s+init$/.test(value)) {
       startInitWizard();
     } else {
-      respond(demoResponse(value, installCmd));
+      respond(demoResponse(value, installCmd, tI18nComplete));
     }
   };
 
@@ -675,7 +674,9 @@ export function CliDemo() {
       <div className="border-border/60 bg-muted/30 flex shrink-0 items-center gap-3 border-b p-4 py-2">
         <span className="text-muted-foreground/70 inline-flex items-center gap-1 text-xs">
           <KortixAsterisk index={0} parentClass="mt-0" />
-          <HyperText animateOnHover={false}>kortix</HyperText>
+          <HyperText animateOnHover={false}>
+            {tI18nHardcoded.raw('i18nComplete.text388f7968512c')}
+          </HyperText>
         </span>
       </div>
 
@@ -740,7 +741,9 @@ export function CliDemo() {
                 <span className="text-foreground">
                   {tI18nHardcoded.raw('autoComponentsHomeCliDemoJsxTextProjectName25e32f89')}
                 </span>
-                <span className="text-muted-foreground">(my-app)</span>
+                <span className="text-muted-foreground">
+                  {tI18nHardcoded.raw('i18nComplete.textb90afbc5b70e')}
+                </span>
                 <span className="text-foreground">: </span>
               </>
             ) : wizard?.phase === 'agent' ? (
@@ -767,7 +770,7 @@ export function CliDemo() {
                     ? ''
                     : wizard?.phase === 'name'
                       ? 'my-app'
-                      : 'try kortix init, or / for commands'
+                      : tI18nHardcoded.raw('i18nComplete.textd84ee1e1e08b')
               }
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
