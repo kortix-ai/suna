@@ -3540,10 +3540,8 @@ export function SessionChat({
     };
   }, []);
   // The 2 s permission/question self-heal polls that used to sit here are
-  // gone: the session stream's runtime channel is SEQUENCED (a lost
-  // `question.asked` frame is a detectable gap, not a silent hole), and the
-  // `kortix.control.runtime_state` snapshots re-seed open asks on every
-  // attach/reconnect — see the SDK's `useSessionRuntimeStream`.
+  // gone. The SDK now consumes the OpenCode runtime event stream directly;
+  // there is no `useSessionRuntimeStream` control-channel hook.
 
   // ---- Permission/question reply handlers ----
   const removePermission = useRuntimePendingStore((s) => s.removePermission);

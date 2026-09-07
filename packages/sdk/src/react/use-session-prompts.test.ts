@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  environmentManager,
+  focusManager,
+  QueryClient,
+  QueryObserver,
+} from '@tanstack/react-query';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { configureKortix } from '../core/http/config';
 import { INBOX_OBSERVATION_MAX_MS } from '../core/session/working';
@@ -12,9 +18,14 @@ import {
   removeOptimisticPrompt,
   settleOptimisticPrompt,
   SESSION_PROMPTS_IDLE_POLL_MS,
+  SESSION_PROMPTS_LIVE_POLL_LADDER_MS,
   SESSION_PROMPTS_POLL_MS,
+  type SessionPromptsCadenceState,
+  countNonTerminalSessionPrompts,
+  nextSessionPromptsCadenceState,
   noteInboxObservation,
   readSessionPromptsInbox,
+  sessionPromptsFingerprint,
   sessionPromptsPollMs,
   startSessionWithPrompt,
 } from './use-session-prompts';
@@ -30,6 +41,20 @@ import {
  * only a full page load recovers.
  */
 describe('sessionPromptsPollMs', () => {
+  const prompt = (over: Partial<SessionPrompt> = {}): SessionPrompt => ({
+    prompt_id: 'p1',
+    client_message_id: 'q_1',
+    message_id: 'msg_01',
+    state: 'queued',
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-08-18T10:00:00.000Z',
+    available_at: '2026-08-18T10:00:00.000Z',
+    ...over,
+  });
+
   test('polls fast while prompts are pending — their state changes on its own', () => {
     expect(sessionPromptsPollMs(1)).toBe(SESSION_PROMPTS_POLL_MS);
     expect(sessionPromptsPollMs(7)).toBe(SESSION_PROMPTS_POLL_MS);
@@ -80,6 +105,243 @@ describe('sessionPromptsPollMs', () => {
 
   test('no belief and no rows still means the idle floor', () => {
     expect(sessionPromptsPollMs(0, undefined, 0)).toBe(SESSION_PROMPTS_IDLE_POLL_MS);
+  });
+
+  test('a terminal-only list uses the idle floor, while a queued row uses the live ladder', () => {
+    const failed = prompt({ state: 'failed' });
+    const queued = prompt({ prompt_id: 'p2' });
+
+    expect(countNonTerminalSessionPrompts([failed])).toBe(0);
+    expect(sessionPromptsPollMs(countNonTerminalSessionPrompts([failed]))).toBe(
+      SESSION_PROMPTS_IDLE_POLL_MS,
+    );
+    expect(countNonTerminalSessionPrompts([failed, queued])).toBe(1);
+    expect(sessionPromptsPollMs(countNonTerminalSessionPrompts([failed, queued]))).toBe(
+      SESSION_PROMPTS_POLL_MS,
+    );
+  });
+
+  test('identical live snapshots advance 1,000 → 2,000 → 4,000 → 4,000 ms inside the latency budget', () => {
+    const rows = [prompt()];
+    let cadence = nextSessionPromptsCadenceState(undefined, rows);
+    const rungs = [0, 1, 2, 3].map(() => {
+      const interval = sessionPromptsPollMs(
+        countNonTerminalSessionPrompts(rows),
+        undefined,
+        0,
+        cadence,
+      );
+      cadence = nextSessionPromptsCadenceState(cadence, rows);
+      return interval;
+    });
+
+    expect(SESSION_PROMPTS_LIVE_POLL_LADDER_MS).toEqual([1_000, 2_000, 4_000]);
+    expect(rungs).toEqual([1_000, 2_000, 4_000, 4_000]);
+    for (const rung of rungs) {
+      expect(rung + 2 * 2_500).toBeLessThan(INBOX_OBSERVATION_MAX_MS);
+    }
+  });
+
+  test('a changed fingerprint, mutation reset, and focus reset each return live polling to 1,000 ms', () => {
+    const rows = [prompt()];
+    let cadence = nextSessionPromptsCadenceState(undefined, rows);
+    cadence = nextSessionPromptsCadenceState(cadence, rows);
+    cadence = nextSessionPromptsCadenceState(cadence, rows);
+    expect(sessionPromptsPollMs(1, undefined, 0, cadence)).toBe(4_000);
+
+    const changed = nextSessionPromptsCadenceState(cadence, [prompt({ state: 'delivering' })]);
+    expect(sessionPromptsPollMs(1, undefined, 0, changed)).toBe(1_000);
+    expect(sessionPromptsPollMs(1, undefined, 0, nextSessionPromptsCadenceState(changed, rows, true))).toBe(1_000);
+    expect(sessionPromptsPollMs(1, undefined, 0, nextSessionPromptsCadenceState(changed, rows, true))).toBe(1_000);
+  });
+
+  test('held rows remain non-terminal, and the fingerprint ignores observation timestamps only', () => {
+    const held = prompt({ state: 'waiting', reason: 'held' });
+    expect(countNonTerminalSessionPrompts([held])).toBe(1);
+
+    const original = {
+      ...held,
+      observed_at: '2026-08-18T10:00:00.000Z',
+    } as SessionPrompt & { observed_at: string };
+    const observedLater = {
+      ...original,
+      observed_at: '2026-08-18T10:01:00.000Z',
+    };
+    expect(sessionPromptsFingerprint([original])).toBe(sessionPromptsFingerprint([observedLater]));
+
+    for (const changed of [
+      { prompt_id: 'p2' },
+      { state: 'queued' as const },
+      { reason: null },
+      { attempts: 1 },
+      { last_error: 'retry' },
+      { message_id: 'msg_02' },
+      { available_at: '2026-08-18T10:02:00.000Z' },
+    ]) {
+      expect(sessionPromptsFingerprint([original])).not.toBe(
+        sessionPromptsFingerprint([{ ...original, ...changed }]),
+      );
+    }
+  });
+});
+
+class FakeTimers {
+  private nextId = 1;
+  private now = 0;
+  private timers = new Map<number, { callback: () => void; due: number; interval: number | null }>();
+
+  install(): () => void {
+    const native = {
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+      setInterval: globalThis.setInterval,
+      clearInterval: globalThis.clearInterval,
+    };
+    globalThis.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) =>
+      this.schedule(() => typeof callback === 'function' && callback(...args), delay ?? 0, null)) as typeof setTimeout;
+    globalThis.clearTimeout = ((id: number) => this.timers.delete(id)) as typeof clearTimeout;
+    globalThis.setInterval = ((callback: TimerHandler, delay?: number, ...args: unknown[]) =>
+      this.schedule(() => typeof callback === 'function' && callback(...args), delay ?? 0, delay ?? 0)) as typeof setInterval;
+    globalThis.clearInterval = ((id: number) => this.timers.delete(id)) as typeof clearInterval;
+    return () => Object.assign(globalThis, native);
+  }
+
+  async advanceBy(ms: number): Promise<void> {
+    const end = this.now + ms;
+    for (;;) {
+      const due = [...this.timers.entries()]
+        .filter(([, timer]) => timer.due <= end)
+        .sort((a, b) => a[1].due - b[1].due)[0];
+      if (!due) break;
+      const [id, timer] = due;
+      this.now = timer.due;
+      if (timer.interval == null) this.timers.delete(id);
+      else timer.due += timer.interval;
+      timer.callback();
+      await flushPromises();
+    }
+    this.now = end;
+    await flushPromises();
+  }
+
+  private schedule(callback: () => void, delay: number, interval: number | null): number {
+    const id = this.nextId++;
+    this.timers.set(id, { callback, due: this.now + delay, interval });
+    return id;
+  }
+}
+
+async function flushPromises(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+describe('prompt inbox QueryObserver cadence', () => {
+  let restoreFakeTimers: (() => void) | undefined;
+
+  const row = (state: SessionPrompt['state']): SessionPrompt => ({
+    prompt_id: 'p1', client_message_id: 'q1', message_id: 'msg_01', state, reason: null,
+    text: 'hi', attempts: 0, last_error: null, created_at: '2026-08-18T10:00:00.000Z', available_at: '2026-08-18T10:00:00.000Z',
+  });
+
+  afterEach(() => {
+    restoreFakeTimers?.();
+    restoreFakeTimers = undefined;
+    environmentManager.setIsServer(() => true);
+    focusManager.setFocused(undefined);
+  });
+
+  test('backs a terminal row off to at most four reads in 60 seconds, follows 1/2/4/4 for live rows, and focus re-arms 1 second', async () => {
+    const timers = new FakeTimers();
+    restoreFakeTimers = timers.install();
+    environmentManager.setIsServer(() => false);
+    focusManager.setFocused(true);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.mount();
+    let rows = [row('failed')];
+    let cadence: SessionPromptsCadenceState | undefined;
+    let resetOnNextRead = false;
+    let reads = 0;
+    const observer = new QueryObserver(client, {
+      queryKey: ['prompts', 'p1', 's1'],
+      queryFn: async () => {
+        reads += 1;
+        cadence = nextSessionPromptsCadenceState(cadence, rows, resetOnNextRead);
+        resetOnNextRead = false;
+        return rows;
+      },
+      refetchInterval: (query) => sessionPromptsPollMs(
+        countNonTerminalSessionPrompts(query.state.data ?? []), undefined, 0, cadence,
+      ),
+      refetchOnWindowFocus: true,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await flushPromises();
+    expect(reads).toBe(1);
+    await timers.advanceBy(60_000);
+    expect(reads).toBeLessThanOrEqual(5);
+
+    rows = [row('queued')];
+    resetOnNextRead = true;
+    await observer.refetch();
+    expect(reads).toBe(6);
+    await timers.advanceBy(999);
+    expect(reads).toBe(6);
+    await timers.advanceBy(1);
+    expect(reads).toBe(7);
+    await timers.advanceBy(1_999);
+    expect(reads).toBe(7);
+    await timers.advanceBy(1);
+    expect(reads).toBe(8);
+    await timers.advanceBy(3_999);
+    expect(reads).toBe(8);
+    await timers.advanceBy(1);
+    expect(reads).toBe(9);
+
+    resetOnNextRead = true;
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    await flushPromises();
+    await timers.advanceBy(999);
+    expect(reads).toBe(10);
+    await timers.advanceBy(1);
+    expect(reads).toBe(11);
+    unsubscribe();
+    client.unmount();
+  });
+
+  test('two observers retain one poll owner and do not advance cadence twice', async () => {
+    const timers = new FakeTimers();
+    restoreFakeTimers = timers.install();
+    environmentManager.setIsServer(() => false);
+    focusManager.setFocused(true);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const rows = [row('queued')];
+    let cadence: SessionPromptsCadenceState | undefined;
+    let reads = 0;
+    const options = (owner: boolean) => ({
+      queryKey: ['prompts', 'p1', 's1'],
+      queryFn: async () => {
+        reads += 1;
+        cadence = nextSessionPromptsCadenceState(cadence, rows);
+        return rows;
+      },
+      refetchInterval: (query: { state: { data?: SessionPrompt[] } }) => owner
+        ? sessionPromptsPollMs(countNonTerminalSessionPrompts(query.state.data ?? []), undefined, 0, cadence)
+        : false,
+    });
+    const owner = new QueryObserver(client, options(true));
+    const follower = new QueryObserver(client, options(false));
+    const unsubscribeOwner = owner.subscribe(() => {});
+    const unsubscribeFollower = follower.subscribe(() => {});
+    await flushPromises();
+    await timers.advanceBy(1_000);
+    expect(reads).toBe(2);
+    expect(sessionPromptsPollMs(1, undefined, 0, cadence)).toBe(2_000);
+    unsubscribeFollower();
+    unsubscribeOwner();
   });
 });
 
