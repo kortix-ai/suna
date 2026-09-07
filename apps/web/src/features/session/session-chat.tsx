@@ -2021,11 +2021,15 @@ export function SessionChat({
   const [questionAction, setQuestionAction] = useState<{
     label: string | null;
     canAct: boolean;
-  }>({ label: null, canAct: true });
-  const handleQuestionActionChange = useCallback((action: QuestionAction, canAct: boolean) => {
-    const label = action === 'next' ? 'Next' : action === 'submit' ? 'Submit' : null;
-    setQuestionAction({ label, canAct });
-  }, []);
+    acceptsCustom: boolean;
+  }>({ label: null, canAct: false, acceptsCustom: false });
+  const handleQuestionActionChange = useCallback(
+    (action: QuestionAction, canAct: boolean, acceptsCustom: boolean) => {
+      const label = action === 'next' ? 'Next' : action === 'submit' ? 'Submit' : null;
+      setQuestionAction({ label, canAct, acceptsCustom });
+    },
+    [],
+  );
 
   // ---- Reply-to state (text selection → reply) ----
   const [replyTo, setReplyTo] = useState<ReplyToContext | null>(null);
@@ -5685,6 +5689,7 @@ export function SessionChat({
                 onCustomAnswer={handleCustomAnswer}
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionCanAct={questionAction.canAct}
+                questionAcceptsCustom={questionAction.acceptsCustom}
                 onQuestionAction={handleQuestionAction}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}

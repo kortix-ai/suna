@@ -226,7 +226,7 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
     // that reason; a closed tab lost it, a second tab could not see it, and its
     // release was a guess at a turn boundary. A refusal keeps the draft in the
     // editor and stores nothing.
-    const branch = between(composer, "if (plan.kind === 'command') {", 'if (lockForQuestion) {');
+    const branch = between(composer, "if (plan.kind === 'command') {", 'const content = draft');
     expect(branch).toContain('commandBlocker({');
     expect(branch).toContain('isWorking: sessionWorking ?? isBusy');
     expect(branch).toContain('if (blocker) {');

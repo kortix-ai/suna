@@ -47,6 +47,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Close } from '@/features/icon/icons/close';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
+import { COMPOSER_TEXT_METRICS } from './composer-text-metrics';
 import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
@@ -295,6 +296,7 @@ export interface SessionChatInputProps {
   onCustomAnswer?: (text: string) => void;
   questionButtonLabel?: string | null;
   questionCanAct?: boolean;
+  questionAcceptsCustom?: boolean;
   onQuestionAction?: () => void;
   escCount?: number;
   parentClassName?: string;
@@ -457,6 +459,7 @@ function ComposerImpl({
   onCustomAnswer,
   questionButtonLabel = null,
   questionCanAct = true,
+  questionAcceptsCustom = true,
   onQuestionAction,
   escCount = 0,
   parentClassName,
@@ -545,7 +548,8 @@ function ComposerImpl({
     [agents],
   );
 
-  const editorDisabled = disabled || lockForApproval;
+  const questionTextDisabled = lockForQuestion && !questionAcceptsCustom;
+  const editorDisabled = disabled || lockForApproval || questionTextDisabled;
   const inlineUnderbar = underbarPlacement === 'inline';
 
   const appendAttachedFiles = useCallback(
@@ -878,7 +882,7 @@ function ComposerImpl({
     !modelsLoading &&
     !entitlementsPending &&
     (!availableSelectedModel || !hasSelectableModels);
-  const canSubmit = !isEmpty || effectiveAttachedFiles.length > 0;
+  const canSubmit = !questionTextDisabled && (!isEmpty || effectiveAttachedFiles.length > 0);
   /**
    * No agent may run this prompt. Refused here rather than at the server:
    * `lockForQuestion` is exempt because answering an open question is not a new
@@ -1137,6 +1141,20 @@ function ComposerImpl({
       // submitted as captured; the live editor belongs to whatever the user
       // typed since.
       const draft = stash ? stash.content : editorRef.current?.getContent();
+      if (lockForQuestion) {
+        const trimmed = (draft?.text ?? '').trim();
+        if (trimmed && questionAcceptsCustom && onCustomAnswer) {
+          onCustomAnswer(trimmed);
+          if (!stash) editorRef.current?.clear();
+          return;
+        }
+        if (onQuestionAction) {
+          onQuestionAction();
+          return;
+        }
+        return;
+      }
+
       const filesNow = stash ? stash.files : attachedFiles;
       const fileError = runtimePromptFilesError({
         attachmentsEnabled,
@@ -1221,20 +1239,6 @@ function ComposerImpl({
         return;
       }
 
-      if (lockForQuestion) {
-        const trimmed = (draft?.text ?? '').trim();
-        if (trimmed && onCustomAnswer) {
-          onCustomAnswer(trimmed);
-          if (!stash) editorRef.current?.clear();
-          return;
-        }
-        if (onQuestionAction) {
-          onQuestionAction();
-          return;
-        }
-        return;
-      }
-
       const content = draft ?? { text: '', mentions: [] };
       const trimmed = plan.text;
       if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
@@ -1312,6 +1316,7 @@ function ComposerImpl({
       lockForQuestion,
       lockForApproval,
       onCustomAnswer,
+      questionAcceptsCustom,
       onQuestionAction,
       clearSavedDraft,
     ],
@@ -1365,6 +1370,7 @@ function ComposerImpl({
     lockForApproval,
     lockForQuestion,
     questionButtonLabel,
+    questionAcceptsCustom,
     placeholder,
   });
 
@@ -1638,6 +1644,17 @@ function ComposerImpl({
                 placeholder={editorPlaceholder}
                 active={animatePlaceholder}
               />
+              {questionTextDisabled && isEmpty && (
+                <div
+                  role="status"
+                  className={cn(
+                    'text-muted-foreground pointer-events-none absolute inset-x-1 top-0 text-sm',
+                    COMPOSER_TEXT_METRICS,
+                  )}
+                >
+                  {editorPlaceholder}
+                </div>
+              )}
               <Suspense fallback={<ComposerEditorFallback />}>
                 <ComposerEditorLazy
                   ref={setEditorRef}
@@ -1718,7 +1735,7 @@ function ComposerImpl({
               lockForQuestion={lockForQuestion}
               questionButtonLabel={questionButtonLabel}
               questionCanAct={questionCanAct}
-              hasText={!isEmpty}
+              hasText={!questionTextDisabled && !isEmpty}
               canSubmit={canSubmit}
               submitDisabled={submitDisabled || commandAttachmentPlan.kind === 'refuse'}
               disabled={disabled}

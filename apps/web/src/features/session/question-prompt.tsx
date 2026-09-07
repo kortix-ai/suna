@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useImperativeHandle, useState } from 're
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Close } from '../icon/icons/close';
+import { planQuestionCustomAnswer } from './question-custom-answer';
 
 // ---------------------------------------------------------------------------
 // Lightweight markdown renderer for question text (no Shiki/KaTeX/Mermaid)
@@ -83,7 +84,7 @@ interface QuestionPromptProps {
   onReply: (requestId: string, answers: QuestionAnswer[]) => void;
   onReject: (requestId: string) => void;
   /** Called whenever the question's action state changes (for syncing to the send button). */
-  onActionChange?: (action: QuestionAction, canAct: boolean) => void;
+  onActionChange?: (action: QuestionAction, canAct: boolean, acceptsCustom: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +106,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     const options = currentQuestion?.options ?? [];
     const currentAnswers = answers[tab] ?? [];
     const currentAnswerSet = new Set(currentAnswers);
-    const showCustom = currentQuestion?.custom !== false;
+    const acceptsCustom = !!currentQuestion && currentQuestion.custom !== false;
 
     // -----------------------------------------------------------------------
     // Handlers
@@ -162,39 +163,17 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     /** Called by the parent (via ref) when the user types a custom answer in the main textarea and hits send. */
     const handleCustomSubmit = useCallback(
       (value: string) => {
-        const trimmed = value.trim();
-        if (!trimmed) return;
-
-        // On the Confirm tab there is no "current question" to answer. Treat a
-        // typed message as the user's intent to submit: send all collected
-        // answers and carry the typed text along as an extra note on the last
-        // question (the per-question reply contract has no separate channel for
-        // a free-form message, and an answer list already accepts custom text).
-        if (isConfirm) {
-          const finalAnswers = questions.map((_, i) => answers[i] ?? []);
-          const lastIdx = questions.length - 1;
-          if (lastIdx >= 0) {
-            finalAnswers[lastIdx] = [...finalAnswers[lastIdx], trimmed];
-          }
+        const plan = planQuestionCustomAnswer(questions, answers, tab, value);
+        if (plan.kind === 'ignore' || replying) return;
+        setAnswers(plan.answers);
+        if (plan.kind === 'reply') {
           setReplying(true);
-          onReply(request.id, finalAnswers);
+          onReply(request.id, plan.answers);
           return;
         }
-
-        if (isMulti) {
-          const existing = answers[tab] ?? [];
-          if (!existing.includes(trimmed)) {
-            const next = [...existing, trimmed];
-            const updated = [...answers];
-            updated[tab] = next;
-            setAnswers(updated);
-          }
-          return;
-        }
-
-        pick(trimmed);
+        setTab(plan.tab);
       },
-      [isConfirm, isMulti, answers, tab, pick, questions, request.id, onReply],
+      [questions, answers, tab, replying, request.id, onReply],
     );
 
     const advanceToNext = useCallback(() => {
@@ -214,7 +193,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     const canAct = (() => {
       if (action === 'submit') return true;
       if (action === 'next') return currentAnswers.length > 0;
-      return true;
+      return false;
     })();
 
     const submit = useCallback(() => {
@@ -234,20 +213,20 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 
     // Notify parent of action state changes
     useEffect(() => {
-      onActionChange?.(action, canAct);
-    }, [action, canAct, onActionChange]);
+      onActionChange?.(action, canAct, acceptsCustom);
+    }, [action, canAct, acceptsCustom, onActionChange]);
 
     // Expose imperative handle for parent-driven interaction
     useImperativeHandle(
       ref,
       () => ({
         submitCustomAnswer: handleCustomSubmit,
-        acceptsCustom: showCustom && !isConfirm,
+        acceptsCustom,
         action,
         canAct,
         performAction,
       }),
-      [handleCustomSubmit, showCustom, isConfirm, action, canAct, performAction],
+      [handleCustomSubmit, acceptsCustom, action, canAct, performAction],
     );
 
     const reject = useCallback(() => {

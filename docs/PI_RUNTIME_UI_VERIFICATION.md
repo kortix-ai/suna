@@ -111,6 +111,26 @@ client. The healthy subscriber must receive its event. The completed
 `pnpm test -- --packages-only` run passed in 218.9 seconds. Its web suite reported
 `9,433 passed`.
 
+## Question input constraints
+
+The composer disables text entry when the current question has `custom: false`.
+It shows “Choose an option above” and preserves the option controls. Multiple
+selections advance with Next. A custom answer remains available when allowed.
+Confirm shows “Review your answers above” and submits the collected answers.
+It does not append an extra note to the final question.
+
+Local Chromium uses the current frontend with the real Pi preview API. The
+three-question journey submits `[["Blue"],["Red","Green"],["violet note"]]` with
+HTTP `200`. A separate single-choice question disables the send control and
+submits `[["Blue"]]` through the option button. Normal text entry returns after
+completion. Reload preserves the transcript. No network request fails.
+
+`pnpm --dir apps/web test`: 9,459 pass, zero fail, 35,512 assertions, 31.37 seconds.
+`pnpm --dir apps/web exec tsc --noEmit`: exit 0. Focused eslint: zero errors;
+37 existing warnings. `pnpm test`: all lanes pass in 47.3 seconds, including
+395/395 REST/CLI flows. The brand audit reports the same existing violations
+before and after this change; the change introduces no new visual values.
+
 ## Compatibility limits
 
 These fixes do not establish complete OpenCode replacement parity.
@@ -121,7 +141,7 @@ These fixes do not establish complete OpenCode replacement parity.
 | Commands | Agent/model/variant overrides, subtasks, shell interpolation, and file references return explicit unsupported errors. |
 | Extensibility | Custom tool/plugin hooks, MCP, and durable subagents are not implemented in the committed Pi worker. |
 | Compaction and complete OpenCode lifecycle | Full compaction, child-session, and raw lifecycle compatibility remain incomplete. |
-| Interactive requests across worker replacement | Pending questions, permission requests, and session approvals are process-local. Browser reload is verified; replacement during a pending interaction is not equivalent. |
+| Interactive requests across worker replacement | Pending questions restore through durable checkpoints on `885ad04b91`. A real replacement preserves the request and message IDs; replying and reloading succeed. Pending permission requests and session approvals still need replacement recovery. |
 | LSP | Pi has no language-server process. Config advertises `lsp: false`; diagnostics are empty. |
 | Agent configuration | Some fields are discoverable but do not yet drive runtime behavior. The session's agent and model remain immutable. |
 

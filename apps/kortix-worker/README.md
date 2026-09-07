@@ -108,6 +108,11 @@ Rejected and one-time replies do not create durable grants.
 Pending permission continuations still require a live worker. Durable approval
 grants do not make those blocked continuations restartable.
 
+The web composer respects each question's `custom` flag. Choice-only questions
+use the option buttons; multiple selections advance with Next. Custom answers
+remain available when allowed. Confirm submits the collected answers without
+appending a free-form note. Normal text entry returns after the question settles.
+
 ## Questions across worker replacement
 
 A durable question commits its native transcript and a question checkpoint
