@@ -5,6 +5,7 @@ import {
 } from '@kortix/shared';
 
 import type { PromptPartWire } from './store';
+import { RuntimeStaleDaemonError } from './runtime-prompt-file';
 
 export interface RuntimePromptFileWriteInput {
   externalId: string;
@@ -27,11 +28,13 @@ export interface PromptAttachmentFailure {
 
 export class PromptAttachmentMaterializationError extends Error {
   readonly failures: PromptAttachmentFailure[];
+  readonly stale: boolean;
 
-  constructor(failures: PromptAttachmentFailure[]) {
+  constructor(failures: PromptAttachmentFailure[], stale = false) {
     super(failures.map((failure) => `${failure.filename} — ${failure.reason}`).join('; '));
     this.name = 'PromptAttachmentMaterializationError';
     this.failures = failures;
+    this.stale = stale;
   }
 }
 
@@ -183,18 +186,20 @@ export async function materializePromptAttachments(input: {
   );
 
   const failures: PromptAttachmentFailure[] = [];
+  let stale = false;
   const replacements = new Map<number, PromptPartWire>();
   settled.forEach((result, resultIndex) => {
     const candidate = candidates[resultIndex]!;
     const filename = candidate.part.filename?.trim() || 'File';
     if (result.status === 'fulfilled') replacements.set(result.value.index, result.value.part);
     else {
+      if (result.reason instanceof RuntimeStaleDaemonError) stale = true;
       failures.push({
         filename,
         reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
       });
     }
   });
-  if (failures.length > 0) throw new PromptAttachmentMaterializationError(failures);
+  if (failures.length > 0) throw new PromptAttachmentMaterializationError(failures, stale);
   return input.parts.map((part, index) => replacements.get(index) ?? part);
 }

@@ -6,6 +6,7 @@ import {
   PromptAttachmentMaterializationError,
   materializePromptAttachments,
 } from './prompt-attachment-materializer';
+import { writeRuntimePromptFile } from './runtime-prompt-file';
 
 const parts: PromptPartWire[] = [
   { type: 'text', text: 'Inspect these files.' },
@@ -191,6 +192,37 @@ describe('materializePromptAttachments', () => {
       'bundle.zip',
       'README.md',
     ]);
+  });
+
+  test('preserves the runtime-stale reason and marks the materialization stale', async () => {
+    const imageBytes = new Uint8Array(200 * 1024).fill(7);
+    const error = await materializePromptAttachments({
+      parts: [
+        {
+          type: 'file',
+          mime: 'image/png',
+          filename: 'stale-daemon.png',
+          url: `data:image/png;base64,${Buffer.from(imageBytes).toString('base64')}`,
+        },
+      ],
+      externalId: 'sbx_materializer_stale',
+      sessionId: 'session_1',
+      userId: 'user_1',
+      materializationKey: 'command_1',
+      writeFile: (file) => writeRuntimePromptFile(
+        file,
+        async (_externalId, _port, _access, _method, route) => {
+          if (route === '/kortix/health') return Response.json({ runtime: { build: 1 } });
+          throw new Error(`unexpected route ${route}`);
+        },
+        () => 'fixed',
+      ),
+    }).catch((value) => value);
+
+    expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
+    expect(error.stale).toBe(true);
+    expect(error.message).toBe('stale-daemon.png — runtime stale daemon does not support /file/append for 204800 bytes');
+    expect(error.message).not.toContain('Failed to parse JSON');
   });
 
   test('rejects malformed staged data without forwarding a partial prompt', async () => {

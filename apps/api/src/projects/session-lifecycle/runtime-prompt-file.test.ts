@@ -146,6 +146,7 @@ test('splits a file past the chunk budget into bounded appends', async () => {
   const result = await writeRuntimePromptFile(
     { ...input, bytes, filename: 'photo.jpg', targetPath: '/workspace/uploads/x/1-photo.jpg' },
     async (_externalId, _port, _access, _method, route, _query, headers, body) => {
+      if (route === '/kortix/health') return Response.json({ capabilities: ['file.append'] });
       if (route === '/file/append') {
         const form = await new Request('http://runtime.invalid/file/append', {
           method: 'POST',
@@ -207,6 +208,7 @@ test('a failed chunk aborts the write', async () => {
     writeRuntimePromptFile(
       { ...input, bytes: new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES * 2) },
       async (_externalId, _port, _access, _method, route) => {
+        if (route === '/kortix/health') return Response.json({ capabilities: ['file.append'] });
         if (route === '/file/append') return new Response(null, { status: 503 });
         return Response.json(true);
       },
@@ -223,6 +225,7 @@ test('a failed chunked upload deletes its partial temp file', async () => {
       { ...input, bytes: new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES * 2) },
       async (_e, _p, _a, method, route, _q, _h, body) => {
         calls.push(`${method} ${route}`);
+        if (route === '/kortix/health') return Response.json({ capabilities: ['file.append'] });
         if (route === '/file/append' && calls.filter((c) => c.endsWith('/file/append')).length === 2) {
           return new Response(null, { status: 503 });
         }
@@ -238,4 +241,145 @@ test('a failed chunked upload deletes its partial temp file', async () => {
     ),
   ).rejects.toThrow(/append failed \(503\)/);
   expect(calls.some((c) => c.startsWith('deleted /workspace/uploads/.kortix-inbox/command_1/.kortix-prompt-fixed'))).toBe(true);
+});
+
+test('names an unsupported append route when a successful response is HTML', async () => {
+  let appendCalls = 0;
+  const error = await writeRuntimePromptFile(
+    { ...input, externalId: 'sbx_append_html', bytes: new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES + 1) },
+    async (_externalId, _port, _access, _method, route) => {
+      if (route === '/kortix/health') return Response.json({ capabilities: ['file.append'] });
+      if (route === '/file/append') {
+        appendCalls += 1;
+        if (appendCalls === 1) return Response.json({ path: '/tmp/append', size: RUNTIME_PROMPT_CHUNK_BYTES });
+        return new Response('<!doctype html><title>OpenCode</title>', {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        });
+      }
+      return Response.json(true);
+    },
+    () => 'fixed',
+  ).catch((value) => value);
+
+  expect(error.constructor.name).toBe('RuntimeRouteUnsupportedError');
+  expect(error.message).toContain('POST /file/append');
+  expect(error.message).toContain('200');
+  expect(error.message).toContain('text/html');
+  expect(error.message).not.toContain('Failed to parse JSON');
+});
+
+test('names an unsupported whole-upload route when a successful response is HTML', async () => {
+  const error = await writeRuntimePromptFile(
+    { ...input, externalId: 'sbx_upload_html' },
+    async (_externalId, _port, _access, _method, route) => {
+      if (route === '/file/upload') {
+        return new Response('<!doctype html><title>OpenCode</title>', {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        });
+      }
+      return Response.json(true);
+    },
+    () => 'fixed',
+  ).catch((value) => value);
+
+  expect(error.constructor.name).toBe('RuntimeRouteUnsupportedError');
+  expect(error.message).toContain('POST /file/upload');
+  expect(error.message).toContain('200');
+  expect(error.message).toContain('text/html');
+  expect(error.message).not.toContain('Failed to parse JSON');
+});
+
+test('falls back from an unsupported first append to the legacy whole upload', async () => {
+  const routes: string[] = [];
+  const result = await writeRuntimePromptFile(
+    { ...input, externalId: 'sbx_append_fallback', bytes: new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES + 1) },
+    async (_externalId, _port, _access, method, route) => {
+      routes.push(`${method} ${route}`);
+      if (route === '/kortix/health') return Response.json({ capabilities: ['file.append'] });
+      if (route === '/file/append') {
+        return new Response('<!doctype html><title>OpenCode</title>', {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        });
+      }
+      if (route === '/file/upload') return Response.json([{ path: '/tmp/fallback', size: RUNTIME_PROMPT_CHUNK_BYTES + 1 }]);
+      return Response.json(true);
+    },
+    () => 'fixed',
+  );
+
+  expect(result).toEqual({
+    path: '/workspace/uploads/.kortix-inbox/command_1/1-bundle.zip',
+    size: RUNTIME_PROMPT_CHUNK_BYTES + 1,
+  });
+  expect(routes).toEqual([
+    'GET /kortix/health',
+    'POST /file/append',
+    'POST /file/upload',
+    'POST /file/rename',
+  ]);
+});
+
+test('stops a large upload before an unsupported append when the daemon lacks file.append', async () => {
+  const routes: string[] = [];
+  const error = await writeRuntimePromptFile(
+    { ...input, externalId: 'sbx_legacy_large', bytes: new Uint8Array(200 * 1024) },
+    async (_externalId, _port, _access, method, route) => {
+      routes.push(`${method} ${route}`);
+      if (route === '/kortix/health') return Response.json({ runtime: { build: 1 } });
+      return Response.json(true);
+    },
+    () => 'fixed',
+  ).catch((value) => value);
+
+  expect(error.constructor.name).toBe('RuntimeStaleDaemonError');
+  expect(error.message).toContain('/file/append');
+  expect(error.message).toContain('204800');
+  expect(routes).toEqual(['GET /kortix/health']);
+  expect(routes).not.toContain('POST /file/append');
+  expect(routes).not.toContain('POST /file/upload');
+});
+
+test('marks a large upload stale when a cached append capability drifts', async () => {
+  const routes: string[] = [];
+  const error = await writeRuntimePromptFile(
+    { ...input, externalId: 'sbx_append_drift_large', bytes: new Uint8Array(200 * 1024) },
+    async (_externalId, _port, _access, method, route) => {
+      routes.push(`${method} ${route}`);
+      if (route === '/kortix/health') return Response.json({ capabilities: ['file.append'] });
+      if (route === '/file/append') {
+        return new Response('<!doctype html><title>OpenCode</title>', {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        });
+      }
+      return Response.json(true);
+    },
+    () => 'fixed',
+  ).catch((value) => value);
+
+  expect(error.constructor.name).toBe('RuntimeStaleDaemonError');
+  expect(error.message).toContain('/file/append');
+  expect(error.message).toContain('204800');
+  expect(routes).toEqual(['GET /kortix/health', 'POST /file/append']);
+});
+
+test('caches the legacy capability decision for one externalId', async () => {
+  let healthCalls = 0;
+  const forward = async (_externalId: string, _port: number, _access: unknown, method: string, route: string) => {
+    if (route === '/kortix/health') {
+      healthCalls += 1;
+      return Response.json({ runtime: { build: 1 } });
+    }
+    throw new Error(`unexpected ${method} ${route}`);
+  };
+
+  for (let index = 0; index < 2; index += 1) {
+    const error = await writeRuntimePromptFile(
+      { ...input, externalId: 'sbx_legacy_cached', bytes: new Uint8Array(200 * 1024) },
+      forward as Parameters<typeof writeRuntimePromptFile>[1],
+      () => `fixed-${index}`,
+    ).catch((value) => value);
+    expect(error.constructor.name).toBe('RuntimeStaleDaemonError');
+  }
+
+  expect(healthCalls).toBe(1);
 });
