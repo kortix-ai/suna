@@ -9,7 +9,8 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=60
+// EXPECTED_PASSES=62
+import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -72,6 +73,32 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   check("POST /kortix/env takes a bare map too", bare.applied === 1 && bare.keys[0] === "PLAIN", JSON.stringify(bare));
 
   // Refresh re-reads what a cell can re-read: its skills.
+  // AND IT SURVIVES THE ISOLATE. Per-session config never arrives in the
+  // cell's process env — that is the NODE's — so POST /kortix/env is the only
+  // way a session is configured at all. Kept in memory it did not outlive an
+  // eviction: measured on dev 2026-09-08, session 0d4f60b5 came back from a
+  // destroyed box with no session env, so `toolsFor` no longer saw a platform
+  // session, the cell backend was not chosen, and the agent asked to read its
+  // own file wrote a different one instead.
+  {
+    const db = new DatabaseSync(":memory:");
+    const first = makeCell(AgentCell, ENV, { db });
+    await first.fetch("/kortix/env?c=s", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ env: { KORTIX_SESSION_ID: "sess-7", MODEL_BASE_URL: "https://gw.example/v1" } }),
+    });
+    // The eviction: same storage, new instance — exactly what celld does.
+    const revived = makeCell(AgentCell, ENV, { db });
+    const back = await (await revived.fetch("/kortix/env?c=s")).json();
+    check("session env survives an eviction — it is in the cell's SQLite, not its memory",
+      back.keys.includes("KORTIX_SESSION_ID") && back.keys.includes("MODEL_BASE_URL"),
+      JSON.stringify(back.keys));
+    const model = await (await revived.fetch("/model?c=s")).json();
+    check("so the rebuilt cell still runs its tools on its own filesystem",
+      model.tools?.backend === "cell" && model.tools?.cwd === "/work",
+      JSON.stringify(model.tools));
+  }
+
   const refresh = await (await h.fetch("/kortix/refresh?c=s", { method: "POST" })).json();
   check("POST /kortix/refresh re-reads skills and reports how many", refresh.ok === true && typeof refresh.skills === "number", JSON.stringify(refresh));
 

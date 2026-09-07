@@ -389,6 +389,31 @@ export class AgentCell {
     // The wire id the control plane placed on the prompt, handed back when the
     // turn ends so the ledger closes the record it opened (relayTurnEnd).
     try { this.sql.exec("ALTER TABLE turns ADD COLUMN message_id TEXT"); } catch { /* already there */ }
+    // THE SESSION'S OWN CONFIGURATION, WHICH MUST OUTLIVE THE ISOLATE.
+    //
+    // Per-session config does not arrive in the cell's process env — that is
+    // the NODE's, shared by every cell on it — it is pushed over
+    // POST /kortix/env. It used to be kept in `this.sessionEnv`, memory only,
+    // and the comment there called it "a write, not a restart" while it was
+    // neither: an eviction destroys the isolate and takes the whole map with
+    // it. What comes back is a cell that no longer knows it is a platform
+    // session, so `toolsFor` stops choosing the cell backend and the agent
+    // loses its filesystem — measured 2026-09-08, session 0d4f60b5: before the
+    // eviction `{"backend":"cell","files":3}`, after it no cell backend at all,
+    // and the agent answered a request to read its own file by writing a
+    // different one. The gateway URL and model go the same way, so the turn
+    // after an eviction can also lose its model.
+    //
+    // It lives in the same SQLite as the transcript and the files, so it is
+    // replicated to object storage and comes back with them. That includes the
+    // session's Kortix token: the same store already holds the conversation,
+    // and a session whose credential does not survive its own eviction cannot
+    // finish the turn it was resumed for.
+    this.sql.exec("CREATE TABLE IF NOT EXISTS session_env (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
+    this.sessionEnv = this.sessionEnv ?? {};
+    for (const row of this.sql.exec("SELECT k, v FROM session_env")) {
+      this.sessionEnv[String(row.k)] = String(row.v);
+    }
     // ONE PER ISOLATE. init() is guarded by this.ready, so this counts
     // constructions of the object, not requests — the epoch the local node
     // prints to its log, made durable so it can be read over HTTP from a
@@ -1151,6 +1176,7 @@ export class AgentCell {
         if (typeof k !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
         this.sessionEnv = this.sessionEnv ?? {};
         this.sessionEnv[k] = String(v);
+        this.sql.exec("INSERT INTO session_env(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, String(v));
         applied.push(k);
       }
       return Response.json({ ok: true, sessionId, applied: applied.length, keys: applied.slice(0, 40) });
