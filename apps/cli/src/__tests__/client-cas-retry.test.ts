@@ -116,7 +116,7 @@ describe('CLI client: manifest CAS 409 is replayed once', () => {
     const base = startServer();
     const config = writeConfig(base, base);
     const r = await runCli(['agents', 'scope', 'bot', '--secrets', 'all', '--connectors', 'none', '--project', PROJECT], config);
-    expect(r.code).toBe(0);
+    expect({ code: r.code, stdout: r.stdout, stderr: r.stderr, hits }).toMatchObject({ code: 0 });
     const puts = hits.filter((h) => h.method === 'PUT' && h.path.endsWith('/agents/bot/scope'));
     expect(puts.length).toBe(2);
     expect(r.stderr).not.toContain('changed since it was read');
