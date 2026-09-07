@@ -324,6 +324,7 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../shared/supabase', () => ({
+  toPublicStorageUrl: (url: string) => url,
   getSupabase: () => ({
     auth: {
       admin: {

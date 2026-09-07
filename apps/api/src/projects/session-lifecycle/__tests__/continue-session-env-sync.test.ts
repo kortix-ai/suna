@@ -195,6 +195,7 @@ mock.module("../store", () => ({
   // The delivery path parks a prompt whose RUNTIME was down instead of
   // dead-lettering it. Present so the module mock stays complete.
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
+  RUNTIME_STALE_REASON: "runtime_stale",
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh

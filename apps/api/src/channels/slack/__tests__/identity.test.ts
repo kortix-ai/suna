@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { PROJECT_ACTIONS } from '../../../iam/actions';
 
 // resolveSlackActor is the authoritative security gate: it must return a userId
 // ONLY when the Slack user is linked, in the project's account, and allowed to
@@ -33,6 +34,7 @@ mock.module('../../install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
 mock.module('../../../iam', () => ({
+  PROJECT_ACTIONS,
   authorize: async () => ({ allowed: authorizeAllowed }),
   assertAuthorized: async () => {},
   filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
