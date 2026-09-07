@@ -16,7 +16,7 @@
     "build": "bash scripts/build.sh",
     "start": "./dist/kortixd",
     "typecheck": "bun tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test --isolate"
   },
   "dependencies": {
     "hono": "^4.12.25",

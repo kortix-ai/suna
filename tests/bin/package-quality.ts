@@ -159,12 +159,12 @@ await runAll([
 
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
 // removing idle CPU time between independent load classes. The API has three
-// workers. The CLI has four. The agent server and pnpm each add one supervisor.
+// workers. The CLI and isolated daemon suites run in sequence to bound child processes.
 await runAll([
   runWorkspaceTests(['kortix-api'], 1, {
     KORTIX_API_TEST_WORKERS: '3',
   }),
-  runWorkspaceTests(['@kortix/cli', '@kortix/sandbox-agent-server'], 2),
+  runWorkspaceTests(['@kortix/cli', 'kortixd'], 1),
 ]);
 await runAll([
   (async () => {
@@ -179,7 +179,7 @@ await runAll([
       './apps/**',
       '!kortix-api',
       '!@kortix/cli',
-      '!@kortix/sandbox-agent-server',
+      '!kortixd',
       '!@kortix/worker',
       '!@kortix/db',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),

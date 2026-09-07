@@ -88,7 +88,8 @@ describe('local test runner contract', () => {
     expect(source).toContain("'--no-sort'");
     expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
     expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
-    expect(source).toContain("['@kortix/cli', '@kortix/sandbox-agent-server']");
+    expect(source).toContain("runWorkspaceTests(['@kortix/cli', 'kortixd'], 1)");
+    expect(source).not.toContain("'@kortix/sandbox-agent-server'");
     expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
     expect(source).toContain('Promise.allSettled(tasks)');
     expect(source.match(/await runAll\(\[/g)).toHaveLength(5);
@@ -136,7 +137,7 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    expect(agentPackage.scripts.test).toBe('bun test --isolate');
     expect(dbPackage.scripts.test).toBe('bun test --parallel=2 --max-concurrency 2');
   });
 

@@ -4948,3 +4948,15 @@ sampling settings to requests, rather than only reporting them in discovery.
 **Enforcer:** `generation-settings-routes.test.ts` checks actual HTTP destinations,
 credential headers, exact model references, explicit zero values, omitted defaults,
 and consecutive turns for OpenRouter and native Anthropic transports.
+
+### Wait for the final PostgreSQL server in migration fixtures (2026-09-07)
+
+**When:** starting the disposable PostgreSQL containers used by migration tests.
+**Incident:** the package gate's lifetime-rollup setup accepted the temporary
+Unix-socket server used by the image entrypoint. That server stopped before the
+next readiness check, which failed after 1.5 seconds. Inspection of the installed
+`postgres:16-alpine` entrypoint confirmed `listen_addresses=''` during initialization.
+**Rule:** check TCP readiness with `pg_isready -h 127.0.0.1` before applying migrations.
+A successful Unix-socket probe does not prove the final server is available.
+**Enforcer:** all four migration fixtures use TCP readiness; their full suite applies
+the migration history and verifies 26 contracts against disposable databases.
