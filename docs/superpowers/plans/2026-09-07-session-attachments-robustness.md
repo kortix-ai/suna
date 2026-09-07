@@ -468,7 +468,6 @@ Include any additional required public barrel or documentation file explicitly.
 
 - Modify: `apps/web/src/components/projects/project-access-boundary.tsx`
 - Modify: `apps/web/src/components/projects/project-access-boundary.test.ts`
-- Modify append-only: `.claude/skills/learnings/SKILL.md`
 - Add or modify a Playwright journey under the existing `tests/` browser system
 - Update `tests/spec/end-to-end.md` and route metadata only if the journey adds a contract step
 - Modify the proven source of the early 0.7-second navigation if diagnosis identifies one
@@ -634,6 +633,7 @@ PATH="/Users/jay/.nvm/versions/node/v22.22.3/bin:$PATH" pnpm test
 
 - Modify: `apps/web/src/components/projects/project-access-boundary.tsx`
 - Modify: `apps/web/src/components/projects/project-access-boundary.test.ts`
+- Modify append-only: `.claude/skills/learnings/SKILL.md`
 
 **Step 1: Add the RED auth-readiness policy test**
 
