@@ -168,7 +168,15 @@ function normalizeModelEnv(env) {
     MODEL_PROVIDER: platform
       ? pick(env.KORTIX_PROVIDER, env.MODEL_PROVIDER, key ? "openrouter" : undefined)
       : pick(env.MODEL_PROVIDER),
-    MODEL_ID: platform ? pick(env.KORTIX_MODEL, env.MODEL_ID) : pick(env.MODEL_ID),
+    // NO NODE FALLBACK FOR THE MODEL ID when the platform is driving. The
+    // node's is a bench value, and a bench value is not a smaller mistake than
+    // none — `gpt-5.6-luna` resolves to provider `openai-codex` and the Codex
+    // Responses API, which the Kortix gateway does not speak, so the turn ran
+    // and returned empty content and zero tokens (dev 2026-09-07, sessions
+    // 6342be82 and 84d46f1e). Unset lets the gateway choose, which is what
+    // kortix-worker does: `modelId: process.env.KORTIX_MODEL`, and nothing
+    // else.
+    MODEL_ID: platform ? pick(env.KORTIX_MODEL) : pick(env.MODEL_ID),
     MODEL_BASE_URL: gateway,
     MODEL_API_KEY: key,
   };

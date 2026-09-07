@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=43
+// EXPECTED_PASSES=44
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -263,6 +263,16 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
       KORTIX_MODEL: "glm-5.3-flash", KORTIX_PROVIDER: "openrouter",
     });
     const m = await (await bench.fetch("/model?c=s")).json();
+    // And when the platform names NO model, the node's bench value must not
+    // stand in for it: `gpt-5.6-luna` resolves to the Codex Responses API,
+    // which the gateway does not speak, and the turn comes back empty.
+    const noModel = makeCell(AgentCell, {
+      ...ENV, MODEL_ID: "gpt-5.6-luna", MODEL_PROVIDER: "",
+      KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt",
+    });
+    const nm = await (await noModel.fetch("/model?c=s")).json();
+    check("with a gateway and no platform model, the node's bench id is NOT used",
+      nm.active === "scripted" || nm.active?.id !== "gpt-5.6-luna", JSON.stringify(nm.active));
     check("the PLATFORM's model wins over the node's bench default when a gateway is driving",
       m.active?.id === "glm-5.3-flash", JSON.stringify(m.active));
     check("and its provider does too, so the call is the shape the gateway speaks",
