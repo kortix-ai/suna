@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
+  __expireCachedTokenForTests,
   __resetAuthTokenCacheForTests,
   __setFetchTokenForTests,
   getSupabaseAccessToken,
+  setBootstrapAuthToken,
   setCachedAuthToken,
 } from './auth-token';
 
@@ -93,7 +95,20 @@ describe('getSupabaseAccessToken: stale in-flight fetch vs. a later invalidation
     await expect(getSupabaseAccessToken()).resolves.toBe('second-caller-token');
 
     firstFetch.resolve('first-caller-stale-token');
-    await expect(pending).resolves.toBeNull();
+
+    // The invariant this test exists for: the ABANDONED fetch's answer never
+    // escapes — not as a return value, not into the cache.
+    await expect(pending).resolves.not.toBe('first-caller-stale-token');
+    await expect(getSupabaseAccessToken()).resolves.toBe('second-caller-token');
+
+    // It resolves to the token established under the CURRENT epoch rather
+    // than to `null`. This assertion used to read `.toBeNull()`, which
+    // conflated "your fetch was overtaken" with "you have no session" — the
+    // conflation behind the "This project didn't load." screen (see the
+    // mid-flight-publish suite at the bottom of this file). The identity
+    // guarantee is unchanged: only a value committed under the current epoch
+    // is ever handed back.
+    await expect(pending).resolves.toBe('second-caller-token');
   });
 
   // JAY: CRITICAL regression found by review round 1. `if (inflight) return
@@ -137,5 +152,93 @@ describe('getSupabaseAccessToken: stale in-flight fetch vs. a later invalidation
     await expect(first).resolves.toBe('shared-token');
     await expect(second).resolves.toBe('shared-token');
     expect(fetchCount).toBe(1);
+  });
+});
+
+/**
+ * JAY: the "This project didn't load. / The request failed before we could
+ * check your access." screen on a COLD project load while properly signed in.
+ *
+ * The epoch check above is right to refuse to COMMIT an in-flight fetch that
+ * an authoritative write overtook. It was wrong about what to RETURN. On every
+ * cold load `AuthProvider.getInitialSession()` publishes the real session token
+ * (`setCachedAuthToken(access_token)` + `setBootstrapAuthToken(null)` —
+ * auth-provider.tsx:95-98) at the same moment the project shell's first
+ * `getProject` is inside `fetchToken()`. Two epoch bumps land mid-flight, so
+ * that caller got `null` — "no session" — for a user whose session had just
+ * been published one line earlier.
+ *
+ * Nothing downstream absorbs it: `api-client.ts` calls
+ * `getSupabaseAccessTokenWithRetry()` with no options, which is ONE attempt
+ * (`withTokenRetry`: `attempts ?? 1`), so the null becomes an `AuthError` with
+ * no `.status`, and `ProjectAccessBoundary`'s query is `retry: false`, so that
+ * AuthError is a terminal verdict.
+ *
+ * The fix returns what the authoritative writer PUBLISHED, never what the
+ * overtaken fetch resolved — so a sign-out (which publishes `null`) still
+ * yields null, as the tests above pin.
+ */
+describe('getSupabaseAccessToken: an authoritative token published mid-flight', () => {
+  test('returns the published token rather than reporting "no session" for a signed-in user', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    // The project shell's first getProject asks for a token.
+    const pending = getSupabaseAccessToken();
+
+    // AuthProvider finishes its bootstrap while that fetch is in flight and
+    // publishes the live session token. Two authoritative writes, two epoch
+    // bumps — exactly auth-provider.tsx:95-98.
+    setCachedAuthToken('token-published-by-auth-provider');
+    setBootstrapAuthToken(null);
+
+    // The overtaken fetch resolves. Its answer must NOT be committed...
+    fetch.resolve('token-from-the-overtaken-fetch');
+
+    // ...but the caller is signed in, and the published token is the answer.
+    await expect(pending).resolves.toBe('token-published-by-auth-provider');
+  });
+
+  test('every piggybacking caller gets the published token too', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    const callerA = getSupabaseAccessToken();
+    const callerB = getSupabaseAccessToken();
+
+    setCachedAuthToken('token-published-by-auth-provider');
+    setBootstrapAuthToken(null);
+    fetch.resolve('token-from-the-overtaken-fetch');
+
+    await expect(callerA).resolves.toBe('token-published-by-auth-provider');
+    await expect(callerB).resolves.toBe('token-published-by-auth-provider');
+  });
+
+  test('a bootstrap token published mid-flight is honoured the same way', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    const pending = getSupabaseAccessToken();
+    setBootstrapAuthToken('token-seeded-by-a-server-action');
+    fetch.resolve('token-from-the-overtaken-fetch');
+
+    await expect(pending).resolves.toBe('token-seeded-by-a-server-action');
+  });
+
+  test('an EXPIRED published token is not handed back — a stale cache is still no answer', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    const pending = getSupabaseAccessToken();
+    // Published, then aged past the 30s TTL before the overtaken fetch lands.
+    setCachedAuthToken('token-published-by-auth-provider');
+    __expireCachedTokenForTests();
+    fetch.resolve('token-from-the-overtaken-fetch');
+
+    await expect(pending).resolves.toBeNull();
   });
 });

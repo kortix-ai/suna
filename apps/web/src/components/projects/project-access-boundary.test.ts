@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
+  GATE_FETCH_RETRIES,
   errorStatus,
   gateAction,
   gateCopyKeys,
@@ -13,6 +14,7 @@ import {
   isForbiddenState,
   resolveGateState,
   shouldPollForApproval,
+  shouldRetryGateFetch,
   type AccessGateState,
 } from './project-access-boundary';
 
@@ -76,6 +78,59 @@ describe('gateStateForError', () => {
     }
     expect(gateStateForError(new Error('offline'))).toBe('unavailable');
     expect(gateStateForError(null)).toBe('unavailable');
+  });
+});
+
+/**
+ * JAY: the "This project didn't load. / The request failed before we could
+ * check your access." screen shown to a properly signed-in user on a cold
+ * project load.
+ *
+ * `unavailable` is the right SCREEN for a failure with no verdict — but it was
+ * reached after ONE attempt (`retry: false`), so a single momentary failure to
+ * even send the request was presented as a settled answer about the user's
+ * access. The root cause is fixed in `lib/auth-token.ts`; this is the guarantee
+ * that no future token/network hiccup can put that screen on screen again
+ * without the request having genuinely been tried more than once.
+ */
+describe('shouldRetryGateFetch', () => {
+  test('a 403 or a 404 is an answer — it renders immediately, never retried', () => {
+    for (const status of [403, 404]) {
+      expect(shouldRetryGateFetch(0, { status })).toBe(false);
+      expect(shouldRetryGateFetch(0, { response: { status } })).toBe(false);
+    }
+  });
+
+  test('a failure that never reached the server is retried, not believed', () => {
+    // The exact shape `api-client.ts` returns when it has no token yet: an
+    // AuthError, `code: 'NO_SESSION'`, and no `status` at all.
+    const noSession = Object.assign(new Error('Not authenticated'), { code: 'NO_SESSION' });
+    expect(shouldRetryGateFetch(0, noSession)).toBe(true);
+    expect(shouldRetryGateFetch(0, new Error('Failed to fetch'))).toBe(true);
+    expect(shouldRetryGateFetch(0, null)).toBe(true);
+  });
+
+  test('a server that failed to answer is retried', () => {
+    for (const status of [500, 502, 503, 504]) {
+      expect(shouldRetryGateFetch(0, { status })).toBe(true);
+    }
+  });
+
+  test('retries are bounded — the screen still arrives rather than spinning forever', () => {
+    const noSession = Object.assign(new Error('Not authenticated'), { code: 'NO_SESSION' });
+    expect(shouldRetryGateFetch(GATE_FETCH_RETRIES - 1, noSession)).toBe(true);
+    expect(shouldRetryGateFetch(GATE_FETCH_RETRIES, noSession)).toBe(false);
+  });
+
+  test('the boundary query wires the predicate rather than a fixed retry count', () => {
+    // Anchored on the query options block so the prose above it — which names
+    // the old `retry: false` on purpose — cannot satisfy or break this.
+    const queryOptions = componentSource.slice(
+      componentSource.indexOf('queryKey: [QUERY_KEY, projectId]'),
+      componentSource.indexOf('const { refetch } = query;'),
+    );
+    expect(queryOptions).toContain('retry: shouldRetryGateFetch');
+    expect(queryOptions).not.toMatch(/retry:\s*(false|true|\d)/);
   });
 });
 

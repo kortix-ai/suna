@@ -914,3 +914,81 @@ describe('makeRequest prefers the human-readable body field over the machine `re
     }
   });
 });
+
+/**
+ * JAY: `getSupabaseAccessTokenWithRetry()` was called here with NO options,
+ * and `withTokenRetry` defaults to `attempts ?? 1` — a single ask, no retry,
+ * despite the name (pinned by `auth-core.test.ts`'s "defaults to a single
+ * attempt"). So a host whose token is published a tick later than this call —
+ * the normal shape of a cold page load, where the host's auth bootstrap and
+ * its first data fetch race — had its request refused outright with an
+ * `AuthError` that carries no `status`, and every surface that renders an
+ * unstatused failure reported it as a settled answer.
+ *
+ * `apps/web` showed it as "This project didn't load. / The request failed
+ * before we could check your access." to users who were correctly signed in.
+ */
+describe('makeRequest token acquisition', () => {
+  function stubFetchCapturingAuth() {
+    const originalFetch = globalThis.fetch;
+    let authorization: string | null = null;
+    let fetchCalls = 0;
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      fetchCalls += 1;
+      authorization = (init?.headers as Record<string, string>)?.['Authorization'] ?? null;
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+    return {
+      getAuthorization: () => authorization,
+      getFetchCalls: () => fetchCalls,
+      restore: () => {
+        globalThis.fetch = originalFetch;
+      },
+    };
+  }
+
+  test('asks again for a token that has not been published yet, then sends the request', async () => {
+    let tokenAsks = 0;
+    configureKortix({
+      backendUrl: 'https://api.test/v1',
+      getToken: async () => (++tokenAsks === 1 ? null : 'tok-published-on-the-second-ask'),
+    });
+    const stub = stubFetchCapturingAuth();
+    try {
+      const response = await backendApi.get('/projects/p1', { showErrors: false });
+
+      expect(tokenAsks).toBeGreaterThanOrEqual(2);
+      expect(response.success).toBe(true);
+      expect(stub.getAuthorization()).toBe('Bearer tok-published-on-the-second-ask');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a caller with genuinely no session still gets AuthError, and no naked request', async () => {
+    let tokenAsks = 0;
+    configureKortix({
+      backendUrl: 'https://api.test/v1',
+      getToken: async () => {
+        tokenAsks += 1;
+        return null;
+      },
+    });
+    const stub = stubFetchCapturingAuth();
+    try {
+      const response = await backendApi.get('/projects/p1', { showErrors: false });
+
+      expect(response.success).toBe(false);
+      expect((response.error as ApiError).code).toBe('NO_SESSION');
+      // The request is never sent unauthenticated — that part must not change.
+      expect(stub.getFetchCalls()).toBe(0);
+      // But it was genuinely re-asked before giving up.
+      expect(tokenAsks).toBeGreaterThan(1);
+    } finally {
+      stub.restore();
+    }
+  });
+});

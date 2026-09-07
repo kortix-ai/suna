@@ -21,6 +21,30 @@ linked, not inlined.
 
 ## Register
 
+### A cache-invalidation guard must return the NEW value, never "nothing" (2026-09-07)
+
+**When:** adding a generation/epoch check that discards a result which an
+authoritative write overtook. Discarding the stale answer and reporting *no
+answer* are different things, and conflating them invents a failure. #7065's
+`authEpoch` correctly refused to commit an overtaken `fetchToken()` — then
+returned `null`. But `AuthProvider.getInitialSession()` publishes the real
+session token on EVERY cold load (`setCachedAuthToken` + `setBootstrapAuthToken`,
+two bumps), so the guard fired on the normal path: signed-in users got "no
+session", `api-client.ts` refused to send the request (`AuthError`, **no
+`.status`**), and `ProjectAccessBoundary` rendered an unstatused failure as its
+terminal verdict — "This project didn't load. / The request failed before we
+could check your access." Live on kortix.com for a week. Return what the writer
+published; only a write that published `null` (sign-out) may yield `null`.
+Corollaries: an error with no HTTP status is not a verdict — never render one as
+a terminal answer, and never pair it with `retry: false`; and a helper named
+`…WithRetry` must be *given* attempts (`withTokenRetry` defaults to 1, so
+`api-client.ts` asked exactly once).
+*Incident:* #7065 (2026-08-31) shipped in v0.13.11; the boundary had been
+`retry: false` since 2026-06-20 without ever surfacing.
+*Enforcer:* `auth-token.test.ts` "an authoritative token published mid-flight",
+`project-access-boundary.test.ts` `shouldRetryGateFetch`, and
+`api-client.test.ts` "makeRequest token acquisition".
+
 ### One attachment tile, translated to tokens — never a mockup's pixels (2026-09-06)
 
 **When:** a reference screenshot arrives for a surface that two places render

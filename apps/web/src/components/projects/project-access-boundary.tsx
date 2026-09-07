@@ -88,6 +88,34 @@ export function gateStateForError(error: unknown): AccessGateState {
 }
 
 /**
+ * How many times a failure with no verdict is re-attempted before the
+ * `unavailable` screen is shown. Three attempts across ~1.75s of the same
+ * pending spinner the gate already renders — long enough to outlast a token
+ * publish or a gateway blip, short enough that a genuinely dead backend still
+ * reports itself promptly.
+ */
+export const GATE_FETCH_RETRIES = 3;
+
+/**
+ * Whether a failed `getProject` deserves another attempt.
+ *
+ * A 403 and a 404 are ANSWERS: the server looked at the request and ruled on
+ * it, so those screens render on the first response and are never retried.
+ * Everything else is a failure to *ask* — an `AuthError` raised client-side
+ * because no token had been published yet (`code: 'NO_SESSION'`, no `status`),
+ * a dropped connection, a 5xx. Asking again is exactly what those need, and
+ * presenting one of them as a settled verdict about the user's access is the
+ * bug this predicate exists to prevent: a signed-in user on a cold load was
+ * shown "This project didn't load. / The request failed before we could check
+ * your access." after a single attempt, because this query was `retry: false`.
+ */
+export function shouldRetryGateFetch(failureCount: number, error: unknown): boolean {
+  const status = errorStatus(error);
+  if (status === 403 || status === 404) return false;
+  return failureCount < GATE_FETCH_RETRIES;
+}
+
+/**
  * Maps `requestProjectAccess`'s three-way result to the next screen.
  * `already_has_access` returns null: the caller re-fetches instead, because the
  * project is readable now and the right screen is the project itself.
@@ -190,7 +218,14 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
     queryKey: [QUERY_KEY, projectId],
     queryFn: () => getProject(projectId, { showErrors: false }),
     enabled: !!projectId,
-    retry: false,
+    // A predicate, never a fixed count: a 403/404 still renders on the first
+    // response (see shouldRetryGateFetch), while everything else is retried,
+    // so a request that never reached the server cannot masquerade as an
+    // access verdict.
+    retry: shouldRetryGateFetch,
+    // Tighter than the 1s/2s/4s default: this backoff is spent on the gate's
+    // pending spinner, and 7s of it before an error reads as a hang.
+    retryDelay: (attempt) => Math.min(250 * 2 ** attempt, 1_000),
   });
 
   const { refetch } = query;

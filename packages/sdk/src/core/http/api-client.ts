@@ -144,6 +144,26 @@ const isIdempotentMethod = (method?: string): boolean => {
 
 const TRANSIENT_READ_RETRIES = 2;
 
+/**
+ * How a request asks the host for a token.
+ *
+ * `withTokenRetry` defaults to a SINGLE attempt (pinned by `auth-core.test.ts`),
+ * so calling `getSupabaseAccessTokenWithRetry()` bare made the name a lie: one
+ * ask, and a host whose token is published a tick later got its request refused
+ * with an `AuthError` that carries no HTTP status. A cold page load is exactly
+ * that shape — the host's auth bootstrap and its first data fetch race, and the
+ * fetch can easily ask first. `apps/web` surfaced it to correctly-signed-in
+ * users as "This project didn't load. / The request failed before we could
+ * check your access."
+ *
+ * Three asks across ~300 ms: long enough to outlast a bootstrap publish, short
+ * enough that a genuinely signed-out caller still fails fast — and that caller
+ * is being redirected to sign-in anyway. `invalidateBetweenAttempts` stays off:
+ * the host owns its cache, and telling it to throw the cache away is how a
+ * token that was just published gets deleted before it can be used.
+ */
+const TOKEN_ACQUISITION_RETRY = { attempts: 3, baseDelayMs: 150 };
+
 const isAbortError = (error: unknown): boolean =>
   (error as { name?: string } | null)?.name === 'AbortError' ||
   (error as { name?: string } | null)?.name === 'AbortSignal' ||
@@ -188,7 +208,7 @@ async function makeRequest<T = any>(
       }
     }, timeout);
 
-    const token = await getSupabaseAccessTokenWithRetry();
+    const token = await getSupabaseAccessTokenWithRetry(TOKEN_ACQUISITION_RETRY);
 
     // Don't set Content-Type for FormData - browser will set it automatically with boundary
     const isFormData = fetchOptions.body instanceof FormData;
@@ -584,7 +604,7 @@ async function postStream(
   options: ApiClientOptions = {},
 ): Promise<Response> {
   const { timeout = 30000, fetch: fetchImpl = fetch } = options;
-  const token = await getSupabaseAccessTokenWithRetry();
+  const token = await getSupabaseAccessTokenWithRetry(TOKEN_ACQUISITION_RETRY);
 
   const headers: Record<string, string> = {
     Accept: 'text/event-stream',

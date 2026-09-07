@@ -48,6 +48,9 @@ let bootstrapToken: string | null = null;
  * an authoritative write already happened while this fetch was in flight, so
  * its result is discarded rather than committed: a fetch started against one
  * identity must never land its answer on top of whatever replaced it.
+ *
+ * Discarding that result is NOT the same as having no token — see
+ * `publishedAuthToken()`.
  */
 let authEpoch = 0;
 
@@ -71,6 +74,24 @@ let fetchTokenImpl: () => Promise<string | null> = () => fetchToken();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * The token an AUTHORITATIVE write has published, if it is still usable.
+ *
+ * This is the ONLY value a caller whose own fetch was overtaken may be handed.
+ * The overtaken fetch's answer belongs to the identity that existed before the
+ * write and must never be committed or returned; the published token belongs
+ * to whichever identity is current now, so returning it is correct — and
+ * necessary. `setCachedAuthToken(null)` (sign-out, 401 invalidation) publishes
+ * nothing, so this stays null there and "overtaken" never becomes
+ * "authenticated". A published token that has since aged past the TTL is not
+ * an answer either: the caller falls back to null and re-fetches.
+ */
+function publishedAuthToken(): string | null {
+  if (bootstrapToken) return bootstrapToken;
+  if (cachedToken && Date.now() - cachedAt < TOKEN_CACHE_TTL) return cachedToken;
+  return null;
 }
 
 /**
@@ -118,12 +139,25 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
   try {
     const token = await pending;
     if (authEpoch !== epochAtStart) {
-      // Invalidated (or reseeded) mid-flight. This result's provenance
-      // can't be trusted against whichever identity is current now —
-      // never commit it to the cache, and never hand it back either.
-      // Applies to EVERY caller waiting on this fetch, not just the
-      // one that started it.
-      return null;
+      // Invalidated (or RESEEDED) mid-flight. This result's provenance can't
+      // be trusted against whichever identity is current now, so it is never
+      // committed to the cache and never handed back. Applies to EVERY caller
+      // waiting on this fetch, not just the one that started it.
+      //
+      // Returning a bare `null` here was the bug behind "This project didn't
+      // load. / The request failed before we could check your access." on a
+      // cold project load. A RESEED is the common case, not the rare one:
+      // `AuthProvider.getInitialSession()` publishes the live session token on
+      // every cold load (`setCachedAuthToken(access_token)` +
+      // `setBootstrapAuthToken(null)` — two bumps, auth-provider.tsx) at
+      // exactly the moment the project shell's first `getProject` is inside
+      // `fetchToken()`. Reporting "no session" to that caller made
+      // `api-client.ts` refuse to send the request (`AuthError`, no `.status`),
+      // and `ProjectAccessBoundary` renders an unstatused failure as its
+      // terminal `unavailable` screen. Hand back what the writer published
+      // instead: an invalidation still yields null, a reseed yields the token
+      // the user actually holds.
+      return publishedAuthToken();
     }
     cachedToken = token;
     cachedAt = Date.now();
@@ -212,6 +246,15 @@ export function setBootstrapAuthToken(token: string | null): void {
  */
 export function __setFetchTokenForTests(impl?: () => Promise<string | null>): void {
   fetchTokenImpl = impl ?? (() => fetchToken());
+}
+
+/**
+ * Test-only: age the cached token past `TOKEN_CACHE_TTL` without sleeping, so
+ * a test can prove that a STALE published token is not handed back by the
+ * mid-flight-publish path in `getSupabaseAccessToken`.
+ */
+export function __expireCachedTokenForTests(): void {
+  cachedAt = 0;
 }
 
 /**
