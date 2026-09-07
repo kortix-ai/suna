@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Normalize preview hosts after the provider ingress, not before it (2026-09-07)
+
+**When:** proxying agent-created app ports. Terminate provider ingress at the
+sandbox daemon, then forward to localhost with matching Host, Origin and forwarded
+host. Do not disable framework host checks. *Incident:* an internal `.aec.local`
+Host reproduced Vite's `403`; a real Next.js Server Action also requires coherent
+proxy headers. Verify the running daemon before enabling the API route.
+*Enforcers:* `e2e-preview-proxy.test.ts`, `ws-preview-app.test.ts`, and daemon
+`preview-bridge.test.ts`. See `docs/runbooks/sandbox-preview-origins.md`.
+
 ### One attachment tile, translated to tokens — never a mockup's pixels (2026-09-06)
 
 **When:** a reference screenshot arrives for a surface that two places render
@@ -4489,3 +4499,23 @@ Linux x64 archive when the sandbox reports another version. It verifies the
 official SHA-256 before extraction. *Enforcer:*
 `tests/unit/sandbox-preview.test.ts` requires the repair before the first pnpm
 install and asserts the exact version and checksum.
+
+## Preview socket failures must not terminate the sandbox daemon (2026-09-07)
+
+The localhost preview investigation found `Unhandled error. (ErrorEvent ...)`
+in the sandbox daemon log, followed by exit 1. The provider VM and OpenCode
+survived, but ports 8000 and 5000 no longer listened. A subprocess regression
+reproduced the unhandled error with a refused WebSocket upgrade on Bun 1.3.14.
+The diagnostic probe may have triggered the live failure; it does not establish
+that this crash caused every earlier panel transition.
+
+**The rule.** Keep a WebSocket error listener for its complete lifetime,
+including rejected upgrades and client cancellation. A transient capability
+probe failure must not downgrade a previously confirmed preview transport.
+Test HMR with the app's actual socket path and token, not an assumed root path.
+
+*Fix:* the preview bridge uses a permanent error listener. Capability discovery
+allows three seconds and preserves cached support after inconclusive refreshes.
+*Enforcers:* daemon `preview-bridge.test.ts` uses real child processes for
+refused and cancelled upgrades. API `preview-bridge-capability.test.ts` covers
+cold ingress, transient failures, and explicit healthy downgrade responses.

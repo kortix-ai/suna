@@ -1637,6 +1637,7 @@ import {
   preparePreviewHostWsUpgrade,
   preparePreviewWsUpgrade,
   previewWsHandlers,
+  previewWsUpgradeHeaders,
 } from './sandbox-proxy/ws-proxy';
 
 export default {
@@ -1733,7 +1734,11 @@ export default {
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (server.upgrade(req, { data: prepared.data })) return undefined;
+        if (server.upgrade(req, {
+          data: prepared.data,
+          headers: previewWsUpgradeHeaders(prepared.data),
+        })) return undefined;
+        prepared.data.upstream?.close();
         return new Response(JSON.stringify({ error: 'Preview WebSocket upgrade failed' }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
@@ -1834,7 +1839,7 @@ export default {
           headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
         });
       }
-      const prep = await preparePreviewWsUpgrade(url);
+      const prep = await preparePreviewWsUpgrade(url, req);
       if (!prep.ok) {
         console.warn(
           `[preview-ws] REFUSED ${prep.status} ${prep.message} path=${url.pathname} hasToken=${url.searchParams.has('token')}`,
@@ -1844,7 +1849,11 @@ export default {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      const success = server.upgrade(req, { data: prep.data });
+      const success = server.upgrade(req, {
+        data: prep.data,
+        headers: previewWsUpgradeHeaders(prep.data),
+      });
+      if (!success) prep.data.upstream?.close();
       if (success) return undefined;
       return new Response(JSON.stringify({ error: 'WebSocket upgrade failed' }), {
         status: 500,

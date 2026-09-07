@@ -332,6 +332,9 @@ importers:
       node-forge:
         specifier: ^1.4.0
         version: 1.4.0
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -348,9 +351,6 @@ importers:
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
-      ws:
-        specifier: 8.21.3
-        version: 8.21.3
 
   apps/llm-gateway:
     dependencies:

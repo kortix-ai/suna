@@ -3,6 +3,7 @@ import { BOOT_PHASE_HEADER, bootPhaseLabel } from './boot-phase'
 import { runtimeAssetsActivity } from './runtime-assets'
 import { egressShimPort } from './egress-shim'
 import type { ServerWebSocket } from 'bun'
+import WebSocket from 'ws'
 
 import type { Config } from './config'
 import { logger } from './logger'
@@ -38,6 +39,14 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
 } from './kortix-user-context'
+import {
+  PREVIEW_PATH_PREFIX,
+  PREVIEW_TARGET_HEADER,
+  forwardPreviewHttp,
+  buildPreviewUpstreamHeaders,
+  previewWebSocketUrl,
+  verifyPreviewTarget,
+} from './preview-bridge'
 
 // Headers that must not be forwarded — they're connection-scoped or set by us.
 const STRIP_REQUEST_HEADERS = new Set([
@@ -113,10 +122,44 @@ export function isBlockingTurnRequest(method: string, path: string): boolean {
 }
 
 type OpencodeWsData = {
+  kind?: 'pty'
   // Absent when the client connects without an id — lookup-or-create then
   // mints a brand new pty (see `websocket.open` below).
   ptyId?: string
   handle?: PtyAttachHandle
+}
+
+type PreviewWsData = {
+  kind: 'preview'
+  upstream: WebSocket
+  pending: Array<{ data: string | Buffer; binary: boolean }>
+  pendingBytes: number
+  downstream?: ServerWebSocket<ProxyWsData>
+  closed?: { code: number; reason: string }
+}
+
+type ProxyWsData = OpencodeWsData | PreviewWsData
+
+const PREVIEW_WS_CONNECT_TIMEOUT_MS = 5_000
+const PREVIEW_WS_PREOPEN_BUFFER_BYTES = 1024 * 1024
+
+function relayableWebSocketCloseCode(code: number): number {
+  if (code >= 3000 && code <= 4999) return code
+  if ([1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014].includes(code)) return code
+  return 1011
+}
+
+function previewBlockedPorts(cfg: Config): Set<number> {
+  return new Set([
+    cfg.servicePort,
+    cfg.opencodeInternalPort,
+    cfg.opencodeStandbyPort,
+    egressShimPort(),
+    4319,
+    4320,
+    Number(process.env.KORTIX_LLM_PROXY_PORT) || 4319,
+    Number(process.env.KORTIX_CONNECTORS_PROXY_PORT) || 4320,
+  ])
 }
 
 function jsonError(status: number, body: Record<string, unknown>): Response {
@@ -172,6 +215,25 @@ export function buildOpencodeApp(
   agentEnvFile?: string,
 ): Hono {
   const app = new Hono()
+
+  // Dispatch preview traffic before every daemon-owned route. An app may own a
+  // path such as /kortix/env, so route selection cannot inspect the app path.
+  app.use('*', async (c, next) => {
+    const path = new URL(c.req.url).pathname
+    const ticket = c.req.header(PREVIEW_TARGET_HEADER)
+    const hasTicket = c.req.raw.headers.has(PREVIEW_TARGET_HEADER)
+    const hasPrefix = path === PREVIEW_PATH_PREFIX || path.startsWith(`${PREVIEW_PATH_PREFIX}/`)
+    if (!hasTicket && !hasPrefix) return next()
+    if (!ticket || !hasPrefix || !cfg.sandboxToken) {
+      return c.json({ error: 'unauthorized preview target' }, 401)
+    }
+    const target = verifyPreviewTarget(ticket, cfg.sandboxToken)
+    if (!target.ok) return c.json({ error: 'unauthorized preview target', reason: target.reason }, 401)
+    if (previewBlockedPorts(cfg).has(target.port)) {
+      return c.json({ error: 'preview target port is blocked' }, 403)
+    }
+    return forwardPreviewHttp(c.req.raw, target.port)
+  })
 
   // The daemon owns a small Kortix-namespaced control surface. Everything else is
   // pure passthrough to opencode. Mount at both `/health` and `/health/` so
@@ -633,7 +695,7 @@ export function startProxy(
   )
   let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 
-  const server = Bun.serve<OpencodeWsData>({
+  const server = Bun.serve<ProxyWsData>({
     port: cfg.servicePort,
     hostname: '0.0.0.0',
     // SSE streams from OpenCode can be long-lived with no traffic; default 10s
@@ -645,6 +707,79 @@ export function startProxy(
     async fetch(req, srv) {
       const url = new URL(req.url)
       const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket'
+      const previewTicket = req.headers.get(PREVIEW_TARGET_HEADER)
+      const hasPreviewTicket = req.headers.has(PREVIEW_TARGET_HEADER)
+      const previewPath = url.pathname === PREVIEW_PATH_PREFIX || url.pathname.startsWith(`${PREVIEW_PATH_PREFIX}/`)
+      if (isWsUpgrade && (hasPreviewTicket || previewPath)) {
+        if (!previewTicket || !previewPath || !currentCfg.sandboxToken) {
+          return jsonError(401, { error: 'unauthorized preview target' })
+        }
+        const target = verifyPreviewTarget(previewTicket, currentCfg.sandboxToken)
+        if (!target.ok) return jsonError(401, { error: 'unauthorized preview target', reason: target.reason })
+        if (previewBlockedPorts(currentCfg).has(target.port)) {
+          return jsonError(403, { error: 'preview target port is blocked' })
+        }
+        const targetUrl = previewWebSocketUrl(req, target.port)
+        if (!targetUrl) return jsonError(401, { error: 'unauthorized preview target' })
+        const protocols = (req.headers.get('sec-websocket-protocol') ?? '')
+          .split(',').map((value) => value.trim()).filter(Boolean)
+        const headers = Object.fromEntries(buildPreviewUpstreamHeaders(req.headers, target.port).entries())
+        let upstream: WebSocket
+        try {
+          upstream = new WebSocket(targetUrl, protocols, {
+            headers,
+            handshakeTimeout: PREVIEW_WS_CONNECT_TIMEOUT_MS,
+          })
+        } catch {
+          return jsonError(400, { error: 'invalid websocket handshake' })
+        }
+        const data: PreviewWsData = { kind: 'preview', upstream, pending: [], pendingBytes: 0 }
+        upstream.on('message', (raw, binary) => {
+          const message = binary
+            ? (Array.isArray(raw) ? Buffer.concat(raw) : Buffer.from(raw as ArrayBuffer))
+            : raw.toString()
+          if (data.downstream) {
+            try { data.downstream.send(message, binary) } catch {}
+            return
+          }
+          const size = typeof message === 'string' ? Buffer.byteLength(message) : message.byteLength
+          if (data.pendingBytes + size > PREVIEW_WS_PREOPEN_BUFFER_BYTES) {
+            upstream.close(1009, 'preview pre-open buffer exceeded')
+            return
+          }
+          data.pending.push({ data: message, binary })
+          data.pendingBytes += size
+        })
+        upstream.on('close', (code, reason) => {
+          const close = { code: relayableWebSocketCloseCode(code), reason: reason.toString() }
+          if (data.downstream) {
+            try { data.downstream.close(close.code, close.reason) } catch {}
+          } else {
+            data.closed = close
+          }
+        })
+        const abortUpstream = () => upstream.terminate()
+        req.signal.addEventListener('abort', abortUpstream, { once: true })
+        const connected = await new Promise<boolean>((resolve) => {
+          upstream.once('open', () => resolve(true))
+          // Keep an error listener for the socket's entire lifetime, including
+          // failed upgrades. Bun's ws adapter can emit again after a one-shot
+          // listener is consumed; an unhandled error exits the whole daemon.
+          upstream.on('error', () => resolve(false))
+          upstream.once('close', () => resolve(false))
+        })
+        req.signal.removeEventListener('abort', abortUpstream)
+        if (!connected) return jsonError(502, { error: 'preview websocket target unreachable' })
+        // Bun treats an explicitly empty Sec-WebSocket-Protocol as a protocol
+        // mismatch (1002). Omit it when the upstream negotiated no protocol.
+        const upgradeHeaders = upstream.protocol
+          ? { 'Sec-WebSocket-Protocol': upstream.protocol }
+          : undefined
+        const upgraded = srv.upgrade(req, { data, headers: upgradeHeaders })
+        if (upgraded) return undefined
+        upstream.close(1011, 'downstream upgrade failed')
+        return jsonError(500, { error: 'websocket upgrade failed' })
+      }
       if (isWsUpgrade && KORTIX_PTY_WS_PATH_RE.test(url.pathname)) {
         const prep = prepareKortixPtyWsUpgrade(req, currentCfg)
         if (!prep.ok) return prep.response
@@ -665,8 +800,22 @@ export function startProxy(
       // itself ended, e.g. the user typed `exit`) closes without recreating
       // — that's a real end-of-session the client should surface, not
       // silently paper over.
-      open(ws: ServerWebSocket<OpencodeWsData>) {
+      open(ws: ServerWebSocket<ProxyWsData>) {
         const state = ws.data
+        if (state.kind === 'preview') {
+          state.downstream = ws
+          for (const message of state.pending.splice(0)) {
+            try { ws.send(message.data, message.binary) } catch {}
+          }
+          state.pendingBytes = 0
+          state.upstream.on('error', () => {
+            try { ws.close(1011, 'preview upstream error') } catch {}
+          })
+          if (state.closed) {
+            try { ws.close(state.closed.code, state.closed.reason) } catch {}
+          }
+          return
+        }
         const requestedId = state.ptyId
         const result = ptyRegistry.attachOrCreate(requestedId, {
           onData: (chunk) => {
@@ -694,10 +843,21 @@ export function startProxy(
           try { ws.send(result.handle.replay) } catch {}
         }
       },
-      message(ws: ServerWebSocket<OpencodeWsData>, message: string | Buffer) {
+      message(ws: ServerWebSocket<ProxyWsData>, message: string | Buffer) {
+        if (ws.data.kind === 'preview') {
+          if (ws.data.upstream.readyState === WebSocket.OPEN) ws.data.upstream.send(message)
+          return
+        }
         ws.data.handle?.write(typeof message === 'string' ? message : message.toString())
       },
-      close(ws: ServerWebSocket<OpencodeWsData>) {
+      close(ws: ServerWebSocket<ProxyWsData>, code, reason) {
+        if (ws.data.kind === 'preview') {
+          if (ws.data.upstream.readyState === WebSocket.OPEN) {
+            ws.data.upstream.close(relayableWebSocketCloseCode(code), reason)
+          }
+          else ws.data.upstream.terminate()
+          return
+        }
         ws.data.handle?.detach()
       },
     },
