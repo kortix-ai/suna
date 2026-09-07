@@ -4855,3 +4855,14 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
   `Content-Encoding` or `Content-Length` with the decoded stream.
 - Enforcement: `llm-proxy.test.ts` passes a gzip SSE response through the proxy
   and verifies the downstream event text and content type without double decoding.
+
+
+### Bake first-request fixes into new environment images (2026-09-07)
+
+- Incident: Pi file verification reached an older guest daemon after the API
+  deployed. Its replacement was staged, but the guest deferred self-update.
+- Rule: invalidate environment images for fixes required during the first turn
+  or checkout. The daemon's five-minute minimum update age is intentional and
+  cannot substitute for a current boot artifact.
+- Enforcement: runtime layer v46 includes the native readiness and LLM proxy
+  fixes. The existing runtime fingerprint and layer-render tests pass.

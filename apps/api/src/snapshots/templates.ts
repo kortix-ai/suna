@@ -233,7 +233,10 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // into /workspace without retaining it. Repo warm-up uses only canonical
 // OpenCode config while it indexes /workspace, then restores the exact checkout.
 // v44: bake exact Codex CLI and Claude Code pins into every full environment image.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v45';
+// v45: bake ripgrep for the remote glob and grep tools.
+// v46: bake native file readiness and decoded LLM response forwarding.
+// These govern first requests, before the daemon permits its deferred self-update.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v46';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
