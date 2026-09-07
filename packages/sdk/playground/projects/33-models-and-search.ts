@@ -1,8 +1,7 @@
 /**
  * 33 — the remaining project-level reads: LLM catalog, resolved model
  * defaults, repo file search, per-file git history, a single commit read,
- * featured marketplaces + one catalog item detail, and the Pipedream easy-
- * connect app catalog.
+ * and the Pipedream easy-connect app catalog.
  *
  * Run (from packages/sdk):  bun run playground/projects/33-models-and-search.ts [projectId]
  */
@@ -45,22 +44,6 @@ run("models-and-search", async () => {
     const commit = await project.git.commit(sha);
     console.log(
       `✓ git.commit(${sha.slice(0, 8)}): ${JSON.stringify(commit).slice(0, 150)}…`,
-    );
-  }
-
-  const featured = await kortix.marketplace.featured();
-  console.log(
-    `✓ marketplace.featured(): ${JSON.stringify(featured).slice(0, 200)}…`,
-  );
-
-  const items = await kortix.marketplace.items();
-  const firstId = (
-    Array.isArray(items) ? (items[0] as { id?: string }) : undefined
-  )?.id;
-  if (firstId) {
-    const item = await kortix.marketplace.item(firstId);
-    console.log(
-      `✓ marketplace.item('${firstId}'): ${JSON.stringify(item).slice(0, 150)}…`,
     );
   }
 

@@ -62,7 +62,7 @@ describe('visibleCapabilityTabs', () => {
       review_center: false,
     }).map((t) => t.key);
     expect(keys).not.toContain('review');
-    expect(keys).toContain('marketplace');
+    expect(keys).toContain('templates');
     expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review'));
   });
 
@@ -115,14 +115,14 @@ describe('visibleCapabilityTabs', () => {
 });
 
 // The IAM leaf answers "may this member see it". The flag answers "does this
-// project have the surface at all". Marketplace has both: `project.read` and
-// the `marketplace` flag, whose install route answers 403 `feature_disabled` when off
+// project have the surface at all". Templates has both: `project.read` and
+// the `templates` flag, whose install route answers 403 `feature_disabled` when off
 // (`apps/api/src/feature-flags/registry.ts` — `enforcement: 'routes'`,
 // `platformDefault: () => false`). A tab that renders while the flag is off is
 // a tab that 403s on click.
 describe('flag-gated tabs', () => {
-  test('at least one tab is flag-gated, and Marketplace is one of them', () => {
-    expect(GATED_TABS.map((t) => `${t.key}:${t.flag}`)).toContain('marketplace:marketplace');
+  test('at least one tab is flag-gated, and Templates is one of them', () => {
+    expect(GATED_TABS.map((t) => `${t.key}:${t.flag}`)).toContain('templates:templates');
   });
 
   test('a manager with the flag OFF does not see the gated tab', () => {

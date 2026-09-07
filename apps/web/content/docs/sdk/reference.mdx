@@ -27,7 +27,7 @@ kortix.github; // GitHub App install + repo linking
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
 kortix.connectStatus; // easy-connect (Pipedream) status
-kortix.marketplace; // the public template catalog — list, get
+kortix.templates; // the public template catalog — list, get
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
 kortix.runtime(); // OpenCode REST compatibility client
@@ -183,16 +183,16 @@ project-scoped.
 | `create(input)`            | create one — `{ sandboxId, port, ttl?, label? }` |
 | `revoke(sandboxId, token)` | revoke one                                       |
 
-### Marketplace — `kortix.marketplace`
+### Templates — `kortix.templates`
 
 The public template catalog. Reading needs no token; installing is per-project
-(`project(id).marketplace`). See [Marketplace](/docs/sdk/marketplace).
+(`project(id).templates`). See [Templates](/docs/sdk/templates).
 
 | method                         | what                                                                                   |
 | ------------------------------ | -------------------------------------------------------------------------------------- |
 | `list(options?)` · `get(slug)` | every template; `options.q` narrows by title, description, repo or slug · one template |
 
-`get` throws a `MarketplaceError` with `status: 404` for a slug that is not in
+`get` throws a `TemplateError` with `status: 404` for a slug that is not in
 the catalog.
 
 ### The project handle — `kortix.project(id)`
@@ -364,11 +364,11 @@ not a role. It decides who can open one trigger's sessions. It grants no
 permission the role verdict denies. See
 [Accounts & access](/docs/accounts#per-feature-access-settings).
 
-#### `p.marketplace` — install a template
+#### `p.templates` — install a template
 
-Behind the `marketplace` [feature flag](/docs/feature-flags/marketplace): the
+Behind the `templates` [feature flag](/docs/feature-flags/templates): the
 call answers `403` `feature_disabled` while it is off. See
-[Marketplace](/docs/sdk/marketplace).
+[Templates](/docs/sdk/templates).
 
 | method          | what                                               |
 | --------------- | -------------------------------------------------- |

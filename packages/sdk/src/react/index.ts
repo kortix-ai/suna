@@ -100,12 +100,12 @@ export { useChatTurns, type TurnView, renderParts, type PartRenderers } from './
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export {
-  useMarketplaceTemplates,
-  useMarketplaceTemplate,
-  useMarketplaceInstall,
-  marketplaceTemplatesKey,
-  marketplaceTemplateKey,
-} from './use-marketplace';
+  useTemplateCatalog,
+  useTemplate,
+  useTemplateInstall,
+  templateCatalogKey,
+  templateKey,
+} from './use-templates';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {

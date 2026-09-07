@@ -52,24 +52,24 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 export const qk = {
-  /** The marketplace template catalog — public, not per-project. */
-  marketplace: {
+  /** The template catalog — public, not per-project. */
+  templates: {
     /** Invalidation prefix over every catalog listing, whatever it searched for. */
-    scope: () => ['kx', 'marketplace'] as const,
+    scope: () => ['kx', 'templates'] as const,
 
     /**
      * One catalog listing. The search term is part of the key because
-     * `listMarketplaceTemplates({ q })` is a different SERVER request per term,
+     * `listTemplateCatalog({ q })` is a different SERVER request per term,
      * not a client-side filter of one response — sharing a key would let
      * whichever fetch resolved last overwrite what the other search's readers
      * see. `'all'` stands in for "no search", so an absent option and an
      * explicit `undefined` land on the same entry rather than flickering.
      */
     list: (options?: { q?: string }) =>
-      [...qk.marketplace.scope(), 'list', options?.q?.trim() || 'all'] as const,
+      [...qk.templates.scope(), 'list', options?.q?.trim() || 'all'] as const,
 
     /** One template's detail, by slug. */
-    detail: (slug: string) => [...qk.marketplace.scope(), 'detail', slug] as const,
+    detail: (slug: string) => [...qk.templates.scope(), 'detail', slug] as const,
   },
 
   /**

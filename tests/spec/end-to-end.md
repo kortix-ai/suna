@@ -899,7 +899,7 @@ servable — the same fact the hostname's own DNS record already states.
 
 ---
 
-## 29. Marketplace
+## 29. Templates
 
 A template is a Kortix project you install into your own: a public GitHub
 repository whose `kortix.yaml` declares agents, skills, connectors and triggers.
@@ -917,21 +917,21 @@ cloud sandbox with a reachable callback origin, excluded locally. So that flow
 asserts every 4xx boundary exactly and accepts `201` or
 `503 KORTIX_URL_UNREACHABLE` past the gate.
 
-`MKTP-1` The public catalog — `GET /public/marketplace/templates` answers `200
+`TMPL-1` The public catalog — `GET /public/templates` answers `200
 {templates}` with no auth at all, `Cache-Control: public, max-age=300,
 must-revalidate` and an `ETag`; a matching `If-None-Match` → `304`. Every card
 carries a 40-hex `resolved_sha` and never its manifest — the manifest travels to
 the agent through the install prompt, not to a browser. `?q=` narrows by title,
 description, repo or slug, case-insensitively, and a nonsense query is an empty
-list, not an error. `GET /public/marketplace/templates/:slug` → `200 {template}`
+list, not an error. `GET /public/templates/:slug` → `200 {template}`
 for a catalog slug and `404` otherwise.
 
-`MKTP-2` The feature gate — with the `marketplace` flag off a project member's
-install answers `403 {code:'feature_disabled', feature:'marketplace'}`, not a
+`TMPL-2` The feature gate — with the `templates` flag off a project member's
+install answers `403 {code:'feature_disabled', feature:'templates'}`, not a
 session. Membership is checked BEFORE the flag, so a stranger gets `404` and
-never learns whether the project has the marketplace on.
+never learns whether the project has templates on.
 
-`MKTP-3` The install session — `POST /projects/:projectId/marketplace/install-session`
+`TMPL-3` The install session — `POST /projects/:projectId/templates/install-session`
 validates fully before spawning anything: `401` anonymous, `404` unknown
 project, `400 'slug is required'` without a slug, `404` for a slug that is not in
 the catalog, `403/404` for a non-member. Past the gates it answers

@@ -423,6 +423,19 @@ const nextConfig = (): NextConfig => ({
 
   async redirects() {
     return [
+      // The public template catalog was published as /marketplace before it was
+      // renamed (2026-09-07). Both URLs were in the sitemap, so they redirect
+      // permanently rather than 404.
+      {
+        source: '/marketplace',
+        destination: '/templates',
+        permanent: true,
+      },
+      {
+        source: '/marketplace/:slug',
+        destination: '/templates/:slug',
+        permanent: true,
+      },
       // Capability tabs moved under /customize/ (2026-09-03). The old
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became

@@ -643,17 +643,17 @@ Pinning a provider needs `project.customize.write`.
 
 `add`/`update` options: `--name <label>`, `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
 
-### Marketplace
+### Templates
 
 A template is a Kortix project you install into your own: a public repository
 whose `kortix.yaml` declares agents, skills, connectors and triggers. See
-[Marketplace](/docs/feature-flags/marketplace).
+[Templates](/docs/feature-flags/templates).
 
 | Command                             | Effect                                                           |
 | ----------------------------------- | ---------------------------------------------------------------- |
-| `kortix marketplace list`           | Browse the catalog. `--query` filters. Aliases: `ls`, `search`.  |
-| `kortix marketplace show <slug>`    | One template: what it declares and what it needs. Alias: `view`. |
-| `kortix marketplace install <slug>` | Start the agent session that installs it.                        |
+| `kortix templates list`           | Browse the catalog. `--query` filters. Aliases: `ls`, `search`.  |
+| `kortix templates show <slug>`    | One template: what it declares and what it needs. Alias: `view`. |
+| `kortix templates install <slug>` | Start the agent session that installs it.                        |
 
 Options on every subcommand: `--project <id>` (install only, default the linked
 project), `--host <name>`, `--query <text>` (alias `-q`), `--json`.
@@ -667,7 +667,7 @@ a time with `kortix triggers enable <slug>`, which commits to `kortix.yaml`.
 
 The catalog is curated and ships with the API; there is no `publish`.
 
-Marketplace is a per-project [feature flag](/docs/feature-flags), off by
+Templates is a per-project [feature flag](/docs/feature-flags), off by
 default. While it is off, `install` prints the feature-disabled sentence and
 exits `1`.
 

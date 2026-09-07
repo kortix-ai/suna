@@ -123,7 +123,12 @@ describe('session status dot is the only paint table', () => {
 
   test('the sidebar resolves display status instead of re-deriving paint', () => {
     const source = read(SIDEBAR);
-    expect(source).toContain('status={sessionDisplayStatus(session, reviewCount)}');
-    expect(source).toContain('awaiting your review');
+    // The wrapper resolves the status ONCE and hands it to the shared dot; the
+    // label it overrides with is the localized review count, never a second
+    // paint table.
+    expect(source).toContain('const display = sessionDisplayStatus(session, reviewCount)');
+    expect(source).toContain('status={display}');
+    expect(source).toContain("t('reviewCount', { count: reviewCount })");
+    expect(source).not.toContain('STATUS_DOT_STYLE');
   });
 });

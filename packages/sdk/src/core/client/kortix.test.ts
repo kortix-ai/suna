@@ -559,7 +559,7 @@ test('kortix.projects.createRepo hits the create-repo endpoint (not bound to an 
   expect(last().method).toBe('POST');
 });
 
-// ── wave 5: token minting, billing read surface, marketplace/registry
+// ── wave 5: token minting, billing read surface, templates/registry
 // install, session transcript, CR request-changes, account audit — closing
 // the gaps a coverage audit found against the ~499 API routes ──────────────
 
@@ -663,7 +663,7 @@ test('project(id).audit and session(id).audit expose canonical cursor pagination
 });
 
 // ── setup links / manifest validate / git token / slack files / meet speak /
-// gateway playground / billing mutations / public marketplace / validateToken
+// gateway playground / billing mutations / public template catalog / validateToken
 // — closing the LAST projects-client coverage gaps ─────────────────────────
 
 test('project(id).setupLinks mints secret-entry and connect-request links', async () => {

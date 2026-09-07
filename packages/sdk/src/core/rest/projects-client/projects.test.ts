@@ -969,7 +969,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'meta_agent',
     'monitors',
     'review_center',
-    'marketplace',
+    'templates',
     'secrets_egress',
     'pi_worker',
     'teams',

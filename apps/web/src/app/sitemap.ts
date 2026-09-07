@@ -35,7 +35,7 @@ function markdownEntry(pathname: string, lastModified?: string): SitemapEntry {
 }
 
 /**
- * Every public template's detail page — `/marketplace/<slug>`.
+ * Every public template's detail page — `/templates/<slug>`.
  *
  * These are the only sitemap entries that come from the API rather than from a
  * committed record, so this is the only part of the sitemap that can fail
@@ -50,9 +50,9 @@ function markdownEntry(pathname: string, lastModified?: string): SitemapEntry {
  */
 async function templateEntries(): Promise<SitemapEntry[]> {
   try {
-    const { loadPublicTemplates } = await import('@/features/marketplace/public-templates-server');
+    const { loadPublicTemplates } = await import('@/features/templates/public-templates-server');
     const templates = await loadPublicTemplates();
-    return templates.map((template) => htmlEntry(`/marketplace/${template.slug}`));
+    return templates.map((template) => htmlEntry(`/templates/${template.slug}`));
   } catch {
     return [];
   }

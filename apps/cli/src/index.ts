@@ -20,7 +20,7 @@ import { runHosts } from './commands/hosts.ts';
 import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
-import { runMarketplace } from './commands/marketplace.ts';
+import { runTemplates } from './commands/templates.ts';
 import { runMembers } from './commands/members.ts';
 import { runModels } from './commands/models.ts';
 import { runPermissions } from './commands/permissions.ts';
@@ -271,7 +271,7 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
           },
           {
-            name: 'marketplace',
+            name: 'templates',
             args: '<subcommand>',
             blurb: 'Browse the template catalog and install a template into a project',
           },
@@ -595,8 +595,8 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'connectors') {
     return runConnectors(argv.slice(1));
   }
-  if (argv[0] === 'marketplace') {
-    return runMarketplace(argv.slice(1));
+  if (argv[0] === 'templates') {
+    return runTemplates(argv.slice(1));
   }
   // `system-skills` is the canonical name; `skills` stays a permanent alias
   // because every already-baked sandbox image seeds a kortix-system skill whose
@@ -691,7 +691,7 @@ const KNOWN_COMMANDS = [
   'apps',
   'channels',
   'sandboxes',
-  'marketplace',
+  'templates',
   'system-skills',
   'skills',
   'registry',

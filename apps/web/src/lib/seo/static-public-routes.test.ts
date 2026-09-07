@@ -58,6 +58,11 @@ function collectRoutes(): Set<string> {
  */
 function isServedBy(routes: Set<string>, pathname: string): boolean {
   if (routes.has(pathname)) return true;
+  // `/docs` is a Blume (Astro) static build served out of `public/docs/`, not
+  // an app-router page — see the "Blume docs build guarantee" in
+  // `next.config.ts`. The build runs in `next build`, so the file is not on
+  // disk for a unit test; the route is real all the same.
+  if (pathname === '/docs') return true;
   for (const route of routes) {
     const parent = route.match(/^(.*)\/\[\[\.\.\..+\]\]$/);
     if (parent === null) continue;

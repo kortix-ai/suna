@@ -7,7 +7,7 @@ import {
   prepareInstallSessionNavigation,
 } from './install-session-navigation';
 
-describe('marketplace install session navigation', () => {
+describe('templates install session navigation', () => {
   test('builds the project-scoped session href', () => {
     expect(installSessionHref('proj_123', 'sess_456')).toBe(
       '/projects/proj_123/sessions/sess_456',
@@ -39,7 +39,7 @@ describe('marketplace install session navigation', () => {
     );
 
     expect(href).toBe('/projects/project-123/sessions/session-123');
-    // Marketplace install/setup sessions already carry a server-side
+    // Templates install/setup sessions already carry a server-side
     // `initial_prompt`; marking them fresh would render the empty instant shell
     // instead of the actual install session.
     expect(isSessionFresh(sessionId)).toBe(false);

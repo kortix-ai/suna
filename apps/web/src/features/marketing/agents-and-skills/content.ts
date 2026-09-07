@@ -49,13 +49,13 @@ import type { UiTranslator } from '@/i18n/translator';
  *    registry of agents/skills/templates from this page. That whole surface —
  *    API, CLI, `features/marketplace/*`, the OLD public `/marketplace` page —
  *    was removed from the product. This page had a §5 "Marketplace" section
- *    with a `/marketplace` CTA; both went with it. Its replacement is the
- *    TEMPLATE MARKETPLACE: a curated, static list of Kortix projects (GitHub
- *    repos) installed into a project by change request, listed under
- *    Customize → Marketplace at `/projects/:id/customize/marketplace`, behind
- *    the `marketplace` feature flag (OFF by default). The name `/marketplace`
- *    was reused for a NEW public page — the curated public template catalog
- *    (`app/(public)/(seo)/marketplace/`) — which is a real, live surface as of
+ *    with a `/marketplace` CTA; both went with it. Its replacement is
+ *    TEMPLATES: a curated, static list of Kortix projects (GitHub repos)
+ *    installed into a project by change request, listed under
+ *    Customize → Templates at `/projects/:id/customize/templates`, behind
+ *    the `templates` feature flag (OFF by default). The public page is the
+ *    curated template catalog at `/templates` (`app/(public)/(seo)/templates/`,
+ *    `/marketplace` redirects there) — a real, live surface as of
  *    2026-09-03. Do not re-add a §5 "browse the registry" section here; that
  *    idea is retired. A section pointing at the new public catalog is fair
  *    game, but keep the counts real — never restore the old registry numbers.

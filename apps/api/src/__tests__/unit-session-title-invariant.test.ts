@@ -117,12 +117,12 @@ describe('session-title invariant', () => {
         'channels/teams/session.ts',
         'channels/telegram-webhook.ts',
         'projects/routes/r2.ts',
-        // The marketplace template install. Its createSession call passes an
+        // The template install. Its createSession call passes an
         // explicit `body.name` (`Install <template>`), so `needsTitle` returns false
         // and Hook 1 no-ops — the rendered install envelope can never reach a
         // project-visible title. No `title_source` is needed because the
         // generator never runs for these sessions.
-        'projects/routes/marketplace.ts',
+        'projects/routes/templates.ts',
         'projects/lib/sessions.ts',
       ]),
     ).toEqual([]);

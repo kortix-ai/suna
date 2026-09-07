@@ -1033,11 +1033,11 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
-// Public marketplace — PUBLIC, no gate at all. The anonymous template catalog
-// behind the /marketplace SEO pages, the in-project Marketplace tab and the CLI.
+// Public template catalog — PUBLIC, no gate at all. The anonymous template catalog
+// behind the /templates SEO pages, the in-project Templates tab and the CLI.
 // A static list, so the response is the same for every caller by construction.
-import { publicMarketplaceApp } from './public-marketplace';
-app.route('/v1/public/marketplace', publicMarketplaceApp); // /v1/public/marketplace/templates[/:slug]
+import { publicTemplatesApp } from './public-templates';
+app.route('/v1/public/templates', publicTemplatesApp); // /v1/public/templates[/:slug]
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.

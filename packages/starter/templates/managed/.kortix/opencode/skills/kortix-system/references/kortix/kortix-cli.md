@@ -429,8 +429,8 @@ System skills are the live agent manual for the deployed Kortix host.
 | `kortix system-skills get <name> --full` | Print `SKILL.md` and every referenced file. |
 | `kortix system-skills path [name]` | Print the local project path. |
 
-`kortix skills` is a permanent alias. Optional project skills use
-`kortix marketplace`, not `system-skills`.
+`kortix skills` is a permanent alias. Optional project skills arrive with a
+template (`kortix templates`), not through `system-skills`.
 
 ## Token scope
 

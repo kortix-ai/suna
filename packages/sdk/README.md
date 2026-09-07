@@ -185,14 +185,14 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
-### Marketplace
+### Templates
 
-A template is a public GitHub repository whose `kortix.yaml` declares agents, skills, connectors and triggers. `kortix.marketplace` is the public template catalog — it needs no token — and `kortix.project(projectId).marketplace.install(slug)` starts the agent session that merges one into a project. Marketplace is a project feature flag, so the install route returns `403 feature_disabled` until a manager enables it.
+A template is a public GitHub repository whose `kortix.yaml` declares agents, skills, connectors and triggers. `kortix.templates` is the public template catalog — it needs no token — and `kortix.project(projectId).templates.install(slug)` starts the agent session that merges one into a project. Templates is a project feature flag, so the install route returns `403 feature_disabled` until a manager enables it.
 
 ```ts
-const { templates } = await kortix.marketplace.list({ q: 'seo' });
+const { templates } = await kortix.templates.list({ q: 'seo' });
 
-const { session_id } = await kortix.project(projectId).marketplace.install(templates[0].slug);
+const { session_id } = await kortix.project(projectId).templates.install(templates[0].slug);
 // The template is NOT installed yet. Open that session — the agent reads both
 // manifests, merges, and opens a change request a human reviews.
 ```
@@ -201,9 +201,9 @@ Three things are worth knowing before you render any of it:
 
 - **Nothing records what a project has installed.** The change request the agent opens is the record — everything the template adds lands in that one commit — and reverting it is the uninstall. There is no installed list, no uninstall call and no activation call here.
 - **A template installs with every trigger off.** Enable them individually through `project(id).triggers` once the change request merges. A run belongs to the **trigger** that fired, not to the template that contributed it.
-- **The catalog is curated and static.** It ships with the API; there is no submit, upload or publish call. `MarketplaceTemplate` carries the card — `slug`, `title`, `description`, `repo`, the pinned `resolved_sha`, and the `agents`, `triggers`, `connectors`, `skills` and `env_required` it brings.
+- **The catalog is curated and static.** It ships with the API; there is no submit, upload or publish call. `Template` carries the card — `slug`, `title`, `description`, `repo`, the pinned `resolved_sha`, and the `agents`, `triggers`, `connectors`, `skills` and `env_required` it brings.
 
-React: `useMarketplaceTemplates`, `useMarketplaceTemplate`, `useMarketplaceInstall`. Full reference: `/docs/sdk/marketplace`.
+React: `useTemplateCatalog`, `useTemplate`, `useTemplateInstall`. Full reference: `/docs/sdk/templates`.
 
 ### React runtime
 
@@ -236,10 +236,10 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
-| `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
+| `kortix.templates` | the public template catalog, no token needed: `list` · `get` — installing is project-scoped, `project(id).templates.install(slug)` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.templates.install(slug)` (start the agent session that installs a template by change request) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 

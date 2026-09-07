@@ -1,6 +1,6 @@
 'use client';
 
-import { createMarketplaceInstallSession, listAccounts, provisionProject } from '@kortix/sdk';
+import { createTemplateInstallSession, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   SignInIcon as LogIn,
@@ -29,10 +29,10 @@ import { useProjectPicker } from '@/features/projects/use-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 
-// A use-case slug is handed to the marketplace install-session as the template
+// A use-case slug is handed to the template install-session as the template
 // slug. The registry this used to resolve against (`kortix-starter:<slug>`)
 // was removed with the old skills marketplace; the static template catalog
-// (`apps/api/src/marketplace/templates.ts`) is what replaces it.
+// (`apps/api/src/templates/catalog.ts`) is what replaces it.
 //
 // UNVERIFIED, on purpose: no template with a use-case slug is in that catalog
 // yet, so this install answers 404 until one is added.
@@ -103,7 +103,7 @@ export function TemplateSessionInstallDialog({
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
         projectId = project.project_id;
       }
-      const { session_id } = await createMarketplaceInstallSession(projectId, templateId);
+      const { session_id } = await createTemplateInstallSession(projectId, templateId);
       // nav-contract: prefetch-only — `session_id` comes back from the install
       // POST, and the project may be provisioned in the same click, so neither
       // half of this href exists before the click.

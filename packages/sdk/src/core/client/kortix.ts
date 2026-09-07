@@ -376,13 +376,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   const connectStatus = P.getConnectStatus;
 
   /**
-   * The marketplace (`/v1/public/marketplace/templates`) — the public template
+   * The template catalog (`/v1/public/templates`) — the public template
    * catalog. Reading needs no token; installing is project-scoped
-   * (`project(id).marketplace.install`) and returns a session to open.
+   * (`project(id).templates.install`) and returns a session to open.
    */
-  const marketplace = {
-    list: P.listMarketplaceTemplates,
-    get: P.getMarketplaceTemplate,
+  const templates = {
+    list: P.listTemplateCatalog,
+    get: P.getTemplateBySlug,
   };
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
@@ -632,14 +632,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       /**
-       * Install a marketplace template into this project. Returns a SESSION to
+       * Install a template from the catalog into this project. Returns a SESSION to
        * open — the agent inside it does the merge and lands a change request;
        * nothing is committed by this call, and reverting that change request
        * is the uninstall. Its triggers are enabled one at a time through
        * `triggers` once the change request merges.
        */
-      marketplace: {
-        install: (slug: string) => P.createMarketplaceInstallSession(projectId, slug),
+      templates: {
+        install: (slug: string) => P.createTemplateInstallSession(projectId, slug),
       },
 
       files: {
@@ -1339,8 +1339,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     sandboxShares,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
-    /** The public template catalog (`/v1/public/marketplace/templates`). Installing is per-project. */
-    marketplace,
+    /** The public template catalog (`/v1/public/templates`). Installing is per-project. */
+    templates,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

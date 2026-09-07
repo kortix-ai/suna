@@ -14,7 +14,7 @@ another project, and nothing for other accounts.
   <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">
     Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.
   </Card>
-  <Card icon="store" title="Marketplace" href="/docs/feature-flags/marketplace">
+  <Card icon="store" title="Templates" href="/docs/feature-flags/templates">
     Install a template — agents, skills, connectors and triggers — into a project by change request.
   </Card>
 </CardGroup>
@@ -118,7 +118,7 @@ Registry order — the same order **Settings → Experimental** shows.
 
 | Key                       | Name                    | Stability    | Default                       | Enforcement  |
 | ------------------------- | ----------------------- | ------------ | ----------------------------- | ------------ |
-| `marketplace`             | Marketplace             | Experimental | Off                           | `routes`     |
+| `templates`             | Templates             | Experimental | Off                           | `routes`     |
 | `agent_tunnel`            | Agent Computer Tunnel   | Experimental | Off                           | `ui-only`    |
 | `connectors_api_discover` | Connectors API Discover | Experimental | Off                           | `routes`     |
 | `agentmail_email`         | AgentMail Email         | Experimental | Off                           | `routes`     |
@@ -139,8 +139,8 @@ refs). An explicit project choice always wins.
 
 ### What each flag gates
 
-- **`marketplace`** — browse the template catalog and install a template into
-  the project by change request. See [Marketplace](/docs/feature-flags/marketplace).
+- **`templates`** — browse the template catalog and install a template into
+  the project by change request. See [Templates](/docs/feature-flags/templates).
 - **`agent_tunnel`** — let agents reach a local machine over a permissioned
   reverse tunnel. See [Computer Tunnel](/docs/connect/computers).
 - **`connectors_api_discover`** — browse direct API, MCP, GraphQL, CLI, and

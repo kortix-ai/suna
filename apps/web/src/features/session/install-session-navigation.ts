@@ -9,8 +9,9 @@ export interface SessionRouter {
 }
 
 /**
- * Where an agent-driven install session lives. One route, because a marketplace
- * install and a marketplace template install are both just sessions.
+ * Where an agent-driven install session lives. One route, because a template
+ * install from the catalog and any other agent-driven install are both just
+ * sessions.
  */
 export function installSessionHref(projectId: string, sessionId: string): string {
   return `/projects/${projectId}/sessions/${sessionId}`;
@@ -19,9 +20,10 @@ export function installSessionHref(projectId: string, sessionId: string): string
 /**
  * Warm the session route and its start payload, then hand back the href.
  *
- * Shared by every "the agent does it in a session" flow — marketplace add-to-
- * project and marketplace template install. Named without a surface prefix precisely
- * because a second surface arrived: the mechanism is the session, not the store.
+ * Shared by every "the agent does it in a session" flow — the in-project
+ * Templates tab and the public `/templates/<slug>` page. Named without a
+ * surface prefix precisely because a second surface arrived: the mechanism is
+ * the session, not the store.
  */
 export function prepareInstallSessionNavigation(
   queryClient: QueryClient,

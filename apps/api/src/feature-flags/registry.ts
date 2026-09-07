@@ -190,8 +190,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'marketplace',
-    name: 'Marketplace',
+    key: 'templates',
+    name: 'Templates',
     description:
       'Browse the template catalog and install a template — a GitHub repo whose kortix.yaml declares agents, skills, connectors and triggers — into this project by change request.',
     stability: 'experimental',

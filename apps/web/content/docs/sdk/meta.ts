@@ -9,7 +9,7 @@ export default defineMeta({
     'sign-in',
     'sessions',
     'apps',
-    'marketplace',
+    'templates',
     'react',
     'reference',
   ],

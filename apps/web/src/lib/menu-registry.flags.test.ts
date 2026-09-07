@@ -15,7 +15,7 @@ import { menuRegistry } from './menu-registry';
  */
 const ALL_FLAGS_OFF: Partial<Record<FeatureFlagKey, boolean>> = {
   review_center: false,
-  marketplace: false,
+  templates: false,
 };
 
 /**
@@ -51,8 +51,8 @@ describe('menu registry feature-flag gating', () => {
     // Review is a capability tab since 2026-09-02, gated by the bar itself
     // (`visibleCapabilityTabs`), so this asserts the BEHAVIOUR rather than a
     // declaration — a flag that hides the tab hides every way in. Voice has no
-    // flag any more: it was removed from the product. Marketplace is a
-    // capability tab on the `marketplace` flag, so it must answer to its OWN
+    // flag any more: it was removed from the product. Templates is a
+    // capability tab on the `templates` flag, so it must answer to its OWN
     // flag and stay hidden while only `review_center` is on.
     const keysFor = (flags: Partial<Record<FeatureFlagKey, boolean>>) =>
       visibleCapabilityTabs({}, flags).map((tab) => tab.key);
@@ -60,18 +60,18 @@ describe('menu registry feature-flag gating', () => {
     const off = keysFor(ALL_FLAGS_OFF);
     expect(off).not.toContain('review');
     expect(off).not.toContain('voice');
-    expect(off).not.toContain('marketplace');
+    expect(off).not.toContain('templates');
 
     expect(keysFor({ ...ALL_FLAGS_OFF, review_center: true })).toContain('review');
-    expect(keysFor({ ...ALL_FLAGS_OFF, review_center: true })).not.toContain('marketplace');
-    expect(keysFor({ ...ALL_FLAGS_OFF, marketplace: true })).toContain('marketplace');
+    expect(keysFor({ ...ALL_FLAGS_OFF, review_center: true })).not.toContain('templates');
+    expect(keysFor({ ...ALL_FLAGS_OFF, templates: true })).toContain('templates');
 
     // None of them is a settings tab any more, so the derived palette list
     // must not offer one — that would open the overlay on nothing.
     const paletteTabs = settingsPaletteGroups({ hasProject: true }).flatMap((group) =>
       group.items.map((item) => item.tab as string),
     );
-    for (const key of ['review', 'voice', 'marketplace']) {
+    for (const key of ['review', 'voice', 'templates']) {
       expect(paletteTabs).not.toContain(key);
     }
   });

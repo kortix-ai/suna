@@ -1,6 +1,6 @@
 ---
 name: kortix-onboarding
-description: "Guide a new Kortix user through their first session: set expectations about what Kortix is, turn a vague ask into a strong first prompt, deliver one real result, then surface deeper capabilities (connectors, memory, triggers, subagents, marketplace) and plant a retention hook. Use when the user is new, asks 'what can you do / how does this work / where do I start', sends a vague or exploratory first message, or has no prior history in this project. Do NOT use when they arrive with a specific, well-formed task — just do it."
+description: "Guide a new Kortix user through their first session: set expectations about what Kortix is, turn a vague ask into a strong first prompt, deliver one real result, then surface deeper capabilities (connectors, memory, triggers, subagents, templates) and plant a retention hook. Use when the user is new, asks 'what can you do / how does this work / where do I start', sends a vague or exploratory first message, or has no prior history in this project. Do NOT use when they arrive with a specific, well-formed task — just do it."
 ---
 
 # Onboarding a New Kortix User
@@ -95,7 +95,7 @@ I surface these *contextually*, never as a list:
 - **Connectors** — they mention email, a CRM, a doc, a calendar → "I can connect your [tool] and do this directly. I'll mint a setup link right here — one click, and I never see the raw credentials." I mint the link in the same turn; I never send them digging through settings or ask them to paste a secret.
 - **Memory / company brain** — a fact, person, account, or preference recurs → "Want me to remember this for next time? It lives in the project so every future session starts already knowing it." Kortix gets better the more it's used.
 - **Subagents / parallel sessions** — the job is many similar units (per company, per region, per file) → "I can split this across parallel agents and bring the results back together — much faster than one at a time."
-- **Marketplace** — the need is a repeatable specialty → "There's likely a ready-made skill for this in the marketplace — want me to find and install one?"
+- **Templates** — the need is a whole repeatable loop → "There's likely a ready-made template for this — agents, skills, connectors and triggers as one setup. Want me to find one and open its install session?"
 
 I keep each pitch to one line tied to *their* task. I don't explain OAuth, branches, or internals unless they ask.
 

@@ -22,7 +22,7 @@ import {
   type SettingsPaletteParams,
 } from './settings-palette-items';
 
-// No `flags` any more: the three flag-gated rail rows (Marketplace, Review,
+// No `flags` any more: the three flag-gated rail rows (Templates, Review,
 // Voice) moved to `/projects/<id>/config` with the rest of project
 // configuration, so nothing left in the derived list varies by flag.
 const IN_A_PROJECT: SettingsPaletteParams = { hasProject: true };
@@ -196,7 +196,7 @@ describe('search terms carried across from the removed registry entries', () => 
     // Everything else that used to be listed here named a tab that has left
     // this rail. The thirteen project-configuration words (secrets, env, git,
     // github, members, collaborators, slack, agentmail, llm, openrouter,
-    // marketplace, approvals, livekit, templates, danger zone, customize) are
+    // templates, approvals, livekit, templates, danger zone, customize) are
     // answered by the `proj-customize` registry row now — pinned in the case
     // below — and the eight account words (subscription, ledger, pat, sso, …)
     // by the `account-*` rows, pinned in the case after that.
@@ -382,12 +382,12 @@ describe('the registry no longer carries palette settings destinations', () => {
   });
 
   test('the removed per-tab entries are gone from every surface, not just the palette', () => {
-    // `proj-secrets`, `proj-members`, `proj-channels` and `proj-marketplace`
+    // `proj-secrets`, `proj-members`, `proj-channels` and `proj-templates`
     // are NOT in this list any more, and their absence is the point of this
     // change. They were removed here as SETTINGS TABS
     // (`/settings/secrets`, opened through the overlay); they came back as
     // CAPABILITY PAGES with their own routes (`/projects/<id>/secrets`, the
-    // account Access pane, `?scope=channels`, `/projects/<id>/customize/marketplace`),
+    // account Access pane, `?scope=channels`, `/projects/<id>/customize/templates`),
     // which the derived settings list structurally cannot produce — the same
     // arrangement `proj-triggers` and the `account-*` rows use. What must stay
     // gone is a row that opens the OVERLAY on a tab that no longer exists; the
@@ -409,22 +409,22 @@ describe('the registry no longer carries palette settings destinations', () => {
     }
   });
 
-  // `proj-marketplace` is the id the deleted SKILLS marketplace used for its
-  // settings-overlay tab. It is reused here for the Customize → Marketplace
-  // capability page, so this case states what the row now is: a navigate row
-  // at its own route, gated on the `marketplace` flag. Without it, removing
-  // the id from the absent-list above would leave the reuse unasserted.
-  test('Marketplace is a flag-gated registry row, pointing at its own page', () => {
-    const marketplace = paletteItems.find((item) => item.id === 'proj-marketplace');
-    expect(marketplace?.kind).toBe('navigate');
-    expect(marketplace?.href).toBe('/projects/{projectId}/customize/marketplace');
-    expect(marketplace?.requiresProject).toBe(true);
+  // `proj-marketplace` was the id the deleted SKILLS marketplace used for its
+  // settings-overlay tab; `proj-templates` is its successor for the Customize →
+  // Templates capability page, so this case states what the row now is: a
+  // navigate row at its own route, gated on the `templates` flag. Without it,
+  // removing the old id from the absent-list above would leave that unasserted.
+  test('Templates is a flag-gated registry row, pointing at its own page', () => {
+    const templates = paletteItems.find((item) => item.id === 'proj-templates');
+    expect(templates?.kind).toBe('navigate');
+    expect(templates?.href).toBe('/projects/{projectId}/customize/templates');
+    expect(templates?.requiresProject).toBe(true);
     // The one registry row that declares a flag. A project without the
     // surface must not be offered a palette row that 403s on arrival.
-    expect(marketplace?.requiresFlag).toBe('marketplace');
+    expect(templates?.requiresFlag).toBe('templates');
     // Not claimed by the overlay resolver — clicking it navigates, and does
     // not reopen the settings overlay on a tab that no longer exists.
-    expect(resolveSettingsOverlayHref(marketplace!.href!).opensOverlay).toBe(false);
+    expect(resolveSettingsOverlayHref(templates!.href!).opensOverlay).toBe(false);
   });
 
   test('Triggers is a registry row, pointing at its own page', () => {

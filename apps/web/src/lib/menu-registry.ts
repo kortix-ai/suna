@@ -675,26 +675,26 @@ export const menuRegistry: MenuItemDef[] = [
       'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
   },
   {
-    id: 'proj-marketplace',
-    label: 'Marketplace',
+    id: 'proj-templates',
+    label: 'Templates',
     icon: Storefront,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/marketplace',
+    href: '/projects/{projectId}/customize/templates',
     requiresProject: true,
     // Same gate the tab itself carries (`CAPABILITY_TABS` → `flag:
-    // 'marketplace'`), so the row cannot outlive the page. Without it the
+    // 'templates'`), so the row cannot outlive the page. Without it the
     // palette would offer a destination whose every read answers
     // `403 feature_disabled`.
-    requiresFlag: 'marketplace',
+    requiresFlag: 'templates',
     // "templates" is the noun the product uses; "marketplace" and "store"
     // are what a person types when they want to find one. Both must answer,
     // plus the verb ("install") and what a template brings with it. The
     // plural alone — the match is a substring, so it already answers the
     // singular, and a bag that lists both says nothing more.
     keywords:
-      'marketplace store templates install catalog browse open source repo template starter setup bundle',
+      'templates marketplace store install catalog browse open source repo template starter setup bundle',
   },
   {
     id: 'proj-secrets',
