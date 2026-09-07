@@ -31,6 +31,12 @@ const labelOf = (html: string) => {
 const CARD = 'not-prose';
 const COPY = 'aria-label="Copy code"';
 
+const classNameOf = (html: string, tagName: string) => {
+  const found = html.match(new RegExp(`<${tagName}\\b[^>]*\\bclass="([^"]*)"`));
+  if (!found) throw new Error(`no <${tagName}> with a class in the rendered markup`);
+  return found[1] ?? '';
+};
+
 describe('MarkdownCode — fenced blocks', () => {
   test('a mermaid fence takes the diagram path, not the code card', () => {
     // MermaidRenderer is lazy() inside a Suspense with a null fallback, and a
@@ -76,6 +82,13 @@ describe('MarkdownCode — fenced blocks', () => {
     expect(markup).toContain(CARD);
     expect(markup).toContain(COPY);
     expect(labelOf(markup)).toBe('typescript');
+  });
+
+  test('the code body keeps the same horizontal inset as the header', () => {
+    const markup = render({ className: 'language-bash', children: 'kortix apps deploy' });
+
+    expect(classNameOf(markup, 'figcaption')).toContain('px-2');
+    expect(classNameOf(markup, 'pre')).toContain('px-2');
   });
 
   test('isStreaming keeps the copy button and the label', () => {
