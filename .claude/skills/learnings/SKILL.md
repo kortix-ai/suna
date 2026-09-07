@@ -4991,3 +4991,20 @@ omitted-setting behavior.
 payloads, persisted todo side effects, repeated prompts, `steps: 1`, an omitted
 limit, and a provider that ignores the tool restriction. Three tests fail on
 the unbounded runtime and pass with the limit.
+
+
+### 2026-09-07 — Resolve authentication before rendering an admin denial
+
+The Pi preview browser gate failed while `/v1/user-roles` returned
+`{isAdmin: true, role: "super_admin"}`. The trace showed the refusal screen
+before `auth.getUser()` finished. A disabled TanStack query reports
+`isLoading: false`; that does not mean authentication has resolved.
+
+Include authentication loading in the admin gate's loading state. Start the
+role probe only after a user is known, and apply that condition after caller
+options so `enabled: true` cannot bypass it.
+
+`apps/web/src/hooks/admin/use-admin-role.test.ts` covers initial hydration, a
+resolved anonymous identity, the loading-to-admin transition, and caller
+enablement. `tests/e2e/specs/09-admin-console.spec.ts` remains the deployed
+browser assertion. Do not add a sleep or retry to hide the initial refusal.
