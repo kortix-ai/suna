@@ -741,13 +741,35 @@ PATH="/Users/jay/.nvm/versions/node/v22.22.3/bin:$PATH" pnpm test -- --packages-
 **Result:**
 
 - Package quality passes in 244.0 seconds at commit `2a96334567`.
-- API passes 1,246 tests.
-- CLI passes 8,857 tests.
+- CLI passes 1,246 tests.
+- API passes 8,857 tests and skips 79 tests.
 - Web passes 9,512 tests.
 - Sandbox agent passes 1,185 tests.
 - Migration contracts pass 28 tests.
 - SDK typecheck, packed-install smoke, publish manifests, and all remaining package suites pass.
 - Benchmark: `tests/test-results/local/benchmark-1788810704772.json`.
+
+### Task 16: Preserve CAS retry failure evidence and prove the final head
+
+**Evidence:** One exact-head package retry reported an immediate CLI exit code 1 in the manifest CAS replay test. The assertion retained only the exit code, so the run could not identify the child process error. The failure did not reproduce in 265 focused executions or the complete CLI suite.
+
+**Files:**
+
+- Modify: `apps/cli/src/__tests__/client-cas-retry.test.ts`
+
+**Result:**
+
+- Keep the exit-code requirement at zero.
+- Include stdout, stderr, and HTTP request history in a future assertion failure.
+- A forced HTTP 500 proves that the assertion prints the exact CLI error and both PUT requests.
+- The CLI suite passes 1,246 tests with zero failures.
+- The package lane passes in 281.8 seconds at the final code commit `747cb42524`.
+- API passes 8,857 tests and skips 79 tests.
+- CLI passes 1,246 tests.
+- Web passes 9,512 tests.
+- Sandbox agent passes 1,185 tests with 3,629 assertions.
+- Migration contracts pass 28 tests with 55 assertions.
+- Benchmark: `tests/test-results/local/benchmark-1788812751021.json`.
 
 ## Post-plan review gate: eager attachment upload
 
