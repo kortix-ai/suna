@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { getSsoProvider, listScimTokens } from '@/lib/iam-client';
 
@@ -12,6 +13,7 @@ import { getSsoProvider, listScimTokens } from '@/lib/iam-client';
  * SsoCard/ScimCard (React Query dedupes → no extra round-trips).
  */
 export function IdentityIntro({ accountId }: { accountId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const providerQuery = useQuery({
     queryKey: ['iam-sso-provider', accountId],
     queryFn: () => getSsoProvider(accountId),
@@ -34,13 +36,12 @@ export function IdentityIntro({ accountId }: { accountId: string }) {
 
   return (
     <div className="border-border/60 bg-muted/20 space-y-1.5 rounded-md border px-4 py-3">
-      <p className="text-foreground text-xs font-medium">Why connect both?</p>
+      <p className="text-foreground text-xs font-medium">{tI18nComplete.raw('texta731e5385a6a')}</p>
       <p className="text-muted-foreground text-xs leading-relaxed">
-        <span className="text-foreground font-medium">SAML SSO</span> is how people sign in — with
-        your identity provider's own credentials and MFA, never a Kortix password.{' '}
-        <span className="text-foreground font-medium">SCIM directory sync</span> is who exists — it
-        keeps your Kortix roster matched to your IdP and automatically removes access the moment
-        someone leaves. Most enterprises want both; set up SSO first, then Directory Sync.
+        <span className="text-foreground font-medium">{tI18nComplete.raw('text405e739d53d2')}</span>{' '}
+        {tI18nComplete.raw('text455af11c8046')}{' '}
+        <span className="text-foreground font-medium">{tI18nComplete.raw('text0835965ba94e')}</span>{' '}
+        {tI18nComplete.raw('text3999be1cc89e')}
       </p>
     </div>
   );

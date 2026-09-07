@@ -186,6 +186,7 @@ interface ModalContentProps
     React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>,
     VariantProps<typeof ModalVariants> {
   closeClassName?: string;
+  closeLabel?: string;
   modalClassName?: string;
   showCloseButton?: boolean;
   closeButtonChildren?: React.ReactNode;
@@ -230,6 +231,7 @@ const ModalContentInner = React.forwardRef<
       className,
       modalClassName,
       closeClassName,
+      closeLabel = 'Close',
       children,
       variant = 'default',
       showCloseButton = true,
@@ -245,10 +247,14 @@ const ModalContentInner = React.forwardRef<
 
     const handleInteractOutside = (
       event: Parameters<
-        NonNullable<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>['onInteractOutside']>
+        NonNullable<
+          React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>['onInteractOutside']
+        >
       >[0],
     ) => {
-      if (!modalDismissesOnOutsideInteraction(event.detail.originalEvent.target, closeOnOutsideClick)) {
+      if (
+        !modalDismissesOnOutsideInteraction(event.detail.originalEvent.target, closeOnOutsideClick)
+      ) {
         event.preventDefault();
       }
     };
@@ -294,7 +300,7 @@ const ModalContentInner = React.forwardRef<
                 )}
               >
                 <Close className="text-primary size-4 stroke-1" />
-                <span className="sr-only">Close</span>
+                <span className="sr-only">{closeLabel}</span>
               </Button>
             </ModalClose>
           )}

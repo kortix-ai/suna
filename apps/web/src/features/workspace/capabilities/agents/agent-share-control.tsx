@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The header's share control — who has this agent, and the way to give it
  * to someone else. Asana's shape (Marko, 2026-09-03): a stack of the
@@ -45,6 +46,7 @@ export function AgentShareControl({
   /** The People topic of this agent's page — where the stack links. */
   peopleHref: string;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
@@ -115,7 +117,7 @@ export function AgentShareControl({
       ) : null}
       <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
         <ShareNetworkIcon className="size-3.5 shrink-0" />
-        Share
+        {tI18nComplete.raw('text29887a5ff984')}
       </Button>
 
       <AccessDialog

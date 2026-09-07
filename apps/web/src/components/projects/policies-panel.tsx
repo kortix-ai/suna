@@ -18,9 +18,10 @@
  *   • Default behavior: "Ask before risky actions" (risk) vs "Run everything"
  *     (allow_all, legacy).
  */
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import { CheckIcon, PlusIcon, ShieldCheckIcon, TrashIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -156,6 +157,7 @@ export function seedDraft(data: {
 
 export function PoliciesPanel({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const defaultOptions = useLocalizedUiCatalog(DEFAULT_OPTIONS);
   const queryClient = useQueryClient();
   // qk.project.executorPolicies — sandbox tool-execution allow/deny rules
   // (`listProjectPolicies`, `/executor/projects/:id/policies`). NOT
@@ -198,10 +200,11 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
       return setProjectPolicies(projectId, payload, defaultMode);
     },
     onSuccess: () => {
-      successToast('Global rules saved');
+      successToast(tI18nHardcoded.raw('i18nComplete.text0c6dfc87dc2f'));
       queryClient.invalidateQueries({ queryKey });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to save global rules'),
+    onError: (error: Error) =>
+      errorToast(error.message || tI18nHardcoded.raw('i18nComplete.text9cb1843add48')),
   });
 
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
@@ -277,9 +280,9 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
       {/* ── Default behavior ───────────────────────────────────────────────── */}
       <section className="space-y-4">
         <div className="space-y-1">
-          <Label>Default behavior</Label>
+          <Label>{tI18nHardcoded.raw('i18nComplete.texta98b3578d57b')}</Label>
           <p className="text-muted-foreground text-xs text-pretty">
-            What happens when no rule below matches. Override a single tool with a rule.
+            {tI18nHardcoded.raw('i18nComplete.text39839e17c1cd')}
           </p>
         </div>
 
@@ -290,7 +293,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
           </div>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
-            {DEFAULT_OPTIONS.map((opt) => {
+            {defaultOptions.map((opt) => {
               const selected = defaultMode === opt.value;
               return (
                 <button
@@ -327,10 +330,9 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
       <section className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
-            <Label>Rules</Label>
+            <Label>{tI18nHardcoded.raw('i18nComplete.text4228aeb07c41')}</Label>
             <p className="text-muted-foreground text-xs text-pretty">
-              Checked top to bottom — the first match wins. Rules here override what a connector
-              asks for.
+              {tI18nHardcoded.raw('i18nComplete.texteb35a8dd49a7')}
             </p>
           </div>
           {/* The empty state owns the CTA when there is nothing to list, so the
@@ -344,7 +346,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
               disabled={query.isLoading}
             >
               <PlusIcon className="size-4 shrink-0" />
-              Add rule
+              {tI18nHardcoded.raw('i18nComplete.texta27cff51a2e0')}
             </Button>
           )}
         </div>
@@ -387,7 +389,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
               action={
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={addRule}>
                   <PlusIcon className="size-4 shrink-0" />
-                  Add rule
+                  {tI18nHardcoded.raw('i18nComplete.texta27cff51a2e0')}
                 </Button>
               }
             />
@@ -414,7 +416,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
       {dirty && (
         <div className="bg-popover z-10 mt-auto flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3">
           <p className="text-muted-foreground min-w-0 text-xs text-pretty">
-            Unsaved changes. Saving writes to{' '}
+            {tI18nHardcoded.raw('i18nComplete.text53121d4517f7')}{' '}
             <code className="bg-muted text-foreground rounded-sm px-1 py-0.5 font-mono text-xs">
               kortix.yaml
             </code>
@@ -422,11 +424,11 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
           </p>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" size="sm" onClick={revert} disabled={save.isPending}>
-              Revert
+              {tI18nHardcoded.raw('i18nComplete.text0026c5053478')}
             </Button>
             <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
               {save.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Save changes
+              {tI18nHardcoded.raw('i18nComplete.textdd0ae7a5cbcf')}
             </Button>
           </div>
         </div>
@@ -460,6 +462,7 @@ function RuleRow({
   onRemoveCondition: (index: number) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const actionMeta = useLocalizedUiCatalog(ACTION_META);
   const position = index + 1;
 
   return (
@@ -480,7 +483,7 @@ function RuleRow({
               variant="popover"
               className="min-w-0 flex-1 font-mono text-xs"
               spellCheck={false}
-              aria-label={`Rule ${position} tool`}
+              aria-label={tI18nHardcoded('i18nComplete.textb5af740a6585', { value0: position })}
             />
             {/* `SelectItem description` renders in the menu only, never in the
                 trigger — so the closed control is just "Ask first" and the row
@@ -492,15 +495,17 @@ function RuleRow({
               <SelectTrigger
                 variant="outline"
                 className="w-full shrink-0 sm:w-40"
-                aria-label={`Rule ${position} action`}
+                aria-label={tI18nHardcoded('i18nComplete.text5b2ba171f55f', {
+                  value0: position,
+                })}
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {ACTION_ORDER.map((a) => (
-                  <SelectItem key={a} value={a} description={ACTION_META[a].description}>
-                    <span className={cn('text-sm font-medium', ACTION_META[a].tint)}>
-                      {ACTION_META[a].label}
+                  <SelectItem key={a} value={a} description={actionMeta[a].description}>
+                    <span className={cn('text-sm font-medium', actionMeta[a].tint)}>
+                      {actionMeta[a].label}
                     </span>
                   </SelectItem>
                 ))}
@@ -515,7 +520,7 @@ function RuleRow({
           size="icon-md"
           variant="ghost"
           className="text-muted-foreground hover:text-foreground shrink-0"
-          aria-label={`Remove rule ${position}`}
+          aria-label={tI18nHardcoded('i18nComplete.texte2cbd4618228', { value0: position })}
           onClick={onRemove}
         >
           <TrashIcon className="size-4 shrink-0" />
@@ -527,18 +532,23 @@ function RuleRow({
           an address allow-list. */}
       {rule.conditions.length > 0 && (
         <div className="border-border ml-7 space-y-2 border-l pl-4">
-          <p className="text-muted-foreground text-xs">Only when</p>
+          <p className="text-muted-foreground text-xs">
+            {tI18nHardcoded.raw('i18nComplete.text3ddcbfe612b2')}
+          </p>
 
           {rule.conditions.map((cond, cIdx) => (
             <div key={cond.id} className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input
                 value={cond.arg}
                 onChange={(e) => onChangeCondition(cIdx, { arg: e.target.value })}
-                placeholder="to"
+                placeholder={tI18nHardcoded.raw('i18nComplete.text663ea1bfffe5')}
                 variant="popover"
                 className="font-mono text-xs sm:w-28"
                 spellCheck={false}
-                aria-label={`Rule ${position} condition ${cIdx + 1} field`}
+                aria-label={tI18nHardcoded('i18nComplete.text2eefa5041762', {
+                  value0: position,
+                  value1: cIdx + 1,
+                })}
               />
               <Select
                 value={cond.negate ? CONDITION_EXCLUDES : CONDITION_MATCHES}
@@ -547,29 +557,42 @@ function RuleRow({
                 <SelectTrigger
                   variant="outline"
                   className="w-full shrink-0 text-xs sm:w-36"
-                  aria-label={`Rule ${position} condition ${cIdx + 1} comparison`}
+                  aria-label={tI18nHardcoded('i18nComplete.texta9f78a15820d', {
+                    value0: position,
+                    value1: cIdx + 1,
+                  })}
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={CONDITION_MATCHES}>Matches</SelectItem>
-                  <SelectItem value={CONDITION_EXCLUDES}>Does not match</SelectItem>
+                  <SelectItem value={CONDITION_MATCHES}>
+                    {tI18nHardcoded.raw('i18nComplete.text98abff28a940')}
+                  </SelectItem>
+                  <SelectItem value={CONDITION_EXCLUDES}>
+                    {tI18nHardcoded.raw('i18nComplete.textc9ba775e93dd')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Input
                 value={cond.match}
                 onChange={(e) => onChangeCondition(cIdx, { match: e.target.value })}
-                placeholder="/^(owner|admin)@example\.com$/"
+                placeholder={tI18nHardcoded.raw('i18nComplete.text437223bfa541')}
                 variant="popover"
                 className="min-w-0 flex-1 font-mono text-xs"
                 spellCheck={false}
-                aria-label={`Rule ${position} condition ${cIdx + 1} pattern`}
+                aria-label={tI18nHardcoded('i18nComplete.texta725069dbaec', {
+                  value0: position,
+                  value1: cIdx + 1,
+                })}
               />
               <Button
                 size="icon-md"
                 variant="ghost"
                 className="text-muted-foreground hover:text-foreground shrink-0 self-end sm:self-auto"
-                aria-label={`Remove rule ${position} condition ${cIdx + 1}`}
+                aria-label={tI18nHardcoded('i18nComplete.text7abf95c1092d', {
+                  value0: position,
+                  value1: cIdx + 1,
+                })}
                 onClick={() => onRemoveCondition(cIdx)}
               >
                 <TrashIcon className="size-4 shrink-0" />
@@ -578,8 +601,7 @@ function RuleRow({
           ))}
 
           <p className="text-muted-foreground text-xs text-pretty">
-            A list must have every value match. A missing field never matches, so an allow-list
-            fails closed.
+            {tI18nHardcoded.raw('i18nComplete.text9fdd73a806a4')}
           </p>
         </div>
       )}
@@ -593,7 +615,7 @@ function RuleRow({
         onClick={onAddCondition}
       >
         <PlusIcon className="size-3.5 shrink-0" />
-        Add condition
+        {tI18nHardcoded.raw('i18nComplete.text60a0d83510ea')}
       </Button>
     </li>
   );

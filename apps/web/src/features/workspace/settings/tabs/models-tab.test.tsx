@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -182,7 +182,7 @@ describe('Models page chrome', () => {
     expect(sections).not.toMatch(/className="[^"]*\bpx-\d/);
     expect(sections).not.toMatch(/className="[^"]*\bp-[1-9]/);
     // `ProviderConnect` is the one section with padding of its own to cancel.
-    expect(sections).toContain("className=\"gap-4 p-0\"");
+    expect(sections).toContain('className="gap-4 p-0"');
   });
 
   /**
@@ -320,7 +320,9 @@ describe('Models page — the seven tabs', () => {
 
   test('Costs carries the budget section that used to be its own tab', () => {
     expect(overviewSource).toContain('<GatewayBudgetSection');
-    expect(gatewaySource).toContain('<GatewayOverview projectId={projectId} canWrite={canWrite} />');
+    expect(gatewaySource).toContain(
+      '<GatewayOverview projectId={projectId} canWrite={canWrite} />',
+    );
   });
 
   test('the model-visibility list kept a home as a sibling sub-section', () => {

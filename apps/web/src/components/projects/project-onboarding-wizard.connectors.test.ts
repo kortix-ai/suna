@@ -5,10 +5,7 @@ import { join } from 'node:path';
 // The wizard shell is now a frame only; `ConnectorProfileModal` and the whole
 // tools flow moved into their own module during the single-column refactor.
 // These assertions follow the code — they are not weakened.
-const source = readFileSync(
-  join(import.meta.dir, 'onboarding', 'steps', 'tools-step.tsx'),
-  'utf8',
-);
+const source = readFileSync(join(import.meta.dir, 'onboarding', 'steps', 'tools-step.tsx'), 'utf8');
 
 describe('project onboarding connections', () => {
   test('collects an explicit connection before connecting', () => {
@@ -20,7 +17,7 @@ describe('project onboarding connections', () => {
 
   test('allows multiple connections for one provider app', () => {
     expect(source).toContain('proposeConnectorConnectionSlug(selectedApp.name, existingSlugs)');
-    expect(source).toContain('aria-label={`Add ${app.name} connection`}');
+    expect(source).toContain("aria-label={t('addConnection', { app: app.name })}");
     expect(source).not.toContain('disabled={connected || busy}');
   });
 

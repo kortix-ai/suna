@@ -1,7 +1,7 @@
 'use client';
 
 import { SystemFaultView } from '@/components/common/system-fault';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 type CrashMode = 'reference' | 'type' | 'custom' | 'long' | 'nostack';
@@ -83,11 +83,11 @@ export default function DebugErrorPage() {
           maxWidth: 260,
           padding: 12,
           borderRadius: 12,
-          border: '1px solid rgba(255,255,255,0.12)',
+          border: tI18nHardcoded.raw('i18nComplete.texte73447f19620'),
           background: 'rgba(20,20,20,0.92)',
           backdropFilter: 'blur(8px)',
           color: '#e5e5e5',
-          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
+          fontFamily: tI18nHardcoded.raw('i18nComplete.textc8c25b2598d0'),
           fontSize: 12,
         }}
       >
@@ -107,9 +107,9 @@ export default function DebugErrorPage() {
             type="button"
             onClick={() => setMode(p.key)}
             style={{
-              padding: '7px 10px',
+              padding: tI18nHardcoded.raw('i18nComplete.text3adff87fd00f'),
               borderRadius: 8,
-              border: '1px solid rgba(255,255,255,0.14)',
+              border: tI18nHardcoded.raw('i18nComplete.text59be3646326b'),
               background: mode === p.key ? 'rgba(255,255,255,0.92)' : 'transparent',
               color: mode === p.key ? '#111' : 'inherit',
               fontSize: 11,
@@ -126,9 +126,9 @@ export default function DebugErrorPage() {
           onClick={() => setCrash(mode)}
           style={{
             marginTop: 4,
-            padding: '8px 10px',
+            padding: tI18nHardcoded.raw('i18nComplete.text24309f7c84ea'),
             borderRadius: 8,
-            border: '1px solid rgba(255,80,80,0.4)',
+            border: tI18nHardcoded.raw('i18nComplete.text42fbdd7efa9b'),
             background: 'rgba(255,60,60,0.12)',
             color: '#ff8a8a',
             fontSize: 11,
@@ -139,7 +139,8 @@ export default function DebugErrorPage() {
           {tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextThrowForRealc87f3f6e')}
         </button>
         <div style={{ fontSize: 9.5, opacity: 0.4, lineHeight: 1.5, marginTop: 2 }}>
-          In <code>{tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextNextDev93619a23')}</code>{' '}
+          {tI18nHardcoded.raw('i18nComplete.text8bc1d53cc57c')}{' '}
+          <code>{tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextNextDev93619a23')}</code>{' '}
           {tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextTheNextOverlaye67fbfec')}
           <b>×</b> {tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextToSeeThee15ec5f8')}
         </div>

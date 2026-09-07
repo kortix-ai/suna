@@ -2,14 +2,15 @@
 
 import { InfoBanner } from '@/components/ui/info-banner';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
+import type { SessionScope } from '@kortix/sdk';
 import {
   CpuIcon as Cpu,
   KeyIcon as KeyRound,
   PlugIcon as PlugZap,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
-import type { SessionScope } from '@kortix/sdk';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
   SessionConnectorsEditor,
@@ -118,6 +119,7 @@ export function SessionOverridesToolbar({
   sandbox,
   sandboxSlot,
 }: SessionOverridesToolbarProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { scope, catalog, saveScope, isLoading, isScopeLoading } = useSessionScope({
     projectId,
     sessionId,
@@ -177,13 +179,13 @@ export function SessionOverridesToolbar({
       if (sessionId && result) {
         setRetroactive(result.retroactive);
         setDraftState({ key: initializationKey, draft: createSessionScopeDraft(result, catalog) });
-        successToast('Session overrides saved');
+        successToast(tI18nComplete.raw('textdf7987d6fd91'));
       } else if (!sessionId) {
-        successToast('Session overrides configured');
+        successToast(tI18nComplete.raw('text2467c93661b7'));
       }
       return true;
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Session overrides could not be saved');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('textb9dc64b38ee1'));
       return false;
     }
   }, [
@@ -194,6 +196,7 @@ export function SessionOverridesToolbar({
     saveScope.mutateAsync,
     scope,
     sessionId,
+    tI18nComplete,
   ]);
 
   const draft = draftState.draft;
@@ -209,12 +212,11 @@ export function SessionOverridesToolbar({
       id: 'secrets',
       name: 'Secrets',
       icon: KeyRound,
-      hint: 'Environment values',
+      hint: tI18nComplete.raw('textb9967f948f93'),
       summary:
         activeCatalog.secrets.status === 'ready' ? sessionSecretsSummary(draft) : 'Unavailable',
       overridden: sessionSecretsAreOverridden(draft),
-      description:
-        'Which secrets reach this session. The default is the agent’s grant — everything its kortix.yaml allows — and narrowing it here only ever takes access away.',
+      description: tI18nComplete.raw('text71c0873a1cc2'),
       resetLabel: 'Reset to agent default',
       editor: (
         <SessionSecretsEditor
@@ -230,14 +232,13 @@ export function SessionOverridesToolbar({
       id: 'connectors',
       name: 'Connectors',
       icon: PlugZap,
-      hint: 'Authorized accounts',
+      hint: tI18nComplete.raw('textaea537d63c8c'),
       summary:
         activeCatalog.connector_connections.status === 'ready'
           ? sessionConnectorsSummary(draft)
           : 'Unavailable',
       overridden: sessionConnectorsAreOverridden(draft),
-      description:
-        'Which connected accounts this session may use. The default is the agent’s grant — each granted connector uses the project’s default connection; pick here only to pin this session to something else.',
+      description: tI18nComplete.raw('text11022f38d525'),
       resetLabel: 'Reset to agent default',
       editor: (
         <SessionConnectorsEditor
@@ -255,7 +256,7 @@ export function SessionOverridesToolbar({
         id: 'sandbox',
         name: 'Sandbox',
         icon: Cpu,
-        hint: 'Where it runs',
+        hint: tI18nComplete.raw('text6cc00d310273'),
         summary: sandboxSlot.summary,
         overridden: sandboxSlot.overridden,
         description:
@@ -270,22 +271,27 @@ export function SessionOverridesToolbar({
         id: 'sandbox',
         name: 'Sandbox',
         icon: Cpu,
-        hint: 'Fixed at session start',
-        summary: sandbox?.slug ?? 'Default template',
-        description:
-          'The machine image this session runs on. It is chosen when the session is created and cannot be changed afterwards — start a new session to use a different one.',
+        hint: tI18nComplete.raw('text57c8f2cd3dd6'),
+        summary: sandbox?.slug ?? tI18nComplete.raw('text0b1bdec38bf0'),
+        description: tI18nComplete.raw('textf3ad568c3fa6'),
         readOnly: true,
         editor: (
           <dl className="text-sm">
             <div className="border-border flex items-center justify-between gap-3 border-b py-2">
-              <dt className="text-muted-foreground text-xs">Template</dt>
+              <dt className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('text0575f29df888')}
+              </dt>
               <dd className="text-foreground truncate text-xs">
-                {sandbox?.slug ?? 'Default template'}
+                {sandbox?.slug ?? tI18nComplete.raw('text0b1bdec38bf0')}
               </dd>
             </div>
             <div className="flex items-center justify-between gap-3 py-2">
-              <dt className="text-muted-foreground text-xs">Provider</dt>
-              <dd className="text-foreground truncate text-xs">{sandbox?.provider ?? 'Automatic'}</dd>
+              <dt className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('text472590ae974d')}
+              </dt>
+              <dd className="text-foreground truncate text-xs">
+                {sandbox?.provider ?? 'Automatic'}
+              </dd>
             </div>
           </dl>
         ),
@@ -300,6 +306,7 @@ export function SessionOverridesToolbar({
     sandbox,
     sandboxSlot,
     saveScope.isPending,
+    tI18nComplete,
   ]);
 
   return (
@@ -310,8 +317,12 @@ export function SessionOverridesToolbar({
       saveDisabled={saveDisabled}
       notice={
         retroactive === false ? (
-          <InfoBanner tone="warning" icon={TriangleAlert} title="Existing context is unchanged">
-            Removed secret values can remain in the current conversation or existing shells.
+          <InfoBanner
+            tone="warning"
+            icon={TriangleAlert}
+            title={tI18nComplete.raw('texta6cd531093d4')}
+          >
+            {tI18nComplete.raw('text54a4e6b3594a')}
           </InfoBanner>
         ) : null
       }

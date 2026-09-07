@@ -1,5 +1,7 @@
 'use client';
 
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The account overview block at the top of the Billing tab: what you can
  * spend, what plan you are on, what you spent this period, and the limits
@@ -51,6 +53,7 @@ interface AccountOverviewTabProps {
 
 /** Container: owns the account-state read, renders the view. */
 export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const accountState = useAccountState({ accountId });
 
   if (accountState.isLoading) {
@@ -64,7 +67,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
 
   const state = accountState.data;
   if (!state) {
-    return <p className="text-muted-foreground text-sm">Couldn&apos;t load this account.</p>;
+    return <p className="text-muted-foreground text-sm">{tI18nComplete.raw('text68b8f8d47a7a')}</p>;
   }
 
   return <AccountOverviewView state={state} />;
@@ -79,10 +82,11 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
  * a fixed `AccountState` with no API, no auth, and no billing flag.
  */
 export function AccountOverviewView({ state }: { state: AccountState }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const wallet = state.credits?.total ?? 0;
   const isNegative = wallet < 0;
   const usage = state.usage_this_period;
-  const limits = buildLimitRows(state.limits);
+  const limits = buildLimitRows(state.limits, tI18nComplete);
 
   return (
     <div className="space-y-4">
@@ -94,7 +98,7 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
       <div className="bg-popover rounded-md border">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4">
           <div className="min-w-0">
-            <p className="text-muted-foreground text-xs">Available balance</p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text3ab7dd8428d1')}</p>
             {/* `tabular-nums`, deliberately NOT `font-mono`. Tabular figures
                 give the equal-width digits a balance wants; a monospace face
                 gives the '.' and ',' the same advance as a '0' too, which
@@ -109,7 +113,8 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
               {formatUsd(wallet)}
             </p>
             <p className="text-muted-foreground mt-1.5 text-xs tabular-nums">
-              {formatCredits(dollarsToCredits(Math.abs(wallet)))} credits
+              {formatCredits(dollarsToCredits(Math.abs(wallet)))}{' '}
+              {tI18nComplete.raw('textbe379a30f1aa')}
               {isNegative ? ' owed' : ''}
             </p>
           </div>
@@ -118,16 +123,22 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
 
         {usage ? (
           <div className="divide-border grid grid-cols-3 divide-x border-t">
-            <SpendStat label="Compute" value={usage.compute_usd} />
+            <SpendStat label={tI18nComplete.raw('textcedc516df056')} value={usage.compute_usd} />
             <SpendStat label="LLM" value={usage.llm_usd} />
-            <SpendStat label="Spent this period" value={usage.total_usd} strong />
+            <SpendStat
+              label={tI18nComplete.raw('text97c8335e2880')}
+              value={usage.total_usd}
+              strong
+            />
           </div>
         ) : null}
       </div>
 
       {limits.length > 0 ? (
         <section className="space-y-2">
-          <h3 className="text-foreground text-sm font-medium">Limits</h3>
+          <h3 className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('textdffb64dc7001')}
+          </h3>
           <div className="bg-popover divide-border divide-y rounded-md border">
             {limits.map((row) => {
               const atCap = row.limit > 0 && row.active >= row.limit;
@@ -183,28 +194,57 @@ export interface PlanStatus {
   isWindingDown: boolean;
 }
 
-export function describePlanStatus(state: AccountState): PlanStatus {
+export interface PlanStatusCopy {
+  locale: string;
+  teamSeats: (count: number) => string;
+  cancels: (date: string) => string;
+  cancelsAtPeriodEnd: string;
+  renews: (date: string) => string;
+  active: string;
+  noSubscription: string;
+  status: (status: string) => string;
+}
+
+const DEFAULT_PLAN_STATUS_COPY: PlanStatusCopy = {
+  locale: 'en-US',
+  teamSeats: (count) => `Team · ${count} seat${count === 1 ? '' : 's'}`,
+  cancels: (date) => `Cancels ${date}`,
+  cancelsAtPeriodEnd: 'Cancels at period end',
+  renews: (date) => `Renews ${date}`,
+  active: 'Active',
+  noSubscription: 'No subscription',
+  status: (status) => status.replace(/_/g, ' '),
+};
+
+export function describePlanStatus(
+  state: AccountState,
+  copy: PlanStatusCopy = DEFAULT_PLAN_STATUS_COPY,
+): PlanStatus {
   const seatCount = state.seats?.count ?? 1;
   const plan = resolvedPlan(state);
   const isPerSeat = state.billing_model === 'per_seat';
   const sub = state.subscription;
-  const periodEnd = sub?.current_period_end ? formatDate(sub.current_period_end) : null;
+  const periodEnd = sub?.current_period_end
+    ? formatDate(sub.current_period_end, copy.locale)
+    : null;
   const isActive = sub?.status === 'active';
 
   return {
-    name: isPerSeat ? `Team · ${seatCount} seat${seatCount === 1 ? '' : 's'}` : plan.label,
+    name: isPerSeat ? copy.teamSeats(seatCount) : plan.label,
     sublabel: isPerSeat ? null : plan.sublabel,
     detail: sub?.cancel_at_period_end
       ? periodEnd
-        ? `Cancels ${periodEnd}`
-        : 'Cancels at period end'
+        ? copy.cancels(periodEnd)
+        : copy.cancelsAtPeriodEnd
       : isActive && periodEnd
-        ? `Renews ${periodEnd}`
+        ? copy.renews(periodEnd)
         : isActive
-          ? 'Active'
+          ? copy.active
           : // Raw Stripe statuses are snake_case ('past_due', 'incomplete_expired').
             // Shown to a person, so they read as words.
-            (sub?.status?.replace(/_/g, ' ') ?? 'No subscription'),
+            sub?.status
+            ? copy.status(sub.status)
+            : copy.noSubscription,
     isActive,
     isWindingDown: Boolean(sub?.cancel_at_period_end),
   };
@@ -263,13 +303,14 @@ function SpendStat({ label, value, strong }: { label: string; value: number; str
 
 function buildLimitRows(
   limits: NonNullable<ReturnType<typeof useAccountState>['data']>['limits'],
+  tI18nComplete: UiTranslator,
 ): LimitRow[] {
   if (!limits) return [];
   const rows: LimitRow[] = [];
   if (limits.concurrent_sessions) {
     rows.push({
       id: 'sessions',
-      label: 'Concurrent sessions',
+      label: tI18nComplete.raw('text44912abd87c3'),
       active: limits.concurrent_sessions.active,
       limit: limits.concurrent_sessions.limit,
     });
@@ -277,7 +318,7 @@ function buildLimitRows(
   if (limits.concurrent_runs) {
     rows.push({
       id: 'runs',
-      label: 'Concurrent agent runs',
+      label: tI18nComplete.raw('texte03d3314ccda'),
       active: limits.concurrent_runs.running_count,
       limit: limits.concurrent_runs.limit,
     });
@@ -285,7 +326,7 @@ function buildLimitRows(
   if (limits.ai_worker_count) {
     rows.push({
       id: 'workers',
-      label: 'AI workers',
+      label: tI18nComplete.raw('textd165df0008b1'),
       active: limits.ai_worker_count.current_count,
       limit: limits.ai_worker_count.limit,
     });
@@ -293,7 +334,7 @@ function buildLimitRows(
   if (limits.custom_mcp_count) {
     rows.push({
       id: 'mcps',
-      label: 'Custom MCP connectors',
+      label: tI18nComplete.raw('text49b3a401c749'),
       active: limits.custom_mcp_count.current_count,
       limit: limits.custom_mcp_count.limit,
     });
@@ -316,9 +357,9 @@ function buildLimitRows(
  * (`packages/shared/src/utils/credit-formatter.ts`) — two separators
  * disagreeing inside one card is worse than either choice alone.
  */
-export function formatUsd(amount: number | null | undefined): string {
+export function formatUsd(amount: number | null | undefined, locale = 'en-US'): string {
   const n = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
-  return n.toLocaleString('en-US', {
+  return n.toLocaleString(locale, {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
@@ -327,10 +368,10 @@ export function formatUsd(amount: number | null | undefined): string {
 }
 
 /** `Sep 19` — no year, because a billing period always lands inside one. */
-function formatDate(unixSeconds: number): string | null {
+function formatDate(unixSeconds: number, locale?: string): string | null {
   const ms = unixSeconds * 1000;
   if (!Number.isFinite(ms)) return null;
   const date = new Date(ms);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }

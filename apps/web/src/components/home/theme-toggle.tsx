@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/marketing/button';
 import { getThemeById } from '@/lib/themes';

@@ -1,5 +1,9 @@
 'use client';
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 // RoleSelect — THE role picker for every access surface.
 //
 // One `Select` renders both halves of the role model: the built-in roles
@@ -16,9 +20,9 @@
 // role `Select`, and `CreateAssignmentDialog`'s custom-role-only `Select`.
 // `role-select-item.tsx` folds into this file.
 
-import Link from 'next/link';
 import { menuRow } from '@/components/ui/menu-recipe';
 import { ArrowRightIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 import { useMemo } from 'react';
 
 import {
@@ -116,15 +120,24 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<OfferedProjectRole, RoleDescriptor
 export function builtinRoleDescriptor(
   scope: RoleScope,
   role: AccountRole | ProjectRole,
+  tI18nComplete?: UiTranslator,
 ): RoleDescriptor | undefined {
-  return scope === 'account'
-    ? ACCOUNT_ROLE_DESCRIPTORS[role as AccountRole]
-    : PROJECT_ROLE_DESCRIPTORS[role as OfferedProjectRole];
+  const descriptor =
+    scope === 'account'
+      ? ACCOUNT_ROLE_DESCRIPTORS[role as AccountRole]
+      : PROJECT_ROLE_DESCRIPTORS[role as OfferedProjectRole];
+  return descriptor && tI18nComplete
+    ? localizeUiCatalog(descriptor, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS)
+    : descriptor;
 }
 
 /** "Manager", "Owner" — the display name of a built-in role. */
-export function builtinRoleLabel(scope: RoleScope, role: AccountRole | ProjectRole): string {
-  return builtinRoleDescriptor(scope, role)?.label ?? role;
+export function builtinRoleLabel(
+  scope: RoleScope,
+  role: AccountRole | ProjectRole,
+  tI18nComplete?: UiTranslator,
+): string {
+  return builtinRoleDescriptor(scope, role, tI18nComplete)?.label ?? role;
 }
 
 // ─── RoleValue ─────────────────────────────────────────────────────────────
@@ -181,7 +194,8 @@ export function selectValueToRoleValue(raw: string): RoleValue {
   if (raw.startsWith(BUILTIN_PREFIX)) {
     return { kind: 'builtin', role: raw.slice(BUILTIN_PREFIX.length) as AccountRole | ProjectRole };
   }
-  if (raw.startsWith(CUSTOM_PREFIX)) return { kind: 'custom', roleId: raw.slice(CUSTOM_PREFIX.length) };
+  if (raw.startsWith(CUSTOM_PREFIX))
+    return { kind: 'custom', roleId: raw.slice(CUSTOM_PREFIX.length) };
   return ROLE_NONE;
 }
 
@@ -194,8 +208,9 @@ export function roleValueLabel(
   scope: RoleScope,
   value: RoleValue,
   roles?: readonly IamRole[],
+  tI18nComplete?: UiTranslator,
 ): string {
-  if (value.kind === 'builtin') return builtinRoleLabel(scope, value.role);
+  if (value.kind === 'builtin') return builtinRoleLabel(scope, value.role, tI18nComplete);
   if (value.kind === 'custom') {
     return roles?.find((r) => r.role_id === value.roleId)?.name ?? 'Custom role';
   }
@@ -269,6 +284,7 @@ export function RoleSelect({
   className,
   placeholder = 'Choose a role',
 }: RoleSelectProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const rolesQuery = useAccountRoles(accountId, rbacEnabled);
   const builtins = useMemo(() => {
     const offered = builtinRoles ?? builtinRolesForScope(scope);
@@ -308,14 +324,14 @@ export function RoleSelect({
       <SelectContent>
         {allowNone ? <SelectItem value={NONE_VALUE}>{noneLabel}</SelectItem> : null}
         {builtins.map((role) => {
-          const descriptor = builtinRoleDescriptor(scope, role);
+          const descriptor = builtinRoleDescriptor(scope, role, tI18nComplete);
           return (
             <SelectItem
               key={role}
               value={`${BUILTIN_PREFIX}${role}`}
               description={descriptor?.blurb}
             >
-              <span className="font-medium">{builtinRoleLabel(scope, role)}</span>
+              <span className="font-medium">{builtinRoleLabel(scope, role, tI18nComplete)}</span>
             </SelectItem>
           );
         })}
@@ -324,9 +340,11 @@ export function RoleSelect({
           <>
             <SelectSeparator />
             <SelectGroup>
-              <SelectLabel>Custom</SelectLabel>
+              <SelectLabel>{tI18nComplete.raw('text494ca78f7374')}</SelectLabel>
               {selectedMissingCustom && value.kind === 'custom' ? (
-                <SelectItem value={`${CUSTOM_PREFIX}${value.roleId}`}>Custom role</SelectItem>
+                <SelectItem value={`${CUSTOM_PREFIX}${value.roleId}`}>
+                  {tI18nComplete.raw('text5b58e07ead9f')}
+                </SelectItem>
               ) : null}
               {customRoles.map((role) => (
                 <SelectItem
@@ -351,7 +369,7 @@ export function RoleSelect({
               className={menuRow('md', 'default', 'text-muted-foreground hover:text-foreground')}
             >
               <span className="flex w-full items-center justify-between gap-2">
-                <span>Create a custom role</span>
+                <span>{tI18nComplete.raw('text6dd06b2529d4')}</span>
                 <ArrowRightIcon className="size-3.5 shrink-0" aria-hidden />
               </span>
             </Link>

@@ -4,14 +4,18 @@ import { CopyButton } from '@/components/markdown/copy-button';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { ArrowSquareOutIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function ChatGptDeviceChallenge({ url, code }: { url: string; code: string | null }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <p className="text-foreground text-xs font-medium">Copy your device code</p>
+        <p className="text-foreground text-xs font-medium">
+          {tI18nComplete.raw('text3d927b930ba7')}
+        </p>
         <p className="text-muted-foreground text-xs leading-5 text-pretty">
-          Copy this code. Then open the auth page and enter it to connect ChatGPT.
+          {tI18nComplete.raw('text5ecf97e61ad9')}
         </p>
       </div>
 
@@ -20,7 +24,7 @@ export function ChatGptDeviceChallenge({ url, code }: { url: string; code: strin
           <code className="text-foreground min-w-0 flex-1 font-mono text-lg font-semibold tracking-widest tabular-nums">
             {code}
           </code>
-          <Hint label="Copy code">
+          <Hint label={tI18nComplete.raw('text49a0053f3b0d')}>
             <CopyButton code={code} className="size-10 shrink-0" />
           </Hint>
         </div>
@@ -30,7 +34,7 @@ export function ChatGptDeviceChallenge({ url, code }: { url: string; code: strin
         <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5 px-3" asChild>
           <a href={url} target="_blank" rel="noopener noreferrer">
             <ArrowSquareOutIcon className="size-3.5 shrink-0" />
-            Open auth page
+            {tI18nComplete.raw('textd0858bfa4be3')}
           </a>
         </Button>
       ) : null}

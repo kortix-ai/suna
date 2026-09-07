@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import type { ConnectorAuthorizationStrategy } from '@kortix/sdk';
 import { useEffect, useState } from 'react';
 
@@ -78,6 +79,7 @@ export function AuthorizationStrategyField({
    */
   hideLabel?: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const id = `${idPrefix}-authorization-strategy`;
   /** The name the `<FieldLabel>` would have carried, moved onto the control
    *  itself whenever that label is suppressed. */
@@ -91,7 +93,7 @@ export function AuthorizationStrategyField({
     const isProject = value === 'project';
     return (
       <Field>
-        {hideLabel ? null : <FieldLabel>Authorization owner</FieldLabel>}
+        {hideLabel ? null : <FieldLabel>{tI18nComplete.raw('textca6f5e1c98a8')}</FieldLabel>}
         <div className="bg-popover flex items-start gap-3 rounded-md border px-4 py-3">
           <span
             className={cn(
@@ -109,13 +111,13 @@ export function AuthorizationStrategyField({
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{isProject ? 'Project' : 'User'}</span>
               <Badge variant="outline" size="xs">
-                Fixed
+                {tI18nComplete.raw('text1246fc93bca0')}
               </Badge>
             </div>
             <p className="text-muted-foreground text-xs text-pretty">
               {isProject
-                ? 'Everyone in this project shares one connection.'
-                : 'Everyone connects their own account.'}
+                ? tI18nComplete.raw('texteb573b3b299a')
+                : tI18nComplete.raw('texte31c7af1f424')}
             </p>
           </div>
         </div>
@@ -126,7 +128,9 @@ export function AuthorizationStrategyField({
   return (
     <Field>
       <div className="flex items-center justify-between gap-2">
-        {hideLabel ? null : <FieldLabel htmlFor={id}>Authorization owner</FieldLabel>}
+        {hideLabel ? null : (
+          <FieldLabel htmlFor={id}>{tI18nComplete.raw('textca6f5e1c98a8')}</FieldLabel>
+        )}
         {pending ? <Loading className="size-4 shrink-0" /> : null}
       </div>
       <Select
@@ -138,14 +142,14 @@ export function AuthorizationStrategyField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="project">Project</SelectItem>
-          <SelectItem value="user">User</SelectItem>
+          <SelectItem value="project">{tI18nComplete.raw('text985959785319')}</SelectItem>
+          <SelectItem value="user">{tI18nComplete.raw('textb512d97e7cbf')}</SelectItem>
         </SelectContent>
       </Select>
       <FieldDescription className="text-pretty">
         {value === 'project'
-          ? 'Everyone in this project shares one connection.'
-          : 'Everyone connects their own account.'}
+          ? tI18nComplete.raw('texteb573b3b299a')
+          : tI18nComplete.raw('texte31c7af1f424')}
       </FieldDescription>
     </Field>
   );
@@ -197,6 +201,7 @@ export function ConnectorConnectionModal({
   onOpenChange: (open: boolean) => void;
   onSubmit: (connection: EasyConnectConnectionInput) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // The proposed name counts the project's existing connections to this app,
   // so the second Sentry is "Sentry 2" — see `proposeConnectorConnectionName`.
   const proposedName = proposeConnectorConnectionName(initialName, existingSlugs);
@@ -244,7 +249,8 @@ export function ConnectorConnectionModal({
         >
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <p className="text-muted-foreground text-sm text-pretty">
-              Adds {displayName} to this project. You connect an account right after.
+              {tI18nComplete.raw('text17e9f72b9ba8')}
+              {displayName} {tI18nComplete.raw('texte99baf469ca8')}
             </p>
             <Disclosure
               variant="outline"
@@ -259,7 +265,7 @@ export function ConnectorConnectionModal({
                   className="flex w-full items-center justify-between rounded-none"
                 >
                   <span className="text-muted-foreground truncate text-sm font-medium">
-                    Advanced options
+                    {tI18nComplete.raw('text9443ff69463e')}
                   </span>
                   <CaretDownIcon className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
                 </Button>
@@ -268,7 +274,9 @@ export function ConnectorConnectionModal({
                 <div className="px-4 py-5">
                   <FieldGroup className="gap-4">
                     <Field>
-                      <FieldLabel htmlFor={`${idPrefix}-name`}>Display name</FieldLabel>
+                      <FieldLabel htmlFor={`${idPrefix}-name`}>
+                        {tI18nComplete.raw('text2b7f6a84de91')}
+                      </FieldLabel>
                       <Input
                         id={`${idPrefix}-name`}
                         value={name}
@@ -292,7 +300,9 @@ export function ConnectorConnectionModal({
                       />
                     </Field>
                     <Field>
-                      <FieldLabel htmlFor={`${idPrefix}-slug`}>Slug</FieldLabel>
+                      <FieldLabel htmlFor={`${idPrefix}-slug`}>
+                        {tI18nComplete.raw('textd15387ecc6c5')}
+                      </FieldLabel>
                       <Input
                         id={`${idPrefix}-slug`}
                         value={slug}
@@ -315,8 +325,8 @@ export function ConnectorConnectionModal({
                         className={cn(slug.length > 0 && !slugAvailable && 'text-destructive')}
                       >
                         {slug.length > 0 && !slugAvailable
-                          ? 'This slug already exists in this project.'
-                          : 'Unique within this project. You can change the proposed value.'}
+                          ? tI18nComplete.raw('text1b07037029d3')
+                          : tI18nComplete.raw('text48026cbaf423')}
                       </FieldDescription>
                     </Field>
                     <AuthorizationStrategyField
@@ -338,7 +348,7 @@ export function ConnectorConnectionModal({
               onClick={() => onOpenChange(false)}
               disabled={pending}
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button
               type="submit"
@@ -350,7 +360,7 @@ export function ConnectorConnectionModal({
               ) : (
                 <PlusIcon className="size-4 shrink-0" weight="bold" />
               )}
-              {submitLabel ?? 'Add connector'}
+              {submitLabel ?? tI18nComplete.raw('texta6ef2483d6fb')}
             </Button>
           </ModalFooter>
         </form>

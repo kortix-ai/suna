@@ -1,7 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -167,7 +167,7 @@ export function AccountSwitcher({ className }: { className?: string }) {
           </div>
         )}
 
-        <DropdownMenuLabel>Account</DropdownMenuLabel>
+        <DropdownMenuLabel>{tI18nHardcoded.raw('i18nComplete.text7e1b0d5641f2')}</DropdownMenuLabel>
         <div className="max-h-[280px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {accountsQuery.isLoading ? (
             <div className="space-y-1 py-1">
@@ -177,7 +177,9 @@ export function AccountSwitcher({ className }: { className?: string }) {
             </div>
           ) : filteredAccounts.length === 0 ? (
             <div className="text-muted-foreground/60 px-2 py-3 text-xs">
-              {query.trim() ? 'No accounts match' : 'No accounts yet'}
+              {query.trim()
+                ? tI18nHardcoded.raw('i18nComplete.text58057d6fa81b')
+                : tI18nHardcoded.raw('i18nComplete.text84a7e27178d9')}
             </div>
           ) : (
             filteredAccounts.map((account) => {
@@ -246,7 +248,9 @@ export function AccountSwitcher({ className }: { className?: string }) {
               prefetch
             >
               <CreditCardSolid weight="fill" className="size-3.5" />
-              <span className="flex-1 truncate text-sm font-medium">Billing</span>
+              <span className="flex-1 truncate text-sm font-medium">
+                {tI18nHardcoded.raw('i18nComplete.text3ac8bbca9a74')}
+              </span>
             </Link>
           </DropdownMenuItem>
         )}

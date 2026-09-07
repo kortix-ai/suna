@@ -4,16 +4,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 // comment there). `mock.module` is keyed by the specifier STRING, so this
 // must stay byte-identical to the one the module under test uses — a
 // mismatch silently detaches the mock and lets the real IndexedDB run.
-// eslint-disable-next-line no-restricted-imports
-import * as idb from '@kortix/sdk/internal/idb-sync-cache';
+import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
+import { useTabStore } from '@/stores/tab-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import {
   clearImpersonationSession,
   getImpersonationSession,
   setImpersonationSession,
 } from '@kortix/sdk';
-import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
-import { useTabStore } from '@/stores/tab-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import * as idb from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-line no-restricted-imports
 
 /**
  * `resetClientState()` must SETTLE even when its IndexedDB purge never does.

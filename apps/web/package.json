@@ -209,6 +209,7 @@
     "@types/turndown": "^5.0.5",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
+    "intl-messageformat": "11.2.9",
     "prettier": "^3.5.3",
     "prettier-plugin-organize-imports": "^4.3.0",
     "prettier-plugin-tailwindcss": "^0.6.14",

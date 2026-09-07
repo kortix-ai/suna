@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // Shared "GitHub isn't connected yet" panel — shown in place of the
 // create/import UI whenever there's no usable managed git on this server
 // (self-host with no GitHub App or PAT configured yet). Routes the user to
@@ -48,16 +49,15 @@ export function GitHubSetupRequiredPanel({
   size = 'default',
   className,
 }: GitHubSetupRequiredPanelProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <EmptyState
       icon={Github}
       size={size}
       className={className}
-      title="GitHub isn't connected on this server yet"
+      title={tI18nComplete.raw('text50c3e706a3c2')}
       description={
-        isAdmin
-          ? "Every Kortix project is a git repository. Connect GitHub once in this account's Git settings."
-          : "Every Kortix project is a git repository. Ask your admin to connect GitHub in this account's Git settings."
+        isAdmin ? tI18nComplete.raw('text02d7798e74f6') : tI18nComplete.raw('textc9b3285ac7b3')
       }
       action={
         // An anchor once the account resolves, so Next prefetches Git settings
@@ -67,13 +67,13 @@ export function GitHubSetupRequiredPanel({
           <Button size="sm" className="gap-1.5" asChild>
             <Link href={`/accounts/${accountId}?tab=git`} prefetch onClick={onNavigate}>
               <Github className="size-4" />
-              Set up GitHub
+              {tI18nComplete.raw('text9917a73035f8')}
             </Link>
           </Button>
         ) : (
           <Button type="button" size="sm" className="gap-1.5" disabled>
             <Github className="size-4" />
-            Set up GitHub
+            {tI18nComplete.raw('text9917a73035f8')}
           </Button>
         )
       }

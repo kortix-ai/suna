@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Badge } from '@/components/ui/badge';
@@ -74,6 +74,7 @@ async function fetchShareData(shareId: string): Promise<ShareData> {
 // ============================================================================
 
 export function ShareViewer({ shareId }: { shareId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [data, setData] = useState<ShareData | null>(null);
   const [error, setError] = useState<ShareLoadError | null>(null);
@@ -125,7 +126,7 @@ export function ShareViewer({ shareId }: { shareId: string }) {
 
   // ---------- Error state ----------
   if (error || !data) {
-    const { title, description } = describeShareError(error);
+    const { title, description } = describeShareError(error, tI18nComplete);
     return (
       <div className="bg-background flex h-screen items-center justify-center p-4">
         <div className="flex max-w-md flex-col items-center gap-4 text-center">
@@ -180,10 +181,10 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
     try {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
-      successToast('Share link copied to clipboard!');
+      successToast(tHardcodedUi.raw('i18nComplete.text2d57ecee014e'));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      errorToast('Failed to copy link');
+      errorToast(tHardcodedUi.raw('i18nComplete.text167c96824acb'));
     }
   };
 
@@ -195,7 +196,7 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
           <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm font-medium">
             <span className="max-w-[140px] truncate sm:max-w-none">{sessionTitle}</span>
             <Badge size="sm" variant="secondary" className="shrink-0">
-              Shared
+              {tHardcodedUi.raw('i18nComplete.texte3c4b39d6d50')}
             </Badge>
           </div>
         </div>
@@ -213,7 +214,9 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
                 >
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   <span className="hidden text-sm sm:inline">
-                    {copied ? 'Copied!' : 'Copy Link'}
+                    {copied
+                      ? tHardcodedUi.raw('i18nComplete.textea61bc15688d')
+                      : tHardcodedUi.raw('i18nComplete.text724e78a3254c')}
                   </span>
                 </Button>
               </TooltipTrigger>
@@ -260,6 +263,7 @@ function UserBubble({ text }: { text: string }) {
 // ── Assistant message block (matches Suna AssistantGroupRow) ──
 
 function AssistantBlock({ text }: { text: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex flex-col gap-2">
       {/* Agent header — Kortix logomark (matches Suna AgentHeader for name="Kortix") */}
@@ -267,7 +271,7 @@ function AssistantBlock({ text }: { text: string }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/kortix-logomark-white.svg"
-          alt="Kortix"
+          alt={tI18nComplete.raw('textab54cf5e1d9d')}
           className="shrink-0 invert dark:invert-0"
           style={{ height: '12px', width: 'auto' }}
         />
@@ -293,6 +297,7 @@ function AssistantBlock({ text }: { text: string }) {
 // ============================================================================
 
 function MessageActions({ text, className }: { text: string; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [copied, setCopied] = useState(false);
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
@@ -338,7 +343,7 @@ function MessageActions({ text, className }: { text: string; className?: string 
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          <p>{copied ? 'Copied!' : 'Copy'}</p>
+          <p>{copied ? tI18nComplete.raw('textea61bc15688d') : 'Copy'}</p>
         </TooltipContent>
       </Tooltip>
 

@@ -31,4 +31,3 @@ describe('shouldShowFreeTag', () => {
     ).toBe(false);
   });
 });
-

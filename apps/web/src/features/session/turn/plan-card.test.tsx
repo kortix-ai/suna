@@ -214,7 +214,7 @@ describe('PlanRing — the dial actually reports the plan', () => {
     expect(markup).toContain('stroke-dashoffset="4"');
   });
 
-  test('the sweep starts at twelve o\'clock, not at three', () => {
+  test("the sweep starts at twelve o'clock, not at three", () => {
     // SVG circles start at 3 o'clock; progress has to read from the top.
     const markup = renderRing([todo('a', 'completed'), todo('b', 'pending')]);
     expect(markup).toContain('rotate(-90 8 8)');
@@ -350,10 +350,7 @@ describe('the trigger and the list do not print the same step twice', () => {
     // Dropping the running row must not drop its neighbours: the completed rows
     // are the history and the pending ones are the road ahead.
     const list = planListTodos(keyTodos(RUNNING as any));
-    expect(list.map((r) => r.todo.content)).toEqual([
-      'Inspect the starter repo',
-      'Run browser QA',
-    ]);
+    expect(list.map((r) => r.todo.content)).toEqual(['Inspect the starter repo', 'Run browser QA']);
   });
 
   test('filtering happens after keying, so surviving rows keep their keys', () => {
@@ -488,7 +485,7 @@ describe('PlanRing — the pie', () => {
     expect(pie(dial(6, 6))).toContain('stroke-dashoffset="0"');
   });
 
-  test('the slice starts at twelve o\'clock and sweeps with the ring', () => {
+  test("the slice starts at twelve o'clock and sweeps with the ring", () => {
     expect(pie(dial(1, 6))).toContain('rotate(-90 8 8)');
   });
 

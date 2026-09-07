@@ -33,15 +33,15 @@ describe('catalogFootSummary', () => {
     expect(catalogFootSummary(foot({ categoryLabel: 'Finance', shown: 31 }))).toBe(
       '31 in Finance so far',
     );
-    expect(
-      catalogFootSummary(foot({ categoryLabel: 'Finance', shown: 31, hasMore: false })),
-    ).toBe('All 31 in Finance');
+    expect(catalogFootSummary(foot({ categoryLabel: 'Finance', shown: 31, hasMore: false }))).toBe(
+      'All 31 in Finance',
+    );
   });
 
   test('a search counts results, not connectors', () => {
-    expect(catalogFootSummary(foot({ searching: true, loaded: 40, total: 40, hasMore: false }))).toBe(
-      'All 40 results',
-    );
+    expect(
+      catalogFootSummary(foot({ searching: true, loaded: 40, total: 40, hasMore: false })),
+    ).toBe('All 40 results');
   });
 
   test('one result is not "1 results"', () => {

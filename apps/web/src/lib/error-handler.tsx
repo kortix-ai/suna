@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
+import type { UiTranslator } from '@/i18n/translator';
 import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
 import { isBillingEnabled } from '@/lib/config';
 import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
@@ -155,7 +156,11 @@ const formatErrorMessage = (message: string, context?: ErrorContext): string => 
   return `${prefix}: ${message}`;
 };
 
-export const handleApiError = (error: any, context?: ErrorContext): void => {
+export const handleApiError = (
+  error: any,
+  context: ErrorContext | undefined,
+  tI18nComplete: UiTranslator,
+): void => {
   const status = error?.status || error?.response?.status;
   // Expected 4xx (auth, validation, forbidden, not-found, etc.) should not
   // light up the Next.js dev overlay — they're user-facing business outcomes
@@ -298,8 +303,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
         : 'Concurrent-session limit reached';
     if (!shouldSuppressDuplicate(v2Status, title)) {
       warningToast(title, {
-        description:
-          'Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.',
+        description: tI18nComplete.raw('text655a03fa2bea'),
         duration: 6000,
         button: (
           <Button size="sm" asChild>
@@ -355,49 +359,23 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
 
   if (error?.status >= 500) {
     errorToast(formattedMessage, {
-      description: 'Our team has been notified and is working on a fix.',
+      description: tI18nComplete.raw('text75aec78d2ee8'),
       duration: 6000,
     });
   } else if (error?.status === 403) {
     errorToast(formattedMessage, {
-      description: 'Contact support if you believe this is an error.',
+      description: tI18nComplete.raw('textb3ffc83852a3'),
       duration: 6000,
     });
   } else if (error?.status === 429) {
     warningToast(formattedMessage, {
-      description: 'Please wait a moment before trying again.',
+      description: tI18nComplete.raw('textdbe0414753c1'),
       duration: 5000,
     });
   } else {
     errorToast(formattedMessage, {
       duration: 5000,
     });
-  }
-};
-
-export const handleNetworkError = (error: any, context?: ErrorContext): void => {
-  const isNetworkError =
-    error?.message?.includes('fetch') ||
-    error?.message?.includes('network') ||
-    error?.message?.includes('connection') ||
-    error?.code === 'NETWORK_ERROR' ||
-    !navigator.onLine;
-
-  if (isNetworkError) {
-    // Report network errors to Sentry — these indicate connectivity issues
-    Sentry.captureException(
-      error instanceof Error ? error : new Error(error?.message || 'Network error'),
-      {
-        tags: { errorType: 'network_error', operation: context?.operation },
-        level: 'warning',
-      },
-    );
-    errorToast('Connection error', {
-      description: 'Please check your internet connection and try again.',
-      duration: 6000,
-    });
-  } else {
-    handleApiError(error, context);
   }
 };
 
@@ -432,11 +410,11 @@ export { isBillingError };
  * Returns true if error was handled, false otherwise.
  * Use this in mutation onError callbacks.
  */
-export const handleBillingError = (error: any): boolean => {
+export const handleBillingError = (error: any, tI18nComplete: UiTranslator): boolean => {
   if (!isBillingError(error)) {
     return false;
   }
 
-  handleApiError(error);
+  handleApiError(error, undefined, tI18nComplete);
   return true;
 };

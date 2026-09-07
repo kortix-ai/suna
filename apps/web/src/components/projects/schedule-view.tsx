@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Triggers — the single capability page at `/projects/<id>/triggers`,
  * mounted by `features/workspace/capabilities/triggers/triggers-page.tsx`.
@@ -70,11 +71,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
-  KIND_COPY,
-  TRIGGERS_COPY,
   type TriggerKind,
   describeWhen,
   isTriggerKind,
+  localizedKindCopy,
+  localizedTriggersCopy,
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
@@ -107,25 +108,28 @@ export function TriggerPauseSwitch({
   isPending: boolean;
   onToggle: (next: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!canManage) return null;
 
   return (
     <Field orientation="horizontal" className="items-start gap-3">
       <FieldContent>
         <FieldTitle>
-          Pause all triggers
-          {paused && <span className="text-muted-foreground font-normal"> · paused</span>}
+          {tI18nComplete.raw('textf31740d0e328')}
+          {paused && (
+            <span className="text-muted-foreground font-normal">
+              {' '}
+              {tI18nComplete.raw('textcfaba14736c2')}
+            </span>
+          )}
         </FieldTitle>
-        <FieldDescription>
-          Stops this project running any trigger on its own. You can still start one by hand. Useful
-          when another environment is meant to be doing the work.
-        </FieldDescription>
+        <FieldDescription>{tI18nComplete.raw('text19a4be984642')}</FieldDescription>
       </FieldContent>
       <Switch
         checked={paused}
         disabled={isPending}
         onCheckedChange={onToggle}
-        aria-label="Pause every trigger in this project"
+        aria-label={tI18nComplete.raw('textac910c2802d5')}
       />
     </Field>
   );
@@ -159,6 +163,7 @@ export function TriggerPauseSwitch({
  * banner can never disagree or double-fetch.
  */
 function TriggerActivationMenu({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const queryKey = qk.project.triggers(projectId);
   const triggersQuery = useQuery({
@@ -177,9 +182,11 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
     mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
     onSuccess: (data, next) => {
       queryClient.setQueryData(queryKey, data);
-      successToast(next ? 'Everything paused for this project' : 'Everything resumed');
+      successToast(
+        next ? tI18nComplete.raw('text5f6f23bff165') : tI18nComplete.raw('text5e4efd91b927'),
+      );
     },
-    onError: (error: Error) => errorToast(error.message || 'Could not update'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text43ec39943667')),
   });
 
   // The SAME leaf, applied one level up as well: the trigger
@@ -193,8 +200,8 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
         <Button
           variant="outline"
           size="icon-base"
-          aria-label="Trigger settings"
-          title="Trigger settings"
+          aria-label={tI18nComplete.raw('text17c982d8eb68')}
+          title={tI18nComplete.raw('text17c982d8eb68')}
         >
           <GearSixIcon className="size-4 shrink-0" />
         </Button>
@@ -212,7 +219,9 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
 }
 
 export function ScheduleView({ projectId }: { projectId: string }) {
-  const copy = TRIGGERS_COPY;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const copy = localizedTriggersCopy(tI18nComplete);
+  const kindCopy = localizedKindCopy(tI18nComplete);
   const queryClient = useQueryClient();
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
@@ -245,29 +254,37 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
     onSuccess: (res) => {
       if (res.status === 'fired') {
-        successToast('Started', {
+        successToast(tI18nComplete.raw('textecbc89cd37a0'), {
           description: res.session_id
             ? `Session ${res.session_id.slice(0, 8)}…`
-            : 'Getting a session ready',
+            : tI18nComplete.raw('text747e9e0e8e92'),
         });
       } else if (res.status === 'queued') {
-        successToast('Queued', { description: res.reason ?? 'Busy right now — it will retry' });
+        successToast(tI18nComplete.raw('text661ff40a07e0'), {
+          description: res.reason ?? tI18nComplete.raw('text17cf41bd6a6f'),
+        });
       } else {
-        errorToast('It could not start', { description: res.error });
+        errorToast(tI18nComplete.raw('text9c18cb990345'), { description: res.error });
       }
       invalidate();
     },
-    onError: (err) => errorToast(err instanceof Error ? err.message : 'It could not start'),
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfc56800b00af')),
   });
 
   const toggle = useMutation({
     mutationFn: (trigger: ProjectTrigger) =>
       updateProjectTrigger(projectId, trigger.slug, { enabled: !trigger.enabled }),
     onSuccess: (_data, trigger) => {
-      successToast(trigger.enabled ? 'Paused' : 'Resumed');
+      successToast(
+        trigger.enabled
+          ? tI18nComplete.raw('texte159b06187d3')
+          : tI18nComplete.raw('texta97d32ddb6ba'),
+      );
       invalidate();
     },
-    onError: (err) => errorToast(err instanceof Error ? err.message : 'Could not update'),
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text43ec39943667')),
   });
 
   const remove = useMutation({
@@ -275,13 +292,16 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     onSuccess: (_data, trigger) => {
       // Safe: `trigger` came off the `triggers` list above, already filtered
       // to `isTriggerKind`.
-      const noun = KIND_COPY[trigger.type as TriggerKind].noun;
-      successToast(`${noun[0].toUpperCase()}${noun.slice(1)} deleted`);
+      const noun = kindCopy[trigger.type as TriggerKind].noun;
+      successToast(
+        tI18nComplete('text65e31e8628a9', { value0: noun[0].toUpperCase(), value1: noun.slice(1) }),
+      );
       setDeleteTarget(null);
       setSelectedSlug(null);
       invalidate();
     },
-    onError: (err) => errorToast(err instanceof Error ? err.message : 'Could not delete it'),
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text76bf191d6426')),
   });
 
   /* ── Derived state ──────────────────────────────────────────────────── */
@@ -297,7 +317,10 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     () => (triggersQuery.data?.triggers ?? []).filter((t) => isTriggerKind(t.type)),
     [triggersQuery.data],
   );
-  const filtered = useMemo(() => triggers.filter((t) => matchesQuery(t, query)), [triggers, query]);
+  const filtered = useMemo(
+    () => triggers.filter((t) => matchesQuery(t, query, tI18nComplete)),
+    [triggers, query, tI18nComplete],
+  );
   const selected = triggers.find((t) => t.slug === selectedSlug) ?? null;
   const parseErrors = triggersQuery.data?.errors ?? [];
   const paused = triggersQuery.data?.triggers_paused ?? false;
@@ -354,9 +377,13 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             reader has to know before they read the list. The switch itself
             now lives behind the header gear. */}
         {paused && showContent && (
-          <InfoBanner tone="warning" icon={WarningIcon} title="Everything is paused">
-            Nothing in this project runs on its own right now. You can still start a trigger by
-            hand. A project manager can resume from the gear next to {copy.createLabel}.
+          <InfoBanner
+            tone="warning"
+            icon={WarningIcon}
+            title={tI18nComplete.raw('textb18b93a52cd2')}
+          >
+            {tI18nComplete.raw('text3bc554b5c290')}
+            {copy.createLabel}.
           </InfoBanner>
         )}
 
@@ -368,17 +395,24 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             ))}
           </div>
         ) : isForbidden ? (
-          <InfoBanner tone="warning" icon={LockKeyIcon} title="You don't have access">
-            Ask a project manager to give you access to this project&apos;s {copy.noun}s.
+          <InfoBanner
+            tone="warning"
+            icon={LockKeyIcon}
+            title={tI18nComplete.raw('textabb84be05cfa')}
+          >
+            {tI18nComplete.raw('text22cd1f210415')} {copy.noun}
+            {tI18nComplete.raw('text382584f2456e')}
           </InfoBanner>
         ) : triggersQuery.isError ? (
           <ErrorState
             size="sm"
-            title={`Couldn't load your ${copy.noun}s`}
-            description={(triggersQuery.error as Error)?.message ?? 'Something went wrong.'}
+            title={tI18nComplete('text7ce02a51e3dd', { value0: copy.noun })}
+            description={
+              (triggersQuery.error as Error)?.message ?? tI18nComplete.raw('text0c953ab32c60')
+            }
             action={
               <Button variant="outline" size="sm" onClick={() => triggersQuery.refetch()}>
-                Try again
+                {tI18nComplete.raw('textd8b8392e2c54')}
               </Button>
             }
           />
@@ -404,7 +438,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           />
         ) : filtered.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            Nothing matches <span className="text-foreground font-medium">{query}</span>.
+            {tI18nComplete.raw('text965b516df3ba')}{' '}
+            <span className="text-foreground font-medium">{query}</span>.
           </p>
         ) : (
           <ScheduleTable
@@ -420,7 +455,11 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         )}
 
         {parseErrors.length > 0 && (
-          <InfoBanner tone="warning" icon={WarningIcon} title="Some entries could not be read">
+          <InfoBanner
+            tone="warning"
+            icon={WarningIcon}
+            title={tI18nComplete.raw('text5f6dc605ac36')}
+          >
             <ul className="space-y-0.5 text-xs">
               {parseErrors.map((err) => (
                 <li key={err.slug}>
@@ -464,17 +503,19 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         onOpenChange={(next) => {
           if (!next) setDeleteTarget(null);
         }}
-        title={`Delete this ${deleteTarget ? KIND_COPY[deleteTarget.type as TriggerKind].noun : copy.noun}?`}
+        title={tI18nComplete('text4e9e0de01d8a', {
+          value0: deleteTarget ? kindCopy[deleteTarget.type as TriggerKind].noun : copy.noun,
+        })}
         description={
           deleteTarget ? (
             <>
               <span className="text-foreground font-medium">{triggerName(deleteTarget)}</span> (
-              {describeWhen(deleteTarget).toLowerCase()}) stops running and is removed. Runs it has
-              already done are kept.
+              {describeWhen(deleteTarget).toLowerCase()}
+              {tI18nComplete.raw('text33575b279b5e')}
             </>
           ) : null
         }
-        confirmLabel="Delete"
+        confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
         confirmVariant="destructive"
         isPending={remove.isPending}
         onConfirm={() => deleteTarget && remove.mutate(deleteTarget)}

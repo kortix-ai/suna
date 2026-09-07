@@ -7,6 +7,7 @@ import {
 import { SessionApprovalNotice } from '@/features/session/session-approval-prompt';
 import { approvalNoticeRows } from '@/features/session/session-approval-review';
 import type { SessionAuditAction } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 /**
@@ -93,6 +94,7 @@ const SCENARIOS: Record<string, SessionAuditAction[]> = {
 };
 
 export default function DebugApprovalsPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [scenario, setScenario] = useState<keyof typeof SCENARIOS>(
     'Shortened value — attachment (approvable)',
   );
@@ -142,7 +144,9 @@ export default function DebugApprovalsPage() {
           </div>
         </div>
         <div className="bg-popover border-border rounded-b-xl border px-3 py-4">
-          <span className="text-muted-foreground text-sm">Ask anything…</span>
+          <span className="text-muted-foreground text-sm">
+            {tI18nComplete.raw('textde781187cbfb')}
+          </span>
         </div>
       </div>
     </div>

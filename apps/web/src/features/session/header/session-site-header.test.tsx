@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(
@@ -120,10 +120,11 @@ describe('SessionSiteHeader trailing cluster — non-technical resting state', (
 
     // Exactly one Hint trigger carries the "Developer tools" label, and it is
     // the below-lg collapse — on lg+ the surfaces are their own buttons.
-    const devToolsMatches = source.split('delayDuration={300} label="Developer tools"').length - 1;
+    const devToolsMatches =
+      source.match(/delayDuration=\{300\}[\s\S]{0,150}text96f0c06bbcb7/g)?.length ?? 0;
     expect(devToolsMatches).toBe(1);
 
-    const devToolsMenuStart = source.indexOf('label="Developer tools"');
+    const devToolsMenuStart = source.indexOf('text96f0c06bbcb7');
     const devToolsMenuEnd = source.indexOf('</DropdownMenu>', devToolsMenuStart);
     const devToolsMenu = source.slice(devToolsMenuStart, devToolsMenuEnd);
     expect(devToolsMenu).toContain('lg:hidden');
@@ -135,7 +136,7 @@ describe('SessionSiteHeader trailing cluster — non-technical resting state', (
     const desktopRow = source.slice(desktopRowStart, devToolsMenuStart);
 
     for (const block of [desktopRow, devToolsMenu]) {
-      expect(block).toContain('DEV_TOOLS.map');
+      expect(block).toContain('devTools.map');
       expect(block).toContain("openSessionQuickView(view, 'header')");
     }
   });
@@ -143,7 +144,7 @@ describe('SessionSiteHeader trailing cluster — non-technical resting state', (
   test('the changes and approvals indicators render before the grouped controls', () => {
     const changesIndex = source.indexOf('<SessionChangesIndicator');
     const approvalsIndex = source.indexOf('<SessionPendingApprovalsIndicator');
-    const devToolsIndex = source.indexOf('label="Developer tools"');
+    const devToolsIndex = source.indexOf('text96f0c06bbcb7');
     expect(changesIndex).toBeGreaterThan(-1);
     expect(approvalsIndex).toBeGreaterThan(changesIndex);
     expect(devToolsIndex).toBeGreaterThan(approvalsIndex);
@@ -279,8 +280,8 @@ describe('SessionConfigIndicator wiring', () => {
     // a future edit that collapses them again reintroduces either a manager
     // rewriting another human's session sharing, or a manager who cannot stop
     // a runaway session they did not start.
-    expect(source).toContain("projectSession.can_manage_sharing !== false");
-    expect(source).toContain("projectSession.can_manage_lifecycle !== false");
+    expect(source).toContain('projectSession.can_manage_sharing !== false');
+    expect(source).toContain('projectSession.can_manage_lifecycle !== false');
     // Stop is lifecycle. It must not ride on the sharing verdict.
     expect(source).toContain("projectSession.status === 'running' && canManageLifecycle");
   });

@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, test } from 'bun:test';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { getFileCategory } from '@/features/file-viewer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { isRich, reportsIntrinsicSize } from './file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';
 

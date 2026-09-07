@@ -1,6 +1,8 @@
 'use client';
 
 import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useState } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
@@ -56,11 +58,16 @@ function EndpointHeader({ method, path }: { method: 'POST' | 'GET'; path: string
 
 /** curl / Python switch — a nested compact tab bar local to one endpoint panel. */
 function LangSwitch({ lang, onChange }: { lang: Lang; onChange: (l: Lang) => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Tabs value={lang} onValueChange={(v) => onChange(v as Lang)}>
       <TabsListCompact>
-        <TabsTriggerCompact value="curl">curl</TabsTriggerCompact>
-        <TabsTriggerCompact value="python">Python</TabsTriggerCompact>
+        <TabsTriggerCompact value="curl">
+          {tI18nComplete.raw('text427e4b79b1f0')}
+        </TabsTriggerCompact>
+        <TabsTriggerCompact value="python">
+          {tI18nComplete.raw('text18885f27b5af')}
+        </TabsTriggerCompact>
       </TabsListCompact>
     </Tabs>
   );
@@ -170,6 +177,8 @@ export function GatewayApiReference({
   /** Jump to the Providers/Models tab — omitted when there's nowhere to jump to. */
   onViewModels?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const endpointTabs = useLocalizedUiCatalog(ENDPOINT_TABS);
   const base = gatewayUrl ?? 'https://gateway.kortix.com';
   const [tab, setTab] = useState<EndpointTab>('openai');
   const [openaiLang, setOpenaiLang] = useState<Lang>('curl');
@@ -179,11 +188,15 @@ export function GatewayApiReference({
     <div className="space-y-4">
       <div className="bg-popover space-y-2 rounded-md border px-3 py-2.5 text-xs">
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground w-16 shrink-0 font-medium">Base URL</span>
+          <span className="text-muted-foreground w-16 shrink-0 font-medium">
+            {tI18nComplete.raw('text70589413a3c9')}
+          </span>
           <code className="text-foreground min-w-0 flex-1 truncate font-mono">{base}</code>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground w-16 shrink-0 font-medium">Auth</span>
+          <span className="text-muted-foreground w-16 shrink-0 font-medium">
+            {tI18nComplete.raw('text8eb3ea9bbde6')}
+          </span>
           <code className="text-foreground min-w-0 flex-1 truncate font-mono">
             Authorization: Bearer {apiKey}
           </code>
@@ -192,7 +205,7 @@ export function GatewayApiReference({
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as EndpointTab)}>
         <TabsList type="underline" size="sm">
-          {ENDPOINT_TABS.map((t) => (
+          {endpointTabs.map((t) => (
             <TabsTrigger key={t.id} value={t.id} className="w-fit flex-none">
               {t.label}
             </TabsTrigger>
@@ -206,13 +219,25 @@ export function GatewayApiReference({
           </div>
           {openaiLang === 'curl' ? (
             <>
-              <Sample label="Request" code={chatCompletionsCurl(base, apiKey, false)} />
-              <Sample label="Streaming" code={chatCompletionsCurl(base, apiKey, true)} />
+              <Sample
+                label={tI18nComplete.raw('text59f03d642b41')}
+                code={chatCompletionsCurl(base, apiKey, false)}
+              />
+              <Sample
+                label={tI18nComplete.raw('texta951c5945635')}
+                code={chatCompletionsCurl(base, apiKey, true)}
+              />
             </>
           ) : (
             <>
-              <Sample label="Request" code={chatCompletionsPython(base, apiKey, false)} />
-              <Sample label="Streaming" code={chatCompletionsPython(base, apiKey, true)} />
+              <Sample
+                label={tI18nComplete.raw('text59f03d642b41')}
+                code={chatCompletionsPython(base, apiKey, false)}
+              />
+              <Sample
+                label={tI18nComplete.raw('texta951c5945635')}
+                code={chatCompletionsPython(base, apiKey, true)}
+              />
             </>
           )}
         </TabsContent>
@@ -224,13 +249,25 @@ export function GatewayApiReference({
           </div>
           {anthropicLang === 'curl' ? (
             <>
-              <Sample label="Request" code={messagesCurl(base, apiKey, false)} />
-              <Sample label="Streaming" code={messagesCurl(base, apiKey, true)} />
+              <Sample
+                label={tI18nComplete.raw('text59f03d642b41')}
+                code={messagesCurl(base, apiKey, false)}
+              />
+              <Sample
+                label={tI18nComplete.raw('texta951c5945635')}
+                code={messagesCurl(base, apiKey, true)}
+              />
             </>
           ) : (
             <>
-              <Sample label="Request" code={messagesPython(base, apiKey, false)} />
-              <Sample label="Streaming" code={messagesPython(base, apiKey, true)} />
+              <Sample
+                label={tI18nComplete.raw('text59f03d642b41')}
+                code={messagesPython(base, apiKey, false)}
+              />
+              <Sample
+                label={tI18nComplete.raw('texta951c5945635')}
+                code={messagesPython(base, apiKey, true)}
+              />
             </>
           )}
         </TabsContent>
@@ -239,16 +276,17 @@ export function GatewayApiReference({
           <EndpointHeader method="GET" path="/v1/models" />
           <Sample code={modelsCurl(base, apiKey)} />
           <p className="text-muted-foreground text-xs">
-            Or with the OpenAI SDK:{' '}
+            {tI18nComplete.raw('texta0b47090a19f')}{' '}
             <code className="bg-muted rounded-sm px-1 py-0.5 font-mono">client.models.list()</code>
           </p>
         </TabsContent>
       </Tabs>
 
       <p className="text-muted-foreground text-xs text-pretty">
-        Model ids are{' '}
-        <code className="bg-muted rounded-sm px-1 py-0.5 font-mono">provider/model</code> from the
-        live models.dev catalog (e.g. <code className="font-mono">{SAMPLE_MODEL}</code>,{' '}
+        {tI18nComplete.raw('text819fb4b97133')}{' '}
+        <code className="bg-muted rounded-sm px-1 py-0.5 font-mono">provider/model</code>{' '}
+        {tI18nComplete.raw('text4084c89e3d04')}
+        <code className="font-mono">{SAMPLE_MODEL}</code>,{' '}
         <code className="font-mono">openai/gpt-5.6</code>).
         {onViewModels ? (
           <Button
@@ -258,11 +296,11 @@ export function GatewayApiReference({
             className="h-auto gap-1 px-1 py-0 align-baseline text-xs"
             onClick={onViewModels}
           >
-            See available models
+            {tI18nComplete.raw('text1814e0a6cb50')}
             <ArrowRight className="size-3" />
           </Button>
         ) : (
-          ' See the Providers tab for models available to this key.'
+          tI18nComplete.raw('textc732a94d58e9')
         )}
       </p>
     </div>

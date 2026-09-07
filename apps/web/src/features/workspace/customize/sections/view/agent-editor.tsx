@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The agent editor — every field of one `agents.<name>` block in a
  * kortix_version 2 manifest (agent-first spec §2.2), as three reusable parts
@@ -196,6 +198,8 @@ const CONNECTOR_STATUS_BADGE: Record<string, { label: string; variant: 'destruct
 const EMPTY_TEMPLATES: SandboxTemplate[] = [];
 
 export function useAgentEditorOptions(projectId: string): AgentEditorOptions {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const connectorStatusBadge = useLocalizedUiCatalog(CONNECTOR_STATUS_BADGE);
   const secretsQuery = useQuery({
     queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
@@ -223,18 +227,18 @@ export function useAgentEditorOptions(projectId: string): AgentEditorOptions {
         description: s.purpose || (s.name !== s.identifier ? `Env var ${s.name}` : undefined),
         trailing: s.system ? (
           <Badge variant="muted" size="xs">
-            System
+            {tI18nComplete.raw('text6725e7bbcd28')}
           </Badge>
         ) : undefined,
       });
     }
     return [...seen.values()].sort((a, b) => a.id.localeCompare(b.id));
-  }, [secretsQuery.data]);
+  }, [secretsQuery.data, tI18nComplete]);
   const connectorOptions = useMemo<GrantOption[]>(
     () =>
       (connectorsQuery.data?.connectors ?? [])
         .map((c) => {
-          const status = CONNECTOR_STATUS_BADGE[c.status];
+          const status = connectorStatusBadge[c.status];
           return {
             id: c.slug,
             label: c.name || c.slug,
@@ -247,7 +251,7 @@ export function useAgentEditorOptions(projectId: string): AgentEditorOptions {
           };
         })
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [connectorsQuery.data],
+    [connectorsQuery.data, connectorStatusBadge],
   );
   const sandboxTemplates = sandboxesQuery.data?.items ?? EMPTY_TEMPLATES;
   const defaultSandboxSlug = sandboxesQuery.data?.default_slug ?? null;
@@ -294,6 +298,13 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'tools', label: 'Tools', group: 'Runtime' },
   { key: 'workspace', label: 'Workspace', group: 'Runtime' },
 ] as const satisfies readonly { key: string; label: string; group: AgentConfigSectionGroup }[];
+
+export function useLocalizedAgentConfigCatalog() {
+  return useLocalizedUiCatalog({
+    groups: AGENT_CONFIG_SECTION_GROUPS,
+    sections: AGENT_CONFIG_SECTIONS,
+  });
+}
 
 export type AgentConfigSectionKey = (typeof AGENT_CONFIG_SECTIONS)[number]['key'];
 

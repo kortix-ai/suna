@@ -10,4 +10,4 @@ export const useDocumentModalStore = create<DocumentModalState>((set) => ({
   setIsOpen: (isOpen) => {
     set({ isOpen });
   },
-})); 
+}));

@@ -21,6 +21,7 @@ import {
   UsersIcon,
   type Icon,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState, type ComponentProps } from 'react';
 
 import {
@@ -38,6 +39,8 @@ import {
   CardMedia,
   CardTitle,
 } from '@/components/ui/card';
+import { DESIGN_SYSTEM_TRANSLATION_KEYS } from '@/i18n/design-system-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
 
 /**
@@ -152,15 +155,26 @@ function Variant({
 // ── section ──────────────────────────────────────────────
 
 export function CardSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const localized = localizeUiCatalog(
+    { RUNTIME, SURFACES, WALLPAPERS },
+    tI18nComplete,
+    DESIGN_SYSTEM_TRANSLATION_KEYS,
+  );
   const [selected, setSelected] = useState(1);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const notices = [
-    { id: 'snapshot', icon: CloudArrowUpIcon, title: 'Snapshot rebuilt', body: 'Ready in 8m 42s.' },
+    {
+      id: 'snapshot',
+      icon: CloudArrowUpIcon,
+      title: tI18nComplete.raw('texte1d31423e77f'),
+      body: tI18nComplete.raw('text8c5430fac0d9'),
+    },
     {
       id: 'migration',
       icon: DatabaseIcon,
-      title: 'Migration applied',
-      body: '3 statements, 0 errors.',
+      title: tI18nComplete.raw('text260b83818832'),
+      body: tI18nComplete.raw('textca44d7470fff'),
     },
   ].filter((notice) => !dismissed.includes(notice.id));
 
@@ -168,49 +182,47 @@ export function CardSection() {
     <div>
       {/* 1 ── anatomy ------------------------------------------------ */}
       <Variant
-        label="Anatomy"
-        note="A standalone card owns its own tile. Media, eyebrow, title, description, an action pinned top-right, features in the content slot, and a footer of actions — every part is optional."
+        label={tI18nComplete.raw('text7d345569180b')}
+        note={tI18nComplete.raw('text06da55ff64fa')}
       >
         <Card className="max-w-sm">
           <CardHeader>
             <CardMedia icon={CubeIcon} />
-            <CardEyebrow>Runtime</CardEyebrow>
-            <CardTitle>Sandbox session</CardTitle>
-            <CardDescription>
-              A live cloud sandbox, one per session, reachable over the local API.
-            </CardDescription>
+            <CardEyebrow>{tI18nComplete.raw('text109311589787')}</CardEyebrow>
+            <CardTitle>{tI18nComplete.raw('textbd333807715b')}</CardTitle>
+            <CardDescription>{tI18nComplete.raw('texte92ed53f62b3')}</CardDescription>
             <CardAction>
-              <CardButton icon={DotsThreeIcon}>Manage</CardButton>
+              <CardButton icon={DotsThreeIcon}>{tI18nComplete.raw('text5a23444828db')}</CardButton>
             </CardAction>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <CardFeature
               icon={LightningIcon}
-              title="Boots on start"
-              description="POST /start provisions the sandbox and streams readiness over SSE."
+              title={tI18nComplete.raw('text386bdafccae6')}
+              description={tI18nComplete.raw('texta02979216a1f')}
             />
             <CardFeature
               icon={ShieldCheckIcon}
-              title="Scoped credentials"
-              description="Secrets are injected at boot; nothing is baked into the snapshot."
+              title={tI18nComplete.raw('texta1eef2f07cad')}
+              description={tI18nComplete.raw('textbb87df16a4e3')}
             />
           </CardContent>
           <CardFooter>
             <CardButton variant="default" icon={TerminalWindowIcon}>
-              Open session
+              {tI18nComplete.raw('textb205bb47f81a')}
             </CardButton>
-            <CardButton variant="ghost">Logs</CardButton>
+            <CardButton variant="ghost">{tI18nComplete.raw('textea2100dc89ae')}</CardButton>
           </CardFooter>
         </Card>
       </Variant>
 
       {/* 2 ── stacked group ------------------------------------------ */}
       <Variant
-        label="Group — stacked list"
-        note="The default CardGroup: borderless, one column, hairline dividers between neighbours. Move the cursor down the list — a single magnetic highlight springs to the nearest card and previews where a click lands."
+        label={tI18nComplete.raw('text5c6c8c0157e2')}
+        note={tI18nComplete.raw('text4cc45abce5a0')}
       >
         <CardGroup>
-          {RUNTIME.map((item) => (
+          {localized.RUNTIME.map((item) => (
             <Card key={item.title} label={item.title} onClick={() => {}}>
               <CardHeader>
                 <CardMedia icon={item.icon} />
@@ -224,11 +236,11 @@ export function CardSection() {
 
       {/* 3 ── outlined group ----------------------------------------- */}
       <Variant
-        label="Group — outlined"
-        note='border="outlined" draws one shared frame around the block and clips the highlight and dividers to its corners.'
+        label={tI18nComplete.raw('text88dd780cd3a7')}
+        note={tI18nComplete.raw('texte61c3c44ff74')}
       >
         <CardGroup border="outlined">
-          {SURFACES.slice(0, 3).map((item) => (
+          {localized.SURFACES.slice(0, 3).map((item) => (
             <Card key={item.title} label={item.title} onClick={() => {}}>
               <CardHeader>
                 <CardMedia icon={item.icon} />
@@ -242,11 +254,11 @@ export function CardSection() {
 
       {/* 4 ── grid, 2-D proximity ------------------------------------ */}
       <Variant
-        label="Grid — 2-D proximity"
-        note="columns={2} wraps the group into a grid and resolves the nearest card in two dimensions, so the highlight travels across rows as well as columns."
+        label={tI18nComplete.raw('text37e3f6c2697b')}
+        note={tI18nComplete.raw('text96efbfd36ce5')}
       >
         <CardGroup columns={2} border="outlined">
-          {SURFACES.map((item) => (
+          {localized.SURFACES.map((item) => (
             <Card key={item.title} label={item.title} onClick={() => {}}>
               <CardHeader>
                 <CardMedia icon={item.icon} />
@@ -254,7 +266,7 @@ export function CardSection() {
                 <CardDescription>{item.description}</CardDescription>
               </CardHeader>
               <CardFooter>
-                <CardButton>Get started</CardButton>
+                <CardButton>{tI18nComplete.raw('text61e8d44ad423')}</CardButton>
               </CardFooter>
             </Card>
           ))}
@@ -263,11 +275,11 @@ export function CardSection() {
 
       {/* 5 ── separated tiles ---------------------------------------- */}
       <Variant
-        label="Separated tiles"
-        note="separated splits the block into individually-shaped tiles with a gap. Each tile carries its own frame and clip instead of leaning on a shared one."
+        label={tI18nComplete.raw('text02e0567ac3d4')}
+        note={tI18nComplete.raw('text3658d6e18a94')}
       >
         <CardGroup columns={3} separated border="outlined">
-          {RUNTIME.map((item) => (
+          {localized.RUNTIME.map((item) => (
             <Card key={item.title} label={item.title} onClick={() => {}}>
               <CardHeader>
                 <CardMedia icon={item.icon} />
@@ -281,38 +293,40 @@ export function CardSection() {
 
       {/* 6 ── inline rows -------------------------------------------- */}
       <Variant
-        label="Inline"
-        note='orientation="inline" turns each card into a horizontal row — leading media, flexible text, trailing footer. The same parts, a table-like rhythm.'
+        label={tI18nComplete.raw('text99ed40acbd94')}
+        note={tI18nComplete.raw('text548d65f76e61')}
       >
         <CardGroup orientation="inline" border="outlined">
-          <Card label="CLI token">
+          <Card label={tI18nComplete.raw('textd6f42f3b5411')}>
             <CardMedia icon={KeyIcon} />
             <CardHeader>
-              <CardTitle>CLI token</CardTitle>
-              <CardDescription>Last used 4 minutes ago</CardDescription>
+              <CardTitle>{tI18nComplete.raw('textd6f42f3b5411')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('text92660bfeed73')}</CardDescription>
             </CardHeader>
             <CardFooter>
-              <CardButton icon={ArrowsClockwiseIcon}>Rotate</CardButton>
+              <CardButton icon={ArrowsClockwiseIcon}>
+                {tI18nComplete.raw('textc3613b1704f5')}
+              </CardButton>
             </CardFooter>
           </Card>
-          <Card label="Repository">
+          <Card label={tI18nComplete.raw('text13d6ff07b8a5')}>
             <CardMedia icon={GitBranchIcon} />
             <CardHeader>
-              <CardTitle>kortix-ai/suna</CardTitle>
-              <CardDescription>main — synced</CardDescription>
+              <CardTitle>{tI18nComplete.raw('textec5855a78ab3')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('text43394cf8283e')}</CardDescription>
             </CardHeader>
             <CardFooter>
-              <CardButton icon={CodeIcon}>Open</CardButton>
+              <CardButton icon={CodeIcon}>{tI18nComplete.raw('texted077f3d8125')}</CardButton>
             </CardFooter>
           </Card>
-          <Card label="Notifications">
+          <Card label={tI18nComplete.raw('text788011833a5a')}>
             <CardMedia icon={BellIcon} />
             <CardHeader>
-              <CardTitle>Notifications</CardTitle>
-              <CardDescription>Email on run failure</CardDescription>
+              <CardTitle>{tI18nComplete.raw('text788011833a5a')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('text5be1c74aa0a7')}</CardDescription>
             </CardHeader>
             <CardFooter>
-              <CardButton variant="secondary">Configure</CardButton>
+              <CardButton variant="secondary">{tI18nComplete.raw('text6defafa2caa6')}</CardButton>
             </CardFooter>
           </Card>
         </CardGroup>
@@ -320,23 +334,21 @@ export function CardSection() {
 
       {/* 7 ── inline + image ----------------------------------------- */}
       <Variant
-        label="Inline — with image"
-        note="A CardImage in an inline card bleeds to the left edge and runs the full height; the text and actions ride in a centred column beside it, so the footer drops under the copy instead of trailing right."
+        label={tI18nComplete.raw('text24cfd660e786')}
+        note={tI18nComplete.raw('textef4588ffbd13')}
       >
         <CardGroup orientation="inline" border="outlined">
-          {WALLPAPERS.map((wallpaper) => (
+          {localized.WALLPAPERS.map((wallpaper) => (
             <Card key={wallpaper.title} label={wallpaper.title}>
               <CardImage src={wallpaper.src} alt="" />
               <CardHeader>
                 <CardEyebrow>{wallpaper.eyebrow}</CardEyebrow>
                 <CardTitle>{wallpaper.title}</CardTitle>
-                <CardDescription>
-                  Shipped in both themes; the picker reads a static thumbnail.
-                </CardDescription>
+                <CardDescription>{tI18nComplete.raw('text211ec50d7a30')}</CardDescription>
               </CardHeader>
               <CardFooter>
-                <CardButton variant="secondary">Download</CardButton>
-                <CardButton>Preview</CardButton>
+                <CardButton variant="secondary">{tI18nComplete.raw('textd6eafe823591')}</CardButton>
+                <CardButton>{tI18nComplete.raw('text324b134f57c7')}</CardButton>
               </CardFooter>
             </Card>
           ))}
@@ -345,22 +357,20 @@ export function CardSection() {
 
       {/* 8 ── stacked + banner --------------------------------------- */}
       <Variant
-        label="Stacked — with banner"
-        note="The same CardImage stacked becomes a 16:9 banner at the top of the tile. The image keeps a fixed 2px radius in every state; the tile's own frame does the clipping."
+        label={tI18nComplete.raw('text20a958bfd83a')}
+        note={tI18nComplete.raw('text9bf1993bf5ac')}
       >
         <CardGroup columns={2} separated border="outlined">
-          {WALLPAPERS.map((wallpaper) => (
+          {localized.WALLPAPERS.map((wallpaper) => (
             <Card key={wallpaper.title} label={wallpaper.title}>
               <CardImage src={wallpaper.src} alt="" />
               <CardHeader>
                 <CardEyebrow>{wallpaper.eyebrow}</CardEyebrow>
                 <CardTitle>{wallpaper.title}</CardTitle>
-                <CardDescription>
-                  Light and dark variants, 6K, ships in the brandkit.
-                </CardDescription>
+                <CardDescription>{tI18nComplete.raw('text06d7d97ef55d')}</CardDescription>
               </CardHeader>
               <CardFooter>
-                <CardButton variant="default">Download</CardButton>
+                <CardButton variant="default">{tI18nComplete.raw('textd6eafe823591')}</CardButton>
               </CardFooter>
             </Card>
           ))}
@@ -369,35 +379,35 @@ export function CardSection() {
 
       {/* 9 ── media -------------------------------------------------- */}
       <Variant
-        label="Media"
-        note="CardMedia takes an icon — drawn in a tinted 32×32 tile — or a brand logo. A [logoA, logoB] tuple renders a connected pair for a trigger → target relationship."
+        label={tI18nComplete.raw('textd357175cfe89')}
+        note={tI18nComplete.raw('text7396996a6c8f')}
       >
         <CardGroup columns={3} separated border="outlined">
-          <Card label="Icon tile">
+          <Card label={tI18nComplete.raw('textb6eb7c48522c')}>
             <CardHeader>
               <CardMedia icon={RobotIcon} />
-              <CardTitle>Icon</CardTitle>
-              <CardDescription>Tinted tile, blends over the substrate.</CardDescription>
+              <CardTitle>{tI18nComplete.raw('texta35abcd6dac9')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('textc09bd5ffeba2')}</CardDescription>
             </CardHeader>
           </Card>
-          <Card label="Single logo">
+          <Card label={tI18nComplete.raw('texte966f54a9a75')}>
             <CardHeader>
               <CardMedia logo="/usecases/logos/linear.png" logoAlt="Linear" />
-              <CardTitle>Logo</CardTitle>
-              <CardDescription>Bare mark, no tile, object-contain.</CardDescription>
+              <CardTitle>{tI18nComplete.raw('textd707dc2f1936')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('text3668377bfd48')}</CardDescription>
             </CardHeader>
           </Card>
-          <Card label="Logo pair">
+          <Card label={tI18nComplete.raw('text3851cae17d93')}>
             <CardHeader>
               {/* Raster marks here because provider-icons/*.svg are monochrome
                   currentColor files: through an <img> they resolve to black and
                   vanish in dark mode (the app inlines them, or adds dark:invert). */}
               <CardMedia
                 logo={['/usecases/logos/linear.png', '/usecases/logos/slack.webp']}
-                logoAlt="Linear to Slack"
+                logoAlt={tI18nComplete.raw('text59d3b31b8956')}
               />
-              <CardTitle>Logo pair</CardTitle>
-              <CardDescription>Connected by a hairline — source to target.</CardDescription>
+              <CardTitle>{tI18nComplete.raw('text3851cae17d93')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('textb88c90511203')}</CardDescription>
             </CardHeader>
           </Card>
         </CardGroup>
@@ -405,11 +415,11 @@ export function CardSection() {
 
       {/* 10 ── selection --------------------------------------------- */}
       <Variant
-        label="Selected"
-        note="selected is persistent state on top of the transient hover: a filled background plus a title that weight-animates normal → semibold. Neighbours drop the hairline that would cut across the fill. Click a row."
+        label={tI18nComplete.raw('text57fd7a0cf33f')}
+        note={tI18nComplete.raw('text717927e1dd40')}
       >
         <CardGroup border="outlined">
-          {SURFACES.slice(0, 3).map((item, index) => (
+          {localized.SURFACES.slice(0, 3).map((item, index) => (
             <Card
               key={item.title}
               label={item.title}
@@ -428,22 +438,22 @@ export function CardSection() {
 
       {/* 11 ── disabled ---------------------------------------------- */}
       <Variant
-        label="Disabled"
-        note="disabled dims the card and drops the stretched overlay entirely, so it cannot be clicked, tabbed to, or activated by keyboard."
+        label={tI18nComplete.raw('text75081b593d15')}
+        note={tI18nComplete.raw('text6aa179c11c63')}
       >
         <CardGroup columns={2} separated border="outlined">
-          <Card label="Available" onClick={() => {}}>
+          <Card label={tI18nComplete.raw('texte674447337e8')} onClick={() => {}}>
             <CardHeader>
               <CardMedia icon={SparkleIcon} />
-              <CardTitle>Available</CardTitle>
-              <CardDescription>Interactive — hover previews the target.</CardDescription>
+              <CardTitle>{tI18nComplete.raw('texte674447337e8')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('text3fa319e52954')}</CardDescription>
             </CardHeader>
           </Card>
-          <Card label="Unavailable" disabled onClick={() => {}}>
+          <Card label={tI18nComplete.raw('textca1844969742')} disabled onClick={() => {}}>
             <CardHeader>
               <CardMedia icon={DatabaseIcon} />
-              <CardTitle>Unavailable</CardTitle>
-              <CardDescription>Dimmed, inert, and out of the tab order.</CardDescription>
+              <CardTitle>{tI18nComplete.raw('textca1844969742')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('textce281df2e934')}</CardDescription>
             </CardHeader>
           </Card>
         </CardGroup>
@@ -451,8 +461,8 @@ export function CardSection() {
 
       {/* 12 ── dismissible ------------------------------------------- */}
       <Variant
-        label="Dismissible"
-        note="dismissible adds a ✕ that sits above the stretched overlay, so it stays independently clickable even when the whole card is a link."
+        label={tI18nComplete.raw('textf27bcbb5e1e2')}
+        note={tI18nComplete.raw('textb9539997cfbd')}
       >
         {notices.length > 0 ? (
           <CardGroup columns={2} separated border="outlined">
@@ -473,13 +483,13 @@ export function CardSection() {
           </CardGroup>
         ) : (
           <div className="flex items-center gap-3">
-            <p className="text-muted-foreground text-sm">All dismissed.</p>
+            <p className="text-muted-foreground text-sm">{tI18nComplete.raw('textb9e9f26c6ab1')}</p>
             <CardButton
               variant="secondary"
               icon={ArrowsClockwiseIcon}
               onClick={() => setDismissed([])}
             >
-              Reset
+              {tI18nComplete.raw('textdaee7606b339')}
             </CardButton>
           </div>
         )}
@@ -487,30 +497,34 @@ export function CardSection() {
 
       {/* 13 ── clickable --------------------------------------------- */}
       <Variant
-        label="Clickable"
-        note="href renders a stretched link across the whole card, onClick a stretched button; either way the footer actions stay independently clickable above it. external opens a new tab."
+        label={tI18nComplete.raw('texta4119d094636')}
+        note={tI18nComplete.raw('text12e59d221a29')}
       >
         <CardGroup columns={2} separated border="outlined">
-          <Card label="Read the docs" href="https://docs.kortix.com" external>
+          <Card
+            label={tI18nComplete.raw('text559b1cc46027')}
+            href="https://docs.kortix.com"
+            external
+          >
             <CardHeader>
               <CardMedia icon={BookOpenIcon} />
-              <CardTitle>Documentation</CardTitle>
-              <CardDescription>Whole card is a link — opens in a new tab.</CardDescription>
+              <CardTitle>{tI18nComplete.raw('textc205924de0fe')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('texta8e98b14ad73')}</CardDescription>
             </CardHeader>
             <CardFooter>
               <CardButton href="https://docs.kortix.com" external>
-                docs.kortix.com
+                {tI18nComplete.raw('textd942e3dc737b')}
               </CardButton>
             </CardFooter>
           </Card>
-          <Card label="Design system" href="/design-system#comp-card">
+          <Card label={tI18nComplete.raw('text4a866105af15')} href="/design-system#comp-card">
             <CardHeader>
               <CardMedia icon={SparkleIcon} />
-              <CardTitle>Design system</CardTitle>
-              <CardDescription>Internal route — same stretched-link pattern.</CardDescription>
+              <CardTitle>{tI18nComplete.raw('text4a866105af15')}</CardTitle>
+              <CardDescription>{tI18nComplete.raw('textbe35cc8c61f6')}</CardDescription>
             </CardHeader>
             <CardFooter>
-              <CardButton variant="link">/design-system</CardButton>
+              <CardButton variant="link">{tI18nComplete.raw('text27ef201b76a2')}</CardButton>
             </CardFooter>
           </Card>
         </CardGroup>
@@ -518,8 +532,8 @@ export function CardSection() {
 
       {/* 14 ── card buttons ------------------------------------------ */}
       <Variant
-        label="CardButton"
-        note="The footer's action control is the app Button. variant and size both take Button's own unions — everything button.tsx ships works here, and omitting either falls through to Button's defaults. On top: an optional icon on either side and an external arrow."
+        label={tI18nComplete.raw('textc229fa075816')}
+        note={tI18nComplete.raw('texte22df9359943')}
       >
         {/* CardButton stands alone — it needs no Card around it. */}
         <div className="flex flex-col gap-4">
@@ -538,25 +552,25 @@ export function CardSection() {
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-1">
-            <CardButton icon={CloudArrowUpIcon}>Leading icon</CardButton>
+            <CardButton icon={CloudArrowUpIcon}>{tI18nComplete.raw('textde9c395367bb')}</CardButton>
             <CardButton icon={ArrowsClockwiseIcon} iconPosition="end">
-              Trailing icon
+              {tI18nComplete.raw('textfc62c144fc7a')}
             </CardButton>
             <CardButton href="https://kortix.com" external>
-              External
+              {tI18nComplete.raw('text68c114ea9c8c')}
             </CardButton>
-            <CardButton disabled>Disabled</CardButton>
+            <CardButton disabled>{tI18nComplete.raw('text75081b593d15')}</CardButton>
           </div>
         </div>
       </Variant>
 
       {/* 15 ── proximity off ----------------------------------------- */}
       <Variant
-        label="Proximity off"
-        note="proximityHover={false} keeps the layout and dividers but drops the magnetic highlight — for read-only groups where nothing is clickable."
+        label={tI18nComplete.raw('text4658997f85b5')}
+        note={tI18nComplete.raw('text91e222e24b7f')}
       >
         <CardGroup border="outlined" proximityHover={false}>
-          {RUNTIME.slice(0, 2).map((item) => (
+          {localized.RUNTIME.slice(0, 2).map((item) => (
             <Card key={item.title}>
               <CardHeader>
                 <CardMedia icon={item.icon} />

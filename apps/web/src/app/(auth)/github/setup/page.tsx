@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -11,6 +12,8 @@ import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { AuthPendingScreen } from '@/features/auth/auth-consent';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 import {
   linkGitHubInstallation,
   listLinkableGitHubInstallations,
@@ -18,8 +21,6 @@ import {
   type LinkableGitHubInstallation,
 } from '@kortix/sdk';
 import { GithubLogoIcon as Github } from '@phosphor-icons/react';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 type SetupState = 'verify' | 'loading' | 'select' | 'empty' | 'saving' | 'done' | 'error';
 
@@ -36,6 +37,7 @@ export default function GitHubSetupPage() {
 }
 
 function GitHubSetup() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const appHome = useAppHome();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -215,14 +217,16 @@ function GitHubSetup() {
         {state === 'verify' ? (
           <Rise delay={0.06}>
             <Button size="lg" className="w-full" onClick={handleVerify}>
-              {selectingExistingInstallation ? 'Continue with GitHub' : 'Verify with GitHub'}
+              {selectingExistingInstallation
+                ? tI18nComplete.raw('text7b9db77e0178')
+                : tI18nComplete.raw('text8130db25eca7')}
             </Button>
           </Rise>
         ) : state === 'loading' || state === 'saving' ? (
           <Rise delay={0.06}>
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <Loading className="size-4 shrink-0" />
-              <span>This usually takes a few seconds</span>
+              <span>{tI18nComplete.raw('text147251df4759')}</span>
             </div>
           </Rise>
         ) : state === 'select' ? (
@@ -238,7 +242,7 @@ function GitHubSetup() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-foreground truncate text-sm font-medium">
-                      {installation.owner_login ?? 'GitHub account'}
+                      {installation.owner_login ?? tI18nComplete.raw('textd686f873a566')}
                     </p>
                     <div className="mt-1 flex items-center gap-1.5">
                       <Badge variant="outline" size="xs">
@@ -247,8 +251,8 @@ function GitHubSetup() {
                       {installation.repository_selection ? (
                         <span className="text-muted-foreground text-xs">
                           {installation.repository_selection === 'all'
-                            ? 'All repositories'
-                            : 'Selected repositories'}
+                            ? tI18nComplete.raw('text77fe4eba38d8')
+                            : tI18nComplete.raw('texte0a8d25fe959')}
                         </span>
                       ) : null}
                     </div>
@@ -276,12 +280,12 @@ function GitHubSetup() {
                   onClick={() => window.location.assign(installUrl)}
                 >
                   <Github className="size-4 shrink-0" />
-                  Install GitHub App
+                  {tI18nComplete.raw('text58a34c9573cf')}
                 </Button>
               ) : null}
               <Button size="lg" variant="outline" className="w-full" asChild>
                 <Link href={backHref} replace prefetch onClick={clearGitHubSetupReturn}>
-                  Back
+                  {tI18nComplete.raw('text76900f1bfd16')}
                 </Link>
               </Button>
             </div>
@@ -290,7 +294,7 @@ function GitHubSetup() {
           <Rise delay={0.06}>
             <Button size="lg" className="w-full" asChild>
               <Link href={homeHref} replace prefetch>
-                Back to Kortix
+                {tI18nComplete.raw('text5fae82827f98')}
               </Link>
             </Button>
           </Rise>

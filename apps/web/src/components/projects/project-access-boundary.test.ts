@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
   errorStatus,
   gateAction,
@@ -14,7 +15,6 @@ import {
   shouldPollForApproval,
   type AccessGateState,
 } from './project-access-boundary';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 const componentSource = readFileSync(
   fileURLToPath(new URL('./project-access-boundary.tsx', import.meta.url)),

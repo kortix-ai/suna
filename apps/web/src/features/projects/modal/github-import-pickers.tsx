@@ -19,6 +19,7 @@ import {
   GitBranchIcon as GitBranch,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 interface PickerOption {
@@ -184,6 +185,7 @@ export function RepositoryPicker({
   onValueChange: (value: string) => void;
   onSearchChange?: (value: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const options = useMemo(
     () =>
       repos.map((repo) => ({
@@ -193,9 +195,11 @@ export function RepositoryPicker({
         keywords: [repo.full_name, repo.name, repo.default_branch, repo.description ?? '']
           .join(' ')
           .toLowerCase(),
-        badge: repo.private ? <Badge size="xs">Private</Badge> : undefined,
+        badge: repo.private ? (
+          <Badge size="xs">{tI18nComplete.raw('textc63eb6720c6e')}</Badge>
+        ) : undefined,
       })),
-    [repos],
+    [repos, tI18nComplete],
   );
 
   return (
@@ -204,10 +208,10 @@ export function RepositoryPicker({
       options={options}
       loading={loading}
       disabled={disabled}
-      loadingLabel="Loading repositories…"
-      placeholder="Search repositories"
-      searchPlaceholder="Search repositories"
-      emptyLabel="No repositories found"
+      loadingLabel={tI18nComplete.raw('text460ca92c825a')}
+      placeholder={tI18nComplete.raw('texta134ed6423fa')}
+      searchPlaceholder={tI18nComplete.raw('texta134ed6423fa')}
+      emptyLabel={tI18nComplete.raw('text94a1181cd13e')}
       icon={<Github className="size-4" />}
       onValueChange={onValueChange}
       onSearchChange={onSearchChange}
@@ -228,15 +232,18 @@ export function BranchPicker({
   disabled: boolean;
   onValueChange: (value: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const options = useMemo(
     () =>
       branches.map((branch) => ({
         value: branch.name,
         label: branch.name,
         keywords: branch.name.toLowerCase(),
-        badge: branch.protected ? <Badge size="xs">Protected</Badge> : undefined,
+        badge: branch.protected ? (
+          <Badge size="xs">{tI18nComplete.raw('textb0ed26337336')}</Badge>
+        ) : undefined,
       })),
-    [branches],
+    [branches, tI18nComplete],
   );
 
   return (
@@ -245,10 +252,10 @@ export function BranchPicker({
       options={options}
       loading={loading}
       disabled={disabled}
-      loadingLabel="Loading branches…"
-      placeholder="Select a branch"
-      searchPlaceholder="Search branches"
-      emptyLabel="No branches found"
+      loadingLabel={tI18nComplete.raw('text55704e8f6004')}
+      placeholder={tI18nComplete.raw('text71bf03ad1f6b')}
+      searchPlaceholder={tI18nComplete.raw('text00dd9d632755')}
+      emptyLabel={tI18nComplete.raw('texta4c7fa51a957')}
       icon={<GitBranch className="size-4" />}
       onValueChange={onValueChange}
     />

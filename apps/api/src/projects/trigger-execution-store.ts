@@ -331,8 +331,12 @@ export async function markTriggerExecutionFailed(input: {
   row: TriggerExecutionRow;
   failedAt: Date;
   error: string;
+  /** Force immediate dead-letter (no retry). Used for PERMANENT rejections —
+   *  a billing-gate "out of credits" / "no subscription" fire will fail
+   *  identically on every retry, so retrying only delays the terminal state. */
+  terminal?: boolean;
 }): Promise<'queued' | 'dead_lettered'> {
-  const terminal = input.row.attempts >= 5;
+  const terminal = input.terminal || input.row.attempts >= 5;
   const retryDelayMs = Math.min(60_000, 2 ** Math.max(0, input.row.attempts - 1) * 2_000);
   await db
     .update(projectTriggerExecutions)

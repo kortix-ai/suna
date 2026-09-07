@@ -1,4 +1,5 @@
 'use client';
+
 import { Badge } from '@/components/ui/badge';
 import {
   BasicTool,
@@ -11,11 +12,13 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 import { parseConnectorGetOutput } from '@/lib/utils/kortix-tool-output';
 
 export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const name = (input.name as string) || '';
@@ -25,7 +28,7 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
     <BasicTool
       icon={<Plug className="text-muted-foreground size-3.5" />}
       trigger={{
-        title: data?.name || 'Connector Details',
+        title: data?.name || tI18nComplete.raw('textf51e3554540b'),
         subtitle: name && name !== data?.name ? name : data?.description || 'Fetching...',
       }}
       defaultOpen={defaultOpen}
@@ -43,7 +46,9 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
           </div>
           {data.env && (
             <div className="text-xs">
-              <span className="text-muted-foreground/60">Env: </span>
+              <span className="text-muted-foreground/60">
+                {tI18nComplete.raw('text146cd06d5026')}{' '}
+              </span>
               <code className="bg-muted rounded px-1 text-xs">{data.env}</code>
             </div>
           )}
@@ -57,7 +62,7 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
         <ToolOutputFallback output={output} toolName="connector_get" />
       ) : (
         <ToolResultCard>
-          <ToolEmptyState message="Loading connector…" />
+          <ToolEmptyState message={tI18nComplete.raw('text6cd606384bc7')} />
         </ToolResultCard>
       )}
     </BasicTool>

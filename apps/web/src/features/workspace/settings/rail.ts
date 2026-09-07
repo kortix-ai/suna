@@ -1,21 +1,27 @@
 import {
+  ArrowCircleUpIcon as ArrowUpCircle,
   ChatCircleIcon as ChatCircle,
   CoinsIcon as Coins,
+  ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
+  FlaskIcon as Flask,
   KeyIcon as Key,
   LinkIcon as Link,
   PaletteIcon as Palette,
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
-  UserIcon as User,
-  ArrowCircleUpIcon as ArrowUpCircle,
-  ShippingContainerIcon as Container,
-  FlaskIcon as Flask,
   SquaresFourIcon as SquaresFour,
+  UserIcon as User,
 } from '@phosphor-icons/react';
 
 import type { SettingsTab } from './settings-tabs';
 import type { RailGroup, RailItem } from './type';
+
+export type SettingsRailTranslator = (key: string) => string;
+
+type RailGroupDefinition = RailGroup & {
+  messageKey: 'personal';
+};
 
 /**
  * Whether a rail item is the active one for the current settings tab.
@@ -31,7 +37,7 @@ export function isRailItemActive(item: RailItem, tab: SettingsTab): boolean {
   return item.tab === tab;
 }
 
-const STATIC_GROUPS: readonly RailGroup[] = [
+const STATIC_GROUPS: readonly RailGroupDefinition[] = [
   /**
    * No Workspace group. Project configuration — General, Sandbox templates,
    * Feature flags, Upgrades — is the Customize bar's Settings tab
@@ -41,6 +47,7 @@ const STATIC_GROUPS: readonly RailGroup[] = [
    * is theirs — their profile and their account.
    */
   {
+    messageKey: 'personal',
     // "Personal", not "You" (Jay, 2026-09-02): the group names the scope the
     // same way "Workspace" and "Account" do.
     label: 'Personal',
@@ -169,7 +176,6 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
   },
 ];
 
-
 /**
  * The rail. One group — `Personal` — and no flag-gated rows. Project
  * configuration is the Customize bar's Settings tab; account configuration
@@ -187,8 +193,18 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
  * palette both call it, and a group that reappears here (or one that becomes
  * conditional again) must not change either call site's shape.
  */
-export function railGroups(): readonly RailGroup[] {
-  return STATIC_GROUPS;
+export function railGroups(...args: [] | [SettingsRailTranslator]): readonly RailGroup[] {
+  const translate = args[0];
+  if (!translate) return STATIC_GROUPS;
+
+  return STATIC_GROUPS.map((group) => ({
+    label: translate(`groups.${group.messageKey}`),
+    items: group.items.map((item) => ({
+      ...item,
+      label: translate(`items.${item.tab}.label`),
+      description: item.description ? translate(`items.${item.tab}.description`) : undefined,
+    })),
+  }));
 }
 
 /*
@@ -216,10 +232,20 @@ export function railGroups(): readonly RailGroup[] {
  * this rail are resolved by
  * `capabilities/project-settings/project-settings-sections.ts` instead.
  */
-export function railItemForTab(tab: SettingsTab): RailItem | undefined {
-  for (const group of STATIC_GROUPS) {
+export function railItemForTab(
+  tab: SettingsTab,
+  ...args: [] | [SettingsRailTranslator]
+): RailItem | undefined {
+  for (const group of railGroups(...args)) {
     const found = group.items.find((item) => item.tab === tab);
     if (found) return found;
   }
-  return RETIRED_RAIL_ITEMS.find((item) => item.tab === tab);
+  const found = RETIRED_RAIL_ITEMS.find((item) => item.tab === tab);
+  const translate = args[0];
+  if (!found || !translate) return found;
+  return {
+    ...found,
+    label: translate(`items.${found.tab}.label`),
+    description: found.description ? translate(`items.${found.tab}.description`) : undefined,
+  };
 }

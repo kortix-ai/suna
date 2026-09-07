@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z } from 'zod';
 
 /**
  * BACKEND_URL may be EITHER:
@@ -10,20 +10,15 @@ import { z } from 'zod'
  * Server-side callers that build a URL must resolve the absolute
  * `process.env.BACKEND_URL` rather than this (possibly relative) public value.
  */
-const backendUrlSchema = z
-  .string()
-  .refine(
-    (value) => {
-      if (value.startsWith('/')) return true // root-relative (same-origin proxy)
-      try {
-        const parsed = new URL(value)
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
-      } catch {
-        return false
-      }
-    },
-    'BACKEND_URL must be an absolute http(s) URL or a root-relative path (e.g. "/v1")',
-  )
+const backendUrlSchema = z.string().refine((value) => {
+  if (value.startsWith('/')) return true; // root-relative (same-origin proxy)
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}, 'BACKEND_URL must be an absolute http(s) URL or a root-relative path (e.g. "/v1")');
 
 /**
  * SUPABASE_URL may be EITHER:
@@ -36,20 +31,15 @@ const backendUrlSchema = z
  *    `window.location.origin` before handing it to supabase-js (which requires an
  *    absolute URL). Mirrors BACKEND_URL above.
  */
-const supabaseUrlSchema = z
-  .string()
-  .refine(
-    (value) => {
-      if (value.startsWith('/')) return true // root-relative (same-origin proxy)
-      try {
-        const parsed = new URL(value)
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
-      } catch {
-        return false
-      }
-    },
-    'SUPABASE_URL must be an absolute http(s) URL or a root-relative path (e.g. "/supabase")',
-  )
+const supabaseUrlSchema = z.string().refine((value) => {
+  if (value.startsWith('/')) return true; // root-relative (same-origin proxy)
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}, 'SUPABASE_URL must be an absolute http(s) URL or a root-relative path (e.g. "/supabase")');
 
 const RuntimeEnvSchema = z.object({
   SUPABASE_URL: supabaseUrlSchema,
@@ -105,10 +95,10 @@ const RuntimeEnvSchema = z.object({
   AUTH_METHODS: z.string().optional().default('magic,password'),
   /** Unified platform version (root VERSION file) — surfaced for the UI footer / about. */
   VERSION: z.string().optional().default('dev'),
-})
+});
 
-export type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>
+export type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>;
 
 export function parseRuntimeEnv(raw: Partial<RuntimeEnv>): RuntimeEnv {
-  return RuntimeEnvSchema.parse({ ...raw })
+  return RuntimeEnvSchema.parse({ ...raw });
 }

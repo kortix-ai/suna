@@ -4,6 +4,7 @@
 // the "unknown tab is not a section" rule survive the catalog moving files.
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   NAV_GROUPS,
   PANE_META,
@@ -58,44 +59,51 @@ describe('accountHubCrumbs', () => {
   const account = { label: 'Acme', href: `/accounts/${id}`, kind: 'account' };
 
   test('the account index is Settings / Accounts', () => {
-    expect(accountHubCrumbs('/accounts', undefined, 'members')).toEqual([
-      { label: 'Settings', href: '/accounts' },
-      { label: 'Accounts' },
-    ]);
+    expect(
+      accountHubCrumbs('/accounts', undefined, 'members', undefined, testUiTranslator),
+    ).toEqual([{ label: 'Settings', href: '/accounts' }, { label: 'Accounts' }]);
   });
 
   test('the hub is Settings / <account> / <resolved section>, never the requested one', () => {
-    expect(accountHubCrumbs(`/accounts/${id}`, id, 'access-projects', 'Acme')).toEqual([
-      root,
-      account,
-      { label: 'Projects' },
-    ]);
+    expect(
+      accountHubCrumbs(`/accounts/${id}`, id, 'access-projects', 'Acme', testUiTranslator),
+    ).toEqual([root, account, { label: 'Projects' }]);
   });
 
   test('the account crumb is pending until the record has loaded', () => {
-    expect(accountHubCrumbs(`/accounts/${id}`, id, 'members', undefined)[1]).toEqual({
+    expect(
+      accountHubCrumbs(`/accounts/${id}`, id, 'members', undefined, testUiTranslator)[1],
+    ).toEqual({
       label: 'Account',
       href: `/accounts/${id}`,
       pending: true,
       kind: 'account',
     });
-    expect(accountHubCrumbs(`/accounts/${id}`, id, 'members', '')[1]?.pending).toBe(true);
+    expect(
+      accountHubCrumbs(`/accounts/${id}`, id, 'members', '', testUiTranslator)[1]?.pending,
+    ).toBe(true);
   });
 
   test('the guided-setup routes hang off Identity', () => {
-    expect(accountHubCrumbs(`/accounts/${id}/sso-setup`, id, 'members', 'Acme')).toEqual([
+    expect(
+      accountHubCrumbs(`/accounts/${id}/sso-setup`, id, 'members', 'Acme', testUiTranslator),
+    ).toEqual([
       root,
       account,
       { label: 'Identity', href: `/accounts/${id}?tab=identity` },
       { label: 'SSO setup' },
     ]);
-    expect(accountHubCrumbs(`/accounts/${id}/scim-setup`, id, 'members', 'Acme')[3]).toEqual({
+    expect(
+      accountHubCrumbs(`/accounts/${id}/scim-setup`, id, 'members', 'Acme', testUiTranslator)[3],
+    ).toEqual({
       label: 'Directory sync setup',
     });
   });
 
   test('a token detail hangs off Tokens', () => {
-    expect(accountHubCrumbs(`/accounts/${id}/tokens/tok_1`, id, 'members', 'Acme')).toEqual([
+    expect(
+      accountHubCrumbs(`/accounts/${id}/tokens/tok_1`, id, 'members', 'Acme', testUiTranslator),
+    ).toEqual([
       root,
       account,
       { label: 'API keys', href: `/accounts/${id}?tab=tokens` },
@@ -104,10 +112,14 @@ describe('accountHubCrumbs', () => {
   });
 
   test('the legacy group and member detail routes name their section', () => {
-    expect(accountHubCrumbs(`/accounts/${id}/groups/g1`, id, 'members', 'Acme')[2]).toEqual({
+    expect(
+      accountHubCrumbs(`/accounts/${id}/groups/g1`, id, 'members', 'Acme', testUiTranslator)[2],
+    ).toEqual({
       label: 'Groups',
     });
-    expect(accountHubCrumbs(`/accounts/${id}/members/u1`, id, 'members', 'Acme')[2]).toEqual({
+    expect(
+      accountHubCrumbs(`/accounts/${id}/members/u1`, id, 'members', 'Acme', testUiTranslator)[2],
+    ).toEqual({
       label: 'Members',
     });
   });
@@ -119,6 +131,7 @@ describe('accountHubCrumbs', () => {
         path === '/accounts' ? undefined : id,
         'settings',
         'Acme',
+        testUiTranslator,
       );
       expect(crumbs.at(-1)?.href).toBeUndefined();
     }

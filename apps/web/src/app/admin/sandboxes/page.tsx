@@ -1,9 +1,8 @@
 'use client';
 
-import {
-  ArrowsLeftRightIcon,
-  DotsThreeIcon,
-} from '@phosphor-icons/react';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { ArrowsLeftRightIcon, DotsThreeIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
@@ -69,7 +68,12 @@ import {
 } from '@kortix/sdk';
 
 import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
-import { AdminEmptyFrame, AdminPanel, AdminSection, AdminTableFrame } from '../_components/admin-panel';
+import {
+  AdminEmptyFrame,
+  AdminPanel,
+  AdminSection,
+  AdminTableFrame,
+} from '../_components/admin-panel';
 import { AdminSearch } from '../_components/admin-table';
 import { StatGrid, StatGridSkeleton, StatTile } from '../_components/stat-tile';
 
@@ -200,6 +204,8 @@ const RANGES = [
 ];
 
 export default function AdminSandboxesPage() {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const ranges = useLocalizedUiCatalog(RANGES);
   const qc = useQueryClient();
   const [tab, setTab] = useState('overview');
   const [days, setDays] = useState(7);
@@ -235,10 +241,10 @@ export default function AdminSandboxesPage() {
       return setAdminProviderDistribution(body);
     },
     onSuccess: () => {
-      successToast('Distribution saved');
+      successToast(tI18nComplete.raw('textadf5fc6a2d24'));
       qc.invalidateQueries({ queryKey: ['admin', 'provider-distribution'] });
     },
-    onError: (e: Error) => errorToast(e?.message ?? 'Save failed'),
+    onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('text53ad6f999b1f')),
   });
 
   const [migrating, setMigrating] = useState<Sbx | null>(null);
@@ -246,11 +252,11 @@ export default function AdminSandboxesPage() {
   const migrate = useMutation({
     mutationFn: async () => migrateAdminSandboxProvider(migrating!.sessionId, target),
     onSuccess: () => {
-      successToast(`Migrating to ${target}…`);
+      successToast(tI18nComplete('text44df00d3050e', { value0: target }));
       setMigrating(null);
       qc.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
     },
-    onError: (e: Error) => errorToast(e?.message ?? 'Migrate failed'),
+    onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('textc98995fad3b9')),
   });
 
   // ── Provider failover (one-shot, on session init) ─────────────────────────
@@ -265,10 +271,10 @@ export default function AdminSandboxesPage() {
   const saveFb = useMutation({
     mutationFn: async () => setAdminProviderFallback(fbEnabled),
     onSuccess: () => {
-      successToast('Failover saved');
+      successToast(tI18nComplete.raw('textbc86ed0acea7'));
       qc.invalidateQueries({ queryKey: ['admin', 'provider-fallback'] });
     },
-    onError: (e: Error) => errorToast(e?.message ?? 'Save failed'),
+    onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('text53ad6f999b1f')),
   });
 
   const dist = distQ.data;
@@ -331,8 +337,8 @@ export default function AdminSandboxesPage() {
   return (
     <AdminPageShell
       width="wide"
-      title="Sandboxes"
-      description="Where new sandboxes are placed, how that placement performs, and the live fleet it produces."
+      title={tI18nComplete.raw('text3f2c01e07be5')}
+      description={tI18nComplete.raw('text4b0e0e2050e3')}
       action={
         <AdminRefreshButton
           busy={busy}
@@ -348,8 +354,8 @@ export default function AdminSandboxesPage() {
           bar does not go in the shell's `filters` slot here. */}
       <Tabs value={tab} onValueChange={setTab} className="space-y-5">
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="overview">{tI18nComplete.raw('textd4b1ea5708dd')}</TabsTrigger>
+          <TabsTrigger value="analytics">{tI18nComplete.raw('text94c116ee118a')}</TabsTrigger>
         </TabsList>
         {/* ── OVERVIEW ─────────────────────────────────────────────────────── */}
         <TabsContent value="overview" className="space-y-8">
@@ -358,9 +364,9 @@ export default function AdminSandboxesPage() {
           ) : (
             <StatGrid>
               <StatTile
-                label="Total sandboxes"
+                label={tI18nComplete.raw('text1eaee08882eb')}
                 value={totalSandboxes.toLocaleString()}
-                hint="Across every provider"
+                hint={tI18nComplete.raw('text5cbdd59d7048')}
               />
               {allowed.map((p) => {
                 const pct = totalW > 0 ? Math.round(((Number(weights[p]) || 0) / totalW) * 100) : 0;
@@ -369,7 +375,7 @@ export default function AdminSandboxesPage() {
                     key={p}
                     label={p[0].toUpperCase() + p.slice(1)}
                     value={(countByProvider[p] ?? 0).toLocaleString()}
-                    hint={`${pct}% of new sandboxes`}
+                    hint={tI18nComplete('text347cf684f3e7', { value0: pct })}
                   />
                 );
               })}
@@ -377,8 +383,10 @@ export default function AdminSandboxesPage() {
           )}
 
           <AdminSection
-            title="Split distribution"
-            description={`Weighted-random placement for new sandboxes. All-zero falls back to the default${dist ? ` (${dist.default})` : ''}. An explicit per-request provider always wins.`}
+            title={tI18nComplete.raw('text43a857886565')}
+            description={tI18nComplete('textf6668c33ea1a', {
+              value0: dist ? ` (${dist.default})` : '',
+            })}
           >
             <AdminPanel className="space-y-5">
               {distQ.isLoading ? (
@@ -398,7 +406,7 @@ export default function AdminSandboxesPage() {
                             {p}
                             {p === dist?.default && (
                               <Badge variant="outline" size="sm">
-                                default
+                                {tI18nComplete.raw('text37a8eec1ce19')}
                               </Badge>
                             )}
                           </FieldLabel>
@@ -420,7 +428,8 @@ export default function AdminSandboxesPage() {
                             <div className="bg-foreground h-full" style={{ width: `${pct}%` }} />
                           </div>
                           <span className="text-muted-foreground text-xs tabular-nums">
-                            {pct}% of traffic
+                            {pct}
+                            {tI18nComplete.raw('text499977bddecf')}
                           </span>
                         </Field>
                       );
@@ -433,7 +442,7 @@ export default function AdminSandboxesPage() {
                     className="gap-1.5"
                   >
                     {saveWeights.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                    Save distribution
+                    {tI18nComplete.raw('text85457bd27cfc')}
                   </Button>
                 </>
               )}
@@ -441,19 +450,21 @@ export default function AdminSandboxesPage() {
           </AdminSection>
 
           <AdminSection
-            title="Provider failover"
-            description="Off by default. When enabled, a session init that fails retries once on the next provider."
+            title={tI18nComplete.raw('text2953b4f72d16')}
+            description={tI18nComplete.raw('textf32b512d4c31')}
           >
             <AdminPanel className="space-y-5">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-foreground text-sm">Retry a failed init on another provider</span>
+                <span className="text-foreground text-sm">
+                  {tI18nComplete.raw('textc8392f8bbd61')}
+                </span>
                 {fbQ.isLoading ? (
                   <Skeleton className="h-5 w-9 rounded-full" />
                 ) : (
                   <Switch
                     checked={fbEnabled}
                     onCheckedChange={setFbEnabled}
-                    aria-label="Enable provider failover"
+                    aria-label={tI18nComplete.raw('text158c8bdea1b0')}
                   />
                 )}
               </div>
@@ -464,20 +475,20 @@ export default function AdminSandboxesPage() {
                 className="gap-1.5"
               >
                 {saveFb.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                Save failover
+                {tI18nComplete.raw('text08cfb2899839')}
               </Button>
             </AdminPanel>
           </AdminSection>
 
           <AdminSection
-            title="Live fleet"
-            description="The 300 most recent sandboxes. Refreshes every 10 seconds."
+            title={tI18nComplete.raw('text2d2827ffc214')}
+            description={tI18nComplete.raw('textd038adbf2bca')}
             action={
               <div className="w-full sm:w-72">
                 <AdminSearch
                   value={search}
                   onChange={setSearch}
-                  placeholder="Provider, status, session, account, external ID"
+                  placeholder={tI18nComplete.raw('texte7a5e2570fb6')}
                 />
               </div>
             }
@@ -489,16 +500,20 @@ export default function AdminSandboxesPage() {
                 <EmptyState
                   icon={IconInbox}
                   size="sm"
-                  title={search ? 'No sandboxes match this search' : 'No sandboxes yet'}
+                  title={
+                    search
+                      ? tI18nComplete.raw('text062bccfdad1c')
+                      : tI18nComplete.raw('texta670596d72fd')
+                  }
                   description={
                     search
-                      ? 'Try a different term.'
-                      : 'New sandboxes appear here as sessions spin up.'
+                      ? tI18nComplete.raw('textce18e358bf01')
+                      : tI18nComplete.raw('textd4c2dd15aae0')
                   }
                   action={
                     search ? (
                       <Button variant="outline" size="sm" onClick={() => setSearch('')}>
-                        Clear search
+                        {tI18nComplete.raw('text3b7ea51793e9')}
                       </Button>
                     ) : undefined
                   }
@@ -509,11 +524,11 @@ export default function AdminSandboxesPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Session</TableHead>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Last used</TableHead>
+                      <TableHead>{tI18nComplete.raw('text472590ae974d')}</TableHead>
+                      <TableHead>{tI18nComplete.raw('text920e413c7d41')}</TableHead>
+                      <TableHead>{tI18nComplete.raw('text6959b4159575')}</TableHead>
+                      <TableHead>{tI18nComplete.raw('text7e1b0d5641f2')}</TableHead>
+                      <TableHead>{tI18nComplete.raw('text830ec7f812f9')}</TableHead>
                       <TableHead className="w-10" />
                     </TableRow>
                   </TableHeader>
@@ -552,9 +567,13 @@ export default function AdminSandboxesPage() {
                           </TableCell>
                           <TableCell>
                             <DropdownMenu>
-                              <Hint label="Sandbox actions">
+                              <Hint label={tI18nComplete.raw('text20dba837bd8e')}>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" aria-label="Sandbox actions">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={tI18nComplete.raw('text20dba837bd8e')}
+                                  >
                                     <DotsThreeIcon className="size-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -568,7 +587,7 @@ export default function AdminSandboxesPage() {
                                   }}
                                 >
                                   <ArrowsLeftRightIcon className="size-4 shrink-0" />
-                                  Migrate to another provider…
+                                  {tI18nComplete.raw('text969a25894852')}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -587,15 +606,14 @@ export default function AdminSandboxesPage() {
         <TabsContent value="analytics" className="space-y-8">
           <div className="flex items-center justify-between gap-2">
             <p className="text-muted-foreground text-sm text-balance">
-              How each provider performs — provisioning latency, success rate, and where the time
-              goes.
+              {tI18nComplete.raw('text27342581678a')}
             </p>
             <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
               <SelectTrigger className="w-44 shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent align="end">
-                {RANGES.map((r) => (
+                {ranges.map((r) => (
                   <SelectItem key={r.value} value={r.value}>
                     {r.label}
                   </SelectItem>
@@ -614,54 +632,71 @@ export default function AdminSandboxesPage() {
               <EmptyState
                 icon={IconInbox}
                 size="sm"
-                title="No provisioning data yet"
-                description="Provision a few sandboxes — their timing and outcome show up here."
+                title={tI18nComplete.raw('text9c41daf68e2e')}
+                description={tI18nComplete.raw('texta4cf35d7f3ca')}
               />
             </AdminEmptyFrame>
           ) : (
             <>
               <StatGrid>
                 <StatTile
-                  label="Provisions"
+                  label={tI18nComplete.raw('text7982ad72bd36')}
                   value={an.totals.provisions.toLocaleString()}
                   hint={`${an.totals.migrations} migrations`}
                 />
                 <StatTile
-                  label="Success rate"
+                  label={tI18nComplete.raw('text49da60f8a292')}
                   value={an.totals.successRate == null ? '—' : `${an.totals.successRate}%`}
                   tone={
                     an.totals.successRate != null && an.totals.successRate < 90
                       ? 'warning'
                       : 'success'
                   }
-                  hint={`${an.totals.ok} ok · ${an.totals.error} failed`}
+                  hint={tI18nComplete('textad0f852848bf', {
+                    value0: an.totals.ok,
+                    value1: an.totals.error,
+                  })}
                 />
                 <StatTile
-                  label="Errors"
+                  label={tI18nComplete.raw('textcb702378f315')}
                   value={an.totals.error.toLocaleString()}
                   tone={an.totals.error > 0 ? 'danger' : 'default'}
-                  hint={an.totals.stopped ? `${an.totals.stopped} stopped` : 'None stopped'}
+                  hint={
+                    an.totals.stopped
+                      ? tI18nComplete('text58dfb849aa70', { value0: an.totals.stopped })
+                      : tI18nComplete.raw('text87ee04b2e9ee')
+                  }
                 />
                 <StatTile
-                  label="Providers"
+                  label={tI18nComplete.raw('text996c32b35f21')}
                   value={an.providers.length}
                   hint={anProviders.join(' · ') || '—'}
                 />
               </StatGrid>
 
               <AdminSection
-                title="Per provider"
-                description="The same numbers the charts below encode as colour, as text."
+                title={tI18nComplete.raw('text910ab2c6e011')}
+                description={tI18nComplete.raw('text7055405b8f29')}
               >
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead>Provider</TableHead>
-                      <TableHead className="text-right">Provisions</TableHead>
-                      <TableHead className="text-right">Success</TableHead>
-                      <TableHead className="text-right">p50</TableHead>
-                      <TableHead className="text-right">p95</TableHead>
-                      <TableHead className="text-right">Errors</TableHead>
+                      <TableHead>{tI18nComplete.raw('text472590ae974d')}</TableHead>
+                      <TableHead className="text-right">
+                        {tI18nComplete.raw('text7982ad72bd36')}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {tI18nComplete.raw('textc88a0b907419')}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {tI18nComplete.raw('text875636a511da')}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {tI18nComplete.raw('textf771f4d32eee')}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {tI18nComplete.raw('textcb702378f315')}
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -707,8 +742,8 @@ export default function AdminSandboxesPage() {
 
               <div className="grid gap-5 lg:grid-cols-2">
                 <AdminSection
-                  title="Provisioning latency (p50)"
-                  description="Median time to a ready sandbox, per provider per day."
+                  title={tI18nComplete.raw('textbdc837a7b2e4')}
+                  description={tI18nComplete.raw('textf1ef9e0be888')}
                 >
                   <AdminPanel>
                     <ChartContainer config={chartConfig} className="h-[260px] w-full">
@@ -757,8 +792,8 @@ export default function AdminSandboxesPage() {
                 </AdminSection>
 
                 <AdminSection
-                  title="Provision volume"
-                  description="Sandboxes provisioned per provider per day."
+                  title={tI18nComplete.raw('text34842398fd2d')}
+                  description={tI18nComplete.raw('textfd7e911ee733')}
                 >
                   <AdminPanel>
                     <ChartContainer config={chartConfig} className="h-[260px] w-full">
@@ -799,8 +834,8 @@ export default function AdminSandboxesPage() {
               </div>
 
               <AdminSection
-                title="Where the time goes"
-                description="Average duration of each provisioning phase, in execution order, for successful provisions."
+                title={tI18nComplete.raw('text1499fcd195a5')}
+                description={tI18nComplete.raw('text73741827862b')}
               >
                 <AdminPanel>
                   <ChartContainer config={phaseConfig} className="h-[220px] w-full">
@@ -844,16 +879,16 @@ export default function AdminSandboxesPage() {
 
               {an.recentErrors.length > 0 && (
                 <AdminSection
-                  title="Recent errors"
-                  description="The newest provisioning failures, with the class the API assigned them."
+                  title={tI18nComplete.raw('text799b25b8c943')}
+                  description={tI18nComplete.raw('text9bd290d1b0ce')}
                 >
                   <Table>
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        <TableHead>Provider</TableHead>
-                        <TableHead>Class</TableHead>
-                        <TableHead>Error</TableHead>
-                        <TableHead>When</TableHead>
+                        <TableHead>{tI18nComplete.raw('text472590ae974d')}</TableHead>
+                        <TableHead>{tI18nComplete.raw('text4f3a9bd00397')}</TableHead>
+                        <TableHead>{tI18nComplete.raw('text54a0e8c17ebb')}</TableHead>
+                        <TableHead>{tI18nComplete.raw('textcf9c7aa24a26')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -867,7 +902,7 @@ export default function AdminSandboxesPage() {
                           <TableCell>
                             {e.errorClass === 'capacity' ? (
                               <Badge variant="secondary" size="sm">
-                                capacity
+                                {tI18nComplete.raw('textec21b3b973a3')}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground text-xs">
@@ -904,19 +939,22 @@ export default function AdminSandboxesPage() {
       >
         <ModalContent className="lg:max-w-lg">
           <ModalHeader>
-            <ModalTitle>Migrate sandbox</ModalTitle>
+            <ModalTitle>{tI18nComplete.raw('text5150c9d9bb20')}</ModalTitle>
             <ModalDescription>
-              Move session <span className="font-mono">{migrating?.sessionId?.slice(0, 8)}</span> off{' '}
-              <span className="capitalize">{migrating?.provider}</span>. The session keeps its id;
-              the sandbox is rebuilt.
+              {tI18nComplete.raw('text998c22f68978')}
+              <span className="font-mono">{migrating?.sessionId?.slice(0, 8)}</span> off{' '}
+              <span className="capitalize">{migrating?.provider}</span>
+              {tI18nComplete.raw('text09a3bb2aced6')}
             </ModalDescription>
           </ModalHeader>
           <div className="px-4 pb-2">
             <Field>
-              <FieldLabel htmlFor="migrate-target">Target provider</FieldLabel>
+              <FieldLabel htmlFor="migrate-target">
+                {tI18nComplete.raw('text86ecd94bbb17')}
+              </FieldLabel>
               <Select value={target} onValueChange={setTarget}>
                 <SelectTrigger id="migrate-target" className="w-full">
-                  <SelectValue placeholder="Choose a provider" />
+                  <SelectValue placeholder={tI18nComplete.raw('texte1d36c3adeeb')} />
                 </SelectTrigger>
                 <SelectContent>
                   {targets.map((p) => (
@@ -930,7 +968,7 @@ export default function AdminSandboxesPage() {
           </div>
           <ModalFooter className="sm:justify-between">
             <Button variant="outline-ghost" onClick={() => setMigrating(null)}>
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button
               onClick={() => migrate.mutate()}
@@ -938,7 +976,7 @@ export default function AdminSandboxesPage() {
               className="gap-1.5"
             >
               {migrate.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Migrate
+              {tI18nComplete.raw('textf988ed29d81b')}
             </Button>
           </ModalFooter>
         </ModalContent>

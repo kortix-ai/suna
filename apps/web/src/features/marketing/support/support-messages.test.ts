@@ -71,7 +71,9 @@ describe('support message namespace', () => {
       expect(used.length).toBeGreaterThan(10);
       for (const key of used) {
         expect(scope[key], `${page} asks for support.${namespace}.${key}`).toBeString();
-        expect(scope[key]!.trim().length, `support.${namespace}.${key} is empty`).toBeGreaterThan(0);
+        expect(scope[key]!.trim().length, `support.${namespace}.${key} is empty`).toBeGreaterThan(
+          0,
+        );
         seen.push(`${namespace}.${key}`);
       }
     }
@@ -82,9 +84,8 @@ describe('support message namespace', () => {
     expect(defined.filter((key) => !seen.includes(key))).toEqual([]);
   });
 
-  test.each(locales.filter((locale) => locale !== 'en'))(
-    '%s has every support key en.json has, non-empty',
-    (locale) => {
+  for (const locale of locales.filter((value) => value !== 'en')) {
+    test(`${locale} has every support key en.json has, non-empty`, () => {
       const en = Object.keys(flatten(messages('en'))).sort();
       const translated = flatten(messages(locale));
 
@@ -94,6 +95,6 @@ describe('support message namespace', () => {
           0,
         );
       }
-    },
-  );
+    });
+  }
 });

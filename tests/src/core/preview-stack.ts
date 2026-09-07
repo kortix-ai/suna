@@ -14,6 +14,14 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
 export type PreviewRuntimeSecretName = (typeof PREVIEW_RUNTIME_SECRET_ALLOWLIST)[number];
 export type PreviewRuntimeSecrets = Partial<Record<PreviewRuntimeSecretName, string>>;
 
+export function readPreviewRuntimeSecrets(
+  environment: Readonly<Record<string, string | undefined>>,
+): PreviewRuntimeSecrets {
+  return Object.fromEntries(
+    PREVIEW_RUNTIME_SECRET_ALLOWLIST.map((key) => [key, environment[key]?.trim() ?? '']),
+  );
+}
+
 export interface PreviewStackInput {
   origin: string;
   sha: string;
@@ -229,7 +237,8 @@ export function applyPreviewEnvironment(
   rawSecrets: Record<string, string>,
 ): { runtimeEnv: string; testEnv: string } {
   validatePreviewRuntimeSecrets(rawSecrets);
-  if (!/^[0-9a-f]{40}$/.test(input.sha)) throw new Error('preview SHA must contain 40 hex characters');
+  if (!/^[0-9a-f]{40}$/.test(input.sha))
+    throw new Error('preview SHA must contain 40 hex characters');
   const origin = validatedOrigin(input.origin);
   const runtime = parseEnvironment(baseEnvironmentText);
   const postgresPassword = runtime.POSTGRES_PASSWORD;

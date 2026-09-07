@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { yours } from './content';
+import { getLocalizedSelfHostedContent } from './content';
 
 /**
  * Where the line actually falls when you self-host: what sits on your box, and
@@ -57,6 +58,8 @@ function Column({
 }
 
 export function BoundaryDiagram(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { yours } = getLocalizedSelfHostedContent(tI18nComplete);
   return (
     <div className="border-border bg-card rounded-sm border p-5 sm:p-8">
       <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch lg:gap-0">
@@ -69,7 +72,7 @@ export function BoundaryDiagram(): ReactNode {
             className="bg-border absolute inset-y-0 left-1/2 hidden w-px lg:block"
           />
           <span className="border-border bg-card text-muted-foreground relative rounded-sm border px-2.5 py-1 font-mono text-[10px] tracking-widest uppercase">
-            your box
+            {tI18nComplete.raw('text20ebc2fbf331')}
           </span>
         </div>
 

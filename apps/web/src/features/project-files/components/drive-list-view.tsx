@@ -37,7 +37,7 @@ import {
   FolderIcon as FolderCog,
   DotsThreeVerticalIcon as MoreVertical,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useRef, useState } from 'react';
 import { rowDragIntent } from '../upload-batch';
 import { FileDriveMenuItems, FolderDriveMenuItems } from './drive-grid-view';
@@ -280,7 +280,7 @@ function ListRow({
                 <Folder className="text-muted-foreground size-4 shrink-0" />
               ) : (
                 getFileIcon(node.name, {
-                  className: 'size-4 shrink-0 text-muted-foreground',
+                  className: tHardcodedUi.raw('i18nComplete.text4f3ce4e17d38'),
                   variant: 'monochrome',
                 })
               )}
@@ -316,7 +316,7 @@ function ListRow({
           </TableCell>
           <TableCell>
             {isDir ? (
-              <ChalkBadge label="Folder" />
+              <ChalkBadge label={tHardcodedUi.raw('i18nComplete.text74ccd4330384')} />
             ) : ext ? (
               <ChalkBadge label={ext} />
             ) : (
@@ -378,6 +378,7 @@ function ListRow({
 }
 
 function ElevatedDirRow({ node, onNavigate }: { node: FileNode; onNavigate: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <TableRow onClick={onNavigate} className="cursor-pointer select-none">
       <TableCell>
@@ -392,7 +393,7 @@ function ElevatedDirRow({ node, onNavigate }: { node: FileNode; onNavigate: () =
         </div>
       </TableCell>
       <TableCell>
-        <ChalkBadge label="System" />
+        <ChalkBadge label={tI18nComplete.raw('text6725e7bbcd28')} />
       </TableCell>
       <TableCell />
     </TableRow>
@@ -445,6 +446,7 @@ export function DriveListView({
   isDirDownloading,
   readOnly = false,
 }: DriveListViewProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const onRename = readOnly ? undefined : rawOnRename;
   const onDelete = readOnly ? undefined : rawOnDelete;
   const onHistory = rawOnHistory;
@@ -485,7 +487,7 @@ export function DriveListView({
                 variant="transparent"
                 className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
               >
-                Name
+                {tI18nComplete.raw('textdcd1d5223f73')}
                 <SortIcon field="name" />
               </Button>
             </TableHead>
@@ -495,12 +497,12 @@ export function DriveListView({
                 variant="transparent"
                 className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
               >
-                Type
+                {tI18nComplete.raw('textbaaddf70fb5d')}
                 <SortIcon field="type" />
               </Button>
             </TableHead>
             <TableHead className="w-[52px]">
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
             </TableHead>
           </TableRow>
         </TableHeader>

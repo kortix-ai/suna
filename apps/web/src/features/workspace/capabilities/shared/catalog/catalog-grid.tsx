@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -90,6 +91,7 @@ export function CatalogGrid({
   empty,
   children,
 }: CatalogGridProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (isLoading) {
     return <CatalogGridSkeleton />;
   }
@@ -97,7 +99,7 @@ export function CatalogGrid({
   if (isError) {
     // Copy is derived from the failure rather than fixed, because the fixed
     // string named a cause. See `catalog-error.ts`.
-    const copy = catalogErrorCopy(error);
+    const copy = catalogErrorCopy(error, tI18nComplete);
     return (
       <ErrorState
         size="sm"
@@ -106,7 +108,7 @@ export function CatalogGrid({
         action={
           copy.canRetry ? (
             <Button variant="outline" size="sm" onClick={onRetry}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           ) : undefined
         }

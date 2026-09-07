@@ -15,14 +15,11 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
 import { cn } from '@/lib/utils';
 
-import {
-  AVAILABLE_SERVICES,
-  MAINTENANCE_LEVELS,
-  MAINTENANCE_TONE_GLYPH,
-} from './constants';
+import { AVAILABLE_SERVICES, MAINTENANCE_LEVELS, MAINTENANCE_TONE_GLYPH } from './constants';
 import { DateTimePicker } from './date-time-picker';
 
 interface MaintenanceConfigModalProps {
@@ -72,6 +69,7 @@ export function MaintenanceConfigModal({
   onSave,
   isPending,
 }: MaintenanceConfigModalProps) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const levelConfig = MAINTENANCE_LEVELS.find((l) => l.value === level);
   const Icon = levelConfig?.icon;
   const isNone = level === 'none';
@@ -90,12 +88,15 @@ export function MaintenanceConfigModal({
                 )}
               />
             )}
-            Configure {levelConfig?.label.toLowerCase() ?? 'maintenance'}
+            {tI18nComplete.raw('text6defafa2caa6')}
+            {levelConfig?.label.toLowerCase() ?? 'maintenance'}
           </ModalTitle>
           <ModalDescription>
             {isNone
-              ? 'Saving clears every active maintenance notification and restores normal access.'
-              : `What everyone sees while the ${levelConfig?.label.toLowerCase()} is active.`}
+              ? tI18nComplete.raw('text21e4c72a597b')
+              : tI18nComplete('textbdbdc3e6773d', {
+                  value0: levelConfig?.label.toLowerCase() ?? 'maintenance',
+                })}
           </ModalDescription>
         </ModalHeader>
 
@@ -103,7 +104,7 @@ export function MaintenanceConfigModal({
           <ModalBody className="max-h-[60vh] overflow-y-auto">
             <FieldGroup className="space-y-4">
               <Field>
-                <FieldLabel htmlFor="m-title">Title</FieldLabel>
+                <FieldLabel htmlFor="m-title">{tI18nComplete.raw('text7e8cd2056da7')}</FieldLabel>
                 <Input
                   id="m-title"
                   placeholder={levelConfig?.label ?? 'Maintenance'}
@@ -113,10 +114,10 @@ export function MaintenanceConfigModal({
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="m-message">Message</FieldLabel>
+                <FieldLabel htmlFor="m-message">{tI18nComplete.raw('text2f77668a9dfb')}</FieldLabel>
                 <Textarea
                   id="m-message"
-                  placeholder="Describe what is happening and when it ends."
+                  placeholder={tI18nComplete.raw('text94e0d14dbf98')}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   rows={3}
@@ -125,14 +126,22 @@ export function MaintenanceConfigModal({
 
               {(level === 'warning' || level === 'blocking') && (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <DateTimePicker label="Start time" date={startDate} setDate={setStartDate} />
-                  <DateTimePicker label="End time" date={endDate} setDate={setEndDate} />
+                  <DateTimePicker
+                    label={tI18nComplete.raw('textbabe9dda8503')}
+                    date={startDate}
+                    setDate={setStartDate}
+                  />
+                  <DateTimePicker
+                    label={tI18nComplete.raw('text2e46006a5eeb')}
+                    date={endDate}
+                    setDate={setEndDate}
+                  />
                 </div>
               )}
 
               {(level === 'critical' || level === 'blocking') && (
                 <Field>
-                  <FieldLabel>Affected services</FieldLabel>
+                  <FieldLabel>{tI18nComplete.raw('textdc6c9309c03e')}</FieldLabel>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {AVAILABLE_SERVICES.map((service) => {
                       const SvcIcon = service.icon;
@@ -142,7 +151,7 @@ export function MaintenanceConfigModal({
                           key={service.id}
                           className={cn(
                             'bg-popover flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm',
-                            'transition-colors duration-fast ease-out',
+                            'duration-fast transition-colors ease-out',
                             isSelected ? 'bg-active' : 'hover:bg-hover',
                           )}
                         >
@@ -160,7 +169,9 @@ export function MaintenanceConfigModal({
               )}
 
               <Field>
-                <FieldLabel htmlFor="m-status-url">Status URL (optional)</FieldLabel>
+                <FieldLabel htmlFor="m-status-url">
+                  {tI18nComplete.raw('text0d52d18febbd')}
+                </FieldLabel>
                 <Input
                   id="m-status-url"
                   placeholder="https://status.kortix.com"
@@ -174,7 +185,7 @@ export function MaintenanceConfigModal({
 
         <ModalFooter className="sm:justify-between">
           <Button variant="outline-ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {tI18nComplete.raw('text19766ed6ccb2')}
           </Button>
           <Button
             onClick={onSave}
@@ -183,7 +194,7 @@ export function MaintenanceConfigModal({
             className="gap-1.5"
           >
             {isPending ? <Loading className="size-4 shrink-0" /> : null}
-            {isNone ? 'Clear notifications' : 'Activate'}
+            {isNone ? tI18nComplete.raw('texte6f312c6b6ef') : tI18nComplete.raw('text24433c70eba5')}
           </Button>
         </ModalFooter>
       </ModalContent>

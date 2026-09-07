@@ -1,13 +1,14 @@
 import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
-import { agent, hero, reach, repo, skill } from '@/features/marketing/agents-and-skills/content';
+import { getLocalizedAgentsAndSkillsContent } from '@/features/marketing/agents-and-skills/content';
 import { AgentsAndSkillsHeroVisual } from '@/features/marketing/agents-and-skills/hero-visual';
 import { MdPanel } from '@/features/marketing/agents-and-skills/md-panel';
 import { RepoTree } from '@/features/marketing/agents-and-skills/repo-tree';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
+import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 
 function SectionDivider(): ReactNode {
@@ -29,7 +30,10 @@ function SectionDivider(): ReactNode {
  * It went when the skills marketplace left the product — see that header's
  * gate for what may and may not replace it.
  */
-export default function AgentsAndSkillsPage(): ReactNode {
+export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { agent, hero, reach, repo, skill } =
+    getLocalizedAgentsAndSkillsContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero

@@ -42,14 +42,14 @@ describe('connectors page Global rules', () => {
   test('the trigger lives in the tab row, after the scope tabs', () => {
     const body = code(source);
     const filters = filtersSlice(body);
-    expect(filters).toContain('Global rules');
+    expect(filters).toContain("raw('text1d59a5e09714')");
     expect(filters).toContain('setRulesOpen(true)');
     // After the tab strip in source order = to its right in the flex row.
-    expect(filters.indexOf('TabsList')).toBeLessThan(filters.indexOf('Global rules'));
+    expect(filters.indexOf('TabsList')).toBeLessThan(filters.indexOf("raw('text1d59a5e09714')"));
     // The header keeps only the Add action.
     const header = body.slice(body.indexOf('action={'), body.indexOf('filters={'));
-    expect(header).not.toContain('Global rules');
-    expect(header).toContain('Add a custom connector');
+    expect(header).not.toContain("raw('text1d59a5e09714')");
+    expect(header).toContain("raw('text90ccaee30bdc')");
   });
 
   // Text, not a chip: the row already carries the tab strip's filled control,
@@ -70,7 +70,7 @@ describe('connectors page Global rules', () => {
   // project's approval policy from every viewer.
   test('the trigger is not gated on canWrite', () => {
     const filters = filtersSlice(code(source));
-    expect(filters).toContain('Global rules');
+    expect(filters).toContain("raw('text1d59a5e09714')");
     expect(filters).not.toContain('canWrite');
   });
 
@@ -86,7 +86,7 @@ describe('connectors page Global rules', () => {
     expect(header).toContain('<NewEntityMenu');
     expect(header).not.toContain('size="default"');
     expect(header).toContain("newConfigPrompt('connector')");
-    expect(header).toContain("label: 'Add a custom connector'");
+    expect(header).toContain("label: tI18nComplete.raw('text90ccaee30bdc')");
     expect(header).toContain("setPanel('custom')");
   });
 
@@ -94,7 +94,7 @@ describe('connectors page Global rules', () => {
     const body = code(source);
     expect(body).toContain('<Sheet open={rulesOpen} onOpenChange={setRulesOpen}>');
     expect(body).toContain('<SheetTitle');
-    expect(body).toContain('Approval rules that apply to every connector in this project.');
+    expect(body).toContain("raw('text014d10bd3c64')");
     expect(body).toContain('<PoliciesPanel projectId={projectId} />');
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import CustomizeSectionWrapper from './section-wrapper';
 
 const render = (mode: 'default' | 'fill', extra: { docs?: string; action?: ReactNode }) =>

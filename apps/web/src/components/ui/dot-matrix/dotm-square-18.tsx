@@ -1,12 +1,10 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { useCyclePhase } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase } from '@/lib/dotmatrix-core';
+import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmSquare18Props = DotMatrixCommonProps;
 
@@ -22,30 +20,34 @@ function clampLevel(value: number): number {
 
 export function DotmSquare18({
   speed = 1.35,
-  pattern = "full",
+  pattern = 'full',
   animated = true,
   hoverAnimated = false,
   ...rest
 }: DotmSquare18Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const animPhase = useCyclePhase({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1750,
-    speed
+    speed,
   });
 
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
-      const t = reducedMotion || phase === "idle" ? 0 : animPhase * STEP_COUNT;
+      const t = reducedMotion || phase === 'idle' ? 0 : animPhase * STEP_COUNT;
       const colPhase = t * 0.52 + col * 1.15;
       const level = clampLevel(1 + ((Math.sin(colPhase) + 1) / 2) * (MAX_LEVEL - 1));
       const topLitRow = MAX_LEVEL - level;

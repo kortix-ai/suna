@@ -4,13 +4,13 @@ import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions } from '@tiptap/suggestion';
 
 import { insertMention } from '../editor/mention-node';
-import { baseSuggestion } from '../editor/suggestion';
 import type { MenuController } from '../editor/suggestion';
-import { MentionMenuHost } from './mention-menu';
-import { mountSuggestionMenu } from './mount';
+import { baseSuggestion } from '../editor/suggestion';
 import type { MentionMenuHostProps } from './mention-menu';
+import { MentionMenuHost } from './mention-menu';
 import type { MenuRow } from './menu-items';
 import { MenuNavState } from './menu-nav-state';
+import { mountSuggestionMenu } from './mount';
 
 export const MENTION_PLUGIN_KEY = new PluginKey('mentionSuggestion');
 

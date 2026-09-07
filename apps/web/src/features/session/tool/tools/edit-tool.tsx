@@ -1,5 +1,6 @@
 'use client';
 
+import { filePhase, fileVerb } from '@/features/session/tool/shared/file-verb';
 import {
   BasicTool,
   DiagnosticsDisplay,
@@ -16,7 +17,6 @@ import {
   ToolRunningContext,
   useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
-import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -25,9 +25,11 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { diffLines } from 'diff';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useContext, useMemo } from 'react';
 
 export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const running = useContext(ToolRunningContext);
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
@@ -158,7 +160,9 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         // that was never going to arrive. `write-tool.tsx` dropped that shimmer;
         // `edit` kept it, so one situation had two answers.
         <ToolResultCard bodyClassName="px-2 py-1.5">
-          <span className="text-muted-foreground/60 text-xs">No content received</span>
+          <span className="text-muted-foreground/60 text-xs">
+            {tI18nComplete.raw('text93168435f3ae')}
+          </span>
         </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />

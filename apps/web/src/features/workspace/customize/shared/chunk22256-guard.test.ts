@@ -1,6 +1,6 @@
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 
 // Regression test for the Better Stack chunk-22256 cluster:
 //   5af76e2b… / c80ef19c… / bb2da889… —
@@ -18,13 +18,7 @@ import { describe, expect, test } from 'bun:test';
 // The agents surface moved from this overlay section to the standalone
 // `/projects/[id]/customize/agents` page; the guard follows the code, because the config
 // fields it reads (and the ways they can come back undefined) did not change.
-const capabilities = join(
-  import.meta.dir,
-  '..',
-  '..',
-  'capabilities',
-  'agents',
-);
+const capabilities = join(import.meta.dir, '..', '..', 'capabilities', 'agents');
 const agentsPage = readFileSync(join(capabilities, 'agents-page.tsx'), 'utf8');
 // The agent's skills picker moved from the detail aside to the routed agent
 // page (Customize is agent-centric, 2026-09-01); the guard moved with it.

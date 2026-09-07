@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon as ExternalLink,
   GithubLogoIcon as Github,
@@ -10,28 +12,27 @@ import {
   ArrowClockwiseIcon as RefreshCw,
   PlugsIcon as Unplug,
 } from '@phosphor-icons/react';
-import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { m, useReducedMotion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
 import { AccessProjectsTab } from '@/components/iam/access-projects-tab';
-import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
+import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
 import { KeyRulesCard } from '@/components/iam/key-rules-card';
-import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
+import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -57,17 +58,20 @@ import { SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { AccountPane, AccountPaneSkeleton } from '@/features/accounts/hub/account-pane';
-import { PANE_META, paneWidth, type AccountSection } from '@/features/accounts/hub/sections';
+import {
+  type AccountSection,
+  localizedAccountPaneMeta,
+  paneWidth,
+} from '@/features/accounts/hub/sections';
 import { useAccountDetail } from '@/features/accounts/hub/use-account-detail';
 import { useAccountHubSection } from '@/features/accounts/hub/use-account-hub-access';
 import { useAccountMembers } from '@/features/accounts/hub/use-account-members';
+import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { BrandingTab } from '@/features/accounts/settings/branding-tab';
-import { useBrandingScope } from '@/features/branding/branding-provider';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { useBrandingScope } from '@/features/branding/branding-provider';
 import { Close } from '@/features/icon/icons/close';
 import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -76,20 +80,21 @@ import { useAuth } from '@/features/providers/auth-provider';
 import {
   ACCESS_ROW_CLASS,
   AccessDialog,
+  type AccessDialogPrincipal,
   AccessList,
   AccessRow,
+  type KebabItem,
+  type RoleValue,
   builtinRole,
   builtinRoleLabel,
   customRole,
   formatDate,
-  type AccessDialogPrincipal,
-  type KebabItem,
-  type RoleValue,
   principalLabel,
   roleValueLabel,
   useAccountRoles,
 } from '@/features/workspace/shared/access';
 import { useAccountState } from '@/hooks/billing';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { isGitHubAppInstallationId } from '@/lib/github-installations';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
@@ -107,7 +112,6 @@ import {
   listPolicies,
   removeAccountMember,
   resendAccountInvite,
-  updateAccountMemberRole,
   updateAccountName,
 } from '@kortix/sdk';
 import {
@@ -129,14 +133,14 @@ import {
 // both, byte-identical to the ones the project/group/audit surfaces carried.
 
 /** Copy an invite URL to the clipboard with a friendly toast either way. */
-async function copyInviteLink(url: string) {
+async function copyInviteLink(url: string, copiedMessage: string, fallbackMessage: string) {
   try {
     await navigator.clipboard.writeText(url);
-    successToast('Invite link copied to clipboard');
+    successToast(copiedMessage);
   } catch {
     // Older browsers / blocked clipboard — show the link in a toast so the
     // admin can copy it by hand.
-    infoToast('Copy this invite link', {
+    infoToast(fallbackMessage, {
       description: url,
       duration: 15_000,
     });
@@ -152,6 +156,7 @@ function rememberGitHubSetupReturn(path: string) {
 }
 
 export default function AccountSettingsPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -249,7 +254,9 @@ export default function AccountSettingsPage() {
   // suppress the outer one while a member is open (Groups and Projects have
   // no `PANE_META` entry at all, for the same reason).
   const paneMeta =
-    activeSection === 'members' && selectedAccessMemberId ? undefined : PANE_META[activeSection];
+    activeSection === 'members' && selectedAccessMemberId
+      ? undefined
+      : localizedAccountPaneMeta(tI18nComplete)[activeSection];
   // `project` / `group` / `member` carry the open detail entity onto the URL
   // (`?tab=groups&group=<id>`) — omit one (or pass null) to drop the param,
   // e.g. switching tabs or backing out to the list. Every other tab switch
@@ -268,7 +275,7 @@ export default function AccountSettingsPage() {
 
   return (
     <AccountPane
-      back={{ href: '/accounts', label: 'Back to accounts' }}
+      back={{ href: '/accounts', label: tI18nComplete.raw('text68d8e728a8ad') }}
       title={paneMeta?.title}
       description={paneMeta?.description}
       width={paneWidth(activeSection)}
@@ -276,11 +283,11 @@ export default function AccountSettingsPage() {
       {accountQuery.isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load account"
+          title={tI18nComplete.raw('text25eea22ea61b')}
           description={(accountQuery.error as Error).message}
           action={
             <Button variant="outline" size="sm" onClick={() => accountQuery.refetch()}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -501,7 +508,7 @@ export default function AccountSettingsPage() {
 
           {activeSection === 'settings' && canWriteAccount ? (
             <div className="space-y-10">
-              <SettingsGroup title="General">
+              <SettingsGroup title={tI18nComplete.raw('textc910d474dcd7')}>
                 <GeneralCard
                   account={account}
                   queryClient={queryClient}
@@ -515,18 +522,15 @@ export default function AccountSettingsPage() {
                   lifetime + idle timeout is gone: as full cards they were
                   genuinely too much, as two rows they cost two lines. See
                   `components/iam/session-controls-card.tsx`. */}
-              <SettingsGroup title="Security" description="Account-wide sign-in requirements.">
+              <SettingsGroup
+                title={tI18nComplete.raw('text8f6fb4eb7f42')}
+                description={tI18nComplete.raw('textf9d52abc1fb8')}
+              >
                 <SettingsRowGroup>
                   <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
-                  <SessionControlsCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
+                  <SessionControlsCard accountId={account.account_id} canManage={canWriteAccount} />
                 </SettingsRowGroup>
-                <AccountSessionsPanel
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
+                <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
               </SettingsGroup>
 
               {/* Tucked away, not headline: this reports whether the
@@ -539,8 +543,8 @@ export default function AccountSettingsPage() {
                   demo-toggle or upsell in that case. */}
               {!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available ? (
                 <SettingsGroup
-                  title="Enterprise features"
-                  description="Preview SSO, SCIM, advanced RBAC, and audit logs before upgrading."
+                  title={tI18nComplete.raw('textc2ef82e31689')}
+                  description={tI18nComplete.raw('text9c7d38b81f41')}
                 >
                   <SettingsRowGroup>
                     <EnterpriseDemoCard
@@ -552,7 +556,7 @@ export default function AccountSettingsPage() {
               ) : null}
 
               {canDeleteAccount ? (
-                <SettingsGroup title="Danger zone">
+                <SettingsGroup title={tI18nComplete.raw('textfd8b8dae4421')}>
                   <DangerZoneCard />
                 </SettingsGroup>
               ) : null}
@@ -573,6 +577,7 @@ function GitHubConnectionCard({
   account: AccountDetail;
   canManage: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
@@ -591,7 +596,7 @@ function GitHubConnectionCard({
     mutationFn: (installationId: string) =>
       deleteGitHubInstallation(account.account_id, installationId),
     onSuccess: () => {
-      successToast('GitHub disconnected');
+      successToast(tI18nComplete.raw('text06993786f49e'));
       setDisconnectTarget(null);
       queryClient.invalidateQueries({
         queryKey: ['github-installations', account.account_id],
@@ -600,7 +605,7 @@ function GitHubConnectionCard({
         queryKey: ['github-repositories', account.account_id],
       });
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6e9715f4f2a9')),
   });
 
   function handleConnect() {
@@ -619,22 +624,22 @@ function GitHubConnectionCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <span className="flex items-center gap-1">
-            <p className="text-foreground text-sm font-medium">GitHub connections</p>
-            <Hint label="Kortix stores the GitHub App installation on the account, not on individual members — Git credentials are platform credentials.">
+            <p className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('texte95944e1c3c8')}
+            </p>
+            <Hint label={tI18nComplete.raw('text01c8d0fbaec6')}>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="About Git credentials"
+                aria-label={tI18nComplete.raw('text83ce6bad47b6')}
                 className="text-muted-foreground hover:text-foreground size-5"
               >
                 <Info className="size-3.5" />
               </Button>
             </Hint>
           </span>
-          <p className="text-muted-foreground text-xs">
-            Link an existing App installation or install the App for a GitHub account.
-          </p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text5122d0f1db23')}</p>
         </div>
         <Button
           type="button"
@@ -643,10 +648,10 @@ function GitHubConnectionCard({
           className="gap-1.5"
           disabled={!canManage || isConnecting}
           onClick={handleConnect}
-          title={canManage ? undefined : 'You do not have permission to connect GitHub.'}
+          title={canManage ? undefined : tI18nComplete.raw('text89a0e2d1b569')}
         >
           {isConnecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
-          {isConnecting ? 'Connecting' : 'Add account'}
+          {isConnecting ? 'Connecting' : tI18nComplete.raw('textee7ee5830f09')}
         </Button>
       </div>
 
@@ -655,14 +660,14 @@ function GitHubConnectionCard({
           <Skeleton className="h-[58px] w-full rounded-md" />
         </div>
       ) : installationsQuery.isError ? (
-        <InfoBanner tone="warning" icon={Github} title="GitHub status unavailable">
+        <InfoBanner tone="warning" icon={Github} title={tI18nComplete.raw('textd3a118da5b46')}>
           {(installationsQuery.error as Error).message}
         </InfoBanner>
       ) : installations.length === 0 ? (
         // Quiet contained empty state — the toolbar above already carries the
         // single "Connect GitHub" CTA.
         <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
-          No GitHub connections yet. Add an existing App installation or install the App.
+          {tI18nComplete.raw('text053689bf661f')}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -670,9 +675,9 @@ function GitHubConnectionCard({
             const contentsPermission = permissionLabel(installation.permissions?.contents);
             const repoSelection =
               installation.repository_selection === 'selected'
-                ? 'Selected repositories'
+                ? tI18nComplete.raw('texte0a8d25fe959')
                 : installation.repository_selection === 'all'
-                  ? 'All repositories'
+                  ? tI18nComplete.raw('text77fe4eba38d8')
                   : null;
             const installationId = installation.installation_id ?? '';
             return (
@@ -684,10 +689,10 @@ function GitHubConnectionCard({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-foreground truncate text-sm font-medium">
-                      {installation.owner_login ?? 'GitHub App'}
+                      {installation.owner_login ?? tI18nComplete.raw('texte53bb01e5503')}
                     </span>
                     <Badge variant="success" size="sm">
-                      Connected
+                      {tI18nComplete.raw('text22965568d22a')}
                     </Badge>
                   </div>
                   <span className="text-muted-foreground text-xs">
@@ -707,7 +712,7 @@ function GitHubConnectionCard({
                         rel="noopener noreferrer"
                       >
                         <ExternalLink className="size-3.5" />
-                        Configure
+                        {tI18nComplete.raw('text6defafa2caa6')}
                       </a>
                     </Button>
                   ) : null}
@@ -725,7 +730,7 @@ function GitHubConnectionCard({
                       }
                     >
                       <Unplug className="size-3.5" />
-                      Disconnect
+                      {tI18nComplete.raw('textacfc5be785a9')}
                     </Button>
                   ) : null}
                 </div>
@@ -738,9 +743,11 @@ function GitHubConnectionCard({
       <ConfirmDialog
         open={Boolean(disconnectTarget)}
         onOpenChange={(open) => !open && setDisconnectTarget(null)}
-        title="Disconnect GitHub"
-        description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working until it is connected again. Existing projects keep their repository link.`}
-        confirmLabel="Disconnect"
+        title={tI18nComplete.raw('text6c47b175b49c')}
+        description={tI18nComplete('text53270bef8b4a', {
+          value0: disconnectTarget?.ownerLogin ?? tI18nComplete.raw('textd5f73450ac16'),
+        })}
+        confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         onConfirm={() => {
           if (disconnectTarget) {
             disconnectMutation.mutate(disconnectTarget.installationId);
@@ -793,6 +800,7 @@ function GeneralCard({
   queryClient: ReturnType<typeof useQueryClient>;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [name, setName] = useState(account.name);
 
   useEffect(() => {
@@ -802,14 +810,14 @@ function GeneralCard({
   const renameMutation = useMutation({
     mutationFn: (next: string) => updateAccountName(account.account_id, next),
     onSuccess: (updated) => {
-      successToast('Account updated');
+      successToast(tI18nComplete.raw('textfb38fa39668b'));
       queryClient.setQueryData(['account', account.account_id], updated);
       // The account LIST renders this name in every switcher. `scope()` is
       // the prefix that reaches the signed-in user's list slot from inside a
       // mutation callback, which has no user id in hand.
       queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to update account'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textf8b3ddaa27a4')),
   });
 
   const trimmed = name.trim();
@@ -824,7 +832,7 @@ function GeneralCard({
   return (
     <form onSubmit={handleSubmit} className="bg-popover rounded-md border">
       <div className="space-y-1.5 px-4 py-5">
-        <Label htmlFor="account-name">Account name</Label>
+        <Label htmlFor="account-name">{tI18nComplete.raw('texta704d8d4a818')}</Label>
         <Input
           id="account-name"
           value={name}
@@ -832,17 +840,17 @@ function GeneralCard({
           disabled={!canWrite || renameMutation.isPending}
           maxLength={120}
           className="max-w-md"
-          title={canWrite ? undefined : 'You do not have permission to rename this account.'}
+          title={canWrite ? undefined : tI18nComplete.raw('textc7184af7d9c9')}
         />
         {!canWrite ? (
-          <p className="text-muted-foreground text-xs">
-            You do not have permission to rename this account.
-          </p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textc7184af7d9c9')}</p>
         ) : null}
       </div>
 
       <div className="border-border flex items-center justify-between border-t px-4 py-3">
-        <p className="text-muted-foreground text-xs">Created {formatDate(account.created_at)}</p>
+        <p className="text-muted-foreground text-xs">
+          {tI18nComplete.raw('textd70b9e24bca2')} {formatDate(account.created_at)}
+        </p>
         <Button
           type="submit"
           size="sm"
@@ -850,7 +858,7 @@ function GeneralCard({
           className="gap-1.5"
         >
           {renameMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          Save
+          {tI18nComplete.raw('text1509f561f241')}
         </Button>
       </div>
     </form>
@@ -858,17 +866,26 @@ function GeneralCard({
 }
 
 function DangerZoneCard() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="bg-popover rounded-md border px-4 py-3">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-foreground text-sm font-medium">Delete account</p>
+          <p className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('texta2e20a335700')}
+          </p>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Permanently deletes this account and all its projects.
+            {tI18nComplete.raw('textdc32ee18ad99')}
           </p>
         </div>
-        <Button variant="outline" size="sm" disabled title="Coming soon" className="shrink-0">
-          Coming soon
+        <Button
+          variant="outline"
+          size="sm"
+          disabled
+          title={tI18nComplete.raw('text4f7d64017689')}
+          className="shrink-0"
+        >
+          {tI18nComplete.raw('text4f7d64017689')}
         </Button>
       </div>
     </div>
@@ -929,6 +946,7 @@ function MembersCard({
    *  (`?tab=members&member=<id>`) — no route change, the rail stays. */
   onSelectMember: (userId: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const [grantOpen, setGrantOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AccountMember | null>(null);
@@ -1034,11 +1052,11 @@ function MembersCard({
     onMutate: (userId) => markPending(userId),
     onSettled: (_data, _error, userId) => clearPending(userId),
     onSuccess: () => {
-      successToast('Member removed');
+      successToast(tI18nComplete.raw('text23b0caa9d34a'));
       invalidateMembers();
       setRemoveTarget(null);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to remove member'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text1cff79b7eb0b')),
   });
 
   const leaveMutation = useMutation({
@@ -1046,11 +1064,11 @@ function MembersCard({
     onMutate: () => markPending(currentUserId),
     onSettled: () => clearPending(currentUserId),
     onSuccess: () => {
-      successToast(`Left ${account.name}`);
+      successToast(tI18nComplete('texta95f7e7aff62', { value0: account.name }));
       queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
       router.push('/accounts');
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to leave team'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text9de0b8c8b34b')),
   });
 
   // Bulk surface only shows when the caller can actually do something
@@ -1148,7 +1166,7 @@ function MembersCard({
     });
 
     if (failures.length === 0) {
-      successToast(`${label}: ${ids.length} member${ids.length === 1 ? '' : 's'}`);
+      successToast(tI18nComplete('text540afa4c53ff', { label, count: ids.length }));
       clearSelection();
       setBulkDialog(null);
       return;
@@ -1164,7 +1182,14 @@ function MembersCard({
     const reasonShort = first.reason.length > 140 ? `${first.reason.slice(0, 137)}…` : first.reason;
     const tail = failures.length > 1 ? ` (+${failures.length - 1} more — see console)` : '';
     errorToast(
-      `${label}: ${ids.length - failures.length} succeeded, ${failures.length} failed. ${first.email}: ${reasonShort}${tail}`,
+      tI18nComplete('text479974eaff88', {
+        value0: label,
+        value1: ids.length - failures.length,
+        value2: failures.length,
+        value3: first.email,
+        value4: reasonShort,
+        value5: tail,
+      }),
     );
     // Drop succeeded rows from the selection so a retry only re-runs
     // the ones that failed.
@@ -1179,11 +1204,11 @@ function MembersCard({
       {isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load members"
+          title={tI18nComplete.raw('texte0447514873e')}
           description={error?.message}
           action={
             <Button variant="outline" size="sm" onClick={onRetry}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -1208,7 +1233,7 @@ function MembersCard({
                 <Search />
               </InputGroupSearchIcon>
               <InputGroupSearchInput
-                placeholder="Search members"
+                placeholder={tI18nComplete.raw('text6497fc6f8400')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 variant="popover"
@@ -1222,7 +1247,7 @@ function MembersCard({
                 onClick={() => setGrantOpen(true)}
               >
                 <Plus className="size-4" />
-                Invite
+                {tI18nComplete.raw('text1fd9ae1607aa')}
               </Button>
             ) : null}
           </div>
@@ -1234,7 +1259,9 @@ function MembersCard({
               in `AccessRow`; everything else appears once a row is ticked. */}
           {selectedCount > 0 && canBulk ? (
             <div className="bg-popover flex flex-wrap items-center gap-2 rounded-md border px-4 py-2 text-sm">
-              <span className="text-foreground text-xs font-medium">{selectedCount} selected</span>
+              <span className="text-foreground text-xs font-medium">
+                {selectedCount} {tI18nComplete.raw('textd7cbbb688b2e')}
+              </span>
               <Button
                 size="sm"
                 variant="ghost"
@@ -1242,7 +1269,9 @@ function MembersCard({
                 disabled={bulkBusy}
                 className="text-muted-foreground"
               >
-                {allEligibleSelected ? 'Deselect all' : 'Select all'}
+                {allEligibleSelected
+                  ? tI18nComplete.raw('text967549497036')
+                  : tI18nComplete.raw('text1fc9a387654d')}
               </Button>
               <Button
                 size="sm"
@@ -1251,7 +1280,7 @@ function MembersCard({
                 disabled={bulkBusy}
                 className="text-muted-foreground"
               >
-                Clear
+                {tI18nComplete.raw('text83b12c2216ef')}
               </Button>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {canUpdateRole ? (
@@ -1261,7 +1290,7 @@ function MembersCard({
                     onClick={() => setBulkDialog('set_role')}
                     disabled={bulkBusy}
                   >
-                    Change role
+                    {tI18nComplete.raw('texta43a8d8cfd29')}
                   </Button>
                 ) : null}
                 {canAddToGroup ? (
@@ -1271,7 +1300,7 @@ function MembersCard({
                     onClick={() => setBulkDialog('add_to_group')}
                     disabled={bulkBusy}
                   >
-                    Add to group
+                    {tI18nComplete.raw('textea849eb70c26')}
                   </Button>
                 ) : null}
                 {canRemove ? (
@@ -1281,7 +1310,7 @@ function MembersCard({
                     onClick={() => setBulkDialog('remove')}
                     disabled={bulkBusy}
                   >
-                    Remove
+                    {tI18nComplete.raw('textc3812fc4acb8')}
                   </Button>
                 ) : null}
               </div>
@@ -1296,7 +1325,8 @@ function MembersCard({
 
           {members.length > 0 && sorted.length === 0 ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              No members match “{search.trim()}”.
+              {tI18nComplete.raw('text4caa18882dc4')}
+              {search.trim()}”.
             </p>
           ) : null}
 
@@ -1310,7 +1340,7 @@ function MembersCard({
               // No `selectable` on the LIST: the header's select-all control
               // is gone. Selection starts on a row checkbox, and only then
               // does the bulk bar above offer "Select all" / "Deselect all".
-              header={{ title: 'Members', count: sorted.length }}
+              header={{ title: tI18nComplete.raw('text1044a4c056d0'), count: sorted.length }}
             >
               {sorted.map((member) => {
                 const isSelf = member.user_id === currentUserId;
@@ -1324,19 +1354,19 @@ function MembersCard({
                 const kebab: KebabItem[] = [];
                 if (canUpdateRole && !isSelf) {
                   kebab.push({
-                    label: 'Edit access',
+                    label: tI18nComplete.raw('texta514a684676a'),
                     icon: <PencilSimple className="size-3.5" />,
                     onSelect: () => setEditTarget(member),
                   });
                 }
                 kebab.push({
-                  label: 'View access',
+                  label: tI18nComplete.raw('textf5462009cf42'),
                   icon: <KeyRound className="size-3.5" />,
                   onSelect: () => onSelectMember(member.user_id),
                 });
                 if (canRemove && !isSelf) {
                   kebab.push({
-                    label: 'Remove from account',
+                    label: tI18nComplete.raw('text6bfa319e3d20'),
                     icon: <TrashIcon className="size-3.5" />,
                     variant: 'destructive',
                     separated: true,
@@ -1346,7 +1376,7 @@ function MembersCard({
                 }
                 if (isSelf) {
                   kebab.push({
-                    label: 'Leave account',
+                    label: tI18nComplete.raw('text1d5b40338c62'),
                     icon: <TrashIcon className="size-3.5" />,
                     variant: 'destructive',
                     separated: true,
@@ -1370,20 +1400,24 @@ function MembersCard({
                       <>
                         {isSelf ? (
                           <Badge variant="secondary" size="sm">
-                            You
+                            {tI18nComplete.raw('text08b041935798')}
                           </Badge>
                         ) : null}
                         {member.is_super_admin ? (
                           <Badge
                             size="sm"
                             className="bg-kortix-orange/15 text-kortix-orange border-transparent"
-                            title="Super admin — bypasses every IAM check"
+                            title={tI18nComplete.raw('text3cafa764c6f9')}
                           >
-                            Super
+                            {tI18nComplete.raw('text8185c8ac4656')}
                           </Badge>
                         ) : null}
                         {member.has_verified_mfa ? (
-                          <Badge variant="success" size="sm" title="MFA enrolled">
+                          <Badge
+                            variant="success"
+                            size="sm"
+                            title={tI18nComplete.raw('textc56fc40bb882')}
+                          >
                             2FA
                           </Badge>
                         ) : account.mfa_required && !member.is_super_admin ? (
@@ -1393,15 +1427,15 @@ function MembersCard({
                           <Badge
                             variant="destructive"
                             size="sm"
-                            title="MFA required but not enrolled — this member is blocked from gated actions"
+                            title={tI18nComplete.raw('text0bd9da305fb1')}
                           >
-                            No 2FA
+                            {tI18nComplete.raw('textfdeee365fcf3')}
                           </Badge>
                         ) : null}
                       </>
                     }
                     meta={<MemberMeta member={member} />}
-                    trailing={roleValueLabel('account', roleValue, rolesQuery.data)}
+                    trailing={roleValueLabel('account', roleValue, rolesQuery.data, tI18nComplete)}
                     selectable={
                       canBulk
                         ? {
@@ -1412,13 +1446,13 @@ function MembersCard({
                             reserveSpace: isSelf,
                             checked: selectedIds.has(member.user_id),
                             onCheckedChange: () => toggleOne(member.user_id),
-                            label: `Select ${label}`,
+                            label: tI18nComplete('textb4b262ae0516', { value0: label }),
                           }
                         : undefined
                     }
                     pending={pending}
                     kebab={kebab}
-                    kebabLabel={`Actions for ${label}`}
+                    kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
                   />
                 );
               })}
@@ -1429,8 +1463,8 @@ function MembersCard({
             <EmptyState
               icon={Users}
               size="sm"
-              title="No members yet"
-              description="Invite people to work in this account."
+              title={tI18nComplete.raw('text669a52e9230b')}
+              description={tI18nComplete.raw('text9233263288f5')}
               action={
                 canInvite ? (
                   <Button
@@ -1440,7 +1474,7 @@ function MembersCard({
                     onClick={() => setGrantOpen(true)}
                   >
                     <UserPlus className="size-3.5" />
-                    Invite
+                    {tI18nComplete.raw('text1fd9ae1607aa')}
                   </Button>
                 ) : undefined
               }
@@ -1531,13 +1565,16 @@ function MembersCard({
         onOpenChange={(o) => {
           if (!o) setRemoveTarget(null);
         }}
-        title="Remove access?"
+        title={tI18nComplete.raw('text914d43beac26')}
         description={
           removeTarget
-            ? `${principalLabel(removeTarget)} loses access to ${account.name}.`
+            ? tI18nComplete('text0b628a266141', {
+                value0: principalLabel(removeTarget),
+                value1: account.name,
+              })
             : ''
         }
-        confirmLabel="Remove"
+        confirmLabel={tI18nComplete.raw('textc3812fc4acb8')}
         confirmVariant="destructive"
         onConfirm={() => removeTarget && removeMutation.mutate(removeTarget.user_id)}
         isPending={removeMutation.isPending}
@@ -1546,14 +1583,15 @@ function MembersCard({
       <ConfirmDialog
         open={leaveConfirmOpen}
         onOpenChange={setLeaveConfirmOpen}
-        title="Leave account"
+        title={tI18nComplete.raw('text1d5b40338c62')}
         description={
           <span>
-            You&apos;ll lose access to{' '}
-            <span className="text-foreground font-medium">{account.name}</span> and its projects.
+            {tI18nComplete.raw('text54ce8b59de87')}{' '}
+            <span className="text-foreground font-medium">{account.name}</span>{' '}
+            {tI18nComplete.raw('textd17426176cc2')}
           </span>
         }
-        confirmLabel="Leave"
+        confirmLabel={tI18nComplete.raw('textfc6e4a408d56')}
         confirmVariant="destructive"
         onConfirm={() => leaveMutation.mutate()}
         isPending={leaveMutation.isPending}
@@ -1562,8 +1600,12 @@ function MembersCard({
       <ConfirmDialog
         open={bulkDialog === 'remove'}
         onOpenChange={(o) => !o && setBulkDialog(null)}
-        title="Remove access?"
-        description={`${selectedCount} member${selectedCount === 1 ? '' : 's'} lose access to ${account.name}.`}
+        title={tI18nComplete.raw('text914d43beac26')}
+        description={tI18nComplete('text37074af6784c', {
+          value0: selectedCount,
+          value1: selectedCount === 1 ? '' : 's',
+          value2: account.name,
+        })}
         confirmLabel={`Remove ${selectedCount}`}
         confirmVariant="destructive"
         isPending={bulkBusy}
@@ -1580,6 +1622,7 @@ function MembersCard({
  * `Popover` instead of making an admin leave the list to find out which ones.
  */
 function MemberMeta({ member }: { member: AccountMember }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const projects = member.projects ?? [];
   const projectCount =
     typeof member.explicit_project_count === 'number'
@@ -1590,18 +1633,20 @@ function MemberMeta({ member }: { member: AccountMember }) {
   return (
     <span className="text-muted-foreground text-xs">
       <InlineMeta>
-        <span>Joined {formatDate(member.joined_at)}</span>
-        {showProjects ? (
-          <MemberProjectsChip count={projectCount} projects={projects} />
-        ) : null}
+        <span>
+          {tI18nComplete.raw('text69318b0c6a92')} {formatDate(member.joined_at)}
+        </span>
+        {showProjects ? <MemberProjectsChip count={projectCount} projects={projects} /> : null}
         {member.groups && member.groups.length > 0 ? (
           <span>
-            {member.groups.length} group{member.groups.length === 1 ? '' : 's'}
+            {member.groups.length} {tI18nComplete.raw('textad936fcbed63')}
+            {member.groups.length === 1 ? '' : 's'}
           </span>
         ) : null}
         {typeof member.active_pat_count === 'number' && member.active_pat_count > 0 ? (
           <span>
-            {member.active_pat_count} token{member.active_pat_count === 1 ? '' : 's'}
+            {member.active_pat_count} {tI18nComplete.raw('text3c469e9d6c58')}
+            {member.active_pat_count === 1 ? '' : 's'}
           </span>
         ) : null}
       </InlineMeta>
@@ -1616,6 +1661,7 @@ function MemberProjectsChip({
   count: number;
   projects: AccountMemberProject[];
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const label = `${count} project${count === 1 ? '' : 's'}`;
   if (projects.length === 0) return <span>{label}</span>;
   return (
@@ -1636,7 +1682,7 @@ function MemberProjectsChip({
           >
             <span className="text-foreground min-w-0 truncate">{project.name}</span>
             <span className="text-muted-foreground shrink-0">
-              {builtinRoleLabel('project', project.role)}
+              {builtinRoleLabel('project', project.role, tI18nComplete)}
             </span>
           </div>
         ))}
@@ -1658,6 +1704,7 @@ function PendingInvitesSection({
    *  value, hide invites whose email doesn't include the query. */
   search?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   // Per-invite spinner state. Set rather than scalar so resending one
   // invite + cancelling another (or rapid clicks across rows) don't
@@ -1687,22 +1734,31 @@ function PendingInvitesSection({
     onSettled: (_data, _error, id) => clearPending(id),
     onSuccess: (res) => {
       if (res.email_sent) {
-        successToast('Invite email sent');
+        successToast(tI18nComplete.raw('text7e4f3f8089ab'));
       } else {
         // Mailtrap not configured (local dev or unconfigured prod). Hand the
         // admin the link directly so they can share it manually.
-        warningToast('Email skipped — copy invite link to share manually', {
+        warningToast(tI18nComplete.raw('text146fd497badf'), {
           duration: 8_000,
           button: (
-            <Button size="sm" onClick={() => copyInviteLink(res.invite_url)}>
-              Copy link
+            <Button
+              size="sm"
+              onClick={() =>
+                copyInviteLink(
+                  res.invite_url,
+                  tI18nComplete.raw('text0dc2f4c75de6'),
+                  tI18nComplete.raw('textfa6453683837'),
+                )
+              }
+            >
+              {tI18nComplete.raw('text9adff6870471')}
             </Button>
           ),
         });
       }
       invalidate();
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to resend invite'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text1f37df0db62b')),
   });
 
   const cancelMutation = useMutation({
@@ -1710,10 +1766,10 @@ function PendingInvitesSection({
     onMutate: (id) => markPending(id),
     onSettled: (_data, _error, id) => clearPending(id),
     onSuccess: () => {
-      successToast('Invite cancelled');
+      successToast(tI18nComplete.raw('text25a5ba44713d'));
       invalidate();
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to cancel invite'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text05c7ab9784c3')),
   });
 
   const allInvites = invitesQuery.data ?? [];
@@ -1730,7 +1786,7 @@ function PendingInvitesSection({
 
   return (
     <>
-      <AccessList header={{ title: 'Invited', count: invites.length }}>
+      <AccessList header={{ title: tI18nComplete.raw('text63b17becd812'), count: invites.length }}>
         {invites.map((invite) => (
           <AccessRow
             key={invite.invite_id}
@@ -1740,28 +1796,35 @@ function PendingInvitesSection({
             meta={
               <span className="text-muted-foreground text-xs">
                 <InlineMeta>
-                  <span>Invite expires {formatDate(invite.expires_at)}</span>
+                  <span>
+                    {tI18nComplete.raw('text2a91147eb974')} {formatDate(invite.expires_at)}
+                  </span>
                 </InlineMeta>
               </span>
             }
-            trailing={builtinRoleLabel('account', invite.initial_role)}
+            trailing={builtinRoleLabel('account', invite.initial_role, tI18nComplete)}
             pending={pendingIds.has(invite.invite_id)}
-            kebabLabel={`Actions for ${invite.email}`}
+            kebabLabel={tI18nComplete('text33da220b1a34', { value0: invite.email })}
             kebab={
               canManage
                 ? [
                     {
-                      label: 'Resend invite',
+                      label: tI18nComplete.raw('text60ca7b35a944'),
                       icon: <RefreshCw className="size-3.5" />,
                       onSelect: () => resendMutation.mutate(invite.invite_id),
                     },
                     {
-                      label: 'Copy invite link',
+                      label: tI18nComplete.raw('text5c58cd7963ca'),
                       icon: <LinkIcon className="size-3.5" />,
-                      onSelect: () => void copyInviteLink(invite.invite_url),
+                      onSelect: () =>
+                        void copyInviteLink(
+                          invite.invite_url,
+                          tI18nComplete.raw('text0dc2f4c75de6'),
+                          tI18nComplete.raw('textfa6453683837'),
+                        ),
                     },
                     {
-                      label: 'Cancel invite',
+                      label: tI18nComplete.raw('textd1a5371a1e08'),
                       icon: <Close className="size-3.5" />,
                       variant: 'destructive',
                       separated: true,
@@ -1779,13 +1842,11 @@ function PendingInvitesSection({
         onOpenChange={(o) => {
           if (!o) setCancelTarget(null);
         }}
-        title="Cancel invite"
+        title={tI18nComplete.raw('textd1a5371a1e08')}
         description={
-          cancelTarget
-            ? `Revoke the pending invite for ${cancelTarget.email}? They'll need a new invite to join.`
-            : ''
+          cancelTarget ? tI18nComplete('textaa5da553f3c6', { value0: cancelTarget.email }) : ''
         }
-        confirmLabel="Cancel invite"
+        confirmLabel={tI18nComplete.raw('textd1a5371a1e08')}
         confirmVariant="destructive"
         isPending={cancelMutation.isPending}
         onConfirm={() => {

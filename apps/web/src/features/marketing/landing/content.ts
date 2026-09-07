@@ -1,3 +1,7 @@
+import { AGENTS_LANDING_TRANSLATION_KEYS } from '@/i18n/agents-landing-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * Landing page copy.
  *
@@ -482,3 +486,11 @@ export const stack = {
     },
   ] satisfies readonly StackLayer[],
 } as const;
+
+export function getLocalizedLandingContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, heroEyebrow, cta, trust, useCases, stack },
+    tI18nComplete,
+    AGENTS_LANDING_TRANSLATION_KEYS,
+  );
+}

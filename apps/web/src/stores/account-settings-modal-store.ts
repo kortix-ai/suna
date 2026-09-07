@@ -1,7 +1,7 @@
-import { create } from 'zustand';
 import type { SettingsTabId } from '@/lib/menu-registry';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { create } from 'zustand';
 
 /**
  * Account-level settings live at `/accounts/[id]` — Overview, Billing,
@@ -17,10 +17,7 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 export type AccountSettingsHighlight = 'credits' | null;
 
 /** Tabs that can be deep-linked on /accounts/[id]. */
-export type AccountSettingsTabId = Extract<
-  SettingsTabId,
-  'billing' | 'transactions'
->;
+export type AccountSettingsTabId = Extract<SettingsTabId, 'billing' | 'transactions'>;
 
 interface AccountSettingsModalState {
   isOpen: boolean;

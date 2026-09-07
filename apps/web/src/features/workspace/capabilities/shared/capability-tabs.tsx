@@ -1,6 +1,8 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -125,6 +127,7 @@ export function visibleCapabilityTabs(
  * would hide a page a member can legitimately open.
  */
 function MembersLaunchLink({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data } = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
@@ -151,7 +154,7 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
       prefetch
       className="text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors"
     >
-      Members
+      {tI18nComplete.raw('text1044a4c056d0')}
       <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
     </Link>
   );
@@ -206,7 +209,7 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   const sidebar = useOptionalSidebar();
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
   const flags = useCapabilityTabFlags(projectId);
-  const tabs = visibleCapabilityTabs(caps, flags);
+  const tabs = useLocalizedUiCatalog(visibleCapabilityTabs(caps, flags));
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));

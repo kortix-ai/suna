@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
+import { getTranslations } from '@/i18n/get-translations';
 import { headers } from 'next/headers';
 
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { PUBLIC_METADATA_TRANSLATION_KEYS } from '@/i18n/public-metadata-translation-keys.generated';
 import { getMarketingRecord } from '@/lib/seo/public-content';
 import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
 
@@ -37,8 +40,11 @@ export function socialMetadata(title: string, description: string | undefined, u
   } satisfies Pick<Metadata, 'openGraph' | 'twitter'>;
 }
 
-export function marketingMetadata(pathname: string): Metadata {
-  const record = getMarketingRecord(pathname);
+export function marketingMetadata(
+  pathname: string,
+  recordOverride?: ReturnType<typeof getMarketingRecord>,
+): Metadata {
+  const record = recordOverride ?? getMarketingRecord(pathname);
   if (!record) throw new Error(`Missing marketing SEO record for ${pathname}`);
   const url = `${CANONICAL_ORIGIN}${pathname}`;
   return {
@@ -77,7 +83,12 @@ export async function requestLocale(): Promise<Locale> {
 // <head>. MARKETING_ROUTES in middleware.ts matches by prefix, so anything
 // under /support is locale-routed without a further entry there.
 export async function localizedMarketingMetadata(pathname: string): Promise<Metadata> {
-  const base = marketingMetadata(pathname);
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const sourceRecord = getMarketingRecord(pathname);
+  const record = sourceRecord
+    ? localizeUiCatalog(sourceRecord, tI18nComplete, PUBLIC_METADATA_TRANSLATION_KEYS)
+    : undefined;
+  const base = marketingMetadata(pathname, record);
   const locale = await requestLocale();
   const canonical = `${CANONICAL_ORIGIN}${localePath(locale, pathname)}`;
   return {
@@ -87,7 +98,7 @@ export async function localizedMarketingMetadata(pathname: string): Promise<Meta
     // rendered title distinct from the root-layout default — a resolved title
     // identical to the parent default is dropped from the streamed metadata,
     // leaving the page with no <title> in the served HTML.
-    ...(pathname === '/' ? { title: { absolute: siteMetadata.title } } : {}),
+    ...(pathname === '/' ? { title: { absolute: record?.title ?? siteMetadata.title } } : {}),
     alternates: { canonical, languages: languageAlternates(pathname) },
     openGraph: { ...base.openGraph, url: canonical },
   };

@@ -1,4 +1,5 @@
 'use client';
+
 import {
   BasicTool,
   ToolEmptyState,
@@ -10,10 +11,12 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -56,9 +59,14 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
     <BasicTool
       icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Searched sessions',
+        title: tI18nComplete.raw('text25054dad693a'),
         subtitle: query ? `"${query}"` : '',
-        args: hits.length > 0 ? [`${hits.length} results`] : noResults ? ['no matches'] : [],
+        args:
+          hits.length > 0
+            ? [`${hits.length} results`]
+            : noResults
+              ? [tI18nComplete.raw('text0ed6af34915f')]
+              : [],
       }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
@@ -87,7 +95,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
           ))}
         </div>
       ) : noResults ? (
-        <ToolEmptyState message={`No sessions matched "${query}"`} />
+        <ToolEmptyState message={tI18nComplete('text1fc03af173f4', { value0: query })} />
       ) : output ? (
         <ToolOutputFallback output={output} toolName="session_search" />
       ) : null}

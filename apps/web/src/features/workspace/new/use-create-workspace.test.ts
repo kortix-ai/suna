@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import {
+  ApiError,
+  PROVISION_IN_FLIGHT_CODE,
+  type KortixAccount,
+  type KortixProject,
+  type ProvisionPhase,
+  type ProvisionProjectInput,
+  type ProvisionStreamEvent,
+} from '@kortix/sdk';
+import { attemptKeyFor, clearAttemptKey } from './create-workspace-key';
+import { INITIAL_FORM_STATE } from './new-workspace-form';
+import {
   buildCreatePayload,
   fingerprintOf,
   isRetryableError,
@@ -14,19 +25,12 @@ import {
   type CreateOrchestrationClient,
   type CreateWorkspaceClient,
 } from './use-create-workspace';
-import { attemptKeyFor, clearAttemptKey } from './create-workspace-key';
-import { INITIAL_FORM_STATE } from './new-workspace-form';
-import {
-  ApiError,
-  PROVISION_IN_FLIGHT_CODE,
-  type KortixAccount,
-  type KortixProject,
-  type ProvisionPhase,
-  type ProvisionProjectInput,
-  type ProvisionStreamEvent,
-} from '@kortix/sdk';
 
-const OWNER_ACCOUNT: KortixAccount = { account_id: 'acct-owner', name: 'Owner Co', account_role: 'owner' };
+const OWNER_ACCOUNT: KortixAccount = {
+  account_id: 'acct-owner',
+  name: 'Owner Co',
+  account_role: 'owner',
+};
 
 function fakeProject(id: string, accountId = 'acct-owner'): KortixProject {
   return {
@@ -97,7 +101,11 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
     // `OWNER_ACCOUNT`) so it is a normal multi-account list, not a FOREIGN
     // one — the user is explicitly picking the OTHER account they can also
     // create in (e.g. personal account owned, team account picked).
-    const picked: KortixAccount = { account_id: 'acct-picked', name: 'Picked Co', account_role: 'owner' };
+    const picked: KortixAccount = {
+      account_id: 'acct-picked',
+      name: 'Picked Co',
+      account_role: 'owner',
+    };
     const payload = buildCreatePayload(
       { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
       [OWNER_ACCOUNT, picked],
@@ -159,10 +167,18 @@ describe('resolveTargetAccountId', () => {
   });
 
   test('identity match resolves the default when nothing is explicitly picked', () => {
-    const personal: KortixAccount = { account_id: 'user-1', name: "me's Account", account_role: 'owner' };
+    const personal: KortixAccount = {
+      account_id: 'user-1',
+      name: "me's Account",
+      account_role: 'owner',
+    };
     const team: KortixAccount = { account_id: 'acct-team', name: 'Acme', account_role: 'owner' };
     expect(
-      resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [team, personal], 'user-1'),
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: null },
+        [team, personal],
+        'user-1',
+      ),
     ).toBe('user-1');
   });
 
@@ -171,7 +187,7 @@ describe('resolveTargetAccountId', () => {
   // `filterCreatableAccounts` excludes a member-role account entirely, so a
   // member-only user's `creatableAccounts` is always `[]` — there is nothing
   // to default into, and nothing was ever explicitly picked either.
-  test('a member-only user (empty creatableAccounts) resolves to undefined, never a stranger\'s account', () => {
+  test("a member-only user (empty creatableAccounts) resolves to undefined, never a stranger's account", () => {
     expect(
       resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [], 'user-1'),
     ).toBeUndefined();
@@ -193,8 +209,16 @@ describe('resolveTargetAccountId', () => {
     // to SOME entry — and that entry is trivially "in creatableAccounts",
     // since it came from that exact list. The plain membership check above
     // cannot catch this; only asking whether the list itself is FOREIGN can.
-    const foreign1: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
-    const foreign2: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+    const foreign1: KortixAccount = {
+      account_id: 'org-1',
+      name: 'Acme Inc',
+      account_role: 'admin',
+    };
+    const foreign2: KortixAccount = {
+      account_id: 'org-2',
+      name: 'Widgets Co',
+      account_role: 'admin',
+    };
     expect(() =>
       resolveTargetAccountId(
         { ...INITIAL_FORM_STATE, accountId: null },
@@ -288,14 +312,16 @@ describe('messageFor', () => {
   // `ensureFirstProject` auto-provisions everyone's first project) they lack
   // permissions they actually have.
 
-  test('FIX 2: maps a 403 project_limit_reached to the server\'s own quota message, not the owner/admin explanation', () => {
+  test("FIX 2: maps a 403 project_limit_reached to the server's own quota message, not the owner/admin explanation", () => {
     const err = new ApiError(
       'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
       { status: 403, code: 'project_limit_reached' },
     );
     const msg = messageFor(err);
     expect(msg).not.toBe('You need owner or admin access in this account to create a workspace.');
-    expect(msg).toBe('Free accounts are limited to 1 project. Upgrade to a paid plan to create more.');
+    expect(msg).toBe(
+      'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
+    );
   });
 
   test('FIX 2: a plain 403 with no quota code still gets the owner/admin explanation', () => {
@@ -343,10 +369,7 @@ describe('runCreateAttempt', () => {
 
   test('succeeds on the first try — no retry, no wait', async () => {
     const c = client();
-    const project = await runCreateAttempt(
-      { name: 'x', idempotency_key: 'key-1' },
-      c,
-    );
+    const project = await runCreateAttempt({ name: 'x', idempotency_key: 'key-1' }, c);
     expect(project.project_id).toBe('created-1');
     expect(c.calls).toHaveLength(1);
     expect(c.waits).toEqual([]);
@@ -450,7 +473,9 @@ describe('runCreate: the full create() orchestration', () => {
     } as Storage;
   });
 
-  function noopClient(overrides: Partial<CreateOrchestrationClient> = {}): CreateOrchestrationClient {
+  function noopClient(
+    overrides: Partial<CreateOrchestrationClient> = {},
+  ): CreateOrchestrationClient {
     return {
       attemptKeyFor,
       clearAttemptKey,
@@ -833,9 +858,12 @@ describe('runCreate: the full create() orchestration', () => {
   });
 
   test('a failed GitHub create surfaces the error like any other source', async () => {
-    const err = new ApiError('Install the Kortix GitHub App before creating GitHub-backed projects', {
-      status: 409,
-    });
+    const err = new ApiError(
+      'Install the Kortix GitHub App before creating GitHub-backed projects',
+      {
+        status: 409,
+      },
+    );
     const result = await runCreate(
       {
         ...INITIAL_FORM_STATE,
@@ -857,7 +885,6 @@ describe('runCreate: the full create() orchestration', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe(err);
   });
-
 });
 
 /**
@@ -882,7 +909,9 @@ describe('isTransportFailure', () => {
 
   test('no response.body (the React Native case) is transport-shaped', () => {
     expect(
-      isTransportFailure(new Error('Provision stream is unavailable on this runtime (no response body)')),
+      isTransportFailure(
+        new Error('Provision stream is unavailable on this runtime (no response body)'),
+      ),
     ).toBe(true);
   });
 
@@ -964,9 +993,13 @@ describe('runProvisionAttempt', () => {
       },
     });
 
-    const project = await runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, (phase) => {
-      seenPhases.push(phase);
-    }, client);
+    const project = await runProvisionAttempt(
+      { name: 'x', idempotency_key: 'key-1' },
+      (phase) => {
+        seenPhases.push(phase);
+      },
+      client,
+    );
 
     expect(project.project_id).toBe('created-stream');
     expect(seenPhases).toEqual(['validating', 'creating_repository']);

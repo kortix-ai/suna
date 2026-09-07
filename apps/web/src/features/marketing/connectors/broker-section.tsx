@@ -5,7 +5,8 @@ import { Separator } from '@/components/ui/separator';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { ArrowRightIcon, LockKeyIcon, ProhibitIcon } from '@phosphor-icons/react';
-import { broker } from './content';
+import { useTranslations } from '@/i18n/use-translations';
+import { getLocalizedConnectorsContent } from './content';
 import { Eyebrow, Section } from './shared';
 
 /**
@@ -28,10 +29,7 @@ function EnvPanel({
 }) {
   return (
     <article
-      className={cn(
-        'flex h-full flex-col p-6 sm:p-8',
-        muted ? 'bg-foreground/[0.02]' : 'bg-card',
-      )}
+      className={cn('flex h-full flex-col p-6 sm:p-8', muted ? 'bg-foreground/[0.02]' : 'bg-card')}
     >
       <Eyebrow>{label}</Eyebrow>
       <h3
@@ -76,15 +74,17 @@ function EnvPanel({
  * never crosses, because that is the claim the whole page rests on.
  */
 function FlowDiagram() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { broker } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <div className="border-border bg-card overflow-hidden rounded-sm border">
       {/* which side of the wall you are on */}
       <div className="border-border grid border-b lg:grid-cols-3">
         <div className="border-border/70 px-6 py-3 lg:border-r lg:border-dashed">
-          <Eyebrow>Inside the sandbox</Eyebrow>
+          <Eyebrow>{tI18nComplete.raw('texta5fd5cea27ef')}</Eyebrow>
         </div>
         <div className="border-border/70 border-t px-6 py-3 lg:col-span-2 lg:border-t-0">
-          <Eyebrow>Server-side · Kortix</Eyebrow>
+          <Eyebrow>{tI18nComplete.raw('text2775ed788cd7')}</Eyebrow>
         </div>
       </div>
 
@@ -146,6 +146,8 @@ function FlowDiagram() {
 }
 
 export function BrokerSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { broker } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <Section id="broker">
       <SectionHeader eyebrow={broker.eyebrow} title={broker.title} description={broker.sub} />

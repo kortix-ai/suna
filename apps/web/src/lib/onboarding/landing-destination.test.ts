@@ -56,7 +56,7 @@ describe('resolveDefaultLandingPath', () => {
     expect(resolveDefaultLandingPath(cookie(USER_A, VALID), USER_A)).toBe(`/projects/${VALID}`);
   });
 
-  test('REGRESSION: a different user never inherits the previous account\'s project', () => {
+  test("REGRESSION: a different user never inherits the previous account's project", () => {
     // The shipped bug: sign out of A, sign in as B in the same browser, and the
     // post-auth redirect followed A's cookie straight into A's project — so B
     // landed on "Request access to this project" on every single login.

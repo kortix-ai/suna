@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect } from 'react';
 
 import Loading from '@/components/ui/loading';
@@ -38,6 +39,7 @@ import { performSignOut } from '@/lib/auth/perform-sign-out';
  * development needs no guard here.
  */
 export default function LogoutPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useEffect(() => {
     void performSignOut();
   }, []);
@@ -46,7 +48,7 @@ export default function LogoutPage() {
     <main className="flex min-h-svh flex-col items-center justify-center gap-3">
       <Loading className="size-5 shrink-0" />
       <p className="text-muted-foreground text-sm" aria-live="polite">
-        Signing you out…
+        {tI18nComplete.raw('text7d2e71d27419')}
       </p>
     </main>
   );

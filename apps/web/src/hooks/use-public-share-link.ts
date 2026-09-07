@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Mint a public share for a session resource and copy its link.
  *
@@ -36,6 +37,7 @@ export interface PublicShareLinkTarget {
 }
 
 export function usePublicShareLink({ projectId, sessionId, input }: PublicShareLinkTarget) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   // Minting a public link is the session OWNER's call — the link is
   // unauthenticated, so a project manager who cannot read the session must not
@@ -86,10 +88,10 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
       setCopied(true);
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
       copiedTimer.current = setTimeout(() => setCopied(false), 2000);
-      successToast('Public link copied');
+      successToast(tI18nComplete.raw('textd0f24de8dbc6'));
     },
     onError: (error) => {
-      errorToast(error instanceof Error ? error.message : 'Could not create public link');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text6a9dc1a2ccf5'));
     },
   });
 

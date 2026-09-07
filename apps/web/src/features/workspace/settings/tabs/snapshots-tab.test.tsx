@@ -11,6 +11,7 @@ import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-
 import {
   BuildDetails,
   BuildRow,
+  DEFAULT_SNAPSHOTS_COPY,
   SnapshotsTabView,
   describeBuildOutcome,
 } from './snapshots-tab';
@@ -178,6 +179,27 @@ describe('every build row can be opened', () => {
 });
 
 describe('BuildDetails', () => {
+  test('renders injected Serbian facts and locale-aware dates', () => {
+    const copy = {
+      ...DEFAULT_SNAPSHOTS_COPY,
+      locale: 'sr',
+      facts: {
+        ...DEFAULT_SNAPSHOTS_COPY.facts,
+        triggeredBy: 'Покренуто од',
+        started: 'Почетак',
+        took: 'Трајање',
+        imageId: 'ID слике',
+      },
+      sourceLabels: { ...DEFAULT_SNAPSHOTS_COPY.sourceLabels, manual: 'Ручна изградња' },
+    };
+    const html = renderToStaticMarkup(
+      <BuildDetails build={build()} providerMode="automatic" copy={copy} />,
+    );
+    expect(html).toContain('Покренуто од');
+    expect(html).toContain('Ручна изградња');
+    expect(html).toContain('13. јул');
+    expect(html).not.toContain('Manual rebuild');
+  });
   test('never names the resolved provider when the project is on Automatic', () => {
     const html = renderBuildDetails('automatic');
 

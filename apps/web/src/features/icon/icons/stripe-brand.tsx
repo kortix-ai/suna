@@ -1,14 +1,16 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 
 export const StripeBrand = ({ className }: { className?: string }) => {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="54 36 360.02 149.84"
       className={cn('size-4', className)}
-      aria-label="Stripe"
+      aria-label={tI18nComplete.raw('text961a6062ba1b')}
     >
       <g>
         <path

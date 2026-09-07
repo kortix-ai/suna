@@ -39,7 +39,16 @@ describe('the card speaks to a person, not to a build log', () => {
     // A category with no entry would render the fallback, not a blank line.
     const labels = code.slice(code.indexOf('const CATEGORY_LABEL'));
     const causes = code.slice(code.indexOf('const CATEGORY_CAUSE:'));
-    for (const key of ['quota', 'dockerfile', 'git', 'tunnel', 'provider', 'timeout', 'runtime', 'unknown']) {
+    for (const key of [
+      'quota',
+      'dockerfile',
+      'git',
+      'tunnel',
+      'provider',
+      'timeout',
+      'runtime',
+      'unknown',
+    ]) {
       expect(labels).toContain(`${key}:`);
       expect(causes.slice(0, causes.indexOf('};'))).toContain(`${key}:`);
     }

@@ -1,8 +1,9 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { repo } from './content';
+import { getLocalizedCompanyAsCodeContent, repo as repoSource } from './content';
 
-type Entry = (typeof repo.tree)[number];
+type Entry = (typeof repoSource.tree)[number];
 
 /**
  * `blank` — an ancestor with no siblings left below it: no rail.
@@ -65,6 +66,8 @@ function railsFor(entries: readonly Entry[], i: number): RailKind[] {
  * the visual has to be the real paths from the shipped starter template.
  */
 export function RepoTree(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { repo } = getLocalizedCompanyAsCodeContent(tI18nComplete);
   return (
     <div className="border-border bg-card h-full overflow-x-auto rounded-sm border p-5 sm:p-7">
       {/* One grid for every row, so the note column lines up across depths. */}

@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { isWithinCircularMask } from "@/lib/dotmatrix-core";
-import { rowMajorIndex } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, isWithinCircularMask, rowMajorIndex } from '@/lib/dotmatrix-core';
+import {
+  useDotMatrixPhases,
+  usePrefersReducedMotion,
+  useSteppedCycle,
+} from '@/lib/dotmatrix-hooks';
 
 export type DotmCircular3Props = DotMatrixCommonProps;
 
@@ -31,7 +31,7 @@ const CIRCULAR_RING_PATH: readonly number[] = [
   rowMajorIndex(4, 1),
   rowMajorIndex(3, 0),
   rowMajorIndex(2, 0),
-  rowMajorIndex(1, 0)
+  rowMajorIndex(1, 0),
 ];
 const LOOP_LEN = CIRCULAR_RING_PATH.length;
 
@@ -42,23 +42,27 @@ export function DotmCircular3({
   ...rest
 }: DotmCircular3Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const headStep = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1650,
     steps: STEP_COUNT,
     speed,
-    idleStep: 6
+    idleStep: 6,
   });
 
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ index, row, col, phase }) => {
       if (!isWithinCircularMask(row, col)) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const pathOrder = CIRCULAR_RING_PATH.indexOf(index);
@@ -67,7 +71,7 @@ export function DotmCircular3({
         return { style: { opacity: isCore ? CORE_OPACITY : BASE_OPACITY } };
       }
 
-      if (reducedMotion || phase === "idle") {
+      if (reducedMotion || phase === 'idle') {
         return { style: { opacity: RING_BASE_OPACITY + (pathOrder / (LOOP_LEN - 1)) * 0.56 } };
       }
 

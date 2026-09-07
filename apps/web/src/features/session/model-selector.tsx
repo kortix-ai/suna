@@ -19,7 +19,6 @@ import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useModelStore, type ProviderListResponse } from '@kortix/sdk/react';
-import { modelInDefaultView } from './model-picker-default-view';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -30,11 +29,12 @@ import {
   StarIcon as Star,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAvailableSelectedModel } from './model-availability';
 import { modelItemValue, pickerGroupId, pickerGroupLabel, splitModelLabel } from './model-grouping';
+import { modelInDefaultView } from './model-picker-default-view';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
@@ -130,6 +130,7 @@ function ModelRow({
    *  and the in-group copy must not share a cmdk value. */
   scope: 'pinned' | 'model';
 }) {
+  const t = useTranslations('modelSelector');
   const isFree = shouldShowFreeTag(model);
   const { lead, trail } = splitModelLabel(model.modelName);
 
@@ -142,8 +143,8 @@ function ModelRow({
 
         The two `bg-*` overrides are a FIX, not a preference. `CommandItem`
         paints its hover and highlight with `bg-accent`, and in the dark theme
-        `--accent` and `--popover` are the same colour (both `oklch(0.1913 0 0)`
-        — surface-1, `globals.css`), so the row highlight was mathematically
+        `--accent` and `--popover` resolve to the same surface token in dark mode,
+        so the row highlight was mathematically
         invisible against the popover it sits on. Light mode was fine, which is
         why it read as "sometimes there's a hover". `--hover` and `--active` are
         the tokens the design system defines for exactly this — a transient
@@ -168,7 +169,7 @@ function ModelRow({
         /* Stripped of the tinted tile so it reads as a mark on the row, not a
            chip — `cn` puts these last, so they win over the component's own
            `bg-zinc-*`. */
-        className="size-4 rounded-none bg-transparent dark:bg-transparent"
+        className="size-4 rounded-none bg-transparent"
       />
 
       <span className="min-w-0 flex-1 truncate leading-tight">
@@ -176,7 +177,7 @@ function ModelRow({
         {trail ? <span className="text-muted-foreground font-normal"> {trail}</span> : null}
       </span>
 
-      {isFree && <Tag variant="free">Free</Tag>}
+      {isFree && <Tag variant="free">{t('free')}</Tag>}
 
       {/*
         ONE trailing slot, always the same 24px wide, so swapping what sits in
@@ -197,7 +198,7 @@ function ModelRow({
 
         This used to cross-fade: the star faded in over 150ms and the check
         faded out over 100ms. Dragging the cursor down the list left a trail of
-        stars at every opacity between 0 and 1 — five or six rows mid-transition
+        stars at every opacity between 0 and 1 — five or six rows mid-fade
         at once, none of them the row under the cursor. It read as flicker
         because it WAS flicker. Two causes, both fixed by removing the fade:
 
@@ -212,11 +213,11 @@ function ModelRow({
              easing one opacity in opposite directions is what "comes and goes
              and comes back" looks like.
 
-        The row's own background swaps with no transition from those same two
+        The row's own background swaps immediately from those same two
         triggers, so the star now matches the row it belongs to. What still
         animates is what cannot trail: colour and background on the icon the
         cursor is actually over, and the press scale. Do not put `opacity` back
-        in that transition list.
+        in that property list.
       */}
       <span className="relative flex size-6 shrink-0 items-center justify-center">
         {isSelected && (
@@ -228,10 +229,10 @@ function ModelRow({
             type="button"
             aria-label={
               isAccountDefault
-                ? `${model.modelName} is your default model`
-                : `Set ${model.modelName} as my default model`
+                ? t('defaultAria', { model: model.modelName })
+                : t('setDefaultAria', { model: model.modelName })
             }
-            title={isAccountDefault ? 'Your default model' : 'Set as my default model'}
+            title={isAccountDefault ? t('defaultTitle') : t('setDefaultTitle')}
             /* No `aria-pressed`: that promises a toggle, and clicking the
                filled star does nothing. Clearing an account default is a real
                action with a real fallback behind it, and it belongs where the
@@ -255,7 +256,7 @@ function ModelRow({
               /* `opacity` is NOT in this list, on purpose — see above. These
                  only ever run on the one row the cursor is on, so they cannot
                  leave a trail. */
-              'transition-[color,background-color,transform] duration-150 ease-out',
+              'duration-normal transition-[color,background-color,transform] ease-out',
               /* Press feedback, only where a press does something — the
                  already-default star is a no-op, and a control that recoils
                  under the finger while changing nothing is a worse lie than no
@@ -342,14 +343,15 @@ export function ModelSelector({
   selectedModel,
   onSelect,
   defaultControls,
-  unsetLabel = 'No model',
+  unsetLabel,
   disabled = false,
   modelsLoading = false,
   triggerLabelClassName,
   open: openProp,
   onOpenChange,
 }: ModelSelectorProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tModel = useTranslations('modelSelector');
+  const t = useTranslations('threads');
 
   // Controlled when `open` is supplied, uncontrolled otherwise — Radix's own
   // rule. `setOpen` below is the single write path every internal caller
@@ -398,7 +400,7 @@ export function ModelSelector({
       m.providerID === availableSelectedModel?.providerID &&
       m.modelID === availableSelectedModel?.modelID,
   );
-  const displayName = current?.modelName || unsetLabel;
+  const displayName = current?.modelName || unsetLabel || t('noModel');
 
   useEffect(() => {
     if (!open) {
@@ -433,10 +435,7 @@ export function ModelSelector({
   /** Is there anything to pick AT ALL, ignoring the search box? The empty
    *  state below branches on this: "no models match your search" and "you have
    *  no models" are different problems with different ways out. */
-  const hasAnyModel = useMemo(
-    () => baseModels.some((m) => m.enabled !== false),
-    [baseModels],
-  );
+  const hasAnyModel = useMemo(() => baseModels.some((m) => m.enabled !== false), [baseModels]);
 
   const grouped = useMemo(() => {
     const groups = new Map<
@@ -530,11 +529,16 @@ export function ModelSelector({
         onOpenChange={(next) => !disabled && setOpen(next)}
       >
         <CommandPopoverTrigger>
-          <Button type="button" variant="ghost" size="sm" className="text-foreground/70 rounded-lg">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground rounded-lg"
+          >
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
             <ChevronDown
               className={cn(
-                'size-3 transition-transform duration-200 ease-out',
+                'duration-moderate size-3 transition-transform ease-out',
                 open && 'rotate-180',
               )}
             />
@@ -553,39 +557,25 @@ export function ModelSelector({
           <>
             <CommandInput
               compact
-              placeholder={tHardcodedUi.raw(
-                'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
-              )}
+              placeholder={tModel('search')}
               value={search}
               onValueChange={setSearch}
               rightElement={
                 <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
-                  <Hint
-                    label={tHardcodedUi.raw(
-                      'componentsSessionModelSelector.line239JsxTextConnectProvider',
-                    )}
-                    side="top"
-                    className="z-50"
-                  >
+                  <Hint label={tModel('connectProvider')} side="top" className="z-50">
                     <button
                       type="button"
-                      aria-label="Add provider"
+                      aria-label={tModel('addProvider')}
                       onClick={() => handleOpenProviderModal('providers')}
                       className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                     >
                       <Plus className="size-4" />
                     </button>
                   </Hint>
-                  <Hint
-                    label={tHardcodedUi.raw(
-                      'componentsSessionModelSelector.line251JsxTextManageModels',
-                    )}
-                    side="top"
-                    className="z-50"
-                  >
+                  <Hint label={tModel('manageModels')} side="top" className="z-50">
                     <button
                       type="button"
-                      aria-label="Manage models"
+                      aria-label={tModel('manageModels')}
                       onClick={() => handleOpenProviderModal('models')}
                       className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                     >
@@ -607,7 +597,7 @@ export function ModelSelector({
                 <div
                   className="flex min-h-32 items-center justify-center"
                   role="status"
-                  aria-label="Loading models"
+                  aria-label={tModel('loading')}
                 >
                   <Loading className="text-muted-foreground size-4 shrink-0" />
                 </div>
@@ -620,7 +610,10 @@ export function ModelSelector({
                           it also stays in its own provider section below, so
                           that section is never missing a model, and the star
                           in both places is the same fact. */}
-                      <CommandGroup heading={<GroupHeading>Your default</GroupHeading>} forceMount>
+                      <CommandGroup
+                        heading={<GroupHeading>{tModel('yourDefault')}</GroupHeading>}
+                        forceMount
+                      >
                         <ModelRow
                           model={pinnedDefault.model}
                           groupProviderID={pinnedDefault.providerID}
@@ -691,29 +684,31 @@ export function ModelSelector({
                    two apart: typing "zzz" with 40 models connected showed
                    "No models available" and a Connect-provider CTA. */
                 <div className="px-3 py-5 text-center">
-                  <div className="text-foreground text-sm font-medium">No models match</div>
+                  <div className="text-foreground text-sm font-medium">
+                    {tModel('noMatch.title')}
+                  </div>
                   <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                    Nothing matches “{search.trim()}”. Try a different search.
+                    {tModel('noMatch.description', { search: search.trim() })}
                   </p>
                   <div className="mt-4 flex items-center justify-center">
                     <Button type="button" size="xs" variant="outline" onClick={() => setSearch('')}>
-                      Clear search
+                      {tModel('noMatch.clear')}
                     </Button>
                   </div>
                 </div>
               ) : (
                 <div className="px-3 py-5 text-center">
-                  <div className="text-foreground text-sm font-medium">No models available</div>
+                  <div className="text-foreground text-sm font-medium">{tModel('empty.title')}</div>
                   <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
                     {showUpgradeOption
-                      ? 'Upgrade or connect your own provider to start using this session.'
-                      : 'Connect your own provider to start using this session.'}
+                      ? tModel('empty.upgradeDescription')
+                      : tModel('empty.description')}
                   </p>
                   <div className="mt-4 flex items-center justify-center gap-2">
                     {showUpgradeOption && (
                       <Button type="button" size="xs" onClick={handleUpgrade}>
                         <CreditCard className="size-3.5" />
-                        Upgrade
+                        {tModel('upgrade')}
                       </Button>
                     )}
                     <Button
@@ -723,7 +718,7 @@ export function ModelSelector({
                       onClick={() => handleOpenProviderModal('providers')}
                     >
                       <KeyRound className="size-3.5" />
-                      Connect provider
+                      {tModel('connectProvider')}
                     </Button>
                   </div>
                 </div>
@@ -735,4 +730,3 @@ export function ModelSelector({
     </>
   );
 }
-

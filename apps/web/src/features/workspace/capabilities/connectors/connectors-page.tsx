@@ -5,6 +5,7 @@ import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon } from '@phosphor-icons/react';
@@ -263,6 +264,7 @@ type Panel = 'custom';
  * because the redirect URL is built from the current one.
  */
 export function ConnectorsPage({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // `accountId` comes off the detail this page already loads. Without it
   // `useProjectCan` fetches the project a second time under its own key AND
   // holds the IAM probe disabled until that lands — so Add and every write
@@ -411,14 +413,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const oauth2Error = search?.get('oauth2_error');
   useEffect(() => {
     if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
-    if (oauth2Result === 'connected') successToast('OAuth 2.0 connection completed');
-    else errorToast(oauth2Error || 'OAuth 2.0 connection failed');
+    if (oauth2Result === 'connected') successToast(tI18nComplete.raw('text75586c42e862'));
+    else errorToast(oauth2Error || tI18nComplete.raw('texta6fac795d6d6'));
     invalidate();
     replaceParams((params) => {
       params.delete('oauth2');
       params.delete('oauth2_error');
     });
-  }, [invalidate, oauth2Error, oauth2Result, replaceParams]);
+  }, [invalidate, oauth2Error, oauth2Result, replaceParams, tI18nComplete]);
 
   // Both queries gate what this page can offer, so both have to be able to
   // report a failure and both have to be retried.
@@ -587,7 +589,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   return (
     <CapabilityPageShell
-      title="Connectors"
+      title={tI18nComplete.raw('textc3d2e79ebdd0')}
       description={SCOPE_DESCRIPTION[scope]}
       search={
         channelsActive ? undefined : (
@@ -596,7 +598,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               <MagnifyingGlassIcon />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
-              placeholder="Search all connectors"
+              placeholder={tI18nComplete.raw('textc386cb852691')}
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
               variant="popover"
@@ -615,12 +617,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
            so the accessible name still contains the visible label. */
         canWrite && !channelsActive ? (
           <NewEntityMenu
-            label="New"
+            label={tI18nComplete.raw('text18fdd549b2ed')}
             pending={configure.pending}
             onChat={() => configure.start(newConfigPrompt('connector'))}
             manual={{
-              label: 'Add a custom connector',
-              description: 'OpenAPI, Postman, GraphQL, MCP or HTTP.',
+              label: tI18nComplete.raw('text90ccaee30bdc'),
+              description: tI18nComplete.raw('textb0fbe9dc1fcc'),
               onSelect: () => setPanel('custom'),
             }}
           />
@@ -678,7 +680,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               onClick={() => setRulesOpen(true)}
               className="ml-auto px-0 transition-colors"
             >
-              Global rules
+              {tI18nComplete.raw('text1d59a5e09714')}
             </Button>
             {/* The category filter is NOT here. It is a rail of chips rendered
                 by `ConnectorBrowse` directly above the grid it filters — this
@@ -702,8 +704,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           category={category}
           onCategoryChange={setCategory}
           onSelect={setCatalogTarget}
-          emptyTitle="Catalogue unavailable"
-          emptyDescription="The connector catalogue returned nothing. Try again shortly."
+          emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+          emptyDescription={tI18nComplete.raw('textf652a621153e')}
         />
       ) : (
         <CatalogGrid
@@ -721,15 +723,15 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               <EmptyState
                 icon={PlugIcon}
                 size="sm"
-                title="No connectors yet"
-                description="Connect an outside tool and your agents can use it in a session."
+                title={tI18nComplete.raw('text51ae0a7e3783')}
+                description={tI18nComplete.raw('texta3487dfc2132')}
                 // The CTA goes with the tab it opens. With no catalogue on this
                 // deployment it would be a button to a tab that is not there;
                 // `+` is the remaining way in, and it is already in the header.
                 action={
                   catalogueAvailable ? (
                     <Button size="sm" variant="secondary" onClick={() => setScope('discover')}>
-                      Browse the catalogue
+                      {tI18nComplete.raw('text45bfe4f17af7')}
                     </Button>
                   ) : undefined
                 }
@@ -794,11 +796,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       <Modal open={panel === 'custom'} onOpenChange={(open) => !open && setPanel(null)}>
         <ModalContent className="lg:max-w-3xl">
           <ModalHeader>
-            <ModalTitle>Add a custom connector</ModalTitle>
-            <ModalDescription>
-              Point Kortix at an OpenAPI, Postman, GraphQL, MCP or HTTP source and it becomes a
-              connector your agents can call.
-            </ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('text90ccaee30bdc')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('textd2f3be0047c4')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[75vh] overflow-y-auto">
             <CustomConnectorForm
@@ -827,9 +826,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           {/* `pr-12` clears the sheet's own close button, which is absolutely
               positioned at `top-4 right-4`. */}
           <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
-            <SheetTitle className="text-base font-medium">Global rules</SheetTitle>
+            <SheetTitle className="text-base font-medium">
+              {tI18nComplete.raw('text1d59a5e09714')}
+            </SheetTitle>
             <SheetDescription className="text-xs text-pretty">
-              Approval rules that apply to every connector in this project.
+              {tI18nComplete.raw('text014d10bd3c64')}
             </SheetDescription>
           </SheetHeader>
           <SheetBody className="min-h-0 gap-0 px-5 py-5">

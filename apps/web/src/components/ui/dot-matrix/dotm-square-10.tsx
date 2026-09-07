@@ -1,13 +1,14 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { MATRIX_SIZE } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, MATRIX_SIZE } from '@/lib/dotmatrix-core';
+import {
+  useDotMatrixPhases,
+  usePrefersReducedMotion,
+  useSteppedCycle,
+} from '@/lib/dotmatrix-hooks';
 
 export type DotmSquare10Props = DotMatrixCommonProps;
 
@@ -20,19 +21,23 @@ const COL_WARP = 0.07;
 
 export function DotmSquare10({
   speed = 2.5,
-  pattern = "full",
+  pattern = 'full',
   animated = true,
   hoverAnimated = false,
   ...rest
 }: DotmSquare10Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const scanRow = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1500,
     steps: ROWS,
     speed,
@@ -41,10 +46,10 @@ export function DotmSquare10({
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
-      if (reducedMotion || phase === "idle") {
+      if (reducedMotion || phase === 'idle') {
         const falloff = (ROWS - 1 - row) / Math.max(1, ROWS - 1);
         return { style: { opacity: BASE_OPACITY + falloff * 0.38 } };
       }

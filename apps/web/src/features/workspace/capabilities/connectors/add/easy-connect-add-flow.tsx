@@ -2,6 +2,7 @@
 
 import { createConnector, type PipedreamApp } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
@@ -48,6 +49,7 @@ export function EasyConnectAddFlow({
   onClose: () => void;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const add = useMutation({
     mutationFn: async (connection: Parameters<typeof buildEasyConnectConnectorDraft>[1]) => {
       if (!app) throw new Error('Select an app');
@@ -62,17 +64,20 @@ export function EasyConnectAddFlow({
     onSuccess: (connection) => {
       if (connection.syncError) {
         warningToast(
-          `Added ${connection.name} to the manifest, but synchronization failed: ${connection.syncError}. Use Sync to retry.`,
+          tI18nComplete('textd6a135de3872', {
+            value0: connection.name,
+            value1: connection.syncError,
+          }),
         );
         onAdded();
         onClose();
         return;
       }
-      successToast(`Added ${connection.name} — click Connect to authorize`);
+      successToast(tI18nComplete('text590d36262e11', { value0: connection.name }));
       onAdded(connection.slug);
       onClose();
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('texta34a2714da91')),
   });
 
   // Read-only members can open a card but must not be offered the create form.
@@ -83,7 +88,7 @@ export function EasyConnectAddFlow({
       open={app !== null}
       idPrefix="easy-connect-connection"
       title={`Add ${app?.name ?? 'app'}`}
-      description="Create a connection for this app. The connection name and slug identify it in sessions and project configuration."
+      description={tI18nComplete.raw('text0ca24ff370f7')}
       initialName={app?.name ?? ''}
       initialSlug={app ? proposeConnectorConnectionSlug(app.name, existingSlugs) : ''}
       existingSlugs={existingSlugs}

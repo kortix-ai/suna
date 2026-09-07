@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import {
   ArrowRightIcon,
   ChartLineUpIcon,
@@ -14,6 +15,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
 
 import { AdminPageShell } from './_components/admin-page-shell';
@@ -66,6 +68,7 @@ const usd = new Intl.NumberFormat('en-US', {
 });
 
 export default function AdminOverviewPage() {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const searchParams = useSearchParams();
   const legacySection = searchParams.get('section');
@@ -76,6 +79,7 @@ export default function AdminOverviewPage() {
   }, [legacySection, router]);
 
   const { data, isLoading } = useOpsOverview();
+  const destinations = useLocalizedUiCatalog(DESTINATIONS);
 
   const erroredSandboxes = data?.sandboxes.errored ?? 0;
   const erroredSessions = data?.sessions.errored ?? 0;
@@ -84,12 +88,12 @@ export default function AdminOverviewPage() {
 
   return (
     <AdminPageShell
-      title="Overview"
-      description="The production support entrypoint. Every number below is live — the overview polls every 15 seconds."
+      title={tI18nComplete.raw('textd4b1ea5708dd')}
+      description={tI18nComplete.raw('text211be77ddd51')}
     >
       <AdminSection
-        title="Health"
-        description="What is wrong right now. Zero is the expected value for all three counts."
+        title={tI18nComplete.raw('text55898449eb74')}
+        description={tI18nComplete.raw('text75779b882b3d')}
       >
         {isLoading ? (
           <StatGridSkeleton />
@@ -102,57 +106,75 @@ export default function AdminOverviewPage() {
               tone={apiOk ? 'success' : 'danger'}
             />
             <StatTile
-              label="Errored sandboxes"
+              label={tI18nComplete.raw('text03a66748075e')}
               value={erroredSandboxes.toLocaleString()}
-              hint="Fleet-wide"
+              hint={tI18nComplete.raw('text40b4051ad68e')}
               tone={erroredSandboxes > 0 ? 'danger' : 'default'}
             />
             <StatTile
-              label="Errored sessions"
+              label={tI18nComplete.raw('textc92bd77c8ce2')}
               value={erroredSessions.toLocaleString()}
-              hint="Fleet-wide"
+              hint={tI18nComplete.raw('text40b4051ad68e')}
               tone={erroredSessions > 0 ? 'danger' : 'default'}
             />
             <StatTile
-              label="Queued work"
+              label={tI18nComplete.raw('texta607b581223a')}
               value={queued.toLocaleString()}
-              hint="Trigger and channel events"
+              hint={tI18nComplete.raw('text740edcecbc2a')}
               tone={queued > 0 ? 'warning' : 'default'}
             />
           </StatGrid>
         )}
       </AdminSection>
 
-      <AdminSection title="Platform" description="Scale and spend. Cost figures cover the last 24 hours.">
+      <AdminSection
+        title={tI18nComplete.raw('textc78ffe195710')}
+        description={tI18nComplete.raw('text80037a202e3f')}
+      >
         {isLoading ? (
           <StatGridSkeleton />
         ) : (
           <StatGrid>
-            <StatTile label="Accounts" value={(data?.totals.accounts ?? 0).toLocaleString()} />
-            <StatTile label="Projects" value={(data?.totals.projects ?? 0).toLocaleString()} />
             <StatTile
-              label="Model calls (24h)"
+              label={tI18nComplete.raw('text8a7c8b67fe8b')}
+              value={(data?.totals.accounts ?? 0).toLocaleString()}
+            />
+            <StatTile
+              label={tI18nComplete.raw('text04e2a9728af7')}
+              value={(data?.totals.projects ?? 0).toLocaleString()}
+            />
+            <StatTile
+              label={tI18nComplete.raw('textee907488be07')}
               value={(data?.usage.calls_24h ?? 0).toLocaleString()}
             />
-            <StatTile label="Spend (24h)" value={usd.format(data?.usage.cost_usd_24h ?? 0)} />
+            <StatTile
+              label={tI18nComplete.raw('textcae24ccc3b44')}
+              value={usd.format(data?.usage.cost_usd_24h ?? 0)}
+            />
           </StatGrid>
         )}
       </AdminSection>
 
-      <AdminSection title="Consoles" description="Where each kind of support request gets resolved.">
+      <AdminSection
+        title={tI18nComplete.raw('textacf0b83e8622')}
+        description={tI18nComplete.raw('textb3feb3946ecf')}
+      >
         {/* A chooser, so it is one decision per line rather than a grid of
             equally-weighted cards — the shape `CustomizeIndexPage` settled on
             for the same job. No stagger: this page is opened many times a day
             and the delay would be billed to the operator on every one. */}
-        <nav aria-label="Admin consoles" className="border-border/60 border-y">
-          {DESTINATIONS.map((item, index) => (
+        <nav
+          aria-label={tI18nComplete.raw('text99c62879ad37')}
+          className="border-border/60 border-y"
+        >
+          {destinations.map((item, index) => (
             <Link
               key={item.href}
               href={item.href}
               prefetch
               className={cn(
                 'group hover:bg-hover focus-visible:ring-ring relative -mx-3 flex items-center gap-4 rounded-md px-3 py-4',
-                'transition-colors duration-fast ease-out outline-none focus-visible:ring-2',
+                'duration-fast transition-colors ease-out outline-none focus-visible:ring-2',
                 index > 0 && 'border-border/60 border-t',
               )}
             >
@@ -171,7 +193,7 @@ export default function AdminOverviewPage() {
                 aria-hidden
                 className={cn(
                   'text-muted-foreground size-4 shrink-0 -translate-x-1 opacity-0',
-                  'transition-[opacity,transform] duration-fast ease-out',
+                  'duration-fast transition-[opacity,transform] ease-out',
                   'group-hover:translate-x-0 group-hover:opacity-100',
                   'group-focus-visible:translate-x-0 group-focus-visible:opacity-100',
                   'motion-reduce:translate-x-0 motion-reduce:transition-none',

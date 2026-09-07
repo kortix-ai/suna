@@ -6,7 +6,7 @@
 // no-op), leaving a page about permissions that was read-only. These pins keep
 // the triggers wired and the page on the shared access primitives.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'member-access-panel.tsx'), 'utf8');
@@ -23,7 +23,7 @@ const hubSource = readFileSync(
 describe('member-detail actions are reachable', () => {
   test('an actions dropdown menu is rendered with an accessible label', () => {
     expect(source).toContain('DropdownMenuTrigger');
-    expect(source).toContain('Actions for ${memberLabel}');
+    expect(source).toContain("tI18nComplete('text33da220b1a34', { value0: memberLabel })");
   });
 
   test('"View as this member" opens the simulator dialog', () => {
@@ -45,7 +45,8 @@ describe('member-detail uses the shared access primitives', () => {
     expect(source).toContain('AccessDetailShell');
     // Back goes to the members LIST in the same pane — a callback, not a
     // route change, so the hub's left rail stays put.
-    expect(flat).toContain("back={{ label: 'All members', onClick: onBack }}");
+    expect(flat).toContain("raw('text3d6fe3e703f6')");
+    expect(flat).toContain('onClick: onBack');
   });
 
   test('both lists are AccessList/AccessRow', () => {
@@ -55,7 +56,7 @@ describe('member-detail uses the shared access primitives', () => {
 
   test('a project grant is edited through AccessDialog, not a local dialog', () => {
     expect(source).toContain('AccessDialog');
-    expect(flat).toContain("label: 'Edit access'");
+    expect(flat).toContain("label: tI18nComplete.raw('texta514a684676a')");
     expect(flat).toContain("kind: 'edit'");
   });
 

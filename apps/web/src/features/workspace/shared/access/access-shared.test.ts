@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   endOfLocalDayIso,
   formatDate,
@@ -9,9 +10,9 @@ import {
   isoToDateInputValue,
   pluralize,
   principalLabel,
+  RBAC_UPSELL_MESSAGE,
   removeAccessCopy,
   shortPrincipalId,
-  RBAC_UPSELL_MESSAGE,
 } from './access-shared';
 
 describe('principalLabel', () => {
@@ -40,13 +41,17 @@ describe('principalLabel', () => {
 
 describe('formatExpiry', () => {
   test('no expiry reads as permanent, not as an unknown', () => {
-    expect(formatExpiry(null)).toEqual({ label: 'Never', expired: false, bounded: false });
-    expect(formatExpiry(undefined).label).toBe('Never');
+    expect(formatExpiry(null, testUiTranslator)).toEqual({
+      label: 'Never',
+      expired: false,
+      bounded: false,
+    });
+    expect(formatExpiry(undefined, testUiTranslator).label).toBe('Never');
   });
 
   test('a past timestamp is flagged expired', () => {
     const past = new Date(Date.now() - 86_400_000).toISOString();
-    const result = formatExpiry(past);
+    const result = formatExpiry(past, testUiTranslator);
     expect(result.expired).toBe(true);
     expect(result.bounded).toBe(true);
     expect(result.label).not.toBe('Never');
@@ -54,12 +59,12 @@ describe('formatExpiry', () => {
 
   test('a future timestamp is bounded but not expired', () => {
     const future = new Date(Date.now() + 86_400_000).toISOString();
-    expect(formatExpiry(future).expired).toBe(false);
-    expect(formatExpiry(future).bounded).toBe(true);
+    expect(formatExpiry(future, testUiTranslator).expired).toBe(false);
+    expect(formatExpiry(future, testUiTranslator).bounded).toBe(true);
   });
 
   test('an unparseable value degrades to an em dash', () => {
-    expect(formatExpiry('not-a-date').label).toBe('—');
+    expect(formatExpiry('not-a-date', testUiTranslator).label).toBe('—');
   });
 });
 
@@ -118,24 +123,33 @@ describe('formatRelative', () => {
 
 describe('removeAccessCopy', () => {
   test('names the principal and the scope', () => {
-    expect(removeAccessCopy({ principal: 'alice@corp.com', scopeName: 'Atlas' })).toEqual({
+    expect(
+      removeAccessCopy({ principal: 'alice@corp.com', scopeName: 'Atlas' }, testUiTranslator),
+    ).toEqual({
       title: 'Remove access?',
       description: 'alice@corp.com loses access to Atlas.',
     });
   });
 
   test('an empty inherited list reads as a total removal', () => {
-    expect(removeAccessCopy({ principal: 'a', scopeName: 'B', inherited: [] }).description).toBe(
-      'a loses access to B.',
-    );
+    expect(
+      removeAccessCopy({ principal: 'a', scopeName: 'B', inherited: [] }, testUiTranslator)
+        .description,
+    ).toBe('a loses access to B.');
   });
 
   test('inherited groups are appended so nobody expects a full lockout', () => {
     expect(
-      removeAccessCopy({ principal: 'a', scopeName: 'B', inherited: ['Engineering'] }).description,
+      removeAccessCopy(
+        { principal: 'a', scopeName: 'B', inherited: ['Engineering'] },
+        testUiTranslator,
+      ).description,
     ).toBe('a loses access to B. They keep the access they get via Engineering.');
     expect(
-      removeAccessCopy({ principal: 'a', scopeName: 'B', inherited: ['Eng', 'Ops'] }).description,
+      removeAccessCopy(
+        { principal: 'a', scopeName: 'B', inherited: ['Eng', 'Ops'] },
+        testUiTranslator,
+      ).description,
     ).toBe('a loses access to B. They keep the access they get via Eng and Ops.');
   });
 });

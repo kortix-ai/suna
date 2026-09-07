@@ -124,9 +124,7 @@ describe('every setup tile carries exactly one step key', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  test('every tile has a non-empty checklist title', () => {
-    for (const tile of PROJECT_SETUP_TILES) {
-      expect(tile.title.trim().length).toBeGreaterThan(0);
-    }
+  test('resolves each title from the stable step key', () => {
+    expect(sectionsSource).toContain('title: t(`setup.steps.${tile.key}`)');
   });
 });

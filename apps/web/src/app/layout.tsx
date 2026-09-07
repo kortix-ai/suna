@@ -23,6 +23,7 @@ import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
 import { featureFlags } from '@kortix/sdk';
 import type { Metadata, Viewport } from 'next';
+import { getLocale, getMessages, getTranslations } from '@/i18n/get-translations';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import { Suspense, lazy } from 'react';
@@ -99,7 +100,7 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
-export const metadata: Metadata = {
+const ROOT_METADATA: Metadata = {
   metadataBase: new URL(siteMetadata.url),
   title: {
     default: siteMetadata.title,
@@ -164,7 +165,33 @@ export const metadata: Metadata = {
   // homepage. Each indexable page declares its own canonical instead.
 };
 
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('hardcodedUi.i18nComplete');
+  const title = t.raw('textce34af36d804');
+  const description = t.raw('text2bf70270bfde');
+  return {
+    ...ROOT_METADATA,
+    title: { default: title, template: `%s | ${siteMetadata.name}` },
+    description,
+    openGraph: {
+      ...ROOT_METADATA.openGraph,
+      title,
+      description,
+      images: [
+        {
+          url: '/banner.png',
+          width: 1200,
+          height: 630,
+          alt: `${title} – ${description}`,
+        },
+      ],
+    },
+    twitter: { ...ROOT_METADATA.twitter, title, description },
+  };
+}
+
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = { raw: getHardcodedUiServerText };
   // Opt into dynamic rendering so process.env is evaluated at request time,
   // not baked at build time. Critical for Docker images with runtime env vars.
@@ -187,9 +214,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 
   // Locale-routed marketing pages (/de, /fr, …) are rewritten onto the
   // unprefixed route by the middleware, which records the locale in x-locale.
-  const requestLocale = requestHeaders.get('x-locale');
+  const resolvedLocale = await getLocale();
   const htmlLang =
-    requestLocale && locales.includes(requestLocale as Locale) ? requestLocale : 'en';
+    resolvedLocale && locales.includes(resolvedLocale as Locale) ? (resolvedLocale as Locale) : 'en';
+  const resolvedMessages = await getMessages();
 
   return (
     <html
@@ -216,7 +244,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         {/* Prevent browser auto-translate (Google Translate, Chrome, etc.) from
             mutating the DOM. When translators modify text nodes, React's reconciler
             crashes with "Failed to execute 'insertBefore' on 'Node'".
-            The app ships its own i18n via next-intl (en, de, it, zh, ja, pt, fr, es)
+            The app ships its own i18n via next-intl (en, de, it, zh, ja, pt, fr, es, sr)
             so browser translation is unnecessary and actively harmful. */}
         <meta name="google" content="notranslate" />
 
@@ -268,9 +296,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         {!featureFlags.disableMobileAdvertising ? (
           <meta
             name="apple-itunes-app"
-            content={tHardcodedUi.raw(
-              'appLayout.line214JsxAttrContentAppId6754448524AppArgumentKortix',
-            )}
+            content={"app-id=6754448524, app-argument=kortix://"}
           />
         ) : null}
 
@@ -283,8 +309,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               name: siteMetadata.name,
               alternateName: [
                 'Kortix',
-                'Kortix AI',
-                'Kortix – The AI Command Center for Your Company',
+                "Kortix AI",
+                "Kortix – The AI Command Center for Your Company",
               ],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.svg`,
@@ -297,7 +323,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               ],
               contactPoint: {
                 '@type': 'ContactPoint',
-                contactType: 'Customer Support',
+                contactType: "Customer Support",
                 url: siteMetadata.url,
               },
             }),
@@ -313,7 +339,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               name: siteMetadata.title,
               alternateName: [siteMetadata.name, 'Kortix'],
               applicationCategory: 'BusinessApplication',
-              operatingSystem: 'Web, macOS, Windows, Linux',
+              operatingSystem: "Web, macOS, Windows, Linux",
               description: siteMetadata.description,
               offers: {
                 '@type': 'Offer',
@@ -347,7 +373,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         className="notranslate text-foreground bg-background min-h-screen w-full scroll-smooth font-sans font-medium tracking-normal antialiased"
         suppressHydrationWarning
       >
-        <WebMcpTools />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -358,7 +383,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <IconProvider>
               <TooltipProvider delayDuration={300}>
                 <AuthProvider>
-                  <I18nProvider>
+                  <I18nProvider initialLocale={htmlLang} initialMessages={resolvedMessages}>
+                    <WebMcpTools />
                     {/* Publishes the App Router to lib/navigation/router-bridge so
                     stores and error handlers navigate softly instead of
                     reloading the document. */}

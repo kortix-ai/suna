@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 
 import { IdentityConfetti } from '@/components/ui/identity-confetti';
@@ -63,6 +64,7 @@ export function ProjectHomeWelcomeBody({
   /** When provided, starter-prompt chips render directly below the composer. */
   onPickSuggestion?: (text: string) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // One source for the project name — see `useProjectName`'s doc comment.
   const name = useProjectName(projectId) ?? '';
   // The SAME `qk.project.detail(projectId)` entry `useProjectName` reads, so
@@ -154,7 +156,7 @@ export function ProjectHomeWelcomeBody({
               */}
             <button
               type="button"
-              title="Throw some confetti"
+              title={tI18nComplete.raw('texteff2ec3d9dcd')}
               onClick={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 setBurst((current) => ({

@@ -1,14 +1,11 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
 import { cn } from '@/lib/utils';
 
-import {
-  MAINTENANCE_LEVELS,
-  MAINTENANCE_TONE_GLYPH,
-  MAINTENANCE_TONE_TILE,
-} from './constants';
+import { MAINTENANCE_LEVELS, MAINTENANCE_TONE_GLYPH, MAINTENANCE_TONE_TILE } from './constants';
 
 /**
  * One selectable notification level.
@@ -33,6 +30,7 @@ export function MaintenanceLevelRow({
   isSelected: boolean;
   onClick: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const config = MAINTENANCE_LEVELS.find((l) => l.value === level);
   if (!config) return null;
   const Icon = config.icon;
@@ -44,7 +42,7 @@ export function MaintenanceLevelRow({
       aria-pressed={isSelected}
       className={cn(
         'bg-popover flex w-full cursor-pointer items-center gap-3 rounded-md border px-4 py-3 text-left',
-        'transition-colors duration-fast ease-out',
+        'duration-fast transition-colors ease-out',
         'focus-visible:ring-ring outline-none focus-visible:ring-2',
         isSelected ? 'bg-active' : 'hover:bg-hover',
       )}
@@ -62,7 +60,7 @@ export function MaintenanceLevelRow({
           <span className="text-foreground truncate text-sm font-medium">{config.label}</span>
           {isSelected && (
             <Badge variant="outline" size="sm">
-              Active
+              {tI18nComplete.raw('text92340695899b')}
             </Badge>
           )}
         </span>

@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Whether a `/` command submission may carry the composer's attachments.
  *
@@ -123,16 +124,16 @@ export interface CommandAttachmentInput {
  * the inline warning and the disabled send button, once inside `handleSubmit`
  * for the keyboard path, which no disabled button can gate.
  */
-export function planCommandAttachments({
-  isCommand,
-  attachmentCount,
-}: CommandAttachmentInput): CommandAttachmentPlan {
+export function planCommandAttachments(
+  { isCommand, attachmentCount }: CommandAttachmentInput,
+  tI18nComplete: UiTranslator,
+): CommandAttachmentPlan {
   if (!isCommand || attachmentCount < 1) return { kind: 'dispatch' };
 
   const one = attachmentCount === 1;
   return {
     kind: 'refuse',
-    message: 'A / command cannot send attachments',
+    message: tI18nComplete.raw('text01ec8eaf8ffa'),
     description: one
       ? '1 file stays attached. Remove it to run the command, or remove the command to send the file as a message.'
       : `${attachmentCount} files stay attached. Remove them to run the command, or remove the command to send them as a message.`,

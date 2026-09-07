@@ -11,7 +11,7 @@ import {
   PlugIcon as Plug,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
 
 import { Badge } from '@/components/ui/badge';
@@ -117,7 +117,7 @@ export function ConnectorStatusBadge({ connector }: { connector: AdminConnector 
   if (status === 'error')
     return (
       <Badge variant="destructive" size="sm">
-        Error
+        {tI18nHardcoded.raw('i18nComplete.text54a0e8c17ebb')}
       </Badge>
     );
   if (status === 'no_auth')
@@ -131,7 +131,7 @@ export function ConnectorStatusBadge({ connector }: { connector: AdminConnector 
   if (status === 'user_managed')
     return (
       <Badge variant="outline" size="sm">
-        User-managed
+        {tI18nHardcoded.raw('i18nComplete.text82bcb52dba1e')}
       </Badge>
     );
   if (status === 'needs_setup')

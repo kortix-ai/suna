@@ -1,5 +1,5 @@
 import { and, eq, lt } from 'drizzle-orm';
-import { chatEventDedup, chatTurnStreams } from '@kortix/db';
+import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { config } from '../../config';
@@ -37,7 +37,31 @@ export function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: str
   };
 }
 
-/** Hydrate a DB row into a usable handle (loads the bot token for its project). */
+/**
+ * Hydrate a DB row into a usable handle (loads the bot token for its project).
+ *
+ * `expires_at` IS NOT A REAPER HERE. It used to delete the row and return null
+ * the moment it passed, and `STREAM_TTL_MS` is 15 minutes that ONLY a `slack
+ * step` refreshes (see relayTurnStep) — the agent's own work refreshes nothing.
+ * So a run that thought for 16 minutes, or sat in one long install, silently
+ * lost its stream: every later step AND the final `slack send` found no row and
+ * were dropped, leaving the thread frozen on one stale step while the agent
+ * worked on.
+ *
+ * PROD 2026-09-05, session e58ddd55 (Slack thread 1788612689.109129 in
+ * C0BQCDKMTGX). `slack step` at 12:54:42, next at 13:19:22 — a 24m40s gap — so
+ * the row was reaped at 13:09:42 and the following five steps plus the answer
+ * went nowhere while the agent ran two more hours. The agent noticed the silence
+ * and started its own `while sleep 200; do slack step` keepalive at 13:37; by
+ * then there was nothing left to keep alive. Three incident threads that week
+ * (d91f2ff5, d08cccb4, 11f9e9e9) died the same way and read in Slack as
+ * "Kortix ignored the incident".
+ *
+ * The GC sweep below is the reaper, and the honest one: it is keyed on
+ * `updated_at` (30 minutes with no relay at all) and it POSTS before it deletes.
+ * Reaping here raced that sweep and won silently. `expires_at` stays written for
+ * bookkeeping and its index; nothing reads it as authority any more.
+ */
 export async function loadTurn(sessionId: string): Promise<LiveTurn | null> {
   if (!sessionId) return null;
   const [row] = await db
@@ -46,22 +70,6 @@ export async function loadTurn(sessionId: string): Promise<LiveTurn | null> {
     .where(eq(chatTurnStreams.sessionId, sessionId))
     .limit(1);
   if (!row) return null;
-  const expiry = new Date(row.expiresAt).getTime();
-  if (!Number.isFinite(expiry) || expiry <= Date.now()) {
-    // Reaping an expired un-finalized row: best-effort clear the ⏳ first so a
-    // stale hourglass doesn't sit on the user's message forever (the GC only
-    // sweeps live rows; once this row is gone nothing else can clear it).
-    if (!row.finalized) {
-      const ev = row.originatingEvent as SlackEvent | undefined;
-      const triggerTs = row.triggerTs || ev?.ts;
-      if (row.channel && triggerTs) {
-        const token = await loadSlackTokenForProject(row.projectId);
-        if (token) await removeReaction(token, row.channel, triggerTs, WORKING_EMOJI).catch(() => {});
-      }
-    }
-    await deleteTurn(sessionId);
-    return null;
-  }
   const token = await loadSlackTokenForProject(row.projectId);
   if (!token) return null;
   return rowToHandle(row, token);
@@ -539,13 +547,96 @@ export async function relayTurnAnswer(
   blocks?: unknown[],
 ): Promise<boolean> {
   const handle = await loadTurn(sessionId);
-  if (!handle || handle.finalized) return false;
+  // NO ROW AT ALL → the turn was closed and deleted (the 30-minute GC sweep)
+  // while the run was still going. The answer is real and the thread is still
+  // waiting for it, so deliver it anyway instead of returning false into an HTTP
+  // 200 the agent reads as "sent". See postAnswerWithoutTurn.
+  if (!handle) return postAnswerWithoutTurn(sessionId, text, blocks);
+  // A FINALIZED row is a turn already closed WITH its reply — a duplicate
+  // `slack send`, or a `session.idle` that won the race. Stay quiet.
+  if (handle.finalized) return false;
   // Win the finalize race against a late session.idle/error relay (or a duplicate
   // send) so the turn is closed exactly once.
   if (!(await claimFinalize(sessionId))) return false;
   await finalizeTurn(handle, { answer: markdownToMrkdwn(text), blocks });
   await deleteTurn(sessionId);
   return true;
+}
+
+// ── Last-resort answer delivery, with no turn row left ────────────────────────
+// The row can legitimately be gone by the time the agent answers: the GC closes
+// a turn after 30 minutes with no relay, posts "Run timed out", and deletes it.
+// The RUN does not stop — prod 2026-09-04 session d08cccb4 posted three steps,
+// went quiet, was closed at 30 minutes, and only finished at 09:06:28, 2h58m
+// after it started. `relayTurnAnswer` found no handle, returned false, and the
+// route answered the sandbox HTTP 200 `{ok:false}` (projects/routes/r4.ts), so
+// the agent believed it had replied and the thread never saw a word of it.
+//
+// A Slack-started session carries everything needed to reach its own thread in
+// `project_sessions.metadata.slack` (channel + thread_ts, written at create time
+// in channels/slack/session.ts), so the answer can always be posted. A session
+// from any other source has no `metadata.slack` and is left alone.
+const ANSWER_RESCUE_TTL_MS = STREAM_TTL_MS;
+
+// One rescue per session per TTL, so a duplicate `slack send` cannot post the
+// answer twice. The window is safe: a row must live at least STREAM_TTL_MS
+// before anything can reap it, so two genuine rescues are always further apart
+// than this claim.
+async function claimAnswerRescue(sessionId: string): Promise<boolean> {
+  try {
+    const inserted = await db
+      .insert(chatEventDedup)
+      .values({
+        eventId: `slack:answerrescue:${sessionId}`,
+        expiresAt: new Date(Date.now() + ANSWER_RESCUE_TTL_MS),
+      })
+      .onConflictDoNothing({ target: chatEventDedup.eventId })
+      .returning({ eventId: chatEventDedup.eventId });
+    return inserted.length > 0;
+  } catch (err) {
+    // Fail CLOSED. The whole point is to not post twice into a thread someone is
+    // reading; a dropped rescue is still recoverable from the session link.
+    console.warn('[slack-webhook] answer-rescue claim failed (suppressing)', err);
+    return false;
+  }
+}
+
+/**
+ * Post an agent answer into its Slack thread when no turn row exists.
+ * Returns true only when Slack accepted the message.
+ */
+export async function postAnswerWithoutTurn(
+  sessionId: string,
+  text: string,
+  blocks?: unknown[],
+): Promise<boolean> {
+  const [row] = await db
+    .select({ projectId: projectSessions.projectId, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (!row) return false;
+  const slack = (row.metadata as { slack?: { channel?: string; thread_ts?: string } } | null)?.slack;
+  const channel = slack?.channel;
+  const threadTs = slack?.thread_ts;
+  if (!channel || !threadTs) return false; // not a Slack-started session
+  const token = await loadSlackTokenForProject(row.projectId);
+  if (!token) return false;
+  if (!(await claimAnswerRescue(sessionId))) return false;
+
+  const rendered = markdownToMrkdwn(text);
+  const truncated = rendered.length > MAX_BODY;
+  const body = rendered.slice(0, MAX_BODY);
+  const url = sessionWebUrl(config.FRONTEND_URL, row.projectId, sessionId);
+  const footer = { type: 'context', elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }] };
+  const finalBlocks =
+    blocks && blocks.length > 0 ? [...blocks, footer] : [...toSectionBlocks(body, truncated), footer];
+
+  const ts = await postBlocks(token, channel, body, finalBlocks, threadTs);
+  if (ts) return true;
+  // Block render rejected (a section caps at 3000 chars) — never lose the answer.
+  const fallback = await postMessage(token, channel, `${body}\n\n<${url}|Open session in Kortix ↗>`, threadTs);
+  return fallback != null;
 }
 
 // Called when the agent's turn ends — opencode `session.idle` (finished) or

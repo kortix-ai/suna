@@ -1,13 +1,14 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { isWithinCircularMask } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, isWithinCircularMask } from '@/lib/dotmatrix-core';
+import {
+  useDotMatrixPhases,
+  usePrefersReducedMotion,
+  useSteppedCycle,
+} from '@/lib/dotmatrix-hooks';
 
 export type DotmCircular9Props = DotMatrixCommonProps;
 
@@ -23,13 +24,17 @@ export function DotmCircular9({
   ...rest
 }: DotmCircular9Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const step = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1900,
     steps: STEP_COUNT,
     speed,
@@ -38,16 +43,17 @@ export function DotmCircular9({
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ row, col, phase }) => {
       if (!isWithinCircularMask(row, col)) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const x = col - 2;
       const y = row - 2;
       const ring = Math.sqrt(x * x + y * y);
       const angle = Math.atan2(y, x);
-      const t = reducedMotion || phase === "idle" ? 0 : (step / STEP_COUNT) * Math.PI * 2;
+      const t = reducedMotion || phase === 'idle' ? 0 : (step / STEP_COUNT) * Math.PI * 2;
       const cardinalCenters = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
-      const beaconIndex = Math.floor((step / STEP_COUNT) * cardinalCenters.length) % cardinalCenters.length;
+      const beaconIndex =
+        Math.floor((step / STEP_COUNT) * cardinalCenters.length) % cardinalCenters.length;
       const activeCenter = cardinalCenters[beaconIndex]!;
       const oppositeCenter = cardinalCenters[(beaconIndex + 2) % cardinalCenters.length]!;
 

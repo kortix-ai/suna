@@ -3,6 +3,7 @@
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion, type Variants } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -101,6 +102,8 @@ export function ProjectOnboardingWizard({
    */
   onSkip?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('projectOnboarding');
   const contactTier = usePersonalContactTier();
   const showFounderStep = contactTier === 'personal';
   const { user } = useAuth();
@@ -153,12 +156,12 @@ export function ProjectOnboardingWizard({
       .then(() => resetFn())
       .then(() => {
         setIndex(0);
-        successToast('Onboarding reset');
+        successToast(tI18nComplete('text9f875cecd1c5'));
       })
       .catch((err) => errorToast(err instanceof Error ? err.message : String(err)));
     url.searchParams.delete('onboarding-reset');
     window.history.replaceState(null, '', url.toString());
-  }, [resetHydrated, resetFn]);
+  }, [resetHydrated, resetFn, t, tI18nComplete]);
 
   // Who this wizard is FOR: someone who can set the project up. Every step
   // writes something a plain project member cannot — the company domain and
@@ -239,8 +242,14 @@ export function ProjectOnboardingWizard({
   // palette use for prefill-only handoffs; this is the only `autoSend: true`
   // caller.
   const kickoffPrompt = useMemo(
-    () => buildOnboardingKickoffPrompt(domain, connectorSlugs.length),
-    [domain, connectorSlugs.length],
+    () =>
+      buildOnboardingKickoffPrompt(domain, connectorSlugs.length, {
+        noDomain: (toolsClause) => t('kickoff.noDomain', { toolsClause }),
+        withDomain: (companyDomain, toolsClause) =>
+          t('kickoff.withDomain', { domain: companyDomain, toolsClause }),
+        tools: (count) => t('kickoff.tools', { count }),
+      }),
+    [domain, connectorSlugs.length, t],
   );
   const openProject = useCallback(() => {
     useComposerPrefillStore.getState().setPrefill(projectId, kickoffPrompt, { autoSend: true });
@@ -289,7 +298,7 @@ export function ProjectOnboardingWizard({
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="Back"
+                    aria-label={t('back')}
                     className="text-muted-foreground hover:text-foreground active:scale-[0.96] motion-reduce:active:scale-100"
                     onClick={back}
                   >
@@ -315,19 +324,24 @@ export function ProjectOnboardingWizard({
                     type="button"
                     variant="ghost"
                     size="magic-sm"
-                    aria-label="Skip for now"
+                    aria-label={t('skipForNow')}
                     className="text-muted-foreground hover:text-foreground"
                     onClick={skip}
                   >
-                    <span className="sm:hidden">Skip</span>
-                    <span className="hidden sm:inline">Skip for now</span>
+                    <span className="sm:hidden">{t('skip')}</span>
+                    <span className="hidden sm:inline">{t('skipForNow')}</span>
                   </Button>
                 )}
               </div>
             </div>
 
             <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 md:px-8">
-              <div className="w-full max-w-[520px] pt-8 pb-[max(2rem,env(safe-area-inset-bottom))]">
+              <div
+                className="w-full max-w-[520px] pt-8"
+                style={{
+                  paddingBottom: 'max(calc(var(--spacing) * 8), env(safe-area-inset-bottom, 0px))',
+                }}
+              >
                 {/* popLayout, not wait: `wait` runs the exit to completion before
                   the enter starts, which doubled every step to ~440ms of dead
                   air. popLayout takes the outgoing step out of flow so the two
@@ -393,8 +407,8 @@ export function ProjectOnboardingWizard({
           calLink={CAL_LINK}
           calNamespace={CAL_NAMESPACE}
           source="onboarding-wizard"
-          title="Book a 20-minute setup call"
-          description="A couple of focused minutes with the team to get your command center dialed in."
+          title={t('demo.title')}
+          description={t('demo.description')}
           defaultName={defaultName}
           defaultEmail={defaultEmail}
           onBookingSuccessful={() => setCalOpen(false)}

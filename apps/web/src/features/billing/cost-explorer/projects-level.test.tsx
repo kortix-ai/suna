@@ -7,7 +7,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 import { CostExportButton } from './cost-export-button';
 import { CostSortHeader } from './cost-sort-header';
-import { collectElementsByType } from './react-element-tree';
 import {
   applyProjectSort,
   buildProjectsLevelExportFilters,
@@ -19,8 +18,13 @@ import {
   projectSortDirection,
   type ProjectTableRow,
 } from './projects-level';
+import { collectElementsByType } from './react-element-tree';
 
-const baseRange = { preset: '30d' as const, from: '2026-07-01T00:00:00.000Z', to: '2026-07-31T00:00:00.000Z' };
+const baseRange = {
+  preset: '30d' as const,
+  from: '2026-07-01T00:00:00.000Z',
+  to: '2026-07-31T00:00:00.000Z',
+};
 
 function summaryWithTotal(total_cost: number): CostSummary {
   return {
@@ -72,7 +76,11 @@ describe('buildProjectTableRows', () => {
       summaryWithTotal(670.35),
     );
     expect(rows).toHaveLength(2);
-    expect(rows[1]).toMatchObject({ project_id: null, project_name: 'Unassigned', total_cost: 668.35 });
+    expect(rows[1]).toMatchObject({
+      project_id: null,
+      project_name: 'Unassigned',
+      total_cost: 668.35,
+    });
   });
 
   test('omits the unassigned row when everything is attributed', () => {
@@ -242,7 +250,11 @@ describe('buildProjectTableRows', () => {
       summaryWithTotal(9),
     );
     expect(rows).toHaveLength(3);
-    expect(rows[2]).toMatchObject({ project_id: null, project_name: 'Unassigned', total_cost: 1.5 });
+    expect(rows[2]).toMatchObject({
+      project_id: null,
+      project_name: 'Unassigned',
+      total_cost: 1.5,
+    });
   });
 
   test('omits the unassigned row entirely when the summary has not loaded yet', () => {
@@ -649,7 +661,9 @@ function baseContentProps(overrides: Partial<Parameters<typeof ProjectsLevelCont
   };
 }
 
-function renderContent(overrides: Partial<Parameters<typeof ProjectsLevelContent>[0]> = {}): string {
+function renderContent(
+  overrides: Partial<Parameters<typeof ProjectsLevelContent>[0]> = {},
+): string {
   return renderToStaticMarkup(
     <TooltipProvider>
       <ProjectsLevelContent {...baseContentProps(overrides)} />
@@ -1086,7 +1100,9 @@ describe('ProjectsLevelContent', () => {
   });
 
   test('pagination caption and Previous/Next disabled state reflect the page', () => {
-    const html = renderContent({ page: { ...twoProjectPage, total: 30, offset: 0, next_offset: 25 } });
+    const html = renderContent({
+      page: { ...twoProjectPage, total: 30, offset: 0, next_offset: 25 },
+    });
     expect(html).toContain('Showing 1-2 of 30 projects');
     const previousMatch = html.match(/<button[^>]*>Previous<\/button>/);
     const nextMatch = html.match(/<button[^>]*>Next<\/button>/);
@@ -1099,7 +1115,9 @@ describe('ProjectsLevelContent', () => {
   });
 
   test('Previous is enabled and Next is disabled on the last page', () => {
-    const html = renderContent({ page: { ...twoProjectPage, total: 27, offset: 25, next_offset: null } });
+    const html = renderContent({
+      page: { ...twoProjectPage, total: 27, offset: 25, next_offset: null },
+    });
     expect(html).toContain('Showing 26-27 of 27 projects');
     const previousMatch = html.match(/<button[^>]*>Previous<\/button>/);
     const nextMatch = html.match(/<button[^>]*>Next<\/button>/);

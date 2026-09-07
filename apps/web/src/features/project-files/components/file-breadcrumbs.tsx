@@ -4,6 +4,7 @@ import { useFilesStore, useFilesStoreApi } from '@/features/file-browser/store/f
 import { cn } from '@/lib/utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { CaretRightIcon as ChevronRight, FolderIcon as FolderRoot } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getFileIcon } from './file-icon';
 
@@ -40,6 +41,7 @@ function BreadcrumbSegments({
   onDoubleClick,
   trailing,
 }: BreadcrumbSegmentsProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // When rootPath is set, only show segments at or below it
   const rootSegmentCount = useMemo(
     () => (rootPath ? rootPath.split('/').filter(Boolean).length : 0),
@@ -54,7 +56,7 @@ function BreadcrumbSegments({
     <nav
       className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
       onDoubleClick={onDoubleClick}
-      title={onDoubleClick ? 'Double-click to edit path' : undefined}
+      title={onDoubleClick ? tI18nComplete.raw('text5efd0bed7735') : undefined}
     >
       {/* Home / root */}
       <button
@@ -124,6 +126,7 @@ function BreadcrumbSegments({
  * to jump up a level.
  */
 export function FileBreadcrumbs() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const rootPath = useFilesStore((s) => s.rootPath);
@@ -208,8 +211,8 @@ export function FileBreadcrumbs() {
             setIsEditing(false);
           }}
           className="bg-card focus:ring-primary/50 h-7 min-w-0 flex-1 rounded-2xl border px-2 font-mono text-sm outline-none focus:ring-2"
-          placeholder="/path/to/folder"
-          aria-label="Path to folder"
+          placeholder={tI18nComplete.raw('text1bbab8923e0a')}
+          aria-label={tI18nComplete.raw('textc614ae8886f0')}
         />
       </div>
     );
@@ -246,6 +249,7 @@ interface FilePathBreadcrumbsProps {
  * and is styled as the active/current item.
  */
 export function FilePathBreadcrumbs({ filePath, className }: FilePathBreadcrumbsProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const filesStore = useFilesStoreApi();
   const rootPath = useFilesStore((s) => s.rootPath);
   const homePath = rootPath || '/workspace';
@@ -260,23 +264,23 @@ export function FilePathBreadcrumbs({ filePath, className }: FilePathBreadcrumbs
       filesStore.getState().navigateToPath(dirPath);
       openTabAndNavigate({
         id: 'page:/files',
-        title: 'Files',
+        title: tI18nComplete.raw('textabc7e9892806'),
         type: 'page',
         href: '/files',
       });
     },
-    [filesStore, segments],
+    [filesStore, segments, tI18nComplete],
   );
 
   const handleHomeClick = useCallback(() => {
     filesStore.getState().navigateToPath(homePath);
     openTabAndNavigate({
       id: 'page:/files',
-      title: 'Files',
+      title: tI18nComplete.raw('textabc7e9892806'),
       type: 'page',
       href: '/files',
     });
-  }, [filesStore, homePath]);
+  }, [filesStore, homePath, tI18nComplete]);
 
   return (
     <div className={cn('min-w-0 flex-1', className)}>
@@ -285,7 +289,7 @@ export function FilePathBreadcrumbs({ filePath, className }: FilePathBreadcrumbs
         onSegmentClick={handleSegmentClick}
         onHomeClick={handleHomeClick}
         fileMode
-        fileIcon={getFileIcon(fileName, { className: 'h-3.5 w-3.5 shrink-0' })}
+        fileIcon={getFileIcon(fileName, { className: tI18nComplete.raw('text07a0daf2512a') })}
         rootPath={rootPath}
       />
     </div>

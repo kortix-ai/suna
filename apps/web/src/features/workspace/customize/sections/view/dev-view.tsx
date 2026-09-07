@@ -1,8 +1,8 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import { FormEvent, useState, type ComponentType, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -75,7 +75,7 @@ export function DevView({ projectId }: { projectId: string }) {
           description={(projectQuery.error as Error).message}
           action={
             <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
-              Retry
+              {tI18nHardcoded.raw('i18nComplete.text942087cc2d41')}
             </Button>
           }
         />
@@ -139,7 +139,11 @@ function DevSteps({
       hint: tI18nHardcoded.raw(
         'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintManages9608753c',
       ),
-      content: <CommandBlock lines={[installCommand, 'kortix login']} />,
+      content: (
+        <CommandBlock
+          lines={[installCommand, tI18nHardcoded.raw('i18nComplete.text69fcb4fde341')]}
+        />
+      ),
     },
     {
       title: tI18nHardcoded.raw(
@@ -148,7 +152,7 @@ function DevSteps({
       hint: tI18nHardcoded.raw(
         'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintWires03f7d392',
       ),
-      content: <CommandBlock lines={['kortix init --force']} />,
+      content: <CommandBlock lines={[tI18nHardcoded.raw('i18nComplete.texte9496715d20d')]} />,
     },
     {
       title: tI18nHardcoded.raw(
@@ -157,7 +161,7 @@ function DevSteps({
       hint: tI18nHardcoded.raw(
         'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintWritese14f4d88',
       ),
-      content: <CommandBlock lines={['kortix env pull']} />,
+      content: <CommandBlock lines={[tI18nHardcoded.raw('i18nComplete.textb2797ffabc55')]} />,
     },
     {
       title: tI18nHardcoded.raw(
@@ -179,10 +183,10 @@ function DevSteps({
         <>
           <CommandBlock
             lines={[
-              'git checkout -b my-change',
-              'git commit -am "Describe your change"',
-              `git push origin HEAD`,
-              'kortix cr open --title "Describe your change"',
+              tI18nHardcoded.raw('i18nComplete.text3321947da6d7'),
+              tI18nHardcoded.raw('i18nComplete.text05cc7bb328c6'),
+              tI18nHardcoded.raw('i18nComplete.text6ffb34d0baed'),
+              tI18nHardcoded.raw('i18nComplete.text4f84cf089254'),
             ]}
           />
           <p className="text-muted-foreground mt-2 text-xs">
@@ -241,7 +245,7 @@ function CommandBlock({ lines }: { lines: string[] }) {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return;
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      successToast('Copied to clipboard');
+      successToast(tI18nHardcoded.raw('i18nComplete.texte9a14c42e311'));
       setTimeout(() => setCopied(false), 2000);
     });
   };
@@ -283,6 +287,7 @@ const LAUNCHERS: { label: string; command: string; icon: LauncherIcon }[] = [
 ];
 
 function Launchers() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { copy } = useCopy();
 
   return (
@@ -292,7 +297,7 @@ function Launchers() {
           key={command}
           type="button"
           onClick={() => copy(command)}
-          title={`Copy "${command}"`}
+          title={tI18nHardcoded('i18nComplete.text197300839f83', { value0: command })}
           aria-label={label}
           className="group border-border bg-popover hover:bg-muted flex aspect-square items-center justify-center rounded-md border transition-colors"
         >
@@ -311,13 +316,14 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
     mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), 'write'),
     onSuccess: (res) => {
       if (res.alreadyCollaborator) {
-        successToast(`@${res.username} already has access to this repo`);
+        successToast(tI18nHardcoded('i18nComplete.text4ece196e2346', { value0: res.username }));
       } else {
-        successToast(`Invite sent to @${res.username} — accept it on GitHub`);
+        successToast(tI18nHardcoded('i18nComplete.text02e3cc994971', { value0: res.username }));
       }
       setUsername('');
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add collaborator'),
+    onError: (error: Error) =>
+      errorToast(error.message || tI18nHardcoded.raw('i18nComplete.textc6c23265e620')),
   });
 
   const submit = (e: FormEvent) => {
@@ -328,7 +334,7 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
   return (
     <form className="space-y-2" onSubmit={submit}>
       <Label htmlFor="dev-github-username" className="sr-only">
-        GitHub username
+        {tI18nHardcoded.raw('i18nComplete.text64477e38cfb5')}
       </Label>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-0 flex-1 basis-48">

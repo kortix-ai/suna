@@ -1,4 +1,4 @@
-import { locales, type Locale } from '@/i18n/config';
+import { locales } from '@/i18n/catalog.mjs';
 import {
   authorizeEnvironment,
   deriveEnvironmentAccessCookie,
@@ -23,8 +23,36 @@ import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-// Marketing pages that support locale routing for SEO (/de, /it, etc.)
-const MARKETING_ROUTES = ['/', '/legal', '/support'];
+type Locale = (typeof locales)[number];
+
+// Public application surfaces that support explicit locale routing for SEO
+// and unauthenticated language verification (/de/about, /sr/pricing, etc.).
+const MARKETING_ROUTES = [
+  '/',
+  '/about',
+  '/agent-computer',
+  '/agents-and-skills',
+  '/automations',
+  '/blog',
+  '/careers',
+  '/channels',
+  '/changelog',
+  '/company-as-code',
+  '/connectors',
+  '/contact',
+  '/design-system',
+  '/developers',
+  '/download',
+  '/enterprise',
+  '/legal',
+  '/marketplace',
+  '/pricing',
+  '/security',
+  '/self-hosted',
+  '/solutions',
+  '/support',
+  '/use-cases',
+];
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
@@ -408,8 +436,12 @@ export async function middleware(request: NextRequest) {
 
     if (isRemainingPathMarketing) {
       // Rewrite /de to /, etc.
-      const response = NextResponse.rewrite(new URL(remainingPath, request.url));
-      // Store locale in headers so next-intl can pick it up for the explicit URL.
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set('x-locale', locale);
+      const response = NextResponse.rewrite(new URL(remainingPath, request.url), {
+        request: { headers: requestHeaders },
+      });
+      // Keep the locale response header for diagnostics and cache inspection.
       // Do not persist it: language only changes permanently via profile settings.
       response.headers.set('x-locale', locale);
 

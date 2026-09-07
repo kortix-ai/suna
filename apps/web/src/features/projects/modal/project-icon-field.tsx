@@ -1,17 +1,18 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { SmileyIcon, XIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { emojiTint, emojiTintHover } from '@/components/ui/emoji-tint';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { glyphComponent } from '@/components/ui/glyph-registry';
 import { glyphForeground, glyphTint, glyphTintHover } from '@/components/ui/glyph-tint';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ProjectIconPicker } from '@/components/ui/project-icon-picker';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { cn } from '@/lib/utils';
 
 /** The codebase's icon-swap treatment: scale + opacity + blur, on a spring with
@@ -135,6 +136,7 @@ export function ProjectIconField({
   onClear?: () => void;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const reduceMotion = useReducedMotion();
 
@@ -215,10 +217,10 @@ export function ProjectIconField({
           disabled={disabled}
           aria-label={
             emoji
-              ? `Project icon: ${emoji}. Change it`
+              ? tI18nComplete('text13447731697e', { value0: emoji })
               : glyphFace
-                ? `Project icon: ${glyphFace.name}. Change it`
-                : 'Choose project icon'
+                ? tI18nComplete('text13447731697e', { value0: glyphFace.name })
+                : tI18nComplete.raw('text39a1c11af6d3')
           }
           // size-9 matches the sibling name Input (`size="sm"` => h-9), which is
           // what the field has to line up with. That is 33.11px, under the 40px
@@ -370,7 +372,7 @@ export function ProjectIconField({
       */}
       <PopoverContent
         align={align}
-        aria-label="Choose project icon"
+        aria-label={tI18nComplete.raw('text39a1c11af6d3')}
         className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
       >
         <ProjectIconPicker
@@ -424,7 +426,7 @@ export function ProjectIconField({
               className="h-9 w-full justify-start gap-2 px-2 font-normal transition-[color,background-color,scale] duration-150 active:scale-[0.96]"
             >
               <XIcon className="text-muted-foreground size-3.5 shrink-0" />
-              Remove icon
+              {tI18nComplete.raw('text93d6de7104f0')}
             </Button>
           </div>
         ) : null}

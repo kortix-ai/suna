@@ -136,10 +136,13 @@ describe('isManagedGitUnavailableError', () => {
 describe('isProvisionInFlightError', () => {
   test('true for a 409 with code provision_in_flight', async () => {
     const { isProvisionInFlightError } = await import('./ensure-first-project');
-    const err = Object.assign(new Error('Another provision with this idempotency_key is in flight'), {
-      status: 409,
-      code: 'provision_in_flight',
-    });
+    const err = Object.assign(
+      new Error('Another provision with this idempotency_key is in flight'),
+      {
+        status: 409,
+        code: 'provision_in_flight',
+      },
+    );
     expect(isProvisionInFlightError(err)).toBe(true);
   });
 
@@ -216,17 +219,16 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
   }
 
   function inFlightError() {
-    return Object.assign(
-      new Error('Another provision with this idempotency_key is in flight'),
-      { status: 409, code: 'provision_in_flight' },
-    );
+    return Object.assign(new Error('Another provision with this idempotency_key is in flight'), {
+      status: 409,
+      code: 'provision_in_flight',
+    });
   }
 
   test('getOrCreateProvisionAttemptKey persists per account; clearProvisionAttemptKey resets it', async () => {
     installStorage(fakeStorage());
-    const { getOrCreateProvisionAttemptKey, clearProvisionAttemptKey } = await import(
-      './ensure-first-project'
-    );
+    const { getOrCreateProvisionAttemptKey, clearProvisionAttemptKey } =
+      await import('./ensure-first-project');
 
     const key1 = getOrCreateProvisionAttemptKey(ACCOUNT);
     // Same account, second read — reuses the persisted value.
@@ -341,9 +343,7 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
     // error so the caller (start/page.tsx) can tell it apart from a real
     // failure and keep waiting, using the SAME persisted key on its retry.
     installStorage(fakeStorage());
-    const { ensureFirstProject, isProvisionInFlightError } = await import(
-      './ensure-first-project'
-    );
+    const { ensureFirstProject, isProvisionInFlightError } = await import('./ensure-first-project');
 
     const err = inFlightError();
     const client: EnsureFirstProjectClient = {
@@ -407,7 +407,9 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
 
     await ensureFirstProject(ACCOUNT, {}, client);
 
-    expect((globalThis as { localStorage?: Storage }).localStorage?.getItem(STORAGE_KEY)).toBeNull();
+    expect(
+      (globalThis as { localStorage?: Storage }).localStorage?.getItem(STORAGE_KEY),
+    ).toBeNull();
   });
 
   /**
@@ -423,9 +425,8 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
    */
   describe('the attempt key expires on its own (PROVISION_ATTEMPT_TTL_MS)', () => {
     test('a key minted within the TTL is reused', async () => {
-      const { getOrCreateProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } = await import(
-        './ensure-first-project'
-      );
+      const { getOrCreateProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } =
+        await import('./ensure-first-project');
       const now = 1_800_000_000_000;
       installStorage(
         fakeStorage({
@@ -440,9 +441,8 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
     });
 
     test('a key older than the TTL is discarded and replaced, not replayed', async () => {
-      const { getOrCreateProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } = await import(
-        './ensure-first-project'
-      );
+      const { getOrCreateProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } =
+        await import('./ensure-first-project');
       const now = 1_800_000_000_000;
       installStorage(
         fakeStorage({
@@ -462,9 +462,8 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
     });
 
     test('liveProvisionAttemptKey rejects every non-record value', async () => {
-      const { liveProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } = await import(
-        './ensure-first-project'
-      );
+      const { liveProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } =
+        await import('./ensure-first-project');
       const now = 1_800_000_000_000;
 
       expect(liveProvisionAttemptKey(null, now)).toBeNull();
@@ -475,7 +474,9 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
       expect(liveProvisionAttemptKey(JSON.stringify({ key: 'k' }), now)).toBeNull();
       // A future timestamp is a moved clock or an edited value — no evidence
       // the attempt is still live.
-      expect(liveProvisionAttemptKey(JSON.stringify({ key: 'k', mintedAt: now + 1 }), now)).toBeNull();
+      expect(
+        liveProvisionAttemptKey(JSON.stringify({ key: 'k', mintedAt: now + 1 }), now),
+      ).toBeNull();
       expect(
         liveProvisionAttemptKey(
           JSON.stringify({ key: 'k', mintedAt: now - PROVISION_ATTEMPT_TTL_MS }),
@@ -497,10 +498,10 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
       },
     };
 
-    await expect(
-      ensureFirstProject(ACCOUNT, { allowCreate: false }, client),
-    ).resolves.toBeNull();
+    await expect(ensureFirstProject(ACCOUNT, { allowCreate: false }, client)).resolves.toBeNull();
 
-    expect((globalThis as { localStorage?: Storage }).localStorage?.getItem(STORAGE_KEY)).toBeNull();
+    expect(
+      (globalThis as { localStorage?: Storage }).localStorage?.getItem(STORAGE_KEY),
+    ).toBeNull();
   });
 });

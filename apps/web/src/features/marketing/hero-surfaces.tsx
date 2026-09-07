@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/marketing/button';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { SdkSurface, SurfaceLink } from '@/features/marketing/landing/code-panels';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
@@ -16,6 +17,7 @@ import {
   DeviceMobileIcon as Smartphone,
   TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';
 import type { ComponentType, ReactNode } from 'react';
@@ -98,74 +100,84 @@ function PersonAvatar({ initial }: { initial: string }) {
 
 /** Pick an ask and the thread answers — the surface is meant to be poked at,
  *  not read. Each reply is the kind of artifact the agent actually returns. */
-const CHAT_ASKS = [
-  {
-    id: 'brief',
-    ask: 'what changed in our repo since Monday?',
-    reply: (
-      <div className="space-y-1.5">
-        <p className="text-foreground font-medium">Here&rsquo;s what changed since Monday:</p>
-        <ul className="space-y-1">
-          <li>· 14 PRs merged · 3 need your review</li>
-          <li>· Stripe revenue +$3,482</li>
-          <li>· Renewal drafted for Northwind — waiting on sign-off</li>
-        </ul>
-      </div>
-    ),
-  },
-  {
-    id: 'pipeline',
-    ask: 'what moved in the pipeline this week?',
-    reply: (
-      <div className="space-y-1.5">
-        <p className="text-foreground font-medium">7 deals advanced, 2 slipped.</p>
-        <ul className="space-y-1">
-          <li>· Northwind → Proposal ($120k)</li>
-          <li>· Globex → Negotiation ($90k)</li>
-          <li>· At risk: Initech, Umbrella — no activity in 14 days</li>
-        </ul>
-      </div>
-    ),
-  },
-  {
-    id: 'deck',
-    ask: 'turn this week\u2019s changelog into a launch deck',
-    reply: (
-      <div className="space-y-2">
-        <p className="text-foreground font-medium">Done — 10 slides, grounded in your docs.</p>
-        <div className="flex flex-wrap gap-1.5">
-          {['launch-deck.pptx', 'launch-post.md'].map((f) => (
-            <span
-              key={f}
-              className="border-border text-muted-foreground rounded-sm border px-2 py-0.5 font-mono text-[11px]"
-            >
-              {f}
-            </span>
-          ))}
+function useChatAsks() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+
+  return [
+    {
+      id: 'brief',
+      ask: tI18nComplete.raw('text2aa2ac6c6c00'),
+      reply: (
+        <div className="space-y-1.5">
+          <p className="text-foreground font-medium">{tI18nComplete.raw('text80dc0f75f4af')}</p>
+          <ul className="space-y-1">
+            <li>{tI18nComplete.raw('text0970390b0642')}</li>
+            <li>{tI18nComplete.raw('text440f3314493c')}</li>
+            <li>{tI18nComplete.raw('text6cde19038699')}</li>
+          </ul>
         </div>
-      </div>
-    ),
-  },
-] as const;
+      ),
+    },
+    {
+      id: 'pipeline',
+      ask: tI18nComplete.raw('texte52d49750732'),
+      reply: (
+        <div className="space-y-1.5">
+          <p className="text-foreground font-medium">{tI18nComplete.raw('textdbba817f12f2')}</p>
+          <ul className="space-y-1">
+            <li>{tI18nComplete.raw('text4ee87fdb2f3f')}</li>
+            <li>{tI18nComplete.raw('text8dff4458510f')}</li>
+            <li>{tI18nComplete.raw('text6739e3688fbe')}</li>
+          </ul>
+        </div>
+      ),
+    },
+    {
+      id: 'deck',
+      ask: tI18nComplete.raw('texte21ed4ede571'),
+      reply: (
+        <div className="space-y-2">
+          <p className="text-foreground font-medium">{tI18nComplete.raw('texta2ac7fb0fa46')}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {['launch-deck.pptx', 'launch-post.md'].map((f) => (
+              <span
+                key={f}
+                className="border-border text-muted-foreground rounded-sm border px-2 py-0.5 font-mono text-[11px]"
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+  ] as const;
+}
 
 function ChatSurface({ brand }: { brand: 'slack' | 'teams' }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const chatAsks = useChatAsks();
   const BrandIcon = brand === 'slack' ? Slack : MicrosoftTeams;
-  const [askId, setAskId] = useState<(typeof CHAT_ASKS)[number]['id']>('brief');
-  const active = CHAT_ASKS.find((a) => a.id === askId) ?? CHAT_ASKS[0];
+  const [askId, setAskId] = useState<(typeof chatAsks)[number]['id']>('brief');
+  const active = chatAsks.find((a) => a.id === askId) ?? chatAsks[0];
 
   return (
     <div className="bg-background flex h-full flex-col">
       <div className="border-border flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2.5">
           <BrandIcon className="size-5" />
-          <span className="text-foreground text-sm font-semibold">Kortix</span>
+          <span className="text-foreground text-sm font-semibold">
+            {tI18nComplete.raw('textab54cf5e1d9d')}
+          </span>
           {brand === 'teams' && (
             <Badge variant="kortix" size="sm" className="rounded">
-              Coming soon
+              {tI18nComplete.raw('text4f7d64017689')}
             </Badge>
           )}
         </div>
-        <span className="text-muted-foreground font-mono text-xs">#company-ops</span>
+        <span className="text-muted-foreground font-mono text-xs">
+          {tI18nComplete.raw('texte3c999046232')}
+        </span>
       </div>
 
       {/* justify-start, not justify-end. The thread is short enough to fit on a
@@ -182,7 +194,8 @@ function ChatSurface({ brand }: { brand: 'slack' | 'teams' }) {
         )}
       >
         <ChatBubble name="Marko" avatar={<PersonAvatar initial="M" />}>
-          <span className="text-foreground/70">@Kortix</span> {active.ask}
+          <span className="text-foreground/70">{tI18nComplete.raw('text476b90bdc143')}</span>{' '}
+          {active.ask}
         </ChatBubble>
         <ChatBubble name="Kortix" app avatar={<KortixAvatar />}>
           {active.reply}
@@ -194,10 +207,10 @@ function ChatSurface({ brand }: { brand: 'slack' | 'teams' }) {
             three taps in a row under a thread. On a phone those ~22px are worth
             more to the thread above, so it only appears once there is room. */}
         <p className="text-muted-foreground/60 mb-2 hidden px-0.5 font-mono text-[10px] tracking-widest uppercase sm:block">
-          Try another
+          {tI18nComplete.raw('texteb236aeb8e4b')}
         </p>
         <div className="flex flex-wrap gap-1.5">
-          {CHAT_ASKS.map((a) => (
+          {chatAsks.map((a) => (
             <button
               key={a.id}
               type="button"
@@ -221,14 +234,19 @@ function ChatSurface({ brand }: { brand: 'slack' | 'teams' }) {
 
 /** Email is a first-class channel: forward a thread, get the work back in it. */
 function EmailSurface() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="bg-background flex h-full flex-col">
       <div className="border-border flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2.5">
           <EnvelopeIcon className="text-muted-foreground size-5" />
-          <span className="text-foreground text-sm font-semibold">Inbox</span>
+          <span className="text-foreground text-sm font-semibold">
+            {tI18nComplete.raw('text94835ea2fcf7')}
+          </span>
         </div>
-        <span className="text-muted-foreground font-mono text-xs">ops@acme.com</span>
+        <span className="text-muted-foreground font-mono text-xs">
+          {tI18nComplete.raw('textccaaefeb318c')}
+        </span>
       </div>
 
       <div
@@ -239,14 +257,16 @@ function EmailSurface() {
       >
         <div className="border-border shrink-0 rounded-lg border p-3.5 sm:p-4">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-foreground text-sm font-semibold">Priya Raman</span>
+            <span className="text-foreground text-sm font-semibold">
+              {tI18nComplete.raw('text430c7db2e9a3')}
+            </span>
             <span className="text-muted-foreground font-mono text-[11px]">08:12</span>
           </div>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            to kortix@acme.com · Re: Q3 renewals
+            {tI18nComplete.raw('textf50007df4f30')}
           </p>
           <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-            Forwarding the Northwind thread — can you pull their usage and draft the renewal?
+            {tI18nComplete.raw('text7f56272b701a')}
           </p>
         </div>
 
@@ -254,13 +274,16 @@ function EmailSurface() {
           <div className="flex items-center gap-2">
             <KortixAvatar />
             <div>
-              <span className="text-foreground text-sm font-semibold">Kortix</span>
-              <p className="text-muted-foreground text-xs">replied · 6 min</p>
+              <span className="text-foreground text-sm font-semibold">
+                {tI18nComplete.raw('textab54cf5e1d9d')}
+              </span>
+              <p className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('text73053f6025aa')}
+              </p>
             </div>
           </div>
           <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
-            Pulled 12 months of usage from HubSpot and Stripe. Renewal drafted at $108,960 for year
-            one. Attached the proposal and the workbook — say the word and I&rsquo;ll send it.
+            {tI18nComplete.raw('text67dc3e95dbdc')}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {['proposal-northwind.pdf', 'usage-2026.xlsx'].map((f) => (
@@ -284,7 +307,7 @@ function EmailSurface() {
           same status is stated on /channels, which is where a reader who cares
           about it goes. */}
       <div className="border-border text-muted-foreground hidden shrink-0 border-t px-4 py-3 text-center text-xs sm:block">
-        Slack is live · Teams and email are rolling out · or start sessions from the API
+        {tI18nComplete.raw('text0e0b01710c4b')}
       </div>
     </div>
   );
@@ -297,6 +320,7 @@ const MOBILE_SHOTS = [
 ];
 
 function MobileSurface() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="bg-card relative flex h-full flex-col overflow-hidden">
       {/* The badge sat over the artwork and landed on the first screenshot's
@@ -304,7 +328,7 @@ function MobileSurface() {
           cover the thing it is labelling. */}
       <div className="flex shrink-0 justify-center pt-4 sm:absolute sm:top-5 sm:left-5 sm:z-10 sm:pt-0">
         <Badge variant="kortix" className="rounded">
-          Coming soon
+          {tI18nComplete.raw('text4f7d64017689')}
         </Badge>
       </div>
 
@@ -331,7 +355,7 @@ function MobileSurface() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
-              alt="Kortix mobile app"
+              alt={tI18nComplete.raw('text6fb40527cfc3')}
               className="block h-full w-full object-cover sm:w-auto sm:object-contain"
             />
           </div>
@@ -407,6 +431,7 @@ function useHeroTheme(): 'light' | 'dark' {
  *  finished deck. Every frame is the live app driven against a real project —
  *  the deck in the last screens is one the agent actually produced. */
 function WebSurface() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const theme = useHeroTheme();
   const media = SHOWCASE_MEDIA[theme];
   return (
@@ -432,7 +457,7 @@ function WebSurface() {
         loop
         playsInline
         preload="metadata"
-        aria-label="Kortix in the browser: connect apps, manage agents and skills, and an agent returning a finished pitch deck"
+        aria-label={tI18nComplete.raw('text2df16c3ffc5e')}
       >
         {/* Ordered by the resource selection algorithm: the browser takes the
             first source whose type it supports and whose media matches, so the
@@ -468,7 +493,7 @@ function WebSurface() {
       </video>
       <Image
         src={media.poster}
-        alt="Kortix in the browser, showing a project and its files"
+        alt={tI18nComplete.raw('texta04f0df9baba')}
         fill
         sizes="(max-width: 1024px) 100vw, 1100px"
         className="hidden object-contain motion-reduce:block"
@@ -500,6 +525,7 @@ function CopyInstallCommand() {
  *  112 columns by 18 rows so real output — the host line is 111 characters —
  *  reaches the right edge instead of hugging the left third. */
 function CliSurface() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const theme = useHeroTheme();
   const media = CLI_MEDIA[theme];
   return (
@@ -525,7 +551,7 @@ function CliSurface() {
         loop
         playsInline
         preload="metadata"
-        aria-label="A terminal running the Kortix CLI: curl installs it, kortix projects use picks a project, kortix connectors show lists the actions an agent can call, and kortix sessions new starts a session on a cloud computer"
+        aria-label={tI18nComplete.raw('text6ab434071682')}
       >
         {/* Same per-device selection as the web panel: first supported source
             whose media matches wins, so the narrowest condition leads. Only
@@ -553,7 +579,7 @@ function CliSurface() {
       </video>
       <Image
         src={media.poster}
-        alt="A terminal showing the Kortix CLI with a session running on a cloud computer"
+        alt={tI18nComplete.raw('text33376244e548')}
         fill
         sizes="(max-width: 1024px) 100vw, 1100px"
         className="hidden object-cover object-left-bottom motion-reduce:block"
@@ -563,6 +589,7 @@ function CliSurface() {
 }
 
 function SurfacePanel({ surface }: { surface: SurfaceId }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   switch (surface) {
     case 'web':
       return <WebSurface />;
@@ -577,11 +604,16 @@ function SurfacePanel({ surface }: { surface: SurfaceId }) {
     case 'cli':
       return <CliSurface />;
     case 'sdk':
-      return <SdkSurface cta={<SurfaceLink href="/docs/sdk">Read the SDK docs</SurfaceLink>} />;
+      return (
+        <SdkSurface
+          cta={<SurfaceLink href="/docs/sdk">{tI18nComplete.raw('textc66b771332f5')}</SurfaceLink>}
+        />
+      );
   }
 }
 
 export function HeroSurfaces() {
+  const surfaces = useLocalizedUiCatalog(SURFACES);
   const [active, setActive] = useState<SurfaceId>('web');
 
   useEffect(() => {
@@ -604,7 +636,7 @@ export function HeroSurfaces() {
       </div>
 
       <div className="mt-4 flex w-full flex-wrap items-center justify-center gap-x-0.5 gap-y-1 sm:gap-x-1">
-        {SURFACES.map((s) => {
+        {surfaces.map((s) => {
           const isActive = s.id === active;
           return (
             <Button

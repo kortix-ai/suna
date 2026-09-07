@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 // Source assertions, for the same reason as session-chat-external-send.test.ts:
@@ -40,7 +40,7 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
       '// Associate stashed command info',
     );
 
-    expect(retry).toContain('promptInbox.retry(id)');
+    expect(retry).toMatch(/promptInbox\s*\.retry\(id\)/);
     expect(retry).not.toContain('clientMessageId');
   });
 
@@ -73,7 +73,10 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     // The opposite failure: keying every send off one value would resurrect the
     // silent-drop bug this branch exists to fix. Only the queue names a
     // submission, and each enqueue mints its own key.
-    const composer = between('await handleSend(text, files, mentions);', 'prefill={composerPrefill}');
+    const composer = between(
+      'await handleSend(text, files, mentions);',
+      'prefill={composerPrefill}',
+    );
 
     expect(composer).not.toContain('clientMessageId');
   });

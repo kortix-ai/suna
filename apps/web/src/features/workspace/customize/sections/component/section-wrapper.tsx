@@ -6,6 +6,7 @@ import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import type React from 'react';
 
@@ -91,6 +92,7 @@ const CustomizeSectionWrapper = ({
   scrollContainerRef,
   showSidebarToggleButton = false,
 }: Props) => {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const showToggle = useShowSectionSidebarToggle(showSidebarToggleButton);
 
   // `docs` has no slot on `SettingsSectionHeader` (title/description/action/className
@@ -102,7 +104,7 @@ const CustomizeSectionWrapper = ({
         {docs ? (
           <Button variant="transparent" className="m-0 p-0" asChild>
             <Link href={docs} target="_blank" rel="noopener noreferrer">
-              Learn more.
+              {tI18nComplete.raw('textba24f124cec0')}
             </Link>
           </Button>
         ) : null}
@@ -127,10 +129,7 @@ const CustomizeSectionWrapper = ({
         >
           {heading}
         </header>
-        <div
-          ref={scrollContainerRef}
-          className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden"
-        >
+        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
           {children}
         </div>
       </div>
@@ -154,7 +153,7 @@ const CustomizeSectionWrapper = ({
             for its card grid. `tab-content-width.test.ts` holds the rule. */}
         <div
           className={cn(
-            'mx-auto w-full max-w-2xl space-y-8 ',
+            'mx-auto w-full max-w-2xl space-y-8',
             // showToggle && 'pl-12',
             className,
           )}

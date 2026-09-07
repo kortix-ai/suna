@@ -5,7 +5,9 @@ import { prefersPreviewLink } from './preview-url-fallback';
 describe('prefersPreviewLink', () => {
   test('uses a link-only preview for document urls', () => {
     expect(prefersPreviewLink('https://api.kortix.com/v1/p/sandbox/3210/deck.pdf')).toBe(true);
-    expect(prefersPreviewLink('https://api.kortix.com/v1/p/sandbox/3210/deck.pptx?download=1')).toBe(true);
+    expect(
+      prefersPreviewLink('https://api.kortix.com/v1/p/sandbox/3210/deck.pptx?download=1'),
+    ).toBe(true);
     expect(prefersPreviewLink('/v1/p/sandbox/3210/report.doc#page=2')).toBe(true);
     expect(prefersPreviewLink('/v1/p/sandbox/3210/sheet.xlsx')).toBe(true);
   });

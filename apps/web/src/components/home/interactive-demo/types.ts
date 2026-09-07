@@ -1,5 +1,5 @@
 import type { Icon as IconType, Icon as LucideIcon } from '@phosphor-icons/react';
-import type { useTranslations } from 'next-intl';
+import type { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 export type PageId =

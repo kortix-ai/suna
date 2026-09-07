@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { resolve } from 'node:path';
 
 const source = readFileSync(resolve(import.meta.dir, 'page.tsx'), 'utf8');
@@ -19,7 +19,7 @@ describe('/projects/start does not bounce to /projects', () => {
   test('the terminal branch renders inline instead of redirecting to /projects', () => {
     expect(source).not.toContain("withCurrentQuery('/projects')");
     expect(source).not.toContain("'/projects'");
-    expect(source).toContain('setTerminal(classifyLandingTerminal(');
+    expect(source).toMatch(/setTerminal\(\s*classifyLandingTerminal\(/);
     expect(source).toContain('<ProjectStartEmpty');
   });
 

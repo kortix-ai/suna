@@ -35,8 +35,11 @@ const ALLOWED = new Set<string>([SHIKI_THEME_DARK, SHIKI_THEME_LIGHT]);
 
 // Pierre's pair is not in Shiki's bundle — it arrives through @pierre/diffs —
 // so name it explicitly or the scan cannot see the drift that started this.
-const FORBIDDEN = [...bundledThemesInfo.map((theme) => theme.id), 'pierre-dark', 'pierre-light']
-  .filter((id) => !ALLOWED.has(id) && !AMBIGUOUS.has(id));
+const FORBIDDEN = [
+  ...bundledThemesInfo.map((theme) => theme.id),
+  'pierre-dark',
+  'pierre-light',
+].filter((id) => !ALLOWED.has(id) && !AMBIGUOUS.has(id));
 
 // Files allowed to name a forbidden theme, and exactly which ids each may name.
 // Scoped to the (file, id) pair on purpose: any OTHER theme id in these files
@@ -47,7 +50,10 @@ const EXEMPT: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // foreign-but-real theme, not just a typo — see that file's "the lock"
   // describe block. 'github-dark' stays forbidden everywhere else, including
   // source.config.ts, which is exactly where it drifted in before Task 1.
-  [join(WEB_ROOT, 'src/components/markdown/code/shiki-highlighter.test.ts'), new Set(['github-dark'])],
+  [
+    join(WEB_ROOT, 'src/components/markdown/code/shiki-highlighter.test.ts'),
+    new Set(['github-dark']),
+  ],
   // This file quotes 'pierre-dark' / 'pierre-light' as literals while building
   // FORBIDDEN above, and 'github-dark' while explaining the entry above this
   // one — so it always matches its own source. That is this guard quoting

@@ -6,23 +6,26 @@
  * its UI sinks (toast / OS notifications) into the single config seam. Imported
  * for side-effect by the root provider so it runs before any SDK call.
  */
-import { configureKortix, parseFlagOverride } from '@kortix/sdk';
+import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
+import type { UiTranslator } from '@/i18n/translator';
 import { getSupabaseAccessToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
 import { handleApiError } from '@/lib/error-handler';
 import { createClient } from '@/lib/supabase/client';
-import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import {
   notifyPermissionRequest,
   notifyQuestion,
   notifySessionError,
   notifyTaskComplete,
 } from '@/lib/web-notifications';
+import { configureKortix, parseFlagOverride } from '@kortix/sdk';
 
 let configured = false;
+let uiTranslator: UiTranslator | null = null;
 
-export function ensureKortixConfigured(): void {
+export function ensureKortixConfigured(tI18nComplete: UiTranslator): void {
+  uiTranslator = tI18nComplete;
   if (configured) return;
   configured = true;
 
@@ -46,7 +49,9 @@ export function ensureKortixConfigured(): void {
     // client-bundle compiler inlines — the SDK's own dynamic env lookup yields
     // undefined in the browser, so the flags must be wired here.
     featureFlags: {
-      disableMobileAdvertising: parseFlagOverride(process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING),
+      disableMobileAdvertising: parseFlagOverride(
+        process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING,
+      ),
       enableDinoGame: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_DINO_GAME),
       enableProjects: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_PROJECTS),
     },
@@ -58,15 +63,19 @@ export function ensureKortixConfigured(): void {
       else infoToast(message, opts);
     },
     onNotify: (e) => {
+      if (!uiTranslator) return;
       const title = e.sessionTitle as string | undefined;
-      if (e.kind === 'task-complete') notifyTaskComplete(e.sessionId, title);
-      else if (e.kind === 'session-error') notifySessionError(e.sessionId, e.errorTitle as string, title);
-      else if (e.kind === 'question') notifyQuestion(e.sessionId, e.questionText as string, title);
+      if (e.kind === 'task-complete') notifyTaskComplete(e.sessionId, title, uiTranslator);
+      else if (e.kind === 'session-error')
+        notifySessionError(e.sessionId, e.errorTitle as string, title, uiTranslator);
+      else if (e.kind === 'question')
+        notifyQuestion(e.sessionId, e.questionText as string, title, uiTranslator);
       else if (e.kind === 'permission')
-        notifyPermissionRequest(e.sessionId, e.toolName as string, title);
+        notifyPermissionRequest(e.sessionId, e.toolName as string, title, uiTranslator);
     },
-    onError: (error, context) => handleApiError(error, context as Parameters<typeof handleApiError>[1]),
+    onError: (error, context) => {
+      if (!uiTranslator) return;
+      handleApiError(error, context as Parameters<typeof handleApiError>[1], uiTranslator);
+    },
   });
 }
-
-ensureKortixConfigured();

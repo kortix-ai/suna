@@ -9,6 +9,7 @@
  * Adding an eighth step must never require inventing new chrome.
  */
 
+import { useTranslations } from '@/i18n/use-translations';
 import { createContext, useContext, useId, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -29,7 +30,7 @@ export function StepIdentityProvider({
 
 const rowClassName = cn(
   'border-border bg-popover text-foreground flex min-h-14 w-full cursor-pointer items-center gap-3 rounded-md border px-4 py-3 text-left',
-  'transition-[background-color,border-color,opacity,scale] duration-150 active:scale-[0.99] motion-reduce:active:scale-100',
+  'duration-normal transition-[background-color,border-color,opacity,scale] active:scale-[0.99] motion-reduce:active:scale-100',
   'hover:border-primary/30 hover:bg-primary/[0.03]',
   'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
   'disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
@@ -41,6 +42,7 @@ const rowClassName = cn(
  * promise a filling bar cannot make.
  */
 export function StepProgress({ total, current }: { total: number; current: number }) {
+  const t = useTranslations('projectOnboarding');
   return (
     <div
       // Narrower on phones. This sits in the wizard chrome's centre grid track
@@ -50,7 +52,7 @@ export function StepProgress({ total, current }: { total: number; current: numbe
       // both controls room.
       className="flex w-[7.5rem] items-center gap-1.5 sm:w-[200px]"
       role="progressbar"
-      aria-label="Setup progress"
+      aria-label={t('progress')}
       aria-valuemin={1}
       aria-valuemax={total}
       aria-valuenow={current + 1}
@@ -60,7 +62,7 @@ export function StepProgress({ total, current }: { total: number; current: numbe
           key={i}
           className={cn(
             // 200ms, not 300: a 1px tick taking longer than a dropdown reads as lag.
-            'h-1 flex-1 rounded-full transition-colors duration-200',
+            'duration-moderate h-1 flex-1 rounded-full transition-colors',
             i < current ? 'bg-foreground/50' : i === current ? 'bg-foreground' : 'bg-foreground/15',
           )}
         />
@@ -174,7 +176,7 @@ export function SelectionRow({
           <span className="text-muted-foreground block text-xs text-pretty">{description}</span>
         )}
       </span>
-      <RadioGroupItem id={id} value={value} disabled={disabled}  />
+      <RadioGroupItem id={id} value={value} disabled={disabled} />
     </label>
   );
 }

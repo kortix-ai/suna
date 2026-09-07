@@ -37,7 +37,12 @@ export function useProjectCanRun(projectId: string | undefined) {
   }
 
   if (!accountId) {
-    return { canRun: false, isLoading: false, accountId, billingState: null as BillingState | null };
+    return {
+      canRun: false,
+      isLoading: false,
+      accountId,
+      billingState: null as BillingState | null,
+    };
   }
 
   // Resolved through the ONE billing-state resolver, so "can this account run"

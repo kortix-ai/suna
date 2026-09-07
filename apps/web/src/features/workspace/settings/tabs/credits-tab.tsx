@@ -66,6 +66,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import type { AccountState } from '@kortix/sdk';
 import { dollarsToCredits, formatCredits } from '@kortix/shared';
 import { ReceiptIcon } from '@phosphor-icons/react';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { SettingsTabHeader } from '../settings-tab-header';
 
@@ -86,6 +87,18 @@ export interface CreditBucket {
   credits: number;
 }
 
+export interface CreditBucketCopy {
+  monthly: Pick<CreditBucket, 'label' | 'hint'>;
+  daily: Pick<CreditBucket, 'label' | 'hint'>;
+  extra: Pick<CreditBucket, 'label' | 'hint'>;
+}
+
+const DEFAULT_BUCKET_COPY: CreditBucketCopy = {
+  monthly: { label: 'Plan credits', hint: 'Expire at period end' },
+  daily: { label: 'Daily credits', hint: 'Refill on a timer' },
+  extra: { label: 'Purchased', hint: 'Never expire' },
+};
+
 /**
  * The three buckets that sum to `credits.total`, in the order they are spent
  * down and in the order they matter: the grant, the refill, then the money you
@@ -95,25 +108,25 @@ export interface CreditBucket {
  * depends on the data reflows between accounts and between refreshes, and a
  * zero is itself the answer to "do I have any purchased credits left".
  */
-export function creditBuckets(state: AccountState): CreditBucket[] {
+export function creditBuckets(
+  state: AccountState,
+  copy: CreditBucketCopy = DEFAULT_BUCKET_COPY,
+): CreditBucket[] {
   const credits = state.credits;
   return [
     {
       id: 'monthly',
-      label: 'Plan credits',
-      hint: 'Expire at period end',
+      ...copy.monthly,
       credits: dollarsToCredits(credits?.monthly ?? 0),
     },
     {
       id: 'daily',
-      label: 'Daily credits',
-      hint: 'Refill on a timer',
+      ...copy.daily,
       credits: dollarsToCredits(credits?.daily ?? 0),
     },
     {
       id: 'extra',
-      label: 'Purchased',
-      hint: 'Never expire',
+      ...copy.extra,
       credits: dollarsToCredits(credits?.extra ?? 0),
     },
   ];
@@ -164,6 +177,16 @@ export interface DailyRefresh {
   countdown: string;
 }
 
+export interface DailyRefreshCopy {
+  amount: (credits: string, hours: number | null) => string;
+  countdown: (seconds: number | null | undefined) => string;
+}
+
+const DEFAULT_DAILY_REFRESH_COPY: DailyRefreshCopy = {
+  amount: (credits, hours) => `+${credits} credits${hours ? ` every ${hours}h` : ''}`,
+  countdown: formatCountdown,
+};
+
 /**
  * The daily-credit refill, as two strings.
  *
@@ -176,33 +199,55 @@ export interface DailyRefresh {
  * per-second timer would count down from a figure already up to two minutes
  * stale — precision the data does not have. Hence `~`, and hence no interval.
  */
-export function describeDailyRefresh(state: AccountState): DailyRefresh | null {
+export function describeDailyRefresh(
+  state: AccountState,
+  copy: DailyRefreshCopy = DEFAULT_DAILY_REFRESH_COPY,
+): DailyRefresh | null {
   const refresh = state.credits?.daily_refresh;
   if (!refresh?.enabled) return null;
 
   const amount = dollarsToCredits(refresh.daily_amount ?? 0);
   if (amount <= 0) return null;
 
-  const hours = refresh.refresh_interval_hours;
-  const every = typeof hours === 'number' && hours > 0 ? ` every ${hours}h` : '';
+  const hours =
+    typeof refresh.refresh_interval_hours === 'number' && refresh.refresh_interval_hours > 0
+      ? refresh.refresh_interval_hours
+      : null;
 
   return {
-    amountLine: `+${formatCredits(amount)} credits${every}`,
-    countdown: formatCountdown(refresh.seconds_until_refresh),
+    amountLine: copy.amount(formatCredits(amount), hours),
+    countdown: copy.countdown(refresh.seconds_until_refresh),
   };
 }
 
+export interface CountdownCopy {
+  anyMoment: string;
+  minutes: (minutes: number) => string;
+  hours: (hours: number) => string;
+  hoursMinutes: (hours: number, minutes: number) => string;
+}
+
+const DEFAULT_COUNTDOWN_COPY: CountdownCopy = {
+  anyMoment: 'Any moment now',
+  minutes: (minutes) => `in ~${minutes}m`,
+  hours: (hours) => `in ~${hours}h`,
+  hoursMinutes: (hours, minutes) => `in ~${hours}h ${minutes}m`,
+};
+
 /** `in ~4h 12m` · `in ~12m` · `Any moment now`. Never prints `0m`. */
-export function formatCountdown(seconds: number | null | undefined): string {
+export function formatCountdown(
+  seconds: number | null | undefined,
+  copy: CountdownCopy = DEFAULT_COUNTDOWN_COPY,
+): string {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 60) {
-    return 'Any moment now';
+    return copy.anyMoment;
   }
   const totalMinutes = Math.floor(seconds / 60);
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
-  if (h <= 0) return `in ~${m}m`;
-  if (m === 0) return `in ~${h}h`;
-  return `in ~${h}h ${m}m`;
+  if (h <= 0) return copy.minutes(m);
+  if (m === 0) return copy.hours(h);
+  return copy.hoursMinutes(h, m);
 }
 
 /**
@@ -212,18 +257,22 @@ export function formatCountdown(seconds: number | null | undefined): string {
  * date: a billing period always lands inside one. An en dash, not a hyphen —
  * this is a range, and the hyphen is a different mark.
  */
-export function formatPeriod(start: string | null, end: string | null): string | null {
-  const from = formatDay(start);
-  const to = formatDay(end);
+export function formatPeriod(
+  start: string | null,
+  end: string | null,
+  locale?: string,
+): string | null {
+  const from = formatDay(start, locale);
+  const to = formatDay(end, locale);
   if (!from || !to) return from ?? to;
   return `${from} – ${to}`;
 }
 
-function formatDay(iso: string | null | undefined): string | null {
+function formatDay(iso: string | null | undefined, locale?: string): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 // ─── Container ──────────────────────────────────────────────────────────────
@@ -248,6 +297,7 @@ export function canOfferTopup(state: AccountState): boolean {
 }
 
 export function CreditsTab({ accountId }: { accountId: string | undefined }) {
+  const t = useTranslations('settings.credits');
   const accountState = useAccountState({ accountId });
 
   if (accountState.isLoading || !accountState.data) {
@@ -260,7 +310,7 @@ export function CreditsTab({ accountId }: { accountId: string | undefined }) {
             <Skeleton className="h-24 w-full rounded-md" />
           </div>
         ) : (
-          <p className="text-muted-foreground text-sm">Couldn&apos;t load this account.</p>
+          <p className="text-muted-foreground text-sm">{t('loadFailed')}</p>
         )}
       </div>
     );
@@ -328,13 +378,30 @@ export function CreditsView({
    *  person may not buy. Injected so the view stays hook-free. */
   topup?: ReactNode;
 }) {
+  const t = useTranslations('settings.credits');
+  const locale = useLocale();
   const balance = state.credits?.total ?? 0;
   const isNegative = balance < 0;
-  const buckets = creditBuckets(state);
+  const buckets = creditBuckets(state, {
+    monthly: { label: t('buckets.monthly.label'), hint: t('buckets.monthly.hint') },
+    daily: { label: t('buckets.daily.label'), hint: t('buckets.daily.hint') },
+    extra: { label: t('buckets.extra.label'), hint: t('buckets.extra.hint') },
+  });
   const meter = planGrantMeter(state);
-  const refresh = describeDailyRefresh(state);
+  const countdownCopy: CountdownCopy = {
+    anyMoment: t('countdown.anyMoment'),
+    minutes: (minutes) => t('countdown.minutes', { minutes }),
+    hours: (hours) => t('countdown.hours', { hours }),
+    hoursMinutes: (hours, minutes) => t('countdown.hoursMinutes', { hours, minutes }),
+  };
+  const refresh = describeDailyRefresh(state, {
+    amount: (credits, hours) =>
+      hours ? t('dailyAmountEvery', { credits, hours }) : t('dailyAmount', { credits }),
+    countdown: (seconds) => formatCountdown(seconds, countdownCopy),
+  });
   const usage = state.usage_this_period;
-  const period = usage ? formatPeriod(usage.period_start, usage.period_end) : null;
+  const period = usage ? formatPeriod(usage.period_start, usage.period_end, locale) : null;
+  const formattedBalanceCredits = formatCredits(dollarsToCredits(Math.abs(balance)), { locale });
 
   return (
     <div className="space-y-8">
@@ -346,7 +413,7 @@ export function CreditsView({
       <div className="bg-popover rounded-md border">
         <div className="px-4 py-4">
           <div className="min-w-0">
-            <p className="text-muted-foreground text-xs">Available balance</p>
+            <p className="text-muted-foreground text-xs">{t('availableBalance')}</p>
             {/* `tabular-nums`, not `font-mono` — the call `account-overview.tsx`
                 documents: a monospace face gives '.' and ',' a digit's advance
                 and opens visible gaps mid-number. */}
@@ -356,11 +423,14 @@ export function CreditsView({
                 isNegative ? 'text-kortix-red' : 'text-foreground',
               )}
             >
-              {formatUsd(balance)}
+              {formatUsd(balance, locale)}
             </p>
             <p className="text-muted-foreground mt-1.5 text-xs tabular-nums">
-              {formatCredits(dollarsToCredits(Math.abs(balance)))} credits
-              {isNegative ? ' owed' : ''}
+              {t('creditCount', {
+                count: dollarsToCredits(Math.abs(balance)),
+                formatted: formattedBalanceCredits,
+              })}
+              {isNegative ? ` ${t('owed')}` : ''}
             </p>
           </div>
         </div>
@@ -370,7 +440,7 @@ export function CreditsView({
             <div key={bucket.id} className="min-w-0 px-4 py-3">
               <p className="text-muted-foreground truncate text-xs">{bucket.label}</p>
               <p className="text-foreground mt-0.5 truncate text-sm font-medium tabular-nums">
-                {formatCredits(bucket.credits)}
+                {formatCredits(bucket.credits, { locale })}
               </p>
               <p className="text-muted-foreground mt-0.5 truncate text-xs">{bucket.hint}</p>
             </div>
@@ -380,7 +450,7 @@ export function CreditsView({
 
       {meter || refresh ? (
         <section className="space-y-4">
-          <Label>Included in your plan</Label>
+          <Label>{t('includedInPlan')}</Label>
           {/* One bar, for one headline fraction. `account-overview.tsx` removed
               the per-row bars from Limits because a bar under every row
               restated a fraction the numbers already gave exactly; a single
@@ -389,7 +459,7 @@ export function CreditsView({
           {meter ? (
             <div className="bg-popover rounded-md border px-4 py-4">
               <div className="flex items-baseline justify-between gap-4">
-                <span className="text-foreground text-sm font-medium">Used this period</span>
+                <span className="text-foreground text-sm font-medium">{t('usedThisPeriod')}</span>
                 <span
                   className={cn(
                     'shrink-0 text-sm font-medium tabular-nums',
@@ -400,7 +470,8 @@ export function CreditsView({
                         : 'text-muted-foreground',
                   )}
                 >
-                  {formatCredits(meter.usedCredits)} / {formatCredits(meter.grantedCredits)}
+                  {formatCredits(meter.usedCredits, { locale })} /{' '}
+                  {formatCredits(meter.grantedCredits, { locale })}
                 </span>
               </div>
               <Progress
@@ -416,8 +487,13 @@ export function CreditsView({
               />
               <p className="text-muted-foreground mt-2 text-xs tabular-nums">
                 {meter.tone === 'spent'
-                  ? 'Plan credits are spent. Purchased credits are used from here.'
-                  : `${formatCredits(meter.grantedCredits - meter.usedCredits)} credits left of this period's grant.`}
+                  ? t('planCreditsSpent')
+                  : t('grantRemaining', {
+                      count: meter.grantedCredits - meter.usedCredits,
+                      formatted: formatCredits(meter.grantedCredits - meter.usedCredits, {
+                        locale,
+                      }),
+                    })}
               </p>
             </div>
           ) : null}
@@ -425,7 +501,7 @@ export function CreditsView({
           {refresh ? (
             <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
               <div className="min-w-0">
-                <p className="text-foreground text-sm font-medium">Daily credits</p>
+                <p className="text-foreground text-sm font-medium">{t('dailyCredits')}</p>
                 <p className="text-muted-foreground truncate text-xs tabular-nums">
                   {refresh.amountLine}
                 </p>
@@ -440,7 +516,7 @@ export function CreditsView({
 
       {topup ? (
         <section className="space-y-4">
-          <Label>Add credits</Label>
+          <Label>{t('addCredits')}</Label>
           {topup}
         </section>
       ) : null}
@@ -451,15 +527,15 @@ export function CreditsView({
               tab over an unnamed span, which makes "$11.30" unreadable — since
               when? `usage_this_period` carries the dates; print them. */}
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <Label>Spent this period</Label>
+            <Label>{t('spentThisPeriod')}</Label>
             {period ? (
               <span className="text-muted-foreground text-xs tabular-nums">{period}</span>
             ) : null}
           </div>
           <div className="bg-popover divide-border grid grid-cols-3 divide-x rounded-md border">
-            <SpendStat label="Compute" value={usage.compute_usd} />
-            <SpendStat label="LLM" value={usage.llm_usd} />
-            <SpendStat label="Total" value={usage.total_usd} strong />
+            <SpendStat label={t('compute')} value={usage.compute_usd} locale={locale} />
+            <SpendStat label="LLM" value={usage.llm_usd} locale={locale} />
+            <SpendStat label={t('total')} value={usage.total_usd} locale={locale} strong />
           </div>
         </section>
       ) : null}
@@ -468,16 +544,14 @@ export function CreditsView({
         // The same shape as the Billing portal row on the Plan tab: one line
         // saying what is behind the door, one button opening it.
         <section className="space-y-4">
-          <Label>History</Label>
+          <Label>{t('history')}</Label>
           <div className="bg-popover rounded-md border px-4 py-3">
             <div className="flex items-center justify-between gap-4">
-              <p className="text-muted-foreground min-w-0 text-xs">
-                What every session cost, and every credit added or spent.
-              </p>
+              <p className="text-muted-foreground min-w-0 text-xs">{t('historyDescription')}</p>
               <Button asChild size="sm" variant="outline" className="shrink-0 gap-1.5">
                 <Link href={`/accounts/${accountId}?tab=transactions`}>
                   <ReceiptIcon className="size-3.5 shrink-0" />
-                  Open ledger
+                  {t('openLedger')}
                 </Link>
               </Button>
             </div>
@@ -488,7 +562,17 @@ export function CreditsView({
   );
 }
 
-function SpendStat({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+function SpendStat({
+  label,
+  value,
+  strong,
+  locale,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+  locale?: string;
+}) {
   return (
     <div className="min-w-0 px-4 py-3">
       <p className="text-muted-foreground truncate text-xs">{label}</p>
@@ -498,7 +582,7 @@ function SpendStat({ label, value, strong }: { label: string; value: number; str
           strong ? 'text-foreground font-semibold' : 'text-foreground font-medium',
         )}
       >
-        {formatUsd(value)}
+        {formatUsd(value, locale)}
       </p>
     </div>
   );

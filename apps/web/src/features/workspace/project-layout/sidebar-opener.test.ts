@@ -29,34 +29,30 @@ describe('shouldShowPageSidebarOpener', () => {
   // actually had — returns true here, which is the duplicate-on-the-lights bug.
   test('desktop shell: never, because the shell draws the only one', () => {
     expect(shouldShowPageSidebarOpener({ ...base, isDesktopShell: true })).toBe(false);
-    expect(
-      shouldShowPageSidebarOpener({ ...base, isDesktopShell: true, state: 'expanded' }),
-    ).toBe(false);
+    expect(shouldShowPageSidebarOpener({ ...base, isDesktopShell: true, state: 'expanded' })).toBe(
+      false,
+    );
   });
 
   // A desktop-shell window narrow enough to be "mobile" is a real state: the
   // shell's minWidth is 720 and the sidebar's breakpoint is 768. The shell
   // toggle renders there too, so this must still be false.
   test('desktop shell stays false even at a mobile width', () => {
-    expect(
-      shouldShowPageSidebarOpener({ ...base, isDesktopShell: true, isMobile: true }),
-    ).toBe(false);
+    expect(shouldShowPageSidebarOpener({ ...base, isDesktopShell: true, isMobile: true })).toBe(
+      false,
+    );
   });
 
   // On mobile the panel is a Sheet, but `state` still reflects the DESKTOP
   // dock cookie. Gating on it would hide the only way into the sheet for any
   // user whose cookie happened to say 'expanded'.
   test('mobile ignores the docked state entirely', () => {
-    expect(shouldShowPageSidebarOpener({ ...base, isMobile: true, state: 'expanded' })).toBe(
-      true,
-    );
+    expect(shouldShowPageSidebarOpener({ ...base, isMobile: true, state: 'expanded' })).toBe(true);
   });
 
   test('no sidebar context: nothing to open', () => {
     expect(shouldShowPageSidebarOpener({ ...base, hasSidebar: false })).toBe(false);
-    expect(
-      shouldShowPageSidebarOpener({ ...base, hasSidebar: false, isMobile: true }),
-    ).toBe(false);
+    expect(shouldShowPageSidebarOpener({ ...base, hasSidebar: false, isMobile: true })).toBe(false);
   });
 });
 

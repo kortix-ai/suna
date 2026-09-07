@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * The ONE place the web asks "what is this account's billing situation, and
  * what should we say about it?".
@@ -143,13 +144,16 @@ export function walletSeverity(state: AccountStateLike | null | undefined): Wall
  * a function of billing state, and a component that writes its own is a
  * component that can contradict the server.
  */
-export function walletAlertCopy(severity: Exclude<WalletSeverity, null>): {
+export function walletAlertCopy(
+  severity: Exclude<WalletSeverity, null>,
+  tI18nComplete: UiTranslator,
+): {
   label: string;
   action: string;
 } {
   return severity === 'blocked'
-    ? { label: 'Out of credits', action: 'Top up' }
-    : { label: 'Low balance', action: 'Top up' };
+    ? { label: tI18nComplete.raw('textf1c24ec92034'), action: 'Top up' }
+    : { label: tI18nComplete.raw('text9757b0277bb1'), action: 'Top up' };
 }
 
 export interface BillingModalCopy {
@@ -169,37 +173,36 @@ export interface BillingModalCopy {
  */
 export function billingModalCopy(
   state: BillingState | null,
-  opts?: { isPerSeat?: boolean },
+  opts: { isPerSeat?: boolean } | undefined,
+  tI18nComplete: UiTranslator,
 ): BillingModalCopy {
   const planNoun = opts?.isPerSeat ? 'your Team plan and seats are' : 'your plan is';
   switch (state) {
     case 'payment_failed':
       return {
-        title: 'Payment issue on your plan',
-        description:
-          'Your last payment didn’t go through. Update your payment method under Manage billing, or top up to keep running in the meantime.',
+        title: tI18nComplete.raw('text796a79862546'),
+        description: tI18nComplete.raw('textce0c20c05842'),
       };
     case 'out_of_credits':
       return {
-        title: 'Out of credits',
-        description: `Your wallet is empty, so sessions can’t start. Top up to keep compute and the latest AI models running — ${planNoun} unaffected.`,
+        title: tI18nComplete.raw('textf1c24ec92034'),
+        description: tI18nComplete('text5ecbbab0d8d8', { value0: planNoun }),
       };
     case 'no_account':
       return {
-        title: 'Finish setting up billing',
-        description: 'This account has no billing set up yet, so sessions can’t start.',
+        title: tI18nComplete.raw('text72298eb4f45a'),
+        description: tI18nComplete.raw('text96af819328e8'),
       };
     case 'no_subscription':
       return {
-        title: 'Subscribe to start sessions',
-        description:
-          'Your team isn’t on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate.',
+        title: tI18nComplete.raw('text51d7edea32d3'),
+        description: tI18nComplete.raw('textdbc55cb506f2'),
       };
     default:
       // `active` — a voluntary top-up. Nothing is wrong, so nothing alarming.
       return {
-        title: 'Add credits',
-        description: `Credits cover LLM usage and AI Computer compute. Top up now or set auto top-up so sessions never stop — ${planNoun} unaffected.`,
+        title: tI18nComplete.raw('textd22feb61298b'),
+        description: tI18nComplete('texta1ec2c7ae89a', { value0: planNoun }),
       };
   }
 }
@@ -217,37 +220,36 @@ export interface BillingGateCopy {
  * Copy for a BLOCKING state. `active` has no gate copy by construction, so
  * callers must check `billingStateAllowsRun` first.
  */
-export function billingGateCopy(state: Exclude<BillingState, 'active'>): BillingGateCopy {
+export function billingGateCopy(
+  state: Exclude<BillingState, 'active'>,
+  tI18nComplete: UiTranslator,
+): BillingGateCopy {
   switch (state) {
     case 'out_of_credits':
       return {
-        title: 'Out of credits',
-        message:
-          'Your wallet is empty, so sessions can’t run. Top up to keep compute and the latest AI models going — your plan and seats are unaffected.',
+        title: tI18nComplete.raw('textf1c24ec92034'),
+        message: tI18nComplete.raw('text109346f4fd22'),
         ctaLabel: 'Top up credits',
         dialogReason: 'insufficient_credits',
       };
     case 'payment_failed':
       return {
-        title: 'Payment issue on your plan',
-        message:
-          'Your last payment didn’t go through and your wallet is empty. Update your payment method or top up to start sessions again.',
+        title: tI18nComplete.raw('text796a79862546'),
+        message: tI18nComplete.raw('text3b7d044b6a4c'),
         ctaLabel: 'Fix payment',
         dialogReason: 'insufficient_credits',
       };
     case 'no_account':
       return {
-        title: 'Finish setting up billing',
-        message:
-          'This account has no billing set up yet, so sessions can’t start. Choose a plan to continue.',
+        title: tI18nComplete.raw('text72298eb4f45a'),
+        message: tI18nComplete.raw('text5b31ffa81ee2'),
         ctaLabel: 'Set up billing',
         dialogReason: 'no_account',
       };
     default:
       return {
-        title: 'Subscribe to start sessions',
-        message:
-          'Your team isn’t on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate.',
+        title: tI18nComplete.raw('text51d7edea32d3'),
+        message: tI18nComplete.raw('textdbc55cb506f2'),
         ctaLabel: 'Subscribe to Team plan',
         dialogReason: 'subscription_required',
       };
@@ -258,7 +260,8 @@ export function billingGateCopy(state: Exclude<BillingState, 'active'>): Billing
 export function billingDialogArgs(
   state: BillingState | null,
   accountState: AccountStateLike | null | undefined,
-  accountId?: string,
+  accountId: string | undefined,
+  tI18nComplete: UiTranslator,
 ): {
   reason: UpgradeReason;
   accountId?: string;
@@ -271,7 +274,9 @@ export function billingDialogArgs(
   // Opening the billing modal on an ACTIVE account is always a voluntary
   // top-up (the low-balance nudge in the sidebar) — never a subscribe pitch.
   const reason: UpgradeReason =
-    resolved === 'active' ? 'insufficient_credits' : billingGateCopy(resolved).dialogReason;
+    resolved === 'active'
+      ? 'insufficient_credits'
+      : billingGateCopy(resolved, tI18nComplete).dialogReason;
   return {
     reason,
     accountId,

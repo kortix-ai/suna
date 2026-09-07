@@ -6,12 +6,17 @@ const TEMPLATE = 'https://dev-p{port}-{sandbox}.p.kortix.com';
 describe('isServablePreviewUrl', () => {
   it('accepts a preview origin this deployment serves', () => {
     expect(
-      isServablePreviewUrl('https://dev-p8081-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.p.kortix.com/learn', TEMPLATE),
+      isServablePreviewUrl(
+        'https://dev-p8081-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.p.kortix.com/learn',
+        TEMPLATE,
+      ),
     ).toBe(true);
   });
 
   it('keeps the whole path and query — it is only the host that is checked', () => {
-    expect(isServablePreviewUrl('https://dev-p3000-sbx-a.p.kortix.com/a/b?c=1#d', TEMPLATE)).toBe(true);
+    expect(isServablePreviewUrl('https://dev-p3000-sbx-a.p.kortix.com/a/b?c=1#d', TEMPLATE)).toBe(
+      true,
+    );
   });
 
   // Everything below would be an open redirect that also hands over a bearer
@@ -21,7 +26,9 @@ describe('isServablePreviewUrl', () => {
   });
 
   it('refuses a lookalike that merely contains the domain', () => {
-    expect(isServablePreviewUrl('https://dev-p8081-x.p.kortix.com.evil.example/', TEMPLATE)).toBe(false);
+    expect(isServablePreviewUrl('https://dev-p8081-x.p.kortix.com.evil.example/', TEMPLATE)).toBe(
+      false,
+    );
   });
 
   it('refuses a nested label that escapes the wildcard certificate', () => {
@@ -33,7 +40,9 @@ describe('isServablePreviewUrl', () => {
   });
 
   it('refuses the API host and the app’s own origin', () => {
-    expect(isServablePreviewUrl('https://dev-api.kortix.com/v1/p/sbx_a/8081/', TEMPLATE)).toBe(false);
+    expect(isServablePreviewUrl('https://dev-api.kortix.com/v1/p/sbx_a/8081/', TEMPLATE)).toBe(
+      false,
+    );
     expect(isServablePreviewUrl('https://dev.kortix.com/projects', TEMPLATE)).toBe(false);
   });
 

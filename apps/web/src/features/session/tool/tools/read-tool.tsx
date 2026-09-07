@@ -2,6 +2,7 @@
 
 import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
+import { filePhase, fileVerb } from '@/features/session/tool/shared/file-verb';
 import {
   BasicTool,
   isErrorOutput,
@@ -16,7 +17,6 @@ import {
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { parseReadOutput } from '@/features/session/tool/shared/read-helpers';
-import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -24,7 +24,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
 import { FileIcon, FolderIcon as Folder, ReadCvLogoIcon } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useContext, useMemo } from 'react';
 
 export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {

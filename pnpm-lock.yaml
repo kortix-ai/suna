@@ -1302,6 +1302,9 @@ importers:
       eslint-config-next:
         specifier: 16.3.3
         version: 16.3.3(@typescript-eslint/parser@8.66.0)(eslint@9.39.4)(typescript@5.9.3)
+      intl-messageformat:
+        specifier: 11.2.9
+        version: 11.2.9
       prettier:
         specifier: ^3.5.3
         version: 3.9.4
@@ -5645,17 +5648,14 @@ packages:
 
   /@formatjs/fast-memoize@3.1.6:
     resolution: {integrity: sha512-H5aexk1Le7T9TPmscacZ+1pR6CTa2n1wq+HDVGXhH8TzUlQQpeXzZs91dRtmFHrbeNbjPFPfQujUqm7MHgVoXQ==}
-    dev: false
 
   /@formatjs/icu-messageformat-parser@3.5.12:
     resolution: {integrity: sha512-YyzzxVgYJ8DELmmkhn0Yr0rUj0dTJFf9Jp628K3S0ysInBWxLVDOS8i3RP91cCp4DMK4WYb4cVMhWA9i4knSJg==}
     dependencies:
       '@formatjs/icu-skeleton-parser': 2.1.10
-    dev: false
 
   /@formatjs/icu-skeleton-parser@2.1.10:
     resolution: {integrity: sha512-XuSva+8ZGawk8VnD5VD6UeH8KarQ/Z022zgjHDoHmlNiAewstXuuzXc0Hk5pGFSdG+nNw5bfJKXqj1ZXHn9yUA==}
-    dev: false
 
   /@formatjs/intl-localematcher@0.8.10:
     resolution: {integrity: sha512-P/IC3qws3jH+1fEs+o0RIFgXKRaQlFehjS5W0FPAqdo6hgzawLl+eD0q0JjheQ3XtoOe5n8WSYfX06KQZI/QJA==}
@@ -22096,7 +22096,6 @@ packages:
     dependencies:
       '@formatjs/fast-memoize': 3.1.6
       '@formatjs/icu-messageformat-parser': 3.5.12
-    dev: false
 
   /invariant@2.2.4:
     resolution: {integrity: sha512-phJfQVBuaJM5raOpJjSfkiD6BpbCE4Ns//LaXl6wGYtUBY83nWS6Rf9tXm2e8VaK60JEjYldbPif/A2B1C2gNA==}

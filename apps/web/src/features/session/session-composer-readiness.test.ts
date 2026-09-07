@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { projectWorking, type SessionTurn } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
 import {
   resolveLastTurnWorking,
@@ -14,7 +14,9 @@ describe('sessionComposerReadiness', () => {
   // notice is a function of what the control plane and the runtime have
   // actually said.
   test('a cold load says nothing — unknown is not a fault', () => {
-    expect(sessionComposerReadiness({ runtimeReady: false, connection: 'unknown' }).notice).toBeNull();
+    expect(
+      sessionComposerReadiness({ runtimeReady: false, connection: 'unknown' }).notice,
+    ).toBeNull();
   });
 
   test('a running sandbox we have not reached yet says nothing either', () => {
@@ -93,7 +95,11 @@ describe('sessionComposerReadiness', () => {
     expect(unreachable.notice).toMatch(/lost contact/i);
     expect(unreachable.retryable).toBe(true);
 
-    const stalled = sessionComposerReadiness({ runtimeReady: false, settling: true, stalled: true });
+    const stalled = sessionComposerReadiness({
+      runtimeReady: false,
+      settling: true,
+      stalled: true,
+    });
     expect(stalled.notice).toMatch(/taking longer/i);
     expect(stalled.retryable).toBe(true);
   });
@@ -237,7 +243,9 @@ describe('serverHoldsOpenTurn', () => {
 
     expect(working.state).toBe('working');
     expect(serverHoldsOpenTurn(working)).toBe(true);
-    expect(sessionComposerReadiness({ runtimeReady: false, serverTurnLive: true }).notice).toBeNull();
+    expect(
+      sessionComposerReadiness({ runtimeReady: false, serverTurnLive: true }).notice,
+    ).toBeNull();
   });
 
   test('a turn started with no wire messageID counts — triggers, Slack, and every `/` command', () => {

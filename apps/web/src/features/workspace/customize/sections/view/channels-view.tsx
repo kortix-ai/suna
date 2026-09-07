@@ -1,5 +1,8 @@
 'use client';
 
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 /**
  * Channels — where a project's agent becomes reachable from Slack, Email, and
  * Microsoft Teams.
@@ -102,7 +105,6 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { ModelSelector } from '@/features/session/model-selector';
-import { storedModelRefToKey } from '@/lib/llm-gateway';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import {
   ChannelDisconnectButton,
@@ -130,20 +132,17 @@ import {
   useTeamsInstall,
   useTeamsMode,
 } from '@/hooks/channels/use-teams-installations';
+import { storedModelRefToKey } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
   type Agent,
-  contract,
   modelKeyToWire,
-  qk,
   useFeatureFlag,
   useRuntimeProviders,
   useVisibleAgents,
-  wireToModelKey,
 } from '@kortix/sdk/react';
 import { AtIcon, EnvelopeIcon } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -158,6 +157,7 @@ const EMAIL_CONNECTOR_SLUG = 'kortix_email';
 const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2'];
 
 export function ChannelsSection({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // This view used to read the flags off the project SUMMARY query
   // (`qk.project.summary` / `getProject`, whose payload nests them one level
   // shallower). It now reads the one gating primitive, which is backed by
@@ -235,7 +235,7 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
 
           {hasRows ? (
             <section className="space-y-2">
-              {showMoreLabel ? <Label>More channels</Label> : null}
+              {showMoreLabel ? <Label>{tI18nComplete.raw('text28647129955c')}</Label> : null}
               <ul className="space-y-2">
                 {install ? (
                   <SlackChannelRow
@@ -277,6 +277,7 @@ function SlackChannelRow({
   installation: SlackInstallation;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const disconnect = useDisconnectSlack();
 
   return (
@@ -285,7 +286,7 @@ function SlackChannelRow({
       name="Slack"
       connected
       detail={installation.workspaceName ?? installation.workspaceId}
-      pitch="Mention your agent in any channel."
+      pitch={tI18nComplete.raw('text9bd1c37ed121')}
       actions={
         canWrite ? (
           <ChannelDisconnectButton
@@ -294,7 +295,7 @@ function SlackChannelRow({
               disconnect.mutate(projectId, {
                 onSuccess: () => {
                   done();
-                  successToast('Slack disconnected');
+                  successToast(tI18nComplete.raw('textd948c285986a'));
                 },
               })
             }
@@ -317,15 +318,19 @@ function SlackChannelRow({
  * no table, and bindings mean the table and no nudge.
  */
 function SlackFollowUp({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const bindingsQuery = useChannelBindings(projectId);
   const bindings = bindingsQuery.data?.bindings ?? [];
 
   return (
     <div className="space-y-4">
       {bindings.length === 0 && !bindingsQuery.isLoading ? (
-        <InfoBanner tone="neutral" icon={AtIcon} title="One more step, in Slack">
-          Invite <span className="text-foreground font-medium">@Kortix</span> to a channel, then
-          mention it. Each mention starts a fresh run and the agent answers in that thread.
+        <InfoBanner tone="neutral" icon={AtIcon} title={tI18nComplete.raw('textd63af8edd3d6')}>
+          {tI18nComplete.raw('text1fd9ae1607aa')}{' '}
+          <span className="text-foreground font-medium">
+            {tI18nComplete.raw('text476b90bdc143')}
+          </span>{' '}
+          {tI18nComplete.raw('textb81b729b4538')}
         </InfoBanner>
       ) : null}
 
@@ -341,6 +346,7 @@ function SlackFollowUp({ projectId, canWrite }: { projectId: string; canWrite: b
  * commands; this edits the same row through `PATCH …/channels/bindings/:id`.
  */
 function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const bindingsQuery = useChannelBindings(projectId);
   const bindings = bindingsQuery.data?.bindings ?? [];
 
@@ -356,18 +362,15 @@ function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; ca
 
   return (
     <div className="space-y-2">
-      <Label>Channel bindings</Label>
-      <p className="text-muted-foreground text-xs">
-        Which agent, model, and join policy each connected channel uses. A channel with no override
-        follows the project default.
-      </p>
+      <Label>{tI18nComplete.raw('text5f61b63c2c4a')}</Label>
+      <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text1f2550ed44dc')}</p>
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>Channel</TableHead>
-            <TableHead>Agent</TableHead>
-            <TableHead>Model</TableHead>
-            <TableHead>Join policy</TableHead>
+            <TableHead>{tI18nComplete.raw('textce4683e7013a')}</TableHead>
+            <TableHead>{tI18nComplete.raw('text11b39c93777e')}</TableHead>
+            <TableHead>{tI18nComplete.raw('text5e2c614c23f0')}</TableHead>
+            <TableHead>{tI18nComplete.raw('textb1ca871c6696')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -431,6 +434,8 @@ function ChannelBindingTableRow({
   projectDefaultAgent: string | null;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const conversationPolicies = useLocalizedUiCatalog(CONVERSATION_POLICIES);
   // The binding PATCH route asserts `project.connector.write`, and `canWrite`
   // already probes exactly that. This used to AND it with the roster's coarse
   // `can_manage` flag — a role label by another name, and strictly redundant
@@ -445,7 +450,7 @@ function ChannelBindingTableRow({
   const agentSelectorAgents = useMemo<Agent[]>(() => {
     const defaultEntry = {
       name: agentDefaultLabel(projectDefaultAgent),
-      description: "Falls back to the project's configured default agent.",
+      description: tI18nComplete.raw('text12dc6dbd8fc8'),
       mode: 'primary',
       permission: {},
       options: {},
@@ -465,7 +470,7 @@ function ChannelBindingTableRow({
           ]
         : [];
     return [defaultEntry, ...visibleAgents, ...missingCurrent];
-  }, [visibleAgents, projectDefaultAgent, binding.agentName]);
+  }, [projectDefaultAgent, tI18nComplete, visibleAgents, binding.agentName]);
   const selectedAgentValue = binding.agentName ?? agentDefaultLabel(projectDefaultAgent);
 
   const { data: providers } = useRuntimeProviders();
@@ -492,7 +497,7 @@ function ChannelBindingTableRow({
         </div>
       </TableCell>
       <TableCell>
-        {/* rounded-full, not the rounded-2xl this used to carry: the selector
+        {/* rounded-full, not the former large radius: the selector
             inside renders a fully-round h-8 pill trigger, so a 16px-radius
             frame around it read as two mismatched curves. */}
         <div className="bg-card inline-flex rounded-full border px-2 py-1">
@@ -507,8 +512,8 @@ function ChannelBindingTableRow({
                   agentName: !v || v === agentDefaultLabel(projectDefaultAgent) ? null : v,
                 },
                 {
-                  onSuccess: () => successToast('Channel agent updated'),
-                  onError: (e) => errorToastFallback(e),
+                  onSuccess: () => successToast(tI18nComplete.raw('text5a37d20f1235')),
+                  onError: (e) => errorToastFallback(e, tI18nComplete),
                 },
               )
             }
@@ -524,7 +529,7 @@ function ChannelBindingTableRow({
                 models={models}
                 providers={providers}
                 selectedModel={selectedModel}
-                unsetLabel="Project default"
+                unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
                 onSelect={(m) =>
                   update.mutate(
                     {
@@ -533,8 +538,8 @@ function ChannelBindingTableRow({
                       opencodeModel: m ? modelKeyToWire(m) : null,
                     },
                     {
-                      onSuccess: () => successToast('Channel model updated'),
-                      onError: (e) => errorToastFallback(e),
+                      onSuccess: () => successToast(tI18nComplete.raw('text6c779d9f41fa')),
+                      onError: (e) => errorToastFallback(e, tI18nComplete),
                     },
                   )
                 }
@@ -561,8 +566,8 @@ function ChannelBindingTableRow({
                 conversationPolicy: v as ChannelBinding['conversationPolicy'],
               },
               {
-                onSuccess: () => successToast('Join policy updated'),
-                onError: (e) => errorToastFallback(e),
+                onSuccess: () => successToast(tI18nComplete.raw('textc430cba8b89f')),
+                onError: (e) => errorToastFallback(e, tI18nComplete),
               },
             )
           }
@@ -572,7 +577,7 @@ function ChannelBindingTableRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {CONVERSATION_POLICIES.map((p) => (
+            {conversationPolicies.map((p) => (
               <SelectItem key={p.value} value={p.value}>
                 {p.label}
               </SelectItem>
@@ -584,11 +589,12 @@ function ChannelBindingTableRow({
   );
 }
 
-function errorToastFallback(error: unknown) {
-  errorToast(error instanceof Error ? error.message : 'Failed to update channel binding');
+function errorToastFallback(error: unknown, tI18nComplete: UiTranslator) {
+  errorToast(error instanceof Error ? error.message : tI18nComplete.raw('textf8bc408a8d81'));
 }
 
 function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: install } = useTeamsInstall(projectId);
   const { data: mode } = useTeamsMode(projectId);
   const disconnect = useDisconnectTeams();
@@ -603,14 +609,14 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
       name="Microsoft Teams"
       connected={connected}
       detail={install?.teamName ?? install?.tenantId ?? null}
-      pitch="Mention your agent in a Teams channel or chat."
+      pitch={tI18nComplete.raw('text9225e456b795')}
       actions={
         !canWrite ? null : connected ? (
           <>
             {deepLinkUrl ? (
               <Button size="sm" variant="secondary" asChild>
                 <Link href={deepLinkUrl} target="_blank" rel="noopener noreferrer">
-                  Add to Teams
+                  {tI18nComplete.raw('text1fece1858ee9')}
                 </Link>
               </Button>
             ) : null}
@@ -620,7 +626,7 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
                 disconnect.mutate(projectId, {
                   onSuccess: () => {
                     done();
-                    successToast('Microsoft Teams disconnected');
+                    successToast(tI18nComplete.raw('textf2e69a5e24ba'));
                   },
                 })
               }
@@ -629,7 +635,7 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
         ) : installUrl ? (
           <Button size="sm" variant="secondary" asChild>
             <Link href={installUrl} target="_blank" rel="noopener noreferrer">
-              Connect
+              {tI18nComplete.raw('text1a2303ede074')}
             </Link>
           </Button>
         ) : null
@@ -647,6 +653,7 @@ function EmailChannelRow({
   installation: EmailInstallation | null;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const disconnect = useDisconnectEmail();
   const [connectOpen, setConnectOpen] = useState(false);
 
@@ -659,7 +666,7 @@ function EmailChannelRow({
         name="Email"
         connected={connected}
         detail={installation?.email ?? null}
-        pitch="Give your agent an inbox it can read and reply from."
+        pitch={tI18nComplete.raw('text27ba4ec98716')}
         actions={
           !canWrite ? null : connected ? (
             <ChannelDisconnectButton
@@ -670,7 +677,7 @@ function EmailChannelRow({
                   {
                     onSuccess: () => {
                       done();
-                      successToast('Email disconnected');
+                      successToast(tI18nComplete.raw('text958c8e06d3e7'));
                     },
                   },
                 )
@@ -678,7 +685,7 @@ function EmailChannelRow({
             />
           ) : (
             <Button size="sm" variant="secondary" onClick={() => setConnectOpen(true)}>
-              Connect
+              {tI18nComplete.raw('text1a2303ede074')}
             </Button>
           )
         }
@@ -687,10 +694,8 @@ function EmailChannelRow({
       <Modal open={connectOpen} onOpenChange={setConnectOpen}>
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
-            <ModalTitle>Connect Email</ModalTitle>
-            <ModalDescription>
-              Create a managed AgentMail inbox for your agent, or attach one you already have.
-            </ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('text3de5e2a29bbc')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('texte13e04973080')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[75vh] overflow-y-auto">
             <EmailConnectForm
@@ -698,7 +703,7 @@ function EmailChannelRow({
               connectorSlug={EMAIL_CONNECTOR_SLUG}
               onConnected={() => {
                 setConnectOpen(false);
-                successToast('Email connected');
+                successToast(tI18nComplete.raw('text62c381e56f37'));
               }}
             />
           </ModalBody>

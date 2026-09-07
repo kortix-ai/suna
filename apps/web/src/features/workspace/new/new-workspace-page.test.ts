@@ -104,7 +104,7 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
   test('shows the create-into AccountPicker (email fallback) next to a Log out control, unconditionally rendered', () => {
     expect(code).toContain('<AccountPicker');
     expect(code).toContain('fallbackLabel={user?.email}');
-    expect(code).toContain('Log out');
+    expect(code).toContain("t('actions.logOut')");
     // `performSignOut()`, not the old bare `void signOut()`. Spelled in full on
     // purpose: `signOut()` is a SUBSTRING of `performSignOut()`, so the previous
     // assertion could not tell the fixed control from the broken one — which
@@ -115,7 +115,9 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     // trip this control never made before and is bounded at four steps, which
     // is long enough that a silent button reads as a dead one.
     expect(code).toContain('disabled={signingOut}');
-    expect(code).toContain("{signingOut ? 'Signing out' : 'Log out'}");
+    expect(code).toContain(
+      "const signOutLabel = signingOut ? t('actions.signingOut') : t('actions.logOut')",
+    );
 
     // Rendered ahead of the <form>, not gated behind form state — a user
     // blocked by an invalid/incomplete form must still be able to leave.
@@ -192,7 +194,6 @@ describe('/new page: ProjectIconField wiring', () => {
     expect(field).not.toContain('onClear');
   });
 });
-
 
 /**
  * The form's field group: the outermost `<div>` that holds the icon and the
@@ -338,9 +339,7 @@ describe('/new page: AccountPicker wiring', () => {
     // Effective id = explicit pick OR identity-matched / primary default —
     // null outright for a FOREIGN list (Task 2 item 2).
     expect(picker).toContain('value={effectiveAccountId}');
-    expect(picker).toContain(
-      "onChange={(accountId) => setState((s) => ({ ...s, accountId }))}",
-    );
+    expect(picker).toContain('onChange={(accountId) => setState((s) => ({ ...s, accountId }))}');
     expect(picker).toContain('fallbackLabel={user?.email}');
     expect(picker).toContain('showAccountLine={showAccountLine}');
     expect(code).toContain('shouldShowAccountLine(creatableAccounts, userId)');
@@ -392,7 +391,7 @@ describe('/new page: AccountPicker wiring', () => {
 describe('/new page: zero-creatable-accounts state', () => {
   test('renders an explanatory note instead of a silently-disabled button when nothing is creatable', () => {
     expect(code).toContain('creatableAccounts.length === 0');
-    expect(code).toContain('You need owner or admin access in an account to create a workspace.');
+    expect(code).toContain("t('permissions.noCreatableAccount')");
     // Paired negative: it is plain text in the field group's own flow, not a
     // second bordered surface — `advanced-fields.tsx`'s GitHub-source note
     // already had to fix exactly this (InfoBanner nested inside this same
@@ -423,7 +422,7 @@ describe('/new page: foreign-accounts-list state (B3)', () => {
   // worse than the 403 this branch set out to fix.
   test('renders a reason with an escape hatch instead of a silent dead end', () => {
     expect(code).toContain('!accountsQuery.isLoading && foreignAccountList');
-    expect(code).toContain("We can't tell which of your accounts is yours");
+    expect(code).toContain("t('permissions.unknownAccountPrefix')");
     expect(code).toContain('mailto:support@kortix.ai');
     // Same restrained treatment as the sibling zero-accounts note — no new
     // chrome introduced for this one state.
@@ -466,9 +465,9 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     // the second shape can render neither branch (or both) as `submitting`
     // and `onboardingProjectId` drift relative to each other, which is exactly
     // what happens at the moment a create succeeds.
-    const swapMatch = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
-    expect(swapMatch).not.toBeNull();
-    const [, handoffBranch, formBranch] = swapMatch ?? [];
+    expect(code).toContain('{handingOff ? (');
+    const handoffBranch = code.slice(code.indexOf('key="handoff"'), code.indexOf('key="form"'));
+    const formBranch = code.slice(code.indexOf('key="form"'), code.indexOf('</AnimatePresence>'));
     expect(handoffBranch).toContain('<WorkspaceHandoff');
     expect(formBranch).toContain('<form');
   });
@@ -493,10 +492,10 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     // "Create a workspace" above a screen that is already creating one is
     // stale, and a heading holding still while the block under it fades reads
     // as two motions rather than the page turning over.
-    const swapMatch = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
-    const [, handoffBranch, formBranch] = swapMatch ?? [];
-    expect(formBranch).toContain('Create a workspace');
-    expect(handoffBranch).not.toContain('Create a workspace');
+    const handoffBranch = code.slice(code.indexOf('key="handoff"'), code.indexOf('key="form"'));
+    const formBranch = code.slice(code.indexOf('key="form"'), code.indexOf('</AnimatePresence>'));
+    expect(formBranch).toContain("t('title')");
+    expect(handoffBranch).not.toContain("t('title')");
   });
 
   // ONE. The icon reveal is a persistent element retargeting its width, not an

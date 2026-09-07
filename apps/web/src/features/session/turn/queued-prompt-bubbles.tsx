@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Prompts that are queued at the server but not yet in the transcript, drawn
  * IN the transcript — as the user bubbles they are about to become.
@@ -29,13 +30,28 @@ import {
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
-import { BUBBLE_SURFACE, BUBBLE_TEXT } from './user-message';
+import {
+  type AttachmentUploadStatus,
+  BUBBLE_SURFACE,
+  BUBBLE_TEXT,
+  MessageAttachments,
+  type NormalizedAttachment,
+} from './user-message';
 
 export interface QueuedPromptRow {
   id: string;
   text: string;
   /** Present on a failed row. */
   lastError?: string;
+  /**
+   * The row's files, by NAME and TYPE. A queued row is the only thing on
+   * screen for a prompt whose bytes are still travelling to the box, and on a
+   * warm box that is the whole upload window: drawn text-only, a send of
+   * three files read as a send of none (2026-09-04, browser-measured).
+   */
+  attachments?: ReadonlyArray<{ filename: string; mime: string }>;
+  /** What the strip says about them — see `AttachmentUploadStatus`. */
+  uploadStatus?: AttachmentUploadStatus;
 }
 
 /** The dim a scheduled bubble sits at. One number, so the transcript's
@@ -145,6 +161,7 @@ export function QueuedPromptActions({
   onSendNow?: (id: string) => void;
   onRetry?: (id: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const failed = state === 'failed';
   const interrupted = state === 'interrupted';
   // In-flight is NOT beyond removal any more: the server cancels a forwarded
@@ -158,12 +175,12 @@ export function QueuedPromptActions({
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       {failed && onRetry && (
-        <Action label="Retry" onClick={() => onRetry(id)}>
+        <Action label={tI18nComplete.raw('text942087cc2d41')} onClick={() => onRetry(id)}>
           <ArrowClockwiseIcon className="size-4" />
         </Action>
       )}
       {state === 'held' && onSendNow && (
-        <Action label="Send now" onClick={() => onSendNow(id)}>
+        <Action label={tI18nComplete.raw('text588032878324')} onClick={() => onSendNow(id)}>
           <PaperPlaneRightIcon className="size-4" />
         </Action>
       )}
@@ -185,8 +202,9 @@ export function RemoveFromQueueButton({
   id: string;
   onRemove: (id: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
-    <Action label="Remove from queue" onClick={() => onRemove(id)} destructive>
+    <Action label={tI18nComplete.raw('textc0b9d9e9ac1d')} onClick={() => onRemove(id)} destructive>
       <XIcon className="size-4" />
     </Action>
   );
@@ -261,6 +279,13 @@ function QueuedBubble({
   onRetry?: (id: string) => void;
 }) {
   const failed = state === 'failed';
+  const queuedTiles: NormalizedAttachment[] = (row.attachments ?? []).map((file, index) => ({
+    key: `queued:${row.id}:${index}:${file.filename}`,
+    filename: file.filename,
+    mime: file.mime,
+    // No `src`/`path`: nothing to preview until the runtime holds the bytes.
+    pending: true,
+  }));
   return (
     <div
       data-queued-prompt-id={row.id}
@@ -270,6 +295,13 @@ function QueuedBubble({
       {/* Bubble + its controls in ONE row: the actions sit beside the bubble,
           to its right, revealed on hover — never floating in space. The
           column is width-reserved (`w-6`) so nothing shifts on hover. */}
+      {/* The row's files, ABOVE the bubble exactly where the sent message will
+          draw them, every tile pending: the bytes are still on their way. Same
+          strip and the same "Uploading N files…" line the boot shell shows, so
+          the warm-box path stops being the one path with no tiles. */}
+      {queuedTiles.length > 0 && (
+        <MessageAttachments attachments={queuedTiles} pending status={row.uploadStatus} />
+      )}
       <div className="flex w-full items-center justify-end gap-1">
         <div
           className={cn(
@@ -278,7 +310,7 @@ function QueuedBubble({
             failed ? 'opacity-90' : live ? 'opacity-100' : QUEUED_BUBBLE_OPACITY_CLASS,
           )}
         >
-          <div className={cn('max-w-full min-w-0 max-h-[200px] overflow-hidden', BUBBLE_TEXT)}>
+          <div className={cn('max-h-[200px] max-w-full min-w-0 overflow-hidden', BUBBLE_TEXT)}>
             {row.text}
           </div>
         </div>
@@ -317,12 +349,15 @@ export function QueuedPromptBubbles({
   onRetry,
   className,
 }: QueuedPromptBubblesProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (queued.length === 0 && failed.length === 0) return null;
   const inFlight = inFlightIds instanceof Set ? inFlightIds : new Set(inFlightIds ?? []);
   return (
     <div
       role="list"
-      aria-label={held ? 'Queued prompts, held' : 'Queued prompts'}
+      aria-label={
+        held ? tI18nComplete.raw('textaef78db89933') : tI18nComplete.raw('textc7ce396fcd33')
+      }
       className={cn('flex flex-col gap-3', className)}
     >
       {queued.map((row) => (

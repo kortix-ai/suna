@@ -1,9 +1,9 @@
 'use client';
 
-import * as React from 'react';
-import { ThemeProvider as NextThemesProvider } from 'next-themes';
+import { getAllThemeClassNames, getThemeClassName } from '@/lib/themes';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { getThemeClassName, getAllThemeClassNames } from '@/lib/themes';
+import { ThemeProvider as NextThemesProvider } from 'next-themes';
+import * as React from 'react';
 
 function ThemeClassSync() {
   const themeId = useUserPreferencesStore((s) => s.preferences.themeId);

@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
 import { groupIntoSections, POPULAR_SECTION } from './connector-categories';
@@ -44,14 +45,13 @@ export type CatalogEntry =
   | (CatalogEntryFields & { source: 'computer' });
 
 /** Native platform provider. The tunnel fleet is its account directory. */
-export function computersCatalogEntry(): CatalogEntry {
+export function computersCatalogEntry(tI18nComplete: UiTranslator): CatalogEntry {
   return {
     source: 'computer',
     key: 'computer:computers',
     slug: 'computers',
     name: 'Computer Tunnels',
-    description:
-      'Pair Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel. Each profile grants agents access only to its selected machines.',
+    description: tI18nComplete.raw('text070855f4fe8d'),
     icon: null,
     categories: ['developer-tools'],
     popularity: null,

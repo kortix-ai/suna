@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useState, type ReactNode } from 'react';
 
 import type { CostSummary, ProjectCostPage, ProjectCostSort } from '@kortix/sdk';
@@ -20,12 +21,16 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { COST_PAGE_SIZE, useCostByProject, useCostSummary } from '@/hooks/billing/use-cost-explorer';
+import {
+  COST_PAGE_SIZE,
+  useCostByProject,
+  useCostSummary,
+} from '@/hooks/billing/use-cost-explorer';
 
+import { formatSessionCostUsd } from '../session-cost-format';
 import { CostExportButton } from './cost-export-button';
 import { CostLevelShell } from './cost-level-shell';
 import { CostSortHeader } from './cost-sort-header';
-import { formatSessionCostUsd } from '../session-cost-format';
 
 /** The whole explorer's default landing preset (`parseExplorerState` in the
  *  forthcoming explorer shell — see the plan's Task 15 — defaults new URL
@@ -293,6 +298,7 @@ export function ProjectsLevelContent({
   onPreviousPage,
   onNextPage,
 }: ProjectsLevelContentProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const rows = page ? buildProjectTableRows(page, summary) : [];
 
   const offset = page?.offset ?? 0;
@@ -303,7 +309,7 @@ export function ProjectsLevelContent({
   let tableSlot: ReactNode;
   if (projectsError) {
     tableSlot = (
-      <InfoBanner tone="destructive" title="Failed to load project costs">
+      <InfoBanner tone="destructive" title={tI18nComplete.raw('text625e6bf05289')}>
         {projectsError.message}
       </InfoBanner>
     );
@@ -318,7 +324,7 @@ export function ProjectsLevelContent({
     // that made a failed `/usage/session-costs` request read as "No sessions"
     // (see sessions-level.tsx).
     tableSlot = (
-      <div className="space-y-2" aria-label="Loading projects">
+      <div className="space-y-2" aria-label={tI18nComplete.raw('texta5986e5e04f8')}>
         {Array.from({ length: 5 }, (_, index) => (
           <Skeleton key={index} className="h-12 w-full rounded-md" />
         ))}
@@ -330,11 +336,11 @@ export function ProjectsLevelContent({
       <EmptyState
         size="sm"
         icon={ReceiptText}
-        title="No spend in this range"
-        description="Nothing was recorded for the selected window."
+        title={tI18nComplete.raw('text3b915cdff384')}
+        description={tI18nComplete.raw('text4e29720c2372')}
         action={
           <Button type="button" variant="outline" size="sm" onClick={onResetRange}>
-            Reset range
+            {tI18nComplete.raw('texte25e80a85459')}
           </Button>
         }
       />
@@ -342,8 +348,8 @@ export function ProjectsLevelContent({
       <EmptyState
         size="sm"
         icon={ReceiptText}
-        title="No spend recorded yet"
-        description="Project costs appear here once a session starts running."
+        title={tI18nComplete.raw('textd6240bb76311')}
+        description={tI18nComplete.raw('textb48f5aea165f')}
       />
     );
   } else {
@@ -355,15 +361,15 @@ export function ProjectsLevelContent({
                 route can order by (see `ProjectSortColumn`). Sessions, LLM and
                 Compute stay plain `TableHead`s rather than dead controls. */}
             <CostSortHeader
-              label="Project"
+              label={tI18nComplete.raw('text985959785319')}
               direction={projectSortDirection(sort, 'name')}
               onSort={() => onSort('name')}
             />
-            <TableHead className="text-right">Sessions</TableHead>
+            <TableHead className="text-right">{tI18nComplete.raw('text6fa3cbf451b2')}</TableHead>
             <TableHead className="text-right">LLM</TableHead>
-            <TableHead className="text-right">Compute</TableHead>
+            <TableHead className="text-right">{tI18nComplete.raw('textcedc516df056')}</TableHead>
             <CostSortHeader
-              label="Total"
+              label={tI18nComplete.raw('textc9b3c38247f7')}
               align="right"
               direction={projectSortDirection(sort, 'total')}
               onSort={() => onSort('total')}
@@ -391,7 +397,7 @@ export function ProjectsLevelContent({
                 tile's $62.53, the difference being the $0.34425 that the 15
                 projects on page 2 account for. Two quantities that are not
                 the same quantity do not get the same label. */}
-            <TableCell className="font-medium">Page total</TableCell>
+            <TableCell className="font-medium">{tI18nComplete.raw('text420aaa63cba7')}</TableCell>
             <TableCell className="text-right font-mono tabular-nums">
               {sumBy(rows, (row) => row.session_count).toLocaleString('en-US')}
             </TableCell>
@@ -430,7 +436,9 @@ export function ProjectsLevelContent({
         {total > 0 ? (
           <div className="flex items-center justify-between gap-3">
             <p className="text-muted-foreground text-xs tabular-nums">
-              Showing {start}-{end} of {total} projects
+              {tI18nComplete.raw('textd604310a789a')} {start}-{end}{' '}
+              {tI18nComplete.raw('text28391d3bc64e')} {total}{' '}
+              {tI18nComplete.raw('text2577c0f557b2')}
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -440,7 +448,7 @@ export function ProjectsLevelContent({
                 disabled={offset === 0}
                 onClick={onPreviousPage}
               >
-                Previous
+                {tI18nComplete.raw('texta57b08a480b8')}
               </Button>
               <Button
                 type="button"
@@ -449,7 +457,7 @@ export function ProjectsLevelContent({
                 disabled={page?.next_offset == null}
                 onClick={onNextPage}
               >
-                Next
+                {tI18nComplete.raw('text1ff57a29d7c9')}
               </Button>
             </div>
           </div>
@@ -535,7 +543,7 @@ function ProjectRow({
 
   return (
     <TableRow
-      className="cursor-pointer hover:bg-accent"
+      className="hover:bg-accent cursor-pointer"
       onClick={() => onSelectProject(row.project_id)}
     >
       {cells}
