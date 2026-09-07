@@ -6,14 +6,15 @@ import type {
   SessionSource,
   SessionSourceKind,
 } from '@/components/projects/session-label';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { LocalTime } from '@/components/ui/local-time';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { menuRow } from '@/components/ui/menu-recipe';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
 import { CR_ID_PREFIX } from '@/features/review-center/review-actions';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { useSessionHoverStore } from '@/stores/session-hover-store';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
 import {
   CalendarDotsIcon,
@@ -25,20 +26,9 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ComponentType,
-  type FocusEvent,
-  type ReactElement,
-} from 'react';
+import { useEffect, type ComponentType, type ReactElement } from 'react';
 import { shortRelative } from './project-session-list-helpers';
 import { SessionStatusMark } from './session-status-mark';
-
-const HOVER_OPEN_DELAY_MS = 200;
-const HOVER_CLOSE_DELAY_MS = 100;
 
 const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -80,15 +70,12 @@ const CHANGE_REQUEST_STATUS_KEY: Record<
   closed: 'changeRequestStatus.closed',
 };
 
-export type ChangeRequestLoadState = 'loading' | 'error' | 'ready';
-
-interface SessionBriefProps {
+interface SessionBrief {
   title: string;
   status: SessionDisplayStatus;
   createdAt: string;
   source: SessionSource;
   changeRequests: readonly ChangeRequest[];
-  changeRequestLoadState: ChangeRequestLoadState;
 }
 
 interface SessionBriefInteractionProps {
@@ -136,21 +123,15 @@ function RelativeCreatedTime({ createdAt }: { createdAt: string }) {
   );
 }
 
-function ChangeRequestStatusIcon({ status }: { status: ChangeRequestStatus }) {
-  const StatusIcon = CHANGE_REQUEST_STATUS_ICON[status];
-
-  return (
-    <StatusIcon
-      className={cn('size-4 shrink-0', CHANGE_REQUEST_STATUS_CLASS[status])}
-      aria-hidden
-    />
-  );
-}
-
-const CHANGE_REQUEST_ACTION_CLASS =
-  'hover:bg-accent focus-visible:ring-ring -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1 text-left text-xs focus-visible:ring-2 focus-visible:outline-none';
-
-function ChangeRequestAction({
+/**
+ * One change request as a row in the panel's list.
+ *
+ * It wears `menuRow` rather than local padding, for the same reason the footer's
+ * open-change chooser does: this is the app-wide floating-list row, and hand-rolled
+ * padding is how two lists that should line up stop lining up. The recipe also
+ * owns the icon box (`[&_svg]:size-4`), so the status glyph carries colour only.
+ */
+function ChangeRequestRow({
   changeRequest,
   projectId,
   reviewEnabled,
@@ -163,18 +144,23 @@ function ChangeRequestAction({
   onOpenChangeRequest: (changeRequestId: string) => void;
   onDismiss: () => void;
 }) {
+  const StatusIcon = CHANGE_REQUEST_STATUS_ICON[changeRequest.status];
+  const className = menuRow('sm', 'default', 'cursor-pointer py-1.5 text-left');
   const content = (
     <>
-      <ChangeRequestStatusIcon status={changeRequest.status} />
-      <span className="text-foreground min-w-0 flex-1 truncate">{changeRequest.title}</span>
+      <StatusIcon className={CHANGE_REQUEST_STATUS_CLASS[changeRequest.status]} aria-hidden />
+      <span className="min-w-0 flex-1 truncate">{changeRequest.title}</span>
     </>
   );
 
+  // Same split the footer change-requests pill makes: with the Review Center on,
+  // every change opens in the unified inbox; with it off, the legacy per-CR
+  // dialog is still the only detail view there is.
   if (reviewEnabled) {
     const reviewItemId = `${CR_ID_PREFIX}${changeRequest.cr_id}`;
     const href = `${capabilityTabHref(projectId, 'review')}?id=${encodeURIComponent(reviewItemId)}`;
     return (
-      <HoverPrefetchLink href={href} onClick={onDismiss} className={CHANGE_REQUEST_ACTION_CLASS}>
+      <HoverPrefetchLink href={href} onClick={onDismiss} className={className}>
         {content}
       </HoverPrefetchLink>
     );
@@ -183,7 +169,7 @@ function ChangeRequestAction({
   return (
     <button
       type="button"
-      className={CHANGE_REQUEST_ACTION_CLASS}
+      className={className}
       onClick={() => {
         onDismiss();
         onOpenChangeRequest(changeRequest.cr_id);
@@ -194,50 +180,62 @@ function ChangeRequestAction({
   );
 }
 
+/**
+ * The panel: an identity block, then the changes this session proposed.
+ *
+ * The two halves are separated by a hairline because only the lower one is
+ * clickable. Without the seam a hover highlight appears on the third line and
+ * not the first two, with nothing to explain why — the rule reads as "below
+ * this, things are targets".
+ *
+ * `px-3.5` on the header is not a guess: the list is `p-1` and its rows are
+ * `px-2.5`, so 3.5 spacing steps is exactly where the row labels start. The
+ * title and the change titles share one left edge.
+ */
 function SessionBriefContent({
   title,
   status,
   createdAt,
   source,
   changeRequests,
-  changeRequestLoadState,
   projectId,
   reviewEnabled,
   onOpenChangeRequest,
   onDismiss,
-}: SessionBriefProps & SessionBriefInteractionProps & { onDismiss: () => void }) {
+}: SessionBrief & SessionBriefInteractionProps & { onDismiss: () => void }) {
   const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
-  const visibleChangeRequests = changeRequestLoadState === 'ready' ? changeRequests : [];
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex items-center gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <p className="text-foreground truncate text-sm leading-5 font-medium">{title}</p>
-          <span className="shrink-0">
-            <SessionStatusMark status={status} />
-          </span>
+    <>
+      <div className="space-y-1.5 px-3.5 py-2.5">
+        <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <p className="text-foreground truncate text-sm font-medium">{title}</p>
+            <span className="shrink-0">
+              <SessionStatusMark status={status} />
+            </span>
+          </div>
+          <RelativeCreatedTime createdAt={createdAt} />
         </div>
-        <RelativeCreatedTime createdAt={createdAt} />
+
+        {SourceIcon ? (
+          <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
+            <SourceIcon className="size-3.5 shrink-0" />
+            <span className="text-foreground min-w-0 truncate">
+              {source.label}
+              {source.triggerSlug ? (
+                <span className="text-muted-foreground"> · {source.triggerSlug}</span>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
       </div>
 
-      {SourceIcon ? (
-        <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
-          <SourceIcon className="size-4 shrink-0" />
-          <span className="text-foreground min-w-0 truncate">
-            {source.label}
-            {source.triggerSlug ? (
-              <span className="text-muted-foreground"> · {source.triggerSlug}</span>
-            ) : null}
-          </span>
-        </div>
-      ) : null}
-
-      {visibleChangeRequests.length > 0 ? (
-        <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
-          {visibleChangeRequests.map((changeRequest) => (
+      {changeRequests.length > 0 ? (
+        <ul className="border-border max-h-48 overflow-y-auto overscroll-contain border-t p-1">
+          {changeRequests.map((changeRequest) => (
             <li key={changeRequest.cr_id}>
-              <ChangeRequestAction
+              <ChangeRequestRow
                 changeRequest={changeRequest}
                 projectId={projectId}
                 reviewEnabled={reviewEnabled}
@@ -248,78 +246,81 @@ function SessionBriefContent({
           ))}
         </ul>
       ) : null}
-    </div>
+    </>
   );
 }
 
+/**
+ * Radix HoverCard strips every tab stop inside its content — `getTabbableNodes`
+ * runs on each render and sets `tabindex="-1"` — because a hover card is a
+ * preview surface, not a menu. Pointer clicks and `cmd`-clicks on the change
+ * rows still work; the keyboard route to the same changes is the footer's
+ * Review pill, which is a Popover and therefore fully tabbable. Do not try to
+ * restore focusability here: the effect has no dependency array and will
+ * overwrite whatever you set on the next commit.
+ *
+ * Timing and exclusivity belong to `useSessionHoverStore`, not to this instance,
+ * because both are properties of the LIST: only one card may be open at a time,
+ * and the second row the pointer visits must not pay the opening delay again.
+ * Radix's own delays are zeroed and its `onOpenChange` left unwired — with
+ * `closeDelay={0}` it would report a close the instant the pointer left the row,
+ * cancelling the window in which the pointer travels into the card. The store is
+ * the only thing that decides whether this card is showing.
+ *
+ * `animated={false}` for the reason submenus opt out of their enter animation:
+ * the card opens to the right, into the path the pointer is already taking, so
+ * an enter animation is time spent moving content away from the hand.
+ */
 export function SessionBriefHoverCard({
+  sessionId,
   children,
   ...brief
-}: SessionBriefProps & SessionBriefInteractionProps & { children: ReactElement }) {
-  const [open, setOpen] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+}: SessionBrief & SessionBriefInteractionProps & { sessionId: string; children: ReactElement }) {
+  const open = useSessionHoverStore((state) => state.activeSessionId === sessionId);
+  const openSession = useSessionHoverStore((state) => state.openSession);
+  const closeSession = useSessionHoverStore((state) => state.closeSession);
+  const dismiss = useSessionHoverStore((state) => state.dismiss);
 
-  const clearTimer = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-  }, []);
-
-  useEffect(() => clearTimer, [clearTimer]);
-
-  const openNow = useCallback(() => {
-    clearTimer();
-    setOpen(true);
-  }, [clearTimer]);
-
-  const updateAfterDelay = useCallback(
-    (nextOpen: boolean, delay: number) => {
-      clearTimer();
-      timer.current = setTimeout(() => setOpen(nextOpen), delay);
+  // A row can be filtered out, or the sidebar unmounted, while its card shows.
+  // Without this the store keeps naming a row that no longer exists and the
+  // group is still warm the next time the list mounts.
+  useEffect(
+    () => () => {
+      const store = useSessionHoverStore.getState();
+      if (store.activeSessionId === sessionId) store.dismiss();
     },
-    [clearTimer],
+    [sessionId],
   );
 
-  const handleContentBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      updateAfterDelay(false, HOVER_CLOSE_DELAY_MS);
-    }
-  };
-
-  // Radix HoverCard makes every descendant untabbable. Popover preserves the
-  // same hover behavior while keeping each change-request action interactive.
-  // Keep the default body portal so the sidebar scroll container cannot clip it.
   return (
-    <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        clearTimer();
-        setOpen(nextOpen);
-      }}
-    >
-      <PopoverTrigger
+    <HoverCard open={open} openDelay={0} closeDelay={0}>
+      <HoverCardTrigger
         asChild
-        onPointerEnter={() => updateAfterDelay(true, HOVER_OPEN_DELAY_MS)}
-        onPointerLeave={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
-        onFocus={openNow}
-        onBlur={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
+        onPointerEnter={() => openSession(sessionId)}
+        onPointerLeave={() => closeSession(sessionId)}
+        onFocus={() => openSession(sessionId)}
+        onBlur={() => closeSession(sessionId)}
       >
         {children}
-      </PopoverTrigger>
-      <PopoverContent
+      </HoverCardTrigger>
+      <HoverCardContent
         side="right"
         align="start"
         sideOffset={14}
-        className="w-72 p-3 shadow-xs"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-        onCloseAutoFocus={(event) => event.preventDefault()}
-        onPointerEnter={openNow}
-        onPointerLeave={() => updateAfterDelay(false, HOVER_CLOSE_DELAY_MS)}
-        onFocusCapture={openNow}
-        onBlurCapture={handleContentBlur}
+        animated={false}
+        className="w-72 overflow-hidden rounded-md p-0 shadow-xs"
+        onPointerEnter={() => openSession(sessionId)}
+        onPointerLeave={() => closeSession(sessionId)}
+        // WCAG 1.4.13: content shown on hover must be dismissible without moving
+        // the pointer. Radix's own dismissal path runs through `setOpen`, which
+        // is inert here because the store owns `open`, so Escape is wired
+        // straight to the store. DismissableLayer listens on the document, so it
+        // fires even though nothing inside the card can hold focus.
+        onEscapeKeyDown={dismiss}
       >
-        <SessionBriefContent {...brief} onDismiss={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
+        <SessionBriefContent {...brief} onDismiss={dismiss} />
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -333,8 +334,7 @@ export function SessionBriefDescription({
   createdAt,
   source,
   changeRequests,
-  changeRequestLoadState,
-}: SessionBriefProps & { id: string }) {
+}: Omit<SessionBrief, 'title'> & { id: string }) {
   const t = useTranslations('sidebar.sessionList.brief');
   const statusLabel = useStatusLabel(status);
 
@@ -344,7 +344,7 @@ export function SessionBriefDescription({
       {source.kind !== 'chat'
         ? ` ${t('source')}: ${source.label}${source.triggerSlug ? `, ${source.triggerSlug}` : ''}.`
         : null}{' '}
-      {changeRequestLoadState === 'ready' && changeRequests.length > 0
+      {changeRequests.length > 0
         ? `${t('changeRequests')}: ${changeRequests
             .map(
               (changeRequest) =>

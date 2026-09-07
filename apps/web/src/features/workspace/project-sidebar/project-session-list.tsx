@@ -51,7 +51,6 @@ import {
   MobileSessionCreatedTime,
   SessionBriefDescription,
   SessionBriefHoverCard,
-  type ChangeRequestLoadState,
 } from '@/features/workspace/project-sidebar/session-brief-hover-card';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import {
@@ -142,6 +141,35 @@ const SESSION_MENU_TRIGGER_CLASS = cn(
   'hover:text-foreground data-[state=open]:text-foreground',
 );
 
+/** The same trigger on a touch device.
+ *
+ *  It cannot stay hover-revealed and absolutely positioned — there is no hover,
+ *  and the glyph has to hold a real finger target. It goes `relative` (in flex
+ *  flow, nothing running underneath it) and permanently visible.
+ *
+ *  The size is split from the target on purpose. `size-12` made the button the
+ *  full 44.16px of the row's own `min-h-12`, so pressing it lit a slab of
+ *  `bg-sidebar-accent` spanning the entire row height — a control that reads as
+ *  heavy as the row it belongs to. The square is `size-8` and an unpainted
+ *  `::after` carries the touch target instead:
+ *
+ *    size-8            8 × 0.23rem = 29.44px   ← what you see
+ *    after:-inset-2  + 2 × 7.36px   = 44.16px  ← what you can hit
+ *
+ *  44.16px is exactly `min-h-12`, so the target fills the row's height and not
+ *  one pixel more: it can never annex a neighbouring row's right edge. Nothing
+ *  in the row clips (`overflow-hidden` would drop the overflowing hit area), and
+ *  `px-2` on the row is 7.36px, so the target ends flush with the row's edge.
+ *
+ *  All three variants are the exact complement of the hover-card gate
+ *  (`min-width: 768px` AND `hover: hover` AND `pointer: fine`), which is why the
+ *  same block is written narrow-viewport, no-hover, and coarse-pointer. */
+const SESSION_MENU_TRIGGER_TOUCH_CLASS = cn(
+  "max-md:pointer-events-auto max-md:relative max-md:size-8 max-md:translate-y-0 max-md:opacity-100 max-md:after:absolute max-md:after:-inset-2 max-md:after:content-['']",
+  "[@media(hover:none)]:pointer-events-auto [@media(hover:none)]:relative [@media(hover:none)]:size-8 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100 [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-2 [@media(hover:none)]:after:content-['']",
+  "[@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:relative [@media(pointer:coarse)]:size-8 [@media(pointer:coarse)]:translate-y-0 [@media(pointer:coarse)]:opacity-100 [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-2 [@media(pointer:coarse)]:after:content-['']",
+);
+
 /** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
  *  centered in an identical 32px line at all three levels. */
 const SESSION_ROW_HEIGHT_CLASS = 'h-8';
@@ -217,11 +245,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   // The brief is a session record, not a Review Center inbox. It therefore
   // loads every CR state even when the Review Center feature flag is disabled.
-  const {
-    data: changeRequestData,
-    isLoading: isChangeRequestLoading,
-    isError: isChangeRequestError,
-  } = useQuery({
+  const { data: changeRequestData } = useQuery({
     queryKey: changeRequestKeys.list(projectId, 'all'),
     queryFn: () => listChangeRequests(projectId, 'all'),
     staleTime: 5_000,
@@ -282,13 +306,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     () => groupChangeRequestsBySession(changeRequestData?.change_requests ?? [], sessions),
     [changeRequestData?.change_requests, sessions],
   );
-  const changeRequestLoadState: ChangeRequestLoadState = changeRequestData
-    ? 'ready'
-    : isChangeRequestError
-      ? 'error'
-      : isChangeRequestLoading
-        ? 'loading'
-        : 'ready';
   // Filtering itself lives in the nested `⋯` menu (SessionFilterMenu, mounted
   // both on the Sessions header and on every section header below); this list
   // only applies the two ANDed multi-select facets from the store.
@@ -408,7 +425,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             childCount={children.length}
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
             changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
-            changeRequestLoadState={changeRequestLoadState}
             canShowHoverCard={canShowSessionHoverCard}
             reviewEnabled={reviewEnabled}
             onOpenChangeRequest={setSelectedChangeRequestId}
@@ -747,7 +763,6 @@ interface ProjectSessionRowProps {
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
   changeRequests: readonly ChangeRequest[];
-  changeRequestLoadState: ChangeRequestLoadState;
   canShowHoverCard: boolean;
   reviewEnabled: boolean;
   onOpenChangeRequest: (changeRequestId: string) => void;
@@ -773,7 +788,6 @@ function ProjectSessionRow({
   childCount = 0,
   reviewCount = 0,
   changeRequests,
-  changeRequestLoadState,
   canShowHoverCard,
   reviewEnabled,
   onOpenChangeRequest,
@@ -800,7 +814,13 @@ function ProjectSessionRow({
   // the hover shift below only makes sense when there is something to shift.
   const showSpawnedBy = Boolean(spawnedBy) && !nested;
   const hasIndicators = showSpawnedBy || Boolean(SourceIcon) || sessionIsShared(session);
-  const lifecycleStatus = sessionDisplayStatus(session);
+  // `reviewCount` is not optional here, whatever the signature's default says.
+  // Omitting it does not mean "unknown", it asserts "nothing is waiting", which
+  // is how the row's dot and this row's own hover card came to disagree: the dot
+  // passed the count and went green, the card omitted it and went grey while
+  // listing the very change requests that made it `needs-you`. Both now read the
+  // same `reviewCount` prop, so they agree by construction rather than by luck.
+  const displayStatus = sessionDisplayStatus(session, reviewCount);
 
   const sessionLink = (
     <HoverPrefetchLink
@@ -871,12 +891,12 @@ function ProjectSessionRow({
             correct. The prefetch now starts on hover/focus/touch. */}
         {canShowHoverCard ? (
           <SessionBriefHoverCard
+            sessionId={session.session_id}
             title={displayTitle}
-            status={lifecycleStatus}
+            status={displayStatus}
             createdAt={session.created_at}
             source={source}
             changeRequests={changeRequests}
-            changeRequestLoadState={changeRequestLoadState}
             projectId={session.project_id}
             reviewEnabled={reviewEnabled}
             onOpenChangeRequest={onOpenChangeRequest}
@@ -889,12 +909,10 @@ function ProjectSessionRow({
 
         <SessionBriefDescription
           id={descriptionId}
-          title={displayTitle}
-          status={lifecycleStatus}
+          status={displayStatus}
           createdAt={session.created_at}
           source={source}
           changeRequests={changeRequests}
-          changeRequestLoadState={changeRequestLoadState}
         />
 
         {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
@@ -988,9 +1006,7 @@ function ProjectSessionRow({
                 'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
                 'focus-visible:pointer-events-auto focus-visible:opacity-100',
                 'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
-                'max-md:pointer-events-auto max-md:static max-md:size-12 max-md:translate-y-0 max-md:opacity-100',
-                '[@media(hover:none)]:pointer-events-auto [@media(hover:none)]:static [@media(hover:none)]:size-12 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100',
-                '[@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:static [@media(pointer:coarse)]:size-12 [@media(pointer:coarse)]:translate-y-0 [@media(pointer:coarse)]:opacity-100',
+                SESSION_MENU_TRIGGER_TOUCH_CLASS,
               )}
               onClick={(e) => {
                 e.preventDefault();
