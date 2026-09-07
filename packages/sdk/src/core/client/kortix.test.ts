@@ -1429,6 +1429,7 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
 });
 
 test('pi session files use the environment while messages stay on the worker', async () => {
+  let healthPolls = 0;
   globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
     const url = requestUrl(input);
     const request = input instanceof Request ? input : null;
@@ -1449,7 +1450,14 @@ test('pi session files use the environment while messages stay on the worker', a
         preview_token: null,
       });
     }
-    if (url.includes('/file?path=')) return jsonResponse([]);
+    if (url.endsWith('/p/environment-files-pi/8000/kortix/health')) {
+      healthPolls += 1;
+      return jsonResponse({ runtimeReady: healthPolls > 1 });
+    }
+    if (url.includes('/file?path=')) {
+      expect(healthPolls).toBe(2);
+      return jsonResponse([]);
+    }
     if (url.endsWith('/sessions/FILES-PI')) {
       return jsonResponse({ agent_name: 'agent', metadata: {} });
     }
@@ -1460,6 +1468,7 @@ test('pi session files use the environment while messages stay on the worker', a
   const session = k.session('PROJ', 'FILES-PI');
 
   await session.files.list('/workspace');
+  expect(healthPolls).toBe(2);
   expect(calls.some((call) => call.url.endsWith('/environment/ensure'))).toBe(true);
   expect(calls.find((call) => call.url.includes('/file?path='))?.url).toContain(
     '/p/environment-files-pi/8000/file',

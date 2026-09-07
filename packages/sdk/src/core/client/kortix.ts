@@ -25,6 +25,7 @@ import * as A from '../rest/platform-client/auth';
 import type { HeadlessAuthApi } from '../rest/platform-client/auth';
 import { createKortixSession } from '../auth/session';
 import { getSessionHealth } from '../session/health';
+import { resolveSessionWorkspaceEnvironment } from '../session/workspace-readiness';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
 import { loadPreviewUrlTemplate } from '../session/preview-config';
 import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../session/preview-options';
@@ -1066,8 +1067,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         const deadline = Date.now() + (opts?.readyTimeoutMs ?? 180_000);
         let environment: P.ProjectSessionEnvironment | null = null;
         while (Date.now() < deadline) {
-          environment = await P.ensureProjectSessionEnvironment(projectId, sessionId);
-          if (environment.status === 'active' && environment.external_id) {
+          const resolved = await resolveSessionWorkspaceEnvironment(projectId, sessionId);
+          environment = resolved.environment;
+          if (resolved.ready && environment.external_id) {
             const workspaceReady: SessionRuntimeEntry = {
               ...ready,
               workspaceRuntimeUrl: getSandboxUrlForExternalId(environment.external_id),

@@ -66,6 +66,9 @@ owns workspace files, project paths, Git operations, terminals, and preview port
 
 React hosts mount `useSessionWorkspace(projectId, sessionId)` when a workspace
 surface opens. Wait for `phase: 'ready'` before requesting files or project data.
+The SDK checks the environment's own daemon readiness before publishing its workspace
+URL. An allocated environment can still be preparing its checkout. Session-scoped
+file methods use the same readiness check.
 The SDK recognizes the server-owned Pi metadata on `/start`, including
 `pi_worker_boot` and `runtimeArtifact`. Hosts do not infer the runtime from its URL.
 

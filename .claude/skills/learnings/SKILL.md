@@ -4832,3 +4832,15 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
   only after setup. File access does not depend on the OpenCode process.
 - Enforcement: `proxy-auth.test.ts` reproduces the premature `404`, then verifies
   auth, checkout, setup, ready contents, and a genuinely missing file.
+
+
+### Prove workspace readiness before publishing its SDK address (2026-09-07)
+
+- Incident: a Pi environment was active before its checkout completed. File
+  previews cached a `404`; the same path existed after startup. A new API build
+  did not update the daemon already baked into every environment image.
+- Rule: React workspace views and session-scoped file methods must probe the
+  selected environment's `runtimeReady` field before exposing its address.
+- Enforcement: `workspace-readiness.test.ts` exercises real authenticated HTTP
+  across provisioning, startup, ready, transient failure, and boot failure.
+  `kortix.test.ts` rejects file reads made before the second readiness response.

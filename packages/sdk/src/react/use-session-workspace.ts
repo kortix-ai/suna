@@ -3,10 +3,8 @@
 import { useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
-import {
-  ensureProjectSessionEnvironment,
-  type ProjectSessionEnvironment,
-} from '../core/rest/projects-client';
+import type { ProjectSessionEnvironment } from '../core/rest/projects-client';
+import { resolveSessionWorkspaceEnvironment } from '../core/session/workspace-readiness';
 import {
   setCurrentWorkspaceRuntime,
   type CurrentRuntimeState,
@@ -58,26 +56,28 @@ export function useSessionWorkspace(
   const workspaceSandboxId = useCurrentRuntime((state) => state.workspaceSandboxId);
   const needsEnvironment = enabled && dataRuntimeKind === 'environment' && !workspaceUrl;
 
-  const environmentQuery = useQuery<ProjectSessionEnvironment>({
+  const environmentQuery = useQuery({
     queryKey: sessionWorkspaceKey(projectId ?? '', sessionId ?? ''),
-    queryFn: () => ensureProjectSessionEnvironment(projectId as string, sessionId as string),
+    queryFn: ({ signal }) =>
+      resolveSessionWorkspaceEnvironment(projectId as string, sessionId as string, signal),
     enabled: needsEnvironment,
     refetchInterval: (query) =>
-      query.state.data?.status === 'active' && query.state.data.external_id ? false : 1_000,
+      query.state.data?.ready ? false : 1_000,
     retry: 2,
     retryDelay: (attempt) => Math.min(500 * 2 ** attempt, 2_000),
     staleTime: 0,
   });
 
-  const environment = environmentQuery.data ?? null;
+  const environment = environmentQuery.data?.environment ?? null;
+  const environmentReady = environmentQuery.data?.ready === true;
   useEffect(() => {
     if (dataRuntimeKind !== 'environment') return;
-    if (environment?.status !== 'active' || !environment.external_id) return;
+    if (!environmentReady || !environment?.external_id) return;
     setCurrentWorkspaceRuntime(
       getSandboxUrlForExternalId(environment.external_id),
       environment.external_id,
     );
-  }, [dataRuntimeKind, environment]);
+  }, [dataRuntimeKind, environment, environmentReady]);
 
   const phase = deriveSessionWorkspacePhase({
     enabled,

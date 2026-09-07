@@ -38,8 +38,10 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 
 Mount `useSessionWorkspace` only in a surface that needs repository files,
 PTYs, or preview ports. A Pi session then provisions or resumes its separate
-environment. A one-box session reuses its control runtime without another API
-request.
+environment. The hook waits for that environment's daemon to report
+`runtimeReady: true` before exposing `phase: 'ready'` and its workspace URL.
+Allocation alone does not prove checkout readiness. A one-box session reuses
+its control runtime without another API request.
 
 ```tsx
 import { useSession, useSessionWorkspace } from '@kortix/sdk/react';
