@@ -1,14 +1,18 @@
 import {
   BugIcon,
   ChartLineIcon,
+  ChatCircleIcon,
   CurrencyDollarIcon,
+  DatabaseIcon,
   EnvelopeIcon,
   HeadsetIcon,
   type IconProps,
   MagnifyingGlassIcon,
+  MegaphoneIcon,
   NotepadIcon,
   PuzzlePieceIcon,
   ShieldCheckIcon,
+  UsersIcon,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -39,6 +43,19 @@ export interface TemplateVisual {
   color: string;
   /** Tile fill behind the icon, e.g. `bg-kortix-blue/15`. */
   bgColor: string;
+  /**
+   * The card/detail banner wash, e.g. `from-kortix-blue/30 via-kortix-blue/5`.
+   *
+   * It rides on the SAME hue index as `color`/`bgColor` above, so a template's
+   * banner, its tile and its icon can never disagree — one template, one hue,
+   * everywhere it appears.
+   *
+   * This is the one gradient in the feature, and it is identity rather than
+   * decoration: it is how a person tells one card from another at a glance in a
+   * grid where every card has the same shape. Both stops are `kortix-*` tokens,
+   * so it flips with the theme like every other colour here.
+   */
+  banner: string;
 }
 
 /**
@@ -48,11 +65,36 @@ export interface TemplateVisual {
  * chart.
  */
 const VISUALS: readonly TemplateVisual[] = [
-  { Icon: BugIcon, color: 'text-kortix-blue', bgColor: 'bg-kortix-blue/15' },
-  { Icon: ShieldCheckIcon, color: 'text-kortix-red', bgColor: 'bg-kortix-red/15' },
-  { Icon: ChartLineIcon, color: 'text-kortix-orange', bgColor: 'bg-kortix-orange/15' },
-  { Icon: CurrencyDollarIcon, color: 'text-kortix-green', bgColor: 'bg-kortix-green/15' },
-  { Icon: HeadsetIcon, color: 'text-kortix-purple', bgColor: 'bg-kortix-purple/15' },
+  {
+    Icon: BugIcon,
+    color: 'text-kortix-blue',
+    bgColor: 'bg-kortix-blue/15',
+    banner: 'from-kortix-blue/30 via-kortix-blue/5',
+  },
+  {
+    Icon: ShieldCheckIcon,
+    color: 'text-kortix-red',
+    bgColor: 'bg-kortix-red/15',
+    banner: 'from-kortix-red/30 via-kortix-red/5',
+  },
+  {
+    Icon: ChartLineIcon,
+    color: 'text-kortix-orange',
+    bgColor: 'bg-kortix-orange/15',
+    banner: 'from-kortix-orange/30 via-kortix-orange/5',
+  },
+  {
+    Icon: CurrencyDollarIcon,
+    color: 'text-kortix-green',
+    bgColor: 'bg-kortix-green/15',
+    banner: 'from-kortix-green/30 via-kortix-green/5',
+  },
+  {
+    Icon: HeadsetIcon,
+    color: 'text-kortix-purple',
+    bgColor: 'bg-kortix-purple/15',
+    banner: 'from-kortix-purple/30 via-kortix-purple/5',
+  },
 ];
 
 /**
@@ -61,6 +103,13 @@ const VISUALS: readonly TemplateVisual[] = [
  * the deterministic pick, which is stable but arbitrary.
  */
 const BY_KEYWORD: ReadonlyArray<readonly [RegExp, ComponentType<IconProps>]> = [
+  // FIRST MATCH WINS, so the specific subjects come before the broad ones.
+  // `feedback-triage` is feedback, not an incident, and it would otherwise be
+  // claimed by `/triage/` below.
+  [/candidate|hiring|recruit|resume|screening|interview/, UsersIcon],
+  [/query|database|sql|postgres|schema|index/, DatabaseIcon],
+  [/feedback|survey|nps|sentiment|review/, ChatCircleIcon],
+  [/\bads?\b|campaign|creative|a-?b-?test/, MegaphoneIcon],
   [/error|triage|bug|incident|on-?call/, BugIcon],
   [/security|pentest|audit|vuln/, ShieldCheckIcon],
   [/seo|growth|analytic|metric|report/, ChartLineIcon],

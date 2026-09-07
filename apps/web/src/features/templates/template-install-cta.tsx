@@ -31,7 +31,15 @@ import type { Template } from './templates-catalog';
  *    makes, after a project-picker step that modal never needs (it already
  *    knows `projectId`).
  */
-export function TemplateInstallCta({ template }: { template: Template }) {
+export function TemplateInstallCta({
+  template,
+  className,
+}: {
+  template: Template;
+  /** Applied to every branch below, so the button keeps one shape while auth
+   *  resolves and the layout never reflows under it. */
+  className?: string;
+}) {
   const { user, isLoading: authLoading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
@@ -50,7 +58,7 @@ export function TemplateInstallCta({ template }: { template: Template }) {
     // signed in — `useAuth` resolves in one tick locally, but a cold load over
     // the network can take longer.
     return (
-      <Button size="lg" disabled>
+      <Button size="lg" disabled className={className}>
         Start free to install
       </Button>
     );
@@ -59,7 +67,7 @@ export function TemplateInstallCta({ template }: { template: Template }) {
   if (!user) {
     const installHref = `/auth?redirect=${encodeURIComponent(`${pathname}?install=1`)}`;
     return (
-      <Button asChild size="lg">
+      <Button asChild size="lg" className={className}>
         <Link href={installHref}>Start free to install</Link>
       </Button>
     );
@@ -67,7 +75,7 @@ export function TemplateInstallCta({ template }: { template: Template }) {
 
   return (
     <>
-      <Button size="lg" onClick={() => setInstallOpen(true)}>
+      <Button size="lg" onClick={() => setInstallOpen(true)} className={className}>
         Install
       </Button>
       <PublicTemplateInstallDialog

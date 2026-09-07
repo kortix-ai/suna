@@ -82,7 +82,27 @@ export const CONNECTORS: Record<string, Connector> = {
  */
 export function connectorFor(id: string): Connector {
   const key = id.trim().toLowerCase();
-  return CONNECTORS[key] ?? { id: key, name: id };
+  // A manifest spells a toolkit however its author typed it, and the registry
+  // keys are separator-free — `new_relic` in a `kortix.yaml` is the `newrelic`
+  // we ship a mark for. Without this second lookup an app we HAVE a logo for
+  // renders as an initials tile, which is what the SRE template did.
+  const compact = key.replace(/[^a-z0-9]/g, '');
+  return (
+    CONNECTORS[key] ??
+    CONNECTORS[compact] ?? { id: key, name: titleCaseFromId(key) }
+  );
+}
+
+/**
+ * `better_stack` → `Better Stack`. A presentational fallback for an app with no
+ * row above, so one grid never mixes proper names with raw manifest slugs. It
+ * cannot know real casing (`PagerDuty`), so an app worth naming exactly earns a
+ * row in {@link CONNECTORS} instead.
+ */
+function titleCaseFromId(key: string): string {
+  const words = key.split(/[^a-z0-9]+/i).filter(Boolean);
+  if (words.length === 0) return key;
+  return words.map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
 }
 
 /** Two-letter monogram for a connector with no mark — the `ProviderLogo` fallback. */

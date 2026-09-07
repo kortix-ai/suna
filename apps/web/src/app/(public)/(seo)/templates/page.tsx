@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 
-import { Button } from '@/components/ui/marketing/button';
-import { PublicTemplatesGrid } from '@/features/templates/public-templates-grid';
+import { PublicTemplatesExplore } from '@/features/templates/public-templates-explore';
 import { loadPublicTemplates } from '@/features/templates/public-templates-server';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { socialMetadata } from '@/lib/seo/metadata';
@@ -77,27 +75,15 @@ export default async function TemplatesPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
-      <div className="mx-auto max-w-7xl px-6 pb-24 sm:pb-32">
-        {/* Measure capped at max-w-2xl so the deck reads as a paragraph, not as a
-            banner stretched across the full 80rem catalog width — the same
-            header shape `/use-cases` uses. */}
-        <header className="max-w-2xl pt-32 pb-12 sm:pt-44 sm:pb-16">
-          <span className="text-muted-foreground/70 font-mono text-xs tracking-wider uppercase">
-            {TITLE}
-          </span>
-          <h1 className="text-foreground mt-4 text-3xl font-medium tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
-            {HEADLINE}
-          </h1>
-          <p className="text-muted-foreground mt-5 text-base leading-relaxed sm:text-lg">
-            {DESCRIPTION}
-          </p>
-          <Button asChild size="lg" className="mt-8">
-            <Link href="/auth">Start free to install</Link>
-          </Button>
-        </header>
-
-        <PublicTemplatesGrid templates={templates} />
-      </div>
+      {/* The explore surface owns the page container: it is a pinned rail beside
+          the catalog, so the headline and the description belong in that rail
+          rather than in a banner above it. They are passed down from the same
+          constants the metadata above uses, so the two can never drift. */}
+      <PublicTemplatesExplore
+        templates={templates}
+        headline={HEADLINE}
+        description={DESCRIPTION}
+      />
     </main>
   );
 }

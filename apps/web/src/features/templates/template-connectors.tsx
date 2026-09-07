@@ -21,7 +21,7 @@ import type { TemplateConnectorRow } from './templates-catalog';
  * see `next.config.ts`), Next serves a `.svg` src as-is rather than routing it
  * through `/_next/image`, which would answer `400`.
  */
-function ConnectorMark({ connector }: { connector: Connector }) {
+export function ConnectorMark({ connector }: { connector: Connector }) {
   return (
     <span className="bg-muted flex size-6 shrink-0 items-center justify-center rounded-sm">
       {connector.logo ? (

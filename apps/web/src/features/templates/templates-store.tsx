@@ -14,13 +14,12 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 import { TemplateInstallModal } from './install-modal';
-import { TemplateCard } from './template-card';
+import { TemplateCard, TemplateCardSkeleton } from './template-card';
 import { type Template, countLabel, templateMatchesQuery } from './templates-catalog';
 
 /**
@@ -124,12 +123,12 @@ export function TemplatesStore({ projectId }: { projectId: string }) {
           </InputGroupSearch>
 
           {catalog.isLoading ? (
-            // Six skeletons at the card's own height, so the grid does not jump
+            // Six skeletons in the card's own shape, so the grid does not jump
             // when the response lands.
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 6 }, (_, index) => (
                 <li key={index}>
-                  <Skeleton className="h-[122px] w-full rounded-md" />
+                  <TemplateCardSkeleton size="default" />
                 </li>
               ))}
             </ul>
@@ -158,7 +157,11 @@ export function TemplatesStore({ projectId }: { projectId: string }) {
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {filtered.map((template) => (
                 <li key={template.slug}>
-                  <TemplateCard template={template} onOpen={() => setOpenSlug(template.slug)} />
+                  <TemplateCard
+                    template={template}
+                    size="default"
+                    onOpen={() => setOpenSlug(template.slug)}
+                  />
                 </li>
               ))}
             </ul>

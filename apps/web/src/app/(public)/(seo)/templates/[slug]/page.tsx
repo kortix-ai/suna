@@ -2,7 +2,10 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { PublicTemplateDetail } from '@/features/templates/public-template-detail';
-import { loadPublicTemplate } from '@/features/templates/public-templates-server';
+import {
+  loadPublicTemplate,
+  loadPublicTemplates,
+} from '@/features/templates/public-templates-server';
 import type { Template } from '@/features/templates/templates-catalog';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { socialMetadata } from '@/lib/seo/metadata';
@@ -57,6 +60,12 @@ export default async function PublicTemplatePage(props: PageProps) {
   const template = await loadPublicTemplate(slug);
   if (!template) notFound();
 
+  // Cross-links at the foot of the page, server-rendered like the rest of it so
+  // they are real crawlable links between catalog pages rather than a
+  // client-side fetch. The catalog is small, so this is the same read the index
+  // does and it is already cached for the hour this page is.
+  const otherTemplates = (await loadPublicTemplates()).filter((other) => other.slug !== slug);
+
   const url = `${CANONICAL_ORIGIN}/templates/${slug}`;
   const description = describe(template);
   const jsonLd = [
@@ -98,7 +107,7 @@ export default async function PublicTemplatePage(props: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
-      <PublicTemplateDetail template={template} />
+      <PublicTemplateDetail template={template} otherTemplates={otherTemplates} />
     </main>
   );
 }

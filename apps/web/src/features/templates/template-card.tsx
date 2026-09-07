@@ -1,93 +1,143 @@
 'use client';
 
+import { ArrowRightIcon, GithubLogoIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { templateVisual } from './template-visual';
-import { type Template, templateRepoSlug } from './templates-catalog';
+import { type Template, countLabel } from './templates-catalog';
 
 /**
- * The template card — minimal on purpose: tile + title + install affordance on
- * one row, a two-line description, and a quiet mono `owner/repo` row. The
- * WHOLE card is one button that opens the install modal, so the Install
- * affordance is a styled `span`, never a nested `<button>` — the same
- * one-control rule `AppCard` follows.
+ * One template, as a card.
  *
- * Every card in a grid is the SAME height, and two things are load-bearing for
- * that: the description reserves two line boxes whether or not it fills them,
- * and the card fills its grid cell (`h-full`). See the notes on each.
+ * It reads as an ACTION card — a banner that gives the template a face, then
+ * the name, what it does, where it came from, and the affordance — rather than
+ * a dense utility row. That is the right weight for the primary surface of a
+ * catalog whose whole job is "pick one of these".
+ *
+ * The banner is the template's identity, not decoration: the hue comes from
+ * `templateVisual`, so the same template wears the same colour on this card, on
+ * its detail page, and in the install modal, and a grid of otherwise identical
+ * shapes stays scannable.
+ *
+ * The WHOLE card is one control. On the public catalog it is a real `<a href>`
+ * a crawler follows to the detail page; in the in-project store it is a button
+ * that opens the install modal. Either way the affordance in the corner is a
+ * styled `span`, never a nested `<button>`.
  */
+export function TemplateCardSkeleton({ size = 'featured' }: { size?: 'default' | 'featured' }) {
+  const featured = size === 'featured';
+  return (
+    // Shape-matched to the card above — banner, title, two description lines,
+    // meta row — so the grid does not jump when the catalog lands. A single
+    // fixed-height block would have to guess the card's height and be wrong the
+    // moment any of its type or spacing moves.
+    <div className="bg-popover overflow-hidden rounded-md border">
+      <Skeleton className={cn('w-full rounded-none', featured ? 'h-32' : 'h-20')} />
+      <div className={cn('space-y-2', featured ? 'p-6' : 'p-5')}>
+        <Skeleton className="h-5 w-2/5" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-4/5" />
+        <Skeleton className="mt-4 h-4 w-1/2" />
+      </div>
+    </div>
+  );
+}
+
 export function TemplateCard({
   template,
   onOpen,
   href,
+  size = 'featured',
 }: {
   template: Template;
-  /** Omitted on the public grid, where the card is a link instead of a button. */
+  /** Opens the install modal. The in-project store passes this instead of `href`. */
   onOpen?: () => void;
-  /**
-   * Render the card as a link to this destination instead of a button. The
-   * public `/templates` grid sets it so every card is a real `<a href>` a
-   * crawler can follow; the in-project store leaves it unset and opens the
-   * install modal.
-   */
+  /** Renders the card as a link. The public grid passes this instead of `onOpen`. */
   href?: string;
+  /**
+   * `featured` is the catalog's own grid — a taller banner and a larger title.
+   * `default` is the compact form for cross-links ("Other templates").
+   */
+  size?: 'default' | 'featured';
 }) {
-  const { Icon, color, bgColor } = templateVisual(template.slug);
+  const { Icon, banner, color } = templateVisual(template.slug);
+  const featured = size === 'featured';
+
   const className = cn(
-    // `h-full`, not just `w-full`: the card is wrapped in an `<li>` grid cell,
-    // and a grid cell stretches while the button inside it does not. Without
-    // this a short card leaves a gap under itself in a stretched row.
-    'group hover:border-foreground/20 bg-popover flex h-full w-full cursor-pointer flex-col gap-2.5 rounded-md border p-4 text-left',
-    'duration-normal transition-[border-color,transform] hover:-translate-y-0.5 active:scale-[0.99]',
+    // `h-full`, not just `w-full`: the card sits in a stretched grid cell, and
+    // the element inside it does not stretch on its own. Without this a short
+    // card leaves a gap under itself in a taller row.
+    'group bg-popover hover:border-foreground/20 flex h-full w-full flex-col overflow-hidden rounded-md border text-left',
+    'duration-normal transition-[border-color,transform] ease-out active:scale-[0.99]',
   );
+
   const body = (
     <>
-      <div className="flex items-center gap-2.5">
-        {/* Tinted status tile — the sanctioned tinted-tile + fill-icon pattern.
-            The pair is derived from the slug (see `templateVisual`), never stored. */}
-        <span
-          className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-sm',
-            bgColor,
-            color,
-          )}
-        >
-          <Icon weight="fill" className="size-5" aria-hidden />
-        </span>
-        <span className="text-foreground min-w-0 truncate text-sm font-medium">
-          {template.title}
-        </span>
-        {/* The install affordance — a styled span, not a button, so the card
-            stays the one control. */}
-        <span
+      <div
+        className={cn(
+          'flex items-center justify-center bg-gradient-to-br',
+          banner,
+          featured ? 'h-32' : 'h-20',
+        )}
+      >
+        <Icon
+          weight="fill"
+          className={cn(featured ? 'size-9' : 'size-6', color, 'opacity-80')}
           aria-hidden
-          className={cn(
-            'bg-background text-foreground ml-auto inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-medium',
-            'group-hover:bg-foreground group-hover:text-background duration-normal transition-colors',
-          )}
-        >
-          Install
-        </span>
+        />
       </div>
-      {/* `min-h-[2lh]` — exactly two line boxes of THIS paragraph, so a template
-          with a one-line description reserves the same height as one with two
-          and every card in the grid matches. Derived from the computed
-          line-height, so it stays correct if either token moves. */}
-      <p className="text-muted-foreground line-clamp-2 min-h-[2lh] text-xs leading-relaxed text-pretty">
-        {template.description ?? 'No description in its kortix.yaml.'}
-      </p>
-      <div className="text-muted-foreground mt-auto flex items-center gap-1.5 pt-0.5 text-xs">
-        <span className="min-w-0 truncate font-mono">{templateRepoSlug(template)}</span>
+
+      <div className={cn('flex flex-1 flex-col gap-4', featured ? 'p-6' : 'p-5')}>
+        <div className="min-w-0 space-y-1.5">
+          <div
+            className={cn(
+              'text-foreground font-medium tracking-tight text-balance',
+              featured ? 'text-lg' : 'text-base',
+            )}
+          >
+            {template.title}
+          </div>
+          {template.description ? (
+            <p className="text-muted-foreground line-clamp-2 text-sm leading-relaxed text-pretty">
+              {template.description}
+            </p>
+          ) : null}
+        </div>
+
+        {/* `mt-auto` pins this row to the bottom, so the affordance sits on one
+            line across a row of cards whose descriptions differ in length. */}
+        <div className="mt-auto flex items-center justify-between gap-3 pt-1">
+          <span className="text-muted-foreground/70 inline-flex min-w-0 items-center gap-1.5 text-xs">
+            <GithubLogoIcon className="size-3.5 shrink-0" aria-hidden />
+            {/* The publisher, not the full `owner/repo`: the repo slug is long
+                enough to truncate away the count beside it, and the count is
+                the part that helps you choose. The full slug is one click away
+                on the detail page. */}
+            <span className="truncate font-mono">{template.repo_owner}</span>
+            {template.agents.length > 0 ? (
+              <span className="shrink-0 tabular-nums">
+                · {countLabel(template.agents.length, 'agent')}
+              </span>
+            ) : null}
+          </span>
+          <span className="text-foreground group-hover:text-kortix-base duration-normal inline-flex shrink-0 items-center gap-1 text-sm font-medium transition-colors ease-out">
+            {href ? 'View' : 'Install'}
+            <ArrowRightIcon
+              className="duration-normal size-3.5 transition-transform ease-out group-hover:translate-x-0.5"
+              aria-hidden
+            />
+          </span>
+        </div>
       </div>
     </>
   );
-  // A crawler follows `<a href>`, not an onClick — so the PUBLIC grid passes
-  // `href` and the card renders as a Link. Either way it stays ONE control.
+
   if (href) {
+    // No `aria-label`: the card's visible title IS the link's accessible name,
+    // and "Install X" would misdescribe a link that opens a detail page.
     return (
-      // No `aria-label` here: the card's visible title IS the link's accessible
-      // name, and "Install X" would misdescribe a link that opens a detail page.
       <Link href={href} className={className}>
         {body}
       </Link>
@@ -98,7 +148,7 @@ export function TemplateCard({
       type="button"
       onClick={onOpen}
       aria-label={`Install ${template.title}`}
-      className={className}
+      className={cn(className, 'cursor-pointer')}
     >
       {body}
     </button>
