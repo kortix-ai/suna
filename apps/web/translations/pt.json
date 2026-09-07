@@ -1261,7 +1261,22 @@
       "empty": "Ainda não existem sessões",
       "noMatches": "Nenhuma sessão corresponde aos filtros ativos.",
       "actions": "Ações da sessão",
+      "actionsFor": "Ações para {title}",
       "reviewCount": "A aguardar revisão: {count}",
+      "brief": {
+        "status": "Estado",
+        "created": "Criada em",
+        "source": "Origem",
+        "changeRequests": "Pedidos de alteração",
+        "noChangeRequests": "Sem pedidos de alteração",
+        "changeRequestsLoading": "A carregar pedidos de alteração",
+        "changeRequestsUnavailable": "Pedidos de alteração indisponíveis",
+        "changeRequestStatus": {
+          "open": "Pendente",
+          "merged": "Integrado",
+          "closed": "Fechado"
+        }
+      },
       "status": {
         "needsYou": "Precisa de si",
         "starting": "A iniciar",

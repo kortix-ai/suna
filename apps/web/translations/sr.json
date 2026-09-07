@@ -1261,7 +1261,22 @@
       "empty": "Још нема сесија",
       "noMatches": "Ниједна сесија не одговара активним филтерима.",
       "actions": "Радње сесије",
+      "actionsFor": "Радње за {title}",
       "reviewCount": "Чека преглед: {count}",
+      "brief": {
+        "status": "Статус",
+        "created": "Креирано",
+        "source": "Извор",
+        "changeRequests": "Захтеви за измену",
+        "noChangeRequests": "Нема захтева за измену",
+        "changeRequestsLoading": "Учитавање захтева за измену",
+        "changeRequestsUnavailable": "Захтеви за измену нису доступни",
+        "changeRequestStatus": {
+          "open": "На чекању",
+          "merged": "Спојено",
+          "closed": "Затворено"
+        }
+      },
       "status": {
         "needsYou": "Захтева вашу пажњу",
         "starting": "Покретање",

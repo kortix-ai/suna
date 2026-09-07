@@ -1261,7 +1261,22 @@
       "empty": "No sessions yet",
       "noMatches": "No sessions match the active filters.",
       "actions": "Session actions",
+      "actionsFor": "Actions for {title}",
       "reviewCount": "Awaiting your review: {count}",
+      "brief": {
+        "status": "Status",
+        "created": "Created",
+        "source": "Source",
+        "changeRequests": "Change requests",
+        "noChangeRequests": "No change requests",
+        "changeRequestsLoading": "Loading change requests",
+        "changeRequestsUnavailable": "Change requests unavailable",
+        "changeRequestStatus": {
+          "open": "Pending",
+          "merged": "Merged",
+          "closed": "Closed"
+        }
+      },
       "status": {
         "needsYou": "Needs you",
         "starting": "Starting",

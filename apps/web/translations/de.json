@@ -1261,7 +1261,22 @@
       "empty": "Noch keine Sitzungen",
       "noMatches": "Keine Sitzung entspricht den aktiven Filtern.",
       "actions": "Sitzungsaktionen",
+      "actionsFor": "Aktionen für {title}",
       "reviewCount": "Zur Prüfung: {count}",
+      "brief": {
+        "status": "Status",
+        "created": "Erstellt",
+        "source": "Quelle",
+        "changeRequests": "Änderungsanfragen",
+        "noChangeRequests": "Keine Änderungsanfragen",
+        "changeRequestsLoading": "Änderungsanfragen werden geladen",
+        "changeRequestsUnavailable": "Änderungsanfragen nicht verfügbar",
+        "changeRequestStatus": {
+          "open": "Ausstehend",
+          "merged": "Zusammengeführt",
+          "closed": "Geschlossen"
+        }
+      },
       "status": {
         "needsYou": "Benötigt dich",
         "starting": "Wird gestartet",
