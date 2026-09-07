@@ -71,7 +71,7 @@ export function normalizeGoTrueError(status: number, raw: unknown): { error: str
 export async function gotrue<T = Record<string, unknown>>(
   path: string,
   init: {
-    method?: 'GET' | 'POST' | 'PUT';
+    method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
     body?: unknown;
     bearer?: string | null;
     clientIp?: string | null;

@@ -1,4 +1,4 @@
-import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
+import type { ChangeRequest, ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 
 /**
  * Pure helpers extracted from `project-session-list.tsx` so every decision the
@@ -23,6 +23,55 @@ export const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = [
   'branching',
   'provisioning',
 ];
+
+/**
+ * Index every change-request state by the session that created it.
+ *
+ * New records use `origin_session_id`. Older records can lack that field, so a
+ * unique `head_ref` → `branch_name` match restores the association. Ambiguous
+ * branches stay unassigned instead of showing a change request on the wrong
+ * session.
+ */
+export function groupChangeRequestsBySession(
+  changeRequests: readonly ChangeRequest[],
+  sessions: readonly ProjectSession[],
+): Map<string, ChangeRequest[]> {
+  const sessionIds = new Set(sessions.map((session) => session.session_id));
+  const sessionIdsByBranch = new Map<string, string[]>();
+
+  for (const session of sessions) {
+    const branch = session.branch_name?.trim();
+    if (!branch) continue;
+    const matches = sessionIdsByBranch.get(branch) ?? [];
+    matches.push(session.session_id);
+    sessionIdsByBranch.set(branch, matches);
+  }
+
+  const grouped = new Map<string, ChangeRequest[]>();
+  for (const changeRequest of changeRequests) {
+    let sessionId: string | undefined;
+    if (changeRequest.origin_session_id && sessionIds.has(changeRequest.origin_session_id)) {
+      sessionId = changeRequest.origin_session_id;
+    } else if (!changeRequest.origin_session_id) {
+      const branchMatches = sessionIdsByBranch.get(changeRequest.head_ref) ?? [];
+      if (branchMatches.length === 1) sessionId = branchMatches[0];
+    }
+
+    if (!sessionId) continue;
+    const requests = grouped.get(sessionId) ?? [];
+    requests.push(changeRequest);
+    grouped.set(sessionId, requests);
+  }
+
+  for (const requests of grouped.values()) {
+    requests.sort((left, right) => {
+      const createdDifference = Date.parse(right.created_at) - Date.parse(left.created_at);
+      return createdDifference || right.number - left.number;
+    });
+  }
+
+  return grouped;
+}
 
 /** Whether the session list should keep polling — true while any session is
  *  still mid-provisioning (queued/branching/provisioning). */
