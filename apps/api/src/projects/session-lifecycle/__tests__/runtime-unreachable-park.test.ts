@@ -128,13 +128,36 @@ describe('parkPromptForUnreachableRuntime', () => {
       expect(sqlText(updates.attempts)).toContain('GREATEST');
       expect((updates.availableAt as Date).getTime() - now.getTime()).toBe(delay);
     }
-    selectedRow = { payload: { runtimeUnreachableRetries: 3 } };
+    selectedRow = { payload: { runtimeUnreachableRetries: 4 } };
     expect(
       await parkPromptForUnreachableRuntime('cmd-1', 'runtime stale', {
         now,
         reason: 'runtime_stale',
       }),
-    ).toEqual({ parked: false, retries: 3 });
+    ).toEqual({ parked: false, retries: 4 });
+  });
+
+  test('stale recovery retains one final grace and Stop hold after the third runtime retry', async () => {
+    selectedRow = { payload: { runtimeUnreachableRetries: 3, stopPausedOnDelivery: true } };
+    const now = new Date('2026-09-07T00:10:30Z');
+    expect(
+      await parkPromptForUnreachableRuntime('cmd-1', 'runtime stale', {
+        now,
+        reason: 'runtime_stale',
+      }),
+    ).toEqual({ parked: true, retries: 4 });
+    const updates = updateCalls[0]!.updates;
+    expect(updates.status).toBe('queued');
+    expect(updates.availableAt).toEqual(new Date('2026-09-07T00:12:30Z'));
+    expect(updates.result).toEqual({
+      delivery_blocked: 'runtime_stale',
+      runtime_retries: 4,
+      held: true,
+      stop_paused: true,
+    });
+    expect(sqlText(updates.attempts)).toContain('GREATEST');
+    expect(sqlText(updates.payload)).toContain('deliveryAttempt');
+    expect(sqlText(updates.payload)).toContain('stopPausedOnDelivery');
   });
 
   test('the first unreachable attempt parks the row instead of failing it', async () => {

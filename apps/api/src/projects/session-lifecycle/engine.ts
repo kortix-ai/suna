@@ -2016,7 +2016,7 @@ export async function executeQueuedContinue(
       }
       await markCommandFailed(
         row.commandId,
-        `runtime stale after ${MAX_RUNTIME_UNREACHABLE_RETRIES} retries`,
+        `runtime stale after ${parked.retries} retries`,
         { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
       );
       return 'failed';

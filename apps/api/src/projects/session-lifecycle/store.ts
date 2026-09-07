@@ -777,6 +777,14 @@ export const MAX_RUNTIME_UNREACHABLE_RETRIES = 3;
  */
 const RUNTIME_UNREACHABLE_BACKOFF_MS = [30_000, 120_000, 480_000] as const;
 
+// A pre-swap=1 daemon ignores early swap requests until its 300-second uptime
+// gate, then needs another refresh: it has no deferred swap timer. The ordinary
+// ladder refreshes at 0/30/150 seconds. Keep one final stale-only park at 630
+// seconds so the engine can refresh after the gate and then retry delivery.
+// Two minutes clear the writer's 60-second capability cache and leave time for
+// detached convergence and supervisor boot. This grace is persisted and bounded.
+const RUNTIME_STALE_FINAL_GRACE_MS = 120_000;
+
 /** Set by {@link parkPromptForUnreachableRuntime} on a row waiting for a box. */
 export const RUNTIME_UNREACHABLE_REASON = 'runtime_unreachable';
 export const RUNTIME_STALE_REASON = 'runtime_stale';
@@ -828,10 +836,14 @@ export async function parkPromptForUnreachableRuntime(
   if (!current) return { parked: false, retries: 0 };
 
   const spent = runtimeUnreachableRetries(current.payload);
-  if (spent >= MAX_RUNTIME_UNREACHABLE_RETRIES) return { parked: false, retries: spent };
+  const maxRetries =
+    MAX_RUNTIME_UNREACHABLE_RETRIES + (opts.reason === RUNTIME_STALE_REASON ? 1 : 0);
+  if (spent >= maxRetries) return { parked: false, retries: spent };
   const retries = spent + 1;
   const backoff =
-    RUNTIME_UNREACHABLE_BACKOFF_MS[Math.min(spent, RUNTIME_UNREACHABLE_BACKOFF_MS.length - 1)]!;
+    spent === MAX_RUNTIME_UNREACHABLE_RETRIES
+      ? RUNTIME_STALE_FINAL_GRACE_MS
+      : RUNTIME_UNREACHABLE_BACKOFF_MS[Math.min(spent, RUNTIME_UNREACHABLE_BACKOFF_MS.length - 1)]!;
 
   // Carry the Stop through. `stopPausedOnDelivery` means the user pressed Stop
   // while this row was inside `continueSession`; the hold has to survive a park
@@ -878,7 +890,7 @@ export async function parkPromptForUnreachableRuntime(
     command_id: commandId,
     session_id: opts.sessionId ?? null,
     runtime_retries: retries,
-    max_retries: MAX_RUNTIME_UNREACHABLE_RETRIES,
+    max_retries: maxRetries,
     delivery_blocked: result.delivery_blocked,
     backoff_ms: backoff,
     error,
