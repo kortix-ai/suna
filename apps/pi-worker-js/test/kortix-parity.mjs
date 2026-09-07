@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=45
+// EXPECTED_PASSES=47
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -167,6 +167,25 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   // Worker-level readiness: a session polls BEFORE it has a session to name, so
   // the default export answers it without touching a cell.
   const worker = mod.default;
+  // The spawn benchmark measures a SPAWN, which means each sample must be a
+  // name that has never existed — a loop that reused one would report the cost
+  // of a warm lookup and read as a spectacular result.
+  {
+    // A namespace that records every name it is asked for, so the claim below
+    // is about the bench's behaviour and not about its own arithmetic.
+    const spawnedNames = new Set();
+    const AGENT = {
+      idFromName: (n) => { spawnedNames.add(n); return n; },
+      get: () => ({ fetch: async () => new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } }) }),
+    };
+    const r = await worker.fetch(new Request("http://cell/bench/spawn?n=3"), { AGENT });
+    const b = await r.json();
+    check("the spawn bench reports a distribution, not one lucky sample",
+      b.n === 3 && typeof b.p50 === "number" && typeof b.min === "number", JSON.stringify(b).slice(0, 140));
+    check("and it asked for THREE DIFFERENT isolates — a reused name is not a spawn",
+      spawnedNames.size === 3, `${spawnedNames.size} distinct names for n=3`);
+  }
+
   const r = await worker.fetch(new Request("http://cell/kortix/health"), { AGENT: null });
   const body = await r.json();
   // THE PROXY CARRIES NO `?c=`. A Kortix session reaches this worker through

@@ -1458,6 +1458,41 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/health") return Response.json({ ok: true, agent: "pi-in-a-cell" });
+
+    // SPAWN, MEASURED THE WAY A LIBRARY MEASURES IT.
+    //
+    // agentOS reports 4.8 ms p50 for "time from requesting an execution to
+    // first code running", in-process on one machine — no socket, no TLS, no
+    // proxy. Every number taken from outside this node includes all three, so
+    // comparing them is comparing a function call with a request to Paris.
+    //
+    // This is the same quantity for a cell: ask the binding for an isolate that
+    // has never existed and stop the clock when its code answers. /ping is used
+    // deliberately because it returns BEFORE init(), so the reading is the
+    // spawn and not the schema.
+    //
+    // Measured on dev 2026-09-07 for the record kept in the comparison: from
+    // outside, subtracting two readings over the identical path, the spawn was
+    // 67 ms. This says what it is with nothing subtracted.
+    if (url.pathname === "/bench/spawn") {
+      const n = Math.max(1, Math.min(Number(url.searchParams.get("n") ?? 25), 200));
+      const t = [];
+      for (let i = 0; i < n; i++) {
+        const name = `bench-${Date.now().toString(36)}-${i}-${Math.random().toString(36).slice(2, 8)}`;
+        const t0 = performance.now();
+        await env.AGENT.get(env.AGENT.idFromName(name)).fetch(new Request("http://cell/ping"));
+        t.push(performance.now() - t0);
+      }
+      t.sort((a, b) => a - b);
+      const at = (q) => Math.round(t[Math.min(t.length - 1, Math.floor(t.length * q))] * 100) / 100;
+      return Response.json({
+        n,
+        p50: at(0.5), p90: at(0.9), p99: at(0.99),
+        min: Math.round(t[0] * 100) / 100,
+        max: Math.round(t[t.length - 1] * 100) / 100,
+        note: "in-node: no network, no TLS, no edge — the same quantity agentOS reports as 4.8 ms",
+      });
+    }
     // The session polls readiness BEFORE it has a session to name, so this one
     // answers at the worker, not in a cell.
     if (url.pathname === "/kortix/health" && !url.searchParams.get("c")) {
