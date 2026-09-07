@@ -16,6 +16,7 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -61,6 +62,7 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
   // once it does, without waiting for the message to re-render for other
   // reasons.
   const sessionId = useSessionBrowserStore((s) => s.activeSessionId);
+  const workspaceUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
   const [status, setStatus] = useState<FileAvailability>(() => peekFileAvailability(text));
 
   const alive = useRef(true);
@@ -71,11 +73,9 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
     };
   }, []);
 
-  // Only a live session has a runtime to ask. On the dashboard and project
-  // pages the target is the preview modal and there is nothing to probe — so
-  // stay optimistic there rather than condemning every path on a network
-  // error that says nothing about the file.
-  const canProbe = Boolean(sessionId);
+  // A Pi worker can be ready before its workspace exists. Let the viewer
+  // ensure that workspace before probing or resolving its file paths.
+  const canProbe = Boolean(sessionId && workspaceUrl);
   const missing = status === 'missing';
 
   // Pointer/keyboard intent, not render. A message with forty paths in it
@@ -97,8 +97,8 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
         return;
       }
     }
-    openPreview(await resolveRuntimePath(text));
-  }, [canProbe, missing, openPreview, text]);
+    openPreview(workspaceUrl ? await resolveRuntimePath(text) : text);
+  }, [canProbe, missing, openPreview, text, workspaceUrl]);
 
   if (missing) {
     // Inert: no `role`, no handler, no pointer. Losing the affordances IS the

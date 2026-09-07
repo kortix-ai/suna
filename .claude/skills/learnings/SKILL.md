@@ -4809,3 +4809,15 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
   standalone directory containing only that worker manifest and Bun lockfile.
 - Enforcement: the API Dockerfile uses the standalone frozen Bun install.
   The corrected lockfile passed that install locally with 103 packages.
+
+
+### Open a lazy workspace before probing its files (2026-09-07)
+
+- Incident: clicking `/workspace/kortix.yaml` in a text-only Pi session removed
+  its button. The file probe treated an absent workspace as a missing file.
+- Rule: an inline file control probes only when the SDK has a workspace URL.
+  Otherwise it opens the viewer with the original path. The viewer's existing
+  `useSessionWorkspace` hook provisions compute before its file read.
+- Verification: the live browser reproduced the inert path before the change.
+  The existing Markdown, availability, and viewer suites passed 37 tests.
+  The focused ESLint and full web typecheck both passed.
