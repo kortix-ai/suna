@@ -1,5 +1,5 @@
 import { normalizeClientSource } from '../../platform/auth-core';
-import { getSupabaseAccessTokenWithRetry } from './auth';
+import { getSupabaseAccessTokenWithRetry, invalidateTokenCache } from './auth';
 import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
 import { platformConfig } from './config';
 import { impersonationHeaders } from './impersonation';
@@ -305,6 +305,43 @@ async function makeRequest<T = any>(
       try {
         await response.arrayBuffer();
       } catch {}
+    }
+
+    // 401 recovery. A 401 is decided by the auth middleware BEFORE the handler
+    // runs, so nothing was mutated and replaying is safe for any method.
+    //
+    // Ask the host to drop the token it just gave us, take a fresh one, and
+    // replay exactly once — and only when the host actually produced a
+    // DIFFERENT token. Re-sending the same rejected token would burn a round
+    // trip on a guaranteed 401. Without this, a merely-stale token was a hard
+    // failure: in apps/web an `ApiError` with `status: 401` reaches
+    // `gateStateForError`, which special-cases only 403 and 404, so the user
+    // gets the terminal "This project didn't load." screen for a token that a
+    // single refresh would have fixed.
+    if (response.status === 401 && token) {
+      invalidateTokenCache();
+      const freshToken = await getSupabaseAccessTokenWithRetry(TOKEN_ACQUISITION_RETRY);
+      if (freshToken && freshToken !== token) {
+        try {
+          await response.arrayBuffer();
+        } catch {}
+        const retryController = new AbortController();
+        const retryTimeout = setTimeout(() => {
+          didTimeout = true;
+          retryController.abort();
+        }, timeout);
+        try {
+          const fetchImpl = platformConfig().fetch ?? fetch;
+          response = await fetchImpl(url, {
+            ...fetchOptions,
+            headers: { ...headers, Authorization: `Bearer ${freshToken}` },
+            signal: retryController.signal,
+            credentials: fetchOptions.credentials ?? 'omit',
+          });
+        } finally {
+          clearTimeout(retryTimeout);
+        }
+      }
     }
 
     if (!response.ok) {

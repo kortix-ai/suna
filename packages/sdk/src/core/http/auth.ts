@@ -16,12 +16,16 @@
  * callers that historically asked for "the Supabase token" specifically —
  * same delegate, same value.
  *
- * `invalidateTokenCache()` / `setCachedAuthToken()` / `setBootstrapAuthToken()`
- * are no-ops here (there is no SDK-side cache to invalidate or seed); they're
- * kept as exported names so existing call sites compile unchanged, and a host
- * that layers its own caching on top of `getToken()` can wire these to that
- * cache if it wants the "invalidate on 401" / "seed before hydration" hooks to
- * do something.
+ * `setCachedAuthToken()` / `setBootstrapAuthToken()` are no-ops here (there is
+ * no SDK-side cache to seed); they're kept as exported names so existing call
+ * sites compile unchanged.
+ *
+ * `invalidateTokenCache()` is NOT a no-op: it calls the host's
+ * `onAuthInvalidate` (see `config.ts`), which is how a 401 gets recovered from.
+ * It used to be inert, and that silently disabled every "retry once with a
+ * fresh token" path in this package — the host kept handing back the same
+ * cached token, so the retry guards never fired. A host that caches behind
+ * `getToken` must wire `onAuthInvalidate`.
  */
 
 import {
@@ -70,6 +74,11 @@ export async function getSupabaseAccessTokenWithRetry(
  * The next getSupabaseAccessToken() call will fetch fresh.
  */
 export function invalidateTokenCache(): void {
+	// Reaches the HOST's cache. `setCachedAuthToken` below is a genuine no-op
+	// (this package stores no token), so without `onAuthInvalidate` this call
+	// did nothing at all and every "retry once with a fresh token" path in the
+	// SDK was inert — see the hook's doc comment in `config.ts`.
+	platformConfig().onAuthInvalidate?.();
 	setCachedAuthToken(null);
 }
 

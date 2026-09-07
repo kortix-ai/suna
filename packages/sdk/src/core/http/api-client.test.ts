@@ -992,3 +992,122 @@ describe('makeRequest token acquisition', () => {
     }
   });
 });
+
+/**
+ * JAY: the SDK's "invalidate on 401" story never worked, so an expired token
+ * turned every REST read into a hard failure.
+ *
+ * `makeRequest` had NO 401 handling at all. `authenticatedFetch` appeared to
+ * have it, but its recovery was dead code: `invalidateTokenCache()` delegated to
+ * `setCachedAuthToken()`, which is an empty stub here (the SDK holds no token
+ * state), and `KortixPlatformConfig` exposed no way to reach the HOST's cache.
+ * So it invalidated nothing, re-asked `getToken()`, got the identical token back
+ * from the host's 30s TTL cache, and its own `newToken !== token` guard then
+ * blocked the retry.
+ *
+ * In apps/web the consequence is user-visible: an `ApiError` with `status: 401`
+ * reaches `gateStateForError`, which special-cases only 403 and 404, so a merely
+ * stale token renders the terminal "This project didn't load. / The request
+ * failed before we could check your access." screen with no way back.
+ *
+ * `onAuthInvalidate` closes the loop: the host wires it to its own cache, so a
+ * 401 can actually be recovered from.
+ */
+describe('makeRequest 401 recovery', () => {
+  function stubFetch(onRequest: (auth: string | undefined) => Response) {
+    const originalFetch = globalThis.fetch;
+    const sent: (string | undefined)[] = [];
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string>)?.['Authorization'];
+      sent.push(auth);
+      return onRequest(auth);
+    }) as typeof fetch;
+    return { sent, restore: () => { globalThis.fetch = originalFetch; } };
+  }
+
+  const json = (body: unknown, status: number) =>
+    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  test('a 401 invalidates the host token cache, re-acquires, and retries once', async () => {
+    let invalidations = 0;
+    let asks = 0;
+    configureKortix({
+      backendUrl: 'https://api.test/v1',
+      getToken: async () => (++asks === 1 ? 'stale-token' : 'fresh-token'),
+      onAuthInvalidate: () => {
+        invalidations += 1;
+      },
+    });
+    const stub = stubFetch((auth) =>
+      auth === 'Bearer stale-token'
+        ? json({ error: true, message: 'Invalid or expired token', status: 401 }, 401)
+        : json({ ok: true }, 200),
+    );
+    try {
+      const response = await backendApi.get('/projects/p1', { showErrors: false });
+
+      expect(invalidations).toBe(1);
+      expect(stub.sent).toEqual(['Bearer stale-token', 'Bearer fresh-token']);
+      expect(response.success).toBe(true);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a 401 that re-acquisition cannot fix is surfaced once, not retried forever', async () => {
+    let invalidations = 0;
+    configureKortix({
+      backendUrl: 'https://api.test/v1',
+      // The host has nothing better to offer — the session really is gone.
+      getToken: async () => 'the-only-token',
+      onAuthInvalidate: () => {
+        invalidations += 1;
+      },
+    });
+    const stub = stubFetch(() => json({ error: true, message: 'Invalid or expired token', status: 401 }, 401));
+    try {
+      const response = await backendApi.get('/projects/p1', { showErrors: false });
+
+      expect(response.success).toBe(false);
+      expect((response.error as ApiError).status).toBe(401);
+      // Exactly one attempt: re-asking produced the same token, so replaying it
+      // would only burn another round trip on a guaranteed 401.
+      expect(stub.sent).toEqual(['Bearer the-only-token']);
+      expect(invalidations).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a host that wires no onAuthInvalidate still gets a clean 401, never a crash', async () => {
+    configureKortix({ backendUrl: 'https://api.test/v1', getToken: async () => 'tok' });
+    const stub = stubFetch(() => json({ error: true, message: 'nope', status: 401 }, 401));
+    try {
+      const response = await backendApi.get('/projects/p1', { showErrors: false });
+      expect(response.success).toBe(false);
+      expect((response.error as ApiError).status).toBe(401);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a non-401 failure is never treated as an auth problem', async () => {
+    let invalidations = 0;
+    configureKortix({
+      backendUrl: 'https://api.test/v1',
+      getToken: async () => 'tok',
+      onAuthInvalidate: () => {
+        invalidations += 1;
+      },
+    });
+    const stub = stubFetch(() => json({ error: true, message: 'forbidden', status: 403 }, 403));
+    try {
+      const response = await backendApi.get('/projects/p1', { showErrors: false });
+      expect((response.error as ApiError).status).toBe(403);
+      expect(invalidations).toBe(0);
+      expect(stub.sent).toEqual(['Bearer tok']);
+    } finally {
+      stub.restore();
+    }
+  });
+});

@@ -45,6 +45,18 @@ export interface KortixPlatformConfig {
   onNotify?: (event: { kind: string; sessionId: string; [key: string]: unknown }) => void;
   /** Explicit per-flag overrides for `@kortix/sdk/feature-flags` (portable path). */
   featureFlags?: KortixFeatureFlagOverrides;
+  /**
+   * Drop whatever token the host is caching behind `getToken`, so the next
+   * `getToken()` re-acquires instead of returning the same stale value.
+   *
+   * The SDK holds no token state, so `invalidateTokenCache()` had nothing to
+   * invalidate and every 401-recovery path in this package was dead: it
+   * invalidated nothing, re-asked `getToken()`, got the identical token back
+   * from the host's own cache, and its `newToken !== token` guard then blocked
+   * the retry. A host that caches (apps/web caches for 30s) MUST wire this or
+   * a merely-stale token becomes a hard, unrecoverable failure.
+   */
+  onAuthInvalidate?: () => void;
 }
 
 /**

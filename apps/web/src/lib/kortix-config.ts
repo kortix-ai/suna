@@ -8,7 +8,7 @@
  */
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
-import { getSupabaseAccessToken } from '@/lib/auth-token';
+import { getSupabaseAccessToken, invalidateTokenCache } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
 import { handleApiError } from '@/lib/error-handler';
@@ -32,6 +32,12 @@ export function ensureKortixConfigured(tI18nComplete: UiTranslator): void {
   configureKortix({
     backendUrl: getEnv().BACKEND_URL,
     getToken: () => getSupabaseAccessToken(),
+    // Lets the SDK drop THIS module's 30s token cache when the API rejects a
+    // token. Without it `invalidateTokenCache()` inside the SDK reached nothing,
+    // so a 401 re-asked `getToken()`, got the same stale token straight back
+    // from the cache, and the retry was skipped — turning a refreshable token
+    // into the terminal "This project didn't load." screen.
+    onAuthInvalidate: () => invalidateTokenCache(),
     clientSource: 'web',
     getUserId: async () => {
       try {
