@@ -680,7 +680,7 @@ npx eslint src/components/projects/project-access-boundary.tsx \
 
 ### Task 12: Synchronize merged web test contracts
 
-**Evidence:** Merging `origin/main` changed the sandbox-loading predicate and public-content timestamps. Two static web tests still asserted the old source.
+**Evidence:** The packages lane found a stale sandbox-loading source assertion and a stale public-content timestamp manifest.
 
 **Files:**
 
@@ -696,7 +696,7 @@ npx eslint src/components/projects/project-access-boundary.tsx \
 
 ### Task 13: Remove sandbox-agent test leakage and wall-clock assumptions
 
-**Evidence:** The packages lane exposed 15 Git failures after `refresh-stale-swap.test.ts` replaced `../git` and `../runtime-assets` process-wide. A relay test also required an upstream probe to finish within 300 ms.
+**Evidence:** The packages lane exposed 15 Git failures after `refresh-stale-swap.test.ts` replaced `../git` and `../runtime-assets` process-wide. A relay test also required construction to return within 300 ms while its capability probe waited 600 ms.
 
 **Files:**
 
