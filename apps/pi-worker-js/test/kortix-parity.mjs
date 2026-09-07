@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=32
+// EXPECTED_PASSES=35
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -191,6 +191,30 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     const named = await (await hd.fetch("/session?c=other")).json();
     check("and an explicit ?c= still names a different cell — the suites rely on it",
       named[0]?.id === "other", JSON.stringify(named).slice(0, 100));
+  }
+
+  // ONE CELL, MANY SESSIONS — addressed by the PATH. This is what takes the
+  // per-session Platinum sandbox off the critical path: measured on dev
+  // 2026-09-07 a cell sandbox costs 2443 ms before it can answer (POST 198 ms,
+  // row running 1296 ms, expose 141 ms, edge live +928 ms), while another
+  // isolate on a cell that already exists is 86-146 ms.
+  {
+    const shared = makeCell(AgentCell, { ...ENV, KORTIX_SESSION_ID: "owner" });
+    const a = await (await shared.fetch("/session/alpha/prompt_async", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "for alpha" }] }),
+    })).status;
+    check("a prompt for a session named in the PATH is accepted, with no ?c=",
+      a === 204, `status ${a}`);
+    const b = await (await shared.fetch("/session/beta/prompt_async", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "for beta" }] }),
+    })).status;
+    check("and so is one for a DIFFERENT session on the same cell sandbox",
+      b === 204, `status ${b}`);
+    const unnamed = await (await shared.fetch("/session")).json();
+    check("a request that names no session still falls back to the cell's own",
+      unnamed[0]?.id === "owner", JSON.stringify(unnamed).slice(0, 100));
   }
 
   check("the worker answers /kortix/health with no session named", r.status === 200 && body.ok === true, JSON.stringify(body));

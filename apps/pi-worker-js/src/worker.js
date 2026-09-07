@@ -719,7 +719,12 @@ export class AgentCell {
     // convention, so adding an endpoint is a decision about billing rather than
     // an accident of its name.
     if (!UNBILLED_PATHS.has(url.pathname)) this.meterRequest();
-    const sessionId = url.searchParams.get("c") ?? this.env?.KORTIX_SESSION_ID ?? this.state.id?.toString?.() ?? "default";
+    const pathSession = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
+    const sessionId = url.searchParams.get("c")
+      ?? (pathSession ? decodeURIComponent(pathSession[1]) : null)
+      ?? this.env?.KORTIX_SESSION_ID
+      ?? this.state.id?.toString?.()
+      ?? "default";
 
     if (req.headers.get("upgrade") === "websocket") {
       const pair = new WebSocketPair();
@@ -1369,7 +1374,22 @@ export default {
     // back on: `?c=` still works for callers that name a cell (the suites, the
     // eviction probes), and everything else lands on the session this cell was
     // made for.
-    const name = url.searchParams.get("c") ?? env.KORTIX_SESSION_ID ?? "default";
+    // The path names the session too, and that is what makes ONE cell sandbox
+    // able to hold MANY sessions. Every route the control plane calls carries
+    // the session in the path — /session/:id/prompt_async, /session/:id/abort —
+    // so a request that names one there does not need `?c=`, which the proxy
+    // drops anyway.
+    //
+    // Why it matters: a session currently costs a whole Platinum sandbox, and
+    // that is where the seconds are. Measured on dev 2026-09-07, warm node:
+    // POST 198 ms, row running at 1296 ms, expose 141 ms, edge live 928 ms
+    // later — 2443 ms before anything can answer. Spawning another isolate on
+    // a cell that already exists is 86 ms resumed, 146 ms new.
+    const fromPath = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
+    const name = url.searchParams.get("c")
+      ?? (fromPath ? decodeURIComponent(fromPath[1]) : null)
+      ?? env.KORTIX_SESSION_ID
+      ?? "default";
     return env.AGENT.get(env.AGENT.idFromName(name)).fetch(req);
   },
 };
