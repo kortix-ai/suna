@@ -1672,6 +1672,17 @@ describe('raw OpenCode turn routes', () => {
         'must not complete after remote Stop',
       );
       expect(await (await request(remote, '/session/status')).json()).toEqual({});
+      const transcript = await (await request(owner, `/session/${sessionID}/message`)).json() as
+        Array<{ info: AssistantMessage | UserMessage }>;
+      const terminal = transcript.filter((message) => message.info.role === 'assistant').at(-1);
+      expect((terminal?.info as AssistantMessage).error?.name).toBe('MessageAbortedError');
+      expect((terminal?.info as AssistantMessage).time.completed).toBeNumber();
+      const restarted = await startWorker(config);
+      workers.push(restarted);
+      const restored = await (await request(restarted, `/session/${sessionID}/message`)).json() as
+        Array<{ info: AssistantMessage | UserMessage }>;
+      expect(restored.find((message) => message.info.id === terminal?.info.id)?.info)
+        .toEqual(terminal?.info);
     });
   }
 

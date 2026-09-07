@@ -4924,3 +4924,13 @@ body ignored Stop. KeepAliveTransport accepted a `503` response whose JSON resem
 interpreting an RPC result. Never replay an ambiguous mutation to recover its response.
 **Enforcer:** `rpc-response.test.ts` uses real HTTP servers to hold a partial body and return a
 misleading `503`; it requires acknowledged cancellation and explicit status rejection.
+
+### Preserve cancellation at the provider stream boundary (2026-09-07)
+
+**When:** adapting a provider stream after Stop aborts a turn.
+**Incident:** the live Pi worker killed the remote shell correctly, but its terminal message became
+`UnknownError`. The timing wrapper converted an iterator's `AbortError` into a generic failure.
+**Rule:** preserve abort exceptions and normalize provider error results against the turn's abort
+signal. Persist `stopReason: aborted` so the live and restored messages use `MessageAbortedError`.
+**Enforcer:** provider-stream tests and both cross-worker Stop routes cover the error frame,
+terminal result, message completion, and replacement-worker transcript.

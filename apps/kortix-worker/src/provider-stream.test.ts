@@ -1,9 +1,57 @@
 import { describe, expect, test } from 'bun:test';
-import type { AssistantMessageEventStream } from '@earendil-works/pi-ai';
+import { fauxAssistantMessage, type AssistantMessageEventStream } from '@earendil-works/pi-ai';
 
 import { tapFirstToken } from './worker.ts';
 
 describe('provider stream instrumentation', () => {
+  test('a provider iterator AbortError remains a cancellation', async () => {
+    const broken = {
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            throw new DOMException('This operation was aborted', 'AbortError');
+          },
+        };
+      },
+    } as unknown as AssistantMessageEventStream;
+    const instrumented = tapFirstToken(broken, () => {}, {});
+    const events = [];
+    for await (const event of instrumented) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'error', reason: 'aborted' });
+    expect(await instrumented.result()).toMatchObject({ stopReason: 'aborted' });
+  });
+
+  test('a stopped turn normalizes the provider error frame and terminal result', async () => {
+    const controller = new AbortController();
+    const message = fauxAssistantMessage('partial reply', {
+      stopReason: 'error',
+      errorMessage: 'request cancelled',
+    });
+    const inner = {
+      async *[Symbol.asyncIterator]() {
+        controller.abort();
+        yield { type: 'error', reason: 'error', error: message };
+      },
+      async result() {
+        return message;
+      },
+    } as unknown as AssistantMessageEventStream;
+    const instrumented = tapFirstToken(inner, () => {}, {}, controller.signal);
+    const events = [];
+    for await (const event of instrumented) events.push(event);
+    expect(events.at(-1)).toMatchObject({
+      type: 'error',
+      reason: 'aborted',
+      error: { content: message.content, stopReason: 'aborted' },
+    });
+    expect(await instrumented.result()).toMatchObject({
+      content: message.content,
+      stopReason: 'aborted',
+      errorMessage: 'request cancelled',
+    });
+    expect(message.stopReason).toBe('error');
+  });
+
   test('records first content delta instead of the empty text-start marker', async () => {
     let releaseDelta!: () => void;
     const deltaGate = new Promise<void>((resolve) => {

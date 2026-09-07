@@ -321,10 +321,15 @@ export function tapFirstToken(
   inner: AssistantMessageEventStream,
   onFirst: (ms: number) => void,
   model: { api?: unknown; provider?: unknown; id?: unknown },
+  signal?: AbortSignal,
 ): AssistantMessageEventStream {
   const out = createAssistantMessageEventStream();
   const t0 = process.hrtime.bigint();
   let fired = false;
+  const normalize = (message: AssistantMessage): AssistantMessage =>
+    signal?.aborted && message.stopReason === 'error'
+      ? { ...message, stopReason: 'aborted' }
+      : message;
   (async () => {
     try {
       for await (const ev of inner) {
@@ -339,10 +344,16 @@ export function tapFirstToken(
             onFirst(Number(process.hrtime.bigint() - t0) / 1e6);
           }
         }
-        out.push(ev);
+        if (ev.type === 'error') {
+          const error = normalize(ev.error);
+          out.push({ ...ev, error, reason: error.stopReason === 'aborted' ? 'aborted' : ev.reason });
+        } else {
+          out.push(ev);
+        }
       }
-      out.end(await inner.result());
+      out.end(normalize(await inner.result()));
     } catch (error) {
+      const aborted = signal?.aborted || (error instanceof Error && error.name === 'AbortError');
       const message: AssistantMessage = {
         role: 'assistant',
         content: [{ type: 'text', text: '' }],
@@ -358,11 +369,11 @@ export function tapFirstToken(
           totalTokens: 0,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
         },
-        stopReason: 'error',
+        stopReason: aborted ? 'aborted' : 'error',
         errorMessage: String((error as Error)?.message ?? error),
         timestamp: Date.now(),
       };
-      out.push({ type: 'error', reason: 'error', error: message });
+      out.push({ type: 'error', reason: aborted ? 'aborted' : 'error', error: message });
     }
   })();
   return out;
@@ -931,6 +942,7 @@ export async function buildHarness(cfg: WorkerConfig) {
           if (timing.firstTokenMs === null) timing.firstTokenMs = ms;
         },
         m,
+        opts?.signal,
       ),
     toolExecution: 'sequential',
     initialState: {

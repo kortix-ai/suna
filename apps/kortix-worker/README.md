@@ -74,6 +74,7 @@ its control-plane notification pending until delivery succeeds.
 Stop records an abort request and waits for the owner to acknowledge it. File
 and shell operations receive cancellation through the environment transport.
 The daemon kills the shell process group before acknowledging cancellation.
+Provider cancellation remains `MessageAbortedError` in the live and restored transcript.
 An unreachable cancellation endpoint returns an error instead of claiming that
 the remote operation stopped. Runtime layer v47 supplies that endpoint.
 
