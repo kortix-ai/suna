@@ -357,7 +357,10 @@ export class PlatinumProvider implements SandboxProvider {
     // the user as a session stuck at `failed` with no box and no explanation.
     if (opts.piWorker && !bodyOverride) {
       const cellBody = buildCellCreateBody({
-        name: dedup?.name ?? `kortix-cell-${opts.sandboxId ?? Date.now()}`,
+        // A SHARED HOST IS NAMED FOR ITS PROJECT, not for the session that
+        // happened to create it — that name is how the next session finds it,
+        // and Platinum has no other mutable field to register one under.
+        name: opts.cellHostName ?? dedup?.name ?? `kortix-cell-${opts.sandboxId ?? Date.now()}`,
         envVars,
         cpu: opts.resourceSpec?.cpuCores,
         ramMb: opts.resourceSpec ? Math.round(opts.resourceSpec.memoryGb * 1024) : undefined,

@@ -116,6 +116,12 @@ export interface CreateSandboxOpts {
    * spawn, 415-745 ms for a full scripted turn.
    */
   piWorker?: boolean;
+  /**
+   * Name this cell sandbox so a LATER session of the same project can find and
+   * reuse it (cell-host-platinum.ts). Absent means the ordinary per-session
+   * name, which is what every non-shared boot uses.
+   */
+  cellHostName?: string;
   /** Provider-normalized App machine limits. Session snapshots retain their existing limits. */
   resourceSpec?: {
     cpuCores: number;

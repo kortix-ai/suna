@@ -544,6 +544,18 @@ const envSchema = z.object({
   // switch: deploy-dev.yml injects an explicit `false` for THIS flag on every
   // push). The per-project warm-image system it also used to gate is gone.
   KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
+
+  // ONE CELL SANDBOX PER PROJECT INSTEAD OF ONE PER SESSION.
+  //
+  // Measured on dev 2026-09-07: a cell sandbox costs 2443 ms before it can
+  // answer, while a session on one that already exists costs 194 ms cold and
+  // 2 ms warm. celld holds many named isolates in one node, each with its own
+  // SQLite, so the sandbox is the expensive part and not the isolation.
+  //
+  // OFF by default because a shared box changes what ending one session may do
+  // to another: the reaper stops a box when its session is finished and nothing
+  // yet teaches it that a host is shared. See cell-host-platinum.ts.
+  KORTIX_CELL_SHARED_HOST_ENABLED: optBoolUnset,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -1188,6 +1200,7 @@ export const config = {
   KORTIX_FS_S3_SECRET_ACCESS_KEY: env.KORTIX_FS_S3_SECRET_ACCESS_KEY,
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
+  KORTIX_CELL_SHARED_HOST_ENABLED: env.KORTIX_CELL_SHARED_HOST_ENABLED ?? false,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
 

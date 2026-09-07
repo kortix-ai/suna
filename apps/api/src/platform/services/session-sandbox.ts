@@ -56,6 +56,7 @@ import {
 } from '../providers';
 import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
 import { claimParkedPlatinumBox, maintainPlatinumPiWorkerPool } from './pi-worker-pool-platinum';
+import { adoptSharedCellHost, sharedCellHostEnabled, sharedCellHostName } from './cell-host-platinum';
 import { selectProvider } from './provider-balancer';
 import { recordProviderEvent } from './provider-events';
 import { ProvisionTimeline } from './provision-timeline';
@@ -638,9 +639,30 @@ export async function provisionSessionSandbox(opts: {
         // every other provider.
         if (opts.metadata?.pi_worker_boot === true && providerName === 'platinum') {
           providerCreateInput.piWorker = true;
+          // If no host exists yet, the box this session is about to create
+          // BECOMES the host — named for the project so the next session
+          // adopts it instead of paying 2443 ms of its own.
+          if (sharedCellHostEnabled() && opts.projectId) {
+            providerCreateInput.cellHostName = sharedCellHostName(opts.projectId);
+          }
         }
-        const pooledClaim =
+        // THE PROJECT'S CELL HOST, BEFORE THE POOL. A session on a cell
+        // sandbox that already exists costs 194 ms cold; making it one costs
+        // 2443 ms (dev, 2026-09-07). So the first question is whether this
+        // project already has a host, and only then whether a park is going.
+        const sharedHost =
           opts.metadata?.pi_worker_boot === true && providerName === 'platinum'
+            ? await adoptSharedCellHost(opts.projectId).catch((err) => {
+                console.warn(
+                  `[session-sandbox] shared cell host lookup failed for ${sandbox.sandboxId}; cold create:`,
+                  err,
+                );
+                return null;
+              })
+            : null;
+        if (sharedHost) tl.mark('cell-host-adopted');
+        const pooledClaim = sharedHost ??
+          (opts.metadata?.pi_worker_boot === true && providerName === 'platinum'
             ? await claimParkedPlatinumBox(
                 providerCreateInput.envVars ?? {},
                 // The rename IS the de-registration on Platinum (no label or
@@ -662,7 +684,7 @@ export async function provisionSessionSandbox(opts: {
                 );
                 return null;
               })
-            : null;
+            : null);
         if (pooledClaim) {
           result = {
             externalId: pooledClaim.externalId,
