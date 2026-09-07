@@ -225,8 +225,15 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   // dev 2026-09-07: sessions dee5338a and 5b482709 ran turns to `done` with no
   // model behind them.
   {
+    // With the EMPTY wrangler defaults present, which is what a real cell has:
+    // MODEL_PROVIDER and MODEL_BASE_URL are declared as "" so the bindings
+    // exist for a scripted run. An empty string is not nullish, so `??` reads
+    // it as a value and the platform's gateway is never reached. Measured on
+    // dev 2026-09-07, session 3cd59929: all fourteen KORTIX_* names on the
+    // isolate, gateway and token among them, and model_mode still "scripted".
     const gw = makeCell(AgentCell, {
-      ...ENV, KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt", KORTIX_MODEL: "glm-5.3-flash",
+      ...ENV, MODEL_PROVIDER: "", MODEL_BASE_URL: "", MODEL_API_KEY: "",
+      KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt", KORTIX_MODEL: "glm-5.3-flash",
     });
     const live = await (await gw.fetch("/kortix/health?c=s")).json();
     check("a session given the platform's gateway and token runs LIVE, not scripted",

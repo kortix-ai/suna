@@ -135,12 +135,25 @@ function toolsFor(env, sessionId, sql) {
  * model without the platform's names getting in the way.
  */
 function normalizeModelEnv(env) {
-  const gateway = env.MODEL_BASE_URL ?? env.KORTIX_GATEWAY_URL ?? env.KORTIX_LLM_BASE_URL;
-  const key = env.MODEL_API_KEY ?? env.KORTIX_API_KEY ?? (gateway ? env.KORTIX_TOKEN : undefined);
+  // `??` IS THE WRONG OPERATOR HERE, and it cost a whole session.
+  //
+  // wrangler.json declares MODEL_PROVIDER and MODEL_BASE_URL as "" so the
+  // bindings exist for a scripted run. An empty string is not nullish, so
+  // `env.MODEL_BASE_URL ?? env.KORTIX_LLM_BASE_URL` answers "" and the
+  // platform's gateway is never reached — which makes the key undefined, which
+  // makes the cell scripted. Measured on dev 2026-09-07, session 3cd59929: all
+  // fourteen KORTIX_* variables present on the isolate, a gateway URL and a
+  // token among them, and model_mode still "scripted".
+  //
+  // So: the first value that is actually SET wins, and a declared-but-empty
+  // binding counts as unset.
+  const pick = (...vals) => vals.find((v) => typeof v === "string" && v.length > 0);
+  const gateway = pick(env.MODEL_BASE_URL, env.KORTIX_GATEWAY_URL, env.KORTIX_LLM_BASE_URL);
+  const key = pick(env.MODEL_API_KEY, env.KORTIX_API_KEY, gateway ? env.KORTIX_TOKEN : undefined);
   return {
     ...env,
-    MODEL_PROVIDER: env.MODEL_PROVIDER ?? (key ? (env.KORTIX_PROVIDER ?? "openrouter") : undefined),
-    MODEL_ID: env.MODEL_ID ?? env.KORTIX_MODEL,
+    MODEL_PROVIDER: pick(env.MODEL_PROVIDER, key ? pick(env.KORTIX_PROVIDER, "openrouter") : undefined),
+    MODEL_ID: pick(env.MODEL_ID, env.KORTIX_MODEL),
     MODEL_BASE_URL: gateway,
     MODEL_API_KEY: key,
   };
