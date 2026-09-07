@@ -16,7 +16,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=29
+// EXPECTED_PASSES=37
 
 import * as all from "../src/providers.all.js";
 import * as slim from "../src/providers.slim.js";
@@ -129,6 +129,32 @@ check("slim's set name is reported", slim.SET_NAME === "slim" && all.SET_NAME ==
     check("a separately built stream loads for itself, so the memo is per-stream not global",
       loads === 2, `${loads} loads`);
   } finally { entry.load = realLoad; }
+}
+
+// A RECORD THE STREAM CAN ACTUALLY USE.
+//
+// pi's stream asks `model.input.includes("image")` before it sends anything.
+// A synthetic record without `input` dies with "Cannot read properties of
+// undefined (reading 'includes')" — thrown in ~35 ms, before any network call,
+// and delivered as a single `error` EVENT rather than a rejection. The agent
+// stores that as an assistant message with EMPTY CONTENT and the turn reports
+// success, which is the most expensive shape a failure can take.
+//
+// It is the gateway case that breaks, and the gateway case is the product: a
+// gateway serves models this catalogue has never heard of, so the fallback
+// record is the one that runs. Measured on dev 2026-09-07 against the Kortix
+// gateway: with `input` absent, one error event in 35 ms and no text; with it,
+// 60 events in 3027 ms and a real answer.
+for (const [name, mod] of [["all", all], ["slim", slim]]) {
+  const m = mod.lookupModel({ provider: name === "slim" ? "openai" : "openrouter", modelId: "a-model-no-catalogue-knows", baseUrl: "https://gw.example/v1" });
+  check(`${name}: an unknown model id still gets an \`input\` list — the stream reads it before sending`,
+    Array.isArray(m.input) && m.input.includes("text"), JSON.stringify(m.input));
+  check(`${name}: and it does not claim to see images it cannot`,
+    !m.input.includes("image"), JSON.stringify(m.input));
+  check(`${name}: it carries a context window and a max — a stream that reads them finds numbers`,
+    typeof m.contextWindow === "number" && typeof m.maxTokens === "number", JSON.stringify({ c: m.contextWindow, m: m.maxTokens }));
+  check(`${name}: and the baseUrl it was given, so a gateway is actually used`,
+    m.baseUrl === "https://gw.example/v1", String(m.baseUrl));
 }
 
 console.log(bad ? `\n  ${bad} failure(s)` : "\n  the provider layer holds");

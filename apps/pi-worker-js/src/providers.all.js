@@ -30,9 +30,30 @@ export function lookupModel({ provider, modelId, baseUrl }) {
   // call fail with the provider's own message if the id really is wrong.
   let model;
   try { model = getBuiltinModel(provider, modelId); } catch { model = undefined; }
+  // A SYNTHETIC RECORD MUST CARRY EVERY FIELD THE STREAM READS, not just the
+  // ones that identify a model.
+  //
+  // pi's stream asks `model.input.includes("image")` before it sends anything.
+  // The fallback below had no `input`, so an unknown model id died with
+  // "Cannot read properties of undefined (reading 'includes')" — thrown in
+  // ~35 ms, before any network call, and delivered as a single `error` EVENT
+  // rather than a rejection. The agent recorded that as an assistant message
+  // with empty content and zero tokens, and the turn reported success.
+  //
+  // Measured on dev 2026-09-07: every gateway turn behaved this way, because a
+  // gateway serves models this catalogue has never heard of — which is the
+  // whole point of a gateway, and therefore the case that had to work.
+  //
+  // Defaults are the conservative ones: text only, so nothing claims a vision
+  // capability it has not got, and a window small enough not to overrun a
+  // model whose real limit is unknown.
   model ??= {
     id: modelId, name: modelId, api: record.api ?? "openai-completions",
     provider, baseUrl: record.baseUrl, reasoning: false,
+    input: ["text"],
+    contextWindow: 128000,
+    maxTokens: 16384,
+    compat: { supportsStrictMode: false },
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   };
   return { ...model, baseUrl: baseUrl || model.baseUrl };

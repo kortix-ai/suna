@@ -29,9 +29,20 @@ export function lookupModel({ provider, modelId, baseUrl }) {
       `OpenAI API — use provider "openai" with model.base_url pointing at it.`,
     );
   }
+  // EVERY FIELD THE STREAM READS, not just the ones that identify a model. pi's
+  // stream asks `model.input.includes("image")` before it sends anything, so a
+  // record without `input` dies with "Cannot read properties of undefined
+  // (reading 'includes')" — thrown before any network call and delivered as an
+  // `error` EVENT, which the agent stores as an assistant message with empty
+  // content while the turn reports success. Every model in the slim set is
+  // synthetic, so this record is the only one there is. See providers.all.js.
   return {
     id: modelId, name: modelId, api: p.api, provider,
     baseUrl: baseUrl || p.baseUrl, reasoning: false,
+    input: ["text"],
+    contextWindow: 128000,
+    maxTokens: 16384,
+    compat: { supportsStrictMode: false },
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   };
 }
