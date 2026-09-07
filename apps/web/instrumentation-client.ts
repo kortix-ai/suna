@@ -28,8 +28,16 @@ try {
       // rejection wins even when signed in, signed-in users are captured
       // otherwise. posthog-identify.tsx re-decides on consent and auth changes.
       opt_out_capturing_by_default: !captureAllowedNow(document.cookie),
-      disable_session_recording: true, // the project default is ON; flip once the replay scope is decided
-      session_recording: { maskAllInputs: true, maskTextSelector: '*' }, // sessions show customer code and files
+      // Session replay is FAIL-CLOSED: never auto-start. posthog-identify.tsx
+      // starts the recorder only on routes lib/analytics/posthog-replay.ts
+      // allows — never the workspace, public shares or the admin console, which
+      // render customer content and mutate the DOM on every streamed token.
+      disable_session_recording: true,
+      // Masked even on the allowed routes: a replay shows layout, clicks and the
+      // drop-off point, never text or typed values. Sampling and minimum
+      // duration stay in the PostHog project settings so they are tunable
+      // without a deploy (client `sampleRate` would override remote config).
+      session_recording: { maskAllInputs: true, maskTextSelector: '*' },
     });
   }
 } catch {

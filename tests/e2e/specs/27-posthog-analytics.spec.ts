@@ -356,6 +356,10 @@ test.describe.serial('27 — PostHog product analytics', { tag: '@quarantine' },
     expect(ingestStatuses.length).toBeGreaterThan(0);
     expect(ingestStatuses.every((status) => status === 200)).toBe(true);
 
+    // Session replay never runs here: every page this test opened is under
+    // /projects/, which lib/analytics/posthog-replay.ts blocks.
+    expect(captured.filter((event) => event.event === '$snapshot')).toEqual([]);
+
     // 4. Read back from PostHog: ingestion is asynchronous, allow up to 3 minutes.
     test.skip(!posthogReadable, 'POSTHOG_HOST / POSTHOG_PROJECT_ID / POSTHOG_API_KEY not set: server-side read-back skipped.');
     await expect
@@ -399,7 +403,7 @@ test.describe('27 — PostHog consent', { tag: '@quarantine' }, () => {
       value: `consentid:e2e,${fields}`,
       url: process.env.E2E_BASE_URL || 'http://localhost:3000',
     });
-    const visit = async (cookie?: ReturnType<typeof cky>) => {
+    const visit = async (cookie?: ReturnType<typeof cky>, waitForEvent?: string) => {
       const context = await browser.newContext({
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
@@ -415,7 +419,16 @@ test.describe('27 — PostHog consent', { tag: '@quarantine' }, () => {
         }
       });
       await page.goto('/', { waitUntil: 'load' });
-      await page.waitForTimeout(6_000);
+      if (waitForEvent) {
+        // The replay recorder is a lazily loaded script, so `$snapshot` lands
+        // seconds after the pageview. Poll instead of guessing a fixed wait.
+        const deadline = Date.now() + 25_000;
+        while (Date.now() < deadline && !captures.includes(waitForEvent)) {
+          await page.waitForTimeout(500);
+        }
+      } else {
+        await page.waitForTimeout(6_000);
+      }
       await context.close();
       return captures;
     };
@@ -424,9 +437,12 @@ test.describe('27 — PostHog consent', { tag: '@quarantine' }, () => {
     expect(await visit()).toEqual([]);
     // Reject All: still nothing.
     expect(await visit(cky('consent:no,action:yes,necessary:yes,functional:no,analytics:no,advertisement:no'))).toEqual([]);
-    // Accept All: the pageview goes out.
-    expect(
-      await visit(cky('consent:yes,action:yes,necessary:yes,functional:yes,analytics:yes,advertisement:yes')),
-    ).toContain('$pageview');
+    // Accept All: the pageview goes out, and replay records this allowed route.
+    const accepted = await visit(
+      cky('consent:yes,action:yes,necessary:yes,functional:yes,analytics:yes,advertisement:yes'),
+      '$snapshot',
+    );
+    expect(accepted).toContain('$pageview');
+    expect(accepted).toContain('$snapshot');
   });
 });
