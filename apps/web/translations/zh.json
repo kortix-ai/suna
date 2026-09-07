@@ -1304,7 +1304,7 @@
         "status": "状态",
         "activity": "活动",
         "source": "来源",
-        "subproject": "子项目",
+        "space": "空间",
         "none": "不分组"
       },
       "order": {

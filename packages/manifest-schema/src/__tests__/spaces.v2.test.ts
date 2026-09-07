@@ -1,14 +1,14 @@
 /**
- * Subprojects live in their own file — `kortix-<slug>.yaml`, a sibling of the
- * root manifest (spec 2026-09-06 §2). The root `subprojects:` map is gone.
+ * Spaces live in their own file — `kortix-<slug>.yaml`, a sibling of the
+ * root manifest (spec 2026-09-06 §2). The root `spaces:` map is gone.
  *
  * Three validators cover the model:
- *   - the root v2 validator REJECTS `subprojects:`,
- *   - `validateSubprojectFileV2` checks ONE file's shape (keys, types, its
+ *   - the root v2 validator REJECTS `spaces:`,
+ *   - `validateSpaceFileV2` checks ONE file's shape (keys, types, its
  *     `agents:` map of blocks and `{ from }` references),
  *   - `validateManifestSetV2` checks everything only the whole set can know:
  *     duplicate agent names, `from` targets, `agent:`/`default_agent`
- *     defaults, and `triggers[].subproject`/`triggers[].agent`.
+ *     defaults, and `triggers[].space`/`triggers[].agent`.
  */
 import { describe, expect, test } from 'bun:test';
 import Ajv2020 from 'ajv/dist/2020';
@@ -16,14 +16,15 @@ import {
   isAgentReferenceV2,
   type ManifestIssue,
   type ManifestSetV2,
-  SUBPROJECT_FILE_RE,
-  subprojectFilePath,
-  subprojectSlugFromPath,
+  SPACE_FILE_RE,
+  spaceFilePath,
+  spaceSlugFromPath,
   validateManifest,
   validateManifestSetV2,
-  validateSubprojectFileV2,
+  validateSpaceFileV2,
+  validateTriggerSpaceRefsV2,
 } from '../index.ts';
-import { buildManifestV2Schema, buildSubprojectFileV2Schema } from '../json-schema.ts';
+import { buildManifestV2Schema, buildSpaceFileV2Schema } from '../json-schema.ts';
 
 const BASE = `
 kortix_version: 2
@@ -40,7 +41,7 @@ function errorsOf(yaml: string) {
 /** Run the file validator and return `[issues, result]`. */
 function checkFile(raw: unknown, slug = 'marketing', path?: string) {
   const issues: ManifestIssue[] = [];
-  const result = validateSubprojectFileV2(raw, slug, issues, path ? { path } : undefined);
+  const result = validateSpaceFileV2(raw, slug, issues, path ? { path } : undefined);
   return { issues, errors: issues.filter((i) => i.severity === 'error'), result };
 }
 
@@ -52,13 +53,13 @@ function checkSet(set: ManifestSetV2) {
 
 // ─── A. helpers ───────────────────────────────────────────────────────────
 
-describe('subproject file naming helpers', () => {
-  test('SUBPROJECT_FILE_RE captures the slug from a basename', () => {
-    expect('kortix-marketing.yaml'.match(SUBPROJECT_FILE_RE)?.[1]).toBe('marketing');
-    expect('kortix-go-to-market_2.yaml'.match(SUBPROJECT_FILE_RE)?.[1]).toBe('go-to-market_2');
+describe('space file naming helpers', () => {
+  test('SPACE_FILE_RE captures the slug from a basename', () => {
+    expect('kortix-marketing.yaml'.match(SPACE_FILE_RE)?.[1]).toBe('marketing');
+    expect('kortix-go-to-market_2.yaml'.match(SPACE_FILE_RE)?.[1]).toBe('go-to-market_2');
   });
 
-  test('SUBPROJECT_FILE_RE rejects the root manifest, .yml, and a bad slug', () => {
+  test('SPACE_FILE_RE rejects the root manifest, .yml, and a bad slug', () => {
     for (const name of [
       'kortix.yaml',
       'kortix-marketing.yml',
@@ -68,26 +69,26 @@ describe('subproject file naming helpers', () => {
       'kortix-marketing.yaml.bak',
       'notkortix-marketing.yaml',
     ]) {
-      expect(SUBPROJECT_FILE_RE.test(name)).toBe(false);
+      expect(SPACE_FILE_RE.test(name)).toBe(false);
     }
   });
 
-  test('subprojectFilePath joins without a double slash', () => {
-    expect(subprojectFilePath('', 'marketing')).toBe('kortix-marketing.yaml');
-    expect(subprojectFilePath('apps/thing', 'marketing')).toBe('apps/thing/kortix-marketing.yaml');
-    expect(subprojectFilePath('apps/thing/', 'marketing')).toBe('apps/thing/kortix-marketing.yaml');
+  test('spaceFilePath joins without a double slash', () => {
+    expect(spaceFilePath('', 'marketing')).toBe('kortix-marketing.yaml');
+    expect(spaceFilePath('apps/thing', 'marketing')).toBe('apps/thing/kortix-marketing.yaml');
+    expect(spaceFilePath('apps/thing/', 'marketing')).toBe('apps/thing/kortix-marketing.yaml');
   });
 
-  test('subprojectSlugFromPath reads the basename, or null', () => {
-    expect(subprojectSlugFromPath('kortix-marketing.yaml')).toBe('marketing');
-    expect(subprojectSlugFromPath('apps/thing/kortix-marketing.yaml')).toBe('marketing');
-    expect(subprojectSlugFromPath('kortix.yaml')).toBeNull();
-    expect(subprojectSlugFromPath('deep/kortix-marketing.yml')).toBeNull();
-    expect(subprojectSlugFromPath('')).toBeNull();
+  test('spaceSlugFromPath reads the basename, or null', () => {
+    expect(spaceSlugFromPath('kortix-marketing.yaml')).toBe('marketing');
+    expect(spaceSlugFromPath('apps/thing/kortix-marketing.yaml')).toBe('marketing');
+    expect(spaceSlugFromPath('kortix.yaml')).toBeNull();
+    expect(spaceSlugFromPath('deep/kortix-marketing.yml')).toBeNull();
+    expect(spaceSlugFromPath('')).toBeNull();
   });
 
-  test('subprojectFilePath and subprojectSlugFromPath round-trip', () => {
-    expect(subprojectSlugFromPath(subprojectFilePath('a/b', 'sales'))).toBe('sales');
+  test('spaceFilePath and spaceSlugFromPath round-trip', () => {
+    expect(spaceSlugFromPath(spaceFilePath('a/b', 'sales'))).toBe('sales');
   });
 
   test('isAgentReferenceV2 is true only for a lone non-empty `from`', () => {
@@ -103,9 +104,34 @@ describe('subproject file naming helpers', () => {
   });
 });
 
+// The pre-2026-09-07 spelling of `triggers[].space`. A manifest written before
+// the rename keeps its scoping — the loader reads it — and validation says so.
+describe('a trigger still written with `subproject:`', () => {
+  const issues: ManifestIssue[] = [];
+  validateTriggerSpaceRefsV2(
+    [{ slug: 'weekly', subproject: 'marketing' }, { slug: 'other', subproject: 'gone' }],
+    'triggers',
+    ['marketing'],
+    issues,
+  );
+
+  test('is a warning naming the old key, not an error', () => {
+    const first = issues.filter((i) => i.path === 'triggers[0].subproject');
+    expect(first).toHaveLength(1);
+    expect(first[0]?.severity).toBe('warning');
+    expect(first[0]?.message).toContain('renamed to `space`');
+  });
+
+  test('is still checked against the declared set', () => {
+    const bad = issues.filter((i) => i.path === 'triggers[1].subproject' && i.severity === 'error');
+    expect(bad).toHaveLength(1);
+    expect(bad[0]?.message).toContain('does not match any declared space');
+  });
+});
+
 // ─── B. one file ──────────────────────────────────────────────────────────
 
-describe('validateSubprojectFileV2 — one kortix-<slug>.yaml', () => {
+describe('validateSpaceFileV2 — one kortix-<slug>.yaml', () => {
   test('a file with every field passes and reports its agents', () => {
     const { errors, result } = checkFile(
       {
@@ -142,16 +168,16 @@ describe('validateSubprojectFileV2 — one kortix-<slug>.yaml', () => {
   test('a slug that is not a valid slug is an error', () => {
     const { errors } = checkFile({}, 'Bad Slug');
     expect(errors).toHaveLength(1);
-    expect(errors[0]?.message).toContain('not a valid subproject slug');
+    expect(errors[0]?.message).toContain('not a valid space slug');
   });
 
   test('an unknown key is an error naming the allowed keys', () => {
     const { errors } = checkFile({ prompt: 'nope' }, 'marketing', 'kortix-marketing.yaml');
     expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:prompt']);
-    expect(errors[0]?.message).toContain('is not a subproject field');
+    expect(errors[0]?.message).toContain('is not a space field');
   });
 
-  test('kortix_version in a subproject file is an error', () => {
+  test('kortix_version in a space file is an error', () => {
     const { errors } = checkFile({ kortix_version: 2 });
     expect(errors.map((e) => e.path)).toEqual(['kortix_version']);
     expect(errors[0]?.message).toContain("root manifest's version");
@@ -181,7 +207,7 @@ describe('validateSubprojectFileV2 — one kortix-<slug>.yaml', () => {
       ['kortix-marketing.yaml:instructions', 'warning'],
       ['kortix-marketing.yaml:context', 'warning'],
     ]);
-    expect(issues[0]?.message).toContain('no longer a subproject field');
+    expect(issues[0]?.message).toContain('no longer a space field');
     // The rest of the file is still read.
     expect(result.owned).toEqual(['writer']);
   });
@@ -247,7 +273,7 @@ const ROOT = {
 };
 
 function file(slug: string, raw: Record<string, unknown>) {
-  return { slug, path: subprojectFilePath('', slug), raw };
+  return { slug, path: spaceFilePath('', slug), raw };
 }
 
 describe('validateManifestSetV2 — cross-file rules', () => {
@@ -257,11 +283,11 @@ describe('validateManifestSetV2 — cross-file rules', () => {
         root: {
           ...ROOT,
           triggers: [
-            { slug: 'weekly', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', subproject: 'marketing', agent: 'writer' },
+            { slug: 'weekly', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', space: 'marketing', agent: 'writer' },
             { slug: 'daily', type: 'cron', cron: '0 0 9 * * *', prompt: 'y', agent: 'kortix' },
           ],
         },
-        subprojects: [
+        spaces: [
           file('marketing', {
             agent: 'writer',
             agents: { writer: { connectors: ['slack'] }, researcher: { from: 'research' } },
@@ -275,7 +301,7 @@ describe('validateManifestSetV2 — cross-file rules', () => {
   test('an agent declared in the root and in a file is a duplicate naming both', () => {
     const errors = checkSet({
       root: ROOT,
-      subprojects: [file('marketing', { agents: { kortix: {} } })],
+      spaces: [file('marketing', { agents: { kortix: {} } })],
     });
     expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:agents.kortix']);
     expect(errors[0]?.message).toContain('kortix.yaml');
@@ -284,7 +310,7 @@ describe('validateManifestSetV2 — cross-file rules', () => {
   test('an agent declared in two files is a duplicate naming both', () => {
     const errors = checkSet({
       root: ROOT,
-      subprojects: [file('marketing', { agents: { writer: {} } }), file('sales', { agents: { writer: {} } })],
+      spaces: [file('marketing', { agents: { writer: {} } }), file('sales', { agents: { writer: {} } })],
     });
     expect(errors.map((e) => e.path)).toEqual(['kortix-sales.yaml:agents.writer']);
     expect(errors[0]?.message).toContain('kortix-marketing.yaml');
@@ -293,16 +319,16 @@ describe('validateManifestSetV2 — cross-file rules', () => {
   test('a duplicate slug in the set is an error', () => {
     const errors = checkSet({
       root: ROOT,
-      subprojects: [file('marketing', {}), { slug: 'marketing', path: 'sub/kortix-marketing.yaml', raw: {} }],
+      spaces: [file('marketing', {}), { slug: 'marketing', path: 'sub/kortix-marketing.yaml', raw: {} }],
     });
     expect(errors.map((e) => e.path)).toEqual(['sub/kortix-marketing.yaml']);
     expect(errors[0]?.message).toContain('already declared in kortix-marketing.yaml');
   });
 
-  test('from must name an existing subproject', () => {
+  test('from must name an existing space', () => {
     const errors = checkSet({
       root: ROOT,
-      subprojects: [file('marketing', { agents: { researcher: { from: 'ghost' } } })],
+      spaces: [file('marketing', { agents: { researcher: { from: 'ghost' } } })],
     });
     expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:agents.researcher.from']);
     expect(errors[0]?.message).toContain('kortix-ghost.yaml');
@@ -311,7 +337,7 @@ describe('validateManifestSetV2 — cross-file rules', () => {
   test('from must name an agent OWNED there — not a reference, a global, or itself', () => {
     const errors = checkSet({
       root: ROOT,
-      subprojects: [
+      spaces: [
         // `writer` is only referenced in research, not owned there.
         file('marketing', { agents: { writer: { from: 'research' }, kortix: { from: 'research' } } }),
         file('research', { agents: { writer: { from: 'design' }, self: { from: 'research' } } }),
@@ -326,10 +352,10 @@ describe('validateManifestSetV2 — cross-file rules', () => {
     expect(errors.find((e) => e.path.includes('self'))?.message).toContain('itself');
   });
 
-  test("a subproject's agent: must be global, owned, or referenced there", () => {
+  test("a space's agent: must be global, owned, or referenced there", () => {
     const errors = checkSet({
       root: ROOT,
-      subprojects: [
+      spaces: [
         file('marketing', { agent: 'designer' }),
         file('sales', { agent: 'kortix' }),
         file('design', { agent: 'designer', agents: { designer: {} } }),
@@ -337,52 +363,52 @@ describe('validateManifestSetV2 — cross-file rules', () => {
       ],
     });
     expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:agent']);
-    expect(errors[0]?.message).toContain('not usable in subproject "marketing"');
+    expect(errors[0]?.message).toContain('not usable in space "marketing"');
   });
 
   test('default_agent must be a global agent', () => {
     const errors = checkSet({
       root: { ...ROOT, default_agent: 'writer' },
-      subprojects: [file('marketing', { agents: { writer: {} } })],
+      spaces: [file('marketing', { agents: { writer: {} } })],
     });
     expect(errors.map((e) => e.path)).toEqual(['default_agent']);
     expect(errors[0]?.message).toContain('marketing');
   });
 
-  test('a trigger naming an undeclared subproject is an error', () => {
+  test('a trigger naming an undeclared space is an error', () => {
     const errors = checkSet({
       root: {
         ...ROOT,
-        triggers: [{ slug: 't', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', subproject: 'ghost' }],
+        triggers: [{ slug: 't', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', space: 'ghost' }],
       },
-      subprojects: [file('marketing', {})],
+      spaces: [file('marketing', {})],
     });
-    expect(errors.map((e) => e.path)).toEqual(['triggers[0].subproject']);
+    expect(errors.map((e) => e.path)).toEqual(['triggers[0].space']);
   });
 
-  test("a trigger's agent must be usable in its subproject", () => {
+  test("a trigger's agent must be usable in its space", () => {
     const errors = checkSet({
       root: {
         ...ROOT,
         triggers: [
-          { slug: 'a', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', subproject: 'sales', agent: 'writer' },
-          { slug: 'b', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', subproject: 'marketing', agent: 'writer' },
-          { slug: 'c', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', subproject: 'sales', agent: 'kortix' },
+          { slug: 'a', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', space: 'sales', agent: 'writer' },
+          { slug: 'b', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', space: 'marketing', agent: 'writer' },
+          { slug: 'c', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', space: 'sales', agent: 'kortix' },
         ],
       },
-      subprojects: [file('marketing', { agents: { writer: {} } }), file('sales', {})],
+      spaces: [file('marketing', { agents: { writer: {} } }), file('sales', {})],
     });
     expect(errors.map((e) => e.path)).toEqual(['triggers[0].agent']);
-    expect(errors[0]?.message).toContain('not usable in subproject "sales"');
+    expect(errors[0]?.message).toContain('not usable in space "sales"');
   });
 
-  test('a project-level trigger may not use a subproject-owned agent', () => {
+  test('a project-level trigger may not use a space-owned agent', () => {
     const errors = checkSet({
       root: {
         ...ROOT,
         triggers: [{ slug: 'a', type: 'cron', cron: '0 0 9 * * 1', prompt: 'x', agent: 'writer' }],
       },
-      subprojects: [file('marketing', { agents: { writer: {} } })],
+      spaces: [file('marketing', { agents: { writer: {} } })],
     });
     expect(errors.map((e) => e.path)).toEqual(['triggers[0].agent']);
     expect(errors[0]?.message).toContain('marketing');
@@ -391,34 +417,34 @@ describe('validateManifestSetV2 — cross-file rules', () => {
   test('the set validator reports no shape issues — that is the file validator’s job', () => {
     const errors = checkSet({
       root: ROOT,
-      subprojects: [file('marketing', { prompt: 'nope', agents: { writer: { model: 'x' } } })],
+      spaces: [file('marketing', { prompt: 'nope', agents: { writer: { model: 'x' } } })],
     });
     expect(errors).toEqual([]);
   });
 
   test('an empty set is valid', () => {
-    expect(checkSet({ root: ROOT, subprojects: [] })).toEqual([]);
+    expect(checkSet({ root: ROOT, spaces: [] })).toEqual([]);
   });
 });
 
 // ─── D. the root manifest ─────────────────────────────────────────────────
 
 describe('the root v2 manifest', () => {
-  test('rejects a subprojects: key and names the file convention', () => {
+  test('rejects a spaces: key and names the file convention', () => {
     const errors = errorsOf(`${BASE}
-subprojects:
+spaces:
   marketing:
     name: Marketing
 `);
-    expect(errors.map((e) => e.path)).toEqual(['subprojects']);
+    expect(errors.map((e) => e.path)).toEqual(['spaces']);
     expect(errors[0]?.message).toContain('kortix-<slug>.yaml');
   });
 
-  test('rejects an empty subprojects: key too', () => {
-    expect(errorsOf(`${BASE}\nsubprojects: {}\n`).map((e) => e.path)).toEqual(['subprojects']);
+  test('rejects an empty spaces: key too', () => {
+    expect(errorsOf(`${BASE}\nspaces: {}\n`).map((e) => e.path)).toEqual(['spaces']);
   });
 
-  test('a trigger with a subproject no longer fails root validation on its scoped agent', () => {
+  test('a trigger with a space no longer fails root validation on its scoped agent', () => {
     // `writer` is owned by kortix-marketing.yaml; the root cannot know that, so
     // the root validator leaves scoped triggers to `validateManifestSetV2`.
     const errors = errorsOf(`${BASE}
@@ -427,7 +453,7 @@ triggers:
     type: cron
     cron: "0 0 9 * * 1"
     prompt: x
-    subproject: marketing
+    space: marketing
     agent: writer
 `);
     expect(errors).toEqual([]);
@@ -448,19 +474,19 @@ triggers:
 
 // ─── E. JSON schema ───────────────────────────────────────────────────────
 
-describe('the subproject-file JSON schema', () => {
-  test('the v2 manifest schema no longer declares subprojects', () => {
+describe('the space-file JSON schema', () => {
+  test('the v2 manifest schema no longer declares spaces', () => {
     const schema = buildManifestV2Schema() as any;
-    expect(schema.properties.subprojects).toBeUndefined();
-    expect(schema.properties.triggers.items.properties.subproject).toEqual({
+    expect(schema.properties.spaces).toBeUndefined();
+    expect(schema.properties.triggers.items.properties.space).toEqual({
       type: 'string',
       minLength: 1,
     });
   });
 
   test('the file schema declares the block keys, forbids extras, and forbids kortix_version', () => {
-    const schema = buildSubprojectFileV2Schema() as any;
-    expect(schema.$id).toBe('https://kortix.com/schema/kortix-subproject.v2.schema.json');
+    const schema = buildSpaceFileV2Schema() as any;
+    expect(schema.$id).toBe('https://kortix.com/schema/kortix-space.v2.schema.json');
     expect(schema.additionalProperties).toBe(false);
     expect(schema.properties.instructions).toEqual({ type: 'string', deprecated: true });
     expect(schema.properties.sessions).toEqual({ type: 'string', enum: ['private', 'shared'] });
@@ -468,7 +494,7 @@ describe('the subproject-file JSON schema', () => {
   });
 
   test('an agents entry is a block OR a { from } reference', () => {
-    const schema = buildSubprojectFileV2Schema() as any;
+    const schema = buildSpaceFileV2Schema() as any;
     const entry = schema.properties.agents.additionalProperties;
     expect(entry.oneOf).toHaveLength(2);
     expect(entry.oneOf[1]).toEqual({
@@ -481,7 +507,7 @@ describe('the subproject-file JSON schema', () => {
 
   test('the file schema compiles and validates a real file', () => {
     const validate = new Ajv2020({ strict: false }).compile(
-      buildSubprojectFileV2Schema() as Record<string, unknown>,
+      buildSpaceFileV2Schema() as Record<string, unknown>,
     );
     expect(
       validate({

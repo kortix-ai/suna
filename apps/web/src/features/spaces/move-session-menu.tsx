@@ -1,17 +1,17 @@
 'use client';
 
 /**
- * "Move to" — file a session under a subproject, or back at the project level.
+ * "Move to" — file a session under a space, or back at the project level.
  *
- * One `PATCH /projects/:id/sessions/:id { subproject }`. The server owns every
- * refusal: a subproject the caller is not granted is a 403, an undeclared one
+ * One `PATCH /projects/:id/sessions/:id { space }`. The server owns every
+ * refusal: a space the caller is not granted is a 403, an undeclared one
  * a 400, and so is a move that would land the session's agent somewhere it
  * cannot run. Nothing is pre-validated here beyond hiding the control from
  * someone who could not use it — `can_manage_sharing` is the server's gate
- * too, because a `shared` subproject makes its sessions readable by everyone
+ * too, because a `shared` space makes its sessions readable by everyone
  * granted it.
  *
- * Mounts inside a dropdown's content, so its subproject read only fires when a
+ * Mounts inside a dropdown's content, so its space read only fires when a
  * menu is actually open.
  */
 
@@ -29,36 +29,36 @@ import { qk } from '@kortix/sdk/react';
 import { FolderSimpleIcon } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { useProjectSubprojects } from './subprojects-data';
+import { useProjectSpaces } from './spaces-data';
 
-/** The radio value standing for "no subproject" — `''` is not selectable. */
-const NO_SUBPROJECT = '__project__';
+/** The radio value standing for "no space" — `''` is not selectable. */
+const NO_SPACE = '__project__';
 
 export function MoveSessionMenu({ session }: { session: ProjectSession }) {
   const projectId = session.project_id;
   const queryClient = useQueryClient();
-  const subprojectsQuery = useProjectSubprojects(projectId);
-  const subprojects = subprojectsQuery.data?.subprojects ?? [];
+  const spacesQuery = useProjectSpaces(projectId);
+  const spaces = spacesQuery.data?.spaces ?? [];
 
   const move = useMutation({
     mutationFn: (slug: string | null) =>
-      updateProjectSession(projectId, session.session_id, { subproject: slug }),
+      updateProjectSession(projectId, session.session_id, { space: slug }),
     onSuccess: (_result, slug) => {
-      const name = subprojects.find((s) => s.slug === slug)?.name;
-      successToast(name ? `Moved to ${name}` : 'Moved out of the subproject');
-      // The row changes list: the sidebar's subproject folders and its
+      const name = spaces.find((s) => s.slug === slug)?.name;
+      successToast(name ? `Moved to ${name}` : 'Moved out of the space');
+      // The row changes list: the sidebar's space folders and its
       // unfiled `Sessions` list read the same inventory entry, and each
-      // subproject's `session_count` moved with it.
+      // space's `session_count` moved with it.
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
-      queryClient.invalidateQueries({ queryKey: qk.project.subprojects(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) });
     },
     onError: (error: Error) => errorToast(error.message || 'Could not move the session'),
   });
 
   // Nothing to move into, or no right to move it.
-  if (subprojects.length === 0 || session.can_manage_sharing === false) return null;
+  if (spaces.length === 0 || session.can_manage_sharing === false) return null;
 
-  const current = session.subproject ?? NO_SUBPROJECT;
+  const current = session.space ?? NO_SPACE;
 
   return (
     <DropdownMenuSub>
@@ -71,20 +71,20 @@ export function MoveSessionMenu({ session }: { session: ProjectSession }) {
           value={current}
           onValueChange={(next) => {
             if (next === current) return;
-            move.mutate(next === NO_SUBPROJECT ? null : next);
+            move.mutate(next === NO_SPACE ? null : next);
           }}
         >
-          <DropdownMenuRadioItem value={NO_SUBPROJECT} disabled={move.isPending}>
-            No subproject
+          <DropdownMenuRadioItem value={NO_SPACE} disabled={move.isPending}>
+            No space
           </DropdownMenuRadioItem>
-          {subprojects.length > 0 ? <DropdownMenuSeparator /> : null}
-          {subprojects.map((subproject) => (
+          {spaces.length > 0 ? <DropdownMenuSeparator /> : null}
+          {spaces.map((space) => (
             <DropdownMenuRadioItem
-              key={subproject.slug}
-              value={subproject.slug}
+              key={space.slug}
+              value={space.slug}
               disabled={move.isPending}
             >
-              <span className="truncate">{subproject.name}</span>
+              <span className="truncate">{space.name}</span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

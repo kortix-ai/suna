@@ -250,7 +250,7 @@ describe('[[agents]] — round-trip', () => {
     const spec: AgentSpec = {
       name: 'release-bot',
       path: 'kortix.toml#agents.release-bot',
-      subproject: null,
+      space: null,
       enabled: true,
       connectors: ['github'],
       kortixCli: ['project.trigger.create'],
@@ -272,7 +272,7 @@ model = "${entry.model}"
 
   test('minimal spec emits only name', () => {
     const entry = agentSpecToTomlEntry({
-      name: 'kortix', path: '', subproject: null, enabled: true, connectors: [], kortixCli: [], env: 'all', file: null, model: null,
+      name: 'kortix', path: '', space: null, enabled: true, connectors: [], kortixCli: [], env: 'all', file: null, model: null,
     });
     expect(entry).toEqual({ name: 'kortix' });
   });

@@ -51,7 +51,7 @@ import {
 // `@kortix/manifest-schema` backward compatibility.
 import {
   rejectChannelsV2,
-  rejectSubprojectsV2,
+  rejectSpacesV2,
   validateAgentsV2,
   validateDefaultAgentV2,
   validateRuntimeV2,
@@ -148,19 +148,19 @@ export {
   type AppResourcesV2,
   type ManifestV2,
   type AgentReferenceV2,
-  type SubprojectFileV2,
-  type SubprojectFileAgentsV2,
-  type SubprojectSessionsModeV2,
+  type SpaceFileV2,
+  type SpaceFileAgentsV2,
+  type SpaceSessionsModeV2,
   type ManifestSetV2,
-  SUBPROJECT_SESSIONS_MODES_V2,
-  SUBPROJECT_FILE_RE,
+  SPACE_SESSIONS_MODES_V2,
+  SPACE_FILE_RE,
   isAgentReferenceV2,
-  subprojectFilePath,
-  subprojectSlugFromPath,
+  spaceFilePath,
+  spaceSlugFromPath,
   resolveGrantSet,
-  validateSubprojectFileV2,
+  validateSpaceFileV2,
   validateManifestSetV2,
-  validateTriggerSubprojectRefsV2,
+  validateTriggerSpaceRefsV2,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
@@ -319,10 +319,10 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
-  // Subprojects live in their own `kortix-<slug>.yaml` files, so the root
-  // validator can neither hold them nor cross-check `triggers[].subproject` —
+  // Spaces live in their own `kortix-<slug>.yaml` files, so the root
+  // validator can neither hold them nor cross-check `triggers[].space` —
   // that is `validateManifestSetV2`'s job (spec 2026-09-06 §3).
-  rejectSubprojectsV2(parsed.subprojects, 'subprojects', issues);
+  rejectSpacesV2(parsed.spaces, 'spaces', issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */
@@ -1706,10 +1706,10 @@ export {
   KORTIX_V1_JSON_SCHEMA,
   KORTIX_V2_JSON_SCHEMA,
   KORTIX_JSON_SCHEMA,
-  KORTIX_SUBPROJECT_V2_JSON_SCHEMA,
+  KORTIX_SPACE_V2_JSON_SCHEMA,
   buildManifestV1Schema,
   buildManifestV2Schema,
   buildManifestSchema,
-  buildSubprojectFileV2Schema,
+  buildSpaceFileV2Schema,
   manifestJsonSchema,
 } from './json-schema';

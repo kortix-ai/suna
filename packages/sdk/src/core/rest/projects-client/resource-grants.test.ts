@@ -72,27 +72,27 @@ test('createProjectResourceGrant forwards an explicit expiry (including null)', 
   });
 });
 
-test('createProjectResourceGrant grants a subproject — the second closed object type', async () => {
+test('createProjectResourceGrant grants a space — the second closed object type', async () => {
   await createProjectResourceGrant('P1', {
-    resourceType: 'subproject',
+    resourceType: 'space',
     resourceId: 'marketing',
     principalType: 'member',
     principalId: 'user-1',
   });
   expect(last().body).toEqual({
-    resource_type: 'subproject',
+    resource_type: 'space',
     resource_id: 'marketing',
     principal_type: 'member',
     principal_id: 'user-1',
   });
 });
 
-test('listProjectResourceGrants surfaces the grantable subprojects', async () => {
+test('listProjectResourceGrants surfaces the grantable spaces', async () => {
   const result = await listProjectResourceGrants('P1');
   // Optional (older API responses omit it) — assert the field is readable and
   // typed as a resource list, not that the stub populated it.
-  const subprojects: ProjectResourceItem[] = result.resources.subprojects ?? [];
-  expect(subprojects).toEqual([]);
+  const spaces: ProjectResourceItem[] = result.resources.spaces ?? [];
+  expect(spaces).toEqual([]);
 });
 
 test('deleteProjectResourceGrant deletes by grant id', async () => {

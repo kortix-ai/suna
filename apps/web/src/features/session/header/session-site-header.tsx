@@ -27,7 +27,7 @@ import { SessionPendingApprovalsIndicator } from '@/features/session/header/sess
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { MoveSessionMenu } from '@/features/subprojects/move-session-menu';
+import { MoveSessionMenu } from '@/features/spaces/move-session-menu';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -203,7 +203,7 @@ export function SessionSiteHeader({
               ? tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f')
               : tI18nHardcoded.raw('i18nComplete.textadc01d813da0')}
           </DropdownMenuItem>
-          {/* Filing a session under a subproject is an access decision, so it
+          {/* Filing a session under a space is an access decision, so it
               sits with Share, not with the lifecycle controls below. */}
           {projectSession ? <MoveSessionMenu session={projectSession} /> : null}
 

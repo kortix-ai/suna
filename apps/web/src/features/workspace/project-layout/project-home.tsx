@@ -12,12 +12,12 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { cn } from '@/lib/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { SubprojectSelector } from '@/features/subprojects/subproject-selector';
-import { useProjectSubprojects } from '@/features/subprojects/subprojects-data';
+import { SpaceSelector } from '@/features/spaces/space-selector';
+import { useProjectSpaces } from '@/features/spaces/spaces-data';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
   type SandboxTemplate,
-  type Subproject,
+  type Space,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
@@ -40,10 +40,10 @@ export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
-  /** Where the session starts: a subproject slug, or `null` for the whole project. */
-  subproject?: string | null;
-  /** That subproject's own `agent` — the boot agent when the composer picked none. */
-  subproject_agent?: string | null;
+  /** Where the session starts: a space slug, or `null` for the whole project. */
+  space?: string | null;
+  /** That space's own `agent` — the boot agent when the composer picked none. */
+  space_agent?: string | null;
 }
 
 /**
@@ -65,7 +65,7 @@ export function ProjectHome({
   below,
   breadcrumb,
   toolbar,
-  subproject,
+  space,
 }: {
   projectId: string;
   onSend: (
@@ -74,7 +74,7 @@ export function ProjectHome({
     options?: ProjectHomeSendOptions,
   ) => void;
   busy: boolean;
-  /** See `ProjectHomeWelcomeBody` — a subproject wears this surface with its own name. */
+  /** See `ProjectHomeWelcomeBody` — a space wears this surface with its own name. */
   hero?: ProjectHomeHero;
   /** Rendered under the composer, inside the hero column. */
   below?: ReactNode;
@@ -82,8 +82,8 @@ export function ProjectHome({
   breadcrumb?: ReactNode;
   /** Floated over the top-right corner, ahead of the access-requests bell. */
   toolbar?: ReactNode;
-  /** The subproject this page IS (a subproject page) — the picker's default. */
-  subproject?: Subproject | null;
+  /** The space this page IS (a space page) — the picker's default. */
+  space?: Space | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const sidebarCollapsed = useSidebar().state === 'collapsed';
@@ -92,29 +92,29 @@ export function ProjectHome({
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
-  // Where a send starts. The page's own subproject is the default; a pick on
+  // Where a send starts. The page's own space is the default; a pick on
   // the composer overrides it. The pick remembers which page it was made on,
-  // so moving between subproject pages never carries a stale choice across.
-  const pageSubproject = subproject?.slug ?? null;
-  const [subprojectPick, setSubprojectPick] = useState<{
+  // so moving between space pages never carries a stale choice across.
+  const pageSpace = space?.slug ?? null;
+  const [spacePick, setSpacePick] = useState<{
     page: string | null;
     slug: string | null;
   } | null>(null);
-  const activeSubproject =
-    subprojectPick?.page === pageSubproject ? subprojectPick.slug : pageSubproject;
+  const activeSpace =
+    spacePick?.page === pageSpace ? spacePick.slug : pageSpace;
   // The SAME query the sidebar group reads — never a second request.
-  const subprojectsQuery = useProjectSubprojects(projectId);
-  const subprojects = useMemo(() => {
-    const list = subprojectsQuery.data?.subprojects ?? [];
+  const spacesQuery = useProjectSpaces(projectId);
+  const spaces = useMemo(() => {
+    const list = spacesQuery.data?.spaces ?? [];
     // The page's own row must exist before the list lands, or the trigger
-    // would read "Subproject" on a page that is already inside one.
-    return subproject && !list.some((s) => s.slug === subproject.slug)
-      ? [subproject, ...list]
+    // would read "Space" on a page that is already inside one.
+    return space && !list.some((s) => s.slug === space.slug)
+      ? [space, ...list]
       : list;
-  }, [subprojectsQuery.data, subproject]);
-  const activeSubprojectSpec = subprojects.find((s) => s.slug === activeSubproject) ?? null;
-  const activeSubprojectAgent = activeSubprojectSpec?.agent ?? null;
-  const canCreateSubproject =
+  }, [spacesQuery.data, space]);
+  const activeSpaceSpec = spaces.find((s) => s.slug === activeSpace) ?? null;
+  const activeSpaceAgent = activeSpaceSpec?.agent ?? null;
+  const canCreateSpace =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
 
   // The sandbox TEMPLATE catalog, not live sandbox health (that is
@@ -177,8 +177,8 @@ export function ProjectHome({
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       onSend(text, files, {
         ...options,
-        subproject: activeSubproject,
-        subproject_agent: activeSubprojectAgent,
+        space: activeSpace,
+        space_agent: activeSpaceAgent,
         ...(metaSelected
           ? { sandbox_slug: META_SANDBOX_SLUG }
           : selectedSlug
@@ -186,7 +186,7 @@ export function ProjectHome({
             : {}),
       });
     },
-    [metaSelected, selectedSlug, onSend, activeSubproject, activeSubprojectAgent],
+    [metaSelected, selectedSlug, onSend, activeSpace, activeSpaceAgent],
   );
 
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
@@ -312,21 +312,21 @@ export function ProjectHome({
             onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
             sandboxSlot={sandboxSlot}
-            // The roster follows the pick: a subproject's own agents appear
+            // The roster follows the pick: a space's own agents appear
             // only while it is chosen; the whole project offers globals only.
-            subproject={activeSubprojectSpec ? { agents: activeSubprojectSpec.agents ?? [] } : null}
+            space={activeSpaceSpec ? { agents: activeSpaceSpec.agents ?? [] } : null}
             // The tray under the card: where the session starts (user,
             // 2026-09-05 — "under the main chat box, like Claude's project or
-            // folder strip"). Absent until the project has a subproject to
+            // folder strip"). Absent until the project has a space to
             // offer — a picker over nothing can only say "Whole project".
             traySlot={
-              subprojects.length > 0 ? (
-                <SubprojectSelector
+              spaces.length > 0 ? (
+                <SpaceSelector
                   projectId={projectId}
-                  subprojects={subprojects}
-                  selected={activeSubproject}
-                  onSelect={(slug) => setSubprojectPick({ page: pageSubproject, slug })}
-                  canCreate={canCreateSubproject}
+                  spaces={spaces}
+                  selected={activeSpace}
+                  onSelect={(slug) => setSpacePick({ page: pageSpace, slug })}
+                  canCreate={canCreateSpace}
                 />
               ) : null
             }

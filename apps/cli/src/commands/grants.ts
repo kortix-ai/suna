@@ -87,7 +87,7 @@ function missing(what: string): number {
 }
 
 /** Resolve a member's user-id from an email via the project access list.
- *  Exported for `subprojects grant/revoke --member <id|email>` — same lookup. */
+ *  Exported for `spaces grant/revoke --member <id|email>` — same lookup. */
 export async function resolveMemberId(
   client: { get: <T>(p: string) => Promise<T> },
   base: string,

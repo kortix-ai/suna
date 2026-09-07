@@ -261,7 +261,7 @@ export function SessionFilterMenu({
     status: t('group.status'),
     activity: t('group.activity'),
     source: t('group.source'),
-    subproject: t('group.subproject'),
+    space: t('group.space'),
     none: t('group.none'),
   };
   const orderLabels: Record<SessionOrderMode, string> = {

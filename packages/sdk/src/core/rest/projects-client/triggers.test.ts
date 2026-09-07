@@ -240,14 +240,14 @@ test('the public trigger access type rejects unknown modes', () => {
   expect([access, badAccess]).toHaveLength(2);
 });
 
-// Subprojects: a trigger may belong to a `subprojects.<slug>`; the field is
+// Spaces: a trigger may belong to a `spaces.<slug>`; the field is
 // typed on the row and both inputs so hosts never widen the type themselves.
 import type {
-  CreateProjectTriggerInput as _CreateWithSubproject,
-  ProjectTrigger as _TriggerWithSubproject,
-  UpdateProjectTriggerInput as _UpdateWithSubproject,
+  CreateProjectTriggerInput as _CreateWithSpace,
+  ProjectTrigger as _TriggerWithSpace,
+  UpdateProjectTriggerInput as _UpdateWithSpace,
 } from './triggers';
-const _subprojectOnRow: _TriggerWithSubproject['subproject'] = 'marketing';
-const _subprojectOnCreate: _CreateWithSubproject['subproject'] = null;
-const _subprojectOnUpdate: _UpdateWithSubproject['subproject'] = undefined;
-void [_subprojectOnRow, _subprojectOnCreate, _subprojectOnUpdate];
+const _spaceOnRow: _TriggerWithSpace['space'] = 'marketing';
+const _spaceOnCreate: _CreateWithSpace['space'] = null;
+const _spaceOnUpdate: _UpdateWithSpace['space'] = undefined;
+void [_spaceOnRow, _spaceOnCreate, _spaceOnUpdate];

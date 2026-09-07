@@ -65,7 +65,7 @@ export function ComposerChatInput({
   clearOnSend,
   onAgentSelectionChange,
   sandboxSlot,
-  subproject,
+  space,
   draftScope,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
@@ -111,10 +111,10 @@ export function ComposerChatInput({
   sandboxSlot?: SessionOverrideSlot;
   /**
    * Where the session starts, for the agent roster (spec 2026-09-06 §2):
-   * the subproject's usable agents, `null` for the whole project, or
+   * the space's usable agents, `null` for the whole project, or
    * `undefined` when the host does not know (the roster is left as served).
    */
-  subproject?: { agents: readonly string[] } | null;
+  space?: { agents: readonly string[] } | null;
   /** Persist the unsent draft under this scope — see `composer/draft/`. */
   draftScope?: DraftScope | null;
 }) {
@@ -124,7 +124,7 @@ export function ComposerChatInput({
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
   const local = useSessionModelSelection({
-    subproject,
+    space,
     agents,
     providers,
     config,

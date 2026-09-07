@@ -30,7 +30,7 @@ let transientFailurePaths = new Set<string>();
 // the barrel's shape intact for whoever loads next. Add to them rather than
 // letting a sibling suite break.
 mock.module('../git', () => ({
-  // The subproject loader lists the manifest's directory; serve whatever the
+  // The space loader lists the manifest's directory; serve whatever the
   // test seeded as files, so a `kortix-<slug>.yaml` in `mdFileContent` is found.
   listRepoFiles: async () =>
     Object.keys(mdFileContent).map((path) => ({ path, type: 'file' as const, size: null })),
@@ -699,7 +699,7 @@ describe('resolveSelectedAgentConfigForSession', () => {
   });
 });
 
-// ─── the session's subproject decides which agents compile ─────────────────
+// ─── the session's space decides which agents compile ─────────────────
 
 const ROOT_FIXTURE = `
 kortix_version: 2
@@ -711,7 +711,7 @@ agents:
 
 `;
 
-// `kortix-marketing.yaml` — a subproject is its own file beside the root, and
+// `kortix-marketing.yaml` — a space is its own file beside the root, and
 // the agents it declares are usable only inside it (spec 2026-09-06 §2).
 const MARKETING_FILE = `
 agents:
@@ -719,7 +719,7 @@ agents:
     workspace: runtime
 `;
 
-describe('a session inside a subproject compiles the agents that subproject owns', () => {
+describe('a session inside a space compiles the agents that space owns', () => {
   test('resolveCompiledAgentConfigForSession folds in the owned agent, and only there', async () => {
     manifestFile = { path: 'kortix.yaml', content: ROOT_FIXTURE };
     mdFileContent = {
@@ -728,22 +728,22 @@ describe('a session inside a subproject compiles the agents that subproject owns
       'kortix-marketing.yaml': MARKETING_FILE,
     };
 
-    const inSubproject = JSON.parse(
+    const inSpace = JSON.parse(
       (await resolveCompiledAgentConfigForSession(PROJECT, 'main', {
-        subproject: 'marketing',
+        space: 'marketing',
       }))!,
     );
-    expect(Object.keys(inSubproject.agent).sort()).toEqual(['support', 'writer']);
-    expect(inSubproject.agent.writer.prompt).toBe('Writer body.');
+    expect(Object.keys(inSpace.agent).sort()).toEqual(['support', 'writer']);
+    expect(inSpace.agent.writer.prompt).toBe('Writer body.');
 
     const projectLevel = JSON.parse(
       (await resolveCompiledAgentConfigForSession(PROJECT, 'main'))!,
     );
     expect(Object.keys(projectLevel.agent)).toEqual(['support']);
 
-    // An out-of-date session row naming a subproject that is gone still boots.
+    // An out-of-date session row naming a space that is gone still boots.
     const stale = JSON.parse(
-      (await resolveCompiledAgentConfigForSession(PROJECT, 'main', { subproject: 'gone' }))!,
+      (await resolveCompiledAgentConfigForSession(PROJECT, 'main', { space: 'gone' }))!,
     );
     expect(Object.keys(stale.agent)).toEqual(['support']);
   });
@@ -757,7 +757,7 @@ describe('a session inside a subproject compiles the agents that subproject owns
 
     const compiled = JSON.parse(
       await resolveSelectedAgentConfigForSession(PROJECT, 'writer', 'main', {
-        subproject: 'marketing',
+        space: 'marketing',
       }),
     );
     expect(compiled.agent.writer.prompt).toBe('Writer body.');

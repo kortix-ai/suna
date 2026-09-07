@@ -78,10 +78,10 @@ projectsApp.openapi(
         declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
       }[];
       skills: { id: string; name: string }[];
-      // Manifest subprojects — the second closed-by-default object type. Same
+      // Manifest spaces — the second closed-by-default object type. Same
       // grant shape as an agent: id is the slug.
-      subprojects: { id: string; name: string; description: string | null }[];
-    } = { agents: [], skills: [], subprojects: [] };
+      spaces: { id: string; name: string; description: string | null }[];
+    } = { agents: [], skills: [], spaces: [] };
     let configLoaded = false;
     try {
       const config = await loadConfigWithFiles(loaded.row);
@@ -95,7 +95,7 @@ projectsApp.openapi(
         },
       }));
       resources.skills = fromConfig.skills;
-      resources.subprojects = fromConfig.subprojects;
+      resources.spaces = fromConfig.spaces;
       configLoaded = true;
     } catch (err) {
       console.warn('[resource-grants] config load failed', {
@@ -111,15 +111,15 @@ projectsApp.openapi(
     // must not mass-flag).
     const liveAgentIds = new Set(resources.agents.map((r) => r.id));
     const liveSkillIds = new Set(resources.skills.map((r) => r.id));
-    const liveSubprojectIds = new Set(resources.subprojects.map((r) => r.id));
+    const liveSpaceIds = new Set(resources.spaces.map((r) => r.id));
     const isOrphan = (type: string, id: string) => {
       if (!configLoaded) return false;
       return type === 'agent'
         ? !liveAgentIds.has(id)
         : type === 'skill'
           ? !liveSkillIds.has(id)
-          : type === 'subproject'
-            ? !liveSubprojectIds.has(id)
+          : type === 'space'
+            ? !liveSpaceIds.has(id)
             : false;
     };
 
@@ -214,7 +214,7 @@ projectsApp.openapi(
     // Pre-existing skill/secret rows still read/list/revoke fine (see
     // resource-grants.ts's RESOURCE_GRANT_TYPES doc comment).
     if (!resourceType || !isCreatableResourceType(resourceType)) {
-      return c.json({ error: 'resource_type must be agent or subproject' }, 400);
+      return c.json({ error: 'resource_type must be agent or space' }, 400);
     }
     if (!resourceId) return c.json({ error: 'resource_id is required' }, 400);
     if (principalType !== 'member' && principalType !== 'group') {

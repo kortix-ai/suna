@@ -158,11 +158,11 @@ export async function createDatabaseSession(
     userId: string;
     visibility?: "private" | "project" | "restricted";
     metadata?: Record<string, unknown>;
-    /** `project_sessions.subproject` — the manifest slug this row joins, or
+    /** `project_sessions.space` — the manifest slug this row joins, or
      *  omit/null for an ordinary session. Lets a flow seed a row inside a
-     *  subproject without a real session-create call (the local profile
-     *  can't provision one — see subprojects.flow.ts SUBP-3). */
-    subproject?: string | null;
+     *  space without a real session-create call (the local profile
+     *  can't provision one — see spaces.flow.ts SPACE-3). */
+    space?: string | null;
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<string> {
@@ -179,7 +179,7 @@ export async function createDatabaseSession(
          created_by,
          visibility,
          metadata,
-         subproject
+         space
        )
        VALUES (
          $1,
@@ -198,7 +198,7 @@ export async function createDatabaseSession(
         input.userId,
         input.visibility ?? "private",
         JSON.stringify(input.metadata ?? {}),
-        input.subproject ?? null,
+        input.space ?? null,
       ],
     );
   } finally {

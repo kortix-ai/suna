@@ -155,7 +155,7 @@ export interface AgentBlockV2 {
 }
 
 /**
- * An agent BORROWED from another subproject: `agents.<name>: { from: <slug> }`
+ * An agent BORROWED from another space: `agents.<name>: { from: <slug> }`
  * in a `kortix-<slug>.yaml`. It imports use, not governance — the target must
  * be an agent OWNED by `<slug>` (never itself a reference), and the block may
  * carry no other key in this version (spec 2026-09-06 §2). Grant-set
@@ -168,29 +168,29 @@ export interface AgentReferenceV2 {
 /**
  * The body of one `kortix-<slug>.yaml` — a Claude/ChatGPT-style "project"
  * INSIDE a Kortix project. It groups sessions, may pin a default agent, owns
- * the triggers that name it (`triggers[].subproject`), and declares the agents
+ * the triggers that name it (`triggers[].space`), and declares the agents
  * that are usable only inside it. Identity is the FILENAME, so there is no `slug` key
  * and no `kortix_version` (the root manifest's version applies).
- * Authorization is an IAM object grant (`object_type = 'subproject'`, closed
+ * Authorization is an IAM object grant (`object_type = 'space'`, closed
  * by default, like agents) and lives server-side — nothing here is a
  * permission.
  */
-export interface SubprojectFileV2 {
+export interface SpaceFileV2 {
   /** Display name. Defaults to the slug. */
   name?: string;
   description?: string;
-  /** Default agent for sessions started inside this subproject. Must be
+  /** Default agent for sessions started inside this space. Must be
    *  usable here (global, owned, or referenced); omit to fall back to
    *  `default_agent`. A default, not a binding: the person may pick any
    *  other agent they hold. */
   agent?: string;
-  /** Session visibility inside the subproject. `private` (default): the
+  /** Session visibility inside the space. `private` (default): the
    *  ordinary model — a session is its creator's unless shared. `shared`:
-   *  everyone granted the subproject may open every session in it. */
-  sessions?: SubprojectSessionsModeV2;
-  /** Agents this subproject OWNS (a full block, same shape as the root's) or
-   *  BORROWS from another subproject (`{ from: <slug> }`). An owned agent is
-   *  usable only here and in the subprojects that reference it. */
+   *  everyone granted the space may open every session in it. */
+  sessions?: SpaceSessionsModeV2;
+  /** Agents this space OWNS (a full block, same shape as the root's) or
+   *  BORROWS from another space (`{ from: <slug> }`). An owned agent is
+   *  usable only here and in the spaces that reference it. */
   agents?: Record<string, AgentBlockV2 | AgentReferenceV2>;
 }
 
@@ -207,31 +207,31 @@ export function isAgentReferenceV2(entry: unknown): entry is AgentReferenceV2 {
   );
 }
 
-/** The one place that knows the subproject filename convention: a BASENAME
+/** The one place that knows the space filename convention: a BASENAME
  *  `kortix-<slug>.yaml`, capture group 1 = the slug. `.yaml` only — a v1
- *  (`kortix.toml`) project has no subprojects, and `kortix.yaml` itself is
- *  the root manifest, never a subproject. */
-export const SUBPROJECT_FILE_RE = new RegExp(
+ *  (`kortix.toml`) project has no spaces, and `kortix.yaml` itself is
+ *  the root manifest, never a space. */
+export const SPACE_FILE_RE = new RegExp(
   `^kortix-(${SLUG_RE.source.replace(/^\^/, '').replace(/\$$/, '')})\\.yaml$`,
 );
 
 /** The path of `<slug>`'s file inside `dir` (the directory holding the
  *  resolved root manifest; `''` for the repo root). */
-export function subprojectFilePath(dir: string, slug: string): string {
+export function spaceFilePath(dir: string, slug: string): string {
   const base = `kortix-${slug}.yaml`;
   const prefix = dir.replace(/\/+$/, '');
   return prefix ? `${prefix}/${base}` : base;
 }
 
-/** The slug `path` declares, or `null` when its basename is not a subproject
+/** The slug `path` declares, or `null` when its basename is not a space
  *  file (`kortix.yaml`, `kortix-x.yml`, `kortix-Bad.yaml`, …). */
-export function subprojectSlugFromPath(path: string): string | null {
+export function spaceSlugFromPath(path: string): string | null {
   const base = path.split('/').pop() ?? '';
-  return base.match(SUBPROJECT_FILE_RE)?.[1] ?? null;
+  return base.match(SPACE_FILE_RE)?.[1] ?? null;
 }
 
-export const SUBPROJECT_SESSIONS_MODES_V2 = ['private', 'shared'] as const;
-export type SubprojectSessionsModeV2 = (typeof SUBPROJECT_SESSIONS_MODES_V2)[number];
+export const SPACE_SESSIONS_MODES_V2 = ['private', 'shared'] as const;
+export type SpaceSessionsModeV2 = (typeof SPACE_SESSIONS_MODES_V2)[number];
 
 /** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
 export interface ManifestV2 {
@@ -754,17 +754,17 @@ export function rejectChannelsV2(node: unknown, path: string, issues: ManifestIs
 
 /** The keys a `kortix-<slug>.yaml` may carry. Anything else is an error, so a
  *  typo (`agnet:`) cannot silently become "no agent". */
-const SUBPROJECT_FILE_KEYS_V2 = new Set(['name', 'description', 'agent', 'sessions', 'agents']);
+const SPACE_FILE_KEYS_V2 = new Set(['name', 'description', 'agent', 'sessions', 'agents']);
 
 /** Keys this version dropped (2026-09-07). Ignored with a warning rather than
  *  rejected: a file written when they were valid must not become unparseable,
  *  which would take its sessions and its owned agents down with it. */
-const REMOVED_SUBPROJECT_FILE_KEYS_V2 = new Set(['instructions', 'context']);
+const REMOVED_SPACE_FILE_KEYS_V2 = new Set(['instructions', 'context']);
 
-/** The agents one subproject file declares: the ones it OWNS (a block) and the
+/** The agents one space file declares: the ones it OWNS (a block) and the
  *  ones it BORROWS (`{ from }`). Cross-file checks run on these — see
  *  `validateManifestSetV2`. */
-export interface SubprojectFileAgentsV2 {
+export interface SpaceFileAgentsV2 {
   owned: string[];
   referenced: Array<{ name: string; from: string }>;
 }
@@ -778,20 +778,20 @@ export interface SubprojectFileAgentsV2 {
  * (`kortix-marketing.yaml:agents.writer`), so a set-wide report says which
  * file each issue belongs to; without it the field path stands alone.
  */
-export function validateSubprojectFileV2(
+export function validateSpaceFileV2(
   raw: unknown,
   slug: string,
   issues: ManifestIssue[],
   opts?: { path?: string },
-): SubprojectFileAgentsV2 {
+): SpaceFileAgentsV2 {
   const file = opts?.path?.trim() ?? '';
   const at = (field: string) => (field ? (file ? `${file}:${field}` : field) : file || slug);
-  const result: SubprojectFileAgentsV2 = { owned: [], referenced: [] };
+  const result: SpaceFileAgentsV2 = { owned: [], referenced: [] };
 
   if (!SLUG_RE.test(slug)) {
     issues.push({
       path: at(''),
-      message: `"${slug}" is not a valid subproject slug (lowercase letters, digits, dashes, underscores).`,
+      message: `"${slug}" is not a valid space slug (lowercase letters, digits, dashes, underscores).`,
       severity: 'error',
     });
   }
@@ -799,7 +799,7 @@ export function validateSubprojectFileV2(
   if (!isTable(raw)) {
     issues.push({
       path: at(''),
-      message: 'a subproject file must be a table of subproject fields (use `{}` for an empty one).',
+      message: 'a space file must be a table of space fields (use `{}` for an empty one).',
       severity: 'error',
     });
     return result;
@@ -809,23 +809,23 @@ export function validateSubprojectFileV2(
     issues.push({
       path: at('kortix_version'),
       message:
-        "a subproject file carries no `kortix_version` — the root manifest's version applies (and must be 2).",
+        "a space file carries no `kortix_version` — the root manifest's version applies (and must be 2).",
       severity: 'error',
     });
   }
   for (const key of Object.keys(raw)) {
-    if (key === 'kortix_version' || SUBPROJECT_FILE_KEYS_V2.has(key)) continue;
-    if (REMOVED_SUBPROJECT_FILE_KEYS_V2.has(key)) {
+    if (key === 'kortix_version' || SPACE_FILE_KEYS_V2.has(key)) continue;
+    if (REMOVED_SPACE_FILE_KEYS_V2.has(key)) {
       issues.push({
         path: at(key),
-        message: `"${key}" is no longer a subproject field and is ignored — delete it.`,
+        message: `"${key}" is no longer a space field and is ignored — delete it.`,
         severity: 'warning',
       });
       continue;
     }
     issues.push({
       path: at(key),
-      message: `"${key}" is not a subproject field (allowed: ${[...SUBPROJECT_FILE_KEYS_V2].join(', ')}).`,
+      message: `"${key}" is not a space field (allowed: ${[...SPACE_FILE_KEYS_V2].join(', ')}).`,
       severity: 'error',
     });
   }
@@ -835,11 +835,11 @@ export function validateSubprojectFileV2(
 
   if (
     raw.sessions !== undefined &&
-    !(SUBPROJECT_SESSIONS_MODES_V2 as readonly unknown[]).includes(raw.sessions)
+    !(SPACE_SESSIONS_MODES_V2 as readonly unknown[]).includes(raw.sessions)
   ) {
     issues.push({
       path: at('sessions'),
-      message: `sessions must be one of ${SUBPROJECT_SESSIONS_MODES_V2.map((m) => `"${m}"`).join(', ')}.`,
+      message: `sessions must be one of ${SPACE_SESSIONS_MODES_V2.map((m) => `"${m}"`).join(', ')}.`,
       severity: 'error',
     });
   }
@@ -850,14 +850,14 @@ export function validateSubprojectFileV2(
       issues.push({
         path: at('agent'),
         message:
-          'agent must be a non-empty string naming an agent usable in this subproject; omit it to fall back to `default_agent`.',
+          'agent must be a non-empty string naming an agent usable in this space; omit it to fall back to `default_agent`.',
         severity: 'error',
       });
     }
   }
 
   if (raw.agents !== undefined && raw.agents !== null) {
-    validateSubprojectAgentsV2(raw.agents, at('agents'), at, result, issues);
+    validateSpaceAgentsV2(raw.agents, at('agents'), at, result, issues);
   }
 
   return result;
@@ -865,18 +865,18 @@ export function validateSubprojectFileV2(
 
 /** `kortix-<slug>.yaml` → `agents:` — the same name→block map the root uses,
  *  plus the `{ from: <slug> }` reference form. */
-function validateSubprojectAgentsV2(
+function validateSpaceAgentsV2(
   node: unknown,
   path: string,
   at: (field: string) => string,
-  result: SubprojectFileAgentsV2,
+  result: SpaceFileAgentsV2,
   issues: ManifestIssue[],
 ): void {
   if (Array.isArray(node) || !isTable(node)) {
     issues.push({
       path,
       message:
-        '`agents` must be a map of agent name → agent block, or → `{ from: <subproject> }` to borrow one.',
+        '`agents` must be a map of agent name → agent block, or → `{ from: <space> }` to borrow one.',
       severity: 'error',
     });
     return;
@@ -906,7 +906,7 @@ function validateSubprojectAgentsV2(
       if (typeof entry.from !== 'string' || !entry.from.trim()) {
         issues.push({
           path: `${where}.from`,
-          message: 'from must be a non-empty string naming the subproject that owns the agent.',
+          message: 'from must be a non-empty string naming the space that owns the agent.',
           severity: 'error',
         });
         continue;
@@ -922,16 +922,16 @@ function validateSubprojectAgentsV2(
 /** The root manifest plus every `kortix-<slug>.yaml` beside it. */
 export interface ManifestSetV2 {
   root: Record<string, unknown>;
-  subprojects: Array<{ slug: string; path: string; raw: Record<string, unknown> }>;
+  spaces: Array<{ slug: string; path: string; raw: Record<string, unknown> }>;
 }
 
 /**
  * The rules no single file can check (spec 2026-09-06 §3): duplicate agent
  * names, `from` targets, and every default that names an agent — `agent:`,
  * `default_agent`, `triggers[].agent` — against the usability rule ("global,
- * owned by the subproject, or referenced by it"). Shape errors are NOT
+ * owned by the space, or referenced by it"). Shape errors are NOT
  * repeated here; run `validateManifest` on the root and
- * `validateSubprojectFileV2` on each file for those.
+ * `validateSpaceFileV2` on each file for those.
  */
 export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[]): void {
   const rootAgents = set.root?.agents;
@@ -945,14 +945,14 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
     slug: string;
     path: string;
     raw: Record<string, unknown>;
-    agents: SubprojectFileAgentsV2;
+    agents: SpaceFileAgentsV2;
   }> = [];
-  for (const entry of set.subprojects) {
+  for (const entry of set.spaces) {
     const declared = byPath.get(entry.slug);
     if (declared !== undefined) {
       issues.push({
         path: entry.path,
-        message: `subproject "${entry.slug}" is already declared in ${declared} — one file per subproject.`,
+        message: `space "${entry.slug}" is already declared in ${declared} — one file per space.`,
         severity: 'error',
       });
       continue;
@@ -960,7 +960,7 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
     byPath.set(entry.slug, entry.path);
     files.push({
       ...entry,
-      agents: validateSubprojectFileV2(entry.raw, entry.slug, scratch, { path: entry.path }),
+      agents: validateSpaceFileV2(entry.raw, entry.slug, scratch, { path: entry.path }),
     });
   }
 
@@ -972,7 +972,7 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
       if (declared !== undefined) {
         issues.push({
           path: `${f.path}:agents.${name}`,
-          message: `agent "${name}" is already declared in ${declared} — agent names are unique across the root manifest and every subproject file.`,
+          message: `agent "${name}" is already declared in ${declared} — agent names are unique across the root manifest and every space file.`,
           severity: 'error',
         });
         continue;
@@ -989,40 +989,40 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
     return [...globals, ...f.agents.owned, ...f.agents.referenced.map((ref) => ref.name)];
   };
 
-  // 2. Every `from` names another subproject that OWNS that agent.
+  // 2. Every `from` names another space that OWNS that agent.
   for (const f of files) {
     for (const ref of f.agents.referenced) {
       const where = `${f.path}:agents.${ref.name}.from`;
       if (ref.from === f.slug) {
         issues.push({
           path: where,
-          message: `a subproject cannot reference itself — declare "${ref.name}" here, or borrow it from another subproject.`,
+          message: `a space cannot reference itself — declare "${ref.name}" here, or borrow it from another space.`,
           severity: 'error',
         });
       } else if (!byPath.has(ref.from)) {
         issues.push({
           path: where,
-          message: `from "${ref.from}" does not match any subproject — expected ${subprojectFilePath('', ref.from)}.`,
+          message: `from "${ref.from}" does not match any space — expected ${spaceFilePath('', ref.from)}.`,
           severity: 'error',
         });
       } else if (!ownedBy.get(ref.from)?.includes(ref.name)) {
         issues.push({
           path: where,
-          message: `subproject "${ref.from}" does not declare an agent named "${ref.name}" — a reference must name an agent OWNED there, never a global agent or another reference.`,
+          message: `space "${ref.from}" does not declare an agent named "${ref.name}" — a reference must name an agent OWNED there, never a global agent or another reference.`,
           severity: 'error',
         });
       }
     }
   }
 
-  // 3. `agent:` must be usable in its own subproject.
+  // 3. `agent:` must be usable in its own space.
   for (const f of files) {
     const agent = typeof f.raw.agent === 'string' ? f.raw.agent.trim() : '';
     if (!agent) continue;
     if (!usableIn(f.slug).includes(agent)) {
       issues.push({
         path: `${f.path}:agent`,
-        message: `agent "${agent}" is not usable in subproject "${f.slug}" — it must be a global agent, declared in ${f.path}, or borrowed there with \`{ from: <subproject> }\`.`,
+        message: `agent "${agent}" is not usable in space "${f.slug}" — it must be a global agent, declared in ${f.path}, or borrowed there with \`{ from: <space> }\`.`,
         severity: 'error',
       });
     }
@@ -1038,21 +1038,21 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
     if (owner) {
       issues.push({
         path: 'default_agent',
-        message: `default_agent "${defaultAgent}" is owned by subproject "${owner.slug}" (${owner.path}) — the project default must be a global agent declared in ${MANIFEST_FILENAME_YAML}.`,
+        message: `default_agent "${defaultAgent}" is owned by space "${owner.slug}" (${owner.path}) — the project default must be a global agent declared in ${MANIFEST_FILENAME_YAML}.`,
         severity: 'error',
       });
     }
   }
 
-  // 5. Triggers: the subproject must exist, and the agent must be usable in it.
+  // 5. Triggers: the space must exist, and the agent must be usable in it.
   const triggers = set.root?.triggers;
-  validateTriggerSubprojectRefsV2(triggers, 'triggers', [...byPath.keys()], issues);
+  validateTriggerSpaceRefsV2(triggers, 'triggers', [...byPath.keys()], issues);
   if (Array.isArray(triggers)) {
     triggers.forEach((entry, i) => {
       if (!isTable(entry)) return;
       const agent = typeof entry.agent === 'string' ? entry.agent.trim() : '';
       if (!agent) return;
-      const slug = typeof entry.subproject === 'string' ? entry.subproject.trim() : '';
+      const slug = typeof entry.space === 'string' ? entry.space.trim() : '';
       if (!slug) {
         // A project-level trigger may use global agents only. As with
         // `default_agent`, an undeclared name is the root validator's error.
@@ -1060,18 +1060,18 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
         if (owner && !globals.includes(agent)) {
           issues.push({
             path: `triggers[${i}].agent`,
-            message: `agent "${agent}" is owned by subproject "${owner.slug}" (${owner.path}) — a trigger with no \`subproject\` may use global agents only.`,
+            message: `agent "${agent}" is owned by space "${owner.slug}" (${owner.path}) — a trigger with no \`space\` may use global agents only.`,
             severity: 'error',
           });
         }
         return;
       }
-      // An undeclared subproject is already reported above.
+      // An undeclared space is already reported above.
       if (!byPath.has(slug)) return;
       if (!usableIn(slug).includes(agent)) {
         issues.push({
           path: `triggers[${i}].agent`,
-          message: `agent "${agent}" is not usable in subproject "${slug}" — it must be a global agent, declared in ${byPath.get(slug)}, or borrowed there with \`{ from: <subproject> }\`.`,
+          message: `agent "${agent}" is not usable in space "${slug}" — it must be a global agent, declared in ${byPath.get(slug)}, or borrowed there with \`{ from: <space> }\`.`,
           severity: 'error',
         });
       }
@@ -1079,38 +1079,51 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
   }
 }
 
-/** v2 moves every subproject into its own file — an inline `subprojects:` map
+/** v2 moves every space into its own file — an inline `spaces:` map
  *  is an error that names the convention (spec 2026-09-06 §2). Nothing
  *  shipped with the map, so there is no migration. */
-export function rejectSubprojectsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+export function rejectSpacesV2(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node === undefined) return;
   issues.push({
     path,
     message:
-      '`subprojects` is not a manifest key — each subproject lives in its own `kortix-<slug>.yaml` file beside kortix.yaml, one file per subproject.',
+      '`spaces` is not a manifest key — each space lives in its own `kortix-<slug>.yaml` file beside kortix.yaml, one file per space.',
     severity: 'error',
   });
 }
 
 /**
- * v2 cross-validation: a trigger's `subproject` (if set) must name a declared
- * subproject. Mirrors `validateTriggerAgentRefsV2`.
+ * v2 cross-validation: a trigger's `space` (if set) must name a declared
+ * space. Mirrors `validateTriggerAgentRefsV2`.
  */
-export function validateTriggerSubprojectRefsV2(
+export function validateTriggerSpaceRefsV2(
   node: unknown,
   path: string,
-  subprojectNames: string[],
+  spaceNames: string[],
   issues: ManifestIssue[],
 ): void {
   if (!Array.isArray(node)) return;
   node.forEach((entry, i) => {
-    if (!isTable(entry) || entry.subproject === undefined || entry.subproject === null) return;
-    const where = `${path}[${i}].subproject`;
-    const name = typeof entry.subproject === 'string' ? entry.subproject.trim() : '';
-    if (!name || !subprojectNames.includes(name)) {
+    if (!isTable(entry)) return;
+    // `subproject:` is this key's pre-2026-09-07 spelling. A manifest written
+    // before the rename keeps working — the trigger loader reads it too
+    // (`extractTriggers`) — but say so, because the next write emits `space:`.
+    const legacy = entry.space === undefined || entry.space === null;
+    const raw = legacy ? entry.subproject : entry.space;
+    if (raw === undefined || raw === null) return;
+    const where = `${path}[${i}].${legacy ? 'subproject' : 'space'}`;
+    if (legacy) {
       issues.push({
         path: where,
-        message: `subproject "${String(entry.subproject)}" does not match any declared subproject in \`subprojects\`.`,
+        message: '`subproject` was renamed to `space` — rename the key (it is still read for now).',
+        severity: 'warning',
+      });
+    }
+    const name = typeof raw === 'string' ? raw.trim() : '';
+    if (!name || !spaceNames.includes(name)) {
+      issues.push({
+        path: where,
+        message: `space "${String(raw)}" does not match any declared space.`,
         severity: 'error',
       });
     }
@@ -1123,8 +1136,8 @@ export function validateTriggerSubprojectRefsV2(
  * trigger seam 7(a)). Layered on top of `validateTriggers`' structural checks,
  * which stay identical between v1 and v2.
  *
- * A trigger that carries a `subproject` is SKIPPED here: its agent may be one
- * the subproject owns or borrows, which lives in a file this validator never
+ * A trigger that carries a `space` is SKIPPED here: its agent may be one
+ * the space owns or borrows, which lives in a file this validator never
  * sees. `validateManifestSetV2` checks those against the usability rule.
  */
 export function validateTriggerAgentRefsV2(
@@ -1136,6 +1149,8 @@ export function validateTriggerAgentRefsV2(
   if (!Array.isArray(node)) return;
   node.forEach((entry, i) => {
     if (!isTable(entry) || entry.agent === undefined || entry.agent === null) return;
+    if (typeof entry.space === 'string' && entry.space.trim()) return;
+    // Same skip for the legacy spelling — see `validateTriggerSpaceRefsV2`.
     if (typeof entry.subproject === 'string' && entry.subproject.trim()) return;
     const where = `${path}[${i}].agent`;
     if (typeof entry.agent !== 'string' || !entry.agent.trim()) {

@@ -248,7 +248,7 @@ export interface SessionChatInputProps {
   /**
    * A tray hanging off the card's bottom edge — the same overlap
    * `ModelConnectionBar` uses, and the bar follows it. Project Home's
-   * subproject picker lives here.
+   * space picker lives here.
    */
   traySlot?: React.ReactNode;
   /**

@@ -9,13 +9,13 @@ import {
   parseManifestText,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
-import { mergeSubprojectAgents } from '../agents';
+import { mergeSpaceAgents } from '../agents';
 import {
-  extractSubprojectsFromFiles,
+  extractSpacesFromFiles,
   manifestDir,
-  subprojectFileEntries,
-  type SubprojectFile,
-} from '../subprojects';
+  spaceFileEntries,
+  type SpaceFile,
+} from '../spaces';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
@@ -173,7 +173,7 @@ export function resolveConfigAgents(
         ...agent,
         source: 'opencode' as const,
         enabled: true,
-        subproject: null,
+        space: null,
       })),
     };
   }
@@ -195,7 +195,7 @@ export function resolveConfigAgents(
           model: native?.model ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
-          subproject: spec.subproject,
+          space: spec.space,
           sandbox: spec.sandbox ?? null,
           // Surface the per-agent allowlists so the UI can show (read-only) what
           // secrets/connectors/CLI powers each declared agent is scoped to.
@@ -251,18 +251,18 @@ export async function loadProjectConfig(
           ],
         }
       : { specs: [], errors: [] };
-  // Subprojects are one `kortix-<slug>.yaml` each, beside the root manifest,
+  // Spaces are one `kortix-<slug>.yaml` each, beside the root manifest,
   // and v2-only. An unparseable or v1 manifest yields none, the same
   // degradation the agent list already takes.
-  const subprojectFiles: SubprojectFile[] = [];
+  const spaceFiles: SpaceFile[] = [];
   if (parsedManifest && manifestSchemaVersionFor(parsedManifest) >= 2) {
-    for (const entry of subprojectFileEntries(repoFiles, manifestDir(manifestFilePath))) {
+    for (const entry of spaceFileEntries(repoFiles, manifestDir(manifestFilePath))) {
       const content = await optionalFile(project, entry.path);
-      if (content !== null) subprojectFiles.push({ ...entry, content });
+      if (content !== null) spaceFiles.push({ ...entry, content });
     }
   }
-  const loadedSubprojects = extractSubprojectsFromFiles(subprojectFiles);
-  const subprojects = loadedSubprojects.specs.map((spec) => ({
+  const loadedSpaces = extractSpacesFromFiles(spaceFiles);
+  const spaces = loadedSpaces.specs.map((spec) => ({
     slug: spec.slug,
     name: spec.name,
     description: spec.description,
@@ -302,9 +302,9 @@ export async function loadProjectConfig(
   );
   const { agent_discovery, agents } = resolveConfigAgents(
     nativeAgents,
-    // Owned agents join the roster here, carrying their subproject — the
+    // Owned agents join the roster here, carrying their space — the
     // composer reads THIS list, so ownership reaches it without a second call.
-    mergeSubprojectAgents(loadedAgents, loadedSubprojects.specs),
+    mergeSpaceAgents(loadedAgents, loadedSpaces.specs),
   );
 
   const seenSkills = new Set<string>();
@@ -380,7 +380,7 @@ export async function loadProjectConfig(
     agents,
     skills,
     commands,
-    subprojects,
+    spaces,
   };
 }
 

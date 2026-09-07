@@ -206,14 +206,14 @@ enforcement feature:
 Never print or return a secret value or a handle. Use `kortix secrets ls
 --json` when you need the complete stored policy.
 
-**Subproject context.** `$KORTIX_SUBPROJECT` set means this session runs
-inside a named subproject — check it before assuming you're in the project's
-general scope. `/tmp/kortix/subproject.md` holds its standing instructions and
+**Space context.** `$KORTIX_SPACE` set means this session runs
+inside a named space — check it before assuming you're in the project's
+general scope. `/tmp/kortix/space.md` holds its standing instructions and
 lists its context files; read it early, the same way you'd read a README.
 Sessions you spawn from here (`kortix sessions new`) inherit the same
-subproject automatically — pass `--subproject ""` to opt a spawned session out,
-or `--subproject <other-slug>` to put it in a different one. Full field
-reference: `references/kortix/kortix-yaml.md`'s `subprojects:` section.
+space automatically — pass `--space ""` to opt a spawned session out,
+or `--space <other-slug>` to put it in a different one. Full field
+reference: `references/kortix/kortix-yaml.md`'s `spaces:` section.
 
 **Getting a credential — never punt to the dashboard.** When you need an API key
 or an app connected, **mint a setup link and surface the URL in the same turn** —

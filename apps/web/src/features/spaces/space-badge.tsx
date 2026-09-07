@@ -1,12 +1,12 @@
 'use client';
 
 /**
- * The subproject a session belongs to, as one chip.
+ * The space a session belongs to, as one chip.
  *
  * Rendered on the sidebar row and on the sessions page — the two places a
  * session shows up out of context. It renders nothing when the session
- * carries no subproject, and nothing on a surface already scoped to one
- * (the subproject page's own list), where every row would wear the same chip
+ * carries no space, and nothing on a surface already scoped to one
+ * (the space page's own list), where every row would wear the same chip
  * and it would say nothing.
  */
 
@@ -16,14 +16,14 @@ import { FolderSimpleIcon } from '@phosphor-icons/react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-export function SubprojectBadge({
+export function SpaceBadge({
   session,
   className,
 }: {
-  session: Pick<ProjectSession, 'subproject'>;
+  session: Pick<ProjectSession, 'space'>;
   className?: string;
 }) {
-  const slug = session.subproject;
+  const slug = session.space;
   if (!slug) return null;
   return (
     <Badge

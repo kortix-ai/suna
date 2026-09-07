@@ -50,7 +50,7 @@ import {
   type RuntimeV2,
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
-import { agentBlocksUsableIn, loadProjectSubprojectsAtRef } from '../subprojects';
+import { agentBlocksUsableIn, loadProjectSpacesAtRef } from '../spaces';
 import {
   isRepoFileNotFoundError,
   readManifestFromRepo,
@@ -89,7 +89,7 @@ export interface OpencodeConfig {
    *  land without another signature change. */
   small_model?: string;
   /** OpenCode top-level `instructions` — extra context files inlined into every
-   *  turn ALONGSIDE the agent's own prompt. Today only the session's subproject
+   *  turn ALONGSIDE the agent's own prompt. Today only the session's space
    *  contributes here (its `context[]`); omitted when there is nothing to add.
    *  Never confuse this with an agent's `prompt`, which REPLACES OpenCode's
    *  default system prompt. */
@@ -493,8 +493,8 @@ export async function resolveCompiledAgentConfigForSession(
    * Falls back to the default branch, which is what every caller got before.
    */
   baseRef?: string | null,
-  /** The session's `project_sessions.subproject`, when it runs inside one. */
-  opts?: { subproject?: string | null },
+  /** The session's `project_sessions.space`, when it runs inside one. */
+  opts?: { space?: string | null },
 ): Promise<string | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
@@ -506,11 +506,11 @@ export async function resolveCompiledAgentConfigForSession(
     const rootRaw = parseManifestText(found.content, format);
     if (manifestSchemaVersion(rootRaw) !== 2) return null;
 
-    // The agents a session inside a subproject may run: the root's, plus the
+    // The agents a session inside a space may run: the root's, plus the
     // ones its file owns or references (spec 2026-09-06 §2). A project-level
     // session compiles the root's only. Read at the session's ref, like the
     // manifest itself.
-    const blocks = await subprojectAgentBlocksAtRef(project, found.path, ref, opts?.subproject);
+    const blocks = await spaceAgentBlocksAtRef(project, found.path, ref, opts?.space);
     const raw = withUsableAgents(rootRaw, blocks);
     const v2 = raw as unknown as ManifestV2;
     const agents =
@@ -557,8 +557,8 @@ export async function resolveSelectedAgentConfigForSession(
   project: GitBackedProject,
   agentName: string,
   baseRef?: string | null,
-  /** The session's `project_sessions.subproject`, when it runs inside one. */
-  opts?: { subproject?: string | null },
+  /** The session's `project_sessions.space`, when it runs inside one. */
+  opts?: { space?: string | null },
 ): Promise<string> {
   const ref = baseRef?.trim() || project.defaultBranch;
   const candidates = manifestCandidatePaths(project.manifestPath).map(
@@ -581,7 +581,7 @@ export async function resolveSelectedAgentConfigForSession(
     );
   }
 
-  const blocks = await subprojectAgentBlocksAtRef(project, found.path, ref, opts?.subproject);
+  const blocks = await spaceAgentBlocksAtRef(project, found.path, ref, opts?.space);
   const raw = withUsableAgents(rootRaw, blocks);
   const path = agentMarkdownPath(raw, agentName);
   const agentMdFiles: Record<string, string> = {};
@@ -594,21 +594,21 @@ export async function resolveSelectedAgentConfigForSession(
   return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
 }
 
-/** The raw agent blocks usable inside the session's subproject at `ref`,
+/** The raw agent blocks usable inside the session's space at `ref`,
  *  beyond the root's. A slug not declared at this ref contributes nothing, so
  *  an out-of-date session row never breaks a compile. */
-async function subprojectAgentBlocksAtRef(
+async function spaceAgentBlocksAtRef(
   project: GitBackedProject,
   manifestPath: string,
   ref: string,
   slug: string | null | undefined,
 ): Promise<Record<string, unknown>> {
   if (!slug) return {};
-  const declared = await loadProjectSubprojectsAtRef(project, { manifestPath, ref });
+  const declared = await loadProjectSpacesAtRef(project, { manifestPath, ref });
   return agentBlocksUsableIn(declared.specs, slug);
 }
 
-/** The root manifest with the subproject's usable agent blocks folded into
+/** The root manifest with the space's usable agent blocks folded into
  *  `agents:` — what the compiler sees. The root's own blocks win a name clash
  *  (the set validator reports it; the compile must still not crash). Pure. */
 export function withUsableAgents(

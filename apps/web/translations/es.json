@@ -1304,7 +1304,7 @@
         "status": "Estado",
         "activity": "Actividad",
         "source": "Origen",
-        "subproject": "Subproyecto",
+        "space": "Espacio",
         "none": "Ninguno"
       },
       "order": {

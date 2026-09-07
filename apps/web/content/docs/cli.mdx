@@ -520,38 +520,38 @@ instantly, with no `kortix.yaml` commit; `default` and `config` commit to
 `kortix.yaml` on the project's default branch. `scope` needs
 `project.agent.write`; `default` and `config` need `project.customize.write`.
 
-### Subprojects
+### Spaces
 
-A subproject groups sessions under a named effort inside the project — its own
+A space groups sessions under a named effort inside the project — its own
 default agent, its own scheduled work, its own grants. Its file
 (`kortix-<slug>.yaml`) is the source of truth; every write below commits to it.
-See [Subprojects](/docs/project/manifest#subprojects).
+See [Spaces](/docs/project/manifest#spaces).
 
 | Command | Effect |
 | --- | --- |
-| `kortix subprojects ls [--json]` | List the subprojects you can see. |
-| `kortix subprojects show <slug> [--json]` | Show one subproject in full. |
-| `kortix subprojects create <name> [--slug <s>] [--description <text>] [--agent <name>] [--sessions private\|shared]` | Declare a new subproject. |
-| `kortix subprojects update <slug> [--name <text>] [--description <text>] [--agent <name>] [--sessions private\|shared]` | Change fields on an existing subproject. |
-| `kortix subprojects rm <slug> [--yes]` | Delete a subproject. Sessions keep their history but lose the grouping; triggers naming it are un-scoped, not deleted. Prompts for confirmation on a TTY without `--yes`; exits `2` without one on a non-interactive terminal. |
-| `kortix subprojects grant <slug> (--member <id\|email> \| --group <id>) [--expires YYYY-MM-DD]` | Let a member or group use this subproject. |
-| `kortix subprojects revoke <slug> (--member <id\|email> \| --group <id>)` | Remove that grant. |
+| `kortix spaces ls [--json]` | List the spaces you can see. |
+| `kortix spaces show <slug> [--json]` | Show one space in full. |
+| `kortix spaces create <name> [--slug <s>] [--description <text>] [--agent <name>] [--sessions private\|shared]` | Declare a new space. |
+| `kortix spaces update <slug> [--name <text>] [--description <text>] [--agent <name>] [--sessions private\|shared]` | Change fields on an existing space. |
+| `kortix spaces rm <slug> [--yes]` | Delete a space. Sessions keep their history but lose the grouping; triggers naming it are un-scoped, not deleted. Prompts for confirmation on a TTY without `--yes`; exits `2` without one on a non-interactive terminal. |
+| `kortix spaces grant <slug> (--member <id\|email> \| --group <id>) [--expires YYYY-MM-DD]` | Let a member or group use this space. |
+| `kortix spaces revoke <slug> (--member <id\|email> \| --group <id>)` | Remove that grant. |
 
 On `update`, an explicit empty value (`--description=`, `--agent=`) clears that
-field; `name` cannot be cleared. `--sessions shared` makes every session in the subproject visible to
+field; `name` cannot be cleared. `--sessions shared` makes every session in the space visible to
 everyone granted it, regardless of who started it; `private` (default) keeps
 the ordinary per-session visibility rule. `grant`/`revoke` write the same
-`resource_type: 'subproject'` row `kortix grants` and the dashboard's access
+`resource_type: 'space'` row `kortix grants` and the dashboard's access
 dialog use — `--member` accepts an email and resolves it against the project's
 access list. Create/update/rm/grant/revoke need `project.customize.write`.
 
-Sessions and triggers can be scoped to a subproject:
+Sessions and triggers can be scoped to a space:
 
 | Command | Effect |
 | --- | --- |
-| `kortix sessions new --subproject <slug>` | Start a session inside a subproject. Inside a sandbox, defaults to `$KORTIX_SUBPROJECT` (the coordinator session's own subproject) when the flag is omitted. |
-| `kortix sessions ls --subproject <slug>` | List only that subproject's sessions. `--subproject=` (empty) lists sessions with no subproject. |
-| `kortix triggers add <slug> --apply --subproject <slug>` / `kortix triggers set <slug> --subproject <slug>` | Scope a live trigger's fired sessions to a subproject. `--subproject=` clears it. |
+| `kortix sessions new --space <slug>` | Start a session inside a space. Inside a sandbox, defaults to `$KORTIX_SPACE` (the coordinator session's own space) when the flag is omitted. |
+| `kortix sessions ls --space <slug>` | List only that space's sessions. `--space=` (empty) lists sessions with no space. |
+| `kortix triggers add <slug> --apply --space <slug>` / `kortix triggers set <slug> --space <slug>` | Scope a live trigger's fired sessions to a space. `--space=` clears it. |
 
 ### Models
 
@@ -906,7 +906,7 @@ an assignment names them or one of their groups. `kortix access grant --agent
 
 | Command | Effect |
 | --- | --- |
-| `kortix validate [--file <path>] [--json] [--scopes]` | Validate the manifest against the canonical schema. Resolves `kortix.yaml` first, then `kortix.toml`. Exit codes: `0` valid, `1` errors, `2` file missing. Also validates every sibling `kortix-<slug>.yaml` subproject file and the set as a whole (unique agent names, `from` references, default agents, trigger back-references). |
+| `kortix validate [--file <path>] [--json] [--scopes]` | Validate the manifest against the canonical schema. Resolves `kortix.yaml` first, then `kortix.toml`. Exit codes: `0` valid, `1` errors, `2` file missing. Also validates every sibling `kortix-<slug>.yaml` space file and the set as a whole (unique agent names, `from` references, default agents, trigger back-references). |
 | `kortix schema [--version 1\|2] [--url]` | Print the manifest's JSON Schema. `--url` prints the schema URL instead. |
 
 See [Manifest reference](/docs/project/manifest).

@@ -109,7 +109,7 @@ function projectConfigAgentToOpenCodeAgent(agent: ProjectConfigSummary['agents']
     hidden: agent.enabled === false,
     // Carried for the usability rule (`agentsUsableIn`); OpenCode's own
     // roster has no such field, so it is null for agents read from a runtime.
-    subproject: agent.subproject ?? null,
+    space: agent.space ?? null,
   } as unknown as Agent;
 }
 

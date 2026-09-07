@@ -15,16 +15,16 @@ import { getSessionDisplayTitle, sessionLastActivityAt } from './project-session
  * decided by display status, and `needs-you` wins outright over every other
  * signal.
  *
- * `subproject` mode is the only one whose sections come from the data (one
- * per subproject present, "No subproject" last) rather than from a declared
- * constant — a subproject is a manifest entry, so there is no fixed list.
+ * `space` mode is the only one whose sections come from the data (one
+ * per space present, "No space" last) rather than from a declared
+ * constant — a space is a manifest entry, so there is no fixed list.
  *
- * `activity`, `source` and `subproject` modes do NOT give review state that same veto —
+ * `activity`, `source` and `space` modes do NOT give review state that same veto —
  * review-pending sessions group by their date or their source like any other
  * session, and the review state itself shows on the row's status dot.
  */
 
-export type SessionGroupMode = 'status' | 'activity' | 'source' | 'subproject' | 'none';
+export type SessionGroupMode = 'status' | 'activity' | 'source' | 'space' | 'none';
 export type SessionOrderMode = 'activity' | 'created' | 'name';
 
 export const DEFAULT_SESSION_GROUP_MODE: SessionGroupMode = 'activity';
@@ -33,7 +33,7 @@ export const SESSION_GROUP_MODES: Array<{ value: SessionGroupMode; label: string
   { value: 'status', label: 'Status' },
   { value: 'activity', label: 'Activity' },
   { value: 'source', label: 'Source' },
-  { value: 'subproject', label: 'Subproject' },
+  { value: 'space', label: 'Space' },
   { value: 'none', label: 'None' },
 ];
 
@@ -96,37 +96,37 @@ const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
 
 const NONE_SECTION_ORDER: Array<{ id: string; label: string }> = [{ id: 'all', label: 'All' }];
 
-/** The tail bucket of `subproject` mode — always last, and always declared,
- *  so "the sessions in no subproject" is a section a person can hide like any
+/** The tail bucket of `space` mode — always last, and always declared,
+ *  so "the sessions in no space" is a section a person can hide like any
  *  other rather than a residue that appears only sometimes. */
-const SUBPROJECT_NONE_SECTION = { id: 'subproject:none', label: 'No subproject' };
+const SPACE_NONE_SECTION = { id: 'space:none', label: 'No space' };
 
-/** Section id for one subproject. Namespaced, because section ids share one
+/** Section id for one space. Namespaced, because section ids share one
  *  persisted hidden/collapsed list with every other mode's ids and a slug
  *  called `recent` would otherwise collide with status mode's `Recent`. */
-function subprojectSectionId(slug: string): string {
-  return `subproject:${slug}`;
+function spaceSectionId(slug: string): string {
+  return `space:${slug}`;
 }
 
 /**
- * `subproject` mode's declared section order: every subproject present in
- * these sessions, by slug, then "No subproject".
+ * `space` mode's declared section order: every space present in
+ * these sessions, by slug, then "No space".
  *
  * This is the one mode whose sections come from the DATA rather than from a
- * constant — a subproject is a manifest entry, so there is no fixed list to
+ * constant — a space is a manifest entry, so there is no fixed list to
  * declare. Sorting by slug is what keeps it deterministic anyway: the same
  * sessions always produce the same section order, whatever order they arrive
  * in.
  */
-function subprojectSectionOrder(
+function spaceSectionOrder(
   sessions: readonly ProjectSession[],
 ): Array<{ id: string; label: string }> {
   const slugs = [
-    ...new Set(sessions.map((session) => session.subproject).filter((slug): slug is string => !!slug)),
+    ...new Set(sessions.map((session) => session.space).filter((slug): slug is string => !!slug)),
   ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   return [
-    ...slugs.map((slug) => ({ id: subprojectSectionId(slug), label: slug })),
-    SUBPROJECT_NONE_SECTION,
+    ...slugs.map((slug) => ({ id: spaceSectionId(slug), label: slug })),
+    SPACE_NONE_SECTION,
   ];
 }
 
@@ -255,8 +255,8 @@ export function groupSessions(
         ? activitySections
         : mode === 'source'
           ? sourceSections
-          : mode === 'subproject'
-            ? subprojectSectionOrder(sessions)
+          : mode === 'space'
+            ? spaceSectionOrder(sessions)
             : allSections;
 
   const buckets = new Map<string, ProjectSession[]>(declared.map((section) => [section.id, []]));
@@ -274,10 +274,10 @@ export function groupSessions(
             )
           : mode === 'source'
             ? sessionSource(session, tI18nComplete).kind
-            : mode === 'subproject'
-              ? (session.subproject
-                  ? subprojectSectionId(session.subproject)
-                  : SUBPROJECT_NONE_SECTION.id)
+            : mode === 'space'
+              ? (session.space
+                  ? spaceSectionId(session.space)
+                  : SPACE_NONE_SECTION.id)
               : 'all';
     buckets.get(bucketId)?.push(session);
   }

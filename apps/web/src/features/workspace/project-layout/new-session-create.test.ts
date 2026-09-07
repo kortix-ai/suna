@@ -47,33 +47,33 @@ describe('buildNewSessionCreateInput', () => {
     expect(buildNewSessionCreateInput({ agent: '' })).toBeUndefined();
   });
 
-  it('files the session under a subproject, and that alone needs overrides', () => {
-    // A subproject start carries no agent and no sandbox of its own — the
+  it('files the session under a space, and that alone needs overrides', () => {
+    // A space start carries no agent and no sandbox of its own — the
     // builder must still return a body, or the create would drop the slug and
     // the session would be filed under nothing.
-    expect(buildNewSessionCreateInput({ subproject: 'marketing' })).toEqual({
-      subproject: 'marketing',
+    expect(buildNewSessionCreateInput({ space: 'marketing' })).toEqual({
+      space: 'marketing',
     });
   });
 
-  it('carries the subproject alongside the agent and the sandbox', () => {
+  it('carries the space alongside the agent and the sandbox', () => {
     expect(
       buildNewSessionCreateInput({
         agent: 'writer',
         sandbox_slug: 'node22',
-        subproject: 'marketing',
+        space: 'marketing',
       }),
     ).toEqual({
-      subproject: 'marketing',
+      space: 'marketing',
       agent_name: 'writer',
       sandbox_slug: 'node22',
     });
   });
 
-  it('ignores an empty-string subproject (never binds subproject="")', () => {
-    // `''` is a REAL filter on the sessions LIST ("rows with no subproject"),
+  it('ignores an empty-string space (never binds space="")', () => {
+    // `''` is a REAL filter on the sessions LIST ("rows with no space"),
     // so it must not leak into a create body and be read as a slug.
-    expect(buildNewSessionCreateInput({ subproject: '' })).toBeUndefined();
+    expect(buildNewSessionCreateInput({ space: '' })).toBeUndefined();
   });
 
   it('binds the complete committed connector selection at creation', () => {

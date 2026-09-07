@@ -4,17 +4,17 @@
  * What a send on the `ProjectHome` composer does.
  *
  * Two surfaces mount that composer — the project index (`/projects/[id]`) and
- * a subproject page (`/projects/[id]/subprojects/[slug]`) — and they must do
+ * a space page (`/projects/[id]/spaces/[slug]`) — and they must do
  * the SAME thing on Enter: gate on billing, turn attachments into data: URLs,
  * create the session with a durable `pending_prompt`, stash the picks, seed
  * the first-prompt preview, navigate. Where the session STARTS is not a
- * difference between them any more: the composer carries a subproject picker
- * (`ProjectHome` owns it; a subproject page preselects its own), and each send
+ * difference between them any more: the composer carries a space picker
+ * (`ProjectHome` owns it; a space page preselects its own), and each send
  * arrives here with two option fields:
  *
- *  - `subproject` — filed onto the create body, and the reason the warm-session
+ *  - `space` — filed onto the create body, and the reason the warm-session
  *    pool is skipped (`use-new-project-session.ts`). `null` is the whole project.
- *  - `subproject_agent` — that subproject's own `agent`, used when the composer
+ *  - `space_agent` — that space's own `agent`, used when the composer
  *    picked none. It is resolved ONCE and then used for the create bind, the
  *    pending prompt and the start stash, so those three can never disagree.
  *
@@ -77,8 +77,8 @@ export function useProjectHomeSend(projectId: string, config: ProjectHomeSendCon
 
       // The one resolved agent. The create bind, the durable pending prompt and
       // the start stash all read THIS value.
-      const agent = options?.agent || options?.subproject_agent || null;
-      const subproject = options?.subproject ?? undefined;
+      const agent = options?.agent || options?.space_agent || null;
+      const space = options?.space ?? undefined;
 
       setSending(true);
       // Attachments ride the create itself as data: URLs — the session's
@@ -97,7 +97,7 @@ export function useProjectHomeSend(projectId: string, config: ProjectHomeSendCon
 
       newSession({
         create: {
-          ...buildNewSessionCreateInput({ ...options, agent: agent ?? undefined, subproject }),
+          ...buildNewSessionCreateInput({ ...options, agent: agent ?? undefined, space }),
           pending_prompt: {
             text,
             agent,

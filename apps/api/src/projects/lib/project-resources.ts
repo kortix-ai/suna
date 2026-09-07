@@ -47,9 +47,9 @@ export interface ProjectResourceItem {
 export interface ProjectResources {
   agents: ProjectResourceItem[];
   skills: ProjectResourceItem[];
-  /** Manifest subprojects — id is the slug, the same key
-   *  `role_assignments.object_id` stores for `object_type = 'subproject'`. */
-  subprojects: ProjectResourceItem[];
+  /** Manifest spaces — id is the slug, the same key
+   *  `role_assignments.object_id` stores for `object_type = 'space'`. */
+  spaces: ProjectResourceItem[];
 }
 
 const SKILL_SLUG_RE = /\/skills\/(.+?)\/SKILL\.md$/;
@@ -69,7 +69,7 @@ export function projectResourcesFromConfig(config: ProjectConfigSummary): Projec
       name: s.name,
       description: s.description,
     })),
-    subprojects: (config.subprojects ?? []).map((s) => ({
+    spaces: (config.spaces ?? []).map((s) => ({
       id: s.slug,
       name: s.name,
       description: s.description,
@@ -80,12 +80,12 @@ export function projectResourcesFromConfig(config: ProjectConfigSummary): Projec
 /** Validate a (resourceType, resourceId) against what the project actually has. */
 export function projectHasResource(
   config: ProjectConfigSummary,
-  resourceType: 'agent' | 'skill' | 'subproject',
+  resourceType: 'agent' | 'skill' | 'space',
   resourceId: string,
 ): boolean {
   const res = projectResourcesFromConfig(config);
   const set =
-    resourceType === 'agent' ? res.agents : resourceType === 'skill' ? res.skills : res.subprojects;
+    resourceType === 'agent' ? res.agents : resourceType === 'skill' ? res.skills : res.spaces;
   return set.some((r) => r.id === resourceId);
 }
 
@@ -100,21 +100,21 @@ export async function filterConfigResourcesForUser(
 ): Promise<ProjectConfigSummary> {
   const agentIds = (config.agents ?? []).map((a) => a.name);
   const skillIds = (config.skills ?? []).map((s) => skillSlugFromPath(s.path) ?? s.name);
-  const subprojectIds = (config.subprojects ?? []).map((s) => s.slug);
+  const spaceIds = (config.spaces ?? []).map((s) => s.slug);
   const actor = await actorForToken(ctx.userId, ctx.accountId, ctx.actingTokenId);
-  const [okAgents, okSkills, okSubprojects] = await Promise.all([
+  const [okAgents, okSkills, okSpaces] = await Promise.all([
     filterAccessibleObjects(actor, ctx.projectId, 'agent', agentIds),
     filterAccessibleObjects(actor, ctx.projectId, 'skill', skillIds),
-    filterAccessibleObjects(actor, ctx.projectId, 'subproject', subprojectIds),
+    filterAccessibleObjects(actor, ctx.projectId, 'space', spaceIds),
   ]);
   const okAgentSet = new Set(okAgents);
   const okSkillSet = new Set(okSkills);
-  const okSubprojectSet = new Set(okSubprojects);
+  const okSpaceSet = new Set(okSpaces);
   return {
     ...config,
     agents: (config.agents ?? []).filter((a) => okAgentSet.has(a.name)),
     skills: (config.skills ?? []).filter((s) => okSkillSet.has(skillSlugFromPath(s.path) ?? s.name)),
-    subprojects: (config.subprojects ?? []).filter((s) => okSubprojectSet.has(s.slug)),
+    spaces: (config.spaces ?? []).filter((s) => okSpaceSet.has(s.slug)),
   };
 }
 

@@ -18,7 +18,7 @@ describe('loadObjectGrants memo — empty map caching', () => {
       "shouldCache: (map, _projectId, objectType) => map.size > 0 || !CLOSED_BY_DEFAULT_OBJECT_TYPES.has(objectType)",
     );
     expect(flat).toContain(
-      "CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'subproject'])",
+      "CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'space'])",
     );
   });
 

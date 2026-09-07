@@ -16,7 +16,7 @@ import {
   type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
-import { SubprojectBadge } from '@/features/subprojects/subproject-badge';
+import { SpaceBadge } from '@/features/spaces/space-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -35,7 +35,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { MoveSessionMenu } from '@/features/subprojects/move-session-menu';
+import { MoveSessionMenu } from '@/features/spaces/move-session-menu';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -93,19 +93,19 @@ import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
 interface ProjectSessionListProps {
   projectId: string;
   /**
-   * Narrow the list to one subproject. This is a different SERVER request
-   * (`GET /sessions?subproject=`), not a client-side filter, so it gets its
-   * own cache entry — see `qk.project.sessions(id, scope, subproject)`.
+   * Narrow the list to one space. This is a different SERVER request
+   * (`GET /sessions?space=`), not a client-side filter, so it gets its
+   * own cache entry — see `qk.project.sessions(id, scope, space)`.
    * Omitted in the sidebar, where the list is the whole project's.
    *
-   * When set, the rows drop their subproject chip: every row would wear the
+   * When set, the rows drop their space chip: every row would wear the
    * same one, and a chip every row shares says nothing.
    */
-  subproject?: string;
+  space?: string;
   /**
-   * Show only sessions filed under NO subproject. The sidebar sets this: a
-   * subproject's sessions nest under its own folder in the `Subprojects`
-   * group above (`subprojects-sidebar-group.tsx`), so listing them here too
+   * Show only sessions filed under NO space. The sidebar sets this: a
+   * space's sessions nest under its own folder in the `Spaces`
+   * group above (`spaces-sidebar-group.tsx`), so listing them here too
    * would show every one twice. Client-side on purpose — both readers share
    * one inventory query.
    */
@@ -187,7 +187,7 @@ function ProjectSessionListSkeleton() {
 
 export function ProjectSessionList({
   projectId,
-  subproject,
+  space,
   unfiledOnly = false,
 }: ProjectSessionListProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -209,9 +209,9 @@ export function ProjectSessionList({
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: qk.project.sessions(projectId, 'visible', subproject),
+    queryKey: qk.project.sessions(projectId, 'visible', space),
     queryFn: () =>
-      listProjectSessions(projectId, subproject === undefined ? undefined : { subproject }),
+      listProjectSessions(projectId, space === undefined ? undefined : { space }),
     refetchInterval: (query) =>
       projectSessionsRefetchInterval({
         sessions: query.state.data as ProjectSession[] | undefined,
@@ -273,7 +273,7 @@ export function ProjectSessionList({
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
   // sorting twice per render bought nothing.
-  const sessions = unfiledOnly ? (data ?? []).filter((session) => !session.subproject) : (data ?? []);
+  const sessions = unfiledOnly ? (data ?? []).filter((session) => !session.space) : (data ?? []);
   // Filtering itself lives in the nested `⋯` menu (SessionFilterMenu, mounted
   // both on the Sessions header and on every section header below); this list
   // only applies the two ANDed multi-select facets from the store.
@@ -390,7 +390,7 @@ export function ProjectSessionList({
               }
             }}
             displayTitle={getSessionDisplayTitle(session)}
-            showSubproject={subproject === undefined}
+            showSpace={space === undefined}
             childCount={children.length}
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
             onDelete={(id, label) => setSessionToDelete({ id, label })}
@@ -716,9 +716,9 @@ interface ProjectSessionRowProps {
   onStop: (sessionId: string, label: string) => void;
   isStopping: boolean;
   childCount?: number;
-  /** False on a list already scoped to one subproject — see the list's own
-   *  `subproject` prop. */
-  showSubproject?: boolean;
+  /** False on a list already scoped to one space — see the list's own
+   *  `space` prop. */
+  showSpace?: boolean;
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
   /** Rendered indented under its coordinator — the indent already conveys the
@@ -741,7 +741,7 @@ function ProjectSessionRow({
   onStop,
   isStopping,
   childCount = 0,
-  showSubproject = true,
+  showSpace = true,
   reviewCount = 0,
   nested = false,
 }: ProjectSessionRowProps) {
@@ -764,9 +764,9 @@ function ProjectSessionRow({
   // `gap-2`, so a plain chat session paid 8px of title width for nothing), and
   // the hover shift below only makes sense when there is something to shift.
   const showSpawnedBy = Boolean(spawnedBy) && !nested;
-  const showSubprojectBadge = showSubproject && Boolean(session.subproject);
+  const showSpaceBadge = showSpace && Boolean(session.space);
   const hasIndicators =
-    showSpawnedBy || showSubprojectBadge || Boolean(SourceIcon) || sessionIsShared(session);
+    showSpawnedBy || showSpaceBadge || Boolean(SourceIcon) || sessionIsShared(session);
 
   return (
     <div className="group/session-list block">
@@ -855,7 +855,7 @@ function ProjectSessionRow({
             )}
             data-session-indicators="true"
           >
-            {showSubprojectBadge && <SubprojectBadge session={session} className="mr-1 max-w-20" />}
+            {showSpaceBadge && <SpaceBadge session={session} className="mr-1 max-w-20" />}
             {showSpawnedBy && spawnedBy && (
               <Hint
                 side="top"
@@ -1045,7 +1045,7 @@ const STATUS_DOT_STYLE: Record<
 };
 
 /** The one status glyph a session row wears — exported so the sidebar's
- *  nested subproject rows draw exactly this, not a lookalike. */
+ *  nested space rows draw exactly this, not a lookalike. */
 export function SessionStatusDot({
   session,
   reviewCount = 0,

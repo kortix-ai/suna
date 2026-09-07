@@ -74,7 +74,7 @@ export function ProjectHomeWelcomeBody({
   /** When provided, starter-prompt chips render directly below the composer. */
   onPickSuggestion?: (text: string) => void;
   /**
-   * A surface that is not the project itself (a subproject) wears the SAME
+   * A surface that is not the project itself (a space) wears the SAME
    * greeting with its own name in the slot — the shape stays recognisable,
    * only the noun changes. No confetti: the pressable name is the project's.
    */
@@ -138,7 +138,7 @@ export function ProjectHomeWelcomeBody({
           'flex w-full shrink-0 flex-col gap-10 py-8 sm:px-4',
           // With content under the composer the block pins to the TOP
           // (`mx-auto`, not `m-auto`): that content grows and shrinks — a
-          // subproject's Recents list is as long as its history — and a
+          // space's Recents list is as long as its history — and a
           // vertically centred column would slide the composer up and down
           // under the cursor with it (user, 2026-09-06).
           below ? 'mx-auto max-w-3xl pt-16 lg:pt-28' : 'm-auto max-w-3xl',

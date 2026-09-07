@@ -24,7 +24,7 @@ function row(
     sandboxUrl: null,
     opencodeSessionId: null,
     agentName: 'default',
-    subproject: null,
+    space: null,
     status: 'running',
     error: null,
     createdBy: VIEWER_ID,
@@ -434,13 +434,13 @@ describe('runtime status map tolerates a superset', () => {
 });
 
 /**
- * Subprojects are IAM objects, closed by default. A session inside one is not
+ * Spaces are IAM objects, closed by default. A session inside one is not
  * "hidden but listed" — it is not a row at all for a viewer without the grant,
  * in BOTH scopes, including for a project manager who was scoped out. The
- * opposite direction is `sessions: shared`, where the subproject grant IS the
- * read right for every session in it. See lib/subproject-access.ts.
+ * opposite direction is `sessions: shared`, where the space grant IS the
+ * read right for every session in it. See lib/space-access.ts.
  */
-describe('selectSessionRowsForViewer — subprojects', () => {
+describe('selectSessionRowsForViewer — spaces', () => {
   const base = {
     scope: 'visible' as const,
     canManageProject: false,
@@ -452,38 +452,38 @@ describe('selectSessionRowsForViewer — subprojects', () => {
   };
 
   const plain = row('plain');
-  const mine = row('mine-in-marketing', { subproject: 'marketing' });
-  const theirs = row('theirs-in-marketing', { createdBy: OTHER_ID, subproject: 'marketing' });
-  const research = row('in-research', { subproject: 'research' });
+  const mine = row('mine-in-marketing', { space: 'marketing' });
+  const theirs = row('theirs-in-marketing', { createdBy: OTHER_ID, space: 'marketing' });
+  const research = row('in-research', { space: 'research' });
 
-  test('a row in an ungranted subproject is dropped, plain rows survive', () => {
+  test('a row in an ungranted space is dropped, plain rows survive', () => {
     const selected = selectSessionRowsForViewer({
       ...base,
       rows: [plain, mine, research],
-      accessibleSubprojects: new Set(['marketing']),
+      accessibleSpaces: new Set(['marketing']),
     });
     expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain', 'mine-in-marketing']);
   });
 
   test('the drop applies to the manager `project` scope too', () => {
     // Both rows are project-visible, so the ONLY thing separating them is the
-    // subproject grant — a manager scoped out of `research` loses that row.
+    // space grant — a manager scoped out of `research` loses that row.
     const openMarketing = row('open-marketing', {
       createdBy: OTHER_ID,
       visibility: 'project',
-      subproject: 'marketing',
+      space: 'marketing',
     });
     const openResearch = row('open-research', {
       createdBy: OTHER_ID,
       visibility: 'project',
-      subproject: 'research',
+      space: 'research',
     });
     const selected = selectSessionRowsForViewer({
       ...base,
       scope: 'project',
       canManageProject: true,
       rows: [plain, openMarketing, openResearch],
-      accessibleSubprojects: new Set(['marketing']),
+      accessibleSpaces: new Set(['marketing']),
     });
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'plain',
@@ -491,7 +491,7 @@ describe('selectSessionRowsForViewer — subprojects', () => {
     ]);
   });
 
-  test('omitting the accessible set drops every subproject row — fail closed', () => {
+  test('omitting the accessible set drops every space row — fail closed', () => {
     const selected = selectSessionRowsForViewer({ ...base, rows: [plain, mine, research] });
     expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain']);
   });
@@ -500,51 +500,51 @@ describe('selectSessionRowsForViewer — subprojects', () => {
     const selected = selectSessionRowsForViewer({
       ...base,
       rows: [theirs],
-      accessibleSubprojects: new Set(['marketing']),
+      accessibleSpaces: new Set(['marketing']),
     });
     // Listed as a row for the grantee, but not accessible — the ordinary
     // per-session model is untouched, so the `visible` scope filters it out.
     expect(selected.items).toEqual([]);
   });
 
-  test('`sessions: shared` opens every session in the subproject to a grantee', () => {
+  test('`sessions: shared` opens every session in the space to a grantee', () => {
     const selected = selectSessionRowsForViewer({
       ...base,
       rows: [theirs],
-      accessibleSubprojects: new Set(['marketing']),
-      sharedSubprojects: new Set(['marketing']),
+      accessibleSpaces: new Set(['marketing']),
+      sharedSpaces: new Set(['marketing']),
     });
     expect(selected.items.map((item) => [item.row.sessionId, item.canAccess])).toEqual([
       ['theirs-in-marketing', true],
     ]);
   });
 
-  test('`sessions: shared` never widens a subproject the viewer was not granted', () => {
+  test('`sessions: shared` never widens a space the viewer was not granted', () => {
     const selected = selectSessionRowsForViewer({
       ...base,
       rows: [theirs],
-      accessibleSubprojects: new Set(),
-      sharedSubprojects: new Set(['marketing']),
+      accessibleSpaces: new Set(),
+      sharedSpaces: new Set(['marketing']),
     });
     expect(selected.items).toEqual([]);
   });
 
-  test('?subproject=<slug> narrows to one subproject', () => {
+  test('?space=<slug> narrows to one space', () => {
     const selected = selectSessionRowsForViewer({
       ...base,
       rows: [plain, mine, research],
-      accessibleSubprojects: new Set(['marketing', 'research']),
-      subprojectFilter: 'research',
+      accessibleSpaces: new Set(['marketing', 'research']),
+      spaceFilter: 'research',
     });
     expect(selected.items.map((item) => item.row.sessionId)).toEqual(['in-research']);
   });
 
-  test('?subproject= (empty) narrows to the sessions in none', () => {
+  test('?space= (empty) narrows to the sessions in none', () => {
     const selected = selectSessionRowsForViewer({
       ...base,
       rows: [plain, mine, research],
-      accessibleSubprojects: new Set(['marketing', 'research']),
-      subprojectFilter: '',
+      accessibleSpaces: new Set(['marketing', 'research']),
+      spaceFilter: '',
     });
     expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain']);
   });
@@ -553,7 +553,7 @@ describe('selectSessionRowsForViewer — subprojects', () => {
     const selected = selectSessionRowsForViewer({
       ...base,
       rows: [plain, mine, research],
-      accessibleSubprojects: new Set(['marketing', 'research']),
+      accessibleSpaces: new Set(['marketing', 'research']),
     });
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'plain',

@@ -1,5 +1,5 @@
 /**
- * Subproject CRUD — one `kortix-<slug>.yaml` per subproject.
+ * Space CRUD — one `kortix-<slug>.yaml` per space.
  *
  * The manifest is the source of truth, so every write here is one git commit,
  * exactly like the trigger routes next door (`routes/r4.ts`): read the manifest
@@ -7,8 +7,8 @@
  *
  * Gates:
  *  - read  → `loadProjectForUser(read)` + `project.read`, then the per-object
- *            fold (`lib/subproject-access.ts`), so a member sees only the
- *            subprojects granted to them and an ungranted one is a 404.
+ *            fold (`lib/space-access.ts`), so a member sees only the
+ *            spaces granted to them and an ungranted one is a 404.
  *  - write → `loadProjectForUser(manage)` + `project.customize.write` — the
  *            manifest-editing leaf, manager tier. No new permission leaf: the
  *            permission catalog is DB-driven.
@@ -24,12 +24,12 @@ import {
   loadProjectForUser,
   projectCapabilityAllowed,
 } from '../lib/access';
-import { AnyObject, SubprojectSchema, SubprojectsResponseSchema, projectsApp } from '../lib/app';
+import { AnyObject, SpaceSchema, SpacesResponseSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { normalizeString, readBody, type ProjectRow } from '../lib/serializers';
 import { loadProjectSessionInventory } from '../lib/session-list';
-import { accessibleSubprojectSlugs, subprojectViewerAccess } from '../lib/subproject-access';
+import { accessibleSpaceSlugs, spaceViewerAccess } from '../lib/space-access';
 import { serializeManifestObject } from '@kortix/manifest-schema';
 import { commitRepoChanges, commitRepoFile, slugify } from '../lib/triggers';
 import { loadProjectAgents } from '../agents';
@@ -38,34 +38,34 @@ import type { GitBackedProject } from '../git';
 // fixed export list must keep loading this route.
 import { readRepoFileRevision } from '../git/files';
 import {
-  loadProjectSubprojects,
-  stripSubprojectFromTriggers,
-  subprojectPathFor,
-  subprojectSpecToFileEntry,
+  loadProjectSpaces,
+  stripSpaceFromTriggers,
+  spacePathFor,
+  spaceSpecToFileEntry,
   usableAgentNames,
-  type SubprojectSessionsMode,
-  type SubprojectSpec,
-} from '../subprojects';
+  type SpaceSessionsMode,
+  type SpaceSpec,
+} from '../spaces';
 import type { ParsedManifest } from '../triggers';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
-const SESSIONS_MODES: readonly SubprojectSessionsMode[] = ['private', 'shared'];
+const SESSIONS_MODES: readonly SpaceSessionsMode[] = ['private', 'shared'];
 /** What a create/update body may carry. `slug` is create-only and immutable —
  *  on a PATCH it lands here as a no-op, not as a rename. */
-const SUBPROJECT_BODY_KEYS = ['name', 'slug', 'description', 'agent', 'sessions'];
+const SPACE_BODY_KEYS = ['name', 'slug', 'description', 'agent', 'sessions'];
 
 const ParamsWithSlug = z.object({ projectId: z.string(), slug: z.string() });
 
 type Loaded = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
 /** Everything a response needs beyond the spec itself. */
-interface SubprojectContext {
+interface SpaceContext {
   sessionCounts: Map<string, number>;
   triggerCounts: Map<string, number>;
   canManage: boolean;
 }
 
-function serializeSubproject(spec: SubprojectSpec, ctx: SubprojectContext) {
+function serializeSpace(spec: SpaceSpec, ctx: SpaceContext) {
   return {
     slug: spec.slug,
     name: spec.name,
@@ -87,19 +87,19 @@ function serializeSubproject(spec: SubprojectSpec, ctx: SubprojectContext) {
  * session list uses — rather than a bespoke count, so "sessions the caller can
  * see" cannot drift between the number on the card and the rows on the page.
  */
-async function loadSubprojectView(
+async function loadSpaceView(
   c: Context,
   loaded: Loaded,
   projectId: string,
 ): Promise<{
-  specs: SubprojectSpec[];
+  specs: SpaceSpec[];
   errors: Array<{ slug: string; path: string; error: string }>;
-  ctx: SubprojectContext;
+  ctx: SpaceContext;
 }> {
   const gitProject = await withProjectGitAuth(loaded.row);
   const { loadProjectTriggers } = await import('../triggers');
   const [declared, triggers, canManage] = await Promise.all([
-    loadProjectSubprojects(gitProject),
+    loadProjectSpaces(gitProject),
     loadProjectTriggers(gitProject),
     projectCapabilityAllowed(
       c,
@@ -111,7 +111,7 @@ async function loadSubprojectView(
   ]);
 
   const accessible = new Set(
-    await accessibleSubprojectSlugs(
+    await accessibleSpaceSlugs(
       c,
       loaded,
       projectId,
@@ -122,8 +122,8 @@ async function loadSubprojectView(
 
   const triggerCounts = new Map<string, number>();
   for (const spec of triggers.specs) {
-    if (!spec.subproject) continue;
-    triggerCounts.set(spec.subproject, (triggerCounts.get(spec.subproject) ?? 0) + 1);
+    if (!spec.space) continue;
+    triggerCounts.set(spec.space, (triggerCounts.get(spec.space) ?? 0) + 1);
   }
 
   const sessionCounts = new Map<string, number>();
@@ -135,7 +135,7 @@ async function loadSubprojectView(
       effectiveRole: loaded.effectiveRole,
       scope: 'visible',
       boundCredentialSessionId: callerKortixSessionId(c),
-      loadSubprojectAccess: (slugs) => subprojectViewerAccess(c, loaded, projectId, slugs),
+      loadSpaceAccess: (slugs) => spaceViewerAccess(c, loaded, projectId, slugs),
       probeManageCapability: () =>
         projectCapabilityAllowed(
           c,
@@ -146,8 +146,8 @@ async function loadSubprojectView(
         ),
     });
     for (const item of inventory.items) {
-      if (!item.row.subproject) continue;
-      sessionCounts.set(item.row.subproject, (sessionCounts.get(item.row.subproject) ?? 0) + 1);
+      if (!item.row.space) continue;
+      sessionCounts.set(item.row.space, (sessionCounts.get(item.row.space) ?? 0) + 1);
     }
   }
 
@@ -156,26 +156,26 @@ async function loadSubprojectView(
 
 /** Parse the create/update body onto a base spec. Returns the error string the
  *  route should 400 with, or the merged spec. `existing` is null on create. */
-function mergeSubprojectBody(
+function mergeSpaceBody(
   body: Record<string, unknown>,
-  existing: SubprojectSpec | null,
+  existing: SpaceSpec | null,
   slug: string,
   manifestPath: string,
   declaredAgents: readonly string[],
-): SubprojectSpec | { error: string } {
+): SpaceSpec | { error: string } {
   const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
   // Refuse what this version does not have rather than swallowing it. A client
   // still sending `instructions` or `context` (both dropped 2026-09-07) has to
   // learn that the write does nothing, not lose it silently.
-  const unknown = Object.keys(body).find((key) => !SUBPROJECT_BODY_KEYS.includes(key));
+  const unknown = Object.keys(body).find((key) => !SPACE_BODY_KEYS.includes(key));
   if (unknown) {
-    return { error: `"${unknown}" is not a subproject field (allowed: ${SUBPROJECT_BODY_KEYS.join(', ')})` };
+    return { error: `"${unknown}" is not a space field (allowed: ${SPACE_BODY_KEYS.join(', ')})` };
   }
-  const spec: SubprojectSpec = existing
+  const spec: SpaceSpec = existing
     ? { ...existing }
     : {
         slug,
-        path: subprojectPathFor(manifestPath, slug),
+        path: spacePathFor(manifestPath, slug),
         name: slug,
         description: null,
         agent: null,
@@ -186,7 +186,7 @@ function mergeSubprojectBody(
         agentsRaw: null,
       };
   spec.slug = slug;
-  spec.path = subprojectPathFor(manifestPath, slug);
+  spec.path = spacePathFor(manifestPath, slug);
 
   if (has('name')) {
     const name = normalizeString(body.name);
@@ -199,7 +199,7 @@ function mergeSubprojectBody(
     const agent = normalizeString(body.agent);
     if (agent && !declaredAgents.includes(agent)) {
       return {
-        error: `agent "${agent}" is not usable in this subproject — declare it in the root manifest, in kortix-${slug}.yaml, or reference it there with { from: <slug> }`,
+        error: `agent "${agent}" is not usable in this space — declare it in the root manifest, in kortix-${slug}.yaml, or reference it there with { from: <slug> }`,
       };
     }
     spec.agent = agent;
@@ -209,21 +209,21 @@ function mergeSubprojectBody(
     if (!sessions || !(SESSIONS_MODES as readonly string[]).includes(sessions)) {
       return { error: 'sessions must be "private" or "shared"' };
     }
-    spec.sessions = sessions as SubprojectSessionsMode;
+    spec.sessions = sessions as SpaceSessionsMode;
   }
   return spec;
 }
 
-/** The agent names a subproject may set as its `agent:` — the globals plus
+/** The agent names a space may set as its `agent:` — the globals plus
  *  the ones it owns or references (spec 2026-09-06 §2). On create, globals. */
 async function usableAgentsFor(
   gitProject: GitBackedProject,
-  existing: SubprojectSpec | null,
+  existing: SpaceSpec | null,
 ): Promise<string[]> {
   return usableAgentNames(await loadProjectAgents(gitProject), existing);
 }
 
-/** Where the root manifest lives — the directory subproject files go in. A
+/** Where the root manifest lives — the directory space files go in. A
  *  project with no manifest yet uses its configured path, like every other
  *  synthesized-manifest reader. */
 async function rootManifestPath(gitProject: GitBackedProject): Promise<string> {
@@ -232,34 +232,34 @@ async function rootManifestPath(gitProject: GitBackedProject): Promise<string> {
   return manifest?.path ?? gitProject.manifestPath ?? 'kortix.yaml';
 }
 
-function serializeSubprojectFile(spec: SubprojectSpec): string {
-  return serializeManifestObject(subprojectSpecToFileEntry(spec), 'yaml');
+function serializeSpaceFile(spec: SpaceSpec): string {
+  return serializeManifestObject(spaceSpecToFileEntry(spec), 'yaml');
 }
 
-/** Rewrite one subproject's file with compare-and-swap on its blob: a lost
+/** Rewrite one space's file with compare-and-swap on its blob: a lost
  *  race is a 409, never a silent overwrite of someone else's edit. */
-async function writeSubprojectFile(
+async function writeSpaceFile(
   row: ProjectRow,
   gitProject: GitBackedProject,
-  spec: SubprojectSpec,
+  spec: SpaceSpec,
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const revision = await readRepoFileRevision(gitProject, spec.path);
-  return commitRepoFile(row, spec.path, serializeSubprojectFile(spec), message, revision);
+  return commitRepoFile(row, spec.path, serializeSpaceFile(spec), message, revision);
 }
 
-// ─── GET /v1/projects/:projectId/subprojects ────────────────────────────────
+// ─── GET /v1/projects/:projectId/spaces ────────────────────────────────
 
 projectsApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/subprojects',
-    tags: ['subprojects'],
-    summary: 'GET /:projectId/subprojects',
+    path: '/{projectId}/spaces',
+    tags: ['spaces'],
+    summary: 'GET /:projectId/spaces',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
-      200: json(SubprojectsResponseSchema, "The project's accessible subprojects"),
+      200: json(SpacesResponseSchema, "The project's accessible spaces"),
       ...errors(403, 404),
     },
   }),
@@ -275,29 +275,29 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_READ,
     );
 
-    const view = await loadSubprojectView(c, loaded, projectId);
+    const view = await loadSpaceView(c, loaded, projectId);
     return c.json({
-      subprojects: view.specs.map((spec) => serializeSubproject(spec, view.ctx)),
+      spaces: view.specs.map((spec) => serializeSpace(spec, view.ctx)),
       errors: view.errors,
     });
   },
 );
 
-// ─── POST /v1/projects/:projectId/subprojects ───────────────────────────────
+// ─── POST /v1/projects/:projectId/spaces ───────────────────────────────
 
 projectsApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/subprojects',
-    tags: ['subprojects'],
-    summary: 'POST /:projectId/subprojects',
+    path: '/{projectId}/spaces',
+    tags: ['spaces'],
+    summary: 'POST /:projectId/spaces',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      201: json(SubprojectSchema, 'The created subproject'),
+      201: json(SpaceSchema, 'The created space'),
       ...errors(400, 403, 404, 409, 502),
     },
   }),
@@ -326,10 +326,10 @@ projectsApp.openapi(
 
     const gitProject = await withProjectGitAuth(loaded.row);
     const [declared, rootPath] = await Promise.all([
-      loadProjectSubprojects(gitProject),
+      loadProjectSpaces(gitProject),
       rootManifestPath(gitProject),
     ]);
-    const filePath = subprojectPathFor(rootPath, slug);
+    const filePath = spacePathFor(rootPath, slug);
     // A file that exists but failed to parse is still that slug's file.
     if (
       declared.specs.some((s) => s.slug === slug) ||
@@ -337,29 +337,29 @@ projectsApp.openapi(
     ) {
       return c.json(
         {
-          error: `A subproject with slug "${slug}" already exists. Pick a different name.`,
-          code: 'SUBPROJECT_SLUG_TAKEN',
+          error: `A space with slug "${slug}" already exists. Pick a different name.`,
+          code: 'SPACE_SLUG_TAKEN',
         },
         409,
       );
     }
     const usable = await usableAgentsFor(gitProject, null);
-    const merged = mergeSubprojectBody({ ...body, name }, null, slug, rootPath, usable);
+    const merged = mergeSpaceBody({ ...body, name }, null, slug, rootPath, usable);
     if ('error' in merged) return c.json({ error: merged.error }, 400);
     const committed = await commitRepoFile(
       loaded.row,
       filePath,
-      serializeSubprojectFile(merged),
-      `feat(subprojects): add ${slug}`,
+      serializeSpaceFile(merged),
+      `feat(spaces): add ${slug}`,
     );
     if ('error' in committed) {
       return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
     }
-    const created: SubprojectSpec = merged;
-    // A brand-new subproject has no sessions and no triggers yet, and the
+    const created: SpaceSpec = merged;
+    // A brand-new space has no sessions and no triggers yet, and the
     // author just cleared `project.customize.write`.
     return c.json(
-      serializeSubproject(created, {
+      serializeSpace(created, {
         sessionCounts: new Map(),
         triggerCounts: new Map(),
         canManage: true,
@@ -369,18 +369,18 @@ projectsApp.openapi(
   },
 );
 
-// ─── GET /v1/projects/:projectId/subprojects/:slug ──────────────────────────
+// ─── GET /v1/projects/:projectId/spaces/:slug ──────────────────────────
 
 projectsApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/subprojects/{slug}',
-    tags: ['subprojects'],
-    summary: 'GET /:projectId/subprojects/:slug',
+    path: '/{projectId}/spaces/{slug}',
+    tags: ['spaces'],
+    summary: 'GET /:projectId/spaces/:slug',
     ...auth,
     request: { params: ParamsWithSlug },
     responses: {
-      200: json(SubprojectSchema, 'The subproject'),
+      200: json(SpaceSchema, 'The space'),
       ...errors(403, 404),
     },
   }),
@@ -397,30 +397,30 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_READ,
     );
 
-    const view = await loadSubprojectView(c, loaded, projectId);
+    const view = await loadSpaceView(c, loaded, projectId);
     const spec = view.specs.find((s) => s.slug === slug);
     // Undeclared and inaccessible are the SAME answer: a member without the
-    // grant must not be able to probe which subprojects exist.
+    // grant must not be able to probe which spaces exist.
     if (!spec) return c.json({ error: 'Not found' }, 404);
-    return c.json(serializeSubproject(spec, view.ctx));
+    return c.json(serializeSpace(spec, view.ctx));
   },
 );
 
-// ─── PATCH /v1/projects/:projectId/subprojects/:slug ────────────────────────
+// ─── PATCH /v1/projects/:projectId/spaces/:slug ────────────────────────
 
 projectsApp.openapi(
   createRoute({
     method: 'patch',
-    path: '/{projectId}/subprojects/{slug}',
-    tags: ['subprojects'],
-    summary: 'PATCH /:projectId/subprojects/:slug',
+    path: '/{projectId}/spaces/{slug}',
+    tags: ['spaces'],
+    summary: 'PATCH /:projectId/spaces/:slug',
     ...auth,
     request: {
       params: ParamsWithSlug,
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(SubprojectSchema, 'The updated subproject'),
+      200: json(SpaceSchema, 'The updated space'),
       ...errors(400, 403, 404, 409, 502),
     },
   }),
@@ -440,7 +440,7 @@ projectsApp.openapi(
 
     const gitProject = await withProjectGitAuth(loaded.row);
     const [declared, rootPath] = await Promise.all([
-      loadProjectSubprojects(gitProject),
+      loadProjectSpaces(gitProject),
       rootManifestPath(gitProject),
     ]);
     const current = declared.specs.find((s) => s.slug === slug);
@@ -448,13 +448,13 @@ projectsApp.openapi(
     // An empty body is a no-op: no commit, the current shape comes back.
     if (Object.keys(body).length > 0) {
       const usable = await usableAgentsFor(gitProject, current);
-      const merged = mergeSubprojectBody(body, current, slug, rootPath, usable);
+      const merged = mergeSpaceBody(body, current, slug, rootPath, usable);
       if ('error' in merged) return c.json({ error: merged.error }, 400);
-      const written = await writeSubprojectFile(
+      const written = await writeSpaceFile(
         loaded.row,
         gitProject,
         merged,
-        `chore(subprojects): update ${slug}`,
+        `chore(spaces): update ${slug}`,
       );
       if ('error' in written) {
         return c.json({ error: written.error }, written.status as 400 | 409 | 502);
@@ -464,14 +464,14 @@ projectsApp.openapi(
   },
 );
 
-// ─── DELETE /v1/projects/:projectId/subprojects/:slug ───────────────────────
+// ─── DELETE /v1/projects/:projectId/spaces/:slug ───────────────────────
 
 projectsApp.openapi(
   createRoute({
     method: 'delete',
-    path: '/{projectId}/subprojects/{slug}',
-    tags: ['subprojects'],
-    summary: 'DELETE /:projectId/subprojects/:slug',
+    path: '/{projectId}/spaces/{slug}',
+    tags: ['spaces'],
+    summary: 'DELETE /:projectId/spaces/:slug',
     ...auth,
     request: { params: ParamsWithSlug },
     responses: {
@@ -493,25 +493,25 @@ projectsApp.openapi(
     );
 
     const gitProject = await withProjectGitAuth(loaded.row);
-    const declared = await loadProjectSubprojects(gitProject);
+    const declared = await loadProjectSpaces(gitProject);
     const current = declared.specs.find((s) => s.slug === slug);
     if (!current) return c.json({ error: 'Not found' }, 404);
     // Two always-valid commits (spec 2026-09-06 §4): first detach every
-    // trigger naming this subproject — a trigger pointing at a missing one
+    // trigger naming this space — a trigger pointing at a missing one
     // fails the set validator — then remove the file.
     const detached = await mutateManifestWithRetry(
       loaded.row,
-      `subproject ${slug} was being deleted`,
+      `space ${slug} was being deleted`,
       (manifest: ParsedManifest) => {
         const before = JSON.stringify(manifest.raw.triggers ?? null);
-        const next = stripSubprojectFromTriggers(manifest, slug);
+        const next = stripSpaceFromTriggers(manifest, slug);
         if (JSON.stringify(next.raw.triggers ?? null) === before) {
           return { ok: true as const, commitMessage: null };
         }
         manifest.raw = next.raw;
         return {
           ok: true as const,
-          commitMessage: `chore(subprojects): detach ${slug} from its triggers`,
+          commitMessage: `chore(spaces): detach ${slug} from its triggers`,
         };
       },
     );
@@ -520,7 +520,7 @@ projectsApp.openapi(
     }
     const removed = await commitRepoChanges(loaded.row, {
       deletes: [current.path],
-      message: `chore(subprojects): delete ${slug}`,
+      message: `chore(spaces): delete ${slug}`,
     });
     if ('error' in removed) {
       return c.json({ error: removed.error }, removed.status as 400 | 409 | 502);
@@ -529,10 +529,10 @@ projectsApp.openapi(
   },
 );
 
-/** Re-read one subproject after a write, for the response body. */
+/** Re-read one space after a write, for the response body. */
 async function readOne(c: Context, loaded: Loaded, projectId: string, slug: string) {
-  const view = await loadSubprojectView(c, loaded, projectId);
+  const view = await loadSpaceView(c, loaded, projectId);
   const spec = view.specs.find((s) => s.slug === slug);
-  if (!spec) throw new Error(`subproject ${slug} vanished after a successful write`);
-  return serializeSubproject(spec, view.ctx);
+  if (!spec) throw new Error(`space ${slug} vanished after a successful write`);
+  return serializeSpace(spec, view.ctx);
 }

@@ -844,11 +844,11 @@ export const SessionCreateInputSchema = z
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
-    // The `subprojects.<slug>` this session belongs to. Must be declared in the
-    // manifest (400 SUBPROJECT_NOT_DECLARED) and granted to the caller (403
-    // subproject_not_accessible). When set with no `agent_name`, the
-    // subproject's own `agent` becomes the requested one.
-    subproject: z.string().min(1).optional(),
+    // The `spaces.<slug>` this session belongs to. Must be declared in the
+    // manifest (400 SPACE_NOT_DECLARED) and granted to the caller (403
+    // space_not_accessible). When set with no `agent_name`, the
+    // space's own `agent` becomes the requested one.
+    space: z.string().min(1).optional(),
     // The clean text auto-titling derives from, when `initial_prompt` is a
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
@@ -919,8 +919,8 @@ export const ProjectSessionSchema = z.object({
   /** The user-set override alone, so clients can tell it apart from the auto title. */
   custom_name: z.string().nullable(),
   agent_name: z.string(),
-  /** The `subprojects.<slug>` this session lives in, or null. */
-  subproject: z.string().nullable(),
+  /** The `spaces.<slug>` this session lives in, or null. */
+  space: z.string().nullable(),
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
@@ -1244,9 +1244,9 @@ export const TriggerSchema = z.object({
   session_key: z.string().nullable(),
   /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
   filter: z.record(z.string(), z.string()).nullable(),
-  /** The `subprojects.<slug>` this trigger belongs to, or null. Sessions it
+  /** The `spaces.<slug>` this trigger belongs to, or null. Sessions it
    *  fires inherit it. */
-  subproject: z.string().nullable(),
+  space: z.string().nullable(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),
@@ -1268,44 +1268,44 @@ export const TriggerListSchema = z.object({
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;
 
-export const SUBPROJECT_SESSIONS_MODES = ['private', 'shared'] as const;
-export const SubprojectSessionsModeSchema = z.enum(SUBPROJECT_SESSIONS_MODES);
-export type SubprojectSessionsMode = z.infer<typeof SubprojectSessionsModeSchema>;
+export const SPACE_SESSIONS_MODES = ['private', 'shared'] as const;
+export const SpaceSessionsModeSchema = z.enum(SPACE_SESSIONS_MODES);
+export type SpaceSessionsMode = z.infer<typeof SpaceSessionsModeSchema>;
 
 /**
  * One `kortix-<slug>.yaml` as the API serves it: a named container inside a
  * project that groups sessions, may pin a default agent, and owns the
  * triggers naming it. Who may use one is an IAM object grant
- * (`object_type = 'subproject'`), never a field here.
+ * (`object_type = 'space'`), never a field here.
  */
-export const SubprojectSchema = z.object({
+export const SpaceSchema = z.object({
   slug: z.string(),
   /** Display label; defaults to the slug. */
   name: z.string(),
   description: z.string().nullable(),
   /** Default agent for sessions started here — a default, not a binding. */
   agent: z.string().nullable(),
-  sessions: SubprojectSessionsModeSchema,
+  sessions: SpaceSessionsModeSchema,
   /** The file it lives in, repo-relative: `kortix-<slug>.yaml`. */
   path: z.string(),
-  /** Agents usable here beyond the globals — the ones this subproject owns
+  /** Agents usable here beyond the globals — the ones this space owns
    *  (declares in its file) or references, in file order. */
   agents: z.array(z.string()),
-  /** Non-deleted sessions in this subproject that the CALLER can see. */
+  /** Non-deleted sessions in this space that the CALLER can see. */
   session_count: z.number(),
-  /** Triggers whose `subproject` names this one. */
+  /** Triggers whose `space` names this one. */
   trigger_count: z.number(),
   /** True when the caller holds `project.customize.write` (edit/delete). */
   can_manage: z.boolean(),
 });
-export type Subproject = z.infer<typeof SubprojectSchema>;
+export type Space = z.infer<typeof SpaceSchema>;
 
-/** GET /v1/projects/:id/subprojects — an envelope, like the trigger list. */
-export const SubprojectsResponseSchema = z.object({
-  subprojects: z.array(SubprojectSchema),
+/** GET /v1/projects/:id/spaces — an envelope, like the trigger list. */
+export const SpacesResponseSchema = z.object({
+  spaces: z.array(SpaceSchema),
   errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
 });
-export type SubprojectsResponse = z.infer<typeof SubprojectsResponseSchema>;
+export type SpacesResponse = z.infer<typeof SpacesResponseSchema>;
 
 /**
  * The per-user view of one secret, as built by `buildSecretView`: a secret is

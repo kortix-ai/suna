@@ -84,20 +84,20 @@ export async function loadProjectSessionInventory(input: {
   boundCredentialSessionId: string | null;
   probeManageCapability: () => Promise<boolean>;
   /**
-   * `?subproject=` — undefined applies no filter, a slug narrows to it, and the
-   * empty string narrows to rows with no subproject.
+   * `?space=` — undefined applies no filter, a slug narrows to it, and the
+   * empty string narrows to rows with no space.
    */
-  subprojectFilter?: string;
+  spaceFilter?: string;
   /**
-   * Resolve which of these subproject slugs the viewer may see, and which are
+   * Resolve which of these space slugs the viewer may see, and which are
    * declared `sessions: shared`. Injected for the same reason
    * `probeManageCapability` is: it needs the request context, and a thunk keeps
    * this module decidable in a unit test without one. Called ONLY when some row
-   * carries a subproject, so an ordinary project pays nothing. Omitted ⇒ every
-   * subproject row is dropped, which is the fail-closed direction.
-   * See lib/subproject-access.ts `subprojectViewerAccess`.
+   * carries a space, so an ordinary project pays nothing. Omitted ⇒ every
+   * space row is dropped, which is the fail-closed direction.
+   * See lib/space-access.ts `spaceViewerAccess`.
    */
-  loadSubprojectAccess?: (
+  loadSpaceAccess?: (
     slugs: string[],
   ) => Promise<{ accessible: Set<string>; shared: Set<string> }>;
 }): Promise<ProjectSessionInventory> {
@@ -156,16 +156,16 @@ export async function loadProjectSessionInventory(input: {
     ),
   ]);
 
-  // Step 3 — the subproject fold, and ONLY when the project actually uses them.
+  // Step 3 — the space fold, and ONLY when the project actually uses them.
   // The slug set comes from the rows themselves, not the manifest, so a session
-  // in a since-deleted subproject is still judged by its grant rows: a manager
+  // in a since-deleted space is still judged by its grant rows: a manager
   // keeps it, an ungranted member loses it.
-  const rowSubprojects = [
-    ...new Set(rows.map((row) => row.subproject).filter((slug): slug is string => Boolean(slug))),
+  const rowSpaces = [
+    ...new Set(rows.map((row) => row.space).filter((slug): slug is string => Boolean(slug))),
   ];
-  const subprojectAccess =
-    rowSubprojects.length > 0 && input.loadSubprojectAccess
-      ? await input.loadSubprojectAccess(rowSubprojects)
+  const spaceAccess =
+    rowSpaces.length > 0 && input.loadSpaceAccess
+      ? await input.loadSpaceAccess(rowSpaces)
       : { accessible: new Set<string>(), shared: new Set<string>() };
 
   const selected = selectSessionRowsForViewer({
@@ -177,9 +177,9 @@ export async function loadProjectSessionInventory(input: {
     runtimeStatusBySession,
     callerSessionId: input.boundCredentialSessionId,
     boundCredentialSessionId: input.boundCredentialSessionId,
-    accessibleSubprojects: subprojectAccess.accessible,
-    sharedSubprojects: subprojectAccess.shared,
-    subprojectFilter: input.subprojectFilter,
+    accessibleSpaces: spaceAccess.accessible,
+    sharedSpaces: spaceAccess.shared,
+    spaceFilter: input.spaceFilter,
   });
 
   return {

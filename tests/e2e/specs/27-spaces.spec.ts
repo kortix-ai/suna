@@ -13,7 +13,7 @@ import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
 const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
-const password = 'E2eSubprojects123!';
+const password = 'E2eSpaces123!';
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
 
@@ -24,27 +24,27 @@ interface AccountSummary {
   account_role: string;
 }
 
-interface Subproject {
+interface Space {
   slug: string;
   name: string;
   instructions: string | null;
   sessions: 'private' | 'shared';
 }
 
-interface SubprojectsResponse {
-  subprojects: Subproject[];
+interface SpacesResponse {
+  spaces: Space[];
 }
 
 /**
- * 27 — Subprojects (spec §12.7, `docs/specs/2026-09-03-subprojects.md`).
+ * 27 — Spaces (spec §12.7, `docs/specs/2026-09-03-spaces.md`).
  *
  * Four browser-visible contracts, and nothing an API flow could assert on its
- * own (those live in `tests/src/flows/subprojects.flow.ts`):
+ * own (those live in `tests/src/flows/spaces.flow.ts`):
  *
- *  1. The sidebar `+` creates a subproject and lands on its page.
+ *  1. The sidebar `+` creates a space and lands on its page.
  *  2. The page's three rail cards render.
- *  3. Editing the instructions PATCHes the subproject and the API agrees.
- *  4. A send in the page's composer carries `subproject` in the create body.
+ *  3. Editing the instructions PATCHes the space and the API agrees.
+ *  4. A send in the page's composer carries `space` in the create body.
  *  5. A project member with no grant sees no sidebar entry and cannot open
  *     the page.
  *
@@ -52,22 +52,22 @@ interface SubprojectsResponse {
  * profile has no sandbox provider, so `POST /projects/:id/sessions` cannot
  * produce a bootable session — the composer's send is observed at the wire
  * instead, which is exactly the contract this WP owns: the page's composer
- * files its session under the subproject. The server-side gate on that field
- * is `SUBP-2`'s job.
+ * files its session under the space. The server-side gate on that field
+ * is `SPACE-2`'s job.
  *
  * The project comes from `createManifestProject` so its `kortix.yaml` is real
- * and writable: creating a subproject COMMITS to the repo, and a repo the API
+ * and writable: creating a space COMMITS to the repo, and a repo the API
  * cannot reach answers 502 rather than 201.
  */
-test.describe('27 — Subprojects', () => {
-  test('create from the sidebar, edit the instructions, and send into the subproject', async ({
+test.describe('27 — Spaces', () => {
+  test('create from the sidebar, edit the instructions, and send into the space', async ({
     page,
   }) => {
     test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
     test.setTimeout(180_000);
 
     const runId = Date.now().toString(36);
-    const email = `e2e-subproject-owner-${runId}@example.test`;
+    const email = `e2e-space-owner-${runId}@example.test`;
     const owner = await createAuthUser(email, authOptions);
     const session = await signIn(email, authOptions);
 
@@ -90,7 +90,7 @@ test.describe('27 — Subprojects', () => {
         accessToken: session.access_token,
         accountId,
         userId: owner.id,
-        name: `Subprojects UI ${runId}`,
+        name: `Spaces UI ${runId}`,
         databaseUrl: databaseUrl!,
       });
       projectId = project.id;
@@ -103,37 +103,37 @@ test.describe('27 — Subprojects', () => {
       // ── 1. Create from the sidebar `+` ────────────────────────────────
       // The group renders for an owner even with nothing in it, because the
       // owner holds `project.customize.write` — that is the whole reason the
-      // `+` is reachable before the first subproject exists.
-      await expect(page.getByText('Subprojects', { exact: true })).toBeVisible();
-      await page.getByRole('button', { name: 'New subproject', exact: true }).click();
+      // `+` is reachable before the first space exists.
+      await expect(page.getByText('Spaces', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'New space', exact: true }).click();
 
-      const createModal = page.getByRole('dialog', { name: 'New subproject', exact: true });
+      const createModal = page.getByRole('dialog', { name: 'New space', exact: true });
       await expect(createModal).toBeVisible();
       // The two optional fields carry an "optional" suffix inside their label,
       // so the accessible name is "Description optional" — matched by prefix
       // rather than exactly, which would silently never resolve.
       await createModal.getByLabel(/^Name/).fill('Marketing');
       await createModal.getByLabel(/^Description/).fill('Campaign work for this run.');
-      await createModal.getByRole('button', { name: 'Create subproject', exact: true }).click();
+      await createModal.getByRole('button', { name: 'Create space', exact: true }).click();
 
       // The API derives the slug from the name (`slugify`), so the route is
       // predictable and worth asserting: it is the grant key too.
-      await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/subprojects/marketing$`), {
+      await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/spaces/marketing$`), {
         timeout: 30_000,
       });
 
       // ── 2. The hero and the three rows under the composer ─────────────
-      // The page is the project-home surface with the subproject's name in
+      // The page is the project-home surface with the space's name in
       // the greeting; what it owns sits under the composer as disclosure
       // rows, each carrying a one-line summary while closed.
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Marketing');
       await expect(page.getByText('Campaign work for this run.')).toBeVisible();
-      // The composer's own picker starts on this page's subproject — that is
+      // The composer's own picker starts on this page's space — that is
       // the choice the send in step 4 carries (`ProjectHome` owns it).
       await expect(
-        page.getByRole('button', { name: 'Select subproject', exact: true }),
+        page.getByRole('button', { name: 'Select space', exact: true }),
       ).toContainText('Marketing');
-      // What the subproject owns is a panel beside the composer (user,
+      // What the space owns is a panel beside the composer (user,
       // 2026-09-06): one section each, opened from its title.
       const instructionsRow = page.getByRole('button', { name: 'Instructions', exact: true });
       await expect(instructionsRow).toBeVisible();
@@ -143,7 +143,7 @@ test.describe('27 — Subprojects', () => {
 
       // The sidebar picked up the new row without a reload.
       await expect(
-        page.locator(`a[href="/projects/${projectId}/subprojects/marketing"]`).first(),
+        page.locator(`a[href="/projects/${projectId}/spaces/marketing"]`).first(),
       ).toBeVisible();
 
       // The create landed as its own file, `kortix-marketing.yaml`, beside the
@@ -160,7 +160,7 @@ test.describe('27 — Subprojects', () => {
       page.on('request', (request) => {
         if (
           request.method() === 'PATCH' &&
-          request.url().endsWith(`/v1/projects/${projectId}/subprojects/marketing`)
+          request.url().endsWith(`/v1/projects/${projectId}/spaces/marketing`)
         ) {
           try {
             patchBodies.push(JSON.parse(request.postData() ?? '{}'));
@@ -185,18 +185,18 @@ test.describe('27 — Subprojects', () => {
       await expect
         .poll(
           async () => {
-            const listing = await api<SubprojectsResponse>(
+            const listing = await api<SpacesResponse>(
               session.access_token,
               'GET',
-              `/projects/${projectId}/subprojects`,
+              `/projects/${projectId}/spaces`,
             );
-            return listing.subprojects.find((s) => s.slug === 'marketing')?.instructions ?? null;
+            return listing.spaces.find((s) => s.slug === 'marketing')?.instructions ?? null;
           },
           { timeout: 20_000 },
         )
         .toBe(instructions);
 
-      // ── 4. A send carries `subproject` in the create body ─────────────
+      // ── 4. A send carries `space` in the create body ─────────────
       // Session CREATE cannot boot in the local profile (no sandbox provider),
       // so the assertion is the outgoing request — the page's own contract.
       const createBodies: Record<string, unknown>[] = [];
@@ -239,17 +239,17 @@ test.describe('27 — Subprojects', () => {
         await page.getByRole('button', { name: 'Send message' }).click({ force: true });
         await expect.poll(() => createBodies.length, { timeout: 30_000 }).toBeGreaterThan(0);
         const [createBody] = createBodies;
-        expect(createBody?.subproject).toBe('marketing');
+        expect(createBody?.space).toBe('marketing');
         // The prompt rides the create as a durable inbox row, so it is on the
         // same body — proving the composer wiring is the shared one, not a copy.
         expect(createBody?.pending_prompt).toMatchObject({ text: 'Draft the launch note.' });
       }
 
       // ── 5. The project home carries the same picker, starting on the whole
-      //      project, and can be pointed at a subproject before a send ────
+      //      project, and can be pointed at a space before a send ────
       await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
-      const homePicker = page.getByRole('button', { name: 'Select subproject', exact: true });
+      const homePicker = page.getByRole('button', { name: 'Select space', exact: true });
       await expect(homePicker).toContainText('Whole project');
       await homePicker.click();
       await page.getByRole('option', { name: /^Marketing/ }).click();
@@ -265,13 +265,13 @@ test.describe('27 — Subprojects', () => {
     }
   });
 
-  test('a project member with no grant sees no subproject in the sidebar', async ({ page }) => {
+  test('a project member with no grant sees no space in the sidebar', async ({ page }) => {
     test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
     test.setTimeout(180_000);
 
     const runId = Date.now().toString(36);
-    const ownerEmail = `e2e-subproject-owner2-${runId}@example.test`;
-    const memberEmail = `e2e-subproject-member-${runId}@example.test`;
+    const ownerEmail = `e2e-space-owner2-${runId}@example.test`;
+    const memberEmail = `e2e-space-member-${runId}@example.test`;
     const owner = await createAuthUser(ownerEmail, authOptions);
     const member = await createAuthUser(memberEmail, authOptions);
     const ownerSession = await signIn(ownerEmail, authOptions);
@@ -301,23 +301,23 @@ test.describe('27 — Subprojects', () => {
         accessToken: ownerSession.access_token,
         accountId,
         userId: owner.id,
-        name: `Subprojects authz ${runId}`,
+        name: `Spaces authz ${runId}`,
         databaseUrl: databaseUrl!,
       });
       projectId = project.id;
 
-      // Declared by the owner, granted to nobody. `object_policies.subproject`
+      // Declared by the owner, granted to nobody. `object_policies.space`
       // is `closed`, so the member's accessible set is empty — the manager
       // tier sees it, the member tier does not.
-      await api<Subproject>(
+      await api<Space>(
         ownerSession.access_token,
         'POST',
-        `/projects/${projectId}/subprojects`,
+        `/projects/${projectId}/spaces`,
         { name: 'Marketing' },
         201,
       );
       // Project access, and only project access. This is the whole point: a
-      // member who can open the project still sees no subproject.
+      // member who can open the project still sees no space.
       await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, {
         role: 'member',
       });
@@ -334,31 +334,31 @@ test.describe('27 — Subprojects', () => {
         timeout: 30_000,
       });
       await expect(
-        page.locator(`a[href="/projects/${projectId}/subprojects/marketing"]`),
+        page.locator(`a[href="/projects/${projectId}/spaces/marketing"]`),
       ).toHaveCount(0);
       // No group header, and no way to make one: the member holds neither a
       // grant nor `project.customize.write`.
-      await expect(page.getByText('Subprojects', { exact: true })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'New subproject', exact: true })).toHaveCount(
+      await expect(page.getByText('Spaces', { exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'New space', exact: true })).toHaveCount(
         0,
       );
 
       // The page itself is a 404 for them, rendered as the not-found state
       // rather than a blank screen.
-      await page.goto(`/projects/${projectId}/subprojects/marketing`, {
+      await page.goto(`/projects/${projectId}/spaces/marketing`, {
         waitUntil: 'domcontentloaded',
       });
-      await expect(page.getByText('No subproject named marketing')).toBeVisible({
+      await expect(page.getByText('No space named marketing')).toBeVisible({
         timeout: 30_000,
       });
 
       // The API tells the same story, so the browser is not the only witness.
-      const listing = await api<SubprojectsResponse>(
+      const listing = await api<SpacesResponse>(
         memberSession.access_token,
         'GET',
-        `/projects/${projectId}/subprojects`,
+        `/projects/${projectId}/spaces`,
       );
-      expect(listing.subprojects).toEqual([]);
+      expect(listing.spaces).toEqual([]);
     } finally {
       if (project) await project.dispose().catch(() => {});
       await deleteAuthUser(member.id, authOptions).catch(() => {});

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Declare a subproject — name, one line of description, a default agent.
+ * Declare a space — name, one line of description, a default agent.
  *
  * That is the whole file (`kortix-<slug>.yaml`). Who may use it is granted on
  * its page; its scheduled work is filed from the project's triggers. Anything
@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { createProjectSubproject, getProjectDetail } from '@kortix/sdk';
+import { createProjectSpace, getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -41,7 +41,7 @@ import { useState } from 'react';
 /** Sentinel for "no default agent" — `''` is not a legal Radix item value. */
 const NO_AGENT = '__none__';
 
-export function CreateSubprojectModal({
+export function CreateSpaceModal({
   projectId,
   open,
   onOpenChange,
@@ -66,10 +66,10 @@ export function CreateSubprojectModal({
     enabled: open && !!projectId,
     ...contract('config'),
   });
-  // Globals only: a subproject has no agents of its own before it exists,
-  // and another subproject's agents are not usable here (spec 2026-09-06 §2).
+  // Globals only: a space has no agents of its own before it exists,
+  // and another space's agents are not usable here (spec 2026-09-06 §2).
   const agents = (detailQuery.data?.config?.agents ?? []).filter(
-    (a) => a.enabled !== false && a.mode?.toLowerCase() !== 'subagent' && !a.subproject,
+    (a) => a.enabled !== false && a.mode?.toLowerCase() !== 'subagent' && !a.space,
   );
 
   const reset = () => {
@@ -80,19 +80,19 @@ export function CreateSubprojectModal({
 
   const create = useMutation({
     mutationFn: () =>
-      createProjectSubproject(projectId, {
+      createProjectSpace(projectId, {
         name: name.trim(),
         ...(description.trim() ? { description: description.trim() } : {}),
         ...(agent !== NO_AGENT ? { agent } : {}),
       }),
-    onSuccess: async (subproject) => {
-      successToast(`${subproject.name} created`);
-      await queryClient.invalidateQueries({ queryKey: qk.project.subprojects(projectId) });
+    onSuccess: async (space) => {
+      successToast(`${space.name} created`);
+      await queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) });
       onOpenChange(false);
       reset();
-      router.push(`/projects/${projectId}/subprojects/${subproject.slug}`);
+      router.push(`/projects/${projectId}/spaces/${space.slug}`);
     },
-    onError: (error: Error) => errorToast(error.message || 'Could not create the subproject'),
+    onError: (error: Error) => errorToast(error.message || 'Could not create the space'),
   });
 
   return (
@@ -106,7 +106,7 @@ export function CreateSubprojectModal({
     >
       <ModalContent className="sm:max-w-md">
         <ModalHeader>
-          <ModalTitle>New subproject</ModalTitle>
+          <ModalTitle>New space</ModalTitle>
           <ModalDescription>
             A named container inside this project — its own sessions, its own default agent,
             and its own scheduled work.
@@ -122,9 +122,9 @@ export function CreateSubprojectModal({
         >
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <Field className="gap-1.5">
-              <FieldLabel htmlFor="subproject-name">Name</FieldLabel>
+              <FieldLabel htmlFor="space-name">Name</FieldLabel>
               <Input
-                id="subproject-name"
+                id="space-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Marketing"
@@ -135,12 +135,12 @@ export function CreateSubprojectModal({
             </Field>
 
             <Field className="gap-1.5">
-              <FieldLabel htmlFor="subproject-description">
+              <FieldLabel htmlFor="space-description">
                 Description
                 <span className="text-muted-foreground ml-2 text-xs font-normal">optional</span>
               </FieldLabel>
               <Input
-                id="subproject-description"
+                id="space-description"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Campaign work."
@@ -150,12 +150,12 @@ export function CreateSubprojectModal({
             </Field>
 
             <Field className="gap-1.5">
-              <FieldLabel htmlFor="subproject-agent">
+              <FieldLabel htmlFor="space-agent">
                 Agent
                 <span className="text-muted-foreground ml-2 text-xs font-normal">optional</span>
               </FieldLabel>
               <Select value={agent} onValueChange={setAgent} disabled={create.isPending}>
-                <SelectTrigger id="subproject-agent">
+                <SelectTrigger id="space-agent">
                   <SelectValue placeholder="No default agent" />
                 </SelectTrigger>
                 <SelectContent>
@@ -187,7 +187,7 @@ export function CreateSubprojectModal({
             </Button>
             <Button type="submit" size="sm" disabled={!name.trim() || create.isPending}>
               {create.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-              Create subproject
+              Create space
             </Button>
           </ModalFooter>
         </form>

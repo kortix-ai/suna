@@ -25,9 +25,9 @@ import {
   manifestFormatForPath,
   validateManifest,
   parseManifestText,
-  subprojectSlugFromPath,
+  spaceSlugFromPath,
   validateManifestSetV2,
-  validateSubprojectFileV2,
+  validateSpaceFileV2,
 } from '@kortix/manifest-schema';
 import { extractSandboxTemplates } from '@kortix/shared/sandbox';
 import { lintDockerfile } from '../dockerfile-lint.ts';
@@ -109,7 +109,7 @@ function lintSandboxDockerfiles(
  * a set with the root. Issues carry the file name so a report over three
  * files still reads. A v1 root (or one that failed to parse) has no set.
  */
-function validateSubprojectFiles(
+function validateSpaceFiles(
   manifestPath: string,
   parsedRoot: Record<string, unknown> | null,
 ): ManifestIssue[] {
@@ -122,9 +122,9 @@ function validateSubprojectFiles(
   } catch {
     return issues;
   }
-  const subprojects: Array<{ slug: string; path: string; raw: Record<string, unknown> }> = [];
+  const spaces: Array<{ slug: string; path: string; raw: Record<string, unknown> }> = [];
   for (const name of names.sort()) {
-    const slug = subprojectSlugFromPath(name);
+    const slug = spaceSlugFromPath(name);
     if (!slug) continue;
     let raw: Record<string, unknown>;
     try {
@@ -137,10 +137,10 @@ function validateSubprojectFiles(
       });
       continue;
     }
-    validateSubprojectFileV2(raw, slug, issues, { path: name });
-    subprojects.push({ slug, path: name, raw });
+    validateSpaceFileV2(raw, slug, issues, { path: name });
+    spaces.push({ slug, path: name, raw });
   }
-  validateManifestSetV2({ root: parsedRoot, subprojects }, issues);
+  validateManifestSetV2({ root: parsedRoot, spaces }, issues);
   return issues;
 }
 
@@ -219,11 +219,11 @@ export function runValidate(argv: string[]): number {
   }
 
   const result = validateManifest(raw, manifestFormatForPath(filePath));
-  // Subprojects are their own files beside the root manifest
+  // Spaces are their own files beside the root manifest
   // (`kortix-<slug>.yaml`, spec 2026-09-06). Validate each one's shape, then
   // the SET — unique agent names, `from` references, default agents, trigger
   // back-references — so `kortix validate` sees what the API sees.
-  const subprojectIssues = validateSubprojectFiles(filePath, result.parsed);
+  const spaceIssues = validateSpaceFiles(filePath, result.parsed);
 
   // Manifest issues first, then the Dockerfile lint — one merged report, one
   // exit code. A Dockerfile `error` fails `validate` exactly like a schema
@@ -231,7 +231,7 @@ export function runValidate(argv: string[]): number {
   // stop it without any extra wiring.
   const issues = [
     ...result.issues,
-    ...subprojectIssues,
+    ...spaceIssues,
     ...(flags.dockerfileLint ? lintSandboxDockerfiles(result.parsed, filePath) : []),
   ];
   const valid = !issues.some((i) => i.severity === 'error');

@@ -24,8 +24,8 @@ describe('project config agent discovery', () => {
 
     expect(result.agent_discovery).toBe('opencode');
     expect(result.agents).toEqual([
-      { ...nativeAgents[0], source: 'opencode', enabled: true, subproject: null },
-      { ...nativeAgents[1], source: 'opencode', enabled: true, subproject: null },
+      { ...nativeAgents[0], source: 'opencode', enabled: true, space: null },
+      { ...nativeAgents[1], source: 'opencode', enabled: true, space: null },
     ]);
   });
 
@@ -36,7 +36,7 @@ describe('project config agent discovery', () => {
         {
           name: 'kortix',
           path: 'kortix.yaml#agents.kortix',
-          subproject: null,
+          space: null,
           enabled: true,
           connectors: 'all',
           kortixCli: 'all',
@@ -47,7 +47,7 @@ describe('project config agent discovery', () => {
         {
           name: 'triage',
           path: 'kortix.yaml#agents.triage',
-          subproject: null,
+          space: null,
           enabled: true,
           connectors: [],
           kortixCli: [],
@@ -58,7 +58,7 @@ describe('project config agent discovery', () => {
         {
           name: 'disabled',
           path: 'kortix.yaml#agents.disabled',
-          subproject: null,
+          space: null,
           enabled: false,
           connectors: [],
           kortixCli: [],
@@ -84,7 +84,7 @@ describe('project config agent discovery', () => {
         model: null,
         source: 'kortix.yaml',
         enabled: true,
-        subproject: null,
+        space: null,
         sandbox: null,
         scope: { env: 'all', connectors: 'all', kortix_cli: 'all' },
       },
@@ -96,7 +96,7 @@ describe('project config agent discovery', () => {
         model: null,
         source: 'kortix.yaml',
         enabled: true,
-        subproject: null,
+        space: null,
         sandbox: null,
         scope: { env: 'all', connectors: [], kortix_cli: [] },
       },
@@ -110,7 +110,7 @@ describe('project config agent discovery', () => {
         {
           name: 'support_bot',
           path: 'kortix.yaml#agents.support_bot',
-          subproject: null,
+          space: null,
           enabled: true,
           connectors: ['stripe'],
           kortixCli: ['project.read'],

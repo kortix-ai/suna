@@ -1139,9 +1139,9 @@ export async function pushSessionAgentConfigToSandbox(input: {
       .select({
         agentName: projectSessions.agentName,
         metadata: projectSessions.metadata,
-        // A push must compile the SAME config the boot did — the subproject
+        // A push must compile the SAME config the boot did — the space
         // decides which agent blocks are usable, so it has to be read here too.
-        subproject: projectSessions.subproject,
+        space: projectSessions.space,
       })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, input.sessionId))
@@ -1157,10 +1157,10 @@ export async function pushSessionAgentConfigToSandbox(input: {
       !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
       session?.agentName
         ? await resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef, {
-            subproject: session?.subproject ?? null,
+            space: session?.space ?? null,
           })
         : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef, {
-            subproject: session?.subproject ?? null,
+            space: session?.space ?? null,
           });
     // `null` is a v1 project or an unreadable manifest. Pushing an empty value
     // would DELETE the agent config the box is running — a v1 project has none

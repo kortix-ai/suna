@@ -341,10 +341,10 @@ function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolea
           {tI18nComplete.raw('text75081b593d15')}
         </Badge>
       ) : null}
-      {/* Declared by a subproject file — usable only there and where referenced. */}
-      {agent.subproject ? (
+      {/* Declared by a space file — usable only there and where referenced. */}
+      {agent.space ? (
         <Badge variant="muted" size="xs">
-          {`In ${agent.subproject}`}
+          {`In ${agent.space}`}
         </Badge>
       ) : null}
     </>

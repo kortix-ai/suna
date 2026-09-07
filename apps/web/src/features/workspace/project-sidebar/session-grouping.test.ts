@@ -276,33 +276,33 @@ describe('groupSessions — source mode', () => {
   });
 });
 
-describe('groupSessions — subproject mode', () => {
+describe('groupSessions — space mode', () => {
   const sessions = [
-    makeSession({ session_id: 'a', subproject: 'research' }),
-    makeSession({ session_id: 'b', subproject: 'marketing' }),
+    makeSession({ session_id: 'a', space: 'research' }),
+    makeSession({ session_id: 'b', space: 'marketing' }),
     makeSession({ session_id: 'c' }),
-    makeSession({ session_id: 'd', subproject: 'marketing' }),
+    makeSession({ session_id: 'd', space: 'marketing' }),
   ];
   const group = (input = sessions, hiddenSections?: string[]) =>
     groupSessions(input, {
-      mode: 'subproject',
+      mode: 'space',
       order: 'activity',
       reviewCountBySession: {},
       hiddenSections,
       now: NOW,
     }, testUiTranslator);
 
-  test('one section per subproject, sorted by slug, with "No subproject" LAST', () => {
+  test('one section per space, sorted by slug, with "No space" LAST', () => {
     // Slug order, not arrival order: the sessions above list `research` first.
     expect(group().sections.map((s) => s.id)).toEqual([
-      'subproject:marketing',
-      'subproject:research',
-      'subproject:none',
+      'space:marketing',
+      'space:research',
+      'space:none',
     ]);
     expect(group().sections.map((s) => s.label)).toEqual([
       'marketing',
       'research',
-      'No subproject',
+      'No space',
     ]);
   });
 
@@ -311,34 +311,34 @@ describe('groupSessions — subproject mode', () => {
       section.sessions.map((session) => session.session_id),
     );
     expect(ids.sort()).toEqual(['a', 'b', 'c', 'd']);
-    expect(group().sections.find((s) => s.id === 'subproject:marketing')!.sessions).toHaveLength(2);
+    expect(group().sections.find((s) => s.id === 'space:marketing')!.sessions).toHaveLength(2);
   });
 
-  test('a null subproject and an absent one both mean "No subproject"', () => {
+  test('a null space and an absent one both mean "No space"', () => {
     const grouped = group([
-      makeSession({ session_id: 'null', subproject: null }),
+      makeSession({ session_id: 'null', space: null }),
       makeSession({ session_id: 'absent' }),
     ]);
-    expect(grouped.sections.map((s) => s.id)).toEqual(['subproject:none']);
+    expect(grouped.sections.map((s) => s.id)).toEqual(['space:none']);
     expect(grouped.sections[0]!.sessions).toHaveLength(2);
   });
 
   test('a section with nothing in it is dropped, so headers hide at one section', () => {
-    const grouped = group([makeSession({ session_id: 'only', subproject: 'marketing' })]);
-    expect(grouped.sections.map((s) => s.id)).toEqual(['subproject:marketing']);
+    const grouped = group([makeSession({ session_id: 'only', space: 'marketing' })]);
+    expect(grouped.sections.map((s) => s.id)).toEqual(['space:marketing']);
     expect(grouped.showHeaders).toBe(false);
   });
 
   test('section ids are namespaced, so a slug can never collide with another mode', () => {
-    // A subproject literally called `recent` must not share status mode's id.
-    const grouped = group([makeSession({ session_id: 'x', subproject: 'recent' })]);
-    expect(grouped.sections[0]!.id).toBe('subproject:recent');
+    // A space literally called `recent` must not share status mode's id.
+    const grouped = group([makeSession({ session_id: 'x', space: 'recent' })]);
+    expect(grouped.sections[0]!.id).toBe('space:recent');
   });
 
   test('hiding a section drops it like any other mode', () => {
-    expect(group(sessions, ['subproject:none']).sections.map((s) => s.id)).toEqual([
-      'subproject:marketing',
-      'subproject:research',
+    expect(group(sessions, ['space:none']).sections.map((s) => s.id)).toEqual([
+      'space:marketing',
+      'space:research',
     ]);
   });
 });

@@ -1,10 +1,10 @@
-// WHICH SUBPROJECTS MAY THIS CALLER SEE.
+// WHICH SPACES MAY THIS CALLER SEE.
 //
-// A subproject is an IAM object, closed by default (`object_policies` row
-// `subproject = closed`), exactly like an agent. Manager tier — account
+// A space is an IAM object, closed by default (`object_policies` row
+// `space = closed`), exactly like an agent. Manager tier — account
 // owner/admin, project manager, service account, super-admin — sees every
-// subproject; a member sees only the ones with a grant row naming them or one
-// of their groups. Zero grant rows therefore means zero subprojects for a
+// space; a member sees only the ones with a grant row naming them or one
+// of their groups. Zero grant rows therefore means zero spaces for a
 // member, which is the whole point of the closed default.
 //
 // The verdict comes from `filterAccessibleObjects`, the SAME fold the agent
@@ -16,7 +16,7 @@ import { HTTPException } from 'hono/http-exception';
 import { filterAccessibleObjects } from '../../iam/authorize';
 import { actorOf } from '../../iam/actor';
 import { withProjectGitAuth } from './git';
-import { loadProjectSubprojects, type SubprojectSessionsMode } from '../subprojects';
+import { loadProjectSpaces, type SpaceSessionsMode } from '../spaces';
 import type { ProjectRow } from './serializers';
 
 interface LoadedProject {
@@ -28,7 +28,7 @@ interface LoadedProject {
  * Of `slugs`, the ones this caller may use. Preserves input order, one memoized
  * grant load for the whole list. An empty input short-circuits with no I/O.
  */
-export async function accessibleSubprojectSlugs(
+export async function accessibleSpaceSlugs(
   c: Context,
   loaded: LoadedProject,
   projectId: string,
@@ -36,24 +36,24 @@ export async function accessibleSubprojectSlugs(
 ): Promise<string[]> {
   if (slugs.length === 0) return [];
   const actor = await actorOf(c, loaded.row.accountId);
-  return filterAccessibleObjects(actor, projectId, 'subproject', slugs);
+  return filterAccessibleObjects(actor, projectId, 'space', slugs);
 }
 
-/** The 403 for a subproject the caller may not use. `code` +
- *  `accessible_subprojects` let a client recover by picking a usable one —
+/** The 403 for a space the caller may not use. `code` +
+ *  `accessible_spaces` let a client recover by picking a usable one —
  *  the same shape `agent-access.ts` returns for an agent denial. */
-export function subprojectDenial(slug: string, accessible: string[]): HTTPException {
+export function spaceDenial(slug: string, accessible: string[]): HTTPException {
   const message = accessible.length
-    ? `You don't have access to the ${slug} subproject — pick one of: ${accessible.join(', ')}.`
-    : `You don't have access to the ${slug} subproject. Ask a manager to grant it to you.`;
+    ? `You don't have access to the ${slug} space — pick one of: ${accessible.join(', ')}.`
+    : `You don't have access to the ${slug} space. Ask a manager to grant it to you.`;
   return new HTTPException(403, {
     message,
     res: new Response(
       JSON.stringify({
         error: message,
         message,
-        code: 'subproject_not_accessible',
-        accessible_subprojects: accessible,
+        code: 'space_not_accessible',
+        accessible_spaces: accessible,
       }),
       { status: 403, headers: { 'content-type': 'application/json' } },
     ),
@@ -63,9 +63,9 @@ export function subprojectDenial(slug: string, accessible: string[]): HTTPExcept
 /**
  * Assert this caller may use `slug`, or throw the 403 they can act on.
  * `declaredSlugs` is the project's full declared set — it seeds the
- * `accessible_subprojects` hint so the denial names what they COULD pick.
+ * `accessible_spaces` hint so the denial names what they COULD pick.
  */
-export async function assertSubprojectAccessible(
+export async function assertSpaceAccessible(
   c: Context,
   loaded: LoadedProject,
   projectId: string,
@@ -73,19 +73,19 @@ export async function assertSubprojectAccessible(
   declaredSlugs: readonly string[] = [slug],
 ): Promise<void> {
   const candidates = [...new Set([slug, ...declaredSlugs])];
-  const accessible = await accessibleSubprojectSlugs(c, loaded, projectId, candidates);
+  const accessible = await accessibleSpaceSlugs(c, loaded, projectId, candidates);
   if (accessible.includes(slug)) return;
-  throw subprojectDenial(
+  throw spaceDenial(
     slug,
     accessible.filter((s) => s !== slug),
   );
 }
 
-/** What the session inventory needs to fold subproject rows: which slugs the
+/** What the session inventory needs to fold space rows: which slugs the
  *  viewer may see, and which of them share their sessions. */
-export interface SubprojectViewerAccess {
+export interface SpaceViewerAccess {
   accessible: Set<string>;
-  /** Declared subprojects whose `sessions:` mode is `shared`. */
+  /** Declared spaces whose `sessions:` mode is `shared`. */
   shared: Set<string>;
 }
 
@@ -93,21 +93,21 @@ export interface SubprojectViewerAccess {
  * Resolve both halves for a set of slugs observed on session rows.
  *
  * The manifest read only happens because of the `shared` half, and this is
- * called only when some row actually carries a subproject — an ordinary project
+ * called only when some row actually carries a space — an ordinary project
  * pays nothing. A slug that is no longer declared (its block was deleted) keeps
  * whatever grant verdict it has: a manager still sees the historical rows, a
  * member without a grant does not, which is the documented delete behavior.
  */
-export async function subprojectViewerAccess(
+export async function spaceViewerAccess(
   c: Context,
   loaded: LoadedProject,
   projectId: string,
   slugs: readonly string[],
-): Promise<SubprojectViewerAccess> {
+): Promise<SpaceViewerAccess> {
   if (slugs.length === 0) return { accessible: new Set(), shared: new Set() };
   const [accessible, declared] = await Promise.all([
-    accessibleSubprojectSlugs(c, loaded, projectId, slugs),
-    loadSubprojectModes(loaded.row),
+    accessibleSpaceSlugs(c, loaded, projectId, slugs),
+    loadSpaceModes(loaded.row),
   ]);
   const shared = new Set<string>();
   for (const slug of slugs) {
@@ -117,14 +117,14 @@ export async function subprojectViewerAccess(
 }
 
 /** slug → `sessions:` mode, straight from the manifest. Never throws: an
- *  unreadable manifest yields an empty map, i.e. every subproject behaves as
+ *  unreadable manifest yields an empty map, i.e. every space behaves as
  *  `private` — the fail-closed direction. */
-export async function loadSubprojectModes(
+export async function loadSpaceModes(
   project: ProjectRow,
-): Promise<Map<string, SubprojectSessionsMode>> {
+): Promise<Map<string, SpaceSessionsMode>> {
   try {
     const gitProject = await withProjectGitAuth(project);
-    const loaded = await loadProjectSubprojects(gitProject);
+    const loaded = await loadProjectSpaces(gitProject);
     return new Map(loaded.specs.map((spec) => [spec.slug, spec.sessions]));
   } catch {
     return new Map();

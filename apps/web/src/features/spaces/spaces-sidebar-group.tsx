@@ -1,17 +1,17 @@
 'use client';
 
 /**
- * The `Subprojects` group in the project sidebar — between the nav group and
+ * The `Spaces` group in the project sidebar — between the nav group and
  * the session list.
  *
- * Each subproject row is a folder that opens: its sessions nest under it as a
+ * Each space row is a folder that opens: its sessions nest under it as a
  * sub-menu, and the main `Sessions` list below shows only sessions filed
- * under no subproject (`ProjectSessionList unfiledOnly`). One inventory
+ * under no space (`ProjectSessionList unfiledOnly`). One inventory
  * query feeds both — this group reads the same `qk.project.sessions(id)`
  * entry the list owns and partitions it client-side, so nesting costs no
  * extra request and the two can never disagree about a row.
  *
- * A subproject is a closed IAM object (`object_policies.subproject = closed`),
+ * A space is a closed IAM object (`object_policies.space = closed`),
  * so the list is already the caller's accessible set. The group disappears
  * entirely for a member with none and no `project.customize.write` — an empty
  * header would be chrome advertising a feature they cannot reach.
@@ -47,23 +47,23 @@ import { useQuery } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import { CreateSubprojectModal } from './create-subproject-modal';
-import { useProjectSubprojects } from './subprojects-data';
+import { CreateSpaceModal } from './create-space-modal';
+import { useProjectSpaces } from './spaces-data';
 
 /** Rows shown under a folder before "View all" takes over. */
 const NESTED_LIMIT = 6;
 
-export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
+export function SpacesSidebarGroup({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
   const canCreate = canWrite.allowed === true;
   const [createOpen, setCreateOpen] = useState(false);
-  // Folders the person toggled by hand. The active subproject opens itself.
+  // Folders the person toggled by hand. The active space opens itself.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
 
-  const query = useProjectSubprojects(projectId);
-  const subprojects = query.data?.subprojects ?? [];
-  const isEmpty = subprojects.length === 0;
+  const query = useProjectSpaces(projectId);
+  const spaces = query.data?.spaces ?? [];
+  const isEmpty = spaces.length === 0;
 
   // The SAME entry `ProjectSessionList` polls — never a second request.
   const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
@@ -82,10 +82,10 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
   const sessionsBySlug = useMemo(() => {
     const map = new Map<string, ProjectSession[]>();
     for (const session of sessionsQuery.data ?? []) {
-      if (!session.subproject) continue;
-      const bucket = map.get(session.subproject);
+      if (!session.space) continue;
+      const bucket = map.get(session.space);
       if (bucket) bucket.push(session);
-      else map.set(session.subproject, [session]);
+      else map.set(session.space, [session]);
     }
     for (const [slug, list] of map) map.set(slug, sortSessionsByLastActivity(list));
     return map;
@@ -102,15 +102,15 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
     <SidebarGroup className="shrink-0 py-0">
       <div className="flex h-8 w-full shrink-0 flex-row items-center gap-1 px-2">
         <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm font-medium">
-          Subprojects
+          Spaces
         </span>
         {canCreate ? (
-          <Hint label="New subproject">
+          <Hint label="New space">
             <Button
               type="button"
               variant="ghost"
               size="icon-xs"
-              aria-label="New subproject"
+              aria-label="New space"
               className="text-muted-foreground hover:text-foreground shrink-0 transition-none"
               onClick={() => setCreateOpen(true)}
             >
@@ -131,33 +131,33 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
         </div>
       ) : (
         <SidebarMenu>
-          {subprojects.map((subproject) => {
-            const href = `/projects/${projectId}/subprojects/${subproject.slug}`;
-            const sessions = sessionsBySlug.get(subproject.slug) ?? [];
+          {spaces.map((space) => {
+            const href = `/projects/${projectId}/spaces/${space.slug}`;
+            const sessions = sessionsBySlug.get(space.slug) ?? [];
             const holdsActive =
               activeSessionId !== null &&
               sessions.some((session) => session.session_id === activeSessionId);
             const isActive = pathname === href;
             // Open by hand, or because the person is inside it right now.
-            const open = toggled[subproject.slug] ?? (isActive || holdsActive);
+            const open = toggled[space.slug] ?? (isActive || holdsActive);
             const shown = sessions.slice(0, NESTED_LIMIT);
             const rest = sessions.length - shown.length;
             return (
-              <SidebarMenuItem key={subproject.slug}>
+              <SidebarMenuItem key={space.slug}>
                 <SidebarMenuButton
                   asChild
                   isActive={isActive}
-                  tooltip={subproject.name}
+                  tooltip={space.name}
                   // `px-2`, not the menu button's `px-3`: the group header above and
                   // the session rows below both sit at `px-2`, so the folder's 16px
-                  // box starts on the same line as the "Subprojects" text.
+                  // box starts on the same line as the "Spaces" text.
                   className="text-sidebar-foreground px-2"
                 >
                   <HoverPrefetchLink href={href}>
                     <span className="shrink-0">
                       <FolderSimpleIcon />
                     </span>
-                    <span className="truncate">{subproject.name}</span>
+                    <span className="truncate">{space.name}</span>
                   </HoverPrefetchLink>
                 </SidebarMenuButton>
                 {sessions.length > 0 ? (
@@ -166,10 +166,10 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
                     // header's `+` (a 24px `icon-xs` button inside `px-2`).
                     className="right-2.5"
                     showOnHover={!open}
-                    aria-label={open ? `Collapse ${subproject.name}` : `Expand ${subproject.name}`}
+                    aria-label={open ? `Collapse ${space.name}` : `Expand ${space.name}`}
                     aria-expanded={open}
                     onClick={() =>
-                      setToggled((current) => ({ ...current, [subproject.slug]: !open }))
+                      setToggled((current) => ({ ...current, [space.slug]: !open }))
                     }
                   >
                     <CaretRightIcon
@@ -215,7 +215,7 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
       )}
 
       {canCreate ? (
-        <CreateSubprojectModal
+        <CreateSpaceModal
           projectId={projectId}
           open={createOpen}
           onOpenChange={setCreateOpen}

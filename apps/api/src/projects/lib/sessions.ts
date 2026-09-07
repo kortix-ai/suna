@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { SubprojectSpec } from '../subprojects';
+import type { SpaceSpec } from '../spaces';
 import {
   projectSessionConnectorBindings,
   projectSessionGrants,
@@ -456,15 +456,15 @@ export async function buildSessionSandboxEnvVars(input: {
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
   workspaceMode?: WorkspaceModeV2 | null;
-  /** The manifest subproject slug this session runs inside (spec §7).
+  /** The manifest space slug this session runs inside (spec §7).
    *
    *  ONLY the create path passes it — its `project_sessions` row may not exist
    *  yet when this runs. Every other caller (restart, open, ensure-runtime,
    *  env-sync, the platform session service) leaves it `undefined` and the
-   *  session's own row is read below, so a restarted subproject session keeps
+   *  session's own row is read below, so a restarted space session keeps
    *  its envelope without each of those call sites having to remember. Pass
-   *  `null` to force "no subproject". */
-  subproject?: string | null;
+   *  `null` to force "no space". */
+  space?: string | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -479,12 +479,12 @@ export async function buildSessionSandboxEnvVars(input: {
   // Per-session policy, read by sessionId inside the builder so all call sites
   // (create, restart, open/ensure, env-sync) are covered — no caller can forget
   // them. Read BEFORE the git work below because the compiled config depends on
-  // this row's `subproject`.
+  // this row's `space`.
   const [sessionPolicyRow] = await db
     .select({
       secretsAllowlist: projectSessions.secretsAllowlist,
       createdBy: projectSessions.createdBy,
-      subproject: projectSessions.subproject,
+      space: projectSessions.space,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
@@ -492,8 +492,8 @@ export async function buildSessionSandboxEnvVars(input: {
 
   // `undefined` = "ask the row" (every caller but create); an explicit value
   // wins because on create the row can still be racing this call.
-  const subprojectSlug =
-    input.subproject !== undefined ? input.subproject : (sessionPolicyRow?.subproject ?? null);
+  const spaceSlug =
+    input.space !== undefined ? input.space : (sessionPolicyRow?.space ?? null);
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
   // config the sandbox receives sealed (see compile-agent-config.ts). `null`
@@ -513,19 +513,19 @@ export async function buildSessionSandboxEnvVars(input: {
       manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
-    const subprojectOpts = { subproject: subprojectSlug };
+    const spaceOpts = { space: spaceSlug };
     compiledAgentConfig =
       !workspaceModeAllowsFullRepository(input.workspaceMode)
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
             input.agentName,
             input.baseRef,
-            subprojectOpts,
+            spaceOpts,
           )
           : await resolveCompiledAgentConfigForSession(
               gitProject,
               input.baseRef,
-              subprojectOpts,
+              spaceOpts,
             ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
@@ -691,7 +691,7 @@ export async function buildSessionSandboxEnvVars(input: {
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
       gitDeltaBundleRemote: input.gitDeltaBundleRemote,
       opencodeConfigDir: input.opencodeConfigDir,
-      subproject: subprojectSlug,
+      space: spaceSlug,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -1011,42 +1011,42 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  // The subproject join. Declaration is re-checked HERE, not only in the route,
+  // The space join. Declaration is re-checked HERE, not only in the route,
   // because the route is not the only caller: `fireGitTrigger` passes a
-  // `subproject` straight from the manifest, and a stale one must not persist a
+  // `space` straight from the manifest, and a stale one must not persist a
   // row pointing at a block that no longer exists. Authorization stays with the
   // caller — a trigger fire is manager tier by construction (spec §5.5).
-  const subproject = normalizeString(body.subproject);
-  let subprojectSpec: SubprojectSpec | null = null;
-  if (subproject) {
-    const { loadProjectSubprojects } = await import('../subprojects');
-    const declared = await loadProjectSubprojects(project);
-    const spec = declared.specs.find((s) => s.slug === subproject);
+  const space = normalizeString(body.space);
+  let spaceSpec: SpaceSpec | null = null;
+  if (space) {
+    const { loadProjectSpaces } = await import('../spaces');
+    const declared = await loadProjectSpaces(project);
+    const spec = declared.specs.find((s) => s.slug === space);
     if (!spec) {
       return {
         error: {
           status: 400,
           body: {
-            error: `Subproject "${subproject}" is not declared in this project's manifest`,
-            code: 'SUBPROJECT_NOT_DECLARED',
+            error: `Space "${space}" is not declared in this project's manifest`,
+            code: 'SPACE_NOT_DECLARED',
           },
         },
       };
     }
-    // The subproject's `agent` is a DEFAULT: it fills in only when the caller
+    // The space's `agent` is a DEFAULT: it fills in only when the caller
     // named none. The agent gate in the create route already ran on the same
     // resolution, so this cannot land on an agent that gate never approved.
     if (!normalizeString(body.agent_name ?? body.agentName) && spec.agent) {
       body.agent_name = spec.agent;
     }
-    subprojectSpec = spec;
+    spaceSpec = spec;
   }
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: true,
     rethrowReadErrors: true,
   });
-  // The usability rule (spec 2026-09-06 §2): an agent a subproject file owns
-  // runs only in that subproject and in the ones that reference it; a
+  // The usability rule (spec 2026-09-06 §2): an agent a space file owns
+  // runs only in that space and in the ones that reference it; a
   // project-level session runs global agents only. Checked BEFORE the IAM
   // gate so the refusal names the real problem ("not here", not "not
   // granted"). A name declared nowhere stays AGENT_NOT_DECLARED's, as before.
@@ -1057,16 +1057,16 @@ export async function createProjectSession(input: {
       !isMetaAgentName(requested) &&
       loadedAgents.specs.some((spec) => spec.name === requested)
     ) {
-      const { agentUsableIn, usableAgentNames } = await import('../subprojects');
-      if (!agentUsableIn(loadedAgents, subprojectSpec, requested)) {
-        const owner = loadedAgents.specs.find((spec) => spec.name === requested)?.subproject;
+      const { agentUsableIn, usableAgentNames } = await import('../spaces');
+      if (!agentUsableIn(loadedAgents, spaceSpec, requested)) {
+        const owner = loadedAgents.specs.find((spec) => spec.name === requested)?.space;
         return {
           error: {
             status: 400,
             body: {
-              error: `Agent "${requested}" is not usable ${subproject ? `in subproject "${subproject}"` : 'at the project level'} — it is declared by subproject "${owner}" (kortix-${owner}.yaml). Reference it there with \`agents.${requested}: { from: ${owner} }\`, or pick one of: ${usableAgentNames(loadedAgents, subprojectSpec).join(', ') || '(none)'}`,
-              code: 'AGENT_NOT_IN_SUBPROJECT',
-              usable_agents: usableAgentNames(loadedAgents, subprojectSpec),
+              error: `Agent "${requested}" is not usable ${space ? `in space "${space}"` : 'at the project level'} — it is declared by space "${owner}" (kortix-${owner}.yaml). Reference it there with \`agents.${requested}: { from: ${owner} }\`, or pick one of: ${usableAgentNames(loadedAgents, spaceSpec).join(', ') || '(none)'}`,
+              code: 'AGENT_NOT_IN_SPACE',
+              usable_agents: usableAgentNames(loadedAgents, spaceSpec),
             },
           },
         };
@@ -1656,7 +1656,7 @@ export async function createProjectSession(input: {
         // Do not set opencodeSessionId during wrapper-session creation.
         // Runtime root discovery persists it only after OpenCode creates its root.
         agentName,
-        subproject,
+        space,
         status: 'provisioning',
         // Sessions are private to their creator by default; share via the
         // session-header control (visibility = project | restricted).

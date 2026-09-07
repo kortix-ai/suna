@@ -75,7 +75,7 @@ import { ArrowElbowDownRightIcon, KeyIcon, PlugIcon, PlusIcon, XIcon } from '@ph
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 
-import { SUBPROJECT_OBJECT_TYPE } from '@/features/subprojects/subprojects-data';
+import { SPACE_OBJECT_TYPE } from '@/features/spaces/spaces-data';
 
 import { endOfLocalDayIso, isoToDateInputValue, removeAccessCopy } from './access-shared';
 import {
@@ -117,8 +117,8 @@ export interface AccessDialogCurrent {
   /** `'all'` (no resource grants) or the agent ids currently granted. */
   agentIds?: string[] | 'all';
   /** Same shape, for the second closed object type. `'all'` (or omitted)
-   *  means "no subproject grant rows exist for this principal". */
-  subprojectIds?: string[] | 'all';
+   *  means "no space grant rows exist for this principal". */
+  spaceIds?: string[] | 'all';
   expiresAt?: string | null;
   /**
    * The principal's EXISTING custom-role assignment id at this scope. Supply it
@@ -177,12 +177,12 @@ export interface AccessDialogProps {
    */
   initialAgentIds?: string[];
   /**
-   * Grant mode only: open with the subproject picker already narrowed to
-   * these subprojects. A subproject's own page grants access to THAT
-   * subproject, exactly as an agent's page does with `initialAgentIds`.
+   * Grant mode only: open with the space picker already narrowed to
+   * these spaces. A space's own page grants access to THAT
+   * space, exactly as an agent's page does with `initialAgentIds`.
    * Ignored in every other mode, which seeds from `current`.
    */
-  initialSubprojectIds?: string[];
+  initialSpaceIds?: string[];
   onDone?: (result: AccessDialogResult) => void;
 }
 
@@ -244,12 +244,12 @@ export interface AccessDraft {
   role: RoleValue;
   agents: AgentSelection;
   /**
-   * The subproject selection. Optional so a caller that does not edit
-   * subprojects (an account-scope draft, a test) is unchanged — an omitted
-   * selection reads as `ALL_SUBPROJECTS`, which against an empty
-   * `current.subprojectIds` diffs to nothing at all.
+   * The space selection. Optional so a caller that does not edit
+   * spaces (an account-scope draft, a test) is unchanged — an omitted
+   * selection reads as `ALL_SPACES`, which against an empty
+   * `current.spaceIds` diffs to nothing at all.
    */
-  subprojects?: AgentSelection;
+  spaces?: AgentSelection;
   /** `<input type="date">` value, `''` for never. */
   expiresAt: string;
 }
@@ -260,9 +260,9 @@ export interface AccessDraftDiff {
   agentsAdded: string[];
   agentsRemoved: string[];
   agentsChanged: boolean;
-  subprojectsAdded: string[];
-  subprojectsRemoved: string[];
-  subprojectsChanged: boolean;
+  spacesAdded: string[];
+  spacesRemoved: string[];
+  spacesChanged: boolean;
   /** false when nothing at all changed — Save is a no-op. */
   dirty: boolean;
 }
@@ -276,22 +276,22 @@ export function diffAccessDraft(current: AccessDialogCurrent, next: AccessDraft)
   const expiryChanged = isoToDateInputValue(current.expiresAt) !== next.expiresAt;
   const { add, remove } = diffAgentGrants(current.agentIds, next.agents);
   const agentsChanged = add.length > 0 || remove.length > 0;
-  // Object grants are one generic table keyed by object type, so a subproject
+  // Object grants are one generic table keyed by object type, so a space
   // diffs by exactly the same rules as an agent — `diffAgentGrants` is reused
   // rather than copied.
-  const subprojectDiff = diffAgentGrants(current.subprojectIds, next.subprojects ?? ALL_AGENTS);
-  const subprojectsChanged =
-    subprojectDiff.add.length > 0 || subprojectDiff.remove.length > 0;
+  const spaceDiff = diffAgentGrants(current.spaceIds, next.spaces ?? ALL_AGENTS);
+  const spacesChanged =
+    spaceDiff.add.length > 0 || spaceDiff.remove.length > 0;
   return {
     roleChanged,
     expiryChanged,
     agentsAdded: add,
     agentsRemoved: remove,
     agentsChanged,
-    subprojectsAdded: subprojectDiff.add,
-    subprojectsRemoved: subprojectDiff.remove,
-    subprojectsChanged,
-    dirty: roleChanged || expiryChanged || agentsChanged || subprojectsChanged,
+    spacesAdded: spaceDiff.add,
+    spacesRemoved: spaceDiff.remove,
+    spacesChanged,
+    dirty: roleChanged || expiryChanged || agentsChanged || spacesChanged,
   };
 }
 
@@ -405,7 +405,7 @@ interface AccessDraftState {
   principals: PrincipalSelection;
   role: RoleValue;
   agents: AgentSelection;
-  subprojects: AgentSelection;
+  spaces: AgentSelection;
   /** `<input type="date">` value. */
   expires: string;
   attachProjectId: string;
@@ -418,7 +418,7 @@ function initialDraftState(
   mode: AccessDialogMode,
   roleScope: 'account' | 'project' | null,
   initialAgentIds?: string[],
-  initialSubprojectIds?: string[],
+  initialSpaceIds?: string[],
 ): AccessDraftState {
   const role: RoleValue =
     mode.kind === 'edit'
@@ -435,11 +435,11 @@ function initialDraftState(
         : mode.kind === 'grant' && initialAgentIds && initialAgentIds.length > 0
           ? { mode: 'subset', ids: [...initialAgentIds] }
           : ALL_AGENTS,
-    subprojects:
+    spaces:
       mode.kind === 'edit'
-        ? agentSelectionFromCurrent(mode.current.subprojectIds)
-        : mode.kind === 'grant' && initialSubprojectIds && initialSubprojectIds.length > 0
-          ? { mode: 'subset', ids: [...initialSubprojectIds] }
+        ? agentSelectionFromCurrent(mode.current.spaceIds)
+        : mode.kind === 'grant' && initialSpaceIds && initialSpaceIds.length > 0
+          ? { mode: 'subset', ids: [...initialSpaceIds] }
           : ALL_AGENTS,
     expires: mode.kind === 'edit' ? isoToDateInputValue(mode.current.expiresAt) : '',
     attachProjectId: '',
@@ -464,7 +464,7 @@ export function AccessDialog({
   excludeUserIds,
   inheritedFrom,
   initialAgentIds,
-  initialSubprojectIds,
+  initialSpaceIds,
   onDone,
 }: AccessDialogProps) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -479,19 +479,19 @@ export function AccessDialog({
   // reopen. Closing never re-seeds, so the exit animation plays over the
   // content the person was looking at.
   const [draft, setDraft] = useState<AccessDraftState>(() =>
-    initialDraftState(mode, roleScope, initialAgentIds, initialSubprojectIds),
+    initialDraftState(mode, roleScope, initialAgentIds, initialSpaceIds),
   );
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setDraft(initialDraftState(mode, roleScope, initialAgentIds, initialSubprojectIds));
+    if (open) setDraft(initialDraftState(mode, roleScope, initialAgentIds, initialSpaceIds));
   }
 
   const {
     principals,
     role,
     agents,
-    subprojects,
+    spaces,
     expires,
     attachProjectId,
     projectGrants,
@@ -502,10 +502,10 @@ export function AccessDialog({
   const setRole = (next: RoleValue) => setDraft((d) => ({ ...d, role: next }));
   const setAgents = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
     setDraft((d) => ({ ...d, agents: typeof next === 'function' ? next(d.agents) : next }));
-  const setSubprojects = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
+  const setSpaces = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
     setDraft((d) => ({
       ...d,
-      subprojects: typeof next === 'function' ? next(d.subprojects) : next,
+      spaces: typeof next === 'function' ? next(d.spaces) : next,
     }));
   const setExpires = (next: string) => setDraft((d) => ({ ...d, expires: next }));
   const setAttachProjectId = (next: string) => setDraft((d) => ({ ...d, attachProjectId: next }));
@@ -547,15 +547,15 @@ export function AccessDialog({
     () => resourceGrantsQuery.data?.resources.agents ?? [],
     [resourceGrantsQuery.data],
   );
-  // The second closed object type (`object_policies.subproject = closed`), so
+  // The second closed object type (`object_policies.space = closed`), so
   // it gets the same picker as agents and the same "All means one grant per
   // one that exists today" rule. The section hides when the project declares
   // none — an empty checklist under a heading is a question with no answers.
-  const projectSubprojects = useMemo<ProjectResourceItem[]>(
-    () => resourceGrantsQuery.data?.resources.subprojects ?? [],
+  const projectSpaces = useMemo<ProjectResourceItem[]>(
+    () => resourceGrantsQuery.data?.resources.spaces ?? [],
     [resourceGrantsQuery.data],
   );
-  const showSubprojects = showResourcePickers && projectSubprojects.length > 0;
+  const showSpaces = showResourcePickers && projectSpaces.length > 0;
 
   const selectedAgentDeclares = useMemo(() => {
     if (agents.mode !== 'subset' || agents.ids.length === 0) return null;
@@ -679,40 +679,40 @@ export function AccessDialog({
     for (const row of rows) await revokeAssignment(accountId, row.assignment_id);
   }
 
-  /** Give one principal access to ONE subproject. Identical to `assignAgent`
+  /** Give one principal access to ONE space. Identical to `assignAgent`
    *  but for the object type — the assignment table is generic over it, and a
-   *  subproject grant does NOT imply the subproject's agent (spec §2): the
+   *  space grant does NOT imply the space's agent (spec §2): the
    *  person needs both, which is why this dialog offers both. */
-  function assignSubproject(
+  function assignSpace(
     principalType: 'member' | 'group',
     principalId: string,
     pid: string,
-    subprojectId: string,
+    spaceId: string,
     expiresIso: string | undefined,
   ) {
     return createAssignment(accountId, {
       principal: { type: principalKind(principalType), id: principalId },
       roleKey: OBJECT_ASSIGNMENT_ROLE_KEY,
       scope: { type: 'project', id: pid },
-      object: { type: SUBPROJECT_OBJECT_TYPE, id: subprojectId },
+      object: { type: SPACE_OBJECT_TYPE, id: spaceId },
       ...(expiresIso ? { expiresAt: expiresIso } : {}),
     });
   }
 
-  /** Take one subproject away — the `unassignAgent` read-back, by object type. */
-  async function unassignSubproject(
+  /** Take one space away — the `unassignAgent` read-back, by object type. */
+  async function unassignSpace(
     principalType: 'member' | 'group',
     principalId: string,
     pid: string,
-    subprojectId: string,
+    spaceId: string,
   ) {
     const rows = await listAssignments(accountId, {
       principalType: principalKind(principalType),
       principalId,
       scopeType: 'project',
       scopeId: pid,
-      objectType: SUBPROJECT_OBJECT_TYPE,
-      objectId: subprojectId,
+      objectType: SPACE_OBJECT_TYPE,
+      objectId: spaceId,
     });
     for (const row of rows) await revokeAssignment(accountId, row.assignment_id);
   }
@@ -798,10 +798,10 @@ export function AccessDialog({
     const projectBuiltin = (builtin ?? 'member') as ProjectRole;
     const pid = scope.projectId;
     const agentIdsToGrant = effectiveAgentIds(projectBuiltin, roleId, agents, projectAgents);
-    // Same rule, same helper: subprojects are closed by default too, so "All"
-    // for a plain member is one grant per subproject that exists today.
-    const subprojectIdsToGrant = showSubprojects
-      ? effectiveAgentIds(projectBuiltin, roleId, subprojects, projectSubprojects)
+    // Same rule, same helper: spaces are closed by default too, so "All"
+    // for a plain member is one grant per space that exists today.
+    const spaceIdsToGrant = showSpaces
+      ? effectiveAgentIds(projectBuiltin, roleId, spaces, projectSpaces)
       : [];
 
     for (const userId of principals.memberIds) {
@@ -814,8 +814,8 @@ export function AccessDialog({
           for (const resourceId of agentIdsToGrant) {
             await assignAgent('member', userId, pid, resourceId, expiresIso);
           }
-          for (const resourceId of subprojectIdsToGrant) {
-            await assignSubproject('member', userId, pid, resourceId, expiresIso);
+          for (const resourceId of spaceIdsToGrant) {
+            await assignSpace('member', userId, pid, resourceId, expiresIso);
           }
         },
       });
@@ -830,8 +830,8 @@ export function AccessDialog({
           for (const resourceId of agentIdsToGrant) {
             await assignAgent('group', groupId, pid, resourceId, expiresIso);
           }
-          for (const resourceId of subprojectIdsToGrant) {
-            await assignSubproject('group', groupId, pid, resourceId, expiresIso);
+          for (const resourceId of spaceIdsToGrant) {
+            await assignSpace('group', groupId, pid, resourceId, expiresIso);
           }
         },
       });
@@ -853,14 +853,14 @@ export function AccessDialog({
       agents.mode === 'all' && builtin !== 'manager' && !isCustom
         ? { mode: 'subset', ids: projectAgents.map((a) => a.id) }
         : agents;
-    const effectiveDraftSubprojects: AgentSelection =
-      subprojects.mode === 'all' && builtin !== 'manager' && !isCustom && showSubprojects
-        ? { mode: 'subset', ids: projectSubprojects.map((s) => s.id) }
-        : subprojects;
+    const effectiveDraftSpaces: AgentSelection =
+      spaces.mode === 'all' && builtin !== 'manager' && !isCustom && showSpaces
+        ? { mode: 'subset', ids: projectSpaces.map((s) => s.id) }
+        : spaces;
     const diff = diffAccessDraft(current, {
       role,
       agents: effectiveDraftAgents,
-      subprojects: effectiveDraftSubprojects,
+      spaces: effectiveDraftSpaces,
       expiresAt: expires,
     });
     if (!diff.dirty) return [];
@@ -922,11 +922,11 @@ export function AccessDialog({
           for (const resourceId of diff.agentsRemoved) {
             await unassignAgent(principal.type, principal.id, pid, resourceId);
           }
-          for (const resourceId of diff.subprojectsAdded) {
-            await assignSubproject(principal.type, principal.id, pid, resourceId, expiresIso);
+          for (const resourceId of diff.spacesAdded) {
+            await assignSpace(principal.type, principal.id, pid, resourceId, expiresIso);
           }
-          for (const resourceId of diff.subprojectsRemoved) {
-            await unassignSubproject(principal.type, principal.id, pid, resourceId);
+          for (const resourceId of diff.spacesRemoved) {
+            await unassignSpace(principal.type, principal.id, pid, resourceId);
           }
         },
       },
@@ -1102,7 +1102,7 @@ export function AccessDialog({
   // ── Submit gate ───────────────────────────────────────────────────────
   const editDiff =
     mode.kind === 'edit'
-      ? diffAccessDraft(mode.current, { role, agents, subprojects, expiresAt: expires })
+      ? diffAccessDraft(mode.current, { role, agents, spaces, expiresAt: expires })
       : null;
   const canSubmit =
     !pending &&
@@ -1301,45 +1301,45 @@ export function AccessDialog({
               </Field>
             ) : null}
 
-            {/* 4b. Subprojects (project scope) — the same control as Agents,
+            {/* 4b. Spaces (project scope) — the same control as Agents,
                 because they are the same thing to the authorization engine:
                 a closed object type granted by one assignment row. A grant
-                here does NOT hand over the subproject's default agent; that
+                here does NOT hand over the space's default agent; that
                 is the picker directly above, which is why both are offered. */}
-            {showSubprojects ? (
+            {showSpaces ? (
               <Field className="gap-1.5">
-                <FieldLabel>Subprojects</FieldLabel>
+                <FieldLabel>Spaces</FieldLabel>
                 <Tabs
-                  value={subprojects.mode}
+                  value={spaces.mode}
                   onValueChange={(next) =>
-                    setSubprojects(
-                      next === 'all' ? ALL_AGENTS : { mode: 'subset', ids: subprojects.ids },
+                    setSpaces(
+                      next === 'all' ? ALL_AGENTS : { mode: 'subset', ids: spaces.ids },
                     )
                   }
                 >
                   <TabsListCompact>
-                    <TabsTriggerCompact value="all">All subprojects</TabsTriggerCompact>
+                    <TabsTriggerCompact value="all">All spaces</TabsTriggerCompact>
                     <TabsTriggerCompact value="subset">Only these…</TabsTriggerCompact>
                   </TabsListCompact>
                 </Tabs>
-                {subprojects.mode === 'all' ? (
+                {spaces.mode === 'all' ? (
                   <FieldDescription>
-                    {`Every subproject in this project today (${projectSubprojects.length}). Subprojects added later need a new grant — a subproject with no grant rows is the manager tier's only.`}
+                    {`Every space in this project today (${projectSpaces.length}). Spaces added later need a new grant — a space with no grant rows is the manager tier's only.`}
                   </FieldDescription>
                 ) : (
                   <div className="border-border max-h-40 overflow-y-auto rounded-md border p-1">
-                    {projectSubprojects.map((subproject) => (
+                    {projectSpaces.map((space) => (
                       <Checkbox
-                        key={subproject.id}
-                        label={subproject.name}
-                        checked={subprojects.ids.includes(subproject.id)}
+                        key={space.id}
+                        label={space.name}
+                        checked={spaces.ids.includes(space.id)}
                         disabled={pending}
                         onCheckedChange={() =>
-                          setSubprojects((prev) => ({
+                          setSpaces((prev) => ({
                             mode: 'subset',
-                            ids: prev.ids.includes(subproject.id)
-                              ? prev.ids.filter((x) => x !== subproject.id)
-                              : [...prev.ids, subproject.id],
+                            ids: prev.ids.includes(space.id)
+                              ? prev.ids.filter((x) => x !== space.id)
+                              : [...prev.ids, space.id],
                           }))
                         }
                       />

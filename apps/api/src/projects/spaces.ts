@@ -1,30 +1,30 @@
 /**
- * Subprojects — the manifest half.
+ * Spaces — the manifest half.
  *
- * A subproject is a named container INSIDE a project: it groups sessions, owns
+ * A space is a named container INSIDE a project: it groups sessions, owns
  * the triggers that name it, may declare agents of its own, and is an IAM
- * object granted exactly like an agent. Each subproject is ONE FILE, `kortix-<slug>.yaml`, beside the
- * root manifest (spec `docs/specs/2026-09-06-subproject-files-and-scoped-agents.md`);
+ * object granted exactly like an agent. Each space is ONE FILE, `kortix-<slug>.yaml`, beside the
+ * root manifest (spec `docs/specs/2026-09-06-space-files-and-scoped-agents.md`);
  * the slug is the filename. The database holds only the session join
- * (`project_sessions.subproject`) and the grants (`role_assignments`,
- * `object_type = 'subproject'`).
+ * (`project_sessions.space`) and the grants (`role_assignments`,
+ * `object_type = 'space'`).
  *
  * This module is the direct analogue of `./agents.ts` for those files: find
  * them, parse them, load them for a project, and serialize one back.
- * Authorization lives next door in `lib/subproject-access.ts` — nothing here
+ * Authorization lives next door in `lib/space-access.ts` — nothing here
  * is a permission.
  *
- * A v1 (kortix.toml) project has no subprojects: the files are not even
+ * A v1 (kortix.toml) project has no spaces: the files are not even
  * listed, the same back-compat rule every other v2-only block follows.
  */
 import { posix as posixPath } from 'node:path';
 import {
-  SUBPROJECT_SESSIONS_MODES_V2,
+  SPACE_SESSIONS_MODES_V2,
   isAgentReferenceV2,
   parseManifestText,
-  subprojectFilePath,
-  subprojectSlugFromPath,
-  validateSubprojectFileV2,
+  spaceFilePath,
+  spaceSlugFromPath,
+  validateSpaceFileV2,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
 import { extractAgents, type AgentSpec, type LoadedAgents } from './agents';
@@ -33,9 +33,9 @@ import { listRepoFiles, readRepoFile } from './git';
 import type { ProjectFileEntry } from './git/types';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
-export type SubprojectSessionsMode = (typeof SUBPROJECT_SESSIONS_MODES_V2)[number];
+export type SpaceSessionsMode = (typeof SPACE_SESSIONS_MODES_V2)[number];
 
-export interface SubprojectSpec {
+export interface SpaceSpec {
   /** URL-safe slug — the filename, unique per project, and the IAM object id. */
   slug: string;
   /** The file it lives in, repo-relative: `kortix-<slug>.yaml` (or `<dir>/kortix-<slug>.yaml`
@@ -47,39 +47,39 @@ export interface SubprojectSpec {
   /** Default agent for sessions started here. A default, not a binding. */
   agent: string | null;
   /** `private` (default) keeps the ordinary per-session model; `shared` makes
-   *  every session in the subproject readable by everyone granted it. */
-  sessions: SubprojectSessionsMode;
+   *  every session in the space readable by everyone granted it. */
+  sessions: SpaceSessionsMode;
   /**
    * The agents usable here beyond the globals — the ones this file OWNS
    * (declares) and the ones it REFERENCES (`agents.<name>: { from: <slug> }`),
    * in file order. A host builds the roster as globals + these.
    */
   agents: string[];
-  /** The agents this file declares. Each carries `subproject = slug`. */
+  /** The agents this file declares. Each carries `space = slug`. */
   ownedAgents: AgentSpec[];
-  /** `agents.<name>: { from }` entries — use imported from another subproject. */
+  /** `agents.<name>: { from }` entries — use imported from another space. */
   references: Array<{ name: string; from: string }>;
   /**
    * The raw `agents:` map exactly as written, or null when absent. Kept so a
-   * rewrite of the other fields (`subprojectSpecToFileEntry`) never reformats
+   * rewrite of the other fields (`spaceSpecToFileEntry`) never reformats
    * or drops a block it does not understand. Never serialized to the API.
    */
   agentsRaw: Record<string, unknown> | null;
 }
 
-export interface SubprojectParseError {
+export interface SpaceParseError {
   slug: string;
   path: string;
   error: string;
 }
 
-export interface LoadedSubprojects {
-  specs: SubprojectSpec[];
-  errors: SubprojectParseError[];
+export interface LoadedSpaces {
+  specs: SpaceSpec[];
+  errors: SpaceParseError[];
 }
 
-/** One subproject file as read from the repo, before parsing. */
-export interface SubprojectFile {
+/** One space file as read from the repo, before parsing. */
+export interface SpaceFile {
   slug: string;
   path: string;
   content: string;
@@ -101,22 +101,22 @@ function dirOf(filePath: string): string {
 }
 
 /** The directory the root manifest lives in — `''` for the repo root. This is
- *  where subproject files are looked for; nowhere else. */
+ *  where space files are looked for; nowhere else. */
 export function manifestDir(manifestPath: string | null | undefined): string {
   return dirOf(manifestPath || MANIFEST_FILENAME);
 }
 
-/** The repo-relative path a subproject with `slug` lives at, next to the root
+/** The repo-relative path a space with `slug` lives at, next to the root
  *  manifest at `manifestPath`. */
-export function subprojectPathFor(manifestPath: string | null | undefined, slug: string): string {
-  return subprojectFilePath(manifestDir(manifestPath), slug);
+export function spacePathFor(manifestPath: string | null | undefined, slug: string): string {
+  return spaceFilePath(manifestDir(manifestPath), slug);
 }
 
 /**
- * Pick the subproject files out of a repo listing: every `kortix-<slug>.yaml`
+ * Pick the space files out of a repo listing: every `kortix-<slug>.yaml`
  * in `dir` (exactly that directory, never below it), sorted by slug. Pure.
  */
-export function subprojectFileEntries(
+export function spaceFileEntries(
   files: readonly (ProjectFileEntry | string)[],
   dir: string,
 ): Array<{ slug: string; path: string }> {
@@ -124,7 +124,7 @@ export function subprojectFileEntries(
   for (const file of files) {
     const filePath = typeof file === 'string' ? file : file.path;
     if (dirOf(filePath) !== dir) continue;
-    const slug = subprojectSlugFromPath(filePath);
+    const slug = spaceSlugFromPath(filePath);
     if (!slug) continue;
     out.push({ slug, path: filePath.replace(/^\.?\//, '') });
   }
@@ -136,16 +136,16 @@ function issueText(issues: readonly ManifestIssue[]): string {
 }
 
 /**
- * Parse ONE subproject file into a spec. Never throws — invalid YAML, a
+ * Parse ONE space file into a spec. Never throws — invalid YAML, a
  * schema violation, or a bad owned-agent block all land in the error branch
  * with the file's path, so the UI can render it beside the good ones, exactly
  * like `extractTriggers`. Pure.
  */
-export function parseSubprojectFile(
+export function parseSpaceFile(
   slug: string,
   filePath: string,
   content: string,
-): { ok: true; spec: SubprojectSpec } | { ok: false; error: SubprojectParseError } {
+): { ok: true; spec: SpaceSpec } | { ok: false; error: SpaceParseError } {
   const fail = (error: string) => ({ ok: false as const, error: { slug, path: filePath, error } });
 
   let raw: Record<string, unknown>;
@@ -156,7 +156,7 @@ export function parseSubprojectFile(
   }
 
   const issues: ManifestIssue[] = [];
-  validateSubprojectFileV2(raw, slug, issues);
+  validateSpaceFileV2(raw, slug, issues);
   const errors = issues.filter((issue) => issue.severity === 'error');
   if (errors.length > 0) return fail(issueText(errors));
 
@@ -182,7 +182,7 @@ export function parseSubprojectFile(
   const ownedAgents = Object.keys(owned)
     .map((name) => ownedByName.get(name))
     .filter((spec): spec is AgentSpec => Boolean(spec))
-    .map((spec) => ({ ...spec, subproject: slug }));
+    .map((spec) => ({ ...spec, space: slug }));
 
   return {
     ok: true,
@@ -192,7 +192,7 @@ export function parseSubprojectFile(
       name: optionalString(raw.name)?.trim() ?? slug,
       description: optionalString(raw.description),
       agent: optionalString(raw.agent)?.trim() ?? null,
-      sessions: (raw.sessions as SubprojectSessionsMode | undefined) ?? 'private',
+      sessions: (raw.sessions as SpaceSessionsMode | undefined) ?? 'private',
       agents: Object.keys(agentsRaw ?? {}),
       ownedAgents,
       references,
@@ -202,11 +202,11 @@ export function parseSubprojectFile(
 }
 
 /** Parse many files. Specs and errors come back sorted by slug. Pure. */
-export function extractSubprojectsFromFiles(files: readonly SubprojectFile[]): LoadedSubprojects {
-  const specs: SubprojectSpec[] = [];
-  const errors: SubprojectParseError[] = [];
+export function extractSpacesFromFiles(files: readonly SpaceFile[]): LoadedSpaces {
+  const specs: SpaceSpec[] = [];
+  const errors: SpaceParseError[] = [];
   for (const file of files) {
-    const result = parseSubprojectFile(file.slug, file.path, file.content);
+    const result = parseSpaceFile(file.slug, file.path, file.content);
     if (result.ok) specs.push(result.spec);
     else errors.push(result.error);
   }
@@ -216,17 +216,17 @@ export function extractSubprojectsFromFiles(files: readonly SubprojectFile[]): L
 }
 
 /**
- * Read a project's subproject files and parse them. Never throws. Mirrors
+ * Read a project's space files and parse them. Never throws. Mirrors
  * `loadProjectAgents` — including the dynamic `./triggers` import that keeps
  * the module graph acyclic (git/config.ts imports this file).
  *
  * `opts.manifest` lets a caller that already read the root manifest (the
  * agents loader) skip the second read; `null` there means "no manifest".
  */
-export async function loadProjectSubprojects(
+export async function loadProjectSpaces(
   project: GitBackedProject,
   opts?: { forceRefresh?: boolean; manifest?: ParsedManifest | null },
-): Promise<LoadedSubprojects> {
+): Promise<LoadedSpaces> {
   let manifest: ParsedManifest | null;
   if (opts && 'manifest' in opts) {
     manifest = opts.manifest ?? null;
@@ -247,7 +247,7 @@ export async function loadProjectSubprojects(
       };
     }
   }
-  // A v1 manifest has no subprojects. A project with NO manifest yet is the
+  // A v1 manifest has no spaces. A project with NO manifest yet is the
   // synthesized-v2 case every other reader assumes (`loadProjectAgents`), so
   // its files are looked for beside the configured manifest path.
   if (manifest && manifest.schemaVersion < 2) return { specs: [], errors: [] };
@@ -255,7 +255,7 @@ export async function loadProjectSubprojects(
   const dir = manifestDir(manifest?.path ?? project.manifestPath);
   let entries: Array<{ slug: string; path: string }>;
   try {
-    entries = subprojectFileEntries(
+    entries = spaceFileEntries(
       await listRepoFiles(project, project.defaultBranch, dir || null),
       dir,
     );
@@ -266,14 +266,14 @@ export async function loadProjectSubprojects(
         {
           slug: '(manifest)',
           path: dir ? `${dir}/` : '.',
-          error: `Failed to list subproject files: ${(err as Error).message}`,
+          error: `Failed to list space files: ${(err as Error).message}`,
         },
       ],
     };
   }
 
-  const files: SubprojectFile[] = [];
-  const readErrors: SubprojectParseError[] = [];
+  const files: SpaceFile[] = [];
+  const readErrors: SpaceParseError[] = [];
   for (const entry of entries) {
     try {
       files.push({
@@ -288,7 +288,7 @@ export async function loadProjectSubprojects(
       });
     }
   }
-  const loaded = extractSubprojectsFromFiles(files);
+  const loaded = extractSpacesFromFiles(files);
   return {
     specs: loaded.specs,
     errors: [...loaded.errors, ...readErrors].sort((a, b) => a.slug.localeCompare(b.slug)),
@@ -296,19 +296,19 @@ export async function loadProjectSubprojects(
 }
 
 /**
- * The subproject files as they are at ONE ref — a session's `base_ref`, which
+ * The space files as they are at ONE ref — a session's `base_ref`, which
  * may differ from the default branch. Used by everything that compiles or
  * boots a session (envelope, agent config). Never throws; a file that cannot
  * be read is an `errors[]` entry.
  */
-export async function loadProjectSubprojectsAtRef(
+export async function loadProjectSpacesAtRef(
   project: GitBackedProject,
   opts: { manifestPath: string; ref: string },
-): Promise<LoadedSubprojects> {
+): Promise<LoadedSpaces> {
   const dir = manifestDir(opts.manifestPath);
-  const entries = subprojectFileEntries(await listRepoFiles(project, opts.ref, dir || null), dir);
-  const files: SubprojectFile[] = [];
-  const errors: SubprojectParseError[] = [];
+  const entries = spaceFileEntries(await listRepoFiles(project, opts.ref, dir || null), dir);
+  const files: SpaceFile[] = [];
+  const errors: SpaceParseError[] = [];
   for (const entry of entries) {
     try {
       files.push({ ...entry, content: await readRepoFile(project, entry.path, opts.ref) });
@@ -316,44 +316,44 @@ export async function loadProjectSubprojectsAtRef(
       errors.push({ slug: entry.slug, path: entry.path, error: `Failed to read: ${(err as Error).message}` });
     }
   }
-  const loaded = extractSubprojectsFromFiles(files);
+  const loaded = extractSpacesFromFiles(files);
   return { specs: loaded.specs, errors: [...loaded.errors, ...errors] };
 }
 
 // ─── The usability rule (spec 2026-09-06 §2) ─────────────────────────────────
 //
 // An agent is usable in a session iff it is GLOBAL (declared in the root), or
-// OWNED by the session's subproject, or REFERENCED by it. A project-level
-// session (no subproject) may use global agents only. These helpers are the
+// OWNED by the session's space, or REFERENCED by it. A project-level
+// session (no space) may use global agents only. These helpers are the
 // one place that rule is spelled out; the create gate, the trigger gate and
 // the compiler all read them.
 
 /** Global agent names — the ones declared in the root manifest. */
 export function globalAgentNames(loaded: Pick<LoadedAgents, 'specs'>): string[] {
-  return loaded.specs.filter((spec) => !spec.subproject).map((spec) => spec.name);
+  return loaded.specs.filter((spec) => !spec.space).map((spec) => spec.name);
 }
 
-/** The agent names usable inside `subproject` (null = the whole project). */
+/** The agent names usable inside `space` (null = the whole project). */
 export function usableAgentNames(
   loaded: Pick<LoadedAgents, 'specs'>,
-  subproject: Pick<SubprojectSpec, 'agents'> | null | undefined,
+  space: Pick<SpaceSpec, 'agents'> | null | undefined,
 ): string[] {
   const names = globalAgentNames(loaded);
-  for (const name of subproject?.agents ?? []) if (!names.includes(name)) names.push(name);
+  for (const name of space?.agents ?? []) if (!names.includes(name)) names.push(name);
   return names;
 }
 
-/** Is `agentName` usable inside `subproject` (null = the whole project)? */
+/** Is `agentName` usable inside `space` (null = the whole project)? */
 export function agentUsableIn(
   loaded: Pick<LoadedAgents, 'specs'>,
-  subproject: Pick<SubprojectSpec, 'agents'> | null | undefined,
+  space: Pick<SpaceSpec, 'agents'> | null | undefined,
   agentName: string,
 ): boolean {
-  return usableAgentNames(loaded, subproject).includes(agentName);
+  return usableAgentNames(loaded, space).includes(agentName);
 }
 
-/** The raw `agents.<name>` blocks a subproject OWNS (references excluded). */
-export function ownedAgentBlocks(spec: Pick<SubprojectSpec, 'agentsRaw'>): Record<string, unknown> {
+/** The raw `agents.<name>` blocks a space OWNS (references excluded). */
+export function ownedAgentBlocks(spec: Pick<SpaceSpec, 'agentsRaw'>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [name, entry] of Object.entries(spec.agentsRaw ?? {})) {
     if (!isAgentReferenceV2(entry)) out[name] = entry;
@@ -367,15 +367,15 @@ export function ownedAgentBlocks(spec: Pick<SubprojectSpec, 'agentsRaw'>): Recor
  * compiler, which needs blocks, not names. `{}` for the whole project.
  */
 export function agentBlocksUsableIn(
-  subprojects: readonly SubprojectSpec[],
+  spaces: readonly SpaceSpec[],
   slug: string | null | undefined,
 ): Record<string, unknown> {
   if (!slug) return {};
-  const spec = subprojects.find((s) => s.slug === slug);
+  const spec = spaces.find((s) => s.slug === slug);
   if (!spec) return {};
   const out = ownedAgentBlocks(spec);
   for (const ref of spec.references) {
-    const owner = subprojects.find((s) => s.slug === ref.from);
+    const owner = spaces.find((s) => s.slug === ref.from);
     const block = owner ? ownedAgentBlocks(owner)[ref.name] : undefined;
     if (block !== undefined) out[ref.name] = block;
   }
@@ -389,7 +389,7 @@ export function agentBlocksUsableIn(
  * `context`) is not in the spec, so the first write after an edit sweeps it
  * out of the file.
  */
-export function subprojectSpecToFileEntry(spec: SubprojectSpec): Record<string, unknown> {
+export function spaceSpecToFileEntry(spec: SpaceSpec): Record<string, unknown> {
   const entry: Record<string, unknown> = {};
   if (spec.name && spec.name !== spec.slug) entry.name = spec.name;
   if (spec.description) entry.description = spec.description;
@@ -400,20 +400,20 @@ export function subprojectSpecToFileEntry(spec: SubprojectSpec): Record<string, 
 }
 
 /**
- * Drop `subproject: <slug>` from every trigger naming it. Called on delete,
+ * Drop `space: <slug>` from every trigger naming it. Called on delete,
  * in the commit BEFORE the file is removed — a trigger pointing at a
- * subproject that no longer exists fails `validateTriggerSubprojectRefsV2`
+ * space that no longer exists fails `validateTriggerSpaceRefsV2`
  * and would make the manifest set invalid in between.
  */
-export function stripSubprojectFromTriggers(
+export function stripSpaceFromTriggers(
   manifest: ParsedManifest,
   slug: string,
 ): ParsedManifest {
   if (!Array.isArray(manifest.raw.triggers)) return manifest;
   const next = (manifest.raw.triggers as unknown[]).map((entry) => {
-    if (!isTable(entry) || entry.subproject !== slug) return entry;
+    if (!isTable(entry) || entry.space !== slug) return entry;
     const copy = { ...entry };
-    delete copy.subproject;
+    delete copy.space;
     return copy;
   });
   return { ...manifest, raw: { ...manifest.raw, triggers: next } };

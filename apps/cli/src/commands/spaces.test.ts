@@ -7,30 +7,30 @@ import {
   expiresAtEndOfDay,
   resolveOptionalField,
   validateSessionsMode,
-} from './subprojects.ts';
+} from './spaces.ts';
 
 describe('takeFlagValue — explicit empty value', () => {
   test('an explicit empty value via --flag= is returned, not treated as missing', () => {
-    const argv = ['--subproject='];
-    expect(takeFlagValue(argv, ['--subproject'])).toBe('');
+    const argv = ['--space='];
+    expect(takeFlagValue(argv, ['--space'])).toBe('');
     expect(argv).toEqual([]);
   });
 
   test('an explicit empty value via --flag "" is returned, not treated as missing', () => {
-    const argv = ['--subproject', ''];
-    expect(takeFlagValue(argv, ['--subproject'])).toBe('');
+    const argv = ['--space', ''];
+    expect(takeFlagValue(argv, ['--space'])).toBe('');
     expect(argv).toEqual([]);
   });
 
   test('a genuinely missing value (end of argv) still throws', () => {
-    expect(() => takeFlagValue(['--subproject'], ['--subproject'])).toThrow(
-      '--subproject requires a value',
+    expect(() => takeFlagValue(['--space'], ['--space'])).toThrow(
+      '--space requires a value',
     );
   });
 
   test('a missing value followed by another flag still throws', () => {
-    expect(() => takeFlagValue(['--subproject', '--json'], ['--subproject'])).toThrow(
-      '--subproject requires a value',
+    expect(() => takeFlagValue(['--space', '--json'], ['--space'])).toThrow(
+      '--space requires a value',
     );
   });
 });

@@ -268,7 +268,7 @@ export async function getFileHistory(
 /**
  * The blob SHA of `filePath` at `ref`, or null when absent — the
  * compare-and-swap token a single-file rewrite passes back as
- * `expectedFileRevision`, so two editors of one subproject file cannot
+ * `expectedFileRevision`, so two editors of one space file cannot
  * silently overwrite each other.
  */
 export async function readRepoFileRevision(

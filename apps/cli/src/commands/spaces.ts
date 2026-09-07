@@ -9,13 +9,13 @@ import { resolveMemberId } from './grants.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// A subproject is a named container inside a project: it groups sessions and
-// owns scheduled work — see docs/specs/2026-09-03-subprojects.md §2, §6 and the
+// A space is a named container inside a project: it groups sessions and
+// owns scheduled work — see docs/specs/2026-09-03-spaces.md §2, §6 and the
 // 2026-09-07 simplification. Its file (`kortix-<slug>.yaml`) is the source of
 // truth; every write here commits to it.
 
-/** Wire shape — SubprojectSchema in @kortix/api-contract. */
-export interface Subproject {
+/** Wire shape — SpaceSchema in @kortix/api-contract. */
+export interface Space {
   slug: string;
   name: string;
   description: string | null;
@@ -27,14 +27,14 @@ export interface Subproject {
   can_manage: boolean;
 }
 
-interface SubprojectsListResponse {
-  subprojects: Subproject[];
+interface SpacesListResponse {
+  spaces: Space[];
   errors: Array<{ slug: string; path: string; error: string }>;
 }
 
 /** One row of `GET /projects/:id/resource-grants` — locally typed rather than
  *  widening grants.ts's agent/skill/secret-only union, since only the fields
- *  used to find a subproject grant to revoke matter here. */
+ *  used to find a space grant to revoke matter here. */
 interface ResourceGrantRow {
   grant_id: string;
   resource_type: string;
@@ -51,22 +51,22 @@ interface ResourceGrantsResponse {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SESSIONS_MODES = ['private', 'shared'] as const;
 
-const HELP = help`Usage: kortix subprojects <subcommand> [options]
+const HELP = help`Usage: kortix spaces <subcommand> [options]
 
-A subproject groups sessions under a named effort inside the project, with its
+A space groups sessions under a named effort inside the project, with its
 own default agent and scheduled work. Its file (\`kortix-<slug>.yaml\`) is the
 source of truth — every write below commits to it.
 
 Subcommands:
-  ls [--json]                     List subprojects you can see.
-  show <slug> [--json]            Show one subproject in full.
-  create <name> [options]         Declare a new subproject.
-  update <slug> [options]         Change fields on an existing subproject.
-  rm <slug> [--yes]               Delete a subproject. Sessions keep their
+  ls [--json]                     List spaces you can see.
+  show <slug> [--json]            Show one space in full.
+  create <name> [options]         Declare a new space.
+  update <slug> [options]         Change fields on an existing space.
+  rm <slug> [--yes]               Delete a space. Sessions keep their
                                   history but lose the grouping; scheduled
                                   triggers naming it are un-scoped, not deleted.
   grant <slug> (--member <id|email> | --group <id>) [--expires YYYY-MM-DD]
-                                  Let a member or group use this subproject.
+                                  Let a member or group use this space.
   revoke <slug> (--member <id|email> | --group <id>)
                                   Remove that grant.
 
@@ -78,7 +78,7 @@ Create/update options:
   --sessions private|shared
                          private (default): a session is visible to its
                          creator only. shared: every session in it is visible
-                         to everyone granted the subproject.
+                         to everyone granted the space.
 
 On \`update\`, an empty value (\`--description=\`, \`--agent=\`) clears that
 field. \`name\` cannot be cleared.
@@ -94,7 +94,7 @@ Create/update/rm/grant/revoke need \`project.customize.write\`.
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
-export async function runSubprojects(argv: string[]): Promise<number> {
+export async function runSpaces(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
@@ -130,29 +130,29 @@ export async function runSubprojects(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/subprojects`;
+  const base = `/projects/${ctx.projectId}/spaces`;
 
   try {
     switch (sub) {
       case 'ls':
       case 'list':
-        return subprojectsLs(ctx, base, json);
+        return spacesLs(ctx, base, json);
       case 'show':
       case 'info':
-        return subprojectsShow(ctx, base, positional[0], json);
+        return spacesShow(ctx, base, positional[0], json);
       case 'create':
-        return subprojectsCreate(ctx, base, positional[0], f, json);
+        return spacesCreate(ctx, base, positional[0], f, json);
       case 'update':
       case 'set':
-        return subprojectsUpdate(ctx, base, positional[0], f, json);
+        return spacesUpdate(ctx, base, positional[0], f, json);
       case 'rm':
       case 'remove':
       case 'delete':
-        return subprojectsRm(ctx, base, positional[0], yes, json);
+        return spacesRm(ctx, base, positional[0], yes, json);
       case 'grant':
-        return subprojectsGrant(ctx, positional[0], f, json);
+        return spacesGrant(ctx, positional[0], f, json);
       case 'revoke':
-        return subprojectsRevoke(ctx, positional[0], f, json);
+        return spacesRevoke(ctx, positional[0], f, json);
       default:
         process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
         return 2;
@@ -189,7 +189,7 @@ export function validateSessionsMode(raw: string | undefined): string | { error:
   return raw;
 }
 
-/** Build the POST /subprojects body. `name` is required and never cleared. */
+/** Build the POST /spaces body. `name` is required and never cleared. */
 export function buildCreateBody(
   name: string,
   opts: {
@@ -207,7 +207,7 @@ export function buildCreateBody(
   return body;
 }
 
-/** Build the PATCH /subprojects/:slug body: only fields the caller named. */
+/** Build the PATCH /spaces/:slug body: only fields the caller named. */
 export function buildUpdateBody(opts: {
   name?: FieldPatch;
   description?: FieldPatch;
@@ -239,30 +239,30 @@ export function expiresAtEndOfDay(raw: string): string | { error: string } {
 
 // ── ls / show ────────────────────────────────────────────────────────────────
 
-async function subprojectsLs(ctx: ProjectCtx, base: string, json: boolean): Promise<number> {
-  const resp = await ctx.client.get<SubprojectsListResponse>(base);
+async function spacesLs(ctx: ProjectCtx, base: string, json: boolean): Promise<number> {
+  const resp = await ctx.client.get<SpacesListResponse>(base);
   if (json) {
     emitJson(resp);
     return 0;
   }
-  if (resp.subprojects.length === 0) {
+  if (resp.spaces.length === 0) {
     process.stdout.write(
-      `  ${C.dim}No subprojects yet. Create one: ${C.reset}${C.cyan}kortix subprojects create "<name>"${C.reset}\n`,
+      `  ${C.dim}No spaces yet. Create one: ${C.reset}${C.cyan}kortix spaces create "<name>"${C.reset}\n`,
     );
   } else {
-    const slugW = Math.max(...resp.subprojects.map((s) => s.slug.length), 4);
-    const nameW = Math.max(...resp.subprojects.map((s) => s.name.length), 4);
+    const slugW = Math.max(...resp.spaces.map((s) => s.slug.length), 4);
+    const nameW = Math.max(...resp.spaces.map((s) => s.name.length), 4);
     process.stdout.write('\n');
     process.stdout.write(
       `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   AGENT            SESSIONS   #SESSIONS   #TRIGGERS${C.reset}\n`,
     );
-    for (const s of resp.subprojects) {
+    for (const s of resp.spaces) {
       process.stdout.write(
         `  ${pad(s.slug, slugW)}   ${pad(s.name, nameW)}   ${pad(s.agent ?? '—', 15)}  ${pad(s.sessions, 9)}  ${pad(String(s.session_count), 10)}  ${s.trigger_count}\n`,
       );
     }
     process.stdout.write(
-      `\n  ${C.dim}${resp.subprojects.length} subproject${resp.subprojects.length === 1 ? '' : 's'}${C.reset}\n`,
+      `\n  ${C.dim}${resp.spaces.length} space${resp.spaces.length === 1 ? '' : 's'}${C.reset}\n`,
     );
   }
   if (resp.errors.length > 0) {
@@ -275,14 +275,14 @@ async function subprojectsLs(ctx: ProjectCtx, base: string, json: boolean): Prom
   return 0;
 }
 
-async function subprojectsShow(
+async function spacesShow(
   ctx: ProjectCtx,
   base: string,
   slug: string | undefined,
   json: boolean,
 ): Promise<number> {
-  if (!slug) return missing('a subproject slug');
-  const s = await ctx.client.get<Subproject>(`${base}/${encodeURIComponent(slug)}`);
+  if (!slug) return missing('a space slug');
+  const s = await ctx.client.get<Space>(`${base}/${encodeURIComponent(slug)}`);
   if (json) {
     emitJson(s);
     return 0;
@@ -309,7 +309,7 @@ async function subprojectsShow(
 
 // ── create / update ─────────────────────────────────────────────────────────
 
-async function subprojectsCreate(
+async function spacesCreate(
   ctx: ProjectCtx,
   base: string,
   name: string | undefined,
@@ -325,7 +325,7 @@ async function subprojectsCreate(
     agent: f.agent,
     sessions,
   });
-  const created = await ctx.client.post<Subproject>(base, body);
+  const created = await ctx.client.post<Space>(base, body);
   if (json) {
     emitJson(created);
     return 0;
@@ -336,14 +336,14 @@ async function subprojectsCreate(
   return 0;
 }
 
-async function subprojectsUpdate(
+async function spacesUpdate(
   ctx: ProjectCtx,
   base: string,
   slug: string | undefined,
   f: Record<string, string | undefined>,
   json: boolean,
 ): Promise<number> {
-  if (!slug) return missing('a subproject slug');
+  if (!slug) return missing('a space slug');
   const sessions = validateSessionsMode(f.sessions);
   if (sessions && typeof sessions === 'object') return fail(sessions.error);
   const body = buildUpdateBody({
@@ -353,9 +353,9 @@ async function subprojectsUpdate(
     sessions,
   });
   if (Object.keys(body).length === 0) {
-    return fail('Pass at least one field to change (see `kortix subprojects --help`).');
+    return fail('Pass at least one field to change (see `kortix spaces --help`).');
   }
-  const updated = await ctx.client.patch<Subproject>(`${base}/${encodeURIComponent(slug)}`, body);
+  const updated = await ctx.client.patch<Space>(`${base}/${encodeURIComponent(slug)}`, body);
   if (json) {
     emitJson(updated);
     return 0;
@@ -365,14 +365,14 @@ async function subprojectsUpdate(
   return 0;
 }
 
-async function subprojectsRm(
+async function spacesRm(
   ctx: ProjectCtx,
   base: string,
   slug: string | undefined,
   yes: boolean,
   json: boolean,
 ): Promise<number> {
-  if (!slug) return missing('a subproject slug');
+  if (!slug) return missing('a space slug');
   if (!yes) {
     if (!(process.stdin.isTTY === true && process.stdout.isTTY === true)) {
       process.stderr.write(
@@ -381,7 +381,7 @@ async function subprojectsRm(
       return 2;
     }
     const ok = await confirm(
-      `Delete subproject ${C.bold}${slug}${C.reset}? Sessions keep their history but lose the grouping.`,
+      `Delete space ${C.bold}${slug}${C.reset}? Sessions keep their history but lose the grouping.`,
       false,
       { onEndOfInput: false },
     );
@@ -425,13 +425,13 @@ async function resolvePrincipal(
   return { error: 'Pass --member <id|email> or --group <id>.' };
 }
 
-async function subprojectsGrant(
+async function spacesGrant(
   ctx: ProjectCtx,
   slug: string | undefined,
   f: Record<string, string | undefined>,
   json: boolean,
 ): Promise<number> {
-  if (!slug) return missing('a subproject slug');
+  if (!slug) return missing('a space slug');
   const principal = await resolvePrincipal(ctx, f);
   if ('error' in principal) return principal.error === null ? 1 : fail(principal.error);
 
@@ -445,7 +445,7 @@ async function subprojectsGrant(
   const resp = await ctx.client.post<{ grant_id: string }>(
     `/projects/${ctx.projectId}/resource-grants`,
     {
-      resource_type: 'subproject',
+      resource_type: 'space',
       resource_id: slug,
       principal_type: principal.type,
       principal_id: principal.id,
@@ -463,13 +463,13 @@ async function subprojectsGrant(
   return 0;
 }
 
-async function subprojectsRevoke(
+async function spacesRevoke(
   ctx: ProjectCtx,
   slug: string | undefined,
   f: Record<string, string | undefined>,
   json: boolean,
 ): Promise<number> {
-  if (!slug) return missing('a subproject slug');
+  if (!slug) return missing('a space slug');
   const principal = await resolvePrincipal(ctx, f);
   if ('error' in principal) return principal.error === null ? 1 : fail(principal.error);
 
@@ -478,7 +478,7 @@ async function subprojectsRevoke(
   );
   const grant = resp.grants.find(
     (g) =>
-      g.resource_type === 'subproject' &&
+      g.resource_type === 'space' &&
       g.resource_id === slug &&
       g.principal_type === principal.type &&
       g.principal_id === principal.id,

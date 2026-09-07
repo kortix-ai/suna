@@ -62,7 +62,7 @@ import { useMemo, useState } from 'react';
 /** The grants that name `agentName`. Orphaned rows (agent renamed) are kept —
  *  they are inert, and hiding them would hide the thing to clean up.
  *  `resourceType` defaults to `'agent'`, so every existing caller is unchanged;
- *  a subproject page passes `'subproject'` and gets the identical fold. */
+ *  a space page passes `'space'` and gets the identical fold. */
 export function grantsForAgent(
   grants: readonly ProjectResourceGrant[],
   agentName: string,
@@ -72,7 +72,7 @@ export function grantsForAgent(
 }
 
 /** Every object of one type a principal holds — the edit dialog's `agentIds` /
- *  `subprojectIds` seed. */
+ *  `spaceIds` seed. */
 export function agentIdsHeldBy(
   grants: readonly ProjectResourceGrant[],
   principalType: 'member' | 'group',
@@ -96,10 +96,10 @@ export function agentIdsHeldBy(
 /** The section's copy, per resource type. The two objects the IAM engine
  *  closes by default are granted the same way, so they get the same section
  *  with the sentence that names what is actually inherited. */
-/** The agent copy is localized (main's keys); the subproject copy is not
+/** The agent copy is localized (main's keys); the space copy is not
  *  yet — it stays English until its keys are generated. */
 function resourceCopy(
-  resourceType: 'agent' | 'subproject',
+  resourceType: 'agent' | 'space',
   tI18nComplete: ReturnType<typeof useI18nTranslations>,
 ): { description: string; empty: string; rowSuffix: string } {
   if (resourceType === 'agent') {
@@ -111,9 +111,9 @@ function resourceCopy(
   }
   return {
     description:
-      'Members and groups granted this subproject. A subproject grant is not an agent grant — they need its agent in their own right too.',
-    empty: 'No one is granted this subproject yet. Project managers can always use it.',
-    rowSuffix: '· grant no longer matches a subproject',
+      'Members and groups granted this space. A space grant is not an agent grant — they need its agent in their own right too.',
+    empty: 'No one is granted this space yet. Project managers can always use it.',
+    rowSuffix: '· grant no longer matches a space',
   };
 }
 
@@ -157,11 +157,11 @@ export function AgentPeopleSection({
   resourceType = 'agent',
 }: {
   projectId: string;
-  /** The grant key: an agent name, or a subproject slug. */
+  /** The grant key: an agent name, or a space slug. */
   agentName: string;
   /** Which closed object type this section grants. Defaults to `'agent'`, so
    *  the agent page's two call sites are unchanged. */
-  resourceType?: 'agent' | 'subproject';
+  resourceType?: 'agent' | 'space';
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const copy = resourceCopy(resourceType, tI18nComplete);
@@ -209,11 +209,11 @@ export function AgentPeopleSection({
     // other type would leave that picker showing "All" while the principal
     // actually holds a subset.
     const agentIds = agentIdsHeldBy(grants, grant.principal_type, grant.principal_id, 'agent');
-    const subprojectIds = agentIdsHeldBy(
+    const spaceIds = agentIdsHeldBy(
       grants,
       grant.principal_type,
       grant.principal_id,
-      'subproject',
+      'space',
     );
     if (grant.principal_type === 'member') {
       const member = accessQuery.data?.members.find((m) => m.user_id === grant.principal_id);
@@ -232,7 +232,7 @@ export function AgentPeopleSection({
               ? builtinRole(member.project_role)
               : ROLE_NONE,
           agentIds: agentIds.length > 0 ? agentIds : 'all',
-          subprojectIds: subprojectIds.length > 0 ? subprojectIds : 'all',
+          spaceIds: spaceIds.length > 0 ? spaceIds : 'all',
           expiresAt: policy ? policy.expires_at : (member?.expires_at ?? null),
         },
         inheritedFrom: (member?.group_sources ?? []).map((g) => g.group_name),
@@ -254,7 +254,7 @@ export function AgentPeopleSection({
               ? builtinRole(group.built_in_role)
               : ROLE_NONE,
           agentIds: agentIds.length > 0 ? agentIds : 'all',
-          subprojectIds: subprojectIds.length > 0 ? subprojectIds : 'all',
+          spaceIds: spaceIds.length > 0 ? spaceIds : 'all',
           expiresAt: policy ? policy.expires_at : null,
         },
       });
@@ -339,8 +339,8 @@ export function AgentPeopleSection({
           accountId={accountId}
           scope={{ kind: 'project', projectId, projectName }}
           mode={{ kind: 'grant' }}
-          {...(resourceType === 'subproject'
-            ? { initialSubprojectIds: [agentName] }
+          {...(resourceType === 'space'
+            ? { initialSpaceIds: [agentName] }
             : { initialAgentIds: [agentName] })}
         />
       ) : null}

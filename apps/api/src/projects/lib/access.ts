@@ -225,12 +225,12 @@ export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   return typeof metadata.deletedAt === 'string';
 }
 
-/** Is this subproject declared `sessions: shared`? Lazily imported so
+/** Is this space declared `sessions: shared`? Lazily imported so
  *  `lib/access.ts` keeps no static edge to the manifest/git layer, and never
  *  throws — an unreadable manifest answers `false`, i.e. `private`. */
-async function subprojectSharesSessions(project: ProjectRow, slug: string): Promise<boolean> {
-  const { loadSubprojectModes } = await import('./subproject-access');
-  return (await loadSubprojectModes(project)).get(slug) === 'shared';
+async function spaceSharesSessions(project: ProjectRow, slug: string): Promise<boolean> {
+  const { loadSpaceModes } = await import('./space-access');
+  return (await loadSpaceModes(project)).get(slug) === 'shared';
 }
 
 export async function loadVisibleSession(
@@ -278,18 +278,18 @@ export async function loadVisibleSession(
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
-  // A session inside a subproject is invisible — 404, not 403 — to anyone
-  // without that subproject's grant. Enforced HERE, not per route, so all 14
+  // A session inside a space is invisible — 404, not 403 — to anyone
+  // without that space's grant. Enforced HERE, not per route, so all 14
   // lifecycle call sites are covered by one predicate. Costs nothing for the
-  // ordinary session, whose `subproject` is null.
-  if (row.subproject) {
+  // ordinary session, whose `space` is null.
+  if (row.space) {
     const actor =
       loaded.actor ?? (await actorForToken(loaded.userId, loaded.row.accountId, undefined));
     const accessible = await filterAccessibleObjects(
       actor,
       loaded.row.projectId,
-      'subproject',
-      [row.subproject],
+      'space',
+      [row.space],
     );
     if (accessible.length === 0) return null;
   }
@@ -331,11 +331,11 @@ export async function loadVisibleSession(
       ownership,
       { metadata: row.metadata, canManageProject },
     ) &&
-    // `sessions: shared` — the subproject grant (already verified above) is
+    // `sessions: shared` — the space grant (already verified above) is
     // itself the read right for every session inside it. Read the manifest only
-    // on this path: an ordinary cross-owner denial in a `private` subproject
+    // on this path: an ordinary cross-owner denial in a `private` space
     // still pays nothing extra.
-    !(row.subproject ? await subprojectSharesSessions(loaded.row, row.subproject) : false)
+    !(row.space ? await spaceSharesSessions(loaded.row, row.space) : false)
   ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be

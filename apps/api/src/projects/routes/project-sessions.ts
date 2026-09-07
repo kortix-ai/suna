@@ -36,14 +36,14 @@ import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
-import { assertSubprojectAccessible, subprojectViewerAccess } from '../lib/subproject-access';
+import { assertSpaceAccessible, spaceViewerAccess } from '../lib/space-access';
 import { loadProjectAgents } from '../agents';
 import {
   agentUsableIn,
-  loadProjectSubprojects,
+  loadProjectSpaces,
   usableAgentNames,
-  type SubprojectSpec,
-} from '../subprojects';
+  type SpaceSpec,
+} from '../spaces';
 import { withProjectGitAuth } from '../lib/git';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
@@ -122,31 +122,31 @@ projectsApp.openapi(
           PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
         )
       : false;
-  // Per-SUBPROJECT scoping. Runs BEFORE the agent gate for two reasons: an
-  // undeclared or ungranted subproject must be refused whatever agent was
+  // Per-SPACE scoping. Runs BEFORE the agent gate for two reasons: an
+  // undeclared or ungranted space must be refused whatever agent was
   // asked for, and a granted one supplies the agent when the caller named none
   // — so the ordinary agent gate below runs on the agent that will actually
   // start. Declaration is re-checked in `createProjectSession` for the callers
   // that never pass through here (trigger fires).
-  const requestedSubproject = normalizeString(body.subproject);
-  if (requestedSubproject) {
-    const declared = await loadProjectSubprojects(await withProjectGitAuth(loaded.row));
-    const spec = declared.specs.find((s) => s.slug === requestedSubproject);
+  const requestedSpace = normalizeString(body.space);
+  if (requestedSpace) {
+    const declared = await loadProjectSpaces(await withProjectGitAuth(loaded.row));
+    const spec = declared.specs.find((s) => s.slug === requestedSpace);
     if (!spec) {
       return c.json(
         {
-          error: `Subproject "${requestedSubproject}" is not declared in this project's manifest`,
-          code: 'SUBPROJECT_NOT_DECLARED',
+          error: `Space "${requestedSpace}" is not declared in this project's manifest`,
+          code: 'SPACE_NOT_DECLARED',
         },
         400,
       );
     }
-    // Throws the 403 `subproject_not_accessible` with `accessible_subprojects`.
-    await assertSubprojectAccessible(
+    // Throws the 403 `space_not_accessible` with `accessible_spaces`.
+    await assertSpaceAccessible(
       c,
       loaded,
       projectId,
-      requestedSubproject,
+      requestedSpace,
       declared.specs.map((s) => s.slug),
     );
     if (!normalizeString(body.agent_name ?? body.agentName) && spec.agent) {
@@ -277,9 +277,9 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         query: z.object({
           scope: z.enum(['visible', 'project']).optional(),
-          // `?subproject=<slug>` narrows to one subproject; `?subproject=`
+          // `?space=<slug>` narrows to one space; `?space=`
           // (empty) narrows to the sessions that belong to none.
-          subproject: z.string().optional(),
+          space: z.string().optional(),
         }),
       },
     responses: {
@@ -293,7 +293,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
-  const subprojectFilter = c.req.valid('query').subproject as string | undefined;
+  const spaceFilter = c.req.valid('query').space as string | undefined;
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -306,8 +306,8 @@ projectsApp.openapi(
     effectiveRole: loaded.effectiveRole,
     scope,
     boundCredentialSessionId: callerKortixSessionId(c),
-    subprojectFilter,
-    loadSubprojectAccess: (slugs) => subprojectViewerAccess(c, loaded, projectId, slugs),
+    spaceFilter,
+    loadSpaceAccess: (slugs) => spaceViewerAccess(c, loaded, projectId, slugs),
     probeManageCapability: () =>
       projectCapabilityAllowed(
         c,
@@ -537,7 +537,7 @@ projectsApp.openapi(
     return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
 
-  const allowedFields = ['name', 'metadata', 'subproject'];
+  const allowedFields = ['name', 'metadata', 'space'];
   const unknownField = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unknownField) {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
@@ -582,40 +582,40 @@ projectsApp.openapi(
 
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 
-  // MOVE — `subproject: "<slug>"` files the session under that subproject,
+  // MOVE — `space: "<slug>"` files the session under that space,
   // `null`/`""` moves it back to the project level. The row is the only thing
   // that changes: every server-side gate (the list fold, the compile, the
-  // env) reads `project_sessions.subproject`, so the move is complete the
+  // env) reads `project_sessions.space`, so the move is complete the
   // moment it commits. A sandbox that is already running keeps the
-  // KORTIX_SUBPROJECT it booted with until its next start — the in-sandbox
+  // KORTIX_SPACE it booted with until its next start — the in-sandbox
   // CLI's `sessions new` inheritance is the only thing that reads it there.
-  if (hasOwn(body, 'subproject')) {
-    const target = normalizeString(body.subproject);
-    if (target !== (existing.subproject ?? null)) {
+  if (hasOwn(body, 'space')) {
+    const target = normalizeString(body.space);
+    if (target !== (existing.space ?? null)) {
       // A move changes WHO CAN READ the session: everyone granted a `shared`
-      // subproject reads every session in it (spec §2). That is the sharing
+      // space reads every session in it (spec §2). That is the sharing
       // decision, so it takes the sharing gate — owner-governed, not
       // manager-tier, for the same reason PUT /sharing is.
       if (!visible.canManageSharing) {
         return c.json({ error: SESSION_SHARING_OWNER_ONLY_ERROR }, 403);
       }
       const gitProject = await withProjectGitAuth(loaded.row);
-      const declared = await loadProjectSubprojects(gitProject);
-      let spec: SubprojectSpec | null = null;
+      const declared = await loadProjectSpaces(gitProject);
+      let spec: SpaceSpec | null = null;
       if (target) {
         spec = declared.specs.find((s) => s.slug === target) ?? null;
         if (!spec) {
           return c.json(
             {
-              error: `Subproject "${target}" is not declared in this project's manifest`,
-              code: 'SUBPROJECT_NOT_DECLARED',
+              error: `Space "${target}" is not declared in this project's manifest`,
+              code: 'SPACE_NOT_DECLARED',
             },
             400,
           );
         }
-        // Throws the 403 `subproject_not_accessible` with the usable set: a
-        // caller cannot file a session into a subproject they do not hold.
-        await assertSubprojectAccessible(
+        // Throws the 403 `space_not_accessible` with the usable set: a
+        // caller cannot file a session into a space they do not hold.
+        await assertSpaceAccessible(
           c,
           loaded,
           projectId,
@@ -624,8 +624,8 @@ projectsApp.openapi(
         );
       }
       // The session's agent has to be usable where it lands (spec 2026-09-06
-      // §2): an agent a subproject file owns runs only there and in the
-      // subprojects that reference it. Refused up front rather than left to
+      // §2): an agent a space file owns runs only there and in the
+      // spaces that reference it. Refused up front rather than left to
       // fail at the session's next start.
       const agentName = normalizeString(existing.agentName);
       if (agentName) {
@@ -634,18 +634,18 @@ projectsApp.openapi(
           agents.specs.some((a) => a.name === agentName) &&
           !agentUsableIn(agents, spec, agentName)
         ) {
-          const owner = agents.specs.find((a) => a.name === agentName)?.subproject;
+          const owner = agents.specs.find((a) => a.name === agentName)?.space;
           return c.json(
             {
-              error: `This session runs "${agentName}", which is not usable ${target ? `in subproject "${target}"` : 'at the project level'} — it is declared by subproject "${owner}" (kortix-${owner}.yaml). Reference it there with \`agents.${agentName}: { from: ${owner} }\`, or move the session somewhere it runs.`,
-              code: 'AGENT_NOT_IN_SUBPROJECT',
+              error: `This session runs "${agentName}", which is not usable ${target ? `in space "${target}"` : 'at the project level'} — it is declared by space "${owner}" (kortix-${owner}.yaml). Reference it there with \`agents.${agentName}: { from: ${owner} }\`, or move the session somewhere it runs.`,
+              code: 'AGENT_NOT_IN_SPACE',
               usable_agents: usableAgentNames(agents, spec),
             },
             400,
           );
         }
       }
-      updates.subproject = target;
+      updates.space = target;
     }
   }
 

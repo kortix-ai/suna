@@ -153,10 +153,10 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
-    /** The subproject whose `kortix-<slug>.yaml` declares this agent, or null
-     *  for a global one. An owned agent runs only in its subproject and in the
+    /** The space whose `kortix-<slug>.yaml` declares this agent, or null
+     *  for a global one. An owned agent runs only in its space and in the
      *  ones that reference it (`agentsUsableIn`). Absent on older servers. */
-    subproject?: string | null;
+    space?: string | null;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).

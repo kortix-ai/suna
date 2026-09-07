@@ -1304,7 +1304,7 @@
         "status": "ステータス",
         "activity": "アクティビティ",
         "source": "ソース",
-        "subproject": "サブプロジェクト",
+        "space": "スペース",
         "none": "なし"
       },
       "order": {

@@ -367,7 +367,7 @@
             "type": "string",
             "minLength": 1
           },
-          "subproject": {
+          "space": {
             "type": "string",
             "minLength": 1
           },

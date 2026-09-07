@@ -42,10 +42,10 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source: 'opencode' | 'kortix.yaml';
     enabled?: boolean;
-    /** The subproject whose `kortix-<slug>.yaml` declares this agent, or null
-     *  for a global one. An owned agent runs only in its subproject and in the
+    /** The space whose `kortix-<slug>.yaml` declares this agent, or null
+     *  for a global one. An owned agent runs only in its space and in the
      *  ones that reference it. */
-    subproject?: string | null;
+    space?: string | null;
     sandbox?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
@@ -61,7 +61,7 @@ export interface ProjectConfigSummary {
   commands: Array<{ name: string; path: string; description: string | null }>;
   /** The project's `kortix-<slug>.yaml` files, access-filtered for the reader
    *  by `filterConfigResourcesForUser`. */
-  subprojects: Array<{
+  spaces: Array<{
     slug: string;
     name: string;
     description: string | null;

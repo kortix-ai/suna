@@ -1,5 +1,5 @@
 /**
- * Subprojects as files — `kortix-<slug>.yaml` beside the root manifest (spec
+ * Spaces as files — `kortix-<slug>.yaml` beside the root manifest (spec
  * 2026-09-06). Pure parsing, the usability rule, and the file round-trip; the
  * git-backed loader is exercised by the SUBP flows against a real repo.
  */
@@ -7,17 +7,17 @@ import { describe, expect, test } from 'bun:test';
 import {
   agentBlocksUsableIn,
   agentUsableIn,
-  extractSubprojectsFromFiles,
+  extractSpacesFromFiles,
   manifestDir,
-  parseSubprojectFile,
-  stripSubprojectFromTriggers,
-  subprojectFileEntries,
-  subprojectPathFor,
-  subprojectSpecToFileEntry,
+  parseSpaceFile,
+  stripSpaceFromTriggers,
+  spaceFileEntries,
+  spacePathFor,
+  spaceSpecToFileEntry,
   usableAgentNames,
-  type SubprojectSpec,
-} from './subprojects';
-import { mergeSubprojectAgents, type AgentSpec, type LoadedAgents } from './agents';
+  type SpaceSpec,
+} from './spaces';
+import { mergeSpaceAgents, type AgentSpec, type LoadedAgents } from './agents';
 import { parseManifestText, serializeManifestObject } from '@kortix/manifest-schema';
 import type { ParsedManifest } from './triggers';
 import { draftToSpec, specToBody, parseTriggerDraft } from './lib/triggers';
@@ -49,7 +49,7 @@ function globalAgent(name: string): AgentSpec {
   return {
     name,
     path: `kortix.yaml#agents.${name}`,
-    subproject: null,
+    space: null,
     enabled: true,
     connectors: [],
     kortixCli: [],
@@ -73,13 +73,13 @@ describe('file discovery', () => {
     expect(manifestDir(null)).toBe('');
   });
 
-  test('subprojectPathFor puts the file beside the root manifest', () => {
-    expect(subprojectPathFor('kortix.yaml', 'marketing')).toBe('kortix-marketing.yaml');
-    expect(subprojectPathFor('config/kortix.yaml', 'marketing')).toBe('config/kortix-marketing.yaml');
+  test('spacePathFor puts the file beside the root manifest', () => {
+    expect(spacePathFor('kortix.yaml', 'marketing')).toBe('kortix-marketing.yaml');
+    expect(spacePathFor('config/kortix.yaml', 'marketing')).toBe('config/kortix-marketing.yaml');
   });
 
-  test('subprojectFileEntries keeps only kortix-<slug>.yaml in exactly that directory, sorted', () => {
-    const entries = subprojectFileEntries(
+  test('spaceFileEntries keeps only kortix-<slug>.yaml in exactly that directory, sorted', () => {
+    const entries = spaceFileEntries(
       [
         'kortix.yaml',
         'kortix-research.yaml',
@@ -94,15 +94,15 @@ describe('file discovery', () => {
       { slug: 'marketing', path: 'kortix-marketing.yaml' },
       { slug: 'research', path: 'kortix-research.yaml' },
     ]);
-    expect(subprojectFileEntries(['config/kortix-ops.yaml', 'kortix-root.yaml'], 'config')).toEqual([
+    expect(spaceFileEntries(['config/kortix-ops.yaml', 'kortix-root.yaml'], 'config')).toEqual([
       { slug: 'ops', path: 'config/kortix-ops.yaml' },
     ]);
   });
 });
 
-describe('parseSubprojectFile', () => {
+describe('parseSpaceFile', () => {
   test('reads every field, owned agents carry the owner, references are listed', () => {
-    const result = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
+    const result = parseSpaceFile('marketing', 'kortix-marketing.yaml', MARKETING);
     if (!result.ok) throw new Error(result.error.error);
     const spec = result.spec;
     expect(spec.slug).toBe('marketing');
@@ -113,7 +113,7 @@ describe('parseSubprojectFile', () => {
     expect(spec.sessions).toBe('shared');
     expect(spec.agents).toEqual(['writer', 'researcher']);
     expect(spec.ownedAgents.map((a) => a.name)).toEqual(['writer']);
-    expect(spec.ownedAgents[0]?.subproject).toBe('marketing');
+    expect(spec.ownedAgents[0]?.space).toBe('marketing');
     expect(spec.ownedAgents[0]?.path).toBe('kortix-marketing.yaml#agents.writer');
     expect(spec.ownedAgents[0]?.connectors).toEqual(['slack']);
     expect(spec.references).toEqual([{ name: 'researcher', from: 'research' }]);
@@ -123,8 +123,8 @@ describe('parseSubprojectFile', () => {
     });
   });
 
-  test('an empty file is a subproject with defaults', () => {
-    const result = parseSubprojectFile('yo', 'kortix-yo.yaml', '');
+  test('an empty file is a space with defaults', () => {
+    const result = parseSpaceFile('yo', 'kortix-yo.yaml', '');
     if (!result.ok) throw new Error(result.error.error);
     expect(result.spec).toMatchObject({
       name: 'yo',
@@ -147,7 +147,7 @@ describe('parseSubprojectFile', () => {
       ['marketing', 'kortix_version: 2', 'kortix_version'],
     ];
     for (const [slug, text, needle] of cases) {
-      const result = parseSubprojectFile(slug, 'kortix-marketing.yaml', text);
+      const result = parseSpaceFile(slug, 'kortix-marketing.yaml', text);
       expect(result.ok).toBe(false);
       if (result.ok) continue;
       expect(result.error.path).toBe('kortix-marketing.yaml');
@@ -156,9 +156,9 @@ describe('parseSubprojectFile', () => {
   });
 });
 
-describe('extractSubprojectsFromFiles', () => {
+describe('extractSpacesFromFiles', () => {
   test('specs and errors come back sorted by slug, and one bad file never hides the others', () => {
-    const loaded = extractSubprojectsFromFiles([
+    const loaded = extractSpacesFromFiles([
       { slug: 'research', path: 'kortix-research.yaml', content: 'name: Research' },
       { slug: 'broken', path: 'kortix-broken.yaml', content: 'sessions: nope' },
       { slug: 'marketing', path: 'kortix-marketing.yaml', content: MARKETING },
@@ -170,8 +170,8 @@ describe('extractSubprojectsFromFiles', () => {
 });
 
 describe('the usability rule', () => {
-  const marketing = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
-  const research = parseSubprojectFile(
+  const marketing = parseSpaceFile('marketing', 'kortix-marketing.yaml', MARKETING);
+  const research = parseSpaceFile(
     'research',
     'kortix-research.yaml',
     'agents:\n  researcher:\n    connectors: []\n',
@@ -179,10 +179,10 @@ describe('the usability rule', () => {
   if (!marketing.ok || !research.ok) throw new Error('fixtures must parse');
   const specs = [marketing.spec, research.spec];
   const root: LoadedAgents = { specs: [globalAgent('kortix')], errors: [], defaultAgent: 'kortix' };
-  const loaded = mergeSubprojectAgents(root, specs);
+  const loaded = mergeSpaceAgents(root, specs);
 
-  test('mergeSubprojectAgents folds owned agents into the roster with their owner', () => {
-    expect(loaded.specs.map((a) => `${a.name}@${a.subproject ?? 'root'}`)).toEqual([
+  test('mergeSpaceAgents folds owned agents into the roster with their owner', () => {
+    expect(loaded.specs.map((a) => `${a.name}@${a.space ?? 'root'}`)).toEqual([
       'kortix@root',
       'researcher@research',
       'writer@marketing',
@@ -192,7 +192,7 @@ describe('the usability rule', () => {
   });
 
   test('a name declared twice is an error naming both places; the first declaration stays', () => {
-    const clash = mergeSubprojectAgents(
+    const clash = mergeSpaceAgents(
       { specs: [globalAgent('writer')], errors: [], defaultAgent: null },
       [marketing.spec],
     );
@@ -202,7 +202,7 @@ describe('the usability rule', () => {
     expect(clash.errors[0]?.path).toBe('kortix-marketing.yaml#agents.writer');
   });
 
-  test('globals everywhere; owned and referenced only in their subproject', () => {
+  test('globals everywhere; owned and referenced only in their space', () => {
     expect(usableAgentNames(loaded, null)).toEqual(['kortix']);
     expect(usableAgentNames(loaded, marketing.spec)).toEqual(['kortix', 'writer', 'researcher']);
     expect(usableAgentNames(loaded, research.spec)).toEqual(['kortix', 'researcher']);
@@ -224,12 +224,12 @@ describe('the usability rule', () => {
 });
 
 describe('file round-trip', () => {
-  test('subprojectSpecToFileEntry emits only what deviates, and the agents map verbatim', () => {
-    const parsed = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
+  test('spaceSpecToFileEntry emits only what deviates, and the agents map verbatim', () => {
+    const parsed = parseSpaceFile('marketing', 'kortix-marketing.yaml', MARKETING);
     if (!parsed.ok) throw new Error(parsed.error.error);
-    const entry = subprojectSpecToFileEntry(parsed.spec);
+    const entry = spaceSpecToFileEntry(parsed.spec);
     expect(Object.keys(entry)).toEqual(['name', 'description', 'agent', 'sessions', 'agents']);
-    const minimal: SubprojectSpec = {
+    const minimal: SpaceSpec = {
       ...parsed.spec,
       name: 'marketing',
       description: null,
@@ -237,32 +237,32 @@ describe('file round-trip', () => {
       sessions: 'private',
       agentsRaw: null,
     };
-    expect(subprojectSpecToFileEntry(minimal)).toEqual({});
+    expect(spaceSpecToFileEntry(minimal)).toEqual({});
   });
 
   test('serialize → parse keeps every field', () => {
-    const parsed = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
+    const parsed = parseSpaceFile('marketing', 'kortix-marketing.yaml', MARKETING);
     if (!parsed.ok) throw new Error(parsed.error.error);
-    const text = serializeManifestObject(subprojectSpecToFileEntry(parsed.spec), 'yaml');
-    const again = parseSubprojectFile('marketing', 'kortix-marketing.yaml', text);
+    const text = serializeManifestObject(spaceSpecToFileEntry(parsed.spec), 'yaml');
+    const again = parseSpaceFile('marketing', 'kortix-marketing.yaml', text);
     if (!again.ok) throw new Error(again.error.error);
     expect(again.spec).toEqual(parsed.spec);
     expect(parseManifestText(text, 'yaml').agents).toEqual(parsed.spec.agentsRaw);
   });
 
-  test('strip clears `subproject:` only from the triggers naming it', () => {
+  test('strip clears `space:` only from the triggers naming it', () => {
     const m = manifest({
       kortix_version: 2,
       triggers: [
-        { slug: 'a', subproject: 'marketing' },
-        { slug: 'b', subproject: 'research' },
+        { slug: 'a', space: 'marketing' },
+        { slug: 'b', space: 'research' },
         { slug: 'c' },
       ],
     });
-    const next = stripSubprojectFromTriggers(m, 'marketing');
-    expect(next.raw.triggers).toEqual([{ slug: 'a' }, { slug: 'b', subproject: 'research' }, { slug: 'c' }]);
+    const next = stripSpaceFromTriggers(m, 'marketing');
+    expect(next.raw.triggers).toEqual([{ slug: 'a' }, { slug: 'b', space: 'research' }, { slug: 'c' }]);
     // Untouched input.
-    expect((m.raw.triggers as Array<Record<string, unknown>>)[0]?.subproject).toBe('marketing');
+    expect((m.raw.triggers as Array<Record<string, unknown>>)[0]?.space).toBe('marketing');
   });
 });
 
@@ -279,7 +279,7 @@ triggers:
   - slug: weekly
     type: cron
     agent: writer
-    subproject: marketing
+    space: marketing
     cron: "0 0 9 * * 1"
     timezone: UTC
     prompt: Draft the weekly update.
@@ -293,57 +293,76 @@ triggers:
 
 const parse = (raw: string) => parseManifestString(raw, 'yaml', 'kortix.yaml');
 
-describe('trigger `subproject` round-trip', () => {
+describe('trigger `space` round-trip', () => {
   test('parse → entry → parse keeps the slug, and omits the key when unset', () => {
     const specs = extractTriggers(parse(YAML)).specs;
     const weekly = specs.find((s) => s.slug === 'weekly')!;
     const unrelated = specs.find((s) => s.slug === 'unrelated')!;
-    expect(weekly.subproject).toBe('marketing');
-    expect(unrelated.subproject).toBeNull();
+    expect(weekly.space).toBe('marketing');
+    expect(unrelated.space).toBeNull();
 
     const entry = triggerSpecToTomlEntry(weekly);
-    expect(entry.subproject).toBe('marketing');
-    expect(triggerSpecToTomlEntry(unrelated)).not.toHaveProperty('subproject');
+    expect(entry.space).toBe('marketing');
+    expect(triggerSpecToTomlEntry(unrelated)).not.toHaveProperty('space');
 
     const manifest = parse(YAML);
     manifest.raw.triggers = [entry, triggerSpecToTomlEntry(unrelated)];
     const reparsed = extractTriggers(parse(serializeManifest(manifest))).specs;
-    expect(reparsed.map((s) => [s.slug, s.subproject])).toEqual([
+    expect(reparsed.map((s) => [s.slug, s.space])).toEqual([
       ['unrelated', null],
       ['weekly', 'marketing'],
     ]);
   });
 
-  test('a PATCH of an unrelated field keeps `subproject` (specToBody merge base)', () => {
+  test('a trigger still written with `subproject:` keeps its scoping, and is rewritten as `space:`', () => {
+    // The pre-2026-09-07 spelling. `extractTriggers` reads it so a manifest
+    // written before the rename does not silently lose its scoping; the next
+    // write of that trigger emits `space:`.
+    const legacy = parse(YAML.replace('subproject: marketing', 'subproject: marketing'));
+    legacy.raw.triggers = [
+      { slug: 'legacy', type: 'cron', agent: 'writer', subproject: 'marketing', cron: '0 0 9 * * 1', timezone: 'UTC', prompt: 'x' },
+      { slug: 'both', type: 'cron', agent: 'writer', subproject: 'research', space: 'marketing', cron: '0 0 9 * * 1', timezone: 'UTC', prompt: 'x' },
+    ];
+    const specs = extractTriggers(legacy).specs;
+    expect(specs.find((s) => s.slug === 'legacy')?.space).toBe('marketing');
+    // `space` wins when both are present.
+    expect(specs.find((s) => s.slug === 'both')?.space).toBe('marketing');
+
+    const entry = triggerSpecToTomlEntry(specs.find((s) => s.slug === 'legacy')!);
+    expect(entry.space).toBe('marketing');
+    expect(entry).not.toHaveProperty('subproject');
+  });
+
+  test('a PATCH of an unrelated field keeps `space` (specToBody merge base)', () => {
     const weekly = extractTriggers(parse(YAML)).specs.find((s) => s.slug === 'weekly')!;
     const base = specToBody(weekly);
-    expect(base.subproject).toBe('marketing');
+    expect(base.space).toBe('marketing');
 
     const draft = parseTriggerDraft({ ...base, enabled: false }, { existingSlug: 'weekly' });
     expect(draft).not.toHaveProperty('error');
-    expect((draft as { subproject: string | null }).subproject).toBe('marketing');
-    expect(draftToSpec(draft as never, 'kortix.yaml').subproject).toBe('marketing');
+    expect((draft as { space: string | null }).space).toBe('marketing');
+    expect(draftToSpec(draft as never, 'kortix.yaml').space).toBe('marketing');
   });
 
   test('an explicit null or empty string clears it', () => {
     const weekly = extractTriggers(parse(YAML)).specs.find((s) => s.slug === 'weekly')!;
     for (const clear of [null, '']) {
       const draft = parseTriggerDraft(
-        { ...specToBody(weekly), subproject: clear },
+        { ...specToBody(weekly), space: clear },
         { existingSlug: 'weekly' },
       );
-      expect((draft as { subproject: string | null }).subproject).toBeNull();
+      expect((draft as { space: string | null }).space).toBeNull();
     }
   });
 });
 
 /**
- * §5.6 — a warm session is never adopted for a subproject start. The server
+ * §5.6 — a warm session is never adopted for a space start. The server
  * half of that is a plain refusal: both warm bodies are `.strict()`, so a
- * `subproject` key is a 400 before any handler runs. Pinned here because the
+ * `space` key is a 400 before any handler runs. Pinned here because the
  * rule is invisible in the route file.
  */
-describe('warm session bodies refuse a subproject', () => {
+describe('warm session bodies refuse a space', () => {
   const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 
   test('the claim body rejects it', () => {
@@ -353,13 +372,13 @@ describe('warm session bodies refuse a subproject', () => {
     expect(
       ClaimWarmProjectSessionInputSchema.safeParse({
         session_id: SESSION_ID,
-        subproject: 'marketing',
+        space: 'marketing',
       }).success,
     ).toBe(false);
   });
 
   test('the create body ACCEPTS it — only the warm path refuses', () => {
-    expect(SessionCreateInputSchema.safeParse({ subproject: 'marketing' }).success).toBe(true);
-    expect(SessionCreateInputSchema.safeParse({ subproject: '' }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ space: 'marketing' }).success).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ space: '' }).success).toBe(false);
   });
 });

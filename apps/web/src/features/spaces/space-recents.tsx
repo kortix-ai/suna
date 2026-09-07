@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The sessions inside a subproject, under its composer — the same rows the
+ * The sessions inside a space, under its composer — the same rows the
  * sidebar folder lists, laid out as a quiet "Recents" list (user,
  * 2026-09-06). Reads the SAME `qk.project.sessions(pid, 'visible')` entry the
  * sidebar polls, so it costs no request of its own.
@@ -27,7 +27,7 @@ function formatDay(iso: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export function SubprojectRecents({ projectId, slug }: { projectId: string; slug: string }) {
+export function SpaceRecents({ projectId, slug }: { projectId: string; slug: string }) {
   const sessionsQuery = useQuery({
     queryKey: qk.project.sessions(projectId, 'visible'),
     queryFn: () => listProjectSessions(projectId),
@@ -42,7 +42,7 @@ export function SubprojectRecents({ projectId, slug }: { projectId: string; slug
   const sessions = useMemo(
     () =>
       sortSessionsByLastActivity(
-        (sessionsQuery.data ?? []).filter((session) => session.subproject === slug),
+        (sessionsQuery.data ?? []).filter((session) => session.space === slug),
       ).slice(0, RECENTS_LIMIT),
     [sessionsQuery.data, slug],
   );

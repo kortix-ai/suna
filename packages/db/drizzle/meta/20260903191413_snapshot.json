@@ -13586,12 +13586,6 @@
           "notNull": true,
           "default": "'default'"
         },
-        "subproject": {
-          "name": "subproject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "project_session_status",
@@ -13680,6 +13674,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "space": {
+          "name": "space",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

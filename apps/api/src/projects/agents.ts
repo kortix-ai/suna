@@ -90,12 +90,12 @@ export interface AgentSpec {
   /** Agent name — unique per project. Matches projectSessions.agentName + the `.md` filename. */
   name: string;
   /** e.g. `kortix.yaml#agents.<name>` (or `kortix-<slug>.yaml#agents.<name>` for an
-   *  agent a subproject owns) for UI / error reporting. */
+   *  agent a space owns) for UI / error reporting. */
   path: string;
-  /** The subproject that DECLARES this agent (`kortix-<slug>.yaml`), or null for
+  /** The space that DECLARES this agent (`kortix-<slug>.yaml`), or null for
    *  a global agent from the root manifest. An owned agent is usable only in
-   *  its subproject and in the ones that reference it (spec 2026-09-06 §2). */
-  subproject: string | null;
+   *  its space and in the ones that reference it (spec 2026-09-06 §2). */
+  space: string | null;
   /** When false the overlay is skipped (the agent still runs from its `.md`, with default-deny scope). */
   enabled: boolean;
   /** Which connectors (by slug) this agent may use. `[]` = none (default). */
@@ -311,29 +311,29 @@ export async function loadProjectAgents(
   const root = extractAgents(
     manifest ?? synthesizeBlankManifest({ manifestPath: project.manifestPath }),
   );
-  // The agents each subproject file declares join the roster, carrying their
+  // The agents each space file declares join the roster, carrying their
   // owner. Same read (`manifest` is handed over, not re-read); a v1 or absent
   // manifest lists no files at all.
-  const { loadProjectSubprojects } = await import('./subprojects');
-  const subprojects = await loadProjectSubprojects(project, { manifest });
-  return mergeSubprojectAgents(root, subprojects.specs);
+  const { loadProjectSpaces } = await import('./spaces');
+  const spaces = await loadProjectSpaces(project, { manifest });
+  return mergeSpaceAgents(root, spaces.specs);
 }
 
 /**
- * Fold the agents owned by subproject files into the root's roster. An agent
+ * Fold the agents owned by space files into the root's roster. An agent
  * name is unique across the whole project — a name declared twice (root and
  * a file, or two files) is an error naming both places, and the second
  * declaration is dropped so the first keeps working. Pure.
  */
-export function mergeSubprojectAgents(
+export function mergeSpaceAgents(
   root: LoadedAgents,
-  subprojects: readonly { ownedAgents: readonly AgentSpec[] }[],
+  spaces: readonly { ownedAgents: readonly AgentSpec[] }[],
 ): LoadedAgents {
   const specs = [...root.specs];
   const errors = [...root.errors];
   const declaredAt = new Map(root.specs.map((spec) => [spec.name, spec.path]));
-  for (const subproject of subprojects) {
-    for (const agent of subproject.ownedAgents) {
+  for (const space of spaces) {
+    for (const agent of space.ownedAgents) {
       const previous = declaredAt.get(agent.name);
       if (previous) {
         errors.push({
@@ -724,7 +724,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
     spec: {
       name,
       path: `${filename}#agents.${name}`,
-      subproject: null,
+      space: null,
       enabled,
       connectors: connectorsParsed.value,
       kortixCli: kortixParsed.value,
@@ -825,7 +825,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
     spec: {
       name,
       path: `${filename}#agents.${name}`,
-      subproject: null,
+      space: null,
       enabled,
       connectors: toGrantSet(connectorsResolved),
       connectorsRequired,

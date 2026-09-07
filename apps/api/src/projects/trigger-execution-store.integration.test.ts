@@ -50,7 +50,7 @@ const spec: GitTriggerSpec = {
   pinnedSessionId: null,
   sessionKey: null,
   filter: null,
-  subproject: null,
+  space: null,
 };
 
 let integrationDb: Database | null = null;

@@ -1,11 +1,11 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
-  createProjectSubproject,
-  deleteProjectSubproject,
-  getProjectSubproject,
-  listProjectSubprojects,
-  updateProjectSubproject,
+  createProjectSpace,
+  deleteProjectSpace,
+  getProjectSpace,
+  listProjectSpaces,
+  updateProjectSpace,
 } from './index';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -19,7 +19,7 @@ beforeEach(() => {
     });
     return new Response(
       JSON.stringify({
-        subprojects: [],
+        spaces: [],
         errors: [],
         slug: 'marketing',
         name: 'Marketing',
@@ -41,31 +41,31 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
 
-test('listProjectSubprojects gets the collection and returns subprojects + errors', async () => {
-  const result = await listProjectSubprojects('P1');
-  expect(last().url).toBe('http://test.local/projects/P1/subprojects');
+test('listProjectSpaces gets the collection and returns spaces + errors', async () => {
+  const result = await listProjectSpaces('P1');
+  expect(last().url).toBe('http://test.local/projects/P1/spaces');
   expect(last().method).toBe('GET');
-  expect(result.subprojects).toEqual([]);
+  expect(result.spaces).toEqual([]);
   expect(result.errors).toEqual([]);
 });
 
-test('getProjectSubproject gets one subproject by slug', async () => {
-  const result = await getProjectSubproject('P1', 'marketing');
-  expect(last().url).toBe('http://test.local/projects/P1/subprojects/marketing');
+test('getProjectSpace gets one space by slug', async () => {
+  const result = await getProjectSpace('P1', 'marketing');
+  expect(last().url).toBe('http://test.local/projects/P1/spaces/marketing');
   expect(last().method).toBe('GET');
   expect(result.slug).toBe('marketing');
   expect(result.sessions).toBe('private');
 });
 
-test('createProjectSubproject posts the input body verbatim', async () => {
-  await createProjectSubproject('P1', {
+test('createProjectSpace posts the input body verbatim', async () => {
+  await createProjectSpace('P1', {
     name: 'Marketing',
     slug: 'marketing',
     description: 'Campaign work.',
     agent: 'writer',
     sessions: 'shared',
   });
-  expect(last().url).toBe('http://test.local/projects/P1/subprojects');
+  expect(last().url).toBe('http://test.local/projects/P1/spaces');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({
     name: 'Marketing',
@@ -76,30 +76,30 @@ test('createProjectSubproject posts the input body verbatim', async () => {
   });
 });
 
-test('updateProjectSubproject patches the slug and forwards explicit nulls', async () => {
-  await updateProjectSubproject('P1', 'marketing', { description: null, agent: null });
-  expect(last().url).toBe('http://test.local/projects/P1/subprojects/marketing');
+test('updateProjectSpace patches the slug and forwards explicit nulls', async () => {
+  await updateProjectSpace('P1', 'marketing', { description: null, agent: null });
+  expect(last().url).toBe('http://test.local/projects/P1/spaces/marketing');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ description: null, agent: null });
 });
 
-test('deleteProjectSubproject deletes by slug', async () => {
-  await deleteProjectSubproject('P1', 'marketing');
-  expect(last().url).toBe('http://test.local/projects/P1/subprojects/marketing');
+test('deleteProjectSpace deletes by slug', async () => {
+  await deleteProjectSpace('P1', 'marketing');
+  expect(last().url).toBe('http://test.local/projects/P1/spaces/marketing');
   expect(last().method).toBe('DELETE');
 });
 
 test('a slug with a slash-unsafe character is URL-encoded in the path', async () => {
-  await getProjectSubproject('P1', 'a b');
-  expect(last().url).toBe('http://test.local/projects/P1/subprojects/a%20b');
+  await getProjectSpace('P1', 'a b');
+  expect(last().url).toBe('http://test.local/projects/P1/spaces/a%20b');
 });
 
-test('a subproject carries the agents usable in it beyond the globals', async () => {
-  const subproject = await getProjectSubproject('p1', 'marketing');
+test('a space carries the agents usable in it beyond the globals', async () => {
+  const space = await getProjectSpace('p1', 'marketing');
   // The wire field is `agents: string[]` — owned or referenced names, in file
   // order. An older server omits it; the type still names it so hosts can
   // build the roster as globals + these without a second request.
-  const agents: string[] = subproject.agents ?? [];
+  const agents: string[] = space.agents ?? [];
   expect(Array.isArray(agents)).toBe(true);
-  expect(subproject.path).toBe('kortix-marketing.yaml');
+  expect(space.path).toBe('kortix-marketing.yaml');
 });

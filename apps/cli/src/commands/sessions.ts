@@ -56,8 +56,8 @@ Manage Kortix project sessions — each session is an isolated sandbox VM
 on its own ephemeral branch.
 
 Subcommands:
-  ls [--subproject <slug>]          List sessions on the project. --subproject
-                                    filters to one subproject (\`--subproject ""\`
+  ls [--space <slug>]          List sessions on the project. --space
+                                    filters to one space (\`--space ""\`
                                     lists sessions with none). --json.
   status                            Mission control: every session + what
                                     each agent is doing right now (live).
@@ -66,8 +66,8 @@ Subcommands:
                                     initial prompt. --agent <name> pins the
                                     session to that agent (default: the
                                     project's declared default agent).
-                                    --subproject <slug> groups it under a
-                                    subproject (default: $KORTIX_SUBPROJECT
+                                    --space <slug> groups it under a
+                                    space (default: $KORTIX_SPACE
                                     inside a sandbox, if set).
                                     --model <id> overrides the model.
                                     --wait blocks until it's running; --json
@@ -305,7 +305,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   let hostFlag: string | undefined;
   let portFlag: string | undefined;
   let agentFlag: string | undefined;
-  let subprojectFlag: string | undefined;
+  let spaceFlag: string | undefined;
   let withFiles: string[] = [];
   let overrides: SessionOverrides = {};
   try {
@@ -314,7 +314,7 @@ export async function runSessions(argv: string[]): Promise<number> {
     promptFlag = takeFlagValue(rest, ['--prompt', '-p']);
     portFlag = takeFlagValue(rest, ['--port']);
     agentFlag = takeFlagValue(rest, ['--agent']);
-    subprojectFlag = takeFlagValue(rest, ['--subproject']);
+    spaceFlag = takeFlagValue(rest, ['--space']);
     withFiles = takeFlagValues(rest, ['--with-file']);
     // Backend/override flags for `sessions new`. Other subcommands keep their
     // positional arguments in `rest`.
@@ -332,7 +332,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   switch (sub) {
     case 'ls':
     case 'list':
-      return sessionsLs(ctxOpts, json, subprojectFlag);
+      return sessionsLs(ctxOpts, json, spaceFlag);
     case 'new':
     case 'create':
       return sessionsNew(
@@ -344,7 +344,7 @@ export async function runSessions(argv: string[]): Promise<number> {
         overrides,
         withFiles,
         connectAfter,
-        subprojectFlag,
+        spaceFlag,
       );
     case 'info':
     case 'show':
@@ -425,16 +425,16 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
   return out;
 }
 
-async function sessionsLs(opts: CtxOpts, json = false, subproject?: string): Promise<number> {
+async function sessionsLs(opts: CtxOpts, json = false, space?: string): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
-  // `subproject === ''` (the `--subproject=` clearing form) is a deliberate
-  // query too — it asks the API for sessions with NO subproject, not "no filter".
+  // `space === ''` (the `--space=` clearing form) is a deliberate
+  // query too — it asks the API for sessions with NO space, not "no filter".
   const path =
-    subproject === undefined
+    space === undefined
       ? `/projects/${ctx.projectId}/sessions`
-      : `/projects/${ctx.projectId}/sessions?subproject=${encodeURIComponent(subproject)}`;
+      : `/projects/${ctx.projectId}/sessions?space=${encodeURIComponent(space)}`;
 
   let sessions: ProjectSession[];
   try {
@@ -500,7 +500,7 @@ async function sessionsNew(
   overrides: SessionOverrides = {},
   withFiles: string[] = [],
   connectAfter = false,
-  subprojectFlag?: string,
+  spaceFlag?: string,
 ): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -536,12 +536,12 @@ async function sessionsNew(
   // non-binding 'default' sentinel when none is configured. See
   // apps/api/src/projects/lib/sessions.ts createProjectSession.
   if (agent) body.agent_name = agent;
-  // Inside a sandbox, an unset --subproject inherits the coordinator's own
-  // subproject (KORTIX_SUBPROJECT) — the platform-injected env
+  // Inside a sandbox, an unset --space inherits the coordinator's own
+  // space (KORTIX_SPACE) — the platform-injected env
   // session-runtime-env.ts sets — so worker sessions land in the same
-  // subproject by default.
-  const subproject = subprojectFlag ?? process.env.KORTIX_SUBPROJECT;
-  if (subproject) body.subproject = subproject;
+  // space by default.
+  const space = spaceFlag ?? process.env.KORTIX_SPACE;
+  if (space) body.space = space;
   if (overrides.model) body.opencode_model = overrides.model;
   if (overrides.secrets !== undefined) body.secrets = overrides.secrets;
   if (overrides.connectors !== undefined) body.connector_bindings = overrides.connectors;

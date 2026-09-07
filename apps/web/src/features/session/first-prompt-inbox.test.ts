@@ -22,12 +22,12 @@ function read(relative: string): string {
 }
 
 const shell = read('./instant-session-shell.tsx');
-// The composer send moved out of the page and into a hook when the subproject
+// The composer send moved out of the page and into a hook when the space
 // page grew a SECOND `ProjectHome` (2026-09-04): both surfaces now share one
 // producer, so this tripwire follows it there and covers both at once.
 const projectHomeSend = read('../workspace/project-layout/use-project-home-send.ts');
 const projectHomePage = read('../../app/(app)/projects/[id]/page.tsx');
-const subprojectPage = read('../subprojects/subproject-page.tsx');
+const spacePage = read('../spaces/space-page.tsx');
 const sessionPage = read('../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 const configureThread = read('../workspace/customize/use-configure-thread.ts');
 const runUpgrade = read('../workspace/customize/migrate-to-v2/use-run-upgrade.ts');
@@ -54,7 +54,7 @@ describe('every first-prompt producer writes a durable row, not a prompt stash',
     // its own send path and quietly go back to stashing the prompt.
     for (const [name, source] of [
       ['project index page', projectHomePage],
-      ['subproject page', subprojectPage],
+      ['space page', spacePage],
     ] as const) {
       expect({ name, usesSharedSend: source.includes('useProjectHomeSend(') }).toEqual({
         name,

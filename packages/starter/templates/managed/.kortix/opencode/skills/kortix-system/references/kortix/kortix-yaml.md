@@ -315,7 +315,7 @@ output — UI ordering is stable, not authoring-order.
 | `prompt`     | yes      | string  | —           | Mustache-style template.                                      |
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
 | `agent`      | no       | string  | `default_agent` | Must name a declared agent in `agents:`.                  |
-| `subproject` | no       | string  | none        | Must name a declared subproject in `subprojects:`. The fired session joins it. `null`/`""` on PATCH clears it. |
+| `space` | no       | string  | none        | Must name a declared space in `spaces:`. The fired session joins it. `null`/`""` on PATCH clears it. |
 | `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
 | `session_mode` | no     | string  | `"fresh"`   | `"fresh"` (new session every fire, no prior history) or `"reuse"` (re-prompts the same long-lived session, resuming its sandbox and accumulated context). See `<scheduling>` in this skill's SKILL.md for when to pick each. |
 
@@ -430,7 +430,7 @@ and only one should actually fire.
 - Bad entries surface in `errors` next to the good ones — they don't
   break the whole file.
 
-## `subprojects:`
+## `spaces:`
 
 A slug-to-block map. Each entry is a named container inside the project: it
 groups sessions under one effort, gives the agent standing instructions and
@@ -438,7 +438,7 @@ reference files, owns the triggers naming it, and is granted to members/groups
 exactly like an agent — closed by default, no grant means no access.
 
 ```yaml
-subprojects:
+spaces:
   marketing:
     name: Marketing
     description: Campaign work.
@@ -446,7 +446,7 @@ subprojects:
       Always write in British English.
     context:
       - docs/brand.md
-      - .kortix/subprojects/marketing/
+      - .kortix/spaces/marketing/
     agent: writer
     sessions: private
 ```
@@ -458,25 +458,25 @@ subprojects:
 | `description`  | no       | string     | —         | One-liner shown in the dashboard.                                            |
 | `instructions` | no       | string     | —         | Inline markdown, delivered to the sandbox and rendered as standing context.  |
 | `context`      | no       | `string[]` | `[]`      | Repo-relative paths (a file, or a `dir/`). No leading `/`, no `..` segment.  |
-| `agent`        | no       | string     | —         | Must name a key in `agents:`. A DEFAULT for sessions started here — granting the subproject does NOT also grant this agent. |
-| `sessions`     | no       | string     | `private` | `private`: ordinary per-session visibility. `shared`: every session in the subproject is readable by everyone granted it (lifecycle rights unchanged). |
+| `agent`        | no       | string     | —         | Must name a key in `agents:`. A DEFAULT for sessions started here — granting the space does NOT also grant this agent. |
+| `sessions`     | no       | string     | `private` | `private`: ordinary per-session visibility. `shared`: every session in the space is readable by everyone granted it (lifecycle rights unchanged). |
 
 Create/edit/delete need `project.customize.write` (manager tier). Deleting a
-subproject strips `subproject:` from every trigger naming it, in the same
+space strips `space:` from every trigger naming it, in the same
 commit, and orphans (flags, never silently reinterprets) its grant rows.
 Grant one through the generic resource-grant surface — the same endpoint that
 grants agents:
 
 ```
 POST /projects/:id/resource-grants
-{ "resource_type": "subproject", "resource_id": "marketing", "principal_type": "member", "principal_id": "<user-id>" }
+{ "resource_type": "space", "resource_id": "marketing", "principal_type": "member", "principal_id": "<user-id>" }
 ```
 
-**What a session inside a subproject sees:** `KORTIX_SUBPROJECT=<slug>` and
-`KORTIX_SUBPROJECT_CONTEXT=<json>` env vars, plus a rendered
-`/tmp/kortix/subproject.md` (name, description, instructions, listed context)
+**What a session inside a space sees:** `KORTIX_SPACE=<slug>` and
+`KORTIX_SPACE_CONTEXT=<json>` env vars, plus a rendered
+`/tmp/kortix/space.md` (name, description, instructions, listed context)
 appended to the OpenCode `instructions` file — see `<cli>` in SKILL.md for the
-agent-facing contract. `?subproject=<slug>` / `?subproject=` (none) filter
+agent-facing contract. `?space=<slug>` / `?space=` (none) filter
 `GET .../sessions`.
 
 ## Secrets

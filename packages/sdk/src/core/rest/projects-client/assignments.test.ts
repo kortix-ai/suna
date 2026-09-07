@@ -237,8 +237,8 @@ test('listPermissions is a background read — a 403 never reaches the global er
   expect(reportedErrors).toBe(0);
 });
 
-// A subproject is an IAM object like an agent: the assignment object type
-// must admit it or hosts cast (`'subproject' as AssignmentObjectType`).
-import type { AssignmentObjectType as _ObjectTypeWithSubproject } from './assignments';
-const _subprojectObjectType: _ObjectTypeWithSubproject = 'subproject';
-void _subprojectObjectType;
+// A space is an IAM object like an agent: the assignment object type
+// must admit it or hosts cast (`'space' as AssignmentObjectType`).
+import type { AssignmentObjectType as _ObjectTypeWithSpace } from './assignments';
+const _spaceObjectType: _ObjectTypeWithSpace = 'space';
+void _spaceObjectType;

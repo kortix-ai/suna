@@ -100,14 +100,14 @@ export type NewProjectSessionOpts = {
     inherit_unbound?: boolean;
     require_connectors?: string[];
     /**
-     * Start the session inside this declared subproject. A warm session is
+     * Start the session inside this declared space. A warm session is
      * NEVER adopted for one (spec §5.6): a warm session was created seconds
-     * ago with no subproject, and the column is set at birth — adopting one
+     * ago with no space, and the column is set at birth — adopting one
      * would file the session under nothing while the composer said otherwise.
-     * The server refuses a warm claim carrying `subproject` for the same
+     * The server refuses a warm claim carrying `space` for the same
      * reason, so this is the client half of one rule, not a second one.
      */
-    subproject?: string;
+    space?: string;
   };
 };
 
@@ -206,9 +206,9 @@ export function useNewProjectSession(projectId: string | undefined) {
       // null whenever there is nothing suitable, so the create path below stays
       // the authority on billing, the session cap and connector requirements.
       const takeOrCreateSession = async () => {
-        // A subproject start never adopts a warm session — see the field's own
-        // comment on `NewProjectSessionOpts.create.subproject`.
-        const warm = opts?.create?.subproject
+        // A space start never adopts a warm session — see the field's own
+        // comment on `NewProjectSessionOpts.create.space`.
+        const warm = opts?.create?.space
           ? null
           : takeWarmSessionEntry(projectId, {
               create: opts?.create,

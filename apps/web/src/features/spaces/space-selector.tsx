@@ -12,7 +12,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import type { Subproject } from '@kortix/sdk';
+import type { Space } from '@kortix/sdk';
 import {
   CaretDownIcon,
   CheckIcon,
@@ -22,7 +22,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMemo, useState, type ReactNode } from 'react';
 
-import { CreateSubprojectModal } from './create-subproject-modal';
+import { CreateSpaceModal } from './create-space-modal';
 
 /** Same threshold as `AgentSelector`: under it the whole list is readable at
  *  a glance and a search field is a row of chrome that saves nobody time. */
@@ -30,26 +30,26 @@ const SEARCH_MIN_ITEMS = 7;
 
 /**
  * Where a session from this composer starts: the whole project, or one of
- * its subprojects.
+ * its spaces.
  *
  * Lives in the tray under the chat card (`Composer.traySlot`) as a pill that
- * STATES the current target — "Whole project", or the subproject's name —
+ * STATES the current target — "Whole project", or the space's name —
  * and opens downward, the way Claude's "Project or folder" strip does (user,
- * 2026-09-05). The list mirrors the sidebar's `Subprojects` group: the same
- * rows, the same folder glyph, and `New subproject` at the foot for anyone
+ * 2026-09-05). The list mirrors the sidebar's `Spaces` group: the same
+ * rows, the same folder glyph, and `New space` at the foot for anyone
  * who may create one (the modal navigates to the new page, which preselects
  * itself here).
  */
-export function SubprojectSelector({
+export function SpaceSelector({
   projectId,
-  subprojects,
+  spaces,
   selected,
   onSelect,
   canCreate,
 }: {
   projectId: string;
-  /** Every subproject the caller may see — the sidebar's list. */
-  subprojects: Subproject[];
+  /** Every space the caller may see — the sidebar's list. */
+  spaces: Space[];
   /** The slug a send will carry, or `null` for the whole project. */
   selected: string | null;
   onSelect: (slug: string | null) => void;
@@ -59,19 +59,19 @@ export function SubprojectSelector({
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
 
-  const current = subprojects.find((s) => s.slug === selected) ?? null;
+  const current = spaces.find((s) => s.slug === selected) ?? null;
   const query = search.trim().toLowerCase();
   const filtered = useMemo(() => {
-    if (!query) return subprojects;
-    return subprojects.filter(
+    if (!query) return spaces;
+    return spaces.filter(
       (s) =>
         s.name.toLowerCase().includes(query) ||
         s.slug.includes(query) ||
         (s.description ?? '').toLowerCase().includes(query),
     );
-  }, [subprojects, query]);
+  }, [spaces, query]);
   // Keyed off the FULL list, never the filtered one — see `AgentSelector`.
-  const showSearch = subprojects.length >= SEARCH_MIN_ITEMS;
+  const showSearch = spaces.length >= SEARCH_MIN_ITEMS;
 
   const row = (
     key: string,
@@ -120,7 +120,7 @@ export function SubprojectSelector({
             type="button"
             variant="outline"
             size="sm"
-            aria-label="Select subproject"
+            aria-label="Select space"
             className="bg-background rounded-lg"
           >
             {current ? (
@@ -149,7 +149,7 @@ export function SubprojectSelector({
           <div className={showSearch ? undefined : 'sr-only'}>
             <CommandInput
               compact
-              placeholder="Search subprojects"
+              placeholder="Search spaces"
               value={search}
               onValueChange={setSearch}
             />
@@ -162,13 +162,13 @@ export function SubprojectSelector({
                   'whole-project',
                   <SquaresFourIcon className="size-4" />,
                   'Whole project',
-                  'Not inside a subproject.',
+                  'Not inside a space.',
                   selected === null,
                   () => onSelect(null),
                 )}
               {filtered.map((s) =>
                 row(
-                  `subproject-${s.slug}`,
+                  `space-${s.slug}`,
                   <FolderSimpleIcon className="size-4" />,
                   s.name,
                   s.description,
@@ -180,7 +180,7 @@ export function SubprojectSelector({
 
             {filtered.length === 0 && query ? (
               <div className="text-muted-foreground/50 py-8 text-center text-xs">
-                No subprojects match &ldquo;{search.trim()}&rdquo;
+                No spaces match &ldquo;{search.trim()}&rdquo;
               </div>
             ) : null}
 
@@ -189,9 +189,9 @@ export function SubprojectSelector({
                 <CommandSeparator />
                 <CommandGroup forceMount>
                   {row(
-                    'new-subproject',
+                    'new-space',
                     <PlusIcon className="size-4" />,
-                    'New subproject',
+                    'New space',
                     null,
                     false,
                     () => setCreateOpen(true),
@@ -204,7 +204,7 @@ export function SubprojectSelector({
       </CommandPopover>
 
       {canCreate ? (
-        <CreateSubprojectModal
+        <CreateSpaceModal
           projectId={projectId}
           open={createOpen}
           onOpenChange={setCreateOpen}

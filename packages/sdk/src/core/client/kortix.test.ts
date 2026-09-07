@@ -448,29 +448,29 @@ test('project(id).access.resourceGrants covers list/create/remove', async () => 
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).subprojects covers the whole CRUD surface', async () => {
-  const subprojects = kortix.project('PID123').subprojects;
+test('project(id).spaces covers the whole CRUD surface', async () => {
+  const spaces = kortix.project('PID123').spaces;
 
-  await subprojects.list();
-  expect(last().url).toBe('http://test.local/projects/PID123/subprojects');
+  await spaces.list();
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces');
   expect(last().method).toBe('GET');
 
-  await subprojects.get('marketing');
-  expect(last().url).toBe('http://test.local/projects/PID123/subprojects/marketing');
+  await spaces.get('marketing');
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces/marketing');
   expect(last().method).toBe('GET');
 
-  await subprojects.create({ name: 'Marketing' });
-  expect(last().url).toBe('http://test.local/projects/PID123/subprojects');
+  await spaces.create({ name: 'Marketing' });
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ name: 'Marketing' });
 
-  await subprojects.update('marketing', { sessions: 'shared' });
-  expect(last().url).toBe('http://test.local/projects/PID123/subprojects/marketing');
+  await spaces.update('marketing', { sessions: 'shared' });
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces/marketing');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ sessions: 'shared' });
 
-  await subprojects.remove('marketing');
-  expect(last().url).toBe('http://test.local/projects/PID123/subprojects/marketing');
+  await spaces.remove('marketing');
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces/marketing');
   expect(last().method).toBe('DELETE');
 });
 

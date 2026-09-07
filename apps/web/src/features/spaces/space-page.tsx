@@ -1,15 +1,15 @@
 'use client';
 
 /**
- * /projects/[id]/subprojects/[slug] — a subproject IS the project-home surface
+ * /projects/[id]/spaces/[slug] — a space IS the project-home surface
  * wearing a different name.
  *
  * Same wallpaper, same greeting shape, same composer, same create path
  * (`useProjectHomeSend` with the slug and the default agent). What the page
  * adds is quiet: a breadcrumb floated top-left, a ghost toolbar top-right
- * (share, `⋯`), and the subproject's recent sessions under the composer.
+ * (share, `⋯`), and the space's recent sessions under the composer.
  *
- * ONE COLUMN, deliberately (user, 2026-09-07). What a subproject is
+ * ONE COLUMN, deliberately (user, 2026-09-07). What a space is
  * configured with now lives in its `kortix-<slug>.yaml`, written by a person
  * or an agent, not in a settings panel beside the composer. The page is
  * heading + composer + a list, which is also the shape a Slack-style tab strip
@@ -49,14 +49,14 @@ import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
-  deleteProjectSubproject,
+  deleteProjectSpace,
   getProjectDetail,
-  getProjectSubproject,
+  getProjectSpace,
   listProjectResourceGrants,
-  updateProjectSubproject,
+  updateProjectSpace,
   type ProjectResourceGrant,
-  type Subproject,
-  type SubprojectSessionsMode,
+  type Space,
+  type SpaceSessionsMode,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import {
@@ -69,31 +69,31 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import { SubprojectRecents } from './subproject-recents';
-import { useInvalidateSubproject } from './subprojects-data';
+import { SpaceRecents } from './space-recents';
+import { useInvalidateSpace } from './spaces-data';
 
-/** The grants naming this subproject. Orphaned rows (the block was deleted)
+/** The grants naming this space. Orphaned rows (the block was deleted)
  *  are kept — they are inert, and hiding them hides the thing to clean up. */
-export function grantsForSubproject(
+export function grantsForSpace(
   grants: readonly ProjectResourceGrant[],
   slug: string,
 ): ProjectResourceGrant[] {
-  return grants.filter((g) => g.resource_type === 'subproject' && g.resource_id === slug);
+  return grants.filter((g) => g.resource_type === 'space' && g.resource_id === slug);
 }
 
-export function SubprojectPage({ projectId, slug }: { projectId: string; slug: string }) {
+export function SpacePage({ projectId, slug }: { projectId: string; slug: string }) {
   const query = useQuery({
-    queryKey: qk.project.subproject(projectId, slug),
-    queryFn: () => getProjectSubproject(projectId, slug),
+    queryKey: qk.project.space(projectId, slug),
+    queryFn: () => getProjectSpace(projectId, slug),
     retry: false,
     ...contract('config'),
   });
 
-  if (query.isLoading) return <SubprojectPageSkeleton />;
+  if (query.isLoading) return <SpacePageSkeleton />;
 
   if (query.isError || !query.data) {
     // A `404` here is the authorization answer as much as the existence one:
-    // an undeclared subproject and one this caller is not granted look the
+    // an undeclared space and one this caller is not granted look the
     // same on purpose (spec §5.4), so the copy names both.
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -101,7 +101,7 @@ export function SubprojectPage({ projectId, slug }: { projectId: string; slug: s
           <EmptyState
             icon={FolderSimpleIcon}
             size="sm"
-            title={`No subproject named ${slug}`}
+            title={`No space named ${slug}`}
             description="It may have been removed from the project's configuration, or you may not be granted it."
             action={
               <Button asChild variant="outline" size="sm">
@@ -114,17 +114,17 @@ export function SubprojectPage({ projectId, slug }: { projectId: string; slug: s
     );
   }
 
-  return <SubprojectBody projectId={projectId} subproject={query.data} />;
+  return <SpaceBody projectId={projectId} space={query.data} />;
 }
 
-function SubprojectBody({
+function SpaceBody({
   projectId,
-  subproject,
+  space,
 }: {
   projectId: string;
-  subproject: Subproject;
+  space: Space;
 }) {
-  const canManage = subproject.can_manage;
+  const canManage = space.can_manage;
   const accountId = useProjectAccountId(projectId);
   const { handleSend, sending } = useProjectHomeSend(projectId, {
     accountId: accountId ?? undefined,
@@ -135,30 +135,30 @@ function SubprojectBody({
       projectId={projectId}
       onSend={handleSend}
       busy={sending}
-      // The composer's subproject picker starts on THIS one; the send carries
+      // The composer's space picker starts on THIS one; the send carries
       // whatever the picker says (`use-project-home-send.ts`).
-      subproject={subproject}
-      hero={{ name: subproject.name, description: subproject.description }}
-      breadcrumb={<SubprojectBreadcrumb projectId={projectId} subproject={subproject} />}
+      space={space}
+      hero={{ name: space.name, description: space.description }}
+      breadcrumb={<SpaceBreadcrumb projectId={projectId} space={space} />}
       toolbar={
-        <SubprojectToolbar projectId={projectId} subproject={subproject} canManage={canManage} />
+        <SpaceToolbar projectId={projectId} space={space} canManage={canManage} />
       }
-      // One column (user, 2026-09-07): the composer, then the subproject's
+      // One column (user, 2026-09-07): the composer, then the space's
       // recent sessions. The right-hand panel that used to carry instructions,
       // context files, triggers and access is gone with them.
-      below={<SubprojectRecents projectId={projectId} slug={subproject.slug} />}
+      below={<SpaceRecents projectId={projectId} slug={space.slug} />}
     />
   );
 }
 
 // ─── Breadcrumb ────────────────────────────────────────────────────────────
 
-function SubprojectBreadcrumb({
+function SpaceBreadcrumb({
   projectId,
-  subproject,
+  space,
 }: {
   projectId: string;
-  subproject: Subproject;
+  space: Space;
 }) {
   const detailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -178,7 +178,7 @@ function SubprojectBreadcrumb({
         </BreadcrumbItem>
         <BreadcrumbSeparator />
         <BreadcrumbItem>
-          <BreadcrumbPage className="truncate">{subproject.name}</BreadcrumbPage>
+          <BreadcrumbPage className="truncate">{space.name}</BreadcrumbPage>
         </BreadcrumbItem>
       </BreadcrumbList>
     </Breadcrumb>
@@ -188,7 +188,7 @@ function SubprojectBreadcrumb({
 // ─── Toolbar ───────────────────────────────────────────────────────────────
 
 /**
- * Who has this subproject, the way to give it to someone else, and the `⋯`.
+ * Who has this space, the way to give it to someone else, and the `⋯`.
  *
  * Two ghost controls, no fills — this floats over the hero, and anything
  * heavier reads as a second header. Share carries the grant count; the
@@ -196,24 +196,24 @@ function SubprojectBreadcrumb({
  * (spec §2: `sessions: private | shared`) lives in the menu as a radio pair —
  * a manifest field, PATCHed like the others.
  */
-function SubprojectToolbar({
+function SpaceToolbar({
   projectId,
-  subproject,
+  space,
   canManage,
 }: {
   projectId: string;
-  subproject: Subproject;
+  space: Space;
   canManage: boolean;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const invalidate = useInvalidateSubproject(projectId, subproject.slug);
+  const invalidate = useInvalidateSpace(projectId, space.slug);
   const canManageMembers =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
   const [shareOpen, setShareOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const [draftName, setDraftName] = useState(subproject.name);
+  const [draftName, setDraftName] = useState(space.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const grantsQuery = useQuery({
@@ -230,17 +230,17 @@ function SubprojectToolbar({
   });
   const projectName = detailQuery.data?.project?.name ?? '';
   const assigned = useMemo(
-    () => grantsForSubproject(grantsQuery.data?.grants ?? [], subproject.slug),
-    [grantsQuery.data, subproject.slug],
+    () => grantsForSpace(grantsQuery.data?.grants ?? [], space.slug),
+    [grantsQuery.data, space.slug],
   );
 
   const setMode = useMutation({
-    mutationFn: (sessions: SubprojectSessionsMode) =>
-      updateProjectSubproject(projectId, subproject.slug, { sessions }),
+    mutationFn: (sessions: SpaceSessionsMode) =>
+      updateProjectSpace(projectId, space.slug, { sessions }),
     onSuccess: async (updated) => {
       successToast(
         updated.sessions === 'shared'
-          ? 'Everyone granted this subproject can read its sessions'
+          ? 'Everyone granted this space can read its sessions'
           : 'Sessions here are private to whoever starts them',
       );
       await invalidate();
@@ -251,7 +251,7 @@ function SubprojectToolbar({
   });
 
   const rename = useMutation({
-    mutationFn: (name: string) => updateProjectSubproject(projectId, subproject.slug, { name }),
+    mutationFn: (name: string) => updateProjectSpace(projectId, space.slug, { name }),
     onSuccess: async (updated) => {
       successToast(`Renamed to ${updated.name}`);
       setRenaming(false);
@@ -261,18 +261,18 @@ function SubprojectToolbar({
   });
 
   const remove = useMutation({
-    mutationFn: () => deleteProjectSubproject(projectId, subproject.slug),
+    mutationFn: () => deleteProjectSpace(projectId, space.slug),
     onSuccess: async () => {
-      successToast(`${subproject.name} deleted`);
+      successToast(`${space.name} deleted`);
       setConfirmDelete(false);
-      // Drop this subproject's own query BEFORE the list invalidation: the
+      // Drop this space's own query BEFORE the list invalidation: the
       // single-item key nests under the list key, so invalidating the list
       // would refetch a row the server just deleted and toast its 404 while
       // the page is still mounted.
-      queryClient.removeQueries({ queryKey: qk.project.subproject(projectId, subproject.slug) });
+      queryClient.removeQueries({ queryKey: qk.project.space(projectId, space.slug) });
       // The sessions kept their column and the triggers lost theirs, so both
-      // lists move — not just the subproject list.
-      await queryClient.invalidateQueries({ queryKey: qk.project.subprojects(projectId) });
+      // lists move — not just the space list.
+      await queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) });
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
       queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId) });
       router.push(`/projects/${projectId}`);
@@ -282,9 +282,9 @@ function SubprojectToolbar({
 
   const commitRename = () => {
     const next = draftName.trim();
-    if (!next || next === subproject.name) {
+    if (!next || next === space.name) {
       setRenaming(false);
-      setDraftName(subproject.name);
+      setDraftName(space.name);
       return;
     }
     rename.mutate(next);
@@ -294,7 +294,7 @@ function SubprojectToolbar({
     <div className="flex items-center gap-1">
       {renaming ? (
         <Input
-          aria-label="Subproject name"
+          aria-label="Space name"
           value={draftName}
           autoFocus
           maxLength={64}
@@ -308,7 +308,7 @@ function SubprojectToolbar({
               commitRename();
             } else if (event.key === 'Escape') {
               event.preventDefault();
-              setDraftName(subproject.name);
+              setDraftName(space.name);
               setRenaming(false);
             }
           }}
@@ -319,7 +319,7 @@ function SubprojectToolbar({
         <Hint
           label={
             assigned.length === 0
-              ? 'Grant this subproject to people or groups'
+              ? 'Grant this space to people or groups'
               : `Granted to ${assigned.length} ${assigned.length === 1 ? 'person or group' : 'people and groups'}`
           }
         >
@@ -344,7 +344,7 @@ function SubprojectToolbar({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Subproject actions"
+              aria-label="Space actions"
               className="text-muted-foreground hover:text-foreground"
             >
               <DotsThreeIcon className="size-4" />
@@ -355,20 +355,20 @@ function SubprojectToolbar({
               Sessions here are readable by
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup
-              value={subproject.sessions}
-              onValueChange={(next) => setMode.mutate(next as SubprojectSessionsMode)}
+              value={space.sessions}
+              onValueChange={(next) => setMode.mutate(next as SpaceSessionsMode)}
             >
               <DropdownMenuRadioItem value="private" disabled={setMode.isPending}>
                 Only whoever started them
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="shared" disabled={setMode.isPending}>
-                Everyone granted this subproject
+                Everyone granted this space
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={() => {
-                setDraftName(subproject.name);
+                setDraftName(space.name);
                 // After the menu closes, or the input mounts into a tree Radix
                 // is still returning focus through and loses it. A timer, not
                 // requestAnimationFrame: rAF never fires in a tab that is not
@@ -397,15 +397,15 @@ function SubprojectToolbar({
           accountId={accountId}
           scope={{ kind: 'project', projectId, projectName }}
           mode={{ kind: 'grant' }}
-          initialSubprojectIds={[subproject.slug]}
+          initialSpaceIds={[space.slug]}
         />
       ) : null}
 
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={`Delete ${subproject.name}?`}
-        description={`kortix-${subproject.slug}.yaml is removed from the repository and its triggers lose the back-reference. Its sessions are kept, but members granted only this subproject stop seeing them.`}
+        title={`Delete ${space.name}?`}
+        description={`kortix-${space.slug}.yaml is removed from the repository and its triggers lose the back-reference. Its sessions are kept, but members granted only this space stop seeing them.`}
         confirmLabel="Delete"
         confirmVariant="destructive"
         isPending={remove.isPending}
@@ -417,7 +417,7 @@ function SubprojectToolbar({
 
 // ─── States ────────────────────────────────────────────────────────────────
 
-function SubprojectPageSkeleton() {
+function SpacePageSkeleton() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="m-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">

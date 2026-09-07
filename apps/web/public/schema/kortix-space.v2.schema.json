@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kortix.com/schema/kortix-subproject.v2.schema.json",
-  "title": "Kortix subproject (kortix-<slug>.yaml)",
-  "description": "One subproject of a kortix_version 2 project — a file named `kortix-<slug>.yaml` beside `kortix.yaml`, where `<slug>` is its identity. `agents` declares the agents it OWNS (the same governance-only block the root manifest uses; they are usable only inside this subproject and in the ones that reference them) or BORROWS from another subproject with `{ from: <slug> }`. See docs/specs/2026-09-06-subproject-files-and-scoped-agents.md.",
+  "$id": "https://kortix.com/schema/kortix-space.v2.schema.json",
+  "title": "Kortix space (kortix-<slug>.yaml)",
+  "description": "One space of a kortix_version 2 project — a file named `kortix-<slug>.yaml` beside `kortix.yaml`, where `<slug>` is its identity. `agents` declares the agents it OWNS (the same governance-only block the root manifest uses; they are usable only inside this space and in the ones that reference them) or BORROWS from another space with `{ from: <slug> }`. See docs/specs/2026-09-06-space-files-and-scoped-agents.md.",
   "type": "object",
   "properties": {
     "name": {

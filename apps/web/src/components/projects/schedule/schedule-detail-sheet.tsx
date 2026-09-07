@@ -53,10 +53,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  triggerSubproject,
-  useProjectSubprojects,
-  withTriggerSubproject,
-} from '@/features/subprojects/subprojects-data';
+  triggerSpace,
+  useProjectSpaces,
+  withTriggerSpace,
+} from '@/features/spaces/spaces-data';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { storedModelRefToKey } from '@/lib/llm-gateway';
@@ -766,9 +766,9 @@ function ConditionsPanel({
 
 /* ─── Which agent ───────────────────────────────────────────────────────── */
 
-/** Sentinel for "no subproject" — `''` is not a legal Radix item value, and
+/** Sentinel for "no space" — `''` is not a legal Radix item value, and
  *  the wire value that CLEARS the back-reference is `null`. */
-const NO_SUBPROJECT = '__none__';
+const NO_SPACE = '__none__';
 
 function AgentPanel({
   projectId,
@@ -802,26 +802,26 @@ function AgentPanel({
     onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('textc617ab4ba83d')),
   });
 
-  // Only the subprojects this caller is granted, so the picker can never
+  // Only the spaces this caller is granted, so the picker can never
   // offer one the trigger PATCH would reject.
-  const subprojectsQuery = useProjectSubprojects(projectId);
-  const subprojects = subprojectsQuery.data?.subprojects ?? [];
-  const currentSubproject = triggerSubproject(trigger) ?? NO_SUBPROJECT;
+  const spacesQuery = useProjectSpaces(projectId);
+  const spaces = spacesQuery.data?.spaces ?? [];
+  const currentSpace = triggerSpace(trigger) ?? NO_SPACE;
 
-  const saveSubproject = useMutation({
-    // `withTriggerSubproject` is the SDK gap, not a raw body — see
-    // `features/subprojects/subprojects-data.ts`.
+  const saveSpace = useMutation({
+    // `withTriggerSpace` is the SDK gap, not a raw body — see
+    // `features/spaces/spaces-data.ts`.
     mutationFn: (next: string) =>
       updateProjectTrigger(
         projectId,
         trigger.slug,
-        withTriggerSubproject({}, next === NO_SUBPROJECT ? null : next),
+        withTriggerSpace({}, next === NO_SPACE ? null : next),
       ),
     onSuccess: () => {
-      successToast('Subproject updated');
+      successToast('Space updated');
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not update the subproject'),
+    onError: (e: Error) => errorToast(e.message || 'Could not update the space'),
   });
 
   const saveModel = useMutation({
@@ -846,8 +846,8 @@ function AgentPanel({
               label: tI18nComplete.raw('text5e2c614c23f0'),
               value: trigger.model ?? "The agent's usual model",
             },
-            ...(triggerSubproject(trigger)
-              ? [{ label: 'Subproject', value: triggerSubproject(trigger)! }]
+            ...(triggerSpace(trigger)
+              ? [{ label: 'Space', value: triggerSpace(trigger)! }]
               : []),
           ]}
         />
@@ -878,20 +878,20 @@ function AgentPanel({
         </div>
       </div>
 
-      {subprojects.length > 0 ? (
+      {spaces.length > 0 ? (
         <div className="space-y-1.5">
-          <Label className="text-xs">Subproject</Label>
+          <Label className="text-xs">Space</Label>
           <Select
-            value={currentSubproject}
-            onValueChange={(next) => saveSubproject.mutate(next)}
-            disabled={saveSubproject.isPending}
+            value={currentSpace}
+            onValueChange={(next) => saveSpace.mutate(next)}
+            disabled={saveSpace.isPending}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="None" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NO_SUBPROJECT}>None</SelectItem>
-              {subprojects.map((option) => (
+              <SelectItem value={NO_SPACE}>None</SelectItem>
+              {spaces.map((option) => (
                 <SelectItem key={option.slug} value={option.slug}>
                   {option.name}
                 </SelectItem>

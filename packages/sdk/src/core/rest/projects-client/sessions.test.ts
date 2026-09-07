@@ -80,33 +80,33 @@ test('listProjectSessions requests the manager-only project inventory scope', as
   expect(last().method).toBe('GET');
 });
 
-test('listProjectSessions filters to one subproject', async () => {
+test('listProjectSessions filters to one space', async () => {
   nextResponse = { status: 200, body: [] };
-  await listProjectSessions('P1', { subproject: 'marketing' });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions?subproject=marketing');
+  await listProjectSessions('P1', { space: 'marketing' });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions?space=marketing');
 });
 
-test('listProjectSessions sends an EMPTY subproject to mean "no subproject"', async () => {
-  // `''` is a real filter — rows carrying no subproject — and must not be
+test('listProjectSessions sends an EMPTY space to mean "no space"', async () => {
+  // `''` is a real filter — rows carrying no space — and must not be
   // dropped as falsy the way `scope: 'visible'` is dropped as the default.
   nextResponse = { status: 200, body: [] };
-  await listProjectSessions('P1', { subproject: '' });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions?subproject=');
+  await listProjectSessions('P1', { space: '' });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions?space=');
 });
 
-test('listProjectSessions combines scope and subproject', async () => {
+test('listProjectSessions combines scope and space', async () => {
   nextResponse = { status: 200, body: [] };
-  await listProjectSessions('P1', { scope: 'project', subproject: 'marketing' });
+  await listProjectSessions('P1', { scope: 'project', space: 'marketing' });
   expect(last().url).toBe(
-    'http://test.local/projects/P1/sessions?scope=project&subproject=marketing',
+    'http://test.local/projects/P1/sessions?scope=project&space=marketing',
   );
 });
 
-test('createProjectSession forwards the subproject in the body', async () => {
-  nextResponse = { status: 200, body: { session_id: 'S1', subproject: 'marketing' } };
-  const session = await createProjectSession('P1', { subproject: 'marketing' });
-  expect(last().body).toEqual({ subproject: 'marketing' });
-  expect(session.subproject).toBe('marketing');
+test('createProjectSession forwards the space in the body', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', space: 'marketing' } };
+  const session = await createProjectSession('P1', { space: 'marketing' });
+  expect(last().body).toEqual({ space: 'marketing' });
+  expect(session.space).toBe('marketing');
 });
 
 test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apart', async () => {
@@ -524,18 +524,18 @@ test('updateProjectSession PATCHes the name/metadata input', async () => {
   expect(last().body).toEqual({ name: 'Renamed' });
 });
 
-test('updateProjectSession moves a session between subprojects, and back out', async () => {
-  nextResponse = { status: 200, body: { session_id: 'S1', subproject: 'marketing' } };
-  const moved = await updateProjectSession('P1', 'S1', { subproject: 'marketing' });
+test('updateProjectSession moves a session between spaces, and back out', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', space: 'marketing' } };
+  const moved = await updateProjectSession('P1', 'S1', { space: 'marketing' });
   expect(last().method).toBe('PATCH');
-  expect(last().body).toEqual({ subproject: 'marketing' });
-  expect(moved.subproject).toBe('marketing');
+  expect(last().body).toEqual({ space: 'marketing' });
+  expect(moved.space).toBe('marketing');
 
   // `null` is the move OUT — back to the project level. It has to reach the
   // wire as `null`, not be dropped as "no change".
-  nextResponse = { status: 200, body: { session_id: 'S1', subproject: null } };
-  await updateProjectSession('P1', 'S1', { subproject: null });
-  expect(last().body).toEqual({ subproject: null });
+  nextResponse = { status: 200, body: { session_id: 'S1', space: null } };
+  await updateProjectSession('P1', 'S1', { space: null });
+  expect(last().body).toEqual({ space: null });
 });
 
 test('deleteProjectSession DELETEs the session', async () => {

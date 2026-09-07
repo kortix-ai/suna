@@ -1304,7 +1304,7 @@
         "status": "Status",
         "activity": "Activity",
         "source": "Source",
-        "subproject": "Subproject",
+        "space": "Space",
         "none": "None"
       },
       "order": {

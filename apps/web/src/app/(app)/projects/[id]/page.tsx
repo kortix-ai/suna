@@ -36,7 +36,7 @@ export default function ProjectIndexPage() {
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  // What a send does — shared with the subproject page's composer, which is
+  // What a send does — shared with the space page's composer, which is
   // the same composer wired to the same create path with one extra field.
   const { handleSend, sending } = useProjectHomeSend(projectId, {
     accountId: projectAccountId,
