@@ -451,12 +451,41 @@ export class AgentCell {
       // abort signal inside the run, and every cancellation the ExecutionEnv
       // and daemon can honour is unreachable from outside.
       this.running = { agent, turn: next.i, sessionId };
+      // Where the transcript stood before this turn, so "did the model say
+      // anything" is a question with an exact answer rather than a guess.
+      const beforeMsgId = this.sql.exec("SELECT COALESCE(MAX(i), 0) AS i FROM msgs").toArray()[0].i;
       this.saveMessage("user", { role: "user", content: [{ type: "text", text: next.text }] });
       await agent.prompt(next.text);
       const compacted = await this.compactIfNeeded(sessionId, streamFnOf(agent), agent.state.model, next.window || undefined);
       if (compacted) this.broadcast({ type: "compacted", ...compacted });
-      this.sql.exec("UPDATE turns SET status='done', ended_at=? WHERE i=?", Date.now(), next.i);
-      this.broadcast({ type: "turn_done", turn: next.i });
+      // A TURN THAT PRODUCED NOTHING IS NOT A SUCCESS, and saying `done` about
+      // one is the most expensive lie this file can tell: the session shows an
+      // empty reply, the control plane settles the turn, and every log says
+      // fine. Measured on dev 2026-09-07: a live gateway, a resolved model, and
+      // assistant messages with empty content and zero tokens, turn after turn,
+      // with nothing anywhere naming a cause.
+      //
+      // The turn still ends — a stuck turn is worse — but it ends with a reason
+      // attached, and the reason carries what would otherwise have to be
+      // guessed: which model, which api, and whether a key and gateway were
+      // even present.
+      // CONTENT, not rows. An assistant row with an empty `content` array is
+      // exactly what a failed model call leaves behind, so counting rows called
+      // it a success — measured 2026-09-07, which is how this check passed on
+      // its first outing while the reply was still blank.
+      const produced = this.sql.exec(
+        "SELECT COUNT(*) AS n FROM msgs WHERE role = 'assistant' AND i > ? AND json_array_length(json_extract(json, '$.content')) > 0",
+        beforeMsgId,
+      ).toArray()[0].n;
+      if (produced === 0) {
+        const e = normalizeModelEnv(this.effectiveEnv());
+        const why = `the model produced nothing: model=${e.MODEL_ID ?? "unset"} api=${agent?.state?.model?.api ?? "?"} provider=${e.MODEL_PROVIDER ?? "unset"} gateway=${e.MODEL_BASE_URL ? "yes" : "no"} key=${e.MODEL_API_KEY ? "yes" : "no"}`;
+        this.sql.exec("UPDATE turns SET status='error', error=?, ended_at=? WHERE i=?", why, Date.now(), next.i);
+        this.broadcast({ type: "turn_error", turn: next.i, error: why });
+      } else {
+        this.sql.exec("UPDATE turns SET status='done', ended_at=? WHERE i=?", Date.now(), next.i);
+        this.broadcast({ type: "turn_done", turn: next.i });
+      }
     } catch (e) {
       this.sql.exec("UPDATE turns SET status='error', error=?, ended_at=? WHERE i=?",
         String(e?.message ?? e), Date.now(), next.i);
@@ -1250,6 +1279,63 @@ export class AgentCell {
 
     // Diagnostics: which model this cell would actually call, and everything it
     // could be pointed at without a code change.
+    // ONE MODEL CALL, FROM INSIDE THE CELL, REPORTED HONESTLY.
+    //
+    // A turn that produces an empty assistant message and zero tokens says
+    // nothing about why. The same request made from a laptop against the same
+    // gateway with the same credential returns a completion, so the difference
+    // is something only the cell can see — its own egress, its own parse, its
+    // own timeout. This makes that difference readable instead of inferred.
+    //
+    // Never prints the credential: status, timings, byte counts and the first
+    // few characters of content only.
+    if (url.pathname === "/bench/model") {
+      const e = normalizeModelEnv(this.effectiveEnv());
+      if (!e.MODEL_BASE_URL || !e.MODEL_API_KEY) {
+        return Response.json({ ok: false, reason: "no gateway or no key", hasGateway: !!e.MODEL_BASE_URL, hasKey: !!e.MODEL_API_KEY });
+      }
+      const t0 = Date.now();
+      const out = { model: e.MODEL_ID, baseUrl: e.MODEL_BASE_URL };
+      try {
+        const res = await fetch(`${e.MODEL_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${e.MODEL_API_KEY}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            model: e.MODEL_ID,
+            messages: [{ role: "user", content: url.searchParams.get("q") ?? "say pong" }],
+            stream: url.searchParams.get("stream") !== "0",
+          }),
+        });
+        out.status = res.status;
+        out.headersMs = Date.now() - t0;
+        const reader = res.body?.getReader();
+        if (!reader) { out.body = (await res.text()).slice(0, 300); return Response.json(out); }
+        const dec = new TextDecoder();
+        let bytes = 0, keepAlives = 0, firstDataMs = 0, firstContentMs = 0, text = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytes += value.length;
+          for (const line of dec.decode(value, { stream: true }).split("\n")) {
+            if (line.startsWith(":")) { keepAlives++; continue; }
+            if (!line.startsWith("data:")) continue;
+            if (!firstDataMs) firstDataMs = Date.now() - t0;
+            const b = line.slice(5).trim();
+            if (b === "[DONE]") continue;
+            try {
+              const c = JSON.parse(b).choices?.[0]?.delta?.content;
+              if (c && !firstContentMs) { firstContentMs = Date.now() - t0; text = String(c).slice(0, 24); }
+            } catch { /* partial frame */ }
+          }
+        }
+        Object.assign(out, { bytes, keepAlives, firstDataMs, firstContentMs, totalMs: Date.now() - t0, text });
+      } catch (err) {
+        out.error = String(err?.message ?? err).slice(0, 300);
+        out.totalMs = Date.now() - t0;
+      }
+      return Response.json(out);
+    }
+
     if (url.pathname === "/model") {
       const e = this.effectiveEnv();
       const c = modelConfig(e);
