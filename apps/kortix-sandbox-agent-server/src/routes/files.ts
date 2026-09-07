@@ -624,5 +624,6 @@ export function createFilesRouter(cfg: Config): Hono {
     return c.json(true)
   })
 
+  app.all('*', (c) => c.json({ error: 'unknown file route' }, 404))
   return app
 }

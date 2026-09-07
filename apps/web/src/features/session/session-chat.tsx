@@ -923,7 +923,9 @@ function SessionTurnImpl({
         ? 'in-flight'
         : queueRow.reason === 'held' || queueHeld
           ? 'held'
-          : 'queued';
+          : queueRow.reason === 'runtime_stale'
+            ? 'runtime-stale'
+            : 'queued';
   // Only while the bubble is still WAITING (dimmed) — or has something to
   // say regardless (held, failed). A row that reads `delivering` for the rest
   // of the turn in front of it must not label a bubble the agent has reached.

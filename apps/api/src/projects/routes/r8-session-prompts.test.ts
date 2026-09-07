@@ -583,6 +583,11 @@ describe('GET .../prompts', () => {
     expect(body.prompts[0].reason).toBeNull();
   });
 
+  test('a stale runtime reason survives the public prompt projection', async () => {
+    commandTable = [row({ status: 'queued', result: { delivery_blocked: 'runtime_stale', runtime_retries: 1 } })];
+    expect((await list()).prompts[0]).toMatchObject({ state: 'queued', reason: 'runtime_stale', runtime_retries: 1 });
+  });
+
   test('a dead-lettered row reads `failed` and carries its error', async () => {
     commandTable = [row({ status: 'dead_lettered', lastError: 'delivery outcome: failed' })];
     const body = await list();

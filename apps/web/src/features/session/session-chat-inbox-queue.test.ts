@@ -26,6 +26,11 @@ function between(source: string, start: string, end: string): string {
 }
 
 describe('stop reaches the queue that actually holds the messages', () => {
+  test('a transcript-backed stale row also shows workspace waiting after the hold check', () => {
+    const rowState = between(chat, 'const rowState: QueuedPromptState', '// Only while');
+    expect(rowState).toContain("queueRow.reason === 'runtime_stale'");
+    expect(rowState.indexOf("queueRow.reason === 'held'")).toBeLessThan(rowState.indexOf("queueRow.reason === 'runtime_stale'"));
+  });
   test('handleStop holds the SERVER inbox — the only queue there is', () => {
     // REWRITTEN with the browser drain's deletion. A client-side pause never
     // reached the admission gate, which would admit the queued prompt about one

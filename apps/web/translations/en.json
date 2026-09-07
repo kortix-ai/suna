@@ -14,6 +14,7 @@
     "codeDescription": "Because everything is code in a repo, the system can read its own blueprint, extend itself, and stay healthy as it grows. It is 100% extensible, controllable, and self-hostable — nothing is a black box."
   },
   "common": {
+    "workspaceWaiting": "Waiting for the workspace…",
     "cancel": "Cancel",
     "save": "Save",
     "saving": "Saving...",

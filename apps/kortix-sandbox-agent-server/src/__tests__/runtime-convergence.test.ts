@@ -17,6 +17,7 @@ import {
   resetRuntimeConvergenceReportForTests,
   overlayHash,
 } from '../runtime-assets'
+import * as runtimeAssets from '../runtime-assets'
 
 /**
  * Convergent runtime — the v2 half of `reconcileRuntimeAssets`.
@@ -673,6 +674,137 @@ describe('requestAgentSwapIfIdle', () => {
     await Bun.write(ws.agentNext, AGENT_BYTES)
     await Bun.write(ws.agentNextSha, `${sha(AGENT_BYTES)}\n`)
   }
+
+  test('too-young arms one deferred retry and exits after the remaining uptime', async () => {
+    const ws = await workspace()
+    await stage(ws)
+    const exits: number[] = []
+    const options = {
+      agentStateDir: ws.stateDir,
+      minUptimeMs: process.uptime() * 1000 + 80,
+      turnInFlight: async () => false,
+      exit: (code: number) => {
+        exits.push(code)
+      },
+    }
+    expect(await requestAgentSwapIfIdle(options)).toBe('too-young')
+    expect(await requestAgentSwapIfIdle(options)).toBe('too-young')
+    await Bun.sleep(180)
+    expect(exits).toEqual([75])
+  })
+
+  for (const blocker of ['turn', 'pty']) {
+    test(`deferred retry preserves the ${blocker} guard and retries at turn end`, async () => {
+      const ws = await workspace()
+      await stage(ws)
+      const exits: number[] = []
+      let busy = true
+      if (blocker === 'pty') registerAgentSwapBlocker('pty', () => busy)
+      const options = {
+        agentStateDir: ws.stateDir,
+        minUptimeMs: process.uptime() * 1000 + 50,
+        turnInFlight: async () => blocker === 'turn' && busy,
+        exit: (code: number) => {
+          exits.push(code)
+        },
+      }
+      expect(await requestAgentSwapIfIdle(options)).toBe('too-young')
+      await Bun.sleep(120)
+      expect(exits).toEqual([])
+      busy = false
+      await runtimeAssets.requestAgentSwapAfterTurnEnd(options)
+      expect(exits).toEqual([75])
+    })
+  }
+
+  test('reset cancels a pending timer and an asynchronous stale probe cannot exit', async () => {
+    const ws = await workspace()
+    await stage(ws)
+    const exits: number[] = []
+    await requestAgentSwapIfIdle({
+      agentStateDir: ws.stateDir,
+      minUptimeMs: process.uptime() * 1000 + 50,
+      turnInFlight: async () => false,
+      exit: (code) => {
+        exits.push(code)
+      },
+    })
+    resetRuntimeConvergenceForTests()
+    await Bun.sleep(100)
+    expect(exits).toEqual([])
+    let release!: (value: boolean) => void
+    let started!: () => void
+    const probing = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const pending = requestAgentSwapIfIdle({
+      agentStateDir: ws.stateDir,
+      minUptimeMs: 0,
+      turnInFlight: () => {
+        started()
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      },
+      exit: (code) => {
+        exits.push(code)
+      },
+    })
+    await probing
+    resetRuntimeConvergenceForTests()
+    release(false)
+    await pending
+    expect(exits).toEqual([])
+  })
+
+  test('an explicit swap bypasses uptime but retains the live-turn and PTY guards', async () => {
+    const ws = await workspace()
+    await stage(ws)
+    const exits: number[] = []
+    let turnBusy = true
+    let ptyBusy = true
+    registerAgentSwapBlocker('pty', () => ptyBusy)
+    const options = {
+      agentStateDir: ws.stateDir,
+      uptimeMs: 1,
+      minUptimeMs: 0,
+      turnInFlight: async () => turnBusy,
+      exit: (code: number) => {
+        exits.push(code)
+      },
+    }
+    expect(await requestAgentSwapIfIdle(options)).toBe('turn-in-flight')
+    turnBusy = false
+    expect(await requestAgentSwapIfIdle(options)).toBe('attached')
+    expect(exits).toEqual([])
+    ptyBusy = false
+    expect(await requestAgentSwapIfIdle(options)).toBe('exited')
+    expect(exits).toEqual([75])
+  })
+
+  test('a removed staged binary cancels the deferred retry', async () => {
+    const ws = await workspace()
+    await stage(ws)
+    let probes = 0
+    const exits: number[] = []
+    const options = {
+      agentStateDir: ws.stateDir,
+      minUptimeMs: process.uptime() * 1000 + 80,
+      turnInFlight: async () => {
+        probes++
+        return false
+      },
+      exit: (code: number) => {
+        exits.push(code)
+      },
+    }
+    expect(await requestAgentSwapIfIdle(options)).toBe('too-young')
+    await rm(ws.agentNext)
+    expect(await requestAgentSwapIfIdle(options)).toBe('nothing-staged')
+    await Bun.sleep(140)
+    expect(probes).toBe(0)
+    expect(exits).toEqual([])
+  })
 
   test('exits 75 when nothing is in flight', async () => {
     const ws = await workspace()

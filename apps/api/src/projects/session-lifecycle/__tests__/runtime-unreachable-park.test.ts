@@ -17,6 +17,7 @@ let selectedRow: Record<string, unknown> | null = null;
 let updateCalls: Array<{ updates: Record<string, unknown> }> = [];
 let updateReturns: Array<Record<string, unknown>> = [];
 let infoLogs: Array<{ message: string; context?: Record<string, unknown> }> = [];
+let updatePredicates: unknown[] = [];
 
 mock.module('../../../lib/logger', () => ({
   logger: {
@@ -40,16 +41,19 @@ mock.module('../../../shared/db', () => ({
     }),
     update: () => ({
       set: (updates: Record<string, unknown>) => ({
-        where: () => ({
-          then: (resolve: (v: unknown) => void) => {
-            updateCalls.push({ updates });
-            resolve(undefined);
-          },
-          returning: async () => {
-            updateCalls.push({ updates });
-            return updateReturns;
-          },
-        }),
+        where: (predicate: unknown) => {
+          updatePredicates.push(predicate);
+          return {
+            then: (resolve: (v: unknown) => void) => {
+              updateCalls.push({ updates });
+              resolve(undefined);
+            },
+            returning: async () => {
+              updateCalls.push({ updates });
+              return updateReturns;
+            },
+          };
+        },
       }),
     }),
   },
@@ -99,9 +103,40 @@ beforeEach(() => {
   updateCalls = [];
   updateReturns = [{ commandId: 'cmd-1' }];
   infoLogs = [];
+  updatePredicates = [];
 });
 
 describe('parkPromptForUnreachableRuntime', () => {
+  test('stale runtime parking preserves its reason, retry ladder, claim refund, and Stop hold', async () => {
+    const now = new Date('2026-09-07T00:00:00Z');
+    for (const [spent, delay] of [30_000, 120_000, 480_000].entries()) {
+      selectedRow = { payload: { runtimeUnreachableRetries: spent, stopPausedOnDelivery: true } };
+      updateCalls = [];
+      expect(
+        await parkPromptForUnreachableRuntime('cmd-1', 'runtime stale', {
+          now,
+          reason: 'runtime_stale',
+        }),
+      ).toEqual({ parked: true, retries: spent + 1 });
+      const updates = updateCalls[0]!.updates;
+      expect(updates.status).toBe('queued');
+      expect(updates.result).toMatchObject({
+        delivery_blocked: 'runtime_stale',
+        held: true,
+        stop_paused: true,
+      });
+      expect(sqlText(updates.attempts)).toContain('GREATEST');
+      expect((updates.availableAt as Date).getTime() - now.getTime()).toBe(delay);
+    }
+    selectedRow = { payload: { runtimeUnreachableRetries: 3 } };
+    expect(
+      await parkPromptForUnreachableRuntime('cmd-1', 'runtime stale', {
+        now,
+        reason: 'runtime_stale',
+      }),
+    ).toEqual({ parked: false, retries: 3 });
+  });
+
   test('the first unreachable attempt parks the row instead of failing it', async () => {
     selectedRow = { payload: { text: 'hi' } };
 
@@ -207,6 +242,14 @@ describe('runtimeUnreachableRetries', () => {
 });
 
 describe('reArmRuntimeBlockedPrompts', () => {
+  test('wake re-arms both runtime reasons but excludes held rows', async () => {
+    await reArmRuntimeBlockedPrompts('sess-1');
+    const predicate = sqlText(updatePredicates[0]);
+    expect(predicate).toContain('runtime_stale');
+    expect(predicate).toContain('runtime_unreachable');
+    expect(predicate).toContain("->>'held'");
+    expect(predicate).toContain("<> 'true'");
+  });
   test('a runtime coming back makes its parked prompts due now', async () => {
     updateReturns = [{ commandId: 'cmd-1' }, { commandId: 'cmd-2' }];
     const now = new Date('2026-08-26T11:00:00.000Z');

@@ -779,6 +779,7 @@ const RUNTIME_UNREACHABLE_BACKOFF_MS = [30_000, 120_000, 480_000] as const;
 
 /** Set by {@link parkPromptForUnreachableRuntime} on a row waiting for a box. */
 export const RUNTIME_UNREACHABLE_REASON = 'runtime_unreachable';
+export const RUNTIME_STALE_REASON = 'runtime_stale';
 
 export function runtimeUnreachableRetries(payload: unknown): number {
   const value = (payload as { runtimeUnreachableRetries?: unknown } | null)
@@ -812,7 +813,11 @@ export function runtimeUnreachableRetries(payload: unknown): number {
 export async function parkPromptForUnreachableRuntime(
   commandId: string,
   error: string,
-  opts: { sessionId?: string | null; now?: Date } = {},
+  opts: {
+    sessionId?: string | null;
+    now?: Date;
+    reason?: typeof RUNTIME_UNREACHABLE_REASON | typeof RUNTIME_STALE_REASON;
+  } = {},
 ): Promise<{ parked: boolean; retries: number }> {
   const now = opts.now ?? new Date();
   const [current] = await db
@@ -837,7 +842,7 @@ export async function parkPromptForUnreachableRuntime(
     (current.payload as { stopPausedOnDelivery?: unknown } | null)?.stopPausedOnDelivery === true;
 
   const result: Record<string, unknown> = {
-    delivery_blocked: RUNTIME_UNREACHABLE_REASON,
+    delivery_blocked: opts.reason ?? RUNTIME_UNREACHABLE_REASON,
     runtime_retries: retries,
     ...(stopPaused ? { held: true, stop_paused: true } : {}),
   };
@@ -869,11 +874,12 @@ export async function parkPromptForUnreachableRuntime(
     .returning({ commandId: sessionLifecycleCommands.commandId });
   if (!row) return { parked: false, retries: spent };
 
-  logger.info('[session-lifecycle] prompt parked — runtime unreachable, will re-attempt', {
+  logger.info('[session-lifecycle] prompt parked — runtime unavailable, will re-attempt', {
     command_id: commandId,
     session_id: opts.sessionId ?? null,
     runtime_retries: retries,
     max_retries: MAX_RUNTIME_UNREACHABLE_RETRIES,
+    delivery_blocked: result.delivery_blocked,
     backoff_ms: backoff,
     error,
   });
@@ -905,7 +911,7 @@ export async function reArmRuntimeBlockedPrompts(
       and(
         eq(sessionLifecycleCommands.sessionId, sessionId),
         eq(sessionLifecycleCommands.status, 'queued'),
-        sql`${sessionLifecycleCommands.result}->>'delivery_blocked' = ${RUNTIME_UNREACHABLE_REASON}`,
+        sql`${sessionLifecycleCommands.result}->>'delivery_blocked' IN (${RUNTIME_UNREACHABLE_REASON}, ${RUNTIME_STALE_REASON})`,
         sql`COALESCE(${sessionLifecycleCommands.result}->>'held', 'false') <> 'true'`,
       ),
     )

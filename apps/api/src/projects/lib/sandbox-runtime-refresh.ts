@@ -16,7 +16,7 @@ import { db } from '../../shared/db';
  * session reload, and now carries the reconcile — so the fix for both paths is
  * one call to a route that is already part of the contract.
  *
- * WHAT IT SENDS. `?restart=0` only. Deliberately NOT `base=1` (that force-resets
+ * WHAT IT SENDS. `?restart=0`, plus `swap=1` for a stale daemon. Never `base=1` (that force-resets
  * the session branch and discards its commits — see routes/refresh.ts) and not
  * `config_dir=1` (that is the reload's job). What is left is a
  * `git pull --ff-only` on the session branch, which cannot discard anything and
@@ -79,6 +79,7 @@ export type SandboxRuntimeRefreshOutcome = 'refreshed' | 'unreachable' | 'no_san
 export async function refreshSandboxRuntimeAssets(
   sessionId: string,
   deps: SandboxRuntimeRefreshDeps = defaultDeps,
+  context?: string,
 ): Promise<SandboxRuntimeRefreshOutcome> {
   let sandbox: { externalId: string; serviceKey: string } | null = null;
   for (const delay of RETRY_DELAYS_MS) {
@@ -90,7 +91,7 @@ export async function refreshSandboxRuntimeAssets(
       if (!sandbox) continue;
       const ingress = await deps.resolveIngress(sandbox.externalId);
       const response = await deps.fetch(
-        `${ingress.url.replace(/\/+$/, '')}/kortix/refresh?restart=0`,
+        `${ingress.url.replace(/\/+$/, '')}/kortix/refresh?restart=0${context === 'stale-daemon' ? '&swap=1' : ''}`,
         {
           method: 'POST',
           headers: { ...ingress.headers, Authorization: `Bearer ${sandbox.serviceKey}` },
@@ -111,7 +112,7 @@ export async function refreshSandboxRuntimeAssets(
  * Fire-and-forget form for the restart/resume call sites. Returns immediately.
  */
 export function scheduleSandboxRuntimeRefresh(sessionId: string, context: string): void {
-  void refreshSandboxRuntimeAssets(sessionId)
+  void refreshSandboxRuntimeAssets(sessionId, defaultDeps, context)
     .then((outcome) => {
       if (outcome === 'refreshed') return;
       logger.info('[projects] sandbox runtime-asset refresh not delivered', {

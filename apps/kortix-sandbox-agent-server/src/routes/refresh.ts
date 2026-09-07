@@ -29,6 +29,7 @@ export function refreshMayConvergeRuntime(opencodeState: string): boolean {
 export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
   const router = new Hono()
   let refreshInFlight: Promise<Response> | null = null
+  let swapRequested = false
 
   router.post('/', async (c) => {
     if (!cfg.sandboxToken) {
@@ -48,7 +49,9 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
       }
     }
 
+    // A coalesced refresh must retain the stale caller's idle-swap request.
     if (refreshInFlight) {
+      swapRequested ||= c.req.query('swap') === '1'
       return c.json({ error: 'refresh already running' }, 409)
     }
 
@@ -106,6 +109,7 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
       return c.json({ error: 'invalid base_sha' }, 400)
     }
 
+    swapRequested = c.req.query('swap') === '1'
     refreshInFlight = (async () => {
       try {
         const repo = syncBase
@@ -150,7 +154,9 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         // API's start budget expired on both boxes). main.ts schedules the
         // post-boot pass itself once `opencode-ready` is marked; this call is
         // for a box that is already up.
-        if (refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
+        if (refreshMayConvergeRuntime(opencode.getState())) {
+          scheduleRuntimeAssetsReconcile(cfg, { swap: swapRequested })
+        }
         return c.json({
           // The repo work succeeded either way; `reload.outcome` carries whether
           // the new config actually took. Reporting ok:false here would hide a
@@ -189,6 +195,7 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         return c.json({ error: 'refresh failed', message }, status)
       } finally {
         refreshInFlight = null
+        swapRequested = false
       }
     })()
 

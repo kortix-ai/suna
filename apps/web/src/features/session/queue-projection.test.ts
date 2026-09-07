@@ -19,6 +19,13 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
 }
 
 describe('projectQueueRows', () => {
+  test('a stale runtime row remains queued and carries its waiting reason', () => {
+    const projection = projectQueueRows({
+      prompts: [prompt({ reason: 'runtime_stale', last_error: 'runtime stale' })],
+    });
+    expect(projection.failed).toEqual([]);
+    expect(projection.queued[0]).toMatchObject({ id: 'cmd-1', blockedReason: 'runtime_stale' });
+  });
   test('a delivering row is RENDERED, and locked — not dropped from the strip', () => {
     // A prompt typed mid-turn is forwarded within seconds and reads
     // `delivering` for the whole of the turn in front of it. It is not painted

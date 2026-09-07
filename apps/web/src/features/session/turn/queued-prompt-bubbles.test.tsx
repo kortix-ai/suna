@@ -15,6 +15,27 @@ const render = (el: React.ReactElement) =>
   );
 
 describe('QueuedPromptBubbles attachments', () => {
+  test('a stale runtime row waits for the workspace and never says Not sent', () => {
+    const markup = render(
+      <QueuedPromptBubbles
+        queued={[{ id: 'stale', text: 'file', blockedReason: 'runtime_stale' }]}
+        onRemove={() => {}}
+      />,
+    );
+    expect(markup).toContain('Waiting for the workspace…');
+    expect(markup).not.toContain('Not sent');
+  });
+
+  test('a Stop hold takes precedence over a stale runtime', () => {
+    const markup = render(
+      <QueuedPromptBubbles
+        held
+        queued={[{ id: 'held', text: 'file', blockedReason: 'runtime_stale' }]}
+      />,
+    );
+    expect(markup).toContain('Held — stopped');
+    expect(markup).not.toContain('Waiting for the workspace…');
+  });
   // The warm-box gap, measured in a real browser on 2026-09-04: the transcript
   // mounted at +6s, the queued row stood in for the prompt, and it drew the
   // text alone — three attached files, no tiles, no word about an upload.

@@ -75,6 +75,11 @@ let openDelayBySession: Record<string, Promise<void> | undefined> = {};
 let events: string[] = [];
 let runtimeWrites: Array<{ targetPath: string; filename: string; mime: string }> = [];
 let runtimeWriteError: Error | null = null;
+const { RuntimeStaleDaemonError } = await import('../runtime-prompt-file');
+let runtimeParks: Array<{ commandId: string; reason?: string }> = [];
+let runtimeParkBudget = 3;
+let runtimeRefreshes: Array<{ sessionId: string; context: string }> = [];
+let respectRuntimeDue = false;
 let legacyPendingFirst: {
   commandId: string;
   deliveredMessageIds: string[];
@@ -308,6 +313,14 @@ mock.module('../store', () => ({
   },
   claimDueLifecycleCommands: async (input: { idempotencyKey?: string }) => {
     claimInputs.push(input);
+    if (respectRuntimeDue) {
+      return claimed
+        .filter((row) => row.availableAt.getTime() <= Date.now())
+        .map((row) => {
+          row.attempts += 1;
+          return row;
+        });
+    }
     return input.idempotencyKey ? (targetedClaims.get(input.idempotencyKey) ?? []) : claimed;
   },
   enqueueContinueSessionCommand: async () => {
@@ -316,7 +329,22 @@ mock.module('../store', () => ({
   // The delivery path parks a prompt whose RUNTIME was down instead of
   // dead-lettering it. Present so the module mock stays complete.
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
-  parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
+  RUNTIME_STALE_REASON: 'runtime_stale',
+  parkPromptForUnreachableRuntime: async (
+    commandId: string,
+    _error: string,
+    opts: { reason?: string },
+  ) => {
+    runtimeParks.push({ commandId, reason: opts.reason });
+    if (respectRuntimeDue && runtimeParkBudget > 0) {
+      const row = claimed.find((candidate) => candidate.commandId === commandId)!;
+      row.status = 'queued';
+      row.attempts -= 1;
+      row.result = { delivery_blocked: opts.reason };
+      row.availableAt = new Date(Date.now() + [30_000, 120_000, 480_000][3 - runtimeParkBudget]!);
+    }
+    return { parked: runtimeParkBudget-- > 0, retries: 3 - Math.max(0, runtimeParkBudget) };
+  },
   reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (
     commandId: string,
@@ -365,6 +393,7 @@ mock.module('../../lib/sandbox-env-sync', () => ({
 }));
 
 mock.module('../runtime-prompt-file', () => ({
+  RuntimeStaleDaemonError,
   writeRuntimePromptFile: async (input: {
     targetPath: string;
     filename: string;
@@ -378,6 +407,12 @@ mock.module('../runtime-prompt-file', () => ({
       mime: input.mime,
     });
     return { path: input.targetPath, size: input.bytes.byteLength };
+  },
+}));
+
+mock.module('../../lib/sandbox-runtime-refresh', () => ({
+  scheduleSandboxRuntimeRefresh: (sessionId: string, context: string) => {
+    runtimeRefreshes.push({ sessionId, context });
   },
 }));
 
@@ -462,6 +497,10 @@ beforeEach(() => {
   events = [];
   runtimeWrites = [];
   runtimeWriteError = null;
+  runtimeParks = [];
+  runtimeParkBudget = 3;
+  runtimeRefreshes = [];
+  respectRuntimeDue = false;
   legacyPendingFirst = null;
   legacyRuntimeMessages = {};
   legacyMessageReads = [];
@@ -494,6 +533,60 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  const staleRow = () =>
+    baseRow({
+      payload: {
+        text: 'Inspect this file.',
+        wireMessageId: SUBMITTED_WIRE_ID,
+        parts: [
+          {
+            type: 'file',
+            mime: 'application/zip',
+            filename: 'bundle.zip',
+            url: 'data:application/zip;base64,UEsDBA==',
+          },
+        ],
+      },
+    });
+
+  test('a typed stale attachment failure parks and requests daemon convergence', async () => {
+    runtimeWriteError = new RuntimeStaleDaemonError('/file/append', 200_000);
+    expect(await executeQueuedContinue(staleRow())).toBe('queued');
+    expect(runtimeParks).toEqual([{ commandId: 'cmd-1', reason: 'runtime_stale' }]);
+    expect(runtimeRefreshes).toEqual([{ sessionId: SESSION_ID, context: 'stale-daemon' }]);
+    expect(failedCalls).toEqual([]);
+    expect(capturedBodies).toEqual([]);
+  });
+
+  test('five drains in the retry window do not burn the attachment claim budget', async () => {
+    runtimeWriteError = new RuntimeStaleDaemonError('/file/append', 200_000);
+    respectRuntimeDue = true;
+    const row = staleRow();
+    row.attempts = 0;
+    claimed = [row];
+    // The claim harness respects persisted availability. Store tests below the
+    // engine seam prove the actual 30/120/480-second SQL writes and refund.
+    for (let pass = 0; pass < 5; pass++) await drainSessionLifecycleQueue({ limit: 10 });
+    expect(row.status).toBe('queued');
+    expect(row.attempts).toBe(0);
+    expect(row.result).toMatchObject({ delivery_blocked: 'runtime_stale' });
+    expect(runtimeParks).toHaveLength(1);
+    expect(failedCalls).toEqual([]);
+    expect(capturedBodies).toEqual([]);
+  });
+
+  test('a stale daemon fails once with a named error when the runtime budget is spent', async () => {
+    runtimeWriteError = new RuntimeStaleDaemonError('/file/append', 200_000);
+    runtimeParkBudget = 0;
+    expect(await executeQueuedContinue(staleRow())).toBe('failed');
+    expect(failedCalls).toHaveLength(1);
+    expect(failedCalls[0]).toMatchObject({
+      message: 'runtime stale after 3 retries',
+      options: { retryable: false },
+    });
+    expect(capturedBodies).toEqual([]);
+  });
+
   test('materializes non-native staged files before prompt_async', async () => {
     const outcome = await executeQueuedContinue(
       baseRow({

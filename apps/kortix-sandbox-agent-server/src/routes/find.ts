@@ -178,6 +178,7 @@ export function createFindRouter(cfg: Config): Hono {
     return c.json(await nodeTextSearch(workspace, pattern))
   })
 
+  app.all('*', (c) => c.json({ error: 'unknown find route' }, 404))
   return app
 }
 

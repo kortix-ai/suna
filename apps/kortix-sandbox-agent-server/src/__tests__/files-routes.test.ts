@@ -53,6 +53,7 @@ function fakeOpencode(): Opencode {
   return {
     getState: () => 'ok',
     getPid: () => 123,
+    getActivePort: () => 4096,
     getInternalUrl: () => 'http://127.0.0.1:1',
     restart: async () => {},
   } as unknown as Opencode
@@ -98,6 +99,49 @@ describe('daemon file write routes', () => {
   afterAll(async () => {
     server?.stop(true)
     if (WORKSPACE) await fs.rm(WORKSPACE, { recursive: true, force: true })
+  })
+
+  for (const namespace of [
+    'file',
+    'find',
+    'presentation',
+    'proxy',
+    'kortix',
+    'kortix/refresh',
+    'kortix/pty',
+    'kortix/opencode',
+  ]) {
+    it(`unknown /${namespace} routes terminate before the OpenCode proxy`, async () => {
+      const upstream = Bun.serve({
+        port: 0,
+        fetch: () =>
+          new Response('<html>OpenCode</html>', { headers: { 'content-type': 'text/html' } }),
+      })
+      try {
+        const opencode = fakeOpencode()
+        opencode.getInternalUrl = () => `http://127.0.0.1:${upstream.port}`
+        const app = buildOpencodeApp(baseConfig(), opencode, Date.now())
+        const response = await app.request(`http://daemon.test/${namespace}/missing/route`, {
+          method: 'POST',
+          headers: authHeaders(),
+        })
+        expect(response.status).toBe(404)
+        expect(response.headers.get('content-type')).toContain('application/json')
+        expect(await response.json()).toHaveProperty('error')
+      } finally {
+        upstream.stop(true)
+      }
+    })
+  }
+
+  it('health advertises file.append while preserving existing health fields', async () => {
+    const response = await fetch(`${base}/kortix/health`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      daemon: 'ok',
+      opencode: 'ok',
+      capabilities: ['file.append'],
+    })
   })
 
   it('rejects unauthenticated upload (no signed context)', async () => {

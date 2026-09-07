@@ -14,6 +14,7 @@
     "codeDescription": "Como tudo é código em um repositório, o sistema pode ler a própria arquitetura, ampliar seus recursos e permanecer estável enquanto cresce. Ele é totalmente extensível, controlável e auto-hospedável. Nada é uma caixa-preta."
   },
   "common": {
+    "workspaceWaiting": "Aguardando o espaço de trabalho…",
     "cancel": "Cancelar",
     "save": "Salvar",
     "saving": "Salvando...",

@@ -14,6 +14,7 @@
     "codeDescription": "Poiché tutto è codice in un repository, il sistema può leggere il proprio progetto, estendersi e restare stabile mentre cresce. È completamente estendibile, controllabile e self-hosted. Nulla è una scatola nera."
   },
   "common": {
+    "workspaceWaiting": "In attesa dell’area di lavoro…",
     "cancel": "Annulla",
     "save": "Salva",
     "saving": "Salvataggio in corso...",

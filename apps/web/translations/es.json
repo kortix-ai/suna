@@ -14,6 +14,7 @@
     "codeDescription": "Como todo es código en un repositorio, el sistema puede leer su propio diseño, ampliarse y mantenerse estable a medida que crece. Es totalmente extensible, controlable y autoalojable. Nada es una caja negra."
   },
   "common": {
+    "workspaceWaiting": "Esperando al espacio de trabajo…",
     "cancel": "Cancelar",
     "save": "Guardar",
     "saving": "Guardando...",

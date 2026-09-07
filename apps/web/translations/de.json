@@ -14,6 +14,7 @@
     "codeDescription": "Da alles Code in einem Repository ist, kann das System seinen eigenen Bauplan lesen, sich erweitern und beim Wachstum stabil bleiben. Es ist vollständig erweiterbar, kontrollierbar und selbst hostbar. Nichts ist eine Blackbox."
   },
   "common": {
+    "workspaceWaiting": "Warten auf den Arbeitsbereich…",
     "cancel": "Abbrechen",
     "save": "Speichern",
     "saving": "Wird gespeichert...",

@@ -14,6 +14,7 @@
     "codeDescription": "Comme tout est du code dans un dépôt, le système peut lire son propre plan, s'étendre et rester stable pendant sa croissance. Il est entièrement extensible, contrôlable et auto-hébergeable. Rien n'est une boîte noire."
   },
   "common": {
+    "workspaceWaiting": "En attente de l’espace de travail…",
     "cancel": "Annuler",
     "save": "Enregistrer",
     "saving": "Enregistrement...",

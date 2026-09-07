@@ -41,7 +41,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 // `startSessionRuntime` — so every way a session comes up reconciles once.
 // Strictly AFTER `bootMark('opencode-ready')` and never awaited: it adds zero
 // milliseconds to the readiness the API and the frontend poll for.
-import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
+import { configureRuntimeConvergence, requestAgentSwapAfterTurnEnd, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createTurnAutoResumer } from './turn-auto-resume'
@@ -3065,6 +3065,7 @@ export async function relayTurnEndToApi(
         // later observation of the same completed turn is a safe no-op to skip.
         if (dedupSig) relayedTurnSignatures.add(dedupSig)
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
+        void requestAgentSwapAfterTurnEnd()
         return
       }
       logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status, attempt })

@@ -204,6 +204,7 @@ export function createHealthRouter(
 
     return c.json({
       daemon: 'ok',
+      capabilities: ['file.append'],
       status,
       runtimeReady,
       // Which boot path this daemon took. An agent binary that predates

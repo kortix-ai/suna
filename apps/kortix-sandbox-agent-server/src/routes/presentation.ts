@@ -331,5 +331,6 @@ export function createPresentationRouter(
   app.post('/convert-to-pdf', (c) => handle(c, 'pdf'))
   app.post('/convert-to-pptx', (c) => handle(c, 'pptx'))
 
+  app.all('*', (c) => c.json({ error: 'unknown presentation route' }, 404))
   return app
 }
