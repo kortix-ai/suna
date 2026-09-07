@@ -167,6 +167,14 @@ function permissionRequest(
       externalPath: requestedPath.externalPath,
     };
   }
+  if (toolName === 'websearch') {
+    return {
+      permission,
+      patterns: [stringField(input, 'query') ?? '*'],
+      always: ['*'],
+      metadata: structuredClone(input),
+    };
+  }
   if (toolName === 'skill') {
     const name = stringField(input, 'name') ?? '*';
     return {

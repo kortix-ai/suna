@@ -51,6 +51,20 @@ The configured gateway URL overrides the endpoint for catalog models and new
 model references alike. Catalog membership must never bypass the gateway or
 send the session credential to a provider's public endpoint.
 
+## Web search
+
+The `websearch` tool uses Exa's public MCP endpoint, matching OpenCode's Exa
+query options: `query`, `numResults`, `type`, `livecrawl`, and
+`contextMaxCharacters`. Defaults are eight results, automatic search, fallback
+live crawling, and 10,000 context characters. It returns source text that the
+existing web search cards render. The worker sends no session credential to Exa.
+
+Search uses the `websearch` permission with the query as its resource. Stop
+cancels the provider request. A 25-second deadline and 256 KiB response limit
+bound each call. HTTP, RPC, and tool failures stay tool errors. Search does not
+start the execution environment. Parallel-provider routing and private Exa key
+configuration are not implemented.
+
 ## Permission approvals
 
 The `question` tool and permission prompts use the existing OpenCode UI

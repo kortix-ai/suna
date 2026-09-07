@@ -46,6 +46,7 @@ import { PermissionApprovalStore } from './permission-store.ts';
 import type { PermissionConfig } from './permission-policy.ts';
 import { protectToolsWithPermissions } from './permission-tools.ts';
 import { QuestionBroker } from './question-broker.ts';
+import { createWebSearchTool } from './web-search-tool.ts';
 import { createTodoTools } from './todo-tools.ts';
 import { createQuestionTool } from './question-tool.ts';
 import { createSkillTool, type PiSkill } from './skill-runtime.ts';
@@ -1209,6 +1210,7 @@ export async function startWorker(cfg = configFromEnv()) {
       ...agent.state.tools,
       createQuestionTool(questions, (toolCallId) => wireAdapter.toolContext(toolCallId)),
       ...todos.tools,
+      createWebSearchTool(),
       createSkillTool(compiledPayload?.skills ?? [], cfg.envCwd),
     ],
     permissions,

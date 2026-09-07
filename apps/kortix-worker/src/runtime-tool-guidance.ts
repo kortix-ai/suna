@@ -17,6 +17,9 @@ export function appendRuntimeToolGuidance(
   if (names.has('todowrite') && names.has('todoread')) {
     lines.push('Use todowrite and todoread to maintain the visible session plan.');
   }
+  if (names.has('websearch')) {
+    lines.push('Use websearch for current information and cite the returned source URLs.');
+  }
   if (names.has('skill')) {
     lines.push('Use skill to load an available compiled skill. Read and execute its support files in the environment with the workspace tools.');
   }

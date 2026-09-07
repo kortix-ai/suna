@@ -132,7 +132,7 @@ describe('Pi OpenCode discovery routes', () => {
     expect(listResult.error).toBeUndefined();
     const ids: ToolIds = idsResult.data ?? [];
     const tools: ToolList = listResult.data ?? [];
-    expect(ids).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'todowrite', 'todoread', 'skill']);
+    expect(ids).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'todowrite', 'todoread', 'websearch', 'skill']);
     expect(tools.map((tool) => tool.id)).toEqual(ids);
     for (const tool of tools) {
       expect(tool.description.length).toBeGreaterThan(0);
@@ -141,6 +141,10 @@ describe('Pi OpenCode discovery routes', () => {
     expect(tools.find((tool) => tool.id === 'question')?.parameters).toMatchObject({
       required: ['questions'],
       properties: { questions: { type: 'array' } },
+    });
+    expect(tools.find((tool) => tool.id === 'websearch')?.parameters).toMatchObject({
+      required: ['query'],
+      properties: { query: { type: 'string' }, numResults: { type: 'integer' }, livecrawl: { anyOf: expect.any(Array) } },
     });
     expect(tools.find((tool) => tool.id === 'skill')?.parameters).toMatchObject({
       required: ['name'],
