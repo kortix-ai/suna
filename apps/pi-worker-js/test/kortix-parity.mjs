@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=48
+// EXPECTED_PASSES=55
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -154,6 +154,56 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
       busy.turn_in_flight === true, JSON.stringify({ f: busy.turn_in_flight }));
     check("and an accepted prompt that has not run yet is reported as orphaned",
       busy.turn_orphaned_prompt === true, JSON.stringify(busy.turn_orphaned_prompt));
+  }
+
+  // THE THREE ROUTES THE HARNESS SERVES AND A CELL DID NOT.
+  //
+  // /events is the one that decides how fast an answer FEELS. kortix-worker
+  // streams every agent event as SSE and the product reads it; a cell had only
+  // a WebSocket, so a consumer written against the harness saw nothing until
+  // the turn was over. Measured against this gateway on dev 2026-09-07: first
+  // content at 2.6-5.9 s, turn complete at 5.1-7.6 s — everything between is
+  // time the user spends looking at nothing.
+  {
+    const res = await h.fetch("/events?c=s");
+    check("GET /events is an SSE stream, as the harness serves it",
+      res.headers.get("content-type")?.includes("text/event-stream") === true,
+      String(res.headers.get("content-type")));
+    const reader = res.body.getReader();
+    const first = new TextDecoder().decode((await reader.read()).value ?? new Uint8Array());
+    check("and it says hello immediately, so a client knows it is connected",
+      first.startsWith(":"), JSON.stringify(first).slice(0, 60));
+    // A broadcast must reach it — that is the whole contract.
+    const soon = reader.read();
+    h.cell.broadcast({ type: "probe", n: 1 });
+    const got = new TextDecoder().decode((await soon).value ?? new Uint8Array());
+    check("a broadcast reaches the stream as `data:` — this is what makes an answer ARRIVE",
+      got.startsWith("data:") && got.includes("\"probe\""), JSON.stringify(got).slice(0, 90));
+    await reader.cancel();
+  }
+
+  // Stop. The SDK calls /session/:id/abort at the RAW root with no prefix —
+  // kortix-worker learned that against pi.kortix.com on 2026-09-01, where the
+  // raw path 404'd, Stop did nothing, and the UI painted "Interrupted" from its
+  // own receipt while the agent ran to completion.
+  {
+    const ok = await h.fetch("/session/s/abort?c=s", { method: "POST" });
+    check("POST /session/:root/abort answers, whether or not a turn is running",
+      ok.status === 200, `status ${ok.status}`);
+    const wrong = await h.fetch("/session/someone-else/abort?c=s", { method: "POST" });
+    check("and it refuses another session's abort rather than stopping this one",
+      wrong.status === 404, `status ${wrong.status}`);
+  }
+
+  // The raw transcript the OpenCode client reads.
+  {
+    const r = await h.fetch("/session/s/message?c=s");
+    const body = await r.json();
+    check("GET /session/:root/message is a LIST of messages with parts",
+      Array.isArray(body) && body.every((m) => m.info && Array.isArray(m.parts)), JSON.stringify(body).slice(0, 120));
+    const wrong = await h.fetch("/session/nobody/message?c=s");
+    check("and another session's transcript is not served from here",
+      wrong.status === 404, `status ${wrong.status}`);
   }
 
   check("POST /interrupt with no turn says so rather than failing", stop.stopped === false && /no turn/.test(stop.reason), JSON.stringify(stop));

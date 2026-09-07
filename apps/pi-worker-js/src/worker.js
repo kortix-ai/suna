@@ -557,7 +557,30 @@ export class AgentCell {
   //
   // That is also what makes the capacity arithmetic work: a hibernated socket
   // costs the node a file descriptor, not a live isolate.
+  /**
+   * THE EVENT STREAM THE PRODUCT READS.
+   *
+   * kortix-worker serves /events as SSE and pushes every pi agent event into
+   * it (`data: <event>\n\n`). A cell had only a WebSocket, so a UI that speaks
+   * the harness's contract saw NOTHING until the turn was over — the answer
+   * appeared all at once at the end instead of arriving.
+   *
+   * That is the whole difference between a 5 s wait and a 2.6 s first token:
+   * measured against this gateway, first content lands at 2.6-5.9 s while a
+   * turn completes at 5.1-7.6 s. Everything between those two numbers is time
+   * the user spent looking at nothing.
+   */
+  sse(event) {
+    const set = this.sseListeners;
+    if (!set || set.size === 0) return;
+    const line = `data: ${JSON.stringify(event)}\n\n`;
+    for (const w of [...set]) {
+      try { w.write(line); } catch { set.delete(w); }
+    }
+  }
+
   broadcast(event) {
+    this.sse({ ...event, at: Date.now() });
     const payload = JSON.stringify({ ...event, at: Date.now() });
     // THE UNION, not either one. Measured on celld 0.3.0, 2026-09-02: after a
     // cell is evicted and rebuilt, getWebSockets() returns 0 for a watcher that
@@ -622,6 +645,10 @@ export class AgentCell {
     });
 
     agent.subscribe((event) => {
+      // RAW, FIRST. The harness pushes every agent event onto /events verbatim,
+      // and a consumer written against it expects the same shapes — deltas
+      // included, which is what makes an answer arrive rather than appear.
+      this.sse(event);
       // Stream what a watcher actually needs: which tool is running, and what
       // came back. Previously this sent only `{type}`, which tells a UI that
       // something happened and nothing about what.
@@ -1163,6 +1190,57 @@ export class AgentCell {
     // Enqueued exactly like `/prompt?async=1`: persisted first, then the alarm
     // does the work, so nothing runs on this request's back and an eviction
     // mid-turn resumes rather than loses it.
+    // POST /session/:rootId/abort — THE STOP BUTTON'S REAL PATH.
+    //
+    // The SDK builds its client with `baseUrl = <backend>/p/<externalId>/<port>`
+    // and calls `session.abort()`, which resolves to `/session/:id/abort` at the
+    // raw root with no prefix. kortix-worker learned this the hard way against
+    // pi.kortix.com on 2026-09-01: the raw path 404'd, so Stop did nothing while
+    // the UI painted "Interrupted" from its own optimistic receipt and the agent
+    // ran to completion. A cell had the same hole.
+    //
+    // Idempotent and root-scoped, like the harness: aborting an idle session is
+    // a no-op, and a request naming another session is refused rather than
+    // stopping this one.
+    {
+      const m = url.pathname.match(/^\/session\/([^/]+)\/abort$/);
+      if (m && req.method === "POST") {
+        const rootId = decodeURIComponent(m[1]);
+        if (rootId !== sessionId) {
+          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        }
+        const running = this.running;
+        if (running) running.agent.abort();
+        return Response.json({ ok: true, stopped: !!running, turn: running?.turn ?? null });
+      }
+    }
+
+    // GET /session/:rootId/message — the transcript, in the shape the raw
+    // OpenCode client asks for. The harness serves it at the same raw root and
+    // for the same reason: the SDK has no prefix.
+    {
+      const m = url.pathname.match(/^\/session\/([^/]+)\/message$/);
+      if (m && req.method === "GET") {
+        const rootId = decodeURIComponent(m[1]);
+        if (rootId !== sessionId) {
+          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        }
+        const rows = [...this.sql.exec("SELECT i, role, json, ts FROM msgs ORDER BY i")];
+        return Response.json(rows.map((r) => {
+          let parsed = {};
+          try { parsed = JSON.parse(r.json); } catch { /* a row we cannot read is still a row */ }
+          return {
+            info: { id: String(r.i), role: r.role, sessionID: sessionId, time: { created: r.ts } },
+            parts: (parsed.content ?? []).map((c, k) => ({
+              id: `${r.i}-${k}`, messageID: String(r.i), sessionID: sessionId,
+              type: c?.type === "text" ? "text" : (c?.type ?? "text"),
+              ...(c?.text != null ? { text: c.text } : {}),
+            })),
+          };
+        }));
+      }
+    }
+
     {
       const m = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/);
       if (m && req.method === "POST") {
@@ -1459,6 +1537,33 @@ export class AgentCell {
         ctorMs: this.ctorMs ?? null,
         initMs: this.initMs ?? null,
         at: Date.now(),
+      });
+    }
+
+    // GET /events — SSE, the shape kortix-worker serves and the product reads.
+    if (url.pathname === "/events") {
+      this.sseListeners = this.sseListeners ?? new Set();
+      const set = this.sseListeners;
+      const enc = new TextEncoder();
+      let writer = null;
+      const stream = new ReadableStream({
+        start(controller) {
+          writer = { write: (line) => controller.enqueue(enc.encode(line)) };
+          set.add(writer);
+          // An immediate comment so a proxy flushes headers and a client knows
+          // it is connected before anything happens.
+          controller.enqueue(enc.encode(": connected\n\n"));
+        },
+        cancel() { set.delete(writer); },
+      });
+      return new Response(stream, {
+        headers: {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          // The edge must not sit on this waiting for a full body.
+          "x-accel-buffering": "no",
+        },
       });
     }
 
