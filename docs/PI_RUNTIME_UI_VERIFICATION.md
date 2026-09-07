@@ -25,6 +25,15 @@ catalog from registered tools after the compiled prompt. Older project prompts
 therefore receive current capability information without losing their own
 restrictions on tool use.
 
+Live assistant messages now publish the compiled agent and gateway model identity.
+Previously the adapter omitted both values, so live messages used native provider
+names and the default `build` agent. The UI could not match those messages to its
+model catalog. Restored messages already use the resolved identity.
+
+The SDK sends Pi slash commands without per-turn agent, model, or variant
+selections. Pi runs the compiled command on its immutable session runtime.
+OpenCode command selections retain their existing behavior.
+
 Existing workers keep their compiled executable. A frontend reload does not
 install a new worker. Start a new session, or stop and resume an existing session,
 to load current code. Completed transcript preservation is verified separately
@@ -36,6 +45,20 @@ The capability implementation is `1f3a3005e74bef2b4e2ae03e86a3b581b6e26e39`.
 [Deployment 34117577813](https://github.com/kortix-ai/suna/actions/runs/34117577813)
 completed successfully. `/v1/health` reported that exact commit and
 `started_at: 2026-09-07T11:42:42.202Z`.
+
+Follow-up deployments also completed successfully:
+
+- Runtime tool guidance: `30a02923b4789f4c7277796e38605a3c69b5ee00`,
+  [run 34119455187](https://github.com/kortix-ai/suna/actions/runs/34119455187).
+- SDK command routing: `fa10933e265f4fb7b7f6e8feedcb1dfd04a72d15`,
+  [run 34120300619](https://github.com/kortix-ai/suna/actions/runs/34120300619).
+
+The live health response reported each exact SHA after its deployment.
+Stopping and resuming the capability session on the guidance deployment preserved
+28 message IDs, 26 part IDs, both todos, and answered question metadata.
+A normal request for a rendered question then opened the question UI.
+Selecting `parity-proof` from the composer menu submitted the command route,
+returned `200`, and rendered `COMMAND_PARITY_BROWSER_FINAL`.
 
 Browser verification session:
 [`1b979441-ab55-4fce-91de-aaa1a0e4f636`](https://pi.kortix.com/projects/80b8142e-02b8-456d-8684-bff4d3e5718e/sessions/1b979441-ab55-4fce-91de-aaa1a0e4f636).
@@ -66,7 +89,8 @@ CLI, environment startup, stopped history, and stable message IDs after restart.
 
 - `pnpm test`: all lanes pass; REST/CLI reports `395/395 passed`, zero failures.
 - `pnpm --filter @kortix/sdk typecheck`, `test`, `smoke:install`: exit `0`.
-  The install smoke imports and constructs clients from packed tarballs.
+  The SDK suite records `2,844` passing tests. The install smoke imports and
+  constructs clients from packed tarballs.
 - Selected committed worker source: `244 pass`, `0 fail`, 36 files.
   This source snapshot excludes unrelated worktree changes.
 - Selected API compiler tests: `19 pass`, `0 fail`; per-agent and payload
@@ -74,12 +98,16 @@ CLI, environment startup, stopped history, and stable message IDs after restart.
 - Starter package: `92 pass`, `0 fail`; starter and worker typechecks pass.
 - New runtime guidance and starter tests failed before the implementation,
   then passed. The generated starter snapshot changes only the Pi agent prompt.
+- The SDK command-selection regression and live model-identity regression also
+  failed before their fixes, then passed.
 
 The broader package gate initially found a stale generated SDK documentation
 timestamp. Regeneration fixed its focused test. A subsequent run exposed an SSE
 test assumption that one read contains the whole transport frame. The test now
 reads through closure and still rejects any oversized event reaching the limited
-client. The healthy subscriber must receive its event.
+client. The healthy subscriber must receive its event. The completed
+`pnpm test -- --packages-only` run passed in 218.9 seconds. Its web suite reported
+`9,433 passed`.
 
 ## Compatibility limits
 

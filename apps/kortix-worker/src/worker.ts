@@ -703,6 +703,9 @@ export async function startWorker(cfg = configFromEnv()) {
     mintMessageId: surface.mintMessageId,
     parentMessageId: () => surface.turnEndIdentity().messageId,
     workspace: cfg.envCwd,
+    model,
+    agent: runtimeAgent,
+    mode: runtimeAgent,
   });
   agent.subscribe((event: any) => {
     try {

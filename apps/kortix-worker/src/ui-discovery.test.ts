@@ -78,4 +78,20 @@ test('the UI discovers its compiled runtime and reads the visible todo state', a
     await Bun.sleep(10);
   }
   expect(readBack).toEqual(todos);
+  let transcript: any[] = [];
+  for (let n = 0; n < 100; n++) {
+    transcript = await (await call(`/session/${session.id}/message`)).json() as any[];
+    if (transcript.at(-1)?.info.time.completed && !worker.agent.state.isStreaming) break;
+    await Bun.sleep(10);
+  }
+  const assistants = transcript.filter((message) => message.info.role === 'assistant');
+  expect(assistants).toHaveLength(2);
+  for (const assistant of assistants) {
+    expect(assistant.info).toMatchObject({
+      agent: 'review',
+      mode: 'review',
+      providerID: 'kortix',
+      modelID: 'openai/gpt-5.4',
+    });
+  }
 });
