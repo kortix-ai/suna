@@ -4934,3 +4934,17 @@ misleading `503`; it requires acknowledged cancellation and explicit status reje
 signal. Persist `stopReason: aborted` so the live and restored messages use `MessageAbortedError`.
 **Enforcer:** provider-stream tests and both cross-worker Stop routes cover the error frame,
 terminal result, message completion, and replacement-worker transcript.
+
+### Apply gateway routing to every resolved model (2026-09-07)
+
+**When:** resolving Pi provider models behind the Kortix LLM gateway.
+**Incident:** real HTTP regression tests selected a model present in Pi's catalog.
+It used the catalog's public endpoint instead of the configured gateway. Tests
+used dummy credentials and received provider authentication errors. The preview's
+uncatalogued model followed the separate fallback path and did not show the bug.
+**Rule:** set the configured gateway URL on every resolved model. Never rely on
+credential environment metadata to override a model endpoint. Apply compiled
+sampling settings to requests, rather than only reporting them in discovery.
+**Enforcer:** `generation-settings-routes.test.ts` checks actual HTTP destinations,
+credential headers, exact model references, explicit zero values, omitted defaults,
+and consecutive turns for OpenRouter and native Anthropic transports.

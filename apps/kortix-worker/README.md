@@ -34,6 +34,15 @@ closed (exit 78) on mismatch.
 env vars win, because the control plane knows session-start facts (model
 override, session id, environment URL) that a per-commit artifact cannot.
 
+The selected compiled agent's `temperature` and `top_p` apply to every provider
+request. Explicit zero values are preserved. Omitted fields retain provider
+defaults. OpenAI-compatible requests use Pi sampling options. Native Anthropic
+requests retain Pi's temperature handling and add `top_p` to the provider payload.
+
+The configured gateway URL overrides the endpoint for catalog models and new
+model references alike. Catalog membership must never bypass the gateway or
+send the session credential to a provider's public endpoint.
+
 ## Permission approvals
 
 The `question` tool and permission prompts use the existing OpenCode UI

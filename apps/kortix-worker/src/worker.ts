@@ -1,3 +1,4 @@
+import { applyGenerationSettings } from './generation-settings.ts';
 import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
 /**
  * kortix-worker (spike) — the harness, and only the harness.
@@ -575,8 +576,6 @@ export async function buildHarness(cfg: WorkerConfig) {
       await credentials.modify(provider.id, async () => ({
         type: 'api_key',
         key: cfg.apiKey,
-        // KORTIX_GATEWAY_URL is the entire gateway integration: ModelAuth.baseUrl.
-        ...(cfg.gatewayUrl ? { env: { baseUrl: cfg.gatewayUrl } } : {}),
       }));
     }
     const list = models.getModels(provider.id);
@@ -592,6 +591,7 @@ export async function buildHarness(cfg: WorkerConfig) {
       model = { ...list[0], id: cfg.modelId, name: cfg.modelId, baseUrl: cfg.gatewayUrl };
     }
     if (!model) throw new Error(`no model resolved for provider ${provider.id}`);
+    if (cfg.gatewayUrl) model = { ...model, baseUrl: cfg.gatewayUrl };
   }
 
   // THE SEAM. Every default tool is bound to the remote environment once.
@@ -1183,6 +1183,7 @@ export async function startWorker(cfg = configFromEnv()) {
     | null = null;
   let surface!: RuntimeSurface;
   const selectedAgentConfig = compiledPayload?.agentConfig?.agent?.[runtimeAgent];
+  applyGenerationSettings(agent, selectedAgentConfig);
   const permissions = new PermissionBroker({
     sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
     permission: selectedAgentConfig?.permission,
