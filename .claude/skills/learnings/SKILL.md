@@ -4960,3 +4960,16 @@ next readiness check, which failed after 1.5 seconds. Inspection of the installe
 A successful Unix-socket probe does not prove the final server is available.
 **Enforcer:** all four migration fixtures use TCP readiness; their full suite applies
 the migration history and verifies 26 contracts against disposable databases.
+
+### Apply Stop receipts to content and status evidence (2026-09-07)
+
+**When:** deriving shared session working state during cancellation and immediate resend.
+**Incident:** Pi preview delivered busy frames and incremental text after Stop, but
+the composer kept Send visible. The SDK accepted activity from the cancelled turn
+through its abort receipt. Its projection stayed working across the host's local
+Stop reset, so the next turn produced no working-state transition.
+**Rule:** apply the abort acknowledgement boundary to stream activity and busy
+frames as well as ledger reads. A new send clears the receipt. An unanswered Stop
+must still expire at the existing 15-second bound.
+**Enforcer:** `core/session/working.test.ts` covers the complete working → Stop →
+working sequence, late events, post-acknowledgement output, and timeout recovery.

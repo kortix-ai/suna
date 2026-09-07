@@ -228,6 +228,11 @@ persisted session default.
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
 
+Working state respects a pending Stop across status, content, and ledger reads.
+Sending another prompt releases that local Stop receipt. New output after the
+cancellation acknowledgement can report working again. An unanswered Stop loses
+its suppression after 15 seconds, so it cannot hide a running session indefinitely.
+
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
 ```tsx

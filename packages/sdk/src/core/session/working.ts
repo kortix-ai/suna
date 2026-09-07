@@ -441,7 +441,12 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // postdates. A runtime that is emitting parts is working, whatever the last
   // status frame said and whatever a poll that has not answered yet will say.
   const activityFresh = !!activity && nowMs - activity.atMs <= STREAM_OBSERVATION_MAX_MS;
-  const activityAfterIdle = activityFresh && (!idleFrame || activity!.atMs > idleFrame.atMs);
+  // A pending Stop applies to content and status as well as ledger reads.
+  // Otherwise old activity keeps this projection working across cancellation,
+  // so a host's optimistic Stop reset misses the next working transition.
+  // A new send clears the abort receipt; an unanswered Stop retains its bound.
+  const activityAfterIdle =
+    activityFresh && activity!.atMs >= abortFloor && (!idleFrame || activity!.atMs > idleFrame.atMs);
 
   /**
    * Whether the runtime has already finished this turn.
@@ -587,7 +592,10 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   }
 
   const serverAnswers = serverFresh && !openTurn && server!.atMs >= serverFloor;
-  const streamAnswers = streamFresh && stream!.atMs >= streamFloor;
+  const streamAnswers =
+    streamFresh &&
+    stream!.atMs >= streamFloor &&
+    (stream!.type === 'idle' || stream!.atMs >= abortFloor);
 
   if (serverAnswers && (!stream || server!.atMs >= stream.atMs)) {
     return {
