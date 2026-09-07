@@ -79,6 +79,10 @@ mock.module('../shared/jwt-verify', () => ({
     if (t === 'jwt-owner') return { ok: true, userId: 'user-owner' };
     if (t === 'jwt-other') return { ok: true, userId: 'user-other' };
     if (t === 'jwt-fallback') return { ok: false, reason: 'no-keys' };
+    // A project whose JWKS publishes an ES256 key while auth still SIGNS with
+    // the legacy HS256 secret: the local verifier loads a key, then meets an
+    // algorithm it does not implement. Only the auth server can judge it.
+    if (t === 'jwt-hs256') return { ok: false, reason: 'unsupported-alg:HS256' };
     return { ok: false, reason: 'invalid' };
   },
 }));
@@ -181,6 +185,21 @@ describe('authenticatePreviewPrincipal', () => {
   test('rejects network-fallback user without access', async () => {
     mockSupabaseUser = { id: 'user-fallback-other' };
     expect(await authenticatePreviewPrincipal('jwt-fallback', SANDBOX_ID)).toBeNull();
+  });
+
+  // An HS256-signed Supabase JWT is the SAME token combinedAuth accepts on
+  // /v1/*. The local verifier cannot check a symmetric signature, so
+  // `unsupported-alg:*` is inconclusive, not a verdict — it must reach the
+  // network path exactly like a cold JWKS does. Hard-rejecting it 401'd every
+  // browser preview on a project that had not yet migrated to asymmetric JWT
+  // signing keys, while the path proxy for the same sandbox worked.
+  test('falls back to the network verify path for an HS256-signed JWT', async () => {
+    mockSupabaseUser = { id: 'user-fallback-owner' };
+    expect(await authenticatePreviewPrincipal('jwt-hs256', SANDBOX_ID)).toBe('user-fallback-owner');
+  });
+  test('rejects an HS256 JWT whose user lacks sandbox access', async () => {
+    mockSupabaseUser = { id: 'user-fallback-other' };
+    expect(await authenticatePreviewPrincipal('jwt-hs256', SANDBOX_ID)).toBeNull();
   });
 });
 

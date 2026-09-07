@@ -121,10 +121,19 @@ export function isPreviewHost(req: Request, url: URL): boolean {
 /** Query parameters that carry a one-shot credential, never forwarded upstream. */
 const CREDENTIAL_PARAMS = ['token', 'public_share'] as const;
 
-function jsonError(status: number, message: string, origin: string): Response {
+function jsonError(
+  status: number,
+  message: string,
+  origin: string,
+  state?: PreviewState,
+): Response {
   return new Response(JSON.stringify({ error: message }), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(state ? { [PREVIEW_STATE_HEADER]: state } : {}),
+      ...corsHeaders(origin),
+    },
   });
 }
 
@@ -140,7 +149,12 @@ function gateResponse(
   input: { status: 401 | 403 | 404; state: PreviewState; message: string; origin: string; publicHost: string },
 ): Response {
   if (!isDocumentNavigation(req)) {
-    return jsonError(input.status, input.message, input.origin);
+    // Name the state here too. Both refusals mean different things — an unknown
+    // sandbox, an unsigned host, a rejected credential — and without the header
+    // every one of them is the same 24-byte `{"error":"Unauthorized"}` to a
+    // curl. Telling them apart from outside took a code read during the HS256
+    // preview outage; it should take one request.
+    return jsonError(input.status, input.message, input.origin, input.state);
   }
   const proto = req.headers.get('x-forwarded-proto') || url.protocol.replace(':', '');
   const returnTo = `${proto}://${input.publicHost}${url.pathname}${url.search}`;

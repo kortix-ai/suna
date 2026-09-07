@@ -64,6 +64,7 @@ mock.module('../shared/session-public-shares', () => ({
 }));
 
 const { handlePreviewOriginRequest } = await import('./preview-origin');
+const { PREVIEW_STATE_HEADER } = await import('./preview-state-page');
 const { mintPreviewSession } = await import('./preview-session');
 
 const HOST = 'p8081-sbx-known.localhost:8008';
@@ -158,6 +159,21 @@ describe('preview origin auth gate', () => {
     const res = await handlePreviewOriginRequest(req, url);
     expect(res?.status).toBe(401);
     expect(principalCalls).toEqual(['nope']);
+  });
+
+  test('a machine refusal names the state, so one request tells them apart', async () => {
+    // Both answers are the same 24-byte `{"error":"Unauthorized"}` body; only
+    // the header says whether the credential was rejected or the label is not
+    // a sandbox at all.
+    const rejected = await handlePreviewOriginRequest(...request('/api?token=nope'));
+    expect(rejected?.headers.get('content-type')).toContain('application/json');
+    expect(rejected?.headers.get(PREVIEW_STATE_HEADER)).toBe('signed-out');
+
+    const unknown = await handlePreviewOriginRequest(
+      ...request('/api?token=good', {}, 'p8081-sbx-missing.localhost:8008'),
+    );
+    expect(unknown?.status).toBe(404);
+    expect(unknown?.headers.get(PREVIEW_STATE_HEADER)).toBe('unknown');
   });
 
   test('a CORS preflight is answered before auth, but grants nothing to a stranger', async () => {

@@ -27,6 +27,10 @@ import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
+// From the side-effect-free module, NOT from './jwt-verify': the suites that
+// `mock.module('../shared/jwt-verify', …)` replace it wholesale, and a name
+// imported from there would vanish under the mock. See jwt-verify-outcome.ts.
+import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { getSupabase } from '../shared/supabase';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
 
@@ -93,7 +97,14 @@ export async function authenticatePreviewPrincipalDetailed(
         ? { userId: local.userId, sessionId: null }
         : null;
     }
-    if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') return null;
+    // Inconclusive means the LOCAL verifier could not reach a verdict — cold
+    // JWKS, unknown kid, or an algorithm it does not implement. A Supabase
+    // project that still signs with the legacy HS256 secret lands in the last
+    // case, and only the auth server can check a symmetric signature. Route on
+    // the same predicate combinedAuth uses, or the two edges disagree about the
+    // same token: /v1/p/<sandbox>/<port> served it while every browser preview
+    // origin answered 401 'Sign in to open this preview'.
+    if (!isInconclusiveVerifyFailure(local.reason)) return null;
 
     const supabase = getSupabase();
     const { data: { user }, error } = await supabase.auth.getUser(token);

@@ -21,6 +21,31 @@ linked, not inlined.
 
 ## Register
 
+### An inconclusive JWT verdict is not a rejection (2026-09-08)
+
+**When:** writing any code that calls `verifySupabaseJwt` and then decides what
+a FAILURE means. `sandbox-proxy/preview-auth.ts` — the authenticator for the
+preview ORIGIN and the preview WebSocket — compared reasons inline
+(`!== 'no-keys' && !== 'no-key-for-kid'`) instead of calling
+`isInconclusiveVerifyFailure`, so it missed `unsupported-alg:*`. Prod Supabase
+publishes an ES256 JWKS while its auth server still SIGNS HS256, so local verify
+answered `unsupported-alg:HS256` — a non-verdict only the auth server can
+settle. `combinedAuth` fell back to the network and served the token;
+preview-auth read the same string as a verdict and refused it. **The rule:**
+one predicate decides what a verify failure means; never re-state it inline.
+*Blast radius:* every browser preview origin on prod
+(`prod-p{port}-{label}.p.kortix.com`) answered 401 "Sign in to open this
+preview" to the sandbox's own owner, and the gate's sign-in link looped —
+`/preview/authorize` hands back `session.access_token`, the very token being
+refused. `/v1/p/<sandbox>/<port>/` kept working, which made it read as a token
+problem rather than an edge problem. Dev and staging were unaffected: their
+Supabase projects sign ES256. *Enforcement:*
+`apps/api/src/__tests__/unit-jwt-verify-callers.test.ts` fails any caller of
+`verifySupabaseJwt` that does not route through the shared predicate, or that
+compares a reason string by hand. *Also:* the machine-facing refusal now carries
+`x-kortix-preview-state`, because every gate answered the same 24-byte
+`{"error":"Unauthorized"}` and telling them apart took a code read.
+
 ### A `[skip ci]` release-prep commit deadlocks the lane that ships releases (2026-09-02)
 
 **When:** adding `[skip ci]` to any commit that lands on a branch whose deploy
