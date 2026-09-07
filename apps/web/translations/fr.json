@@ -19207,5 +19207,28 @@
         "prompt": "Rédige le document qu’une nouvelle recrue lit durant sa première semaine — notre façon de travailler, où se trouvent les éléments, à qui s’adresser et ce qui caractérise un travail de qualité. Utilise ce que tu peux tirer de la mémoire du projet et, à la fin, liste tout ce que tu as dû supposer au lieu de t’arrêter pour me poser des questions."
       }
     }
+  },
+  "createAgent": {
+    "title": "Créer un agent",
+    "menuDescription": "Choisir son nom et ses instructions",
+    "intro": "Définissez les paramètres de base. Configurez le modèle et les accès dans l’éditeur de l’agent.",
+    "name": "Nom",
+    "nameHelp": "Utilisez 1 à 128 lettres minuscules, chiffres, tirets ou traits de soulignement. Commencez par une lettre ou un chiffre.",
+    "description": "Description",
+    "instructions": "Instructions",
+    "mode": "Mode",
+    "primary": "Principal",
+    "subagent": "Sous-agent",
+    "all": "Tous",
+    "primaryHelp": "Les utilisateurs peuvent démarrer des sessions avec cet agent.",
+    "subagentHelp": "Les autres agents peuvent appeler cet agent.",
+    "allHelp": "Les utilisateurs et les autres agents peuvent utiliser cet agent.",
+    "duplicate": "Un agent porte déjà ce nom. Choisissez un autre nom.",
+    "created": "Agent créé",
+    "failed": "Impossible de créer l’agent",
+    "loadFailed": "Impossible de charger la configuration du projet.",
+    "upgrade": "La configuration manuelle nécessite un projet v2. Mettez ce projet à niveau pour continuer.",
+    "cancel": "Annuler",
+    "retry": "Réessayer"
   }
 }
