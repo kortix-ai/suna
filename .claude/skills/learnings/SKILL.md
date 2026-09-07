@@ -4844,3 +4844,14 @@ unchanged by a model-only PATCH. The strict preview suite includes seeded projec
 - Enforcement: `workspace-readiness.test.ts` exercises real authenticated HTTP
   across provisioning, startup, ready, transient failure, and boot failure.
   `kortix.test.ts` rejects file reads made before the second readiness response.
+
+
+### Remove compression headers when forwarding decoded fetch bodies (2026-09-07)
+
+- Incident: preview SESS-24 completed one reply, then its second OpenCode session
+  failed with `ZlibError` from the local LLM proxy. A compressed SSE fixture
+  reproduced the same failure through a real HTTP server.
+- Rule: after fetch decompresses a response, do not forward its original
+  `Content-Encoding` or `Content-Length` with the decoded stream.
+- Enforcement: `llm-proxy.test.ts` passes a gzip SSE response through the proxy
+  and verifies the downstream event text and content type without double decoding.

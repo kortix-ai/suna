@@ -60,6 +60,31 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
     }
   })
 
+  test('forwards decoded upstream SSE without stale compression headers', async () => {
+    const event = 'data: {"choices":[{"delta":{"content":"PI_STREAM_OK"}}]}\n\ndata: [DONE]\n\n'
+    const compressed = Bun.gzipSync(event)
+    const up = Bun.serve({
+      port: 0,
+      fetch: () => new Response(compressed, {
+        headers: {
+          'content-type': 'text/event-stream',
+          'content-encoding': 'gzip',
+          'content-length': String(compressed.byteLength),
+        },
+      }),
+    })
+    try {
+      startLlmProxy(14319, up.url.origin, 'stream-token')
+      const response = await fetch(`${llmProxyBaseUrl()}/chat/completions`)
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe(event)
+      expect(response.headers.get('content-encoding')).toBeNull()
+      expect(response.headers.get('content-type')).toBe('text/event-stream')
+    } finally {
+      up.stop(true)
+    }
+  })
+
   test('LLM proxy injects the live token and SWAPS it without a restart', async () => {
     const up = mockUpstream()
     try {
