@@ -5029,3 +5029,20 @@ actual readiness writes against PostgreSQL. Nine tests fail before the fence
 and pass afterward. They preserve accepted restart claims, new wake clocks,
 concurrent turn metadata, and stopped status. The current-observation case
 verifies writes and clearing with a microsecond-precision database timestamp.
+
+
+### 2026-09-07 — Persist prompt instructions as part of admission identity
+
+The Pi worker rejected OpenCode's per-prompt `system` field. Compatibility
+requires more than accepting the field. A queued prompt must use its own
+instructions, and a retry must not change an already accepted prompt.
+
+Save the validated string with the admission options and user message. Append
+it to the compiled instructions only while that prompt executes. Restore the
+compiled instructions on completion and error. Include the string in retry
+conflict detection and apply it during accepted-only replay.
+
+`apps/kortix-worker/src/prompt-system-routes.test.ts` checks actual provider HTTP
+requests, omitted and empty strings, malformed inputs, and provider errors.
+The prompt-system cases in `turn-routes.test.ts` check queue isolation, retries,
+replacement, and accepted-only replay through the provider HTTP boundary.

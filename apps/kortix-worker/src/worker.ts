@@ -1408,10 +1408,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   };
 
-  const admissionOptions = {
+  type PromptOptions = { system?: string };
+  const admissionOptions = (options: PromptOptions): JsonObject => ({
     ...(effectiveRuntime.agent ? { agent: effectiveRuntime.agent } : {}),
     ...(effectiveRuntime.model ? { model: effectiveRuntime.model } : {}),
-  } as JsonObject;
+    ...(options.system === undefined ? {} : { system: options.system }),
+  });
   const turns = new Map<string, WorkerTurn>();
   const removeCancelledTurn = (messageId: string): TurnCompletion => {
     if (surface.transcript.messageById(messageId)) {
@@ -1545,6 +1547,12 @@ export async function startWorker(cfg = configFromEnv()) {
         });
       }, abortPollMs);
       let completedDurably = false;
+      const originalSystemPrompt = agent.state.systemPrompt;
+      if (typeof turn.options.system === 'string' && turn.options.system) {
+        agent.state.systemPrompt = [originalSystemPrompt, turn.options.system]
+          .filter(Boolean)
+          .join('\n');
+      }
       try {
         const created = Number(
           (turn.wireUserMessage.info.time as { created?: unknown } | undefined)?.created ??
@@ -1599,6 +1607,7 @@ export async function startWorker(cfg = configFromEnv()) {
         // the next worker drains by exact message id.
         relayDrain.wake();
       } finally {
+        agent.state.systemPrompt = originalSystemPrompt;
         settling = true;
         clearInterval(heartbeatTimer);
         clearInterval(abortPollTimer);
@@ -1645,13 +1654,17 @@ export async function startWorker(cfg = configFromEnv()) {
     return queued.done;
   };
 
-  const makeAdmission = (text: string, explicitId?: string): TurnAdmission => {
+  const makeAdmission = (
+    text: string,
+    explicitId: string | undefined,
+    options: PromptOptions,
+  ): TurnAdmission => {
     const messageId = explicitId ?? surface.mintMessageId();
     const created = Date.now();
     return {
       messageId,
       text,
-      options: admissionOptions,
+      options: admissionOptions(options),
       wireUserMessage: {
         info: {
           id: messageId,
@@ -1660,6 +1673,7 @@ export async function startWorker(cfg = configFromEnv()) {
           time: { created },
           agent: runtimeAgent,
           model: effectiveRuntime.model ?? resolvedModel,
+          ...(options.system === undefined ? {} : { system: options.system }),
         },
         parts: [
           {
@@ -1680,13 +1694,17 @@ export async function startWorker(cfg = configFromEnv()) {
     state: string;
   };
   const admissionFlights = new Map<string, Promise<AdmittedTurn>>();
-  const assertSameAdmission = (admission: TurnAdmission, text: string): void => {
-    if (admission.text !== text || !isDeepStrictEqual(admission.options, admissionOptions)) {
+  const assertSameAdmission = (admission: TurnAdmission, text: string, options: PromptOptions): void => {
+    if (admission.text !== text || !isDeepStrictEqual(admission.options, admissionOptions(options))) {
       throw new TurnAdmissionConflictError(admission.messageId);
     }
   };
 
-  const admitTurnCore = async (text: string, explicitId?: string): Promise<AdmittedTurn> => {
+  const admitTurnCore = async (
+    text: string,
+    explicitId: string | undefined,
+    options: PromptOptions,
+  ): Promise<AdmittedTurn> => {
     sessionLog?.assertWritable();
     if (sessionLog) {
       const durable = await turnJournal.refresh();
@@ -1698,7 +1716,7 @@ export async function startWorker(cfg = configFromEnv()) {
     // closed instead of executing two logical inputs as one message.
     const persisted = explicitId ? turnJournal.admission(explicitId) : null;
     if (persisted) {
-      assertSameAdmission(persisted, text);
+      assertSameAdmission(persisted, text, options);
       const state = turnJournal.state(persisted.messageId);
       if (state === 'completed') await hydrateDurableState();
       return {
@@ -1717,7 +1735,7 @@ export async function startWorker(cfg = configFromEnv()) {
       throw new TurnMessageOrderError();
     }
 
-    const admission = makeAdmission(text, explicitId);
+    const admission = makeAdmission(text, explicitId, options);
     let accepted: boolean;
     try {
       accepted = await turnJournal.accept(admission);
@@ -1741,7 +1759,7 @@ export async function startWorker(cfg = configFromEnv()) {
     if (!persistedAdmission) {
       throw new Error(`turn ${admission.messageId} lost admission without durable state`);
     }
-    assertSameAdmission(persistedAdmission, text);
+    assertSameAdmission(persistedAdmission, text, options);
     const state = turnJournal.state(admission.messageId);
     if (state === 'pending') {
       return {
@@ -1770,15 +1788,19 @@ export async function startWorker(cfg = configFromEnv()) {
     return result;
   };
 
-  const admitTurn = async (text: string, explicitId?: string): Promise<AdmittedTurn> => {
-    if (!explicitId) return serializeAdmission(() => admitTurnCore(text));
+  const admitTurn = async (
+    text: string,
+    explicitId?: string,
+    options: PromptOptions = {},
+  ): Promise<AdmittedTurn> => {
+    if (!explicitId) return serializeAdmission(() => admitTurnCore(text, undefined, options));
     const active = admissionFlights.get(explicitId);
     if (active) {
       const admitted = await active;
-      assertSameAdmission(admitted.admission, text);
+      assertSameAdmission(admitted.admission, text, options);
       return admitted;
     }
-    const operation = serializeAdmission(() => admitTurnCore(text, explicitId));
+    const operation = serializeAdmission(() => admitTurnCore(text, explicitId, options));
     admissionFlights.set(explicitId, operation);
     try {
       return await operation;
@@ -2091,7 +2113,9 @@ export async function startWorker(cfg = configFromEnv()) {
             return;
           }
           try {
-            const admitted = await admitTurn(parsed.value.text, parsed.value.messageID);
+            const admitted = await admitTurn(parsed.value.text, parsed.value.messageID, {
+              system: parsed.value.system,
+            });
             if (m[2] === 'prompt_async') {
               // The acceptance append has committed. Execution continues on
               // the serial queue and all output arrives over the event stream.

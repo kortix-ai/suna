@@ -99,8 +99,13 @@ An authentication rejection before execution allows one credential refresh and
 retry. A disconnected mutation is never replayed because its side effect can
 already have committed. Read operations can retry after reconnecting.
 
-Prompt routes currently accept text parts, `messageID`, and the compiled agent
-and model. Unsupported fields return `400` before admission. The body and each
+Prompt routes currently accept text parts, `messageID`, `system`, and the compiled
+agent and model. A prompt's `system` string appends to the compiled instructions
+for that prompt. It survives queued delivery and accepted-only replay. A retry
+must preserve it; changing it under the same `messageID` returns `409`. The
+worker restores the compiled instructions after completion or failure. An empty
+string adds no instructions and remains an explicit field in the saved message.
+Unsupported fields return `400` before admission. The body and each
 durable log item are limited to 512 KiB. Attachments and the remaining OpenCode
 prompt options are still compatibility gaps.
 

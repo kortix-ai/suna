@@ -8,11 +8,12 @@ export interface CompiledPromptRuntime {
 export interface PromptInput {
   messageID?: string;
   text: string;
+  system?: string;
 }
 
 export type PromptInputResult = { ok: true; value: PromptInput } | { ok: false; error: string };
 
-const SUPPORTED_FIELDS = new Set(['messageID', 'model', 'agent', 'parts']);
+const SUPPORTED_FIELDS = new Set(['messageID', 'model', 'agent', 'parts', 'system']);
 const SUPPORTED_TEXT_PART_FIELDS = new Set(['type', 'text']);
 
 function own(value: Record<string, unknown>, field: string): boolean {
@@ -40,6 +41,10 @@ export function parsePromptInput(
     if (!SUPPORTED_FIELDS.has(field)) {
       return { ok: false, error: `prompt field "${field}" is not supported by the Pi worker` };
     }
+  }
+
+  if (own(body, 'system') && typeof body.system !== 'string') {
+    return { ok: false, error: 'system must be a string' };
   }
 
   if (own(body, 'agent')) {
@@ -127,6 +132,7 @@ export function parsePromptInput(
     value: {
       ...(typeof body.messageID === 'string' ? { messageID: body.messageID } : {}),
       text: text.join(''),
+      ...(typeof body.system === 'string' ? { system: body.system } : {}),
     },
   };
 }

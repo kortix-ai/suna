@@ -2998,3 +2998,195 @@ describe('raw OpenCode turn routes', () => {
     );
   });
 });
+
+describe('prompt system durability', () => {
+  test('queued systems stay isolated and retries preserve the accepted system after replacement', async () => {
+    const reached = deferred();
+    const released = deferred();
+    const envUrl = await listen(
+      createServer(async (_req, res) => {
+        reached.resolve();
+        await released.promise;
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ ok: true, value: { stdout: 'done', stderr: '', exitCode: 0 } }));
+      }),
+    );
+    const items: SessionLogItem[] = [];
+    const config = {
+      port: 0,
+      envUrl,
+      envUrlExplicit: true,
+      envCwd: '/workspace',
+      envTransport: 'fetch' as const,
+      systemPrompt: 'Compiled instructions.',
+      modelMode: 'faux' as const,
+      sessionId: 'queued-system',
+      kortixToken: 'runtime-token',
+      storeUrl: await sharedStore(items),
+    };
+    const worker = await startWorker(config);
+    workers.push(worker);
+    requireValue(worker.faux, 'faux model').setResponses([
+      fauxAssistantMessage([fauxToolCall('bash', { command: 'hold' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('first done'),
+      fauxAssistantMessage('second done'),
+    ]);
+    const base = worker.agent.state.systemPrompt;
+    const seen: string[] = [];
+    const stream = worker.agent.streamFunction;
+    worker.agent.streamFunction = (model, context, options) => {
+      seen.push(context.systemPrompt ?? '');
+      return stream(model, context, options);
+    };
+    const sessionID = await rootId(worker);
+    const firstID = mintWireMessageId({ nowMs: Date.now() }).id;
+    const secondID = mintWireMessageId({ nowMs: Date.now() + 1_000 }).id;
+    const firstBody = {
+      messageID: firstID,
+      system: 'Convention A.',
+      parts: [{ type: 'text', text: 'first' }],
+    };
+    const secondBody = {
+      messageID: secondID,
+      system: 'Convention B.',
+      parts: [{ type: 'text', text: 'second' }],
+    };
+    const send = (target: typeof worker, body: unknown, endpoint = 'prompt_async') =>
+      request(target, `/session/${sessionID}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    try {
+      expect((await send(worker, firstBody)).status).toBe(204);
+      await reached.promise;
+      expect((await send(worker, secondBody)).status).toBe(204);
+      expect((await send(worker, secondBody)).status).toBe(204);
+      expect(
+        (await send(worker, { ...secondBody, system: 'Conflicting convention.' })).status,
+      ).toBe(409);
+      expect(worker.agent.state.systemPrompt).toBe(`${base}\nConvention A.`);
+    } finally {
+      released.resolve();
+    }
+    expect((await send(worker, secondBody, 'message')).status).toBe(200);
+    expect(seen).toEqual([
+      `${base}\nConvention A.`,
+      `${base}\nConvention A.`,
+      `${base}\nConvention B.`,
+    ]);
+    expect(worker.agent.state.systemPrompt).toBe(base);
+    worker.server.closeAllConnections();
+    await worker.close();
+    workers.splice(workers.indexOf(worker), 1);
+    const restored = await startWorker(config);
+    workers.push(restored);
+    const replay = await send(restored, firstBody, 'message');
+    expect(replay.status).toBe(200);
+    expect(
+      (await send(restored, { ...firstBody, system: 'Changed after replacement.' })).status,
+    ).toBe(409);
+    const messages = (await (await request(restored, `/session/${sessionID}/message`)).json()) as {
+      info: { role: string; system?: string };
+    }[];
+    expect(
+      messages
+        .filter((message) => message.info.role === 'user')
+        .map((message) => message.info.system),
+    ).toEqual(['Convention A.', 'Convention B.']);
+    expect(restored.agent.state.systemPrompt).toBe(base);
+  });
+
+  test('accepted-only replay applies its saved system before the first provider request', async () => {
+    const items: SessionLogItem[] = [];
+    const config = {
+      port: 0,
+      envUrl: 'http://127.0.0.1:1',
+      envUrlExplicit: true,
+      envCwd: '/workspace',
+      envTransport: 'fetch' as const,
+      systemPrompt: 'Compiled instructions.',
+      modelMode: 'faux' as const,
+      sessionId: 'replayed-system',
+      kortixToken: 'runtime-token',
+      storeUrl: await sharedStore(items),
+    };
+    const first = await startWorker(config);
+    workers.push(first);
+    await prime(first, ['record a valid admission']);
+    const sessionID = await rootId(first);
+    const body = {
+      messageID: mintWireMessageId({ nowMs: Date.now() }).id,
+      system: 'Saved convention.',
+      parts: [{ type: 'text', text: 'replay me' }],
+    };
+    const response = await request(first, `/session/${sessionID}/message`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(response.status).toBe(200);
+    first.server.closeAllConnections();
+    await first.close();
+    workers.splice(workers.indexOf(first), 1);
+    const accepted = requireValue(
+      items.find((item) => item.kind === 'journal' && item.record.type === 'accepted'),
+      'accepted record',
+    );
+    const pending: SessionLogItem[] = [structuredClone(accepted)];
+    const seen: string[] = [];
+    const provider = await listen(
+      createServer(async (req, res) => {
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        const payload = JSON.parse(raw) as { messages: { role: string; content: string }[] };
+        seen.push(
+          payload.messages
+            .filter((message) => message.role === 'system')
+            .map((message) => message.content)
+            .join('\n'),
+        );
+        res
+          .writeHead(200, { 'content-type': 'text/event-stream' })
+          .end(
+            'data: ' +
+              JSON.stringify({
+                id: 'replay',
+                object: 'chat.completion.chunk',
+                created: 1,
+                model: 'openai/gpt-4.1',
+                choices: [
+                  {
+                    index: 0,
+                    delta: { role: 'assistant', content: 'Replayed.' },
+                    finish_reason: 'stop',
+                  },
+                ],
+              }) +
+              '\n\ndata: [DONE]\n\n',
+          );
+      }),
+    );
+    const replayed = await startWorker({
+      ...config,
+      storeUrl: await sharedStore(pending),
+      modelMode: 'real',
+      providerId: 'openrouter',
+      modelId: 'openai/gpt-4.1',
+      gatewayUrl: provider + '/v1',
+      apiKey: 'fixture-provider-token',
+    });
+    workers.push(replayed);
+    await waitUntil(() =>
+      pending.some((item) => item.kind === 'journal' && item.record.type === 'completed'),
+    );
+    expect(seen).toEqual([`${replayed.agent.state.systemPrompt}\nSaved convention.`]);
+    const messages = (await (await request(replayed, `/session/${sessionID}/message`)).json()) as {
+      info: { id: string; system?: string };
+    }[];
+    expect(messages.find((message) => message.info.id === body.messageID)?.info.system).toBe(
+      'Saved convention.',
+    );
+  });
+});
