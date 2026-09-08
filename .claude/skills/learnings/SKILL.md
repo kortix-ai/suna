@@ -21,6 +21,14 @@ linked, not inlined.
 
 ## Register
 
+### Inline attachment budgets use the decoder's scheme rules (2026-09-08)
+
+**When:** enforcing aggregate inline-file limits. Recognize `data:` with the
+same case-insensitive rule as decoding, then count every accepted file.
+*Near-miss:* PR #7148 review found that uppercase `DATA:` passed decoding but
+escaped the case-sensitive aggregate byte count.
+*Enforcer:* `integration-prompt-attachments.test.ts` covers the uppercase budget.
+
 ### Attachment cleanup must retain concurrency evidence (2026-09-08)
 
 **When:** deleting private staged uploads. Recheck command references in a fresh
