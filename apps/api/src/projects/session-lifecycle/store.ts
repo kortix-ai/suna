@@ -86,6 +86,7 @@ export interface PromptPartWire {
   text?: string;
   mime?: string;
   url?: string;
+  attachment_id?: string;
   filename?: string;
   name?: string;
   source?: unknown;
@@ -254,6 +255,23 @@ export async function enqueueContinueSessionCommand(
   input: EnqueueContinueSessionCommandInput,
 ): Promise<EnqueuedContinueSessionCommand> {
   const values = buildContinueSessionCommandValues(input);
+  // Legacy callers retain their existing write path. Handle-bearing prompts
+  // atomically commit both the queue row and the storage references.
+  if (input.parts?.some((part) => part.attachment_id)) {
+    return db.transaction(async (tx) => {
+      const [row] = await tx.insert(sessionLifecycleCommands).values(values)
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey }).returning();
+      if (row) {
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, deduped: false };
+      }
+      const [existing] = await tx.select().from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey!)).limit(1);
+      if (!existing || existing.projectId !== input.projectId || existing.accountId !== input.accountId || existing.actorUserId !== input.actorUserId) throw new Error('Prompt idempotency conflict');
+      return { row: existing, deduped: true };
+    });
+  }
   if (!input.idempotencyKey) {
     const [row] = await db.insert(sessionLifecycleCommands).values(values).returning();
     return { row, deduped: false };
@@ -482,8 +500,34 @@ export async function claimCreateSessionCommand(
   };
 
   if (!command.idempotencyKey) {
+    const pending = command.body.pending_prompt as { parts?: PromptPartWire[] } | undefined;
+    if (pending?.parts?.some((part) => part.attachment_id)) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx.insert(sessionLifecycleCommands).values(values).returning();
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, existing: false };
+      });
+    }
     const [row] = await db.insert(sessionLifecycleCommands).values(values).returning();
     return { row, existing: false };
+  }
+
+  const pending = command.body.pending_prompt as { parts?: PromptPartWire[] } | undefined;
+  if (pending?.parts?.some((part) => part.attachment_id)) {
+    return db.transaction(async (tx) => {
+      const [row] = await tx.insert(sessionLifecycleCommands).values(values)
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey }).returning();
+      if (row) {
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, existing: false };
+      }
+      const [existing] = await tx.select().from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.idempotencyKey, command.idempotencyKey!)).limit(1);
+      if (!existing) throw new Error('Create command idempotency conflict');
+      return { row: existing, existing: true };
+    });
   }
 
   const inserted = await db

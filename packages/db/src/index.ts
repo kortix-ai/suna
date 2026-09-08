@@ -222,6 +222,8 @@ export {
   connectorProjectSettings,
   connectorCalls,
   connectorAttachments,
+  promptAttachments,
+  promptAttachmentReferences,
   sessionToolApprovals,
   connectorsRelations,
   connectorActionsRelations,

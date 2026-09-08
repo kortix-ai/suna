@@ -292,6 +292,15 @@ paths. The user message renders every attachment before and after reload, with t
 same exact timestamp and completed-turn duration. A legacy pending-first ZIP part is
 rewritten in place before the next prompt.
 
+`SESS-28` Eager private attachment uploads. A project accepts bytes before any
+session exists. Initiation returns an opaque handle; indexed requests carry at
+most64KiB and support digest-checked retries across the preview ingress ceiling.
+Completion verifies all bytes and returns canonical filename, MIME and size.
+Warm claim and follow-up enqueue persist handle-only file parts, not base64.
+Identical submissions reuse the same command; a mismatched consumed warm claim
+returns409. Missing handles return404, incomplete uploads409 and oversize bytes413.
+Bound files cannot be deleted. Removing an unbound upload is idempotent.
+
 ---
 
 ## 8. Sandbox lifecycle + snapshots

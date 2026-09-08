@@ -3,6 +3,7 @@
  * the deprecated claim that predates it. See ../lib/warm-sessions.ts.
  */
 
+import { createHash } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -332,7 +333,20 @@ projectsApp.openapi(
       projectId,
       userId: loaded.userId,
     });
+    // Only the exact eager-upload claim may replay a consumed warm marker.
+    // Legacy, foreign and mismatched claims retain their existing409 contract.
+    const claimFingerprint = createHash('sha256').update(JSON.stringify(body)).digest('hex');
     if (!candidate || candidate.sessionId !== sessionId) {
+      const [replay] = await db.select({ session: projectSessions }).from(sessionLifecycleCommands)
+        .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionLifecycleCommands.sessionId))
+        .where(and(eq(sessionLifecycleCommands.idempotencyKey, `prompt:${sessionId}:pending-first`),
+          eq(sessionLifecycleCommands.projectId, projectId), eq(sessionLifecycleCommands.accountId, loaded.row.accountId),
+          eq(sessionLifecycleCommands.actorUserId, loaded.userId), eq(projectSessions.createdBy, loaded.userId),
+          sql`${sessionLifecycleCommands.payload}->>'warmClaimFingerprint' = ${claimFingerprint}`)).limit(1);
+      if (replay) return c.json(serializeSession(replay.session, {
+        viewerId: loaded.userId,
+        canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+      }), 200);
       return c.json(
         {
           error: 'The warm session is no longer available',
@@ -376,6 +390,9 @@ projectsApp.openapi(
     if (conversion?.error) {
       return c.json({ error: `pending_prompt: ${conversion.error}` }, 400);
     }
+    if ((conversion?.rowValues?.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+      conversion!.rowValues!.payload = { ...conversion!.rowValues!.payload, warmClaimFingerprint: claimFingerprint };
+    }
     const pendingPrompt = conversion ? { pending_prompt: conversion.metadataPicks } : {};
     const claimed = await db.transaction(async (tx) => {
       const [row] = await tx
@@ -393,11 +410,15 @@ projectsApp.openapi(
         // CAS above already refused (marker gone), so this insert runs at most
         // once per session. The idempotency key still guards the create path's
         // row for a session that somehow saw both.
-        await tx
+        const [promptCommand] = await tx
           .insert(sessionLifecycleCommands)
           .values(conversion.rowValues)
           .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
-          .returning({ commandId: sessionLifecycleCommands.commandId });
+          .returning();
+        if (promptCommand && (promptCommand.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+          const { bindPromptAttachments } = await import('../prompt-attachments');
+          await bindPromptAttachments(tx, promptCommand);
+        }
       }
       return row;
     });

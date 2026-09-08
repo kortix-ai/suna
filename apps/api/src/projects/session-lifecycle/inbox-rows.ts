@@ -1,5 +1,5 @@
 import { sessionLifecycleCommands } from '@kortix/db';
-import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { inboxOrderBy } from './inbox-order';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
@@ -78,20 +78,30 @@ export type InboxPromptDeletion =
   | { outcome: 'delivering' }
   | { outcome: 'missing' };
 
+export async function deleteInboxRowsWithAttachmentGrace(predicate: SQL | undefined) {
+  return db.transaction(async (tx) => {
+    const rows = await tx.delete(sessionLifecycleCommands).where(predicate).returning();
+    for (const row of rows) {
+      if ((row.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+        const { retainPromptAttachmentsForUndo } = await import('../prompt-attachments');
+        await retainPromptAttachmentsForUndo(tx, row);
+      }
+    }
+    return rows;
+  });
+}
+
 export async function deleteInboxPrompt(
   sessionId: string,
   promptId: string,
 ): Promise<InboxPromptDeletion> {
-  const deleted = await db
-    .delete(sessionLifecycleCommands)
-    .where(
+  const deleted = await deleteInboxRowsWithAttachmentGrace(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
         inArray(sessionLifecycleCommands.status, ['queued', 'failed', 'dead_lettered']),
       ),
-    )
-    .returning();
+    );
   if (deleted[0]) return { outcome: 'deleted', row: deleted[0] };
 
   // A STOP-PAUSED row is the user's to remove, and a separate statement so the
@@ -102,17 +112,14 @@ export async function deleteInboxPrompt(
   // button. Nothing is going to deliver it (the hold is what took it out of the
   // drain's way) and only removing it takes it off the user's screen, so a
   // refusal there is a control that cannot work.
-  const stopPaused = await db
-    .delete(sessionLifecycleCommands)
-    .where(
+  const stopPaused = await deleteInboxRowsWithAttachmentGrace(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
         eq(sessionLifecycleCommands.status, 'succeeded'),
         sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
       ),
-    )
-    .returning();
+    );
   if (stopPaused[0]) return { outcome: 'deleted', row: stopPaused[0] };
 
   // Separate the two "no row was removed" cases: a row that is on the wire

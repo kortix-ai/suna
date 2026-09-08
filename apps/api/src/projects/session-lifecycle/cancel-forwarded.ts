@@ -27,7 +27,7 @@ import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
 import { resolveSessionOpencodeEndpoint } from './engine';
 import { reachedPlacement, strandedPlacement } from './forwarded-placement';
-import { inboxScope } from './inbox-rows';
+import { deleteInboxRowsWithAttachmentGrace, inboxScope } from './inbox-rows';
 import { wireMessageIdMatches } from './wire-id-match';
 
 function isOnWire(result: unknown): boolean {
@@ -200,16 +200,13 @@ export async function cancelForwardedPrompt(
   // The runtime no longer holds it: the row goes, and its turn authority with
   // it. Guarded on status so a concurrent consumption cannot be deleted from
   // under its own confirmation.
-  const deleted = await db
-    .delete(sessionLifecycleCommands)
-    .where(
+  const deleted = await deleteInboxRowsWithAttachmentGrace(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
         eq(sessionLifecycleCommands.status, 'succeeded'),
       ),
-    )
-    .returning();
+    );
   if (!deleted[0]) return { outcome: 'answered' };
   for (const id of targetIds) {
     await closeSandboxTurnByMessageId(sessionId, id, 'abandoned').catch(() => undefined);

@@ -1,4 +1,9 @@
 export const MAX_PROMPT_UPLOAD_FILENAME_BYTES = 255 - 40;
+export const MAX_PROMPT_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+export const MAX_PROMPT_ATTACHMENTS_BYTES = 100 * 1024 * 1024;
+export const MAX_PROMPT_ATTACHMENT_FILES = 20;
+export const PROMPT_ATTACHMENT_CHUNK_BYTES = 64 * 1024;
+export const PROMPT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface PromptFileReference {
   path: string;

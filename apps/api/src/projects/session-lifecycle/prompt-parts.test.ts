@@ -8,6 +8,13 @@ import {
 } from './prompt-parts';
 
 describe('sanitizeInboxPromptParts', () => {
+  test('accepts an opaque staged attachment without URL or caller metadata', () => {
+    expect(sanitizeInboxPromptParts([
+      { type: 'file', attachment_id: '123e4567-e89b-42d3-a456-426614174000' },
+    ])).toEqual({ parts: [
+      { type: 'file', attachment_id: '123e4567-e89b-42d3-a456-426614174000' },
+    ] });
+  });
   test('keeps the known fields of text and file parts, drops everything else', () => {
     const result = sanitizeInboxPromptParts([
       { type: 'text', text: 'hello', evil: 'dropped' },

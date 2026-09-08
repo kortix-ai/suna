@@ -53,6 +53,8 @@ export type SessionLifecycleStatus =
   | 'deleted';
 
 export interface CreateSessionCommand {
+  /** Internal retained-upload authority from an already accepted create command. */
+  attachmentSourceCommandId?: string;
   source: SessionInvocationSource;
   project: ProjectRow;
   userId: string;

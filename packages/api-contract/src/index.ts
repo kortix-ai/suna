@@ -816,6 +816,7 @@ export const PendingSessionPromptSchema = z
             text: z.string().optional(),
             mime: z.string().max(255).optional(),
             url: z.string().max(17_000_000).optional(),
+            attachment_id: z.string().uuid().optional(),
             filename: z.string().max(512).optional(),
             name: z.string().max(512).optional(),
             source: z.unknown().optional(),

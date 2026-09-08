@@ -12,7 +12,7 @@
  * not a blob store.
  */
 
-import { isModelNativeAttachmentMime } from '@kortix/shared';
+import { isModelNativeAttachmentMime, MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
 
@@ -42,11 +42,17 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
     ...(typeof part?.text === 'string' ? { text: part.text } : {}),
     ...(typeof part?.mime === 'string' ? { mime: part.mime.trim() } : {}),
     ...(typeof part?.url === 'string' ? { url: part.url.trim() } : {}),
+    ...(part?.attachment_id === undefined ? {} : { attachment_id: part.attachment_id }),
     ...(typeof part?.filename === 'string' ? { filename: part.filename } : {}),
     ...(typeof part?.name === 'string' ? { name: part.name } : {}),
     ...(part?.source === undefined ? {} : { source: part.source }),
   }));
   const text = flattenPromptText(parts);
+  if (parts.filter((part) => part.type === 'file').length > MAX_PROMPT_ATTACHMENT_FILES) {
+    return { error: `attachments supports at most ${MAX_PROMPT_ATTACHMENT_FILES} files` };
+  }
+  const ids = parts.filter((part) => part.type === 'file' && part.attachment_id !== undefined).map((part) => part.attachment_id);
+  if (new Set(ids).size !== ids.length) return { error: 'duplicate attachment_id' };
   if (!text && !parts.some((part) => part.type !== 'text')) {
     return { error: 'parts must carry text' };
   }
@@ -68,6 +74,13 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
 
 function validateFilePart(part: PromptPartWire): string | null {
   if (part.type !== 'file') return null;
+  if (part.attachment_id !== undefined) {
+    if (typeof part.attachment_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(part.attachment_id)) {
+      return 'attachment_id must be a UUID';
+    }
+    if (part.url !== undefined) return 'attachment_id cannot be combined with URL data';
+    return null;
+  }
   const filename = part.filename?.trim() || 'File';
   const mime = part.mime?.trim();
   const url = part.url?.trim();
