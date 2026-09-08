@@ -41,9 +41,11 @@ import { describe, expect, test } from 'bun:test';
  */
 import {
   AllowedSourceValidationError,
+  assertAllowedEndpointUrl,
   assertAllowedSourceAddress,
   isAllowedSourceValidationError,
 } from '../marketplace/catalog';
+import { UnsafeEgressError } from '../shared/ssrf-guard';
 import {
   createConnectorRouter,
   type ConnectorPrincipal,
@@ -129,12 +131,54 @@ describe('assertAllowedSourceAddress throws a typed AllowedSourceValidationError
   });
 });
 
+/**
+ * Better Stack API prod 2026-09-07 — `UnsafeEgressError: url must be https`
+ * (10:10 UTC) and `UnsafeEgressError: invalid url` (09:45 UTC), both from
+ * `discoverConnectorAuthFromSource` → `safeEgressFetch`, both 500 + Sentry.
+ * `assertAllowedSourceAddress` had PASSED: its parser only treats lowercase
+ * `http://`/`https://` as a URL and reads anything else as GitHub `owner/repo`
+ * shorthand, so `HTTP://host/mcp`, `ws://host`, `localhost:3000/mcp` and
+ * `my server/mcp` all reached the egress guard. A connector endpoint is never
+ * shorthand — it is fetched verbatim — so it gets its own strict guard.
+ */
+describe('assertAllowedEndpointUrl (connector endpoints are absolute https URLs)', () => {
+  const rejected = [
+    'HTTP://example.com/mcp', // scheme case slipped past the source guard → "url must be https"
+    'http://example.com/mcp',
+    'ws://example.com/mcp',
+    'localhost:3000/mcp', // WHATWG parses this as scheme "localhost:" → "url must be https"
+    'my server/mcp', // → "invalid url"
+    'example.com/mcp',
+    'https://127.0.0.1/mcp',
+    'https://169.254.169.254/latest/meta-data',
+    'https://user:pw@example.com/mcp',
+    '',
+  ];
+  for (const address of rejected) {
+    test(`rejects ${JSON.stringify(address)} as a typed invalid_source_address`, () => {
+      let caught: unknown;
+      try {
+        assertAllowedEndpointUrl(address);
+      } catch (err) {
+        caught = err;
+      }
+      expect(isAllowedSourceValidationError(caught)).toBe(true);
+      expect((caught as AllowedSourceValidationError).code).toBe('invalid_source_address');
+    });
+  }
+
+  test('accepts an absolute https URL on a public host', () => {
+    expect(() => assertAllowedEndpointUrl('https://mcp.example.com/sse')).not.toThrow();
+    expect(() => assertAllowedEndpointUrl('  https://example.com/graphql  ')).not.toThrow();
+  });
+});
+
 // ── Route-level regression: the typed throw becomes a 400, not a 500 ────────
 
 /** Build a connector router whose `discoverConnectorAuth` throws the EXACT prod
  *  failure shape (the typed `AllowedSourceValidationError`). The route handler
  *  must catch it and return a structured 400 — NOT let it reach `app.onError`. */
-function buildRouter(throwFromCreate = false): {
+function buildRouter(throwFromCreate = false, discoveryError?: Error): {
   app: ReturnType<typeof createConnectorRouter>;
   createConnectorCalls: number;
 } {
@@ -155,6 +199,7 @@ function buildRouter(throwFromCreate = false): {
     listConnectors: async () => [],
     syncConnectors: async () => ({ synced: 0, errors: [] }),
     discoverConnectorAuth: async () => {
+      if (discoveryError) throw discoveryError;
       // The exact prod failure shape: the auth-discovery path calls
       // assertAllowedSourceAddress on the draft endpoint, which throws the
       // typed validation error for a non-https / private / local source.
@@ -180,6 +225,23 @@ function buildRouter(throwFromCreate = false): {
 const admin = { 'x-test-admin': ALICE };
 
 describe('connector router: assertAllowedSourceAddress throw → structured 400 (not 500)', () => {
+  test('POST /connectors/auth-discovery: an UnsafeEgressError from the egress guard is a 400 too', async () => {
+    // Better Stack API prod 2026-09-07: "url must be https" / "invalid url"
+    // escaped as 500s because only AllowedSourceValidationError was mapped.
+    const { app } = buildRouter(false, new UnsafeEgressError('url must be https', 'HTTP://example.com/mcp'));
+    const res = await app.fetch(
+      new Request(`http://x/projects/${PROJECT}/connectors/auth-discovery`, {
+        method: 'POST',
+        headers: { ...admin, 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: 'mcp', url: 'HTTP://example.com/mcp' }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('invalid_source_address');
+    expect(body.message).toBe('Connector endpoint rejected: url must be https');
+  });
+
   test('POST /connectors/auth-discovery returns a typed 400 invalid_source_address', async () => {
     const { app } = buildRouter();
     const req = (path: string, init: RequestInit = {}) =>

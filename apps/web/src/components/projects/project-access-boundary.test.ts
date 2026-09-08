@@ -38,6 +38,32 @@ function copyBlock(locale: string): Record<string, string> {
 
 const en = copyBlock('en');
 
+describe('project access waits for the authenticated identity', () => {
+  test('the query waits for auth hydration and is isolated by user', () => {
+    expect(componentSource).toContain('const { user, isLoading: isAuthLoading } = useAuth();');
+    expect(componentSource).toContain('const authReady = !isAuthLoading && !!user?.id;');
+    expect(componentSource).toContain('enabled: authReady && !!projectId');
+    expect(componentSource).toContain('queryKey: [QUERY_KEY, projectId, user?.id]');
+  });
+
+  test('unresolved auth shows pending before cached success or error screens', () => {
+    const pending = componentSource.indexOf('if (!authReady || query.isPending)');
+    const success = componentSource.indexOf('if (query.isSuccess)');
+    expect(pending).toBeGreaterThan(-1);
+    expect(success).toBeGreaterThan(pending);
+    expect(componentSource).toContain('const polling = authReady &&');
+  });
+
+  test('identity changes remount gate state and retain the signed-out escape', () => {
+    const boundary = componentSource.slice(componentSource.indexOf('export function ProjectAccessBoundary'), componentSource.indexOf('function ProjectAccessForUser'));
+    expect(boundary).toContain('useSignedOutRedirect();');
+    expect(boundary).toContain('key={`${props.projectId}:${user?.id ?? "pending"}`}');
+    expect(componentSource.match(/queryKey: \[QUERY_KEY, projectId, user\?\.id\]/g)).toHaveLength(2);
+    expect(componentSource).toContain('if (authReady) void refetch();');
+    expect(componentSource).toContain('if (!authReady) return;');
+  });
+});
+
 /** The English the user actually reads on a given screen. */
 function englishCopy(state: AccessGateState) {
   const keys = gateCopyKeys(state);
@@ -228,7 +254,7 @@ describe('polling lifecycle', () => {
     // This boundary wraps the project shell for the whole session, so a poll
     // that only checks `waiting` keeps calling getProject every 15s while the
     // user works. The guard must include the success case.
-    expect(componentSource).toContain('const polling = !query.isSuccess && shouldPollForApproval');
+    expect(componentSource).toContain('!query.isSuccess && shouldPollForApproval');
     expect(componentSource).toMatch(/if \(!polling\) return;/);
   });
 

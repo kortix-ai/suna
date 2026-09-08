@@ -68,6 +68,7 @@ export function InstantSessionShell({
   stage,
   boundAgentName,
   onSubmit,
+  hasTranscript = false,
 }: {
   projectId: string;
   /** The route's session id (== the pending-prompt namespace the page migrates). */
@@ -78,6 +79,19 @@ export function InstantSessionShell({
   /** Fired on the first send so the page can mount the real chat (which auto-sends
    *  the handed-off prompt) and crossfade it in. */
   onSubmit?: () => void;
+  /**
+   * The real chat underneath already holds the prompt in its transcript.
+   *
+   * This shell dissolves over that chat during the crossfade, and for the
+   * length of the fade both are on screen. While the shell still paints its own
+   * copy of the prompt, that is two copies — measured 2026-09-08: both
+   * stand-ins at full opacity, then the shell's fading over the real bubble.
+   * The transcript's copy is the one that stays, so the moment it exists the
+   * shell's steps aside. The shell keeps everything else (header, composer,
+   * the queued rows behind the first prompt); only the bubble it was standing
+   * in for goes.
+   */
+  hasTranscript?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // `ready` is the backend's authoritative "runtime is up" signal (POST /start).
@@ -384,7 +398,7 @@ export function InstantSessionShell({
                 used to claim. It had stopped being true: this column ran
                 `px-3 py-6 sm:px-6` against the chat's `px-7 pt-6 md:pr-4`. */}
             <div className={SESSION_TRANSCRIPT_CLASS}>
-              {effectiveSubmission && (
+              {effectiveSubmission && !hasTranscript && (
                 <div className="flex min-w-0 flex-col">
                   {/* The optimistic turn, rendered by the component SessionChat
                     also renders — not a copy of it. `deferPreview` is the one

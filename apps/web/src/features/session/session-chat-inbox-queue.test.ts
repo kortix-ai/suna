@@ -190,9 +190,33 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     expect(paint).toContain('markOptimisticSendInboxBacked(sessionId, messageID);');
   });
 
-  test('a row already on screen — by id or by re-mint alias — is never a queued bubble', () => {
+  test('a row already on screen — by id, by re-mint alias, or by elimination — is never a queued bubble', () => {
     expect(chat).toContain('store.optimisticOriginOf(sessionId, message.info.id)');
-    expect(chat).toContain('transcriptMessageIds: transcriptUserMessageIds');
+    // The set the queue projection reads is the id set PLUS the row claimed by
+    // elimination (`claimFirstTurnRow`). The ids alone are not enough for the
+    // one window where the drain has re-minted and this tab has not polled
+    // since: the transcript holds the message under an id the cached row does
+    // not report, so every id clause misses and the prompt renders twice.
+    expect(chat).toContain('transcriptMessageIds: transcriptClaimedIds');
+    expect(chat).toContain('const transcriptClaimedIds = useMemo(');
+    expect(chat).toContain('ids.add(firstTurnClaim.rowMessageId);');
+  });
+
+  test('the synthetic turns read the same claimed set, so both surfaces agree', () => {
+    // One decision, every consumer: if the two disagreed, the row would be
+    // hidden from the strip and still minted as a turn, or the reverse.
+    expect(chat).toContain('if (prompt.message_id && transcriptClaimedIds.has(prompt.message_id))');
+    expect(chat).toContain(
+      'if (prompt.wire_message_id && transcriptClaimedIds.has(prompt.wire_message_id))',
+    );
+  });
+
+  test('the claimed bubble keeps its row: controls, and its queued dimming', () => {
+    // Hiding the duplicate must not cost the surviving copy the chrome the row
+    // is the only source of (the X, send-now, retry, its error) nor let it read
+    // as running while the server still holds the prompt.
+    expect(chat).toContain('byId.set(firstTurnClaim.messageId, claimed);');
+    expect(chat).toContain('if (firstTurnClaim) ids.add(firstTurnClaim.messageId);');
   });
 
   test('the re-mint alias is announced from an EFFECT, never from the memo that reads it', () => {

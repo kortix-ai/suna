@@ -6,6 +6,7 @@ import {
 } from '@composio/core';
 import { HTTPException } from 'hono/http-exception';
 import type { ExecResult } from './call';
+import { searchComposioCatalog, type ComposioCatalogClient } from './composio-catalog-search';
 import type { ComposioToolLike } from './types';
 
 interface ComposioConnectionRequestLike {
@@ -239,6 +240,7 @@ export async function composioCatalogPage(input: {
   cursor?: string;
   limit?: number;
   runtime?: ComposioRuntime;
+  catalogClient?: ComposioCatalogClient;
 }): Promise<
   | EnrichedToolkitConnectionsPage
   | {
@@ -253,7 +255,8 @@ export async function composioCatalogPage(input: {
         connected: boolean;
       }>;
       total: number;
-      hasMore: false;
+      nextCursor?: string;
+      hasMore: boolean;
     }
 > {
   const runtime = input.runtime ?? getComposioRuntime();
@@ -288,6 +291,10 @@ export async function composioCatalogPage(input: {
       total: toolkits.length,
       hasMore: false,
     };
+  }
+  const query = input.q?.trim();
+  if (query && query.length < 3) {
+    return searchComposioCatalog({ ...input, q: query });
   }
   const session = await runtime.sessions.create(`kortix-discovery:${input.projectId}`, {
     manageConnections: false,
