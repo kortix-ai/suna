@@ -6,6 +6,8 @@ import {
   type JournalLogItem,
   type SessionLog,
   SessionLogConflictError,
+  SessionLogReadUnavailableError,
+  SessionLogUnavailableError,
   type SessionLogItem,
   type StorageLogItem,
 } from './session-store.ts';
@@ -871,24 +873,47 @@ export class TurnAdmissionJournal {
   heartbeat(messageId: string): Promise<boolean> {
     return this.serialize(async () => {
       const id = messageId.trim();
-      await this.reload();
-      const turn = this.reduced.turns.get(id);
-      if (!turn || turn.state !== 'started' || turn.ownerId !== this.ownerId) return false;
-      try {
-        await this.appendEvent(
-          { type: 'heartbeat', messageId: id, ownerId: this.ownerId },
-          leaseFenceId(id, turn.ownerId, turn.leaseRevision),
-        );
-      } catch (error) {
-        if (!(error instanceof SessionLogConflictError)) throw error;
+      const ownHeartbeat = (item: SessionLogItem) =>
+        item.kind === 'journal' && item.stream === TURN_JOURNAL_STREAM &&
+        item.record.type === 'heartbeat' && item.record.messageId === id &&
+        item.record.ownerId === this.ownerId;
+      let recovered = false;
+      while (true) {
         await this.reload();
-        const persisted = this.reduced.turns.get(id);
-        // Abort request/acknowledgement can advance this owner's lease on the
-        // same fence. Ownership remains valid; only a terminal transition or
-        // a different owner fences this process out.
-        return persisted?.state === 'started' && persisted.ownerId === this.ownerId;
+        const turn = this.reduced.turns.get(id);
+        if (!turn || turn.state !== 'started' || turn.ownerId !== this.ownerId) return false;
+        try {
+          await this.appendEvent(
+            { type: 'heartbeat', messageId: id, ownerId: this.ownerId },
+            leaseFenceId(id, turn.ownerId, turn.leaseRevision),
+          );
+        } catch (error) {
+          if (
+            error instanceof SessionLogUnavailableError &&
+            this.log.canRecoverPendingAppendsMatching?.(ownHeartbeat)
+          ) {
+            if (!recovered && await this.log.recoverPendingAppends?.(ownHeartbeat)) {
+              recovered = true;
+              // Recovery may confirm an old append. Renew only after a fresh
+              // heartbeat proves ownership against the current lease revision.
+              continue;
+            }
+            if (this.log.canRecoverPendingAppendsMatching?.(ownHeartbeat)) {
+              throw new SessionLogReadUnavailableError(
+                'turn heartbeat storage is temporarily unavailable', { cause: error },
+              );
+            }
+          }
+          if (!(error instanceof SessionLogConflictError)) throw error;
+          await this.reload();
+          const persisted = this.reduced.turns.get(id);
+          // Abort request/acknowledgement can advance this owner's lease on the
+          // same fence. Ownership remains valid; only a terminal transition or
+          // a different owner fences this process out.
+          return persisted?.state === 'started' && persisted.ownerId === this.ownerId;
+        }
+        return true;
       }
-      return true;
     });
   }
 

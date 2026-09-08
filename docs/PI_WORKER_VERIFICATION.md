@@ -567,3 +567,37 @@ The full worker suite also exposed a status/projection race during outage
 recovery. Two controlled storage tests now block the first read after journal
 completion. The worker must remain busy until the recovered transcript is
 projected. The tests fail before the barrier and pass afterward.
+
+The exact `6c7948ca4acbaf48e49c75dfe92283709c7cb0a4` preview deployment
+[34247951847](https://github.com/kortix-ai/suna/actions/runs/34247951847) succeeds.
+`/v1/health` reports that commit. A live custom `onPayload` hook confirms `low`
+and `high` on actual `gpt-5.6-luna` requests through the SDK. The third prompt's
+inspection tool fails with `permission denied: doom_loop`. This is a detected
+regression, not a passing reasoning journey. The test session is stopped.
+
+The latest full local run passes 396/396 REST/CLI flows, SDK, browser, route
+coverage, runner, and worktree lanes. The worker lane exposes a short write-only
+storage outage that cancels a question before its owner lease expires. The API
+package lane fails to load two mocks missing `invalidateSandbox`. The CLI lane
+also fails a service-account command, which passes in isolation. The full gate
+remains red until rerun with the fixes.
+
+## Short outages and repeated tools — 2026-09-08
+
+Heartbeat recovery now retries only this owner's exact pending heartbeat.
+A fresh heartbeat must commit before local lease renewal. Unknown transcript
+mutations remain blocked. Both 4.2-second read/write and write-only outages
+preserve the question under a 10-second lease. A reply completes both tools
+once. Existing 6.5-second outages under a 200 ms lease still interrupt the turn.
+The 63 focused storage, journal, and question tests pass before the added
+heartbeat-specific unit cases.
+
+Repeated-tool history now resets on a new prompt. Recovery reconstructs only
+the current prompt's completed calls. A four-prompt HTTP test fails before the
+fix and passes afterward. Each prompt executes the same custom environment
+operation once. The guard still applies within a recovered prompt. The 47
+focused custom-agent, tool-replay, permission-recovery, and journal tests pass.
+
+`pnpm exec bun tests/bin/worker-quality.ts` passes: 670 tests across 78 files,
+typecheck, build, and seven bundle/lockdown tests. The two corrected API mock
+files pass three tests with nine assertions. The full local gate is rerunning.

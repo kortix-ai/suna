@@ -393,8 +393,8 @@ test('a queued prompt on another worker first recovers an abandoned blocking que
   }
 }, 30000);
 
-test('a temporary store outage within the owner lease keeps a pending question answerable', async () => {
-  const f = await fixture({ ownerLeaseMs: 10000 });
+test.each([false, true])('a temporary store outage within the owner lease keeps a pending question answerable, reads available=%s', async (outageReadsAvailable) => {
+  const f = await fixture({ ownerLeaseMs: 10000, outageReadsAvailable });
   try {
     const worker = await f.start();
     expect(

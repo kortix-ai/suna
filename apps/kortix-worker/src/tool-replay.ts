@@ -90,7 +90,10 @@ export function completedToolCalls(
   const calls: Array<{ name: string; input: unknown }> = [];
   let batch = new Map<string, { name: string; input: unknown }>();
   for (const message of messages) {
-    if (message.role === 'assistant') {
+    if (message.role === 'user') {
+      calls.length = 0;
+      batch.clear();
+    } else if (message.role === 'assistant') {
       batch = new Map(
         message.content
           .filter((part) => part.type === 'toolCall')

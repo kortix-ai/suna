@@ -3,7 +3,9 @@ import { isDeepStrictEqual } from 'node:util';
 
 import {
   type SessionLog,
+  RemoteSessionLog,
   SessionLogConflictError,
+  SessionLogUnavailableError,
   type SessionLogItem,
   type StorageLogItem,
 } from './session-store.ts';
@@ -395,6 +397,68 @@ describe('TurnAdmissionJournal', () => {
     const lease = requireValue(replacement.startedLease(admission.messageId), 'current lease');
     expect(await replacement.reclaim(admission.messageId, lease)).toBe(true);
     expect(await owner.requestAbort(admission.messageId, { ownLeaseOnly: true })).toBe(false);
+  });
+
+  test('a recovered heartbeat uses the exact fence and commits a fresh heartbeat before renewing', async () => {
+    const persisted = new Map<string, SessionLogItem>();
+    const attempts: Array<{ key: string; item: SessionLogItem }> = [];
+    let failNextHeartbeat = true;
+    const log = new RemoteSessionLog('https://store.test', 'session', {}, {
+      maxAttempts: 1,
+      fetch: async (_url, init) => {
+        if (init?.method !== 'POST') return Response.json([...persisted.values()]);
+        const key = new Headers(init.headers).get('idempotency-key')!;
+        const item = JSON.parse(String(init.body)) as SessionLogItem;
+        if (item.kind === 'journal' && item.record.type === 'heartbeat') {
+          attempts.push({ key, item });
+          if (failNextHeartbeat) {
+            failNextHeartbeat = false;
+            return new Response(null, { status: 503 });
+          }
+        }
+        persisted.set(key, item);
+        return new Response(null, { status: 204 });
+      },
+    });
+    const owner = await TurnAdmissionJournal.open(log);
+    const admission = turn('msg_short_outage');
+    await owner.accept(admission);
+    await owner.start(admission.messageId);
+    expect(await owner.heartbeat(admission.messageId)).toBe(true);
+    expect(attempts).toHaveLength(3);
+    expect(attempts[1]).toEqual(attempts[0]);
+    expect(attempts[2]!.key).not.toBe(attempts[0]!.key);
+    expect(owner.startedLease(admission.messageId)?.revision).toBe(3);
+    expect(log.error).toBeNull();
+  });
+
+  test('heartbeat recovery never clears an uncertain transcript mutation', async () => {
+    let failWrites = false;
+    let writes = 0;
+    const items: SessionLogItem[] = [];
+    const log = new RemoteSessionLog('https://store.test', 'session', {}, {
+      maxAttempts: 1,
+      fetch: async (_url, init) => {
+        if (init?.method !== 'POST') return Response.json(items);
+        writes++;
+        if (failWrites) return new Response(null, { status: 503 });
+        items.push(JSON.parse(String(init.body)));
+        return new Response(null, { status: 204 });
+      },
+    });
+    const owner = await TurnAdmissionJournal.open(log);
+    const admission = turn('msg_unknown_write');
+    await owner.accept(admission);
+    await owner.start(admission.messageId);
+    failWrites = true;
+    await expect(owner.appendTranscriptMutation(admission.messageId, {
+      kind: 'entry', lane: 'main', entry: { type: 'message', message: { role: 'assistant' } },
+    })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+    const failedWrites = writes;
+    failWrites = false;
+    await expect(owner.heartbeat(admission.messageId)).rejects.toBeInstanceOf(SessionLogUnavailableError);
+    expect(writes).toBe(failedWrites);
+    expect(log.error).toBeInstanceOf(SessionLogUnavailableError);
   });
 
   test('heartbeat and reclaim contend on one lease CAS in either append order', async () => {

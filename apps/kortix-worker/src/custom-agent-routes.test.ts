@@ -25,7 +25,7 @@ afterEach(async () => {
 async function setup(
   name: string,
   remote: boolean,
-  permission: 'allow' | 'deny' = 'allow',
+  permission: 'allow' | 'deny' | Record<string, 'allow' | 'deny'> = 'allow',
   failShutdown = false,
 ) {
   const requests: any[] = [];
@@ -198,6 +198,21 @@ test('compiled permissions deny a custom tool before its environment operation',
   expect(
     (f.requests[0].tools ?? []).some((tool: any) => tool.function.name === 'custom_blocked'),
   ).toBe(false);
+});
+
+test('identical custom tool calls in separate user prompts do not trigger the doom-loop guard', async () => {
+  const f = await setup('repeat', true, { custom_repeat: 'allow', doom_loop: 'deny' });
+  for (let turn = 0; turn < 4; turn++) {
+    const response = await f.call(`/session/${f.session}/message`, {
+      parts: [{ type: 'text', text: 'Run the same operation once.' }],
+    });
+    expect(response.status).toBe(200);
+    const result = await response.json() as any;
+    expect(result.parts.some((part: any) => part.text?.includes('REMOTE_repeat'))).toBe(true);
+    expect(f.effects).toHaveLength(turn + 1);
+  }
+  expect(f.requests).toHaveLength(8);
+  expect(await (await f.call('/permission')).json()).toEqual([]);
 });
 
 test('a failed custom shutdown still closes the worker HTTP server', async () => {

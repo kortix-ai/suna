@@ -440,6 +440,29 @@ test('permanent append failures never enable automatic recovery', async () => {
   expect(calls).toBe(1);
 });
 
+test('filtered recovery leaves an unrelated pending mutation blocked', async () => {
+  let available = false;
+  const attempts: string[] = [];
+  const log = new RemoteSessionLog('https://api.example.test/projects/p', 'session-1', {}, {
+    maxAttempts: 1,
+    fetch: async (_url, init) => {
+      if (init?.method !== 'POST') return Response.json([]);
+      attempts.push(String(init.body));
+      return response(available ? 204 : 503);
+    },
+  });
+  const heartbeat = (item: SessionLogItem) => item.kind === 'journal' && item.record.type === 'heartbeat';
+  expect(log.canRecoverPendingAppendsMatching(heartbeat)).toBe(false);
+  await expect(log.append({ kind: 'name', name: 'unconfirmed change' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  available = true;
+  expect(log.canRecoverPendingAppendsMatching(heartbeat)).toBe(false);
+  expect(await log.recoverPendingAppends(heartbeat)).toBe(false);
+  expect(attempts).toHaveLength(1);
+  expect(log.error).toBeInstanceOf(SessionLogUnavailableError);
+  expect(await log.recoverPendingAppends()).toBe(true);
+  expect(attempts).toEqual([attempts[0]!, attempts[0]!]);
+});
+
 test('a second outage retains the pending fence and blocks unrelated appends until recovery', async () => {
   let available = false;
   const attempts: string[] = [];

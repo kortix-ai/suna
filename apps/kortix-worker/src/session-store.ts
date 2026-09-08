@@ -71,6 +71,8 @@ export interface SessionLog {
   preflight?(item: SessionLogItem): void;
   append(item: SessionLogItem, options?: { idempotencyKey?: string }): Promise<void>;
   read(): Promise<SessionLogItem[]>;
+  canRecoverPendingAppendsMatching?(matches: (item: SessionLogItem) => boolean): boolean;
+  recoverPendingAppends?(matches?: (item: SessionLogItem) => boolean): Promise<boolean>;
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -154,12 +156,19 @@ export class RemoteSessionLog implements SessionLog {
     return !this.recoveryBlocked && this.pendingAppends.size > 0;
   }
 
-  recoverPendingAppends(): Promise<boolean> {
-    if (this.recovery) return this.recovery;
+  canRecoverPendingAppendsMatching(matches: (item: SessionLogItem) => boolean): boolean {
+    return this.canRecoverPendingAppends &&
+      [...this.pendingAppends.values()].every((item) => matches(structuredClone(item)));
+  }
+
+  recoverPendingAppends(matches?: (item: SessionLogItem) => boolean): Promise<boolean> {
     if (!this.failure) return Promise.resolve(true);
     if (!this.canRecoverPendingAppends) return Promise.resolve(false);
+    if (matches && !this.canRecoverPendingAppendsMatching(matches)) return Promise.resolve(false);
+    if (this.recovery) return this.recovery;
     const run = (async () => {
       for (const [idempotencyKey, item] of this.pendingAppends) {
+        if (matches && !matches(structuredClone(item))) return false;
         const replay = new RemoteSessionLog(this.baseUrl, this.sessionId, this.headers, this.options);
         try {
           await replay.append(item, { idempotencyKey });

@@ -1993,9 +1993,7 @@ export async function startWorker(cfg = configFromEnv()) {
             );
             lastAgentEndStatus = "error";
           } else {
-            permissions.restoreToolHistory(
-              completedToolCalls(agent.state.messages),
-            );
+            permissions.restoreToolHistory([]);
             await agent.prompt(userMessage as any);
           }
         }

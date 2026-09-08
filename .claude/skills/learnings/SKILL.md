@@ -5467,3 +5467,30 @@ Do not weaken the transcript assertion or delay the browser to hide the race.
 Enforced by the two expired-owner cases in `question-recovery-routes.test.ts`.
 The fixture blocks the first storage read after completion. Status must remain
 busy until that read is released. Both cases fail without the projection barrier.
+
+## 2026-09-08 — Preserve an unexpired owner through a heartbeat write outage
+
+A 4.2-second write-only outage cancelled a question with a 10-second owner lease.
+Exhausted heartbeat retries poisoned storage. The worker treated that failure as
+immediate lease loss, while a read outage correctly waited for the lease deadline.
+
+Retry only the exact pending heartbeat for this owner and turn. Commit a fresh
+heartbeat before renewing the local deadline. Never clear an uncertain transcript
+or tool mutation through heartbeat recovery. Keep the independent expiry timer.
+Permanent rejection and a conflicting owner remain terminal.
+
+Enforced by `session-store.test.ts`, `turn-journal.test.ts`, and both short-outage
+cases in `question-recovery-routes.test.ts`. The expired-owner cases remain active.
+
+## 2026-09-08 — Scope repeated-tool detection to one user prompt
+
+A real reasoning verification called one inspection tool per user prompt.
+The third prompt failed with `permission denied: doom_loop`. Restoring all prior
+tool calls made independent user requests count as one model loop.
+
+Clear repeated-call history before each new prompt. During interaction recovery,
+restore only calls after that prompt's user message. Preserve the current turn's
+completed calls so restarting cannot bypass the repeated-tool approval.
+
+Enforced by `custom-agent-routes.test.ts`, `tool-replay.test.ts`, and the two
+doom-loop recovery journeys in `permission-recovery-routes.test.ts`.
