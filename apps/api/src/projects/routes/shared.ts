@@ -115,6 +115,8 @@ export const RUNTIME_WAKE_CLAIM_CLEARED_KEYS = [
   'runtimeWakeCleanupUntilAt',
   'runtimeWakeLateStartStoppedAt',
   'runtimeWakeProgressAt',
+  'sessionRuntimeBootstrapFor',
+  'sessionRuntimeBootstrapAt',
   ...RUNTIME_READINESS_CLOCK_KEYS,
 ] as const;
 

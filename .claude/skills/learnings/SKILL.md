@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Scope bootstrap attempts to one wake, not one sandbox ID (2026-09-08)
+
+**When:** claiming a new resume of an existing sandbox.
+**Incident:** the Pi preview restored once, then skipped bootstrap after a second stop because its old attempt marker remained.
+**Rule:** clear bootstrap attempt markers in each wake claim. Preserve failure counts and retry cooldowns.
+**Enforcer:** `session-runtime-bootstrap.test.ts` proves the same box earns a new attempt while its failure budget survives. Live repeated stop/resume checks compare the complete transcript.
+
 ### Execute provider bootstrap commands through a real shell (2026-09-08)
 
 **When:** constructing a runtime restart command for a sandbox provider.

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { shouldBootstrapSessionRuntime } from './shared';
+import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS, shouldBootstrapSessionRuntime } from './shared';
 
 /**
  * Measured on pi.kortix.com 2026-08-29, with a stop/resume on live sessions:
@@ -53,4 +53,25 @@ describe('shouldBootstrapSessionRuntime', () => {
     // must not be asked.
     expect(shouldBootstrapSessionRuntime({ ...base, providerSupportsBootstrap: false })).toBe(false);
   });
+});
+
+
+test('a new wake of the same box can bootstrap again without resetting its failure budget', () => {
+  const metadata: Record<string, unknown> = {
+    sessionRuntimeBootstrapFor: 'box-1',
+    sessionRuntimeBootstrapAt: '2026-09-08T08:00:00.000Z',
+    runtimeStartFailureCount: 1,
+  };
+  const input = {
+    reason: 'unreachable' as const,
+    externalId: 'box-1',
+    providerSupportsBootstrap: true,
+  };
+  expect(shouldBootstrapSessionRuntime({ ...input, attemptedForExternalId: metadata.sessionRuntimeBootstrapFor })).toBe(false);
+  const nextWake = Object.fromEntries(
+    Object.entries(metadata).filter(([key]) => !(RUNTIME_WAKE_CLAIM_CLEARED_KEYS as readonly string[]).includes(key)),
+  );
+  expect(shouldBootstrapSessionRuntime({ ...input, attemptedForExternalId: nextWake.sessionRuntimeBootstrapFor })).toBe(true);
+  expect(nextWake.sessionRuntimeBootstrapAt).toBeUndefined();
+  expect(nextWake.runtimeStartFailureCount).toBe(1);
 });
