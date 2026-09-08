@@ -2,7 +2,6 @@ import { isMetaAgentName } from '@kortix/shared';
 
 import { resolveAgentGrant } from '../../projects/agents';
 import type { GitBackedProject } from '../../projects/git';
-import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 
@@ -20,11 +19,11 @@ export async function mintSessionRuntimeToken(opts: {
   gitProject: GitBackedProject;
 }): Promise<{ tokenId: string; secretKey: string }> {
   const platformMetaAgent = isMetaAgentName(opts.agentName);
-  const [agentGrant, serviceAccountId] = platformMetaAgent
-    ? [platformMetaAgentGrant(), null]
-    : await Promise.all([
-        resolveAgentGrant(opts.agentName, opts.gitProject),
-        ensureAgentServiceAccount({
+  const [agentGrant, serviceAccountId] = await Promise.all([
+    resolveAgentGrant(opts.agentName, opts.gitProject),
+    platformMetaAgent
+      ? null
+      : ensureAgentServiceAccount({
           accountId: opts.accountId,
           projectId: opts.projectId,
           agentName: opts.agentName,
@@ -35,7 +34,7 @@ export async function mintSessionRuntimeToken(opts: {
           );
           return null;
         }),
-      ]);
+  ]);
 
   const token = await createAccountToken({
     accountId: opts.accountId,

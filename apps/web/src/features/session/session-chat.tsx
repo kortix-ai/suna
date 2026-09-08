@@ -2255,11 +2255,9 @@ export function SessionChat({
   });
   const historyMutationsEnabled =
     !isPiWorkerSession && (!projectSessionId || projectSessionRuntimeIdentity === 'opencode');
-  const compactSessionId = isPiWorkerSession
-    ? null
-    : projectSessionId
-      ? resolveProjectSessionCompactionId(projectSessionRow)
-      : sessionId;
+  const compactSessionId = projectSessionId
+    ? resolveProjectSessionCompactionId(projectSessionRow)
+    : sessionId;
 
   // Default the agent picker to whichever agent owns the latest assistant
   // turn in this session. Catches PM onboarding sessions (first turn was PM),

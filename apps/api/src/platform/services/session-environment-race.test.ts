@@ -13,6 +13,8 @@ let endedMeters: string[];
 let workerStatus: string | null;
 let createCalls: number;
 let blockCreate: boolean;
+let tokenProject: Record<string, unknown> | null;
+let secretConfig: Record<string, unknown> | null;
 let resolvedImageProject: Record<string, unknown> | null;
 let resolvedImageOptions: Record<string, unknown> | null;
 let createdEnvVars: Record<string, string> | null;
@@ -38,14 +40,17 @@ mock.module('../../billing/services/compute-metering', () => ({
 }));
 
 mock.module('../../projects/lib/sessions', () => ({
-  buildSessionSandboxEnvVars: async () => ({}),
+  buildSessionSandboxEnvVars: async (input: Record<string, unknown>) => {
+    secretConfig = input;
+    return {};
+  },
 }));
 
 mock.module('./session-runtime-token', () => ({
-  mintSessionRuntimeToken: async () => ({
-    tokenId: '00000000-0000-4000-8000-000000000099',
-    secretKey: 'service-key',
-  }),
+  mintSessionRuntimeToken: async (input: { gitProject: Record<string, unknown> }) => {
+    tokenProject = input.gitProject;
+    return { tokenId: '00000000-0000-4000-8000-000000000099', secretKey: 'service-key' };
+  },
 }));
 
 mock.module('../../repositories/account-tokens', () => ({
@@ -156,6 +161,8 @@ beforeEach(() => {
   createCalls = 0;
   blockCreate = true;
   resolvedImageProject = null;
+  tokenProject = null;
+  secretConfig = null;
   resolvedImageOptions = null;
   createdEnvVars = null;
   bootstrappedExternalIds = [];
@@ -276,6 +283,8 @@ describe('session environment provision ownership', () => {
     for (let i = 0; i < 100 && createCalls === 0; i++) await Bun.sleep(1);
 
     expect(resolvedImageProject).toMatchObject({ defaultBranch: runtimeSha });
+    expect(tokenProject).toMatchObject({ defaultBranch: runtimeSha });
+    expect(secretConfig).toMatchObject({ defaultBranch: runtimeSha });
     expect(resolvedImageOptions).toEqual({
       slug: 'gpu-large',
       accountId: 'account-1',

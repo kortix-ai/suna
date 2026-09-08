@@ -15,7 +15,7 @@ export function resolveProjectSessionRuntimeIdentity(
 export function resolveProjectSessionCompactionId(
   session: ProjectSessionCompactionSource | null | undefined,
 ): string | null {
-  if (!session || isPiWorkerRuntimeMetadata(session.metadata)) return null;
+  if (!session) return null;
   const sessionId = session.opencode_session_id?.trim();
   return sessionId || null;
 }

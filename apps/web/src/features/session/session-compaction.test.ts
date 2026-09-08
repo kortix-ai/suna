@@ -30,7 +30,7 @@ describe('resolveProjectSessionCompactionId', () => {
     ).toBe('ses_opencode');
   });
 
-  test('returns null for every Pi runtime metadata projection', () => {
+  test('returns the canonical conversation id for every Pi runtime metadata projection', () => {
     for (const metadata of [
       { sandbox_slug: 'pi-worker' },
       { pi_worker_boot: true },
@@ -40,9 +40,9 @@ describe('resolveProjectSessionCompactionId', () => {
       expect(
         resolveProjectSessionCompactionId({
           metadata,
-          opencode_session_id: 'ses_legacy',
+          opencode_session_id: 'ses_pi',
         }),
-      ).toBeNull();
+      ).toBe('ses_pi');
     }
   });
 

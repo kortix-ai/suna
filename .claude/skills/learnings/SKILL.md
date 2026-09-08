@@ -5394,3 +5394,10 @@ the provider bootstrap and checks digest rejection, file preservation, and retry
 **Incident:** Daytona PID 1 includes the Kortix entrypoint in its arguments. The Pi environment upgrade matched that argument and terminated the provider process before installing the workload marker.
 **Rule:** Exclude PID 1 from workload process control. Match the executable and its argument position, not an arbitrary argument containing an entrypoint path.
 **Enforcer:** `environment-runtime-bootstrap.test.ts` runs a provider process whose arguments contain the entrypoint. The upgrade must preserve that process, replace the daemon, and preserve workspace bytes.
+
+
+### Resolve custom Pi token grants through the manifest resolver (2026-09-08)
+
+**Near miss:** Runtime token minting treated every agent named `meta` as the platform coordinator. YAML v3 can declare a custom agent with that name.
+**Rule:** The shared grant resolver decides platform authority. Token minting does not infer authority from an agent name. Environment credentials and injected secrets resolve grants at the worker's immutable configuration commit.
+**Enforcer:** `session-runtime-token.test.ts` checks restricted custom `meta` grants for worker and environment tokens. `session-environment-race.test.ts` checks the immutable grant ref.

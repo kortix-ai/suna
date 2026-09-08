@@ -3831,3 +3831,202 @@ describe("prompt tool controls", () => {
     expect(next.names(0)).not.toContain("bash");
   });
 });
+
+describe('durable context compaction', () => {
+  async function fixture() {
+    const items: SessionLogItem[] = [];
+    const config = {
+      port: 0,
+      envUrl: 'http://127.0.0.1:1',
+      envUrlExplicit: true,
+      envCwd: '/workspace',
+      systemPrompt: 'Follow the user.',
+      turnOwnerLeaseMs: 100,
+      turnOwnerHeartbeatMs: 20,
+      modelMode: 'faux' as const,
+      sessionId: `compact-${crypto.randomUUID()}`,
+      kortixToken: 'runtime-token',
+      storeUrl: await sharedStore(items),
+    };
+    const worker = await startWorker(config);
+    workers.push(worker);
+    const sessionID = await rootId(worker);
+    const post = (target: typeof worker, route: string, body: unknown) => request(target,
+      `/session/${sessionID}/${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const compactBody = { providerID: worker.agent.state.model!.provider, modelID: worker.agent.state.model!.id };
+    const history = async (target = worker) => (await request(target, `/session/${sessionID}/message`)).json() as Promise<any[]>;
+    worker.faux!.setResponses([fauxAssistantMessage('OLD_ASSISTANT_DETAIL')]);
+    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'OLD_USER_DETAIL: remember the launch code cobalt.' }] })).status).toBe(200);
+    return { items, config, worker, sessionID, post, compactBody, history };
+  }
+
+  test('commits summary and display atomically, preserves history, and compacts the next model context after replacement', async () => {
+    const { items, config, worker, post, compactBody, history } = await fixture();
+    const before = await history();
+    worker.faux!.setResponses([fauxAssistantMessage('The launch code is cobalt. SUMMARY_COMPACTED')]);
+    const compacted = await post(worker, 'summarize', compactBody);
+    expect(compacted.status).toBe(200);
+    expect(await compacted.json()).toBe(true);
+    const after = await history();
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after.at(-1).info.summary).toBe(true);
+    expect(after.at(-1).parts.some((p: any) => p.text?.includes('SUMMARY_COMPACTED'))).toBe(true);
+    expect(after.at(-2).parts.some((p: any) => p.type === 'compaction')).toBe(true);
+    const entries = items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction');
+    expect(entries).toHaveLength(1);
+    expect((entries[0] as any)._kortixTurnLease).toBeDefined();
+    expect(worker.env.calls).toHaveLength(0);
+    await worker.close();
+    const replacement = await startWorker(config);
+    workers.push(replacement);
+    expect(await history(replacement)).toEqual(after);
+    let context = '';
+    replacement.faux!.setResponses([(ctx) => { context = JSON.stringify(ctx.messages); return fauxAssistantMessage('cobalt'); }]);
+    expect((await post(replacement, 'message', { parts: [{ type: 'text', text: 'What is the launch code?' }] })).status).toBe(200);
+    expect(context).toContain('SUMMARY_COMPACTED');
+    expect(context).toContain('What is the launch code?');
+    expect(context).not.toContain('OLD_USER_DETAIL');
+    expect(context.match(/OLD_ASSISTANT_DETAIL/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(context).not.toContain('Compact conversation context.');
+  });
+
+  test('Stop cancels summary generation and the next prompt keeps the original context', async () => {
+    const { items, worker, sessionID, post, compactBody, history } = await fixture();
+    const entered = deferred();
+    worker.faux!.setResponses([async (_ctx, options) => {
+      entered.resolve();
+      await new Promise<void>(resolve => {
+        if (options?.signal?.aborted) resolve();
+        else options?.signal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+      return fauxAssistantMessage([], { stopReason: 'aborted', errorMessage: 'stopped' });
+    }]);
+    const pending = post(worker, 'summarize', compactBody);
+    await entered.promise;
+    const status = await (await request(worker, '/session/status')).json() as Record<string, { type: string }>;
+    expect(status[sessionID]?.type).toBe('busy');
+    expect((await request(worker, `/session/${sessionID}/abort`, { method: 'POST' })).status).toBe(200);
+    expect((await pending).status).toBe(409);
+    expect(items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(0);
+    const stopped = await history();
+    expect(stopped.at(-1).info.summary).toBe(true);
+    expect(stopped.at(-1).info.error).toBeDefined();
+    let context = '';
+    worker.faux!.setResponses([(ctx) => { context = JSON.stringify(ctx.messages); return fauxAssistantMessage('continued'); }]);
+    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'Continue after Stop.' }] })).status).toBe(200);
+    expect(context).toContain('OLD_USER_DETAIL');
+    expect(context).toContain('Continue after Stop.');
+  });
+
+  test('serializes an admitted prompt behind compaction and retries the same compaction without charging twice', async () => {
+    const { items, worker, post, compactBody, history } = await fixture();
+    const entered = deferred();
+    const release = deferred();
+    let promptContext = '';
+    let summaryCalls = 0;
+    worker.faux!.setResponses([
+      async () => { summaryCalls++; entered.resolve(); await release.promise; return fauxAssistantMessage('SERIAL_SUMMARY'); },
+      ctx => { promptContext = JSON.stringify(ctx.messages); return fauxAssistantMessage('next done'); },
+    ]);
+    const input = { ...compactBody, messageID: mintWireMessageId({ nowMs: Date.now() + 1000 }).id };
+    const pending = post(worker, 'summarize', input);
+    await entered.promise;
+    const next = post(worker, 'message', { parts: [{ type: 'text', text: 'QUEUED_AFTER_COMPACTION' }] });
+    release.resolve();
+    expect((await pending).status).toBe(200);
+    expect((await next).status).toBe(200);
+    expect(promptContext).toContain('SERIAL_SUMMARY');
+    expect(promptContext).toContain('QUEUED_AFTER_COMPACTION');
+    const beforeRetry = await history();
+    expect((await post(worker, 'summarize', input)).status).toBe(200);
+    expect(await history()).toEqual(beforeRetry);
+    expect(summaryCalls).toBe(1);
+    expect(items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(1);
+  });
+
+  test('replacement completes an atomically saved compaction when the owner dies before journal completion', async () => {
+    const { items, config, worker, post, compactBody, history } = await fixture();
+    worker.faux!.setResponses([fauxAssistantMessage('CRASH_SAFE_SUMMARY')]);
+    expect((await post(worker, 'summarize', compactBody)).status).toBe(200);
+    const expected = await history();
+    const index = items.findIndex((item: any) => item.kind === 'entry' && item.entry.type === 'compaction');
+    expect(index).toBeGreaterThan(0);
+    const atCommit = structuredClone(items.slice(0, index + 1));
+    await worker.close();
+    const replacement = await startWorker({ ...config, storeUrl: await sharedStore(atCommit) });
+    workers.push(replacement);
+    expect(await history(replacement)).toEqual(expected);
+    expect(atCommit.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(1);
+    expect(replacement.faux!.state.callCount).toBe(0);
+    replacement.faux!.setResponses([fauxAssistantMessage('continued')]);
+    expect((await post(replacement, 'message', { parts: [{ type: 'text', text: 'Continue after replacement.' }] })).status).toBe(200);
+  });
+
+  test('replacement interrupts an unsaved compaction without losing history or replaying its model call', async () => {
+    const { items, config, worker, post, compactBody, history } = await fixture();
+    const before = await history();
+    const entered = deferred();
+    const release = deferred();
+    worker.faux!.setResponses([async () => { entered.resolve(); await release.promise; return fauxAssistantMessage('late result'); }]);
+    const pending = post(worker, 'summarize', compactBody);
+    await entered.promise;
+    const atCrash = structuredClone(items);
+    release.resolve();
+    await pending;
+    await worker.close();
+    const replacement = await startWorker({ ...config, storeUrl: await sharedStore(atCrash) });
+    workers.push(replacement);
+    const restored = await history(replacement);
+    expect(restored.slice(0, before.length)).toEqual(before);
+    expect(restored.at(-1).info.summary).toBe(true);
+    expect(restored.at(-1).info.error).toBeDefined();
+    expect(restored.at(-1).parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')).toBe('');
+    expect(replacement.faux!.state.callCount).toBe(0);
+    expect(atCrash.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(0);
+  });
+
+  test('repeated compaction summarizes the previous summary and newer turns without duplicating old context', async () => {
+    const { worker, post, compactBody } = await fixture();
+    let summaryInput = '';
+    let nextContext = '';
+    worker.faux!.setResponses([fauxAssistantMessage('FIRST_CONTEXT_SUMMARY')]);
+    expect((await post(worker, 'summarize', compactBody)).status).toBe(200);
+    worker.faux!.setResponses([fauxAssistantMessage('A newer decision is amber.')]);
+    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'Add the amber decision.' }] })).status).toBe(200);
+    worker.faux!.setResponses([0, 1].map(() => ctx => {
+      summaryInput += JSON.stringify(ctx);
+      return fauxAssistantMessage('SECOND_CONTEXT_SUMMARY includes cobalt and amber.');
+    }));
+    expect((await post(worker, 'summarize', compactBody)).status).toBe(200);
+    worker.faux!.setResponses([ctx => { nextContext = JSON.stringify(ctx.messages); return fauxAssistantMessage('cobalt and amber'); }]);
+    expect(summaryInput).toContain('FIRST_CONTEXT_SUMMARY');
+    expect(summaryInput).toContain('amber');
+    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'Recall both decisions.' }] })).status).toBe(200);
+    expect(nextContext).toContain('SECOND_CONTEXT_SUMMARY');
+    expect(nextContext).not.toContain('FIRST_CONTEXT_SUMMARY');
+    expect(nextContext).not.toContain('OLD_USER_DETAIL');
+  });
+
+  test('an oversized summary fails before storage mutation and leaves the conversation usable', async () => {
+    const { worker, items, post, compactBody, history } = await fixture();
+    const before = await history();
+    worker.faux!.setResponses([fauxAssistantMessage('summary'.repeat(100000))]);
+    expect((await post(worker, 'summarize', compactBody)).status).toBe(409);
+    expect(items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(0);
+    const failed = await history();
+    expect(failed.slice(0, before.length)).toEqual(before);
+    expect(failed.at(-1).info.error).toBeDefined();
+    worker.faux!.setResponses([fauxAssistantMessage('still usable')]);
+    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'Continue.' }] })).status).toBe(200);
+  });
+
+  test('rejects another model, malformed options, and an unknown session before any summary call', async () => {
+    const { worker, post, compactBody, history } = await fixture();
+    const before = await history();
+    for (const body of [{ ...compactBody, modelID: 'other' }, { ...compactBody, auto: 'yes' }, { ...compactBody, extra: true }, []]) {
+      expect((await post(worker, 'summarize', body)).status).toBe(400);
+    }
+    expect((await request(worker, '/session/unknown/summarize', { method: 'POST', body: JSON.stringify(compactBody) })).status).toBe(404);
+    expect(await history()).toEqual(before);
+  });
+});

@@ -324,7 +324,13 @@ The Pi environment daemon serves files, shell, Git, PTY, and previews. It report
 `workload: environment` and `opencode: disabled`. Upgrades preserve workspace
 bytes and the selected Git branch. The process matcher excludes provider PID 1.
 The regression test includes a provider command containing the Kortix entrypoint.
-Live upgrade verification is pending the next preview deployment.
+Preview `a218bc6aa1a65a191d9bcd8ef59fc77632fcb0ca` verifies the upgrade on
+Daytona environment `783c0301-be40-4f3e-a4d9-36fcf2f44779`. Native health reports
+`runtimeReady: true`, `workload: environment`, and `opencode: disabled`.
+The process inventory contains zero Pi workers and zero OpenCode servers.
+The existing note retains SHA-256
+`24c44e1096bfd8dc047e0991d24de9d1b74c707a9ebd8b49925017c45ecfdf79`.
+The workspace retains its session branch and commit `7b0f812ede3a659d14249b2db1538b9f0cf992d9`.
 
 The worker adds `webfetch` for public HTTP(S) pages. It returns Markdown, text,
 or HTML. It does not start the environment. It validates DNS destinations and
@@ -348,4 +354,39 @@ Local verification:
   TLS, and returns `Example Domain` as Markdown. The same process cannot read
   `/etc/hosts` or write files.
 
-Preview verification and the remaining parity matrix remain required.
+Preview web retrieval passes through the real composer in the original reported
+conversation. One `webfetch` call retrieves `https://example.com` as Markdown.
+The completed tool envelope contains `Example Domain`. The response renders the
+page title, its documentation sentence, and `WEBFETCH_PREVIEW_A218`. The composer
+returns to idle. The environment remains stopped. Restarting the worker before
+this test preserves all 22 existing message envelopes.
+
+The remaining parity matrix and the full preview suite remain required.
+
+
+## Manual context compaction and manifest grants — 2026-09-08
+
+Pi implements `POST /session/:id/summarize` with the configured session model.
+The existing composer, header, and command palette expose the compaction action.
+The request joins the durable turn queue. Stop cancels the native Pi summary call.
+The summary uses Pi's compaction preparation, retained context, and file-operation
+summary. Compaction performs no environment call. It can use two model calls when
+Pi splits a turn between older history and retained recent context.
+
+One fenced native compaction entry stores the summary and its display messages.
+The visible transcript remains complete. Later model calls use the summary and
+retained context. Replacing the worker preserves both projections. A crash after
+the compaction entry commits finishes the journal without another model call.
+A crash before it commits records an interrupted attempt and retains the original
+context. Oversized summaries fail before modifying the context.
+
+Local coverage includes history fidelity, configured model validation, queued
+prompts, idempotent retry, repeated compaction, Stop, oversized output, and both
+crash boundaries. The real preview UI test remains pending deployment.
+Automatic threshold-triggered compaction is not implemented by this change.
+
+Runtime token minting resolves every agent through the shared manifest grant
+resolver. A YAML v3 agent named `meta` does not gain the legacy coordinator grant.
+Environment image, token grant, and secret grant resolution use the worker's
+immutable configuration commit. Focused token/environment tests pass: 14 tests,
+39 assertions. The API typecheck passes. The root suite passes all six lanes.

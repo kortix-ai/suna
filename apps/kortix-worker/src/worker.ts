@@ -21,7 +21,8 @@ import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
  */
 import { createServer, type IncomingMessage } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
-import { Agent } from '@earendil-works/pi-agent-core';
+import { Agent, convertToLlm } from '@earendil-works/pi-agent-core';
+import { compactedModelContext, summarizeContext, transcriptMessagesFromEntries } from './context-compaction.ts';
 import type { ExecutionEnv } from '@earendil-works/pi-agent-core';
 import {
   InMemoryCredentialStore,
@@ -33,7 +34,7 @@ import {
 } from '@earendil-works/pi-ai';
 import type { AssistantMessage, AssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { Session } from '@earendil-works/pi-agent-core';
-import { ChatEventAdapter } from './chat-events.ts';
+import { assistantContractFields, ChatEventAdapter } from './chat-events.ts';
 import {
   PiCommandUnsupportedError,
   preparePiCommand,
@@ -279,10 +280,7 @@ class TurnMessageOrderError extends Error {
  * order is pi's business, the ordering contract is ours.
  */
 export function restoredMessagesFromEntries(entries: readonly any[]): any[] {
-  return entries
-    .filter((e: any) => e.type === 'message')
-    .sort((a: any, b: any) => a.seq - b.seq)
-    .map((e: any) => e.message);
+  return transcriptMessagesFromEntries(entries);
 }
 
 function recoveredAssistantWireMessages(
@@ -904,12 +902,13 @@ export async function buildHarness(cfg: WorkerConfig) {
         }).id;
         const interrupted = {
           role: 'assistant',
-          content: [
+          content: admission.options.compaction === true ? [] : [
             {
               type: 'text',
               text: 'This turn was interrupted when the worker restarted. Send a new message to continue.',
             },
           ],
+          ...(admission.options.compaction === true ? { kortixCompactionSummary: true } : {}),
           api: model.api,
           provider: model.provider,
           model: model.id,
@@ -1019,6 +1018,19 @@ export async function buildHarness(cfg: WorkerConfig) {
     sourceSha: process.env.KORTIX_BASE_SHA ?? '',
   }, (globalThis as any).__KORTIX_PI_AGENT__);
 
+  const customTransform = agent.transformContext;
+  agent.convertToLlm = convertToLlm;
+  agent.transformContext = async (messages, signal) => {
+    const context = compactedModelContext(messages, restoredBranchEntries);
+    return customTransform ? customTransform(context, signal) : context;
+  };
+  let compactionAbort: AbortController | null = null;
+  const abortAgent = agent.abort.bind(agent);
+  agent.abort = () => {
+    compactionAbort?.abort(new Error('Context compaction was stopped'));
+    abortAgent();
+  };
+
   let replayEventHandler: ((event: any) => void) | null = null;
   const setToolReplayEventHandler = (handler: typeof replayEventHandler) => {
     replayEventHandler = handler;
@@ -1062,6 +1074,73 @@ export async function buildHarness(cfg: WorkerConfig) {
     refreshTail = result.catch(() => agent.state.messages);
     return result;
   };
+  const compactContext = async (userMessage: any, assistantId: string): Promise<any[]> => {
+    if (!session) throw new Error('Context compaction requires durable session storage');
+    const controller = new AbortController();
+    compactionAbort = controller;
+    try {
+      const leaf = await session.getLeafId();
+      const entries = leaf
+        ? (await session.findEntriesOnBranch({ start: leaf })).sort((a, b) => a.seq - b.seq)
+        : [];
+      const failCompaction = async (error: unknown): Promise<any[]> => {
+        const failed = {
+          ...fauxAssistantMessage([], {
+            stopReason: controller.signal.aborted ? 'aborted' : 'error',
+            errorMessage: String((error as Error)?.message ?? error),
+          }),
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          kortixWireMessageId: assistantId,
+          kortixParentMessageId: userMessage.kortixWireMessageId,
+          kortixCompactionSummary: true,
+        };
+        agent.state.messages = [...agent.state.messages, userMessage, failed];
+        await persistCurrentMessages();
+        return agent.state.messages;
+      };
+      let summary: Awaited<ReturnType<typeof summarizeContext>>;
+      try {
+        summary = await summarizeContext(entries, models, model, controller.signal);
+      } catch (error) {
+        return failCompaction(error);
+      }
+      const assistant = {
+        ...fauxAssistantMessage(summary.summary),
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        ...(summary.usage ? { usage: summary.usage } : {}),
+        kortixWireMessageId: assistantId,
+        kortixParentMessageId: userMessage.kortixWireMessageId,
+        kortixCompactionSummary: true,
+      };
+      const payload = toDurable({
+        type: 'compaction',
+        id: session.idGenerator.next(),
+        ...summary,
+        details: { ...(summary.details as object), kortixDisplayMessages: [userMessage, assistant] },
+      });
+      if (Buffer.byteLength(JSON.stringify(payload)) > MAX_SESSION_LOG_ITEM_BYTES - 4096) {
+        return failCompaction(new Error('Compaction result exceeds the durable storage budget'));
+      }
+      try {
+        sessionLog?.preflight({ kind: 'entry', lane: 'main', entry: payload });
+      } catch (error) {
+        if (error instanceof SessionLogItemTooLargeError) return failCompaction(error);
+        throw error;
+      }
+      const entry = await session.appendEntry(payload as any, 'main');
+      restoredBranchEntries = [...entries, entry];
+      agent.state.messages = [...agent.state.messages, userMessage, assistant];
+      persistedMessages = agent.state.messages.length;
+      return agent.state.messages;
+    } finally {
+      if (compactionAbort === controller) compactionAbort = null;
+    }
+  };
+
   const setPersistenceTurnIdentity = (source: () => string | null): void => {
     persistenceTurnIdentity = source;
   };
@@ -1163,6 +1242,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     permissionCheckpoints,
     hasResumableTurn,
     persistCurrentMessages,
+    compactContext,
     setToolReplayEventHandler,
     turnJournal,
     bootReconcile,
@@ -1203,6 +1283,7 @@ export async function startWorker(cfg = configFromEnv()) {
     permissionCheckpoints,
     hasResumableTurn,
     persistCurrentMessages,
+    compactContext,
     setToolReplayEventHandler,
     turnJournal,
     bootReconcile,
@@ -1541,12 +1622,13 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   };
 
-  type PromptOptions = { system?: string; noReply?: boolean; tools?: Record<string, boolean> };
+  type PromptOptions = { system?: string; noReply?: boolean; tools?: Record<string, boolean>; compaction?: boolean; compactionAuto?: boolean };
   const admissionOptions = (options: PromptOptions): JsonObject => ({
     ...(effectiveRuntime.agent ? { agent: effectiveRuntime.agent } : {}),
     ...(effectiveRuntime.model ? { model: effectiveRuntime.model } : {}),
     ...(options.system === undefined ? {} : { system: options.system }),
     ...(options.noReply === true ? { noReply: true } : {}),
+    ...(options.compaction === true ? { compaction: true, compactionAuto: options.compactionAuto === true } : {}),
     ...(options.tools === undefined
       ? {}
       : { tools: options.tools, toolsOrder: Object.keys(options.tools) }),
@@ -1640,7 +1722,7 @@ export async function startWorker(cfg = configFromEnv()) {
       // The at-most-once boundary committed above. A process that restarts with
       // this state interrupts model turns instead of replaying unknown tool
       // side effects. Context-only turns can finish storing their user input.
-      if (turn.modelStarted && lazy && cfg.environmentStartup === 'prewarm') lazy.prewarm();
+      if (turn.modelStarted && !turn.options.compaction && lazy && cfg.environmentStartup === 'prewarm') lazy.prewarm();
       surface.markTurn(turn.messageId, true);
       lastAgentEndStatus = 'idle';
       const heartbeatMs = Math.max(1, cfg.turnOwnerHeartbeatMs ?? DEFAULT_TURN_OWNER_HEARTBEAT_MS);
@@ -1741,7 +1823,37 @@ export async function startWorker(cfg = configFromEnv()) {
           // it instead of inventing a different wire id after every restart.
           kortixWireMessageId: turn.messageId,
         };
-        if (turn.options.noReply === true) {
+        if (turn.options.compaction === true) {
+          bootReconcile.noteTurnStarted();
+          const assistantId = surface.mintMessageId();
+          surface.publishWire({
+            type: 'session.status',
+            properties: { sessionID: surface.rootId, status: { type: 'busy' } },
+          });
+          surface.publishWire({
+            type: 'message.updated',
+            properties: {
+              info: {
+                id: assistantId,
+                role: 'assistant',
+                parentID: turn.messageId,
+                sessionID: surface.rootId,
+                summary: true,
+                time: { created: Date.now() },
+                ...(effectiveRuntime.model ?? resolvedModel),
+                ...assistantContractFields(undefined, {
+                  agent: runtimeAgent, mode: runtimeAgent, workspace: cfg.envCwd,
+                }),
+              },
+            },
+          });
+          const messages = await compactContext(userMessage, assistantId);
+          lastAgentEndStatus = terminalAgentStatus(messages.slice(-1));
+          surface.replaceDurableMessages(messages, turnJournal.wireMessages);
+          if (lastAgentEndStatus === 'idle') surface.publishWire({
+            type: 'session.compacted', properties: { sessionID: surface.rootId },
+          });
+        } else if (turn.options.noReply === true) {
           bootReconcile.noteTurnStarted();
           const durableSession = sessionRef();
           if (durableSession) await durableSession.appendMessage(toDurable(userMessage) as any);
@@ -1914,8 +2026,7 @@ export async function startWorker(cfg = configFromEnv()) {
             id: `${messageId}-p0`,
             messageID: messageId,
             sessionID: surface.rootId,
-            type: 'text',
-            text,
+            ...(options.compaction ? { type: 'compaction', auto: options.compactionAuto === true } : { type: 'text', text }),
           },
         ],
       },
@@ -2119,6 +2230,58 @@ export async function startWorker(cfg = configFromEnv()) {
       url.pathname === '/session' ||
       url.pathname.startsWith('/session/')
     ) {
+      const summarizeRoute = url.pathname.match(/^\/session\/([^/]+)\/summarize$/);
+      if (summarizeRoute && req.method === 'POST') {
+        if (!surface.authorize(req, url)) {
+          res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'unauthorized' }));
+          return;
+        }
+        const target = decodePathSegment(summarizeRoute[1]!);
+        if (target !== surface.rootId) {
+          res.writeHead(target === null ? 400 : 404, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: target === null ? 'malformed session id' : 'unknown session' }));
+          return;
+        }
+        try {
+          const input = JSON.parse(await readBoundedRequestBody(req));
+          if (!input || typeof input !== 'object' || Array.isArray(input))
+            throw new RequestBodyValidationError('request body must be a JSON object');
+          if (Object.keys(input).some(key => !['providerID', 'modelID', 'auto', 'messageID'].includes(key)))
+            throw new RequestBodyValidationError('unsupported compaction option');
+          const identity = effectiveRuntime.model ?? resolvedModel;
+          if (input.providerID !== identity.providerID || input.modelID !== identity.modelID)
+            throw new RequestBodyValidationError('compaction must use the configured session model');
+          if (input.auto !== undefined && typeof input.auto !== 'boolean')
+            throw new RequestBodyValidationError('auto must be a boolean');
+          if (input.messageID !== undefined && (typeof input.messageID !== 'string' || !input.messageID.trim()))
+            throw new RequestBodyValidationError('messageID must be a non-empty string');
+          for (const key of ['directory', 'workspace']) {
+            if (url.searchParams.getAll(key).some(value => value !== cfg.envCwd))
+              throw new RequestBodyValidationError('compaction workspace must equal the session workspace');
+          }
+          if (modelError || !sessionRef()) {
+            res.writeHead(503, { 'content-type': 'application/json' })
+              .end(JSON.stringify({ error: modelError ?? 'context compaction requires durable session storage' }));
+            return;
+          }
+          const admitted = await admitTurn('Compact conversation context.', input.messageID, { compaction: true, compactionAuto: input.auto === true });
+          await admitted.done;
+          const completed = turnJournal.completionStatus(admitted.admission.messageId);
+          if (completed !== 'idle') {
+            res.writeHead(409, { 'content-type': 'application/json' })
+              .end(JSON.stringify({ error: 'context compaction did not complete; the conversation is preserved' }));
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'application/json', ...promptCompletionHeaders(admitted.admission.messageId) }).end('true');
+        } catch (error) {
+          const code = error instanceof RequestBodyTooLargeError ? 413
+            : error instanceof SyntaxError || error instanceof RequestBodyValidationError ? 400
+            : error instanceof TurnAdmissionConflictError || error instanceof TurnMessageOrderError ? 409 : 503;
+          res.writeHead(code, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: String((error as Error)?.message ?? error) }));
+        }
+        return;
+      }
       if (surface.handleRawSessionList(req, res, url)) return;
     }
 
@@ -2751,7 +2914,7 @@ export async function startWorker(cfg = configFromEnv()) {
       const entries = leaf ? await session.findEntriesOnBranch({ start: leaf } as any) : [];
       const payload = JSON.stringify({
         restoredEntries,
-        messages: entries.filter((e: any) => e.type === 'message').map((e: any) => e.message),
+        messages: restoredMessagesFromEntries(entries),
       });
       res.writeHead(200, { 'content-type': 'application/json' }).end(payload);
       return;

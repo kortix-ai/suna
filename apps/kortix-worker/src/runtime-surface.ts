@@ -522,6 +522,7 @@ interface RestoredTranscriptMessage {
   errorMessage?: string;
   kortixWireMessageId?: string;
   kortixParentMessageId?: string;
+  kortixCompactionSummary?: boolean;
   kortixWireCreatedAt?: number;
   kortixWireCompletedAt?: number;
   kortixWirePartIds?: string[];
@@ -760,6 +761,7 @@ export class RuntimeSurface {
               role,
               sessionID: this.rootId,
               parentID: message.kortixParentMessageId ?? lastUserId!,
+              ...(message.kortixCompactionSummary ? { summary: true } : {}),
               time: { created, completed: message.kortixWireCompletedAt ?? created },
               modelID: resolvedModel.modelID,
               providerID: resolvedModel.providerID,

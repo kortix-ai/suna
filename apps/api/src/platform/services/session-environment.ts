@@ -609,7 +609,7 @@ async function provisionEnvironment(
         // The session branch already exists remotely (pushed at session
         // create); the daemon fetches it instead of assuming branch == base.
         restoreSessionBranch: true,
-        defaultBranch: input.gitProject.defaultBranch,
+        defaultBranch: input.imageRef ?? input.gitProject.defaultBranch,
         manifestPath: input.gitProject.manifestPath,
         workspaceMode: input.workspaceMode,
       }),
@@ -622,7 +622,10 @@ async function provisionEnvironment(
       runtimeKind: 'environment',
       runtimeId: environmentId,
       agentName: input.agentName,
-      gitProject: input.gitProject,
+      gitProject: {
+        ...input.gitProject,
+        defaultBranch: input.imageRef ?? input.gitProject.defaultBranch,
+      },
     });
     const provider = getProvider('daytona');
     const result = await provider.create({
