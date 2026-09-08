@@ -133,17 +133,17 @@ export function ProjectHomeWelcomeBody({
         short container scrolls the column rather than compressing it.
         `gap-10` separates the ask group from whatever a host puts beneath it.
       */}
-      <div
-        className={cn(
-          'flex w-full shrink-0 flex-col gap-10 py-8 sm:px-4',
-          // With content under the composer the block pins to the TOP
-          // (`mx-auto`, not `m-auto`): that content grows and shrinks — a
-          // space's Recents list is as long as its history — and a
-          // vertically centred column would slide the composer up and down
-          // under the cursor with it (user, 2026-09-06).
-          below ? 'mx-auto max-w-3xl pt-16 lg:pt-28' : 'm-auto max-w-3xl',
-        )}
-      >
+      {/*
+        `m-auto` WITH content under the composer too (user, 2026-09-08: "make
+        chat input centrally position like it is on the single project page").
+        This reverses the 2026-09-06 top-pin, which left a space's lower half
+        as empty ballast — the same complaint the project home's own `m-auto`
+        exists to answer. A space's Recents list does move the composer as it
+        grows, which is the cost that buys it; once the column outgrows the
+        container the auto margins resolve to zero and it scrolls from the
+        top, so a long history lands back on the old top-pinned frame anyway.
+      */}
+      <div className="m-auto flex w-full max-w-3xl shrink-0 flex-col gap-10 py-8 sm:px-4">
         <div
           className="flex w-full flex-col gap-6"
         >
