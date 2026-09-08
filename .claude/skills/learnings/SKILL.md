@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Execute provider bootstrap commands through a real shell (2026-09-08)
+
+**When:** constructing a runtime restart command for a sandbox provider.
+**Incident:** Pi preview `0f6b0eac05` could not resume the original test session; `sh` rejected the bootstrap argument.
+**Rule:** quote each shell argument with the shared helper. Separate the command from its argument and export the configured probe port.
+**Enforcer:** `daytona.test.ts` executes the actual command through `/bin/sh`, checks an existing listener, and captures the detached launch arguments.
+
 ### Verify the event route that the installed client actually opens (2026-09-07)
 
 **When:** adding a replacement conversation runtime.

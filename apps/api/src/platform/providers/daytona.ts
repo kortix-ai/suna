@@ -356,19 +356,16 @@ export class DaytonaProvider implements SandboxProvider {
     // `sh -c`, single string: the guest image is Alpine with no bash. The probe
     // uses node (guaranteed present — it is what the worker runs on) rather
     // than curl, which the pi-worker image does not ship.
-    const command = [
-      'sh -c',
-      "'",
-      'PORT=${KORTIX_SERVICE_PORT:-8000}; ',
-      'if node -e "require(\'net\').connect({port:process.env.PORT||8000,host:\'127.0.0.1\'})',
-      '.on(\'connect\',()=>process.exit(0)).on(\'error\',()=>process.exit(1))" 2>/dev/null; then ',
-      'echo already-listening; exit 0; fi; ',
-      'flock -n /run/kortix-pi-worker.lock -c ',
-      '"setsid /usr/local/bin/pi-worker-entrypoint >>/var/log/kortix-pi-worker.log 2>&1 &" ',
-      '|| echo lock-held; ',
+    const probe = "require('node:net').connect({port:process.env.PORT,host:'127.0.0.1'}).on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))";
+    const launch = 'setsid /usr/local/bin/pi-worker-entrypoint >>/var/log/kortix-pi-worker.log 2>&1 &';
+    const script = [
+      'export PORT=${KORTIX_SERVICE_PORT:-8000}',
+      `if node -e ${shellQuote(probe)} 2>/dev/null; then`,
+      'echo already-listening; exit 0; fi',
+      `flock -n /run/kortix-pi-worker.lock -c ${shellQuote(launch)} || echo lock-held`,
       'echo launched',
-      "'",
-    ].join('');
+    ].join('\n');
+    const command = `sh -c ${shellQuote(script)}`;
     const result = await withTimeout(
       sandbox.process.executeCommand(command, undefined, undefined, 15),
       PROVIDER_CALL_TIMEOUT_MS,

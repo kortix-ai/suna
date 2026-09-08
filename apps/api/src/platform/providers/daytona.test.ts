@@ -8,6 +8,9 @@
 // logs, until the process restarted. This proves getStatus() now gives up on
 // a hung upstream call within the configured bound instead of hanging.
 import { beforeEach, expect, mock, test } from 'bun:test';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 mock.module('../../config', () => ({
   config: {
@@ -160,4 +163,73 @@ test('native auto-stop is a backstop that clears the longest measured turn', asy
   expect(daytonaLifecycle().autoStopInterval).toBe(720);
   expect(daytonaLifecycle(5).autoStopInterval).toBe(5);
   expect(daytonaLifecycle(0).autoStopInterval).toBe(1);
+});
+
+
+test('runtime bootstrap probes the configured port through the actual shell command', async () => {
+  const listener = Bun.serve({ port: 0, fetch: () => new Response('ready') });
+  const results: Array<{ exitCode: number; result: string }> = [];
+  getDaytonaSandbox = async () => ({
+    process: {
+      executeCommand: async (command: string) => {
+        const child = Bun.spawn(['/bin/sh', '-c', command], {
+          env: { ...process.env, KORTIX_SERVICE_PORT: String(listener.port) },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const [exitCode, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        const result = { exitCode, result: stdout + stderr };
+        results.push(result);
+        return result;
+      },
+    },
+  });
+  try {
+    const { DaytonaProvider } = await import('./daytona');
+    await new DaytonaProvider().ensureSessionRuntimeStarted('sbx_active');
+    expect(results).toEqual([{ exitCode: 0, result: 'already-listening\n' }]);
+  } finally {
+    listener.stop(true);
+  }
+});
+
+test('runtime bootstrap passes one intact detached command to flock when the port is closed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'daytona-bootstrap-'));
+  const record = join(root, 'flock-args');
+  await writeFile(join(root, 'node'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await writeFile(join(root, 'flock'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$BOOTSTRAP_RECORD"\n', { mode: 0o755 });
+  getDaytonaSandbox = async () => ({
+    process: {
+      executeCommand: async (command: string) => {
+        const child = Bun.spawn(['/bin/sh', '-c', command], {
+          env: { ...process.env, PATH: root + ':' + process.env.PATH, BOOTSTRAP_RECORD: record },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const [exitCode, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        return { exitCode, result: stdout + stderr };
+      },
+    },
+  });
+  try {
+    const { DaytonaProvider } = await import('./daytona');
+    await new DaytonaProvider().ensureSessionRuntimeStarted('sbx_stopped');
+    expect((await readFile(record, 'utf8')).split('\n')).toEqual([
+      '-n',
+      '/run/kortix-pi-worker.lock',
+      '-c',
+      'setsid /usr/local/bin/pi-worker-entrypoint >>/var/log/kortix-pi-worker.log 2>&1 &',
+      '',
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
