@@ -473,6 +473,8 @@ export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
+export * from './core/attachments/limits';
+export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';
 export * from './core/runtime/attachment-part';
 export * from './core/session';

@@ -58,6 +58,56 @@ await connectors.uploadAttachment(bytes, {
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
 
+### Upload prompt attachments before Send
+
+Create one controller per composer. `add(file)` starts a private project upload
+without waiting for a session runtime. Subscribe to `getSnapshot()` for tile state.
+
+```ts
+const attachments = kortix.project(projectId).attachments.createController();
+const localId = attachments.add(file);
+const unsubscribe = attachments.subscribe(() => render(attachments.getSnapshot()));
+
+// Inside the submit handler, after uploads finish:
+const parts = attachments.getReadyParts(); // synchronous; throws while any file is unfinished
+const submittedIds = attachments.getSnapshot().attachments.map((item) => item.id);
+await kortix.session(projectId, sessionId).prompts.create({
+  clientMessageId,
+  messageId,
+  parts: [{ type: 'text', text }, ...parts],
+});
+attachments.forget(submittedIds); // successful handoff; does not delete storage objects
+```
+
+React consumers use `usePromptAttachments(projectId)` from `@kortix/sdk/react`.
+It returns the same controller methods plus reactive `attachments` and `canSend`.
+Call `getReadyParts()` in the submit handler even when a button uses `canSend`.
+This blocks an add-and-Enter event before React renders again.
+
+Files move through `pending`, `uploading`, `processing`, `ready`, `error`, or
+`aborted`. Progress counts acknowledged bytes. At 100%, `processing` still blocks
+Send until completion succeeds. The default concurrency is two files. Limits are
+50 MiB per file, 100 MiB per message, and 20 files. Empty files are rejected.
+
+`retry(localId)` resumes the same upload and preserves the original File.
+`remove(localId)` removes the tile and deletes unbound storage; a bound upload
+returns a typed 409. `abort(localId)` cancels unfinished work. `dispose()` aborts
+unfinished work without deleting completed uploads. Call it on non-React cleanup;
+the hook handles unmount and project changes. Unused uploads expire after 24 hours.
+
+Persist only a ready item's `attachment` metadata in a user/project-bound draft.
+`restore(metadata)` validates it and its expiry. It never stores a File, blob URL,
+or signed URL. An expired restored item requires the user to attach the file again.
+Keep the selection after a failed send; call `forget` only after accepted submission.
+
+For non-composer uploads, call `kortix.project(projectId).attachments.upload(file,
+{ signal, onProgress, onUpload, resume })`. Retain the `onUpload` handle for manual
+same-ID recovery. Chunks retry transient failures up to two times. Completion
+polls retryable server responses for up to five minutes, plus the current request's
+30-second deadline. Caller abort and client timeout never auto-retry.
+Completed `attachment_id` parts use platform prompt routes. Runtime `sendParts`
+continues to accept runtime URL parts. Legacy platform URL parts remain supported.
+
 ## No bundler, no framework
 
 The published package ships a browser IIFE bundle alongside its ESM `dist/` —

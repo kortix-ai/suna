@@ -17,6 +17,7 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from '../files/client';
+import { createPromptAttachmentController } from '../attachments/prompt-attachments';
 import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
@@ -442,6 +443,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.pipedreamFinalizeConnection(projectId, ...a),
     };
     return {
+      attachments: {
+        upload: (...args: DropFirst<Parameters<typeof P.uploadPromptAttachment>>) => P.uploadPromptAttachment(projectId, ...args),
+        delete: (...args: DropFirst<Parameters<typeof P.deletePromptAttachment>>) => P.deletePromptAttachment(projectId, ...args),
+        createController: (options?: Parameters<typeof createPromptAttachmentController>[1]) => createPromptAttachmentController(projectId, options),
+      },
       get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
       detail: () => P.getProjectDetail(projectId),
       /** Canonical project-scoped audit timeline. */
