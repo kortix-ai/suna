@@ -307,7 +307,7 @@ describe('legacySectionRedirect', () => {
  * stops going where it used to.
  */
 describe('account-scoped sections redirect to /accounts/[id]', () => {
-  // Legacy section id -> the `?tab=` segment `app/(app)/accounts/[id]/page.tsx`
+  // Legacy section id -> the `?tab=` segment `features/accounts/hub/account-hub-content.tsx`
   // reads. Hand-kept mirror of ACCOUNT_GRADUATED, so a rename there without a
   // rename here fails immediately. Two are not 1:1 — the account page calls
   // Organization `settings` and Usage `transactions`. `api-keys` and `tokens`
@@ -334,16 +334,16 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     expect(ACCOUNT_GRADUATED).toEqual(ACCOUNT_SECTIONS);
   });
 
-  test('every id resolves to its account-page tab when an account id is supplied', () => {
+  test('every id opens the account hub over the project it came from', () => {
     for (const [legacyId, tab] of Object.entries(ACCOUNT_SECTIONS)) {
-      // `members` is the one non-generic id: it carries a `&project=`
+      // `members` is the one non-generic id: it carries an `accountProject=`
       // special case (see `legacySectionRedirect`) so a stale
       // `/projects/<id>/members` bookmark lands pre-filtered to the project
       // it came from, not every project the account can see.
       const expected =
         legacyId === 'members'
-          ? `/accounts/acc1?tab=${tab}&project=p1`
-          : `/accounts/acc1?tab=${tab}`;
+          ? `/projects/p1?accountId=acc1&accountTab=${tab}&accountProject=p1`
+          : `/projects/p1?accountId=acc1&accountTab=${tab}`;
       expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe(expected);
     }
   });

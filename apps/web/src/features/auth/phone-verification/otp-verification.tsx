@@ -31,7 +31,6 @@ export function OtpVerification({
   showExistingOptions = false,
   challengeId,
 }: OtpVerificationProps) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('auth.phoneVerification');
   const [otp, setOtp] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -81,7 +80,7 @@ export function OtpVerification({
 
     if (otp.length !== 6) {
       setLocalError(t('pleaseEnterSixDigitCode'));
-      errorToast(tI18nComplete('text2d32975062a5'));
+      errorToast(t('pleaseEnterSixDigitCode'));
       return;
     }
 

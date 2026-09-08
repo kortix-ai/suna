@@ -1,6 +1,27 @@
 'use client';
 
+/**
+ * The account hub's body — everything to the right of the settings sidebar at
+ * `/accounts/<id>`: the section catalog's panes, their drill-downs, and the
+ * mutations each one owns.
+ *
+ * **One body, two mounts.** This used to BE `features/accounts/hub/account-hub-content.tsx`.
+ * It moved here on 2026-09-08 so the same component can render in two places:
+ * the route (cold loads, deep links, the five sub-routes) and
+ * `AccountHubPanel`, the full-screen overlay that opens over whatever page you
+ * are on with no navigation at all. The route mount is unchanged in behaviour;
+ * the overlay is what makes an in-app click cost a render instead of an RSC
+ * round-trip, a chunk fetch and a shell remount.
+ *
+ * Nothing here knows which mount it is in. The account id and what a hub link
+ * does come from `useAccountHubLocation()`; the hub's own query — `tab`,
+ * `member`, `group`, `project` — comes from `useHubSearchParams()`, which
+ * reads the route's URL directly and the overlay's prefixed params
+ * (`accountTab`, …) through one translation. Never `useSearchParams()`.
+ */
+
 import { useTranslations } from '@/i18n/use-translations';
+import { useRouter } from 'next/navigation';
 import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon as ExternalLink,
@@ -14,7 +35,6 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { m, useReducedMotion } from 'motion/react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
@@ -58,17 +78,20 @@ import { SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { AccountPane, AccountPaneSkeleton } from '@/features/accounts/hub/account-pane';
+import { AccountPane, AccountPaneSkeleton } from './account-pane';
 import {
   type AccountSection,
   localizedAccountPaneMeta,
   paneWidth,
-} from '@/features/accounts/hub/sections';
-import { useAccountDetail } from '@/features/accounts/hub/use-account-detail';
-import { useAccountHubSection } from '@/features/accounts/hub/use-account-hub-access';
-import { useAccountMembers } from '@/features/accounts/hub/use-account-members';
+} from './sections';
+import { forgetPushedEntry, hubTarget, openAccountPanel } from '@/stores/account-panel-store';
+import { useAccountPanelId, useHubSearchParams } from './account-hub-location';
+import { useAccountDetail } from './use-account-detail';
+import { useAccountHubSection } from './use-account-hub-access';
+import { useAccountMembers } from './use-account-members';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { BrandingTab } from '@/features/accounts/settings/branding-tab';
+import { ScimSetupWizard, SsoSetupWizard } from '@/features/sso-setup/setup-wizard';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { useBrandingScope } from '@/features/branding/branding-provider';
@@ -147,6 +170,14 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
   }
 }
 
+/**
+ * Where `/github/setup` sends you when the install finishes.
+ *
+ * The CURRENT URL, verbatim — which, while the hub is open, already carries
+ * `?accountId=…&accountTab=git`. So the return trip reopens the modal on the
+ * Git tab over the same page the person left, with no hard-coded path to drift
+ * from the one the modal actually uses.
+ */
 function rememberGitHubSetupReturn(path: string) {
   try {
     window.localStorage.setItem('kortix:github_setup_return', path);
@@ -155,12 +186,12 @@ function rememberGitHubSetupReturn(path: string) {
   }
 }
 
-export default function AccountSettingsPage() {
+export function AccountHubContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
-  const accountId = params?.id;
+  // `?accountId=` and the hub's own params, both off the URL the modal writes
+  // onto the page it floats over. See `account-hub-location.tsx`.
+  const accountId = useAccountPanelId();
+  const searchParams = useHubSearchParams();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
 
@@ -249,12 +280,16 @@ export default function AccountSettingsPage() {
   // them one level above where they started.
   const cameFromCustomize = searchParams.get('from') === 'customize';
   const selectedAccessGroupId = searchParams.get('group');
+  // `sso` | `scim`: a guided wizard standing in for the Identity pane.
+  const rawSetup = searchParams.get('setup');
+  const activeSetup = rawSetup === 'sso' || rawSetup === 'scim' ? rawSetup : null;
   const selectedAccessMemberId = searchParams.get('member');
   // The Members list has a pane header; its member panel carries its own, so
   // suppress the outer one while a member is open (Groups and Projects have
   // no `PANE_META` entry at all, for the same reason).
   const paneMeta =
-    activeSection === 'members' && selectedAccessMemberId
+    (activeSection === 'members' && selectedAccessMemberId) ||
+    (activeSection === 'identity' && activeSetup)
       ? undefined
       : localizedAccountPaneMeta(tI18nComplete)[activeSection];
   // `project` / `group` / `member` carry the open detail entity onto the URL
@@ -266,19 +301,24 @@ export default function AccountSettingsPage() {
     section: AccountSection,
     opts?: { project?: string | null; group?: string | null; member?: string | null },
   ) => {
-    const query = new URLSearchParams({ tab: section });
-    if (opts?.project) query.set('project', opts.project);
-    if (opts?.group) query.set('group', opts.group);
-    if (opts?.member) query.set('member', opts.member);
-    router.replace(`/accounts/${accountId}?${query.toString()}`, { scroll: false });
+    openAccountPanel(
+      hubTarget(accountId, {
+        tab: section,
+        project: opts?.project,
+        group: opts?.group,
+        member: opts?.member,
+      }),
+    );
   };
 
   return (
     <AccountPane
-      back={{ href: '/accounts', label: tI18nComplete.raw('text68d8e728a8ad') }}
+      back={{ to: hubTarget(null), label: tI18nComplete.raw('text68d8e728a8ad') }}
       title={paneMeta?.title}
       description={paneMeta?.description}
-      width={paneWidth(activeSection)}
+      /* A wizard is a full-width surface wherever it renders — it was a
+         `width="full"` page of its own before it became a pane. */
+      width={activeSetup && activeSection === 'identity' ? 'full' : paneWidth(activeSection)}
     >
       {accountQuery.isError ? (
         <ErrorState
@@ -312,10 +352,15 @@ export default function AccountSettingsPage() {
                 <BillingTab
                   // Stripe Billing Portal requires an absolute return_url —
                   // a bare path 500s with "Not a valid URL". Build from origin.
+                  // Stripe requires an ABSOLUTE return_url (a bare path 500s
+                  // with "Not a valid URL"), and it must come back to the hub.
+                  // The current URL already IS that: this pane only renders
+                  // while `?accountId=…&accountTab=billing` is on it. Building
+                  // it from `window.location` rather than from a hard-coded
+                  // path is also what keeps the person on the page they opened
+                  // the hub over.
                   returnUrl={
-                    typeof window !== 'undefined'
-                      ? `${window.location.origin}/accounts/${account.account_id}?tab=billing`
-                      : `/accounts/${account.account_id}?tab=billing`
+                    typeof window !== 'undefined' ? window.location.href : '/projects'
                   }
                   isActive
                 />
@@ -474,7 +519,20 @@ export default function AccountSettingsPage() {
               enterprise-demo toggle now lives in Settings (see below) —
               it's an account-level unlock, not part of the identity
               journey itself. */}
-          {activeSection === 'identity' && canWriteAccount ? (
+          {/* The two guided wizards took over the Identity pane on 2026-09-08,
+              when `/accounts/<id>/sso-setup` and `/accounts/<id>/scim-setup`
+              were deleted with the rest of the account routes. `?setup=` is
+              what the SSO and SCIM cards' Configure buttons now set, and the
+              breadcrumb grows a fourth crumb for it (`accountHubCrumbs`). */}
+          {activeSection === 'identity' && canWriteAccount && activeSetup ? (
+            activeSetup === 'sso' ? (
+              <SsoSetupWizard accountId={account.account_id} />
+            ) : (
+              <ScimSetupWizard accountId={account.account_id} />
+            )
+          ) : null}
+
+          {activeSection === 'identity' && canWriteAccount && !activeSetup ? (
             <div className="space-y-3">
               {entitlementsLoading ? (
                 <Skeleton className="h-40 w-full rounded-md" />
@@ -578,6 +636,11 @@ function GitHubConnectionCard({
   canManage: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // GitHub's install flow is a full page load on github.com, so this LEAVES
+  // the hub for a real page. `router.replace` is the whole job: it overwrites
+  // the entry the modal pushed — so Back from the setup page returns to where
+  // the hub was opened, not to the hub — and the URL it goes to carries no
+  // `accountId`, which is what "closed" means.
   const router = useRouter();
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
@@ -611,8 +674,9 @@ function GitHubConnectionCard({
   function handleConnect() {
     if (!canManage) return;
     setIsConnecting(true);
-    rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
-    router.push(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
+    rememberGitHubSetupReturn(`${window.location.pathname}${window.location.search}`);
+    forgetPushedEntry();
+    router.replace(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
   }
 
   const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>
@@ -947,7 +1011,6 @@ function MembersCard({
   onSelectMember: (userId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const router = useRouter();
   const [grantOpen, setGrantOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AccountMember | null>(null);
   // Set rather than scalar so multiple per-row mutations (remove + role
@@ -1066,7 +1129,7 @@ function MembersCard({
     onSuccess: () => {
       successToast(tI18nComplete('texta95f7e7aff62', { value0: account.name }));
       queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
-      router.push('/accounts');
+      openAccountPanel(hubTarget(null));
     },
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text9de0b8c8b34b')),
   });

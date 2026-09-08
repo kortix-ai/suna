@@ -1,5 +1,7 @@
 'use client';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // SAML SSO config on the Settings tab. The Supabase auth.sso_providers
 // row is created out-of-band (Studio or auth admin API) — admins paste
@@ -18,7 +20,6 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
 import { useMemo, useState, useSyncExternalStore } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -237,9 +238,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
             // New providers go through the guided setup wizard (per-IdP
             // steps + inline import) instead of the bare dialog.
             <Button asChild size="sm" variant="secondary" className="shrink-0">
-              <Link href={`/accounts/${accountId}/sso-setup`}>
+              <HubLink to={hubTarget(accountId, { tab: 'identity', setup: 'sso' })}>
                 {tI18nComplete.raw('text6defafa2caa6')}
-              </Link>
+              </HubLink>
             </Button>
           ))}
       </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { hubTarget } from '@/stores/account-panel-store';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
@@ -9,6 +10,7 @@ import { usePathname } from 'next/navigation';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -113,24 +115,27 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
   if (!accountId) return null;
 
   return (
-    <Link
+    <HubLink
       /* `from=customize` is what earns the project panel a "Back to Customize"
          breadcrumb instead of the hub's own "All projects". This link is the
          ONLY way that marker gets set, so the panel can rely on there being a
-         Customize entry in history to go back to. */
-      href={`/accounts/${accountId}?tab=access-projects&project=${projectId}&from=customize`}
-      /* `prefetch={false}` disabled every prefetch path, not just the viewport
-         one: `next/dist/client/app-dir/link.js:108` derives `prefetchEnabled`
-         from it, and both `onMouseEnter` and `onTouchStart` return early when
-         it is off. The segment cache was therefore empty at click time and the
-         click ran the RSC fetch cold — the fetch that degrades into a full
-         document load on an auth bounce, a build-id skew, or a network blip. */
-      prefetch
+         Customize entry in history to go back to.
+
+         The hub opens as a modal over this very page now, which is most of
+         what that marker was compensating for. The history entry it relies on
+         is still exactly one — the one the modal pushes — so
+         `BackToCustomizeOverlay`'s `router.back()` lands on the Customize tab
+         the person left, same as before. */
+      to={hubTarget(accountId, {
+        tab: 'access-projects',
+        project: projectId,
+        from: 'customize',
+      })}
       className="text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors"
     >
       {tI18nComplete.raw('text1044a4c056d0')}
       <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
-    </Link>
+    </HubLink>
   );
 }
 

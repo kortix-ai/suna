@@ -53,6 +53,8 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -549,10 +551,10 @@ export function CreditsView({
             <div className="flex items-center justify-between gap-4">
               <p className="text-muted-foreground min-w-0 text-xs">{t('historyDescription')}</p>
               <Button asChild size="sm" variant="outline" className="shrink-0 gap-1.5">
-                <Link href={`/accounts/${accountId}?tab=transactions`}>
+                <HubLink to={hubTarget(accountId, { tab: 'transactions' })}>
                   <ReceiptIcon className="size-3.5 shrink-0" />
                   {t('openLedger')}
-                </Link>
+                </HubLink>
               </Button>
             </div>
           </div>

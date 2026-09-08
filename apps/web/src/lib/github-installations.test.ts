@@ -28,7 +28,7 @@ describe('GitHub account connection surfaces', () => {
   // assertion to move to, so they are gone, not adapted. The remaining test
   // below is independent of the deleted file.
   const accountPageSource = readFileSync(
-    join(import.meta.dir, '../app/(app)/accounts/[id]/page.tsx'),
+    join(import.meta.dir, '../features/accounts/hub/account-hub-content.tsx'),
     'utf8',
   );
 
