@@ -1,3 +1,5 @@
+import { cellRuntimeFromSandboxMetadata } from '../cell-runtime-detect';
+import { cellSessionEnv } from './cell-session-env';
 import { envPushUrl } from './env-push-url';
 import { createHash } from 'node:crypto';
 import { projectSessions, projects, sessionEnvironments, sessionSandboxes } from '@kortix/db';
@@ -604,6 +606,76 @@ async function postEnvToDaemon(args: {
   };
 }
 
+/**
+ * A CELL RE-TOLD WHO IT IS, BEFORE EVERY PROMPT.
+ *
+ * Deliberately OUTSIDE the snapshot-changed check below: that asks whether the
+ * PROJECT'S SECRETS moved, and a cell loses its own configuration for reasons
+ * that have nothing to do with secrets — a restart drops the create body's
+ * CELLD_VAR_* and Platinum's `sandbox.start` does not replace them. Gating the
+ * repair on a secrets diff would leave exactly the broken case unrepaired.
+ *
+ * Best-effort by construction: a failure here must never block a prompt, and
+ * the cell keeps whatever it already had.
+ */
+const cellRuntimeByExternalId = new Map<string, boolean>();
+
+async function isCellSandbox(externalId: string): Promise<boolean> {
+  const hit = cellRuntimeByExternalId.get(externalId);
+  if (hit !== undefined) return hit;
+  try {
+    const [row] = await db
+      .select({ metadata: sessionSandboxes.metadata })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.externalId, externalId))
+      .limit(1);
+    const isCell = cellRuntimeFromSandboxMetadata(row?.metadata) === 'cell';
+    cellRuntimeByExternalId.set(externalId, isCell);
+    return isCell;
+  } catch {
+    return false;
+  }
+}
+
+export async function repairCellSessionEnv(args: {
+  projectId: string;
+  sessionId: string;
+  externalId: string;
+  serviceKey: string | null;
+  previewUrl: string;
+  providerHeaders: Record<string, string>;
+  llmBaseUrl?: string | null;
+}): Promise<void> {
+  try {
+    if (!(await isCellSandbox(args.externalId))) return;
+    const env = cellSessionEnv({
+      sessionId: args.sessionId,
+      projectId: args.projectId,
+      apiUrl: `${(config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`,
+      serviceKey: args.serviceKey,
+      llmBaseUrl: args.llmBaseUrl,
+    });
+    const res = await fetch(envPushUrl(args.previewUrl, args.sessionId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${args.serviceKey ?? ''}`,
+        ...args.providerHeaders,
+      },
+      body: JSON.stringify({ env }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      console.warn(`[cell-env] repair for ${args.sessionId} answered ${res.status}`);
+    }
+  } catch (err) {
+    console.warn(
+      `[cell-env] repair for ${args.sessionId} failed:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 export async function syncSandboxEnvForPrompt(args: {
   projectId: string;
   sessionId: string;
@@ -744,6 +816,17 @@ export async function syncSandboxEnvForPrompt(args: {
     // nothing to say, and the daemon would no-op it. Skip the round-trip.
     await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
     lap('mark');
+    // A cell can lose its own configuration without any secret changing.
+    await repairCellSessionEnv({
+      projectId: args.projectId,
+      sessionId: args.sessionId,
+      externalId: args.externalId,
+      serviceKey: args.serviceKey,
+      previewUrl: args.previewUrl,
+      providerHeaders: args.providerHeaders,
+      llmBaseUrl: llmGatewayBaseUrl,
+    });
+    lap('cell-env');
     console.log(
       `[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`,
     );
@@ -759,6 +842,15 @@ export async function syncSandboxEnvForPrompt(args: {
     opencodeEnv: args.opencodeEnv,
     llmGatewayEnabled,
     llmGatewayBaseUrl,
+  });
+  await repairCellSessionEnv({
+    projectId: args.projectId,
+    sessionId: args.sessionId,
+    externalId: args.externalId,
+    serviceKey: args.serviceKey,
+    previewUrl: args.previewUrl,
+    providerHeaders: args.providerHeaders,
+    llmBaseUrl: llmGatewayBaseUrl,
   });
   // Remember only AFTER a successful push. A throw below (network/HTTP
   // failure) must leave the memo alone so the next prompt retries with

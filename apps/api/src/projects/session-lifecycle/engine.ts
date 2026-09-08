@@ -24,7 +24,7 @@ import {
   sandboxBelongsToThisInstance,
   sandboxInstanceId,
 } from '../instance-scope';
-import { syncSessionRuntimesEnvForPrompt } from '../lib/sandbox-env-sync';
+import { repairCellSessionEnv, syncSessionRuntimesEnvForPrompt } from '../lib/sandbox-env-sync';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { createProjectSession } from '../lib/sessions';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
@@ -480,6 +480,20 @@ export async function continueSession(
   const awake = await awakeDeliveryTarget(sessionId);
   if (awake && !command.opencodeEnv) {
     tl?.mark('open-ready-fast');
+    // A CELL THAT IS AWAKE CAN STILL HAVE FORGOTTEN WHO IT IS. This fast path
+    // skips the env sync below, which is right for a daemon — its environment
+    // is process state that outlives nothing but the box. A cell's is not: a
+    // restart drops the create body's CELLD_VAR_*, so an awake, healthy-looking
+    // cell may hold no token and no model and answer from its scripted
+    // fixture. Cheap, idempotent, and never allowed to block the prompt.
+    void repairCellSessionEnv({
+      projectId: session.projectId,
+      sessionId,
+      externalId: awake.externalId,
+      serviceKey: await serviceKeyForExternalId(awake.externalId).catch(() => null),
+      previewUrl: (await resolveSandboxIngress(awake.externalId, { port: DAEMON_PORT, transport: 'http' }).catch(() => null))?.url ?? '',
+      providerHeaders: {},
+    }).catch(() => {});
     return deliverWithRetry({
       sessionId,
       opened: awake,
