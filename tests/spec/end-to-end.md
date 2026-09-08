@@ -993,3 +993,20 @@ These 378 route loads must return a document below `400`, retain the matching
 HTML language, avoid corrupt Unicode, render visible content, and include a
 catalog value for the selected locale. Authenticated routes must not redirect to
 `/auth`.
+
+## 31. Desktop UI parity
+
+Playwright journey `27-desktop-parity.spec.ts` signs in a real user and creates a
+manifest-backed project. It runs against web and the desktop frontend in the
+browser lane. `E2E_DESKTOP_NATIVE=1` runs the same journey in the Electron shell.
+
+The workspace selector and fullscreen settings back button must clear native
+window controls. Download app appears only on web. All six settings tabs and
+all eleven agent sections must select and render their panes without overlapping
+navigation rows. Connector navigation must load its route, receive a successful
+GET, and select the Connected filter. Light and dark settings retain row geometry.
+
+At 720 × 480, the sidebar opener must remain reachable and open the workspace
+selector. The Settings capability tab must scroll into view and load its route.
+Native zoom-in and reset shortcuts must change and restore the zoom factor;
+the workspace selector must remain clickable afterward.
