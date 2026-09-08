@@ -6,6 +6,8 @@ Uploads currently start at Send. Pasting, dropping, or selecting a file must sta
 
 Use project-scoped private storage behind the authenticated API. Keep upload transport and state in `@kortix/sdk`. The composer displays that state. Both first prompts and running-session prompts submit attachment identifiers, not file bodies. Do not merge `main` without explicit approval.
 
+Preview ingress probe accepts 96 KiB but times out at 124 KiB and above. Upload through a metadata-init request, sequential 64 KiB raw chunk requests, and an idempotent completion request. Keep chunks in private storage so requests can hit different API replicas. Report acknowledged-byte progress. Failed chunk retries use the same attachment ID and index.
+
 ## Contract
 
 - Shared limits: 50 MiB per file, 100 MiB per message, 20 files. Enforce actual received bytes on the server and validate authoritative stored sizes at Send.
