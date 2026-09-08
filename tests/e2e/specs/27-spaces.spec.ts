@@ -27,7 +27,6 @@ interface AccountSummary {
 interface Space {
   slug: string;
   name: string;
-  instructions: string | null;
   sessions: 'private' | 'shared';
 }
 
@@ -42,11 +41,15 @@ interface SpacesResponse {
  * own (those live in `tests/src/flows/spaces.flow.ts`):
  *
  *  1. The sidebar `+` creates a space and lands on its page.
- *  2. The page's three rail cards render.
- *  3. Editing the instructions PATCHes the space and the API agrees.
+ *  2. That page is ONE column — heading, composer, recents — and the rail
+ *     of Instructions/Context/Triggers cards is gone (2026-09-07).
+ *  3. Changing session visibility PATCHes the space and the API agrees.
  *  4. A send in the page's composer carries `space` in the create body.
  *  5. A project member with no grant sees no sidebar entry and cannot open
  *     the page.
+ *
+ * Spaces is behind the `spaces` feature flag, off by default, so setup turns
+ * it on for the project before the browser sees any of it.
  *
  * **Why (4) asserts the request, not a session.** The deterministic local
  * profile has no sandbox provider, so `POST /projects/:id/sessions` cannot
@@ -60,7 +63,7 @@ interface SpacesResponse {
  * cannot reach answers 502 rather than 201.
  */
 test.describe('27 — Spaces', () => {
-  test('create from the sidebar, edit the instructions, and send into the space', async ({
+  test('create from the sidebar, change its session visibility, and send into the space', async ({
     page,
   }) => {
     test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
@@ -94,6 +97,16 @@ test.describe('27 — Spaces', () => {
         databaseUrl: databaseUrl!,
       });
       projectId = project.id;
+
+      // Spaces is behind the `spaces` flag, off by default (2026-09-08).
+      // Enable it before the UI is driven: with it off the sidebar group,
+      // the composer tray and the space page are all absent by design, and
+      // every /spaces route answers 403 `feature_disabled`. `19-feature-flags-ui`
+      // owns proving the toggle itself; this spec needs the surface present.
+      await api(session.access_token, 'PATCH', `/projects/${projectId}/experimental`, {
+        feature: 'spaces',
+        enabled: true,
+      });
 
       await installBrowserSessionDirect(page, session, `/projects/${projectId}`, authOptions);
       await selectAccountForUi(page, accountId);
@@ -133,13 +146,13 @@ test.describe('27 — Spaces', () => {
       await expect(
         page.getByRole('button', { name: 'Select space', exact: true }),
       ).toContainText('Marketing');
-      // What the space owns is a panel beside the composer (user,
-      // 2026-09-06): one section each, opened from its title.
-      const instructionsRow = page.getByRole('button', { name: 'Instructions', exact: true });
-      await expect(instructionsRow).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Context', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Triggers', exact: true })).toBeVisible();
-      await expect(page.getByText('Files the agent reads first.', { exact: true })).toBeVisible();
+      // ONE COLUMN (user, 2026-09-07): heading, composer, recents. The panel
+      // that used to sit beside the composer — Instructions, Context,
+      // Triggers — went with the fields it edited, so its absence is the
+      // assertion now.
+      await expect(page.getByRole('button', { name: 'Instructions', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Context', exact: true })).toHaveCount(0);
+      await expect(page.getByText('Recents', { exact: true })).toBeVisible();
 
       // The sidebar picked up the new row without a reload.
       await expect(
@@ -157,7 +170,11 @@ test.describe('27 — Spaces', () => {
       expect(file.content).toContain('marketing:');
       expect(file.content).toContain('name: Marketing');
 
-      // ── 3. Editing the instructions PATCHes ───────────────────────────
+      // ── 3. Changing session visibility PATCHes ────────────────────────
+      // `instructions` was the edit this step used to make; it was dropped on
+      // 2026-09-07. `sessions: private | shared` is the field the page still
+      // edits, from the ⋯ menu, and it exercises the same contract: one PATCH,
+      // persisted, read back from the API rather than from the re-render.
       const patchBodies: Record<string, unknown>[] = [];
       page.on('request', (request) => {
         if (
@@ -172,16 +189,11 @@ test.describe('27 — Spaces', () => {
         }
       });
 
-      const instructions = 'Always write in British English.';
-      // The editor lives inside the Instructions section: open it first. Its
-      // textarea carries `aria-label="Instructions"`; Save only exists while
-      // the draft differs from what is saved.
-      await instructionsRow.click();
-      await page.getByRole('textbox', { name: 'Instructions', exact: true }).fill(instructions);
-      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.getByRole('button', { name: 'Space actions', exact: true }).click();
+      await page.getByRole('menuitemradio', { name: 'Everyone granted this space' }).click();
 
       await expect.poll(() => patchBodies.length, { timeout: 15_000 }).toBeGreaterThan(0);
-      expect(patchBodies[0]).toEqual({ instructions });
+      expect(patchBodies[0]).toEqual({ sessions: 'shared' });
 
       // The API is the source of truth for persistence, not the re-render.
       await expect
@@ -192,11 +204,11 @@ test.describe('27 — Spaces', () => {
               'GET',
               `/projects/${projectId}/spaces`,
             );
-            return listing.spaces.find((s) => s.slug === 'marketing')?.instructions ?? null;
+            return listing.spaces.find((s) => s.slug === 'marketing')?.sessions ?? null;
           },
           { timeout: 20_000 },
         )
-        .toBe(instructions);
+        .toBe('shared');
 
       // ── 4. A send carries `space` in the create body ─────────────
       // Session CREATE cannot boot in the local profile (no sandbox provider),
@@ -307,6 +319,14 @@ test.describe('27 — Spaces', () => {
         databaseUrl: databaseUrl!,
       });
       projectId = project.id;
+
+      // Spaces is flag-gated and off by default (2026-09-08): without this the
+      // create below is 403 `feature_disabled`, and the member would see no
+      // space for the wrong reason.
+      await api(ownerSession.access_token, 'PATCH', `/projects/${projectId}/experimental`, {
+        feature: 'spaces',
+        enabled: true,
+      });
 
       // Declared by the owner, granted to nobody. `object_policies.space`
       // is `closed`, so the member's accessible set is empty — the manager
