@@ -92,7 +92,7 @@ function AttachmentImageTile({
   // Fall back to the named tile — the file is still attached and still sends;
   // only the thumbnail is unavailable.
   if (failed) return <AttachmentTile filename={name} mime={attachmentMime(af)} pending={pending} />;
-  if (!src) return <AttachmentTile filename={name} mime={attachmentMime(af)} pending />;
+  if (!src) return <AttachmentTile filename={name} mime={attachmentMime(af)} pending={pending} />;
   return (
     <AttachmentTile filename={name} mime={attachmentMime(af)} imageSrc={src} pending={pending} />
   );
