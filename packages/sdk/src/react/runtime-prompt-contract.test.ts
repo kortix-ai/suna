@@ -5,7 +5,7 @@ import { normalizeSessionPromptForRuntime } from './runtime-prompt-contract';
 describe('normalizeSessionPromptForRuntime', () => {
   const model = { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-5' };
 
-  test('removes every mutable runtime override from a Pi prompt', () => {
+  test('preserves Pi reasoning while removing stale compiled model, agent, and directory selections', () => {
     expect(
       normalizeSessionPromptForRuntime({
         runtime: 'pi-worker',
@@ -19,7 +19,14 @@ describe('normalizeSessionPromptForRuntime', () => {
       }),
     ).toEqual({
       parts: [{ type: 'text', text: 'continue', id: 'prt_1' }],
+      options: { variant: 'high' },
     });
+  });
+
+  test.each([undefined, {}, { variant: '' }])('omits empty Pi prompt options', (options) => {
+    expect(normalizeSessionPromptForRuntime({
+      runtime: 'pi-worker', parts: [{ type: 'text', text: 'continue' }], options,
+    })).toEqual({ parts: [{ type: 'text', text: 'continue' }] });
   });
 
   test('rejects file and agent parts before a text-only Pi worker receives them', () => {

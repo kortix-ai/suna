@@ -146,6 +146,11 @@ the effort for its selected model and preserves it during question recovery.
 Omit `variant` to use the compiled default. The React composer reasoning
 control remains gated during the Pi rollout.
 
+`useSession().sendParts()` and `useSession().runCommand()` preserve reasoning
+options while omitting stale Pi model and agent selections. A slash command
+uses its request variant, then its compiled command variant, then the agent
+default. Each override lasts for that turn only.
+
 Prompt choice precedence is:
 
 1. The `send()` call.

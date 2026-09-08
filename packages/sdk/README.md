@@ -78,12 +78,15 @@ sends workspace requests to the Pi worker. Project and Git query caches use the
 workspace identity, so replacing an environment cannot reuse another workspace's data.
 
 Pi workers use the agent and model compiled into their artifact. The React
-`useSession().sendParts()` path removes per-prompt model, agent, variant, and
+`useSession().sendParts()` path removes per-prompt model, agent, and
 directory overrides for Pi. It rejects non-text prompt parts before transport.
 OpenCode sessions retain their existing prompt options and attachment contract.
-`useSession().runCommand()` also omits model, agent, and variant selections for
+`useSession().runCommand()` also omits model and agent selections for
 Pi; the command executes with the compiled session configuration. OpenCode
 commands retain their explicit overrides.
+Both React methods preserve a nonempty `variant`. Pi validates it against the
+compiled model. A command request overrides its compiled command variant;
+omitting both uses the agent default. Empty React options preserve the default.
 Hosts must also disable controls for choices their runtime cannot apply.
 
 ## No bundler, no framework

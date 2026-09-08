@@ -2492,6 +2492,8 @@ export async function startWorker(cfg = configFromEnv()) {
               input.agent === effectiveRuntime.agent
             ) continue;
             if (field === 'model' && runtimeModel && input.model === runtimeModel) continue;
+            if (field === 'variant' && typeof input.variant === 'string' &&
+              effectiveRuntime.variants?.includes(input.variant)) continue;
             res.writeHead(409, { 'content-type': 'application/json' }).end(
               JSON.stringify({
                 code: 'PI_COMMAND_RUNTIME_OVERRIDE_UNSUPPORTED',
@@ -2521,8 +2523,14 @@ export async function startWorker(cfg = configFromEnv()) {
             );
             return;
           }
-          const prompt = preparePiCommand(command, argumentsText, effectiveRuntime);
-          const admitted = await admitTurn(prompt, input.messageID as string | undefined);
+          const selectedCommand = {
+            ...command,
+            ...(typeof input.variant === 'string' ? { variant: input.variant } : {}),
+          };
+          const prompt = preparePiCommand(selectedCommand, argumentsText, effectiveRuntime);
+          const admitted = await admitTurn(prompt, input.messageID as string | undefined, {
+            ...(selectedCommand.variant !== undefined ? { variant: selectedCommand.variant } : {}),
+          });
           const completion = await admitted.done;
           if (completion === 'cancelled') {
             res

@@ -58,6 +58,15 @@ describe('preparePiCommand', () => {
     ).toBe('Review current changes');
   });
 
+  test('accepts a compiled command reasoning effort supported by the selected model', () => {
+    expect(preparePiCommand({ ...command, variant: 'high' }, 'changes', {
+      variants: ['none', 'low', 'high'],
+    })).toBe('Review changes');
+    expect(() => preparePiCommand({ ...command, variant: 'max' }, 'changes', {
+      variants: ['none', 'low', 'high'],
+    })).toThrow('variant');
+  });
+
   test.each([
     { agent: 'other', model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' } },
     { agent: 'build', model: { providerID: 'kortix', modelID: 'another-model' } },

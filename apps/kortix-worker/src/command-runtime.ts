@@ -93,8 +93,8 @@ export function preparePiCommand(
   if (command.model !== undefined && (!command.model || command.model !== runtimeModel)) {
     throw new PiCommandUnsupportedError('model overrides', command.name);
   }
-  if (command.variant !== undefined) {
-    throw new PiCommandUnsupportedError('variant overrides', command.name);
+  if (command.variant !== undefined && !runtime.variants?.includes(command.variant)) {
+    throw new PiCommandUnsupportedError('variant unsupported by the selected model', command.name);
   }
   if (command.subtask) throw new PiCommandUnsupportedError('subtask execution', command.name);
 

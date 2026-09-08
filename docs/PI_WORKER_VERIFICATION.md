@@ -561,7 +561,7 @@ behavior. A subprocess test kills a worker during a question, restores `max`,
 executes each workspace action once, sends the next prompt with `none`, and
 compares the complete transcript after another restart. The SDK's direct `send`
 method forwards `variant` and stops injecting stored OpenCode defaults into Pi.
-React composer and command overrides remain gated.
+The React composer control remains gated.
 
 The full worker suite also exposed a status/projection race during outage
 recovery. Two controlled storage tests now block the first read after journal
@@ -601,3 +601,24 @@ focused custom-agent, tool-replay, permission-recovery, and journal tests pass.
 `pnpm exec bun tests/bin/worker-quality.ts` passes: 670 tests across 78 files,
 typecheck, build, and seven bundle/lockdown tests. The two corrected API mock
 files pass three tests with nine assertions. The full local gate is rerunning.
+
+## Command reasoning and React SDK transport — 2026-09-08
+
+Command execution now validates reasoning against the compiled model. Precedence
+is request variant, compiled command variant, then agent default. Admission stores
+the effective value. A turn restores the agent default after completion.
+The React SDK preserves a nonempty reasoning option for prompts and commands.
+It still omits stale model, agent, and directory selections for Pi.
+
+The new command transport tests fail before implementation. All 36 command and
+generation tests pass afterward. The two React regression tests fail before
+implementation; all 75 tests in those files pass afterward. The complete SDK
+suite passes 2,862 tests with zero failures. SDK typecheck and packed-package
+install verification pass. Live command verification is pending deployment.
+
+The updated worker quality gate passes 672 tests, typecheck, build, and seven
+bundle/lockdown tests. The full local rerun passes every lane except package
+quality, which stalls in one API test worker after the artifact null-config
+case. A macOS process sample records the worker consuming a CPU core without
+advancing. The complete artifact test file passes 9/9 in isolation. The stalled
+full run is not passing evidence.

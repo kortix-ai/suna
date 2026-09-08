@@ -63,12 +63,22 @@ test('prompt reasoning overrides last one turn and preserve the compiled default
     .toEqual(['max', 'high', 'none', 'low', 'high']);
 });
 
+test('command reasoning uses the request, then the command default, and preserves the agent default', async () => {
+  const requests = await exercise({ variant: 'low' }, 'openrouter', 'gpt-5.6-luna', {
+    model: 'gpt-5.6-luna', context: 1050000, output: 128000,
+    reasoning: true, reasoningEfforts: ['none', 'low', 'high', 'max'],
+  }, ['max', undefined, 'none', undefined], { variant: 'high' });
+  expect(requests.map(request => request.body.reasoning_effort ?? request.body.reasoning?.effort))
+    .toEqual(['max', 'high', 'none', 'high']);
+});
+
 async function exercise(
   settings: Record<string, unknown>,
   providerId: 'openrouter' | 'anthropic',
   configuredModel?: string,
   modelLimits?: WorkerModelLimits,
   variants: (string | undefined)[] = [undefined, undefined],
+  command?: { variant: string },
 ) {
   const requests: { path: string; body: Record<string, any> }[] = [];
   const modelId =
@@ -144,6 +154,7 @@ async function exercise(
   globals.__KORTIX_COMPILED__ = {
     manifest: { default_agent: 'other' },
     agentConfig: { agent: { selected: settings, other: { temperature: 1.9, top_p: 0.1 } } },
+    ...(command ? { commands: [{ name: 'inspect', template: 'Reply.', source: 'command', hints: [], ...command }] } : {}),
   };
   const worker = await startWorker({
     port: 0,
@@ -168,10 +179,12 @@ async function exercise(
   const sessions = (await (await fetch(base + '/session', { headers })).json()) as { id: string }[];
   const defaultThinking = worker.agent.state.thinkingLevel;
   for (const variant of variants) {
-    const response = await fetch(base + `/session/${sessions[0]!.id}/message`, {
+    const response = await fetch(base + `/session/${sessions[0]!.id}/${command ? 'command' : 'message'}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ variant, parts: [{ type: 'text', text: 'Reply.' }] }),
+      body: JSON.stringify(command
+        ? { variant, command: 'inspect', arguments: '' }
+        : { variant, parts: [{ type: 'text', text: 'Reply.' }] }),
     });
     expect(response.status).toBe(200);
     const message = (await response.json()) as any;
@@ -184,7 +197,7 @@ async function exercise(
   expect(requests).toHaveLength(variants.length);
   const messages = await (await fetch(base + `/session/${sessions[0]!.id}/message`, { headers })).json() as any[];
   expect(messages.filter(message => message.info.role === 'user').map(message => message.info.variant))
-    .toEqual(variants.map(variant => variant ?? (settings.variant || undefined)));
+    .toEqual(variants.map(variant => variant ?? command?.variant ?? (settings.variant || undefined)));
   for (const request of requests) expect(request.body.model).toBe(modelId);
   return requests;
 }

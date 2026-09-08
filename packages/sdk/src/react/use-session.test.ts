@@ -482,14 +482,14 @@ describe('send() supersession: optimistic + server echo → one user message', (
 });
 
 describe('buildSessionCommandInput', () => {
-  test('omits host selections for a Pi command bound to a compiled agent and model', () => {
+  test('preserves reasoning for a Pi command while omitting host agent and model selections', () => {
     expect(
       buildSessionCommandInput('ses_root', 'review', 'src', {
         agent: 'kortix',
         model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
         variant: 'high',
       }, 'pi-worker'),
-    ).toEqual({ sessionId: 'ses_root', command: 'review', args: 'src' });
+    ).toEqual({ sessionId: 'ses_root', command: 'review', args: 'src', variant: 'high' });
   });
 
   test('preserves the command model, agent, and variant overrides', () => {

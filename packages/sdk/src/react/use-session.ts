@@ -631,7 +631,7 @@ export function buildSessionCommandInput(
   options: SessionCommandOptions = {},
   runtime: 'pi-worker' | 'opencode' = 'opencode',
 ) {
-  const selection = runtime === 'pi-worker' ? {} : options;
+  const selection = runtime === 'pi-worker' ? { variant: options.variant } : options;
   return {
     sessionId,
     command,

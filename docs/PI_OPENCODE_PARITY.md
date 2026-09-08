@@ -69,7 +69,7 @@ extensions. The native Pi lifecycle surface is documented in
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
 | MCP configuration | No native Pi MCP loader | Governed compiled config, remote/stdio execution placement, authorization, cancellation, and discovery |
 | Live model and agent switching | Config is fixed; API and host controls reject unsupported changes | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
-| Reasoning variants | Compiled defaults and per-prompt HTTP/SDK `send` options validate against model support and survive question recovery | Live preview proof, command overrides, and React composer controls |
+| Reasoning variants | Compiled defaults, prompt/command overrides, and shared SDK paths validate against model support; settings survive question recovery | Complete live preview proof and enable React composer controls from worker capabilities |
 | Structured output | Unsupported prompt fields fail validation | Provider mapping, validation, durable options, and host controls |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |

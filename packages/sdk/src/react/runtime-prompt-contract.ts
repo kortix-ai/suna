@@ -18,7 +18,8 @@ export interface NormalizedRuntimePrompt {
  *
  * A host can render stale model, agent, or attachment state while a session is
  * starting. Pi runs the model and agent compiled into its immutable bundle, so
- * the SDK removes mutable overrides and refuses non-text parts before transport.
+ * the SDK removes model/agent overrides and refuses non-text parts before transport.
+ * Reasoning remains a per-prompt setting validated by the selected worker model.
  */
 export function normalizeSessionPromptForRuntime(
   input: RuntimePromptInput,
@@ -34,5 +35,8 @@ export function normalizeSessionPromptForRuntime(
     throw new Error('Pi worker prompts accept text parts only');
   }
 
-  return { parts: input.parts };
+  return {
+    parts: input.parts,
+    ...(input.options?.variant ? { options: { variant: input.options.variant } } : {}),
+  };
 }
