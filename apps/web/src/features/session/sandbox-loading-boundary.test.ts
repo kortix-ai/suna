@@ -19,6 +19,10 @@ const setupChecklistSource = readFileSync(
   join(import.meta.dir, '../workspace/project-layout/home/setup-checklist.tsx'),
   'utf8',
 );
+const projectPendingSource = readFileSync(
+  join(import.meta.dir, '../../components/projects/project-pending-screen.tsx'),
+  'utf8',
+);
 
 describe('session navigation loading boundaries', () => {
   test('runtime-not-ready retries never render the full-page ASCII logo', () => {
@@ -39,15 +43,29 @@ describe('session navigation loading boundaries', () => {
     // must stay invisible, but the very FIRST project fetch owns the whole
     // viewport, so it has to show something rather than a blank screen.
     expect(projectAccessSource).toContain('if (!authReady || query.isPending)');
-    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
+    expect(projectAccessSource).toContain('<ProjectPendingScreen />');
     expect(projectAccessSource).not.toMatch(/query\.isPending\)\s*return null/);
+  });
+
+  test('the first-fetch loader is the brand mark, not the auth spinner', () => {
+    // This frame is what a hard refresh of /projects/<id> and of every session
+    // route shows, so it is the most-seen loading surface in the product. It
+    // used to be AuthPendingScreen — the consent flows' spinner on an empty
+    // field. Paired assertions: the old frame is gone AND the mark is there,
+    // because an absence-only test passes on a version that renders nothing.
+    expect(projectAccessSource).not.toContain('<AuthPendingScreen');
+    expect(projectPendingSource).toContain('<KortixLogo');
+    expect(projectPendingSource).toContain("variant=\"icon\"");
   });
 
   test('the first-fetch loader carries no legal footer', () => {
     // It resolves into the project shell, which has no footer of its own, so a
     // pinned Terms/Privacy line would flash once per project open and vanish.
-    // The gate screens below it keep theirs — they are terminal pages.
-    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
+    // The footer is now impossible rather than switched off: the frame is its
+    // own component and never mounts the auth shell. The gate screens below it
+    // keep theirs — they are terminal, and there they are the whole page.
+    expect(projectPendingSource).not.toContain('AuthFrame');
+    expect(projectPendingSource).not.toContain('AuthLegalFooter');
     expect(projectAccessSource).toContain('<AuthFrame>');
   });
 
