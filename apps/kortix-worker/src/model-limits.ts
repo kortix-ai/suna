@@ -3,6 +3,7 @@ export interface WorkerModelLimits {
   context: number;
   output: number;
   reasoning?: boolean;
+  images?: boolean;
   reasoningEfforts?: string[];
 }
 
@@ -22,6 +23,7 @@ export function parseWorkerModelLimits(raw: string | undefined): WorkerModelLimi
     value.reasoningEfforts.some(effort => !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) ||
     (value.reasoningEfforts.length > 0 && value.reasoning !== true)
   )) throw new Error('Invalid model reasoning efforts');
+  if (value.images !== undefined && typeof value.images !== 'boolean') throw new Error('Invalid model image capability metadata');
   return value;
 }
 

@@ -1,3 +1,4 @@
+import { AttachmentInputError, SessionAttachmentStore, attachmentDigest, attachmentUserContent, type PromptAttachment } from './session-attachments.ts';
 import { parseWorkerModelLimits, type WorkerModelLimits } from './model-limits';
 import { installCustomAgent } from './custom-agent.ts';
 import { applyGenerationSettings, applyReasoningVariant, supportedReasoningVariants } from './generation-settings.ts';
@@ -256,6 +257,10 @@ export function terminalAgentStatus(messages: readonly unknown[]): 'idle' | 'err
       : 'idle';
   }
   return 'idle';
+}
+
+class TurnAdmissionStoppedError extends Error {
+  constructor() { super("message was stopped before acceptance"); }
 }
 
 class TurnAdmissionConflictError extends Error {
@@ -613,6 +618,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     if (cfg.modelLimits) {
       if (cfg.modelLimits.model !== model.id) throw new Error('Model limits do not match the selected model');
       model = { ...model, contextWindow: cfg.modelLimits.context, maxTokens: cfg.modelLimits.output };
+      if (cfg.modelLimits.images !== undefined) model.input = cfg.modelLimits.images ? ['text', 'image'] : ['text'];
       if (cfg.modelLimits.reasoning !== undefined) model.reasoning = cfg.modelLimits.reasoning;
       if (cfg.modelLimits.reasoningEfforts !== undefined) {
         model.thinkingLevelMap = Object.fromEntries(
@@ -631,6 +637,7 @@ export async function buildHarness(cfg: WorkerConfig) {
   // Durable transcript. The worker is a cache of it, not its owner: kill this
   // process and the conversation is still whole in the store.
   let session: Session | undefined;
+  const attachments = new SessionAttachmentStore(cfg.storeUrl, cfg.sessionId, cfg.storeHeaders ?? {});
   let sessionLog: RemoteSessionLog | undefined;
   let durableSessionLog: SessionLog | undefined;
   let turnJournalRef: TurnAdmissionJournal | null = null;
@@ -835,7 +842,8 @@ export async function buildHarness(cfg: WorkerConfig) {
       if (!user) {
         user = {
           role: 'user',
-          content: [{ type: 'text', text: admission.text }],
+          content: attachmentUserContent(admission.text, admission.options.files),
+          ...(admission.options.files ? { kortixWireUserParts: admission.wireUserMessage.parts } : {}),
           timestamp: Number(
             (admission.wireUserMessage.info.time as { created?: unknown } | undefined)?.created ??
               Date.now(),
@@ -897,7 +905,8 @@ export async function buildHarness(cfg: WorkerConfig) {
           await reloadDurableSession();
           user = {
             role: 'user',
-            content: [{ type: 'text', text: admission.text }],
+            content: attachmentUserContent(admission.text, admission.options.files),
+            ...(admission.options.files ? { kortixWireUserParts: admission.wireUserMessage.parts } : {}),
             timestamp: Number(
               (admission.wireUserMessage.info.time as { created?: unknown } | undefined)?.created ??
                 Date.now(),
@@ -1044,7 +1053,7 @@ export async function buildHarness(cfg: WorkerConfig) {
   const setToolRoundCompaction = (handler: NonNullable<typeof toolRoundCompaction>) => {
     toolRoundCompaction = handler;
   };
-  agent.convertToLlm = convertToLlm;
+  agent.convertToLlm = async messages => convertToLlm(await attachments.hydrate(messages, agent.signal));
   agent.transformContext = async (messages, signal) => {
     let context = compactedModelContext(messages, restoredBranchEntries);
     const latest = context.at(-1);
@@ -1282,6 +1291,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     compactContext,
     setToolRoundCompaction,
     structuredOutput,
+    attachments,
     needsContextCompaction: (incoming: any) => !!session && contextNeedsCompaction(
       compactedModelContext(agent.state.messages, restoredBranchEntries), incoming,
       model, agent.state.systemPrompt, agent.state.tools,
@@ -1329,6 +1339,7 @@ export async function startWorker(cfg = configFromEnv()) {
     compactContext,
     setToolRoundCompaction,
     structuredOutput,
+    attachments,
     needsContextCompaction,
     setToolReplayEventHandler,
     turnJournal,
@@ -1393,6 +1404,7 @@ export async function startWorker(cfg = configFromEnv()) {
   let deleteAdmittedTurn:
     | ((messageId: string) => Promise<'deleted' | 'running' | 'missing'>)
     | null = null;
+  let stopPendingAdmissions = async (): Promise<void> => {};
   let surface!: RuntimeSurface;
   let recoveryProjectionCount = 0;
   let recoveryProjectionPending = false;
@@ -1476,6 +1488,7 @@ export async function startWorker(cfg = configFromEnv()) {
     defaultModel: runtimeModel,
     resolvedModel: effectiveRuntime.model ?? resolvedModel,
     reasoningVariants: effectiveRuntime.variants,
+    imageAttachments: !!agent.state.model?.input.includes("image"),
     workspace: cfg.envCwd,
     permissions,
     permissionConfig: selectedAgentConfig?.permission,
@@ -1500,6 +1513,7 @@ export async function startWorker(cfg = configFromEnv()) {
     // take down the request — the caller has already decided to stop.
     onAbort: () => {
       return (async () => {
+        await stopPendingAdmissions();
         await turnJournal.refresh();
         let active = turnJournal.oldestNonterminal();
         if (active?.state === 'pending') {
@@ -1765,8 +1779,9 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   };
 
-  type PromptOptions = { system?: string; noReply?: boolean; tools?: Record<string, boolean>; variant?: string; format?: OutputFormat; compaction?: boolean; compactionAuto?: boolean };
+  type PromptOptions = { files?: PromptAttachment[]; system?: string; noReply?: boolean; tools?: Record<string, boolean>; variant?: string; format?: OutputFormat; compaction?: boolean; compactionAuto?: boolean };
   const admissionOptions = (options: PromptOptions): JsonObject => ({
+    ...(options.files?.length ? { files: options.files as unknown as JsonObject[] } : {}),
     ...(effectiveRuntime.agent ? { agent: effectiveRuntime.agent } : {}),
     ...(effectiveRuntime.model ? { model: effectiveRuntime.model } : {}),
     ...(options.system === undefined ? {} : { system: options.system }),
@@ -1969,7 +1984,8 @@ export async function startWorker(cfg = configFromEnv()) {
         );
         const userMessage = {
           role: 'user',
-          content: [{ type: 'text', text: turn.text }],
+          content: attachmentUserContent(turn.text, turn.options.files),
+          ...(turn.options.files ? { kortixWireUserParts: turn.wireUserMessage.parts } : {}),
           timestamp: Number.isFinite(created) ? created : Date.now(),
           // Persisted with Pi's own message entry. The restore projection uses
           // it instead of inventing a different wire id after every restart.
@@ -2236,6 +2252,8 @@ export async function startWorker(cfg = configFromEnv()) {
             sessionID: surface.rootId,
             ...(options.compaction ? { type: 'compaction', auto: options.compactionAuto === true } : { type: 'text', text }),
           },
+          ...(options.files ?? []).map((file, index) => ({ ...file, id: `${messageId}-p${index + 1}`, messageID: messageId, sessionID: surface.rootId,
+            url: `/kortix/part/${surface.rootId}/${messageId}/${messageId}-p${index + 1}` })),
         ],
       },
     };
@@ -2257,7 +2275,9 @@ export async function startWorker(cfg = configFromEnv()) {
     text: string,
     explicitId: string | undefined,
     options: PromptOptions,
+    signal: AbortSignal,
   ): Promise<AdmittedTurn> => {
+    signal.throwIfAborted();
     sessionLog?.assertWritable();
     if (sessionLog) {
       const durable = await turnJournal.refresh();
@@ -2288,6 +2308,12 @@ export async function startWorker(cfg = configFromEnv()) {
       throw new TurnMessageOrderError();
     }
 
+    if (options.files?.length) {
+      if (!agent.state.model?.input.includes('image')) throw new AttachmentInputError('the selected model does not accept image attachments');
+      await attachments.validate(options.files, signal);
+    }
+    signal.throwIfAborted();
+    if (closing) throw new TurnAdmissionStoppedError();
     const admission = makeAdmission(text, explicitId, options);
     let accepted: boolean;
     try {
@@ -2341,19 +2367,31 @@ export async function startWorker(cfg = configFromEnv()) {
     return result;
   };
 
+  const pendingAdmissions = new Set<AbortController>();
+  stopPendingAdmissions = async () => {
+    for (const controller of pendingAdmissions) controller.abort(new TurnAdmissionStoppedError());
+    await admissionMutationTail;
+  };
+  const prepareAdmission = (text: string, explicitId: string | undefined, options: PromptOptions) => {
+    const controller = new AbortController();
+    pendingAdmissions.add(controller);
+    return serializeAdmission(() => admitTurnCore(text, explicitId, options, controller.signal))
+      .finally(() => pendingAdmissions.delete(controller));
+  };
+
   const admitTurn = async (
     text: string,
     explicitId?: string,
     options: PromptOptions = {},
   ): Promise<AdmittedTurn> => {
-    if (!explicitId) return serializeAdmission(() => admitTurnCore(text, undefined, options));
+    if (!explicitId) return prepareAdmission(text, undefined, options);
     const active = admissionFlights.get(explicitId);
     if (active) {
       const admitted = await active;
       assertSameAdmission(admitted.admission, text, options);
       return admitted;
     }
-    const operation = serializeAdmission(() => admitTurnCore(text, explicitId, options));
+    const operation = prepareAdmission(text, explicitId, options);
     admissionFlights.set(explicitId, operation);
     try {
       return await operation;
@@ -2415,6 +2453,20 @@ export async function startWorker(cfg = configFromEnv()) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (sessionLog) res.setHeader('x-kortix-prompt-admission', 'durable-message-id-v1');
+    if (url.pathname.startsWith('/kortix/part/') && req.method === 'GET') {
+      if (!surface.authorize(req, url)) { res.writeHead(401).end(); return; }
+      const match = url.pathname.match(/^\/kortix\/part\/([^/]+)\/([^/]+)\/([^/]+)$/);
+      const admission = match && match[1] === surface.rootId ? turnJournal.admission(match[2]!) : null;
+      const index = admission?.wireUserMessage.parts.findIndex(part => part.id === match?.[3]) ?? -1;
+      const file = index > 0 ? (admission?.options.files as unknown as PromptAttachment[] | undefined)?.[index - 1] : undefined;
+      if (!file || !surface.transcript.messageById(match![2]!)) { res.writeHead(404).end(); return; }
+      try {
+        const bytes = await attachments.read(file);
+        res.writeHead(200, { 'content-type': file.mime, 'content-length': String(bytes.length), 'cache-control': 'private, max-age=31536000, immutable', 'x-content-type-options': 'nosniff', etag: `"${attachmentDigest(file.url)}"`, vary: 'Authorization, Cookie' }).end(bytes);
+      } catch { res.writeHead(503).end(); }
+      return;
+    }
+
 
     if (url.pathname.startsWith('/kortix/opencode/')) {
       if (surface.handle(req, res, url)) return;
@@ -2632,7 +2684,7 @@ export async function startWorker(cfg = configFromEnv()) {
         } catch (error) {
           const unsupported = error instanceof PiCommandUnsupportedError;
           const conflict =
-            error instanceof TurnAdmissionConflictError || error instanceof TurnMessageOrderError;
+            error instanceof TurnAdmissionConflictError || error instanceof TurnMessageOrderError || error instanceof TurnAdmissionStoppedError;
           const tooLarge =
             error instanceof RequestBodyTooLargeError || error instanceof SessionLogItemTooLargeError;
           const invalid =
@@ -2755,6 +2807,7 @@ export async function startWorker(cfg = configFromEnv()) {
               tools: parsed.value.tools,
               variant: parsed.value.variant,
               format: parsed.value.format,
+              files: parsed.value.files,
             });
             if (admitted.state === 'cancelled') {
               res.writeHead(409, { 'content-type': 'application/json' }).end(
@@ -2817,10 +2870,10 @@ export async function startWorker(cfg = configFromEnv()) {
             }).end(JSON.stringify(last));
           } catch (error) {
             const conflict =
-              error instanceof TurnAdmissionConflictError || error instanceof TurnMessageOrderError;
+              error instanceof TurnAdmissionConflictError || error instanceof TurnMessageOrderError || error instanceof TurnAdmissionStoppedError;
             const tooLarge = error instanceof SessionLogItemTooLargeError;
             res
-              .writeHead(conflict ? 409 : tooLarge ? 413 : 503, {
+              .writeHead(error instanceof AttachmentInputError ? 400 : conflict ? 409 : tooLarge ? 413 : 503, {
                 'content-type': 'application/json',
               })
               .end(
@@ -3147,6 +3200,7 @@ export async function startWorker(cfg = configFromEnv()) {
           .end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
+      await stopPendingAdmissions();
       agent.abort();
       try {
         await env.waitForAbortSettled();
@@ -3190,6 +3244,7 @@ export async function startWorker(cfg = configFromEnv()) {
     port,
     close: async () => {
       closing = true;
+      await stopPendingAdmissions();
       for (const timer of admissionRetries.values()) clearTimeout(timer);
       admissionRetries.clear();
       relayDrain.close();

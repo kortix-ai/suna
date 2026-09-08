@@ -946,6 +946,48 @@ SDK, worker quality, browser, route coverage, runner, and worktree checks. The
 package lane catches two missing generated audit-registry entries. Regenerating
 the registry adds exactly the GET and PUT attachment routes. Its focused suite
 passes `44 tests / 2,113 assertions`; ESLint reports no errors. The package lane
-is rerun after this correction. SDK typecheck, the full SDK suite, and packed
+is rerun after this correction, but a Bun CLI test worker stalls and is terminated.
+The exact CLI/daemon child command then passes 1,257 CLI and 1,185 daemon tests.
+The stalled root package run is not counted as a pass. SDK typecheck, the full SDK suite, and packed
 Node installation smoke all pass. No SDK public names are removed; the reviewed
 surface snapshots add only the two attachment methods and their metadata type.
+
+
+The attachment storage checkpoint `00985c4ea694dd55e56992c78f075a5ee394040d`
+deploys successfully in run `34274286991`. Remote Git and API/gateway/frontend
+image tags match that SHA. The public SDK test uploads and downloads 8,192 exact
+binary bytes, retries idempotently, rejects MIME replacement with `409`, rejects
+anonymous access with `401`, and returns `404` in a sibling session. The session
+remains stopped and no environment exists. Evidence:
+`/tmp/pi-attachment-sdk-preview.json` and `/tmp/pi-attachment-deployed-sha.log`.
+
+Native image input follows this storage checkpoint. The worker accepts only
+same-session immutable PNG/JPEG/GIF/WebP references. It verifies hashes and MIME,
+bounds each image at 8 MiB, and bounds each prompt/cache at 16 MiB. Wire history
+holds lazy part URLs. Native journal messages hold references rather than base64.
+Stop cancels pending validation before it can admit a later prompt; its regression
+test fails before the fix and passes afterward.
+
+The real local worker/gateway test uses `gpt-5.6-luna` and an independently rendered
+400-by-240 PNG. The model reads `LIME 731`, identifies a blue circle and orange
+square, and reads the same text after worker replacement. Both provider requests
+contain exactly the fixture's bytes. Wire history is identical after replacement,
+the journal contains no image base64, and environment calls remain zero. The
+temporary gateway key is revoked. Evidence: `/tmp/pi-image-live.json`.
+
+The SDK adds `session.attachments.image` and per-prompt `send(..., { files })`.
+The composer uses the current worker's image capability, not the gateway catalog.
+Images upload through the SDK to session storage; document files retain the
+existing environment upload path. Older worker bundles, text-only models, and
+first-prompt creation screens keep their attachment gate. Native tool-result
+images and remote attachment conversion remain pending.
+
+
+The image checkpoint passes `pnpm test -- --full`: all eight lanes, 402.0 seconds.
+This includes 397 REST/CLI flows, SDK, worker/compiler, browser, package quality,
+route coverage, runner, and worktree checks. The browser lane reports 17 passed
+and two existing skips. CLI reports 1,257 passed; daemon reports 1,185 passed;
+web reports 9,469 passed. SDK typecheck and the packed Node installation smoke
+pass. Standalone frontend `tsc --noEmit` passes; focused ESLint reports zero
+errors and 36 existing warnings. Benchmark:
+`tests/test-results/local/benchmark-1788901485635.json`.

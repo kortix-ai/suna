@@ -108,7 +108,7 @@ describe('parsePromptInput', () => {
   });
 
   test.each(['file', 'agent', 'subtask'])(
-    'rejects unsupported %s parts instead of dropping them',
+    'rejects unsupported or malformed %s parts instead of dropping them',
     (type) => {
       const result = parsePromptInput(
         JSON.stringify({ parts: [{ type, text: 'hidden', url: 'data:text/plain,x' }] }),
@@ -116,7 +116,7 @@ describe('parsePromptInput', () => {
       );
       expect(result).toEqual({
         ok: false,
-        error: `prompt part type "${type}" is not supported by the Pi worker`,
+        error: type === 'file' ? 'file part field "text" is not supported' : `prompt part type "${type}" is not supported by the Pi worker`,
       });
     },
   );

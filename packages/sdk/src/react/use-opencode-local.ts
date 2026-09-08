@@ -13,6 +13,7 @@
 
 import { resolveSessionDisplayModel } from './session-display-model';
 import { sessionReasoningStorageKey, sessionReasoningVariants } from './session-reasoning';
+import { sessionImageAttachmentsEnabled } from './session-image-attachments';
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { featureFlags } from '../core/http/feature-flags';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
@@ -78,6 +79,7 @@ export interface OpenCodeLocalAgent {
 }
 
 export interface OpenCodeLocalModel {
+  imageAttachmentsSupported?: boolean;
   /** Current resolved model (ephemeral override -> agent.model -> fallback) */
   current: FlatModel | undefined;
   /** Current model as ModelKey — for DISPLAY in the picker (the resolved default). */
@@ -738,6 +740,7 @@ export function useOpenCodeLocal({
     },
     model: {
       current: currentModel,
+      imageAttachmentsSupported: sessionImageAttachmentsEnabled(runtime, config),
       currentKey: currentModelKey,
       // The concrete model to send. Callers should send this, not stale storage.
       sendKey: sendModelKey,

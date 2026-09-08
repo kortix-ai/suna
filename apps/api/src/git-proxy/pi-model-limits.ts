@@ -5,6 +5,7 @@ export interface PiModelLimits {
   context: number;
   output: number;
   reasoning?: boolean;
+  images?: boolean;
   reasoningEfforts?: string[];
 }
 
@@ -25,6 +26,7 @@ export function piModelLimits(projectId: string, ref: string | null | undefined)
   return {
     model, context: Math.min(limit.context, limit.input ?? limit.context), output: limit.output,
     reasoning: selected.reasoning === true,
+    images: selected.modalities?.input?.includes('image') ?? selected.attachment === true,
     reasoningEfforts,
   };
 }

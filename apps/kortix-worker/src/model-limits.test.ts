@@ -28,3 +28,8 @@ test('validates serialized server limits without accepting missing or invalid di
     expect(() => parseWorkerModelLimits(JSON.stringify(value))).toThrow();
   }
 });
+
+test('validates image capability metadata before boot', () => {
+  expect(parseWorkerModelLimits(JSON.stringify({ model: 'vision', context: 8192, output: 2048, images: true }))?.images).toBe(true);
+  expect(() => parseWorkerModelLimits(JSON.stringify({ model: 'vision', context: 8192, output: 2048, images: 'yes' }))).toThrow('image');
+});

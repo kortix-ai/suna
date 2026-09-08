@@ -1,3 +1,4 @@
+import type { FilePartInput } from '../../runtime/client';
 import { authenticatedFetch } from "../../http/auth";
 import { platformConfig } from "../../http/config";
 
@@ -86,4 +87,21 @@ export async function getSessionAttachment(
     contentType:
       response.headers.get("content-type") || "application/octet-stream",
   };
+}
+
+
+export async function putSessionImage(
+  projectId: string,
+  sessionId: string,
+  content: Uint8Array,
+  options: { contentType: string; filename?: string; signal?: AbortSignal },
+): Promise<FilePartInput> {
+  const mime = options.contentType.toLowerCase();
+  if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(mime))
+    throw new Error('Pi image attachments require PNG, JPEG, GIF, or WebP');
+  if (options.filename !== undefined && (options.filename.length > 255 || options.filename.includes('\0')))
+    throw new Error('invalid attachment filename');
+  const stored = await putSessionAttachment(projectId, sessionId, content, { contentType: mime, signal: options.signal });
+  return { type: 'file', mime: stored.contentType, url: `kortix-attachment:sha256:${stored.sha256}`,
+    ...(options.filename === undefined ? {} : { filename: options.filename }) };
 }

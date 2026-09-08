@@ -1738,3 +1738,24 @@ test('kortix.iam.can probes one leaf for one principal', async () => {
   expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
   expect(last().url).toContain('action=project.write');
 });
+
+test.each(['pi', 'opencode'])('send forwards file parts once and does not inherit them on the next %s prompt', async engine => {
+  const sessionId = `SESS-IMAGES-${engine}`;
+  const nativeId = `ses_images_${engine}`;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    const body = await request.clone().text();
+    calls.push({ url: request.url, method: request.method, body: body ? JSON.parse(body) : undefined });
+    if (request.url.includes(`/sessions/${sessionId}/start`)) return jsonResponse({ ...sessionStartPayload(`sb-images-${engine}`, nativeId), sandbox: { external_id: `sb-images-${engine}`, metadata: { sandbox_slug: engine === 'pi' ? 'pi-worker' : 'opencode' } } });
+    if (request.url.endsWith(`/sessions/${sessionId}`)) return jsonResponse({ session_id: sessionId, metadata: { sandbox_slug: engine === 'pi' ? 'pi-worker' : 'opencode' } });
+    return jsonResponse({ info: { role: 'assistant' } });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).session('PROJ', sessionId);
+  const file = { type: 'file' as const, mime: 'image/png', filename: 'sample.png', url: engine === 'pi' ? `kortix-attachment:sha256:${'a'.repeat(64)}` : 'data:image/png;base64,AQID' };
+  await handle.send('Describe this image.', { files: [file] });
+  await handle.send('Recall it.');
+  const prompts = calls.filter(call => call.url.endsWith(`/session/${nativeId}/message`) && call.method === 'POST');
+  expect(prompts.map(call => (call.body as { parts: unknown }).parts)).toEqual([
+    [{ type: 'text', text: 'Describe this image.' }, file], [{ type: 'text', text: 'Recall it.' }],
+  ]);
+});

@@ -18,7 +18,7 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  */
 import * as F from '../files/client';
 import { getClient, getClientForUrl } from '../runtime/client';
-import type { OutputFormat } from '../runtime/client';
+import type { FilePartInput, OutputFormat } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
 import * as P from '../rest/projects-client';
@@ -1188,6 +1188,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       transcriptSync: (options?: Parameters<typeof P.getSessionTranscriptSync>[2]) =>
         P.getSessionTranscriptSync(projectId, sessionId, options),
       attachments: {
+        image: (...args: DropFirst2<Parameters<typeof P.putSessionImage>>) =>
+          P.putSessionImage(projectId, sessionId, ...args),
         put: (...args: DropFirst2<Parameters<typeof P.putSessionAttachment>>) =>
           P.putSessionAttachment(projectId, sessionId, ...args),
         get: (...args: DropFirst2<Parameters<typeof P.getSessionAttachment>>) =>
@@ -1291,11 +1293,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         _agent = agent;
       },
       /**
-       * Provision/resume if needed, then send a text prompt to the agent.
+       * Provision/resume if needed, then send text and optional file parts to the agent.
        * Per-call model and agent choices override handle defaults. Pi uses its
        * compiled defaults. A reasoning variant applies only to this prompt.
        */
-      send: async (text: string, opts?: { model?: SessionModel; agent?: string; variant?: string; format?: OutputFormat }) => {
+      send: async (text: string, opts?: { model?: SessionModel; agent?: string; variant?: string; format?: OutputFormat; files?: FilePartInput[] }) => {
         const submissionKey = crypto.randomUUID();
         const { opencodeSessionId, runtimeUrl } = await ensureReady();
         const selectedModel = opts?.model ?? _model;
@@ -1305,7 +1307,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         const agent = selectedAgent ?? persisted.agent;
         return getClientForUrl(runtimeUrl).session.prompt({
           sessionID: opencodeSessionId,
-          parts: [{ type: 'text', text }],
+          parts: [{ type: 'text', text }, ...(opts?.files ?? [])],
           ...(model ? { model } : {}),
           ...(agent ? { agent } : {}),
           ...(opts?.variant === undefined ? {} : { variant: opts.variant }),

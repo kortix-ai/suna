@@ -64,7 +64,7 @@ extensions. The native Pi lifecycle surface is documented in
 
 | Capability | Current behavior | Required work |
 |---|---|---|
-| File/image attachments | Immutable PostgreSQL assets and SDK upload/read are implemented; Pi still rejects non-text prompts and hosts gate uploads | Worker model conversion, image replay, tool images, and UI journeys |
+| File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, and capability-gated existing-session composer | First-prompt creation, remote attachment conversion, tool-result images, and full large-upload provider verification |
 | Provider context-overflow recovery | Threshold compaction runs before new prompts and between tool rounds | Recovery when one input or tool result already exceeds the provider window; full-size preview proof remains blocked by ingress |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |

@@ -625,5 +625,20 @@ a MIME change with `409`. Access uses the session's project permissions; worker
 credentials can access only their own session. Deleting the session removes
 access to its attachments.
 
-This API stores assets. It does not submit them to Pi. Pi composer attachments
-and image replay remain gated while that runtime integration is implemented.
+To submit a Pi image, create its immutable reference and pass it to `send`:
+
+```ts
+const image = await session.attachments.image(bytes, {
+  contentType: 'image/png', filename: 'screenshot.png',
+})
+await session.send('Describe this image.', { files: [image] })
+```
+
+Pi supports PNG, JPEG, GIF, and WebP on image-capable models. Each prompt accepts
+up to 16 images and 16 MiB total. Images load from the same session's storage;
+arbitrary remote URLs and filesystem URLs are rejected. Worker replacement
+preserves the image references and downloads their verified bytes again.
+
+The existing session composer enables uploads when its running worker advertises
+image support. First-prompt creation screens remain gated. Documents retain the
+environment upload path. Native tool-result images are not implemented yet.

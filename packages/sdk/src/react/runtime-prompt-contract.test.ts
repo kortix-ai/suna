@@ -29,20 +29,20 @@ describe('normalizeSessionPromptForRuntime', () => {
     })).toEqual({ parts: [{ type: 'text', text: 'continue' }] });
   });
 
-  test('rejects file and agent parts before a text-only Pi worker receives them', () => {
+  test('rejects unsupported file and agent parts before a Pi worker receives them', () => {
     expect(() =>
       normalizeSessionPromptForRuntime({
         runtime: 'pi-worker',
         parts: [{ type: 'file', mime: 'text/plain', url: 'data:text/plain,hello' }],
       }),
-    ).toThrow('Pi worker prompts accept text parts only');
+    ).toThrow('Pi worker prompts accept text and immutable image attachments only');
 
     expect(() =>
       normalizeSessionPromptForRuntime({
         runtime: 'pi-worker',
         parts: [{ type: 'agent', name: 'review' }],
       }),
-    ).toThrow('Pi worker prompts accept text parts only');
+    ).toThrow('Pi worker prompts accept text and immutable image attachments only');
   });
 
   test('preserves the complete OpenCode prompt contract', () => {
@@ -58,4 +58,11 @@ describe('normalizeSessionPromptForRuntime', () => {
       options,
     });
   });
+});
+
+test('allows immutable Pi image references while keeping compiled selector defaults', () => {
+  const parts = [{ type: 'text' as const, text: 'Describe it.' },
+    { type: 'file' as const, mime: 'image/png', url: `kortix-attachment:sha256:${'a'.repeat(64)}`, filename: 'sample.png' }];
+  expect(normalizeSessionPromptForRuntime({ runtime: 'pi-worker', parts, options: { agent: 'stale', variant: 'high' } }))
+    .toEqual({ parts, options: { variant: 'high' } });
 });

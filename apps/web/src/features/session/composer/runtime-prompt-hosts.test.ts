@@ -15,7 +15,7 @@ const projectIndexPage = source('../../../app/(app)/projects/[id]/page.tsx');
 const projectSessionPage = source('../../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 
 describe('existing project session composer runtime contract', () => {
-  test('locks compiled selectors and attachments until OpenCode is confirmed', () => {
+  test('locks compiled selectors and gates attachments on the running worker capability', () => {
     expect(sessionChat).toContain(
       'onAgentChange={runtimePromptOverridesAllowed ? handleAgentChange : undefined}',
     );
@@ -26,7 +26,9 @@ describe('existing project session composer runtime contract', () => {
     expect(sessionChat).toContain(
       'onVariantChange={runtimeReasoningAllowed ? handleVariantChange : undefined}',
     );
-    expect(sessionChat).toContain('attachmentsEnabled={runtimePromptOverridesAllowed}');
+    expect(sessionChat).toContain('attachmentsEnabled={runtimeAttachmentsAllowed}');
+    expect(sessionChat).toContain('local.model.imageAttachmentsSupported === true');
+    expect(sessionChat).toContain('putSessionImage(projectId!, projectSessionId!');
   });
 
   test('strips stale prompt overrides and refuses file parts before upload', () => {

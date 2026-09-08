@@ -271,25 +271,36 @@ export async function buildPromptPartsWithUploads(
   text: string,
   files: AttachedFile[] | undefined,
   uploadFile: UploadFileForPrompt,
+  uploadImage?: (file: File, mime: string) => Promise<PromptFilePart>,
 ): Promise<{
   text: string;
   remoteParts: PromptFilePart[];
 }> {
   const { localFiles, remoteParts } = splitFiles(files);
+  if (uploadImage && remoteParts.some(part => !/^kortix-attachment:sha256:[a-f0-9]{64}$/.test(part.url))) {
+    throw new Error("Attach a local file in this Pi session");
+  }
   if (localFiles.length === 0) return { text, remoteParts };
 
   // `allSettled`, not `all`: an upload's side effect (bytes on disk) is not
   // undone by its sibling's rejection, so the batch has to account for every
   // outcome rather than abandon the first failure's peers.
   const settled = await Promise.allSettled(
-    localFiles.map((file) => uploadLocalFile(file, uploadFile)),
+    localFiles.map(async (file) => {
+      const mime = attachmentMime(file.file.type, file.file.name);
+      if (uploadImage && mime.startsWith('image/')) {
+        return { image: await uploadImage(file.file, mime) };
+      }
+      return { ref: await uploadLocalFile(file, uploadFile) };
+    }),
   );
 
   const uploaded: UploadedFileRef[] = [];
   const failures: UploadFailure[] = [];
   settled.forEach((result, index) => {
     if (result.status === 'fulfilled') {
-      uploaded.push(result.value);
+      if (result.value.image) remoteParts.push(result.value.image);
+      else if (result.value.ref) uploaded.push(result.value.ref);
       return;
     }
     failures.push({
@@ -302,7 +313,7 @@ export async function buildPromptPartsWithUploads(
 
   const refs = uploaded.map(uploadedFileRefXml).join('\n');
   return {
-    text: `${text}\n\n${refs}`,
+    text: refs ? `${text}\n\n${refs}` : text,
     remoteParts,
   };
 }

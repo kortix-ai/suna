@@ -92,3 +92,14 @@ test("surfaces access and conflict failures without converting them to content",
     kortix.session("project", "session").attachments.put(data),
   ).rejects.toThrow("immutable");
 });
+
+test('uploads a Pi image and returns an immutable prompt part without starting a runtime', async () => {
+  const part = await kortix.session('project', 'session').attachments.image(data, { contentType: 'image/png', filename: 'sample.png' });
+  expect(part).toEqual({ type: 'file', mime: 'image/png', filename: 'sample.png', url: `kortix-attachment:sha256:${digest}` });
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.method).toBe('PUT');
+  for (const options of [{ contentType: 'image/svg+xml' }, { contentType: 'image/png', filename: 'a'.repeat(256) }]) {
+    await expect(kortix.session('project', 'session').attachments.image(data, options)).rejects.toThrow();
+  }
+  expect(calls).toHaveLength(1);
+});

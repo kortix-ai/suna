@@ -21,3 +21,10 @@ test('does not borrow a different model limit for an unknown or absent alias', (
   expect(piModelLimits('project', 'not-a-real-provider/not-a-model')).toBeUndefined();
   expect(piModelLimits('project', null)).toBeUndefined();
 });
+
+test('binds image support to the selected gateway model capabilities', () => {
+  const selected = gatewayModelCatalog('project')['gpt-5.6-luna']!;
+  const images = selected.modalities?.input?.includes('image') ?? selected.attachment === true;
+  expect(images).toBe(true);
+  expect(piModelLimits('project', 'gpt-5.6-luna')?.images).toBe(images);
+});

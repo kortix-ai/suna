@@ -757,5 +757,21 @@ The API stores one immutable value per session and digest. Repeating an upload
 is idempotent. Changing its MIME type returns `409`. Working files remain in
 the environment filesystem.
 
-This storage API does not submit a prompt. Pi composer attachment submission
-and image replay remain unavailable until the worker integration is complete.
+Pi accepts PNG, JPEG, GIF, and WebP images through immutable session references:
+
+```ts
+const image = await session.attachments.image(bytes, {
+  contentType: 'image/png', filename: 'screenshot.png',
+});
+await session.send('Describe this image.', { files: [image] });
+```
+
+`attachments.image` uploads bytes without starting either sandbox. `send` starts
+the Pi worker when needed. Each image is at most 8 MiB; one prompt accepts up to
+16 images and 16 MiB in total. The selected model must support images. Image
+bytes stay out of the worker journal and load again after worker replacement.
+Arbitrary remote URLs and local filesystem URLs are not valid Pi image inputs.
+
+The existing session composer enables image upload when the running worker
+advertises support. First-prompt creation screens remain gated. Documents use
+the existing environment upload path. Native tool-result images remain pending.

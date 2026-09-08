@@ -475,6 +475,7 @@ export interface RuntimeSurfaceOptions {
   defaultModel?: string | null;
   resolvedModel?: { providerID: string; modelID: string };
   reasoningVariants?: readonly string[];
+  imageAttachments?: boolean;
   workspace?: string;
   permissions?: PermissionBroker;
   permissionConfig?: PermissionConfig;
@@ -529,6 +530,7 @@ interface RestoredTranscriptMessage {
   kortixWireCompletedAt?: number;
   kortixWirePartIds?: string[];
   kortixWireTextParts?: DurableWireTextPart[];
+  kortixWireUserParts?: Array<Record<string, unknown>>;
   kortixWireToolStarts?: Record<string, number>;
   kortixWireToolTime?: { start: number; end: number };
   kortixStructured?: unknown;
@@ -722,7 +724,7 @@ export class RuntimeSurface {
           message.stopReason === 'length' ||
           message.stopReason === 'error' ||
           message.stopReason === 'aborted');
-      if (parts.length === 0 && !terminalAssistant) continue;
+      if (parts.length === 0 && !terminalAssistant && !(role === 'user' && message.kortixWireUserParts?.length)) continue;
 
       let id = message.kortixWireMessageId;
       if (id) {
@@ -800,6 +802,10 @@ export class RuntimeSurface {
         },
       });
       if (role === 'user') lastUserId = id;
+      if (role === 'user' && Array.isArray(message.kortixWireUserParts)) {
+        for (const part of message.kortixWireUserParts) this.transcript.apply({ type: 'message.part.updated', properties: { sessionID: this.rootId, part } });
+        continue;
+      }
       const suspended = this.opts.suspendedTools?.().find(question => question.messageId === id);
       const suspendedIndex = suspended
         ? parts.findIndex(part => part.kind === 'tool' && part.call.id === suspended.toolCallId)
@@ -1194,9 +1200,10 @@ export class RuntimeSurface {
 
   private reasoningProviderConfig() {
     const model = this.opts.resolvedModel;
-    if (!model || !this.opts.reasoningVariants) return {};
+    if (!model || (!this.opts.reasoningVariants && this.opts.imageAttachments === undefined)) return {};
     return { provider: { [model.providerID]: { models: { [model.modelID]: {
-      variants: Object.fromEntries(this.opts.reasoningVariants.map(level => [level, {}])),
+      ...(this.opts.reasoningVariants ? { variants: Object.fromEntries(this.opts.reasoningVariants.map(level => [level, {}])) } : {}),
+      ...(this.opts.imageAttachments === undefined ? {} : { attachment: this.opts.imageAttachments }),
     } } } } };
   }
 

@@ -1,3 +1,4 @@
+import { parsePromptAttachment, type PromptAttachment } from './session-attachments.ts';
 import { WIRE_MESSAGE_ID, canMintOrderedReplyAfter } from './wire-message-id.ts';
 import type { OutputFormat } from '@opencode-ai/sdk/v2';
 import { parseOutputFormat } from './structured-output.ts';
@@ -16,6 +17,7 @@ export interface PromptInput {
   tools?: Record<string, boolean>;
   variant?: string;
   format?: OutputFormat;
+  files?: PromptAttachment[];
 }
 
 export type PromptInputResult = { ok: true; value: PromptInput } | { ok: false; error: string };
@@ -133,11 +135,18 @@ export function parsePromptInput(
     return { ok: false, error: 'parts must be a non-empty array' };
   }
   const text: string[] = [];
+  const files: PromptAttachment[] = [];
   for (const rawPart of body.parts) {
     if (!rawPart || typeof rawPart !== 'object' || Array.isArray(rawPart)) {
       return { ok: false, error: 'prompt parts must be objects' };
     }
     const part = rawPart as { type?: unknown; text?: unknown };
+    if (part.type === 'file') {
+      try { files.push(parsePromptAttachment(rawPart as Record<string, unknown>)); }
+      catch (error) { return { ok: false, error: (error as Error).message }; }
+      if (files.length > 16) return { ok: false, error: 'at most 16 image attachments are supported per prompt' };
+      continue;
+    }
     if (part.type !== 'text') {
       const type = typeof part.type === 'string' ? part.type : 'unknown';
       return {
@@ -164,6 +173,7 @@ export function parsePromptInput(
     value: {
       ...(typeof body.messageID === 'string' ? { messageID: body.messageID } : {}),
       text: text.join(''),
+      ...(files.length ? { files } : {}),
       ...(typeof body.system === 'string' ? { system: body.system } : {}),
       ...(typeof body.noReply === 'boolean' ? { noReply: body.noReply } : {}),
       ...(own(body, 'tools') ? { tools: body.tools as Record<string, boolean> } : {}),

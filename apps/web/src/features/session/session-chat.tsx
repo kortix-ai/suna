@@ -14,6 +14,7 @@ import {
   isPiWorkerRuntimeMetadata,
   listSessionPrompts,
   projectSessionConnection,
+  putSessionImage,
   showsGeneratingIndicator,
 } from '@kortix/sdk';
 import { isOptimisticSessionPrompt, useProjectSession } from '@kortix/sdk/react';
@@ -2253,6 +2254,8 @@ export function SessionChat({
     projectRuntimeIdentity: projectSessionRuntimeIdentity,
     sandboxIsPiWorker,
   });
+  const runtimeAttachmentsAllowed = runtimePromptOverridesAllowed ||
+    (!!projectId && !!projectSessionId && local.model.imageAttachmentsSupported === true);
   const runtimeReasoningAllowed = runtimePromptOverridesAllowed ||
     (isPiWorkerSession && local.model.variant.list.length > 0);
   const historyMutationsEnabled =
@@ -3668,7 +3671,7 @@ export function SessionChat({
     ) => {
       setCommandError(null);
       const fileError = runtimePromptFilesError({
-        attachmentsEnabled: runtimePromptOverridesAllowed,
+        attachmentsEnabled: runtimeAttachmentsAllowed,
         attachmentCount: files?.length ?? 0,
       });
       if (fileError) {
@@ -3821,7 +3824,13 @@ export function SessionChat({
       > = [textPrompt];
       let built: Awaited<ReturnType<typeof buildPromptPartsWithUploads>>;
       try {
-        built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile);
+        built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile,
+          isPiWorkerSession ? async (file, mime) => ({
+            ...await putSessionImage(projectId!, projectSessionId!, new Uint8Array(await file.arrayBuffer()), {
+              contentType: mime, filename: file.name,
+            }), filename: file.name,
+          }) : undefined,
+        );
       } catch (err) {
         // Never reached the network — nothing to rehydrate from the server,
         // so just clear busy and drop the optimistic message outright.
@@ -4059,6 +4068,8 @@ export function SessionChat({
       local.model.sendKey,
       local.model.variant.current,
       runtimePromptOverridesAllowed,
+      runtimeAttachmentsAllowed,
+      isPiWorkerSession,
       runtimeReasoningAllowed,
       anchorTurn,
       smoothScrollToAbsoluteBottom,
@@ -5659,7 +5670,7 @@ export function SessionChat({
                 providers={providers}
                 modelRequired={runtimePromptOverridesAllowed}
                 modelsLoading={providersLoading}
-                attachmentsEnabled={runtimePromptOverridesAllowed}
+                attachmentsEnabled={runtimeAttachmentsAllowed}
                 threadContext={threadContext}
                 onContextClick={handleContextClick}
                 onCompactClick={compactSessionId ? handleCompactClick : undefined}
