@@ -221,6 +221,7 @@ for (const runtime of runtimes) {
           await tab.click();
           await expect(tab).toHaveAttribute("aria-selected", "true");
           await expect(dialog.getByRole("tabpanel")).toBeVisible();
+          await expect(dialog.getByRole("tabpanel")).toContainText(/\S/);
         }
         await dialog
           .getByRole("tab", { name: "Appearance", exact: true })
@@ -276,6 +277,7 @@ for (const runtime of runtimes) {
           await tab.click();
           await expect(tab).toHaveAttribute("aria-selected", "true");
           await expect(page.locator("main main")).toBeVisible();
+          await expect(page.locator("main main")).toContainText(/\S/);
         }
         await page.screenshot({
           path: test.info().outputPath("agent-sections.png"),
@@ -284,15 +286,22 @@ for (const runtime of runtimes) {
         const connectors = page
           .getByRole("tab", { name: "Connectors", exact: true })
           .first();
+        await connectors.click();
+        await expect(page).toHaveURL(/\/customize\/connectors/);
+        // A fresh document must also load real data, independent of the agent
+        // editor's cached connector query. Do not accept a Next.js page GET.
         const response = page.waitForResponse(
           (response) =>
-            response.url().includes("/connectors") &&
-            response.request().method() === "GET" &&
-            response.ok(),
+            new URL(response.url()).pathname ===
+              `/v1/connectors/projects/${project!.id}/connectors` &&
+            response.request().method() === "GET",
         );
-        await connectors.click();
-        await response;
-        await expect(page).toHaveURL(/\/customize\/connectors/);
+        await page.reload();
+        const connectorResponse = await response;
+        expect(connectorResponse.status()).toBe(200);
+        expect(await connectorResponse.json()).toMatchObject({
+          connectors: expect.any(Array),
+        });
         await expect(
           page.getByRole("tab", { name: "Connected", exact: true }),
         ).toBeVisible();
