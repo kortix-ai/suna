@@ -6,10 +6,12 @@ import { SessionApprovalPrompt } from '@/features/session/session-approval-promp
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
+import { useTranslations } from '@/i18n/use-translations';
 import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
 import {
   type SandboxLifecycle,
   type SessionPrompt,
+  type SessionPromptPart,
   hasRetryingAssistantTurn,
   listSessionPrompts,
   projectSessionConnection,
@@ -28,7 +30,6 @@ import {
   PlayIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -76,19 +77,18 @@ import { Composer as SessionChatInput } from '@/features/session/composer/compos
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
+import {
+  resolveFirstPromptHandover,
+  transcriptCarriesFirstPrompt,
+} from '@/features/session/first-prompt-handover';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
+import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
 import {
   ConnectProviderDialog,
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
-import {
-  resolveFirstPromptHandover,
-  transcriptCarriesFirstPrompt,
-} from '@/features/session/first-prompt-handover';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '@/features/session/outcomes/session-outcomes-provider';
@@ -105,6 +105,7 @@ import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { useSessionBaseRef } from './session-changes-shared';
 import { resolveEffectiveBusy } from './session-chat-busy';
@@ -3415,10 +3416,7 @@ export function SessionChat({
   // the real bubble with no tiles for those seconds. Until then the preview's
   // file NAMES are handed to the real turn to draw as pending tiles, so the
   // strip never blinks out. See `first-prompt-handover.ts`.
-  const transcriptShowsFirstPrompt = useMemo(
-    () => transcriptCarriesFirstPrompt(turns, 0),
-    [turns],
-  );
+  const transcriptShowsFirstPrompt = useMemo(() => transcriptCarriesFirstPrompt(turns, 0), [turns]);
   const previewAttachmentCount = firstPromptPreview?.files.length ?? 0;
   const transcriptCarriesFirstPromptFiles = useMemo(
     () => transcriptCarriesFirstPrompt(turns, previewAttachmentCount),
@@ -3485,24 +3483,28 @@ export function SessionChat({
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
     if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
-  }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
+  }, [
+    projectSessionId,
+    firstPromptPreview,
+    transcriptCarriesFirstPromptFiles,
+    clearFirstPromptPreview,
+  ]);
 
   /** What the real first turn is handed once the stand-in has stepped aside:
    *  the prompt's text and its files' names, so it keeps drawing the bubble
    *  and the pending tiles through any frame where its own parts are still
    *  streaming. Nothing once the transcript carries the files itself. */
-  const firstTurnHandover = useMemo(
-    (): { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> } | undefined => {
-      if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
-      const attachments = firstPromptSource.files.map((file) =>
-        file.kind === 'local'
-          ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
-          : { filename: file.filename, mime: file.mime },
-      );
-      return { text: firstPromptSource.text, attachments };
-    },
-    [firstPromptSource, handover.handOverToRealTurn],
-  );
+  const firstTurnHandover = useMemo(():
+    | { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> }
+    | undefined => {
+    if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
+    const attachments = firstPromptSource.files.map((file) =>
+      file.kind === 'local'
+        ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
+        : { filename: file.filename, mime: file.mime },
+    );
+    return { text: firstPromptSource.text, attachments };
+  }, [firstPromptSource, handover.handOverToRealTurn]);
 
   /**
    * Which turn, if any, draws the plan.
@@ -3855,6 +3857,7 @@ export function SessionChat({
       rawText: string,
       files?: AttachedFile[],
       mentions?: TrackedMention[],
+      attachmentParts: SessionPromptPart[] = [],
       /**
        * Optional per-call overrides — used by the message queue drain so a
        * queued message uses the agent/model/variant captured at enqueue time
@@ -4024,12 +4027,15 @@ export function SessionChat({
       // Build parts: text first, then upload attached files to /workspace/uploads/
       // and send as XML text references (agent reads from disk on demand, not loaded into context)
       const textPrompt = { id: textPartId, type: 'text' as const, text };
-      const parts: Array<
-        typeof textPrompt | { type: 'file'; mime: string; url: string; filename: string }
-      > = [textPrompt];
+      const parts: SessionPromptPart[] = [textPrompt];
       let built: Awaited<ReturnType<typeof buildPromptPartsWithUploads>>;
       try {
-        built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile);
+        built = await buildPromptPartsWithUploads(
+          textPrompt.text,
+          attachedFiles,
+          uploadFile,
+          attachmentParts,
+        );
       } catch (err) {
         // Never reached the network — nothing to rehydrate from the server,
         // so just clear busy and drop the optimistic message outright.
@@ -4114,6 +4120,7 @@ export function SessionChat({
             type: 'file' as const,
             mime: p.mime,
             url: p.url,
+            attachment_id: p.attachment_id,
             filename: p.filename,
           };
         return { type: 'text' as const, text: p.text };
@@ -5596,7 +5603,9 @@ export function SessionChat({
                                   isFirstTurn={turnIndex === 0}
                                   // Handed over only once the stand-in has stepped
                                   // aside — while it is up it draws these itself.
-                                  pendingText={turnIndex === 0 ? firstTurnHandover?.text : undefined}
+                                  pendingText={
+                                    turnIndex === 0 ? firstTurnHandover?.text : undefined
+                                  }
                                   pendingAttachments={
                                     turnIndex === 0 && firstTurnHandover?.attachments.length
                                       ? firstTurnHandover.attachments
@@ -5766,7 +5775,12 @@ export function SessionChat({
                         (`OptimisticTurn busy`), or the two would stack. */}
                     {isBusy &&
                       !someTurnDrawsBusyRow &&
-                      !(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0) && (
+                      !(
+                        showFirstPromptPreview &&
+                        firstPromptSource &&
+                        queuedMessages.length === 0 &&
+                        turns.length === 0
+                      ) && (
                         <SessionBusyIndicator
                           sessionId={sessionId}
                           // Matches the stand-in's row spacing under a bubble
@@ -5795,7 +5809,7 @@ export function SessionChat({
                   style={{
                     left: `${selectionPopup.x}px`,
                     top: `${selectionPopup.y}px`,
-                    transform: "translate(-50%, -100%)",
+                    transform: 'translate(-50%, -100%)',
                   }}
                 >
                   <Button
@@ -5850,8 +5864,8 @@ export function SessionChat({
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
                 autoFocus={deferComposerFocus ? false : undefined}
-                onSend={async (text, files, mentions) => {
-                  await handleSend(text, files, mentions);
+                onSend={async (text, files, mentions, attachmentParts) => {
+                  await handleSend(text, files, mentions, attachmentParts);
                 }}
                 prefill={composerPrefill}
                 draftScope={composerDraftScope}

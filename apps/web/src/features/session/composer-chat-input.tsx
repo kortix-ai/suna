@@ -10,6 +10,7 @@ import {
   SessionChatInput,
   type SessionChatInputProps,
 } from '@/features/session/session-chat-input';
+import type { SessionPromptPart } from '@kortix/sdk';
 import {
   type Command,
   type ModelKey,
@@ -66,7 +67,12 @@ export function ComposerChatInput({
   sandboxSlot,
   draftScope,
 }: {
-  onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
+  onSend: (
+    text: string,
+    files: AttachedFile[] | undefined,
+    options: ComposerOptions,
+    attachmentParts: SessionPromptPart[],
+  ) => void | Promise<void>;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
   sessionId?: string;
   projectId?: string;
@@ -208,7 +214,9 @@ export function ComposerChatInput({
 
   return (
     <SessionChatInput
-      onSend={(text, files) => onSend(text, files, options())}
+      onSend={(text, files, _mentions, attachmentParts = []) =>
+        onSend(text, files, options(), attachmentParts)
+      }
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       clearOnSend={clearOnSend}
       isBusy={isBusy}

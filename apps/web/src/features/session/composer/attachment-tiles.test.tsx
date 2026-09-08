@@ -35,6 +35,80 @@ function classAttrs(html: string): string[] {
 }
 
 describe('AttachmentTiles', () => {
+  test('shows acknowledged upload progress and processing without replacing the file tile', () => {
+    const file = { ...localDoc('notes.txt'), uploadId: 'local-1' };
+    if (file.kind !== 'local') throw new Error('expected local file');
+    const uploading = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[file]}
+        uploads={[
+          {
+            id: 'local-1',
+            file: file.file,
+            filename: 'notes.txt',
+            mime: 'application/pdf',
+            size: 10,
+            status: 'uploading',
+            receivedBytes: 5,
+          },
+        ]}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(uploading).toContain('Uploading 50%');
+    expect(uploading).toContain('tabular-nums');
+    expect(uploading).toContain('notes.txt');
+
+    const processing = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[file]}
+        uploads={[
+          {
+            id: 'local-1',
+            file: file.file,
+            filename: 'notes.txt',
+            mime: 'application/pdf',
+            size: 10,
+            status: 'processing',
+            receivedBytes: 10,
+          },
+        ]}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(processing).toContain('Processing');
+  });
+
+  test('shows an upload error with retry and remove actions', () => {
+    const file = { ...localDoc('failed.pdf'), uploadId: 'local-failed' };
+    if (file.kind !== 'local') throw new Error('expected local file');
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[file]}
+        uploads={[
+          {
+            id: 'local-failed',
+            file: file.file,
+            filename: 'failed.pdf',
+            mime: 'application/pdf',
+            size: 5,
+            status: 'error',
+            receivedBytes: 0,
+            error: new Error('network unavailable'),
+          },
+        ]}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(markup).toContain('Upload failed');
+    expect(markup).toContain('aria-label="Retry failed.pdf"');
+    expect(markup).toContain('aria-label="Remove failed.pdf"');
+    expect(markup).toContain('network unavailable');
+  });
+
   test('an attached SVG shows its name, not a rendered preview', () => {
     const svg: AttachedFile = {
       kind: 'local',

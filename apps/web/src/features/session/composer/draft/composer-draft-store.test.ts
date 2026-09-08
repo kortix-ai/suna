@@ -73,6 +73,7 @@ const draft = (text: string): StoredDraft => ({
   u: USER,
   doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
   files: [],
+  attachments: [],
 });
 
 describe('composer draft store', () => {
@@ -84,7 +85,13 @@ describe('composer draft store', () => {
 
   test('a written draft reads back for the same scope', () => {
     const scope = { kind: 'session', sessionId: 's1' } as const;
-    writeDraft(scope, { v: DRAFT_ENVELOPE_VERSION, u: USER, doc: DOC, files: [] });
+    writeDraft(scope, {
+      v: DRAFT_ENVELOPE_VERSION,
+      u: USER,
+      doc: DOC,
+      files: [],
+      attachments: [],
+    });
     expect(readDraft(scope, USER)?.doc).toEqual(DOC);
   });
 

@@ -85,6 +85,29 @@ describe('serializeDraft', () => {
     expect(draft?.files).toEqual([REMOTE_FILE]);
   });
 
+  test('stores canonical completed metadata without local bytes or URLs', () => {
+    const attachment = {
+      attachment_id: 'att-ready',
+      filename: 'ready.txt',
+      mime: 'text/plain',
+      size: 5,
+      expires_at: '2099-01-01T00:00:00.000Z',
+    };
+    const draft = serializeDraft({
+      doc: EMPTY_DOC,
+      documentIsEmpty: true,
+      files: [LOCAL_FILE],
+      attachments: [attachment],
+      userId: USER,
+    });
+
+    expect(draft?.attachments).toEqual([attachment]);
+    const serialized = JSON.stringify(draft);
+    expect(serialized).not.toContain('blob:');
+    expect(serialized).not.toContain('data:');
+    expect(serialized).not.toContain('signed');
+  });
+
   test('stamps the envelope version and the author user id', () => {
     const draft = serializeDraft({
       doc: TEXT_DOC,
@@ -141,6 +164,42 @@ describe('deserializeDraft', () => {
       userId: USER,
     });
     expect(deserializeDraft(stored, OTHER_USER)).toBeNull();
+  });
+
+  test('restores only valid unexpired completed metadata', () => {
+    const raw = {
+      v: DRAFT_ENVELOPE_VERSION,
+      u: USER,
+      doc: EMPTY_DOC,
+      files: [],
+      attachments: [
+        {
+          attachment_id: 'att-ready',
+          filename: 'ready.txt',
+          mime: 'text/plain',
+          size: 5,
+          expires_at: '2099-01-01T00:00:00.000Z',
+          url: 'https://signed.example/private',
+        },
+        {
+          attachment_id: 'att-expired',
+          filename: 'expired.txt',
+          mime: 'text/plain',
+          size: 5,
+          expires_at: '2020-01-01T00:00:00.000Z',
+        },
+      ],
+    };
+
+    expect(deserializeDraft(raw, USER)?.attachments).toEqual([
+      {
+        attachment_id: 'att-ready',
+        filename: 'ready.txt',
+        mime: 'text/plain',
+        size: 5,
+        expires_at: '2099-01-01T00:00:00.000Z',
+      },
+    ]);
   });
 
   test('a stale envelope version is refused', () => {

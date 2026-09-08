@@ -90,4 +90,24 @@ describe('the composer submits through the latch', () => {
     expect(refs).toHaveLength(3);
     expect(source).toContain('onSubmit={handleSubmit}');
   });
+
+  test('Send captures readiness before reset and forgets only accepted ids after the await', () => {
+    const send = between('const content = draft', 'const dispatchSubmissionRef = useRef');
+    const capture = send.indexOf('captureAttachmentSubmission(');
+    const reset = send.indexOf('resolveComposerResetOnSend(');
+    const awaitSend = send.indexOf('await onSend(');
+    const forget = send.indexOf('promptAttachments.forget(attachmentSubmission.submittedIds)');
+
+    expect(capture).toBeGreaterThan(-1);
+    expect(reset).toBeGreaterThan(capture);
+    expect(awaitSend).toBeGreaterThan(reset);
+    expect(forget).toBeGreaterThan(awaitSend);
+  });
+
+  test('both the button and Enter are gated by attachment readiness', () => {
+    const normalized = source.replace(/\s+/g, ' ');
+    expect(normalized).toContain('submitDisabled || !promptAttachments.canSend');
+    expect(source).toContain('return captureAttachmentSubmission(filesNow, promptAttachments)');
+    expect(source).toContain('const filesNow = stash ? stash.files : attachedFilesRef.current;');
+  });
 });

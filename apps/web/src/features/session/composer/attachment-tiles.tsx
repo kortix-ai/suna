@@ -12,8 +12,10 @@
  * old shape moves in one change.
  */
 
+import type { PromptAttachmentItem } from '@kortix/sdk';
 import { useEffect, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { convertHeicBlobToJpeg, isHeicFile } from '@/lib/utils/heic-convert';
 
 import { AttachmentRemoveButton, AttachmentTile, isPreviewableImage } from '../attachment-tile';
@@ -36,7 +38,15 @@ function attachmentMime(af: AttachedFile): string {
  * a spinner, matching how the sent message's own `AttachmentImage` handles a
  * src that has not resolved yet (`turn/user-message.tsx`).
  */
-function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
+function AttachmentImageTile({
+  af,
+  name,
+  pending,
+}: {
+  af: AttachedFile;
+  name: string;
+  pending: boolean;
+}) {
   const isHeic = isHeicFile(name);
   const [heicUrl, setHeicUrl] = useState<string | null>(null);
   // WHICH file failed, not merely "something failed". Storing the attachment
@@ -71,26 +81,46 @@ function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
     // `attachment-preview.tsx` HEIC effect tracked.
   }, [af, isHeic]);
 
-  const src = isHeic ? heicUrl : af.kind === 'local' ? af.localUrl : af.url;
+  const src = isHeic
+    ? heicUrl
+    : af.kind === 'local'
+      ? af.localUrl
+      : af.kind === 'remote'
+        ? af.url
+        : null;
 
   // Fall back to the named tile — the file is still attached and still sends;
   // only the thumbnail is unavailable.
-  if (failed) return <AttachmentTile filename={name} mime={attachmentMime(af)} />;
+  if (failed) return <AttachmentTile filename={name} mime={attachmentMime(af)} pending={pending} />;
   if (!src) return <AttachmentTile filename={name} mime={attachmentMime(af)} pending />;
-  return <AttachmentTile filename={name} mime={attachmentMime(af)} imageSrc={src} />;
+  return (
+    <AttachmentTile filename={name} mime={attachmentMime(af)} imageSrc={src} pending={pending} />
+  );
 }
 
 /** A locally attached non-image file: the named tile. */
-function AttachmentFileTile({ af, name }: { af: AttachedFile; name: string }) {
-  return <AttachmentTile filename={name} mime={attachmentMime(af)} />;
+function AttachmentFileTile({
+  af,
+  name,
+  pending,
+}: {
+  af: AttachedFile;
+  name: string;
+  pending: boolean;
+}) {
+  return <AttachmentTile filename={name} mime={attachmentMime(af)} pending={pending} />;
 }
 
 export function AttachmentTiles({
   files,
+  uploads = [],
   onRemove,
+  onRetry,
 }: {
   files: AttachedFile[];
+  uploads?: readonly PromptAttachmentItem[];
   onRemove: (index: number) => void;
+  onRetry?: (id: string) => void;
 }) {
   if (files.length === 0) return null;
 
@@ -98,6 +128,16 @@ export function AttachmentTiles({
     <ul className="flex flex-wrap gap-2 px-3">
       {files.map((af, i) => {
         const name = attachmentName(af);
+        const uploadId = af.kind === 'remote' ? undefined : af.uploadId;
+        const upload = uploadId ? uploads.find((item) => item.id === uploadId) : undefined;
+        const pending =
+          upload?.status === 'pending' ||
+          upload?.status === 'uploading' ||
+          upload?.status === 'processing';
+        const progress =
+          upload?.status === 'uploading'
+            ? Math.min(100, Math.floor((upload.receivedBytes / upload.size) * 100))
+            : null;
         return (
           // `li` stays `display: contents` (no box of its own — matches the
           // pattern `turn/user-message.tsx` uses for its own `<li>`s), so it
@@ -110,14 +150,52 @@ export function AttachmentTiles({
           // (an outer plain `relative` wrapper, an inner `overflow-hidden`
           // thumbnail box) — `relative` on a `contents` element is inert, so
           // that split has to live one level in from the `<li>`, not on it.
-          <li key={af.kind === 'local' ? af.localUrl : af.url} className="contents">
+          <li
+            key={af.kind === 'local' ? af.localUrl : af.kind === 'staged' ? af.uploadId : af.url}
+            className="contents"
+          >
             <div className="group relative">
               {af.isImage && isPreviewableImage(name, attachmentMime(af)) ? (
-                <AttachmentImageTile af={af} name={name} />
+                <AttachmentImageTile af={af} name={name} pending={pending} />
               ) : (
-                <AttachmentFileTile af={af} name={name} />
+                <AttachmentFileTile af={af} name={name} pending={pending} />
               )}
               <AttachmentRemoveButton filename={name} onRemove={() => onRemove(i)} />
+              {upload && upload.status !== 'ready' && (
+                <div
+                  role={
+                    upload.status === 'error' || upload.status === 'aborted' ? 'alert' : 'status'
+                  }
+                  title={upload.error?.message}
+                  className="mt-1 flex min-h-5 items-center gap-1 text-xs"
+                >
+                  {upload.status === 'error' || upload.status === 'aborted' ? (
+                    <>
+                      <span className="text-kortix-red min-w-0 flex-1 truncate">Upload failed</span>
+                      {onRetry && upload.file && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className="h-auto px-1.5 py-0.5 text-xs"
+                          aria-label={`Retry ${name}`}
+                          onClick={() => onRetry(upload.id)}
+                        >
+                          Retry
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground tabular-nums">
+                      {upload.status === 'processing'
+                        ? 'Processing'
+                        : upload.status === 'pending'
+                          ? 'Waiting'
+                          : `Uploading ${progress ?? 0}%`}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </li>
         );

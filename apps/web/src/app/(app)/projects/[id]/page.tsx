@@ -22,7 +22,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { getProjectDetail } from '@kortix/sdk';
+import { getProjectDetail, type SessionPromptPart } from '@kortix/sdk';
 import { contract, qk, writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -94,10 +94,15 @@ export default function ProjectIndexPage() {
   }, [searchParams, pathname, projectId, router]);
 
   const handleSend = useCallback(
-    async (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
+    async (
+      text: string,
+      files: AttachedFile[] | undefined,
+      options?: ProjectHomeSendOptions,
+      attachmentParts: SessionPromptPart[] = [],
+    ) => {
       if (!text.trim() && !files?.length) return;
 
-      if (isBillingEnabled() && billingLoading) return;
+      if (isBillingEnabled() && billingLoading) throw new Error('Account access is still loading');
 
       // Gate accounts that cannot run before navigating so we never strand the
       // user on a shell that cannot provision. Free accounts with the monthly
@@ -107,7 +112,7 @@ export default function ProjectIndexPage() {
         openUpgradeDialog(
           billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
         );
-        return;
+        throw new Error('Account cannot start a session');
       }
 
       // Identical create-first path to every other new-session entry point: the
@@ -121,58 +126,65 @@ export default function ProjectIndexPage() {
       // tokens for the first prompt (see buildNewSessionCreateInput). The proxy
       // no longer refuses a prompt whose agent differs — switching is allowed.
       setSending(true);
-      // Attachments ride the create itself as data: URLs — the session's
-      // sandbox does not exist yet, so there is nowhere to upload into. The
-      // API turns this whole pending_prompt into a durable inbox row in the
-      // same transaction as the session, so the message survives a closed tab
-      // from this moment on. Over the cap, the refusal names the way out.
+      // The project-scoped upload handles already exist. The create and warm
+      // claim paths bind those handles into the durable prompt row without
+      // reading the bytes again at Send time.
       let parts: Awaited<ReturnType<typeof stageFirstPromptAttachments>>;
       try {
-        parts = await stageFirstPromptAttachments(files);
+        parts = await stageFirstPromptAttachments(files, attachmentParts);
       } catch (error) {
         errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'));
         setSending(false);
-        return;
+        throw error;
       }
-      newSession({
-        create: {
-          ...buildNewSessionCreateInput(options),
-          pending_prompt: {
-            text,
-            agent: options?.agent ?? null,
-            model: options?.model ?? null,
-            variant: options?.variant ?? null,
-            attachment_names:
-              files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ?? [],
-            ...(parts.length > 0 ? { parts: [{ type: 'text' as const, text }, ...parts] } : {}),
+      await new Promise<void>((resolve, reject) => {
+        newSession({
+          create: {
+            ...buildNewSessionCreateInput(options),
+            pending_prompt: {
+              text,
+              agent: options?.agent ?? null,
+              model: options?.model ?? null,
+              variant: options?.variant ?? null,
+              attachment_names:
+                files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ??
+                [],
+              ...(parts.length > 0 ? { parts: [{ type: 'text' as const, text }, ...parts] } : {}),
+            },
           },
-        },
-        scope: options?.scope,
-        // Create failed (already surfaced by the hook) — we never left this
-        // page, so just unlock the composer with the text still in it.
-        onError: () => setSending(false),
-        onNavigate: (sessionId) => {
-          // `sessionId` here is the route/Kortix session id, not the OpenCode
-          // pin the session page resolves later (`useCanonicalRuntimeSession`
-          // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
-          // route id via the SDK's canonical `writeStartStash` — the session
-          // page's `migrateStash` hands this off onto the resolved pin once it
-          // exists, and `readStartStash` (instant shell, `useSession`) reads it
-          // uniformly either side of that migration.
-          // PICKS only: the prompt (and its attachments) are already a
-          // durable inbox row via create.pending_prompt above — a prompt in
-          // the stash here would be a second delivery channel for the same
-          // message.
-          writeStartStash(sessionId, {
-            prompt: '',
-            agent: options?.agent ?? null,
-            model: options?.model ?? null,
-            variant: options?.variant ?? null,
-          });
-          // RENDER-only copy for the boot shell, so the bubble is on screen
-          // from the session page's first frame — see `useFirstPromptPreviewStore`.
-          useFirstPromptPreviewStore.getState().setFirstPromptPreview(sessionId, text, files ?? []);
-        },
+          scope: options?.scope,
+          // Create failed (already surfaced by the hook). Reject so the
+          // composer restores its submitted draft and keeps every handle.
+          onError: () => {
+            setSending(false);
+            reject(new Error('Session creation failed'));
+          },
+          onNavigate: (sessionId) => {
+            // `sessionId` here is the route/Kortix session id, not the OpenCode
+            // pin the session page resolves later (`useCanonicalRuntimeSession`
+            // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
+            // route id via the SDK's canonical `writeStartStash` — the session
+            // page's `migrateStash` hands this off onto the resolved pin once it
+            // exists, and `readStartStash` (instant shell, `useSession`) reads it
+            // uniformly either side of that migration.
+            // PICKS only: the prompt (and its attachments) are already a
+            // durable inbox row via create.pending_prompt above — a prompt in
+            // the stash here would be a second delivery channel for the same
+            // message.
+            writeStartStash(sessionId, {
+              prompt: '',
+              agent: options?.agent ?? null,
+              model: options?.model ?? null,
+              variant: options?.variant ?? null,
+            });
+            // RENDER-only copy for the boot shell, so the bubble is on screen
+            // from the session page's first frame — see `useFirstPromptPreviewStore`.
+            useFirstPromptPreviewStore
+              .getState()
+              .setFirstPromptPreview(sessionId, text, files ?? []);
+            resolve();
+          },
+        });
       });
     },
     [billingLoading, accountState, newSession, openUpgradeDialog, projectAccountId, tI18nComplete],

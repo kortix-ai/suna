@@ -138,6 +138,62 @@ describe('uploaded file references', () => {
     ]);
   });
 
+  test('does not upload a composer-staged local file during Send', async () => {
+    const file = { ...localFile('eager.txt'), uploadId: 'local-eager' };
+    let uploadCalls = 0;
+    const ready = {
+      type: 'file' as const,
+      attachment_id: 'att-eager',
+      filename: 'eager.txt',
+      mime: 'text/plain',
+    };
+
+    const running = await buildPromptPartsWithUploads(
+      'read it',
+      [file],
+      async () => {
+        uploadCalls += 1;
+        return [];
+      },
+      [ready],
+    );
+    expect(uploadCalls).toBe(0);
+    expect(running.remoteParts).toEqual([ready]);
+
+    const first = await stageFirstPromptAttachments([file], [ready]);
+    expect(first).toEqual([ready]);
+    expect(uploadCalls).toBe(0);
+  });
+
+  test('keeps staged handles and legacy remote URLs in attachment order', async () => {
+    const first = { ...localFile('first.txt'), uploadId: 'local-first' };
+    const third = { ...localFile('third.txt'), uploadId: 'local-third' };
+    const parts = await stageFirstPromptAttachments(
+      [first, remoteFile('second.pdf'), third],
+      [
+        {
+          type: 'file',
+          attachment_id: 'att-first',
+          filename: 'first.txt',
+          mime: 'text/plain',
+        },
+        {
+          type: 'file',
+          attachment_id: 'att-third',
+          filename: 'third.txt',
+          mime: 'text/plain',
+        },
+      ],
+    );
+
+    expect(parts.map((part) => part.filename)).toEqual(['first.txt', 'second.pdf', 'third.txt']);
+    expect(parts.map((part) => part.attachment_id ?? part.url)).toEqual([
+      'att-first',
+      'https://files.example/remote.pdf',
+      'att-third',
+    ]);
+  });
+
   test('fails before producing optimistic file references when upload has no path', async () => {
     await expect(
       buildPromptPartsWithUploads('send', [localFile('missing.txt')], async () => [
@@ -315,24 +371,23 @@ describe('stageFirstPromptAttachments', () => {
   // after another made it the SUM of five reads; they are independent.
   test('reads the batch in parallel, not one file after another', async () => {
     const order: string[] = [];
-    const slowFile = (name: string, delayMs: number) =>
-      ({
-        kind: 'local' as const,
-        localUrl: `blob:${name}`,
-        isImage: false,
-        file: {
-          name,
-          size: 4,
-          type: 'text/plain',
-          arrayBuffer: async () => {
-            order.push(`start:${name}`);
-            await new Promise((r) => setTimeout(r, delayMs));
-            order.push(`end:${name}`);
-            return new Uint8Array([1, 2, 3, 4]).buffer;
-          },
-          // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
-        } as any,
-      });
+    const slowFile = (name: string, delayMs: number) => ({
+      kind: 'local' as const,
+      localUrl: `blob:${name}`,
+      isImage: false,
+      file: {
+        name,
+        size: 4,
+        type: 'text/plain',
+        arrayBuffer: async () => {
+          order.push(`start:${name}`);
+          await new Promise((r) => setTimeout(r, delayMs));
+          order.push(`end:${name}`);
+          return new Uint8Array([1, 2, 3, 4]).buffer;
+        },
+        // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
+      } as any,
+    });
 
     await stageFirstPromptAttachments([slowFile('a.txt', 40), slowFile('b.txt', 5)]);
 
@@ -366,19 +421,18 @@ describe('stageFirstPromptAttachments', () => {
   });
 
   test('keeps the attachments in the order they were attached', async () => {
-    const file = (name: string) =>
-      ({
-        kind: 'local' as const,
-        localUrl: `blob:${name}`,
-        isImage: false,
-        file: {
-          name,
-          size: 2,
-          type: 'text/plain',
-          arrayBuffer: async () => new Uint8Array([65, 66]).buffer,
-          // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
-        } as any,
-      });
+    const file = (name: string) => ({
+      kind: 'local' as const,
+      localUrl: `blob:${name}`,
+      isImage: false,
+      file: {
+        name,
+        size: 2,
+        type: 'text/plain',
+        arrayBuffer: async () => new Uint8Array([65, 66]).buffer,
+        // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
+      } as any,
+    });
 
     const parts = await stageFirstPromptAttachments([file('1.txt'), file('2.txt'), file('3.txt')]);
     expect(parts.map((p) => p.filename)).toEqual(['1.txt', '2.txt', '3.txt']);
@@ -426,7 +480,11 @@ describe('stageFirstPromptAttachments', () => {
       ['README.md', 'text/markdown'],
       ['shot.png', 'image/png'],
     ]);
-    expect(parts.every((part) => part.url.startsWith(`data:${part.mime};base64,`))).toBe(true);
+    expect(
+      parts.every(
+        (part) => typeof part.url === 'string' && part.url.startsWith(`data:${part.mime};base64,`),
+      ),
+    ).toBe(true);
   });
 
   test('refuses a batch over the cap with copy that names the way out', async () => {

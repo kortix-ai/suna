@@ -1,7 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
@@ -16,6 +16,7 @@ import {
   listProjectAccessRequests,
   listProjectSandboxes,
   type SandboxTemplate,
+  type SessionPromptPart,
 } from '@kortix/sdk';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
@@ -54,7 +55,8 @@ export function ProjectHome({
     text: string,
     files: AttachedFile[] | undefined,
     options?: ProjectHomeSendOptions,
-  ) => void;
+    attachmentParts?: SessionPromptPart[],
+  ) => void | Promise<void>;
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -120,15 +122,25 @@ export function ProjectHome({
     : null;
 
   const handleSend = useCallback(
-    (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
-      onSend(text, files, {
-        ...options,
-        ...(metaSelected
-          ? { sandbox_slug: META_SANDBOX_SLUG }
-          : selectedSlug
-            ? { sandbox_slug: selectedSlug }
-            : {}),
-      });
+    (
+      text: string,
+      files: AttachedFile[] | undefined,
+      options: ComposerOptions,
+      attachmentParts: SessionPromptPart[] = [],
+    ) => {
+      return onSend(
+        text,
+        files,
+        {
+          ...options,
+          ...(metaSelected
+            ? { sandbox_slug: META_SANDBOX_SLUG }
+            : selectedSlug
+              ? { sandbox_slug: selectedSlug }
+              : {}),
+        },
+        attachmentParts,
+      );
     },
     [metaSelected, selectedSlug, onSend],
   );

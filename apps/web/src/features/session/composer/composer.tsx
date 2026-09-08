@@ -1,17 +1,18 @@
 'use client';
 
 import { errorToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
+import type { SessionPromptPart } from '@kortix/sdk';
 import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
-import { useRuntimeSessions } from '@kortix/sdk/react';
+import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
 import {
   ArrowBendDoubleUpLeftIcon,
   ArrowUpLeftIcon as ArrowUpLeft,
   WarningIcon,
 } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
-import { useTranslations } from '@/i18n/use-translations';
 import type { RefObject } from 'react';
 import {
   lazy,
@@ -47,6 +48,11 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Close } from '@/features/icon/icons/close';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
+import {
+  attachedFileUploadId,
+  captureAttachmentSubmission,
+  stageComposerFiles,
+} from './attachment-submission';
 import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
@@ -85,6 +91,7 @@ export interface SessionChatInputProps {
     text: string,
     files?: AttachedFile[],
     mentions?: TrackedMention[],
+    attachmentParts?: SessionPromptPart[],
   ) => void | Promise<void>;
   isBusy?: boolean;
   /**
@@ -470,6 +477,15 @@ function ComposerImpl({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const savedDocBeforeQuestionRef = useRef<JSONContent | null>(null);
+  const promptAttachments = usePromptAttachments(projectId);
+  const {
+    addMany: addPromptAttachments,
+    attachments: promptAttachmentItems,
+    getSnapshot: getPromptAttachmentSnapshot,
+    remove: removePromptAttachment,
+    restore: restorePromptAttachment,
+    retry: retryPromptAttachment,
+  } = promptAttachments;
 
   const editorRef = useRef<ComposerEditorHandle | null>(null);
   const [editorElement, setEditorElement] = useState<HTMLElement | null>(null);
@@ -489,18 +505,38 @@ function ComposerImpl({
    * was added by the person in this mount and outranks a stored list. Local
    * attachments were never storable, so nothing is restored for them.
    */
-  const handleDraftRestore = useCallback((draft: StoredDraft) => {
-    setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
-    if (draft.files.length > 0) {
-      setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
-    }
-  }, []);
+  const handleDraftRestore = useCallback(
+    (draft: StoredDraft) => {
+      setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
+      if (draft.files.length === 0 && draft.attachments.length === 0) return;
+      if (attachedFilesRef.current.length > 0) return;
+      try {
+        const restored: AttachedFile[] = draft.attachments.map((attachment) => ({
+          kind: 'staged',
+          uploadId: restorePromptAttachment(attachment),
+          attachment,
+          filename: attachment.filename,
+          mime: attachment.mime,
+          isImage: attachment.mime.startsWith('image/'),
+        }));
+        const next = [...draft.files, ...restored];
+        attachedFilesRef.current = next;
+        setAttachedFiles(next);
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : 'Could not restore attachments');
+      }
+    },
+    [restorePromptAttachment],
+  );
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
     scope: draftScope,
     editorRef,
     editorReady: editorElement != null,
     attachedFiles,
+    attachments: promptAttachmentItems
+      .filter((item) => item.status === 'ready' && item.attachment)
+      .map((item) => item.attachment!),
     hasPrefill: !!prefill,
     onRestore: handleDraftRestore,
   });
@@ -515,15 +551,24 @@ function ComposerImpl({
   const editorDisabled = disabled || lockForApproval;
   const inlineUnderbar = underbarPlacement === 'inline';
 
-  const appendAttachedFiles = useCallback((files: Iterable<File>) => {
-    const newFiles: AttachedFile[] = [];
-    for (const file of files) {
-      const localUrl = URL.createObjectURL(file);
-      newFiles.push({ kind: 'local', file, localUrl, isImage: isImageFile(file) });
-    }
-    if (newFiles.length === 0) return;
-    setAttachedFiles((prev) => [...prev, ...newFiles]);
-  }, []);
+  const appendAttachedFiles = useCallback(
+    (files: Iterable<File>) => {
+      try {
+        const newFiles = stageComposerFiles(Array.from(files), {
+          addMany: addPromptAttachments,
+          createObjectURL: (file) => URL.createObjectURL(file),
+          isImage: isImageFile,
+        });
+        if (newFiles.length === 0) return;
+        const next = [...attachedFilesRef.current, ...newFiles];
+        attachedFilesRef.current = next;
+        setAttachedFiles(next);
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : 'Could not attach files');
+      }
+    },
+    [addPromptAttachments],
+  );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -600,13 +645,34 @@ function ComposerImpl({
     [appendAttachedFiles, disabled, lockForQuestion, dragHasFiles],
   );
 
-  const removeAttachedFile = useCallback((index: number) => {
-    setAttachedFiles((prev) => {
-      const removed = prev[index];
-      if (removed?.kind === 'local') URL.revokeObjectURL(removed.localUrl);
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
+  const removeAttachedFile = useCallback(
+    (index: number) => {
+      const removed = attachedFilesRef.current[index];
+      if (!removed) return;
+      if (removed.kind === 'local') URL.revokeObjectURL(removed.localUrl);
+      const next = attachedFilesRef.current.filter((_, i) => i !== index);
+      attachedFilesRef.current = next;
+      setAttachedFiles(next);
+      const uploadId = attachedFileUploadId(removed);
+      if (uploadId) {
+        void removePromptAttachment(uploadId).catch((error) => {
+          errorToast(error instanceof Error ? error.message : 'Could not remove attachment');
+        });
+      }
+    },
+    [removePromptAttachment],
+  );
+
+  const retryAttachedFile = useCallback(
+    (id: string) => {
+      try {
+        retryPromptAttachment(id);
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : 'Could not retry attachment');
+      }
+    },
+    [retryPromptAttachment],
+  );
 
   useEffect(() => {
     if (!editorElement) return;
@@ -868,11 +934,43 @@ function ComposerImpl({
       editorRef.current?.setContent(prefillText);
     }
     if (prefillFiles?.length) {
-      setAttachedFiles((current) =>
-        prefillMode === 'merge'
-          ? mergeFailedSubmissionFiles(current, prefillFiles)
-          : [...prefillFiles],
-      );
+      try {
+        const liveIds = new Set(
+          getPromptAttachmentSnapshot().attachments.map((attachment) => attachment.id),
+        );
+        const localToStage = prefillFiles.filter(
+          (file): file is Extract<AttachedFile, { kind: 'local' }> =>
+            file.kind === 'local' && (!file.uploadId || !liveIds.has(file.uploadId)),
+        );
+        const newlyStaged = stageComposerFiles(
+          localToStage.map((file) => file.file),
+          {
+            addMany: addPromptAttachments,
+            createObjectURL: (file) => URL.createObjectURL(file),
+            isImage: isImageFile,
+          },
+        );
+        let localIndex = 0;
+        const prepared = prefillFiles.map((file): AttachedFile => {
+          if (file.kind === 'remote') return file;
+          if (file.kind === 'local') {
+            if (file.uploadId && liveIds.has(file.uploadId)) return file;
+            return newlyStaged[localIndex++]!;
+          }
+          if (liveIds.has(file.uploadId)) return file;
+          return {
+            ...file,
+            uploadId: restorePromptAttachment(file.attachment),
+          };
+        });
+        const current = attachedFilesRef.current;
+        const next =
+          prefillMode === 'merge' ? mergeFailedSubmissionFiles(current, prepared) : prepared;
+        attachedFilesRef.current = next;
+        setAttachedFiles(next);
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : 'Could not restore attachments');
+      }
     }
     editorRef.current?.focus();
     // Reported AFTER the text is in the editor, in the same statement run — a
@@ -884,7 +982,16 @@ function ComposerImpl({
     // re-run the effect whenever the caller re-created it, and a `merge` prefill
     // applied twice appends its text twice.
     onPrefillAppliedRef.current?.(prefillId as number);
-  }, [prefillId, prefillText, prefillFiles, prefillMode, editorElement]);
+  }, [
+    prefillId,
+    prefillText,
+    prefillFiles,
+    prefillMode,
+    editorElement,
+    addPromptAttachments,
+    getPromptAttachmentSnapshot,
+    restorePromptAttachment,
+  ]);
 
   useEffect(() => {
     if (lockForQuestion) {
@@ -1060,7 +1167,7 @@ function ComposerImpl({
       // submitted as captured; the live editor belongs to whatever the user
       // typed since.
       const draft = stash ? stash.content : editorRef.current?.getContent();
-      const filesNow = stash ? stash.files : attachedFiles;
+      const filesNow = stash ? stash.files : attachedFilesRef.current;
       const plan = planDraftSubmission({
         commandName: draft?.commandName,
         text: draft?.text ?? '',
@@ -1157,6 +1264,16 @@ function ComposerImpl({
       const trimmed = plan.text;
       if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
 
+      const attachmentSubmission = (() => {
+        try {
+          return captureAttachmentSubmission(filesNow, promptAttachments);
+        } catch (error) {
+          errorToast(error instanceof Error ? error.message : 'Attachments are not ready');
+          return null;
+        }
+      })();
+      if (!attachmentSubmission) return;
+
       const filesToSend = filesNow.length > 0 ? [...filesNow] : undefined;
       const mentionsToSend = content.mentions.length > 0 ? [...content.mentions] : undefined;
       const submittedDoc = stash ? stash.doc : (editorRef.current?.getDocument() ?? null);
@@ -1170,7 +1287,8 @@ function ComposerImpl({
       }
 
       try {
-        await onSend(trimmed, filesToSend, mentionsToSend);
+        await onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission.parts);
+        promptAttachments.forget(attachmentSubmission.submittedIds);
         for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
         // AFTER the await, so a send that throws keeps its draft. Explicit,
         // NOT derived from `reset.clear`: the project-home composer passes
@@ -1191,25 +1309,15 @@ function ComposerImpl({
           submittedIsEmpty,
           currentDoc,
           currentIsEmpty,
-          currentAttachedFiles: attachedFiles,
+          currentAttachedFiles: attachedFilesRef.current,
           sentFiles,
         });
         if (plan?.restoreDoc) {
           setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc);
         }
         if (plan) {
-          setAttachedFiles(
-            (current) =>
-              planFailedSendRecovery({
-                clearOnSend,
-                submittedDoc,
-                submittedIsEmpty,
-                currentDoc,
-                currentIsEmpty,
-                currentAttachedFiles: current,
-                sentFiles,
-              })?.attachedFiles ?? current,
-          );
+          attachedFilesRef.current = plan.attachedFiles;
+          setAttachedFiles(plan.attachedFiles);
         }
       }
     },
@@ -1218,7 +1326,6 @@ function ComposerImpl({
       modelUnavailable,
       lockForApproval,
       disabled,
-      attachedFiles,
       commands,
       lockForQuestion,
       submitDisabled,
@@ -1232,6 +1339,7 @@ function ComposerImpl({
       onCustomAnswer,
       onQuestionAction,
       onSend,
+      promptAttachments,
     ],
   );
 
@@ -1489,7 +1597,12 @@ function ComposerImpl({
         >
           {/* Inline chips: thread context, todos, queue — unified spacing */}
 
-          <AttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
+          <AttachmentTiles
+            files={attachedFiles}
+            uploads={promptAttachmentItems}
+            onRemove={removeAttachedFile}
+            onRetry={retryAttachedFile}
+          />
 
           {/*
             The `/` command + attachments refusal. Directly under the tiles it
@@ -1636,7 +1749,11 @@ function ComposerImpl({
               questionCanAct={questionCanAct}
               hasText={!isEmpty}
               canSubmit={canSubmit}
-              submitDisabled={submitDisabled || commandAttachmentPlan.kind === 'refuse'}
+              submitDisabled={
+                submitDisabled ||
+                !promptAttachments.canSend ||
+                commandAttachmentPlan.kind === 'refuse'
+              }
               disabled={disabled}
               modelUnavailable={modelUnavailable}
               agentUnavailable={agentUnavailable}
