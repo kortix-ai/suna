@@ -766,3 +766,35 @@ session-log server are closed. No environment calls execute.
 This proof uses real HTTP and provider responses with a reduced test window.
 It does not prove full-size context behavior through the Platinum ingress.
 Evidence: `/tmp/pi-tool-round-live.json` and `/tmp/pi-tool-round-live.log`.
+
+## 2026-09-08 — Exact compaction transcript identities
+
+Deployment [34260391976](https://github.com/kortix-ai/suna/actions/runs/34260391976)
+serves `b5ddaa9ff1403546237c6b3feb38fac43b3743fc`. Public health and all three
+service container tags match. `pnpm test -- --full` passes all eight local lanes
+in 408.5 seconds: REST/CLI 396/396, SDK 2,872, worker 684, browser 17 passed
+and two skipped, plus package, runner, route, and worktree gates.
+
+Exact-SHA preview run
+[34261314908](https://github.com/kortix-ai/suna/actions/runs/34261314908)
+passes 455/462 API flows and all 19 browser journeys. SHIP-1, SHIP-4, SHIP-6,
+and SHIP-9 receive synthetic Platinum ingress 502 responses during Git uploads.
+Three flows are skipped, including two quarantined flows. Target-full fails
+in 659.5 seconds. This remains an unresolved provider-boundary failure.
+
+A separate deployed Luna browser check catches a transcript mismatch after
+manual compaction. Session `a8c7a39b-edab-4053-99a4-399f02d510ad` emits an empty
+reasoning part before `inspect_effort`. Luna omits that block from its final
+native content. Restoration drops the placeholder and changes the tool part ID.
+The test fails its exact-history assertion and stops its fixture session.
+
+The worker now persists streamed text and reasoning parts separately from
+model content. Compaction and restart retain their IDs, text, and reasoning
+timing. Tool replay counts the same display parts before assigning tool IDs.
+Legacy messages without this metadata retain their existing restoration path.
+Two regression cases fail before the change. The HTTP regression exercises
+compaction and worker replacement with a provider-omitted reasoning block.
+
+The focused restoration checks pass 20 tests. The complete worker suite passes
+687 tests. Worker typecheck, build, and seven real Node bundle/lockdown checks
+pass. Deployed verification of the new fix follows below.

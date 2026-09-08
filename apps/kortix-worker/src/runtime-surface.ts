@@ -30,7 +30,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { Agent, Session, ToolList } from '@opencode-ai/sdk/v2';
-import { assistantContractFields, assistantMessageError, toolResultMetadata } from './chat-events.ts';
+import { assistantContractFields, assistantMessageError, toolResultMetadata, type DurableWireTextPart } from './chat-events.ts';
 import type { PiCommand } from './command-runtime.ts';
 import { PermissionApprovalUnavailableError, type PermissionBroker } from './permission-broker.ts';
 import { type PermissionConfig, type PermissionRule, compilePermissionRules, validatePermissionRules } from './permission-policy.ts';
@@ -528,6 +528,7 @@ interface RestoredTranscriptMessage {
   kortixWireCreatedAt?: number;
   kortixWireCompletedAt?: number;
   kortixWirePartIds?: string[];
+  kortixWireTextParts?: DurableWireTextPart[];
   kortixWireToolStarts?: Record<string, number>;
   kortixWireToolTime?: { start: number; end: number };
 }
@@ -677,10 +678,16 @@ export class RuntimeSurface {
       const role = message.role === 'user' ? 'user' : 'assistant';
       const parts: Array<
         | { kind: 'compaction'; auto: boolean }
-        | { kind: 'text'; text: string }
-        | { kind: 'reasoning'; text: string }
+        | { kind: 'text'; text: string; id?: string }
+        | { kind: 'reasoning'; text: string; id?: string; time?: { start: number; end?: number } }
         | { kind: 'tool'; call: any }
       > = [];
+      const hasStreamedParts = role === 'assistant' && Array.isArray(message.kortixWireTextParts);
+      if (hasStreamedParts) {
+        for (const part of message.kortixWireTextParts!) {
+          parts.push({ kind: part.type, id: part.id, text: part.text, ...(part.time ? { time: part.time } : {}) });
+        }
+      }
       for (const block of blocks) {
         if (!block || typeof block !== 'object') continue;
         const b = block as {
@@ -691,11 +698,12 @@ export class RuntimeSurface {
           name?: string;
           arguments?: unknown;
         };
-        if (b.type === 'thinking' && typeof b.thinking === 'string' && b.thinking.length > 0)
+        if (b.type === 'toolCall' && b.name) parts.push({ kind: 'tool', call: b });
+        else if (hasStreamedParts) continue;
+        else if (b.type === 'thinking' && typeof b.thinking === 'string' && b.thinking.length > 0)
           parts.push({ kind: 'reasoning', text: b.thinking });
         else if (typeof b.text === 'string' && b.text.length > 0)
           parts.push({ kind: 'text', text: b.text });
-        else if (b.type === 'toolCall' && b.name) parts.push({ kind: 'tool', call: b });
       }
       if (role === 'user' && typeof message.kortixCompactionAuto === 'boolean') {
         parts.splice(0, parts.length, { kind: 'compaction', auto: message.kortixCompactionAuto });
@@ -793,7 +801,7 @@ export class RuntimeSurface {
         : -1;
       parts.forEach((part, index) => {
         if (part.kind === 'tool' && suspendedIndex >= 0 && index > suspendedIndex) return;
-        const partId = message.kortixWirePartIds?.[index] ?? `${id}-p${index}`;
+        const partId = ('id' in part ? part.id : undefined) ?? message.kortixWirePartIds?.[index] ?? `${id}-p${index}`;
         if (part.kind === 'compaction') {
           this.transcript.apply({
             type: 'message.part.updated',
@@ -815,7 +823,7 @@ export class RuntimeSurface {
                 sessionID: this.rootId,
                 type: part.kind === 'text' ? 'text' : 'reasoning',
                 text: part.text,
-                ...(part.kind === 'reasoning' ? { time: { start: created, end: created } } : {}),
+                ...(part.kind === 'reasoning' ? { time: part.time ?? { start: created, end: created } } : {}),
               },
             },
           });

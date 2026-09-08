@@ -4151,6 +4151,44 @@ describe('durable context compaction', () => {
     ).toHaveLength(0);
   });
 
+  test('HTTP compaction and replacement retain reasoning placeholders omitted by the provider', async () => {
+    const { config, worker, post, compactBody, history } = await fixture();
+    const originalStream = worker.agent.streamFunction;
+    worker.agent.streamFunction = ((...args: Parameters<typeof originalStream>) => {
+      const inner = originalStream(...args) as AssistantMessageEventStream;
+      return {
+        async *[Symbol.asyncIterator]() {
+          for await (const event of inner) {
+            yield event;
+            if (event.type === 'start') {
+              yield { type: 'thinking_start', contentIndex: 0, partial: event.partial };
+              yield { type: 'thinking_end', contentIndex: 0, content: '', partial: event.partial };
+            }
+          }
+        },
+        result: () => inner.result(),
+      } as unknown as AssistantMessageEventStream;
+    }) as typeof originalStream;
+    worker.faux!.setResponses([
+      fauxAssistantMessage([fauxToolCall('todoread', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('The launch code remains cobalt.'),
+    ]);
+    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'Read the todo list.' }] })).status).toBe(200);
+    const before = await history();
+    expect(before.at(-2).parts.map((part: any) => part.type)).toEqual(['reasoning', 'tool']);
+    expect(before.at(-2).parts[0].text).toBe('');
+    expect(before.at(-2).parts[1].state.status).toBe('completed');
+    worker.faux!.setResponses([fauxAssistantMessage('The launch code is cobalt. The todo list was read.')]);
+    expect((await post(worker, 'summarize', compactBody)).status).toBe(200);
+    const after = await history();
+    expect(after.slice(0, before.length)).toEqual(before);
+    await worker.close();
+    const replacement = await startWorker(config);
+    workers.push(replacement);
+    expect(await history(replacement)).toEqual(after);
+    expect(replacement.env.calls).toHaveLength(0);
+  });
+
   test('commits summary and display atomically, preserves history, and compacts the next model context after replacement', async () => {
     const { items, config, worker, post, compactBody, history } = await fixture();
     const before = await history();

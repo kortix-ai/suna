@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Persist streamed display parts independently of provider content (2026-09-08)
+
+**When:** translating Pi streams into the durable conversation transcript.
+**Incident:** preview `b5ddaa9` lost an empty Luna reasoning part during compaction and renumbered the following tool.
+**Rule:** retain emitted text/reasoning identities, content, and timing. Providers can omit streamed blocks from their final message. Reuse the same layout during tool replay.
+**Enforcer:** `streamed-part-restore.test.ts` compares exact restoration and resumed tool IDs. `turn-routes.test.ts` verifies HTTP compaction and worker replacement with omitted reasoning.
+
 ### Scope bootstrap attempts to one wake, not one sandbox ID (2026-09-08)
 
 **When:** claiming a new resume of an existing sandbox.

@@ -86,6 +86,13 @@ export interface AssistantContractOptions {
   workspace?: string;
 }
 
+export interface DurableWireTextPart {
+  id: string;
+  type: 'text' | 'reasoning';
+  text: string;
+  time?: { start: number; end?: number };
+}
+
 function finiteNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
@@ -180,6 +187,7 @@ export class ChatEventAdapter {
   private replayedMessage = false;
   private replayedToolParts = new Map<string, { id: string; startedAt: number }>();
   private currentAssistant: any = null;
+  private streamedTextParts = new Map<string, DurableWireTextPart>();
 
   constructor(opts: AdapterOptions) {
     this.sessionID = opts.sessionID;
@@ -238,7 +246,10 @@ export class ChatEventAdapter {
         this.accum.clear();
         this.partStartedAt.clear();
         this.replayedToolParts.clear();
+        this.streamedTextParts.clear();
         if (this.replayedMessage) {
+          const hasStreamedParts = Array.isArray(event.message.kortixWireTextParts);
+          if (hasStreamedParts) this.partCount = event.message.kortixWireTextParts.length;
           for (const block of event.message.content ?? []) {
             if (block.type === 'toolCall') {
               const index = this.partCount++;
@@ -247,8 +258,9 @@ export class ChatEventAdapter {
                 startedAt: event.message.kortixWireToolStarts?.[block.id] ?? this.currentMessageCreatedAt,
               });
             } else if (
-              (block.type === 'text' && block.text) ||
-              (block.type === 'thinking' && block.thinking)
+              !hasStreamedParts &&
+              ((block.type === 'text' && block.text) ||
+                (block.type === 'thinking' && block.thinking))
             ) {
               this.partCount++;
             }
@@ -421,6 +433,9 @@ export class ChatEventAdapter {
           if (this.currentParentId) event.message.kortixParentMessageId = this.currentParentId;
         }
         if (this.replayedMessage) return [];
+        // Providers can omit empty reasoning blocks from their final content.
+        // Preserve the emitted display parts separately from model context.
+        event.message.kortixWireTextParts = [...this.streamedTextParts.values()];
         const stop = event.message?.stopReason;
         const terminalError = assistantMessageError(event.message ?? {});
         const completedAt = this.now();
@@ -507,6 +522,12 @@ export class ChatEventAdapter {
     delta: string | null;
     time?: { start: number; end?: number };
   }): Wire[] {
+    this.streamedTextParts.set(input.id, {
+      id: input.id,
+      type: input.partType,
+      text: input.full,
+      ...(input.time ? { time: input.time } : {}),
+    });
     const snapshot: Wire = {
       type: 'message.part.updated',
       properties: {
