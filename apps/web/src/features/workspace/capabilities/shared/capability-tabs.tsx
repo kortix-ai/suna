@@ -1,11 +1,12 @@
 'use client';
 
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
@@ -209,22 +210,28 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
-      <Tabs value={activeKey ?? ''} className="min-w-0 flex-1">
-        <TabsList
-          type="underline"
-          underlineSize="md"
-          size="lg"
-          className="h-auto w-full justify-start gap-5 border-b-0 px-2"
-        >
-          {primary.map(renderTab)}
-          {/* The seam only earns its pixel when both groups are drawn — a
+      <FadedScrollArea
+        orientation="horizontal"
+        fadeColor="from-background"
+        rootClassName="min-w-0 flex-1"
+      >
+        <Tabs value={activeKey ?? ''} className="w-max min-w-full">
+          <TabsList
+            type="underline"
+            underlineSize="md"
+            size="lg"
+            className="kx-titlebar-tabs h-auto w-full justify-start gap-5 border-b-0 px-2"
+          >
+            {primary.map(renderTab)}
+            {/* The seam only earns its pixel when both groups are drawn — a
               role that holds only Agents gets no dangling bar. */}
-          {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
-          {library.map(renderTab)}
-          <MembersLaunchLink projectId={projectId} />
-          {trailing.map(renderTab)}
-        </TabsList>
-      </Tabs>
+            {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
+            {library.map(renderTab)}
+            <MembersLaunchLink projectId={projectId} />
+            {trailing.map(renderTab)}
+          </TabsList>
+        </Tabs>
+      </FadedScrollArea>
     </div>
   );
 }

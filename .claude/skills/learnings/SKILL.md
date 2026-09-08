@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Scope desktop titlebar rules to native chrome (2026-09-08)
+
+**When:** editing shared navigation, tabs, sidebars, or fullscreen overlays.
+Never size or drag every tab list. Preserve native titlebar clearance when
+adding inline header padding. Reserve a non-shrinking spacer in fullscreen overlays.
+*Incident:* desktop-cleanup reproduced a workspace selector at y=7.36px under
+the traffic lights. Global tab-list heights collapsed settings and agent groups.
+*Enforcers:* `window-chrome.test.js`, `desktop-titlebar.test.ts`, and
+`tests/e2e/specs/27-desktop-parity.spec.ts` (Chromium and native Electron).
+
 ### Token publication must not look like sign-out to waiting requests (2026-09-08)
 
 **When:** fencing in-flight auth reads against cache writes. Distinguish a token

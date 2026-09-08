@@ -384,6 +384,7 @@ export function SettingsPanelView({
         )}
       >
         <ModalTitle className="sr-only">{modalTitle}</ModalTitle>
+        <div className="kx-titlebar-spacer" aria-hidden />
 
         <SettingsPanelShell
           tab={tab}
