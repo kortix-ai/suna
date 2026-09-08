@@ -22,7 +22,7 @@ import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
 import { createServer, type IncomingMessage } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
 import { Agent, convertToLlm } from '@earendil-works/pi-agent-core';
-import { compactedModelContext, summarizeContext, transcriptMessagesFromEntries } from './context-compaction.ts';
+import { compactedModelContext, contextNeedsCompaction, summarizeContext, transcriptMessagesFromEntries } from './context-compaction.ts';
 import type { ExecutionEnv } from '@earendil-works/pi-agent-core';
 import {
   InMemoryCredentialStore,
@@ -1243,6 +1243,10 @@ export async function buildHarness(cfg: WorkerConfig) {
     hasResumableTurn,
     persistCurrentMessages,
     compactContext,
+    needsContextCompaction: (incoming: any) => !!session && contextNeedsCompaction(
+      compactedModelContext(agent.state.messages, restoredBranchEntries), incoming,
+      model, agent.state.systemPrompt, agent.state.tools,
+    ),
     setToolReplayEventHandler,
     turnJournal,
     bootReconcile,
@@ -1284,6 +1288,7 @@ export async function startWorker(cfg = configFromEnv()) {
     hasResumableTurn,
     persistCurrentMessages,
     compactContext,
+    needsContextCompaction,
     setToolReplayEventHandler,
     turnJournal,
     bootReconcile,
@@ -1587,6 +1592,42 @@ export async function startWorker(cfg = configFromEnv()) {
     identity: (messageId) => ({ opencodeSessionId: surface.rootId, messageId }),
   });
   let lastAgentEndStatus: 'idle' | 'error' = 'idle';
+  const runContextCompaction = async (compactUser: any) => {
+    bootReconcile.noteTurnStarted();
+    const assistantId = surface.mintMessageId();
+    surface.publishWire({
+      type: "session.status",
+      properties: { sessionID: surface.rootId, status: { type: "busy" } },
+    });
+    surface.publishWire({
+      type: "message.updated",
+      properties: {
+        info: {
+          id: assistantId,
+          role: "assistant",
+          parentID: compactUser.kortixWireMessageId,
+          sessionID: surface.rootId,
+          summary: true,
+          time: { created: Date.now() },
+          ...(effectiveRuntime.model ?? resolvedModel),
+          ...assistantContractFields(undefined, {
+            agent: runtimeAgent,
+            mode: runtimeAgent,
+            workspace: cfg.envCwd,
+          }),
+        },
+      },
+    });
+    const messages = await compactContext(compactUser, assistantId);
+    const status = terminalAgentStatus(messages.slice(-1));
+    surface.replaceDurableMessages(messages, turnJournal.wireMessages);
+    if (status === "idle")
+      surface.publishWire({
+        type: "session.compacted",
+        properties: { sessionID: surface.rootId },
+      });
+    return { messages, status };
+  };
   agent.subscribe((event: any) => {
     try {
       for (const wire of wireAdapter.translate(event)) {
@@ -1822,37 +1863,10 @@ export async function startWorker(cfg = configFromEnv()) {
           // Persisted with Pi's own message entry. The restore projection uses
           // it instead of inventing a different wire id after every restart.
           kortixWireMessageId: turn.messageId,
+          ...(turn.options.compaction ? { kortixCompactionAuto: turn.options.compactionAuto === true } : {}),
         };
         if (turn.options.compaction === true) {
-          bootReconcile.noteTurnStarted();
-          const assistantId = surface.mintMessageId();
-          surface.publishWire({
-            type: 'session.status',
-            properties: { sessionID: surface.rootId, status: { type: 'busy' } },
-          });
-          surface.publishWire({
-            type: 'message.updated',
-            properties: {
-              info: {
-                id: assistantId,
-                role: 'assistant',
-                parentID: turn.messageId,
-                sessionID: surface.rootId,
-                summary: true,
-                time: { created: Date.now() },
-                ...(effectiveRuntime.model ?? resolvedModel),
-                ...assistantContractFields(undefined, {
-                  agent: runtimeAgent, mode: runtimeAgent, workspace: cfg.envCwd,
-                }),
-              },
-            },
-          });
-          const messages = await compactContext(userMessage, assistantId);
-          lastAgentEndStatus = terminalAgentStatus(messages.slice(-1));
-          surface.replaceDurableMessages(messages, turnJournal.wireMessages);
-          if (lastAgentEndStatus === 'idle') surface.publishWire({
-            type: 'session.compacted', properties: { sessionID: surface.rootId },
-          });
+          lastAgentEndStatus = (await runContextCompaction(userMessage)).status;
         } else if (turn.options.noReply === true) {
           bootReconcile.noteTurnStarted();
           const durableSession = sessionRef();
@@ -1876,8 +1890,82 @@ export async function startWorker(cfg = configFromEnv()) {
           resumablePermissions.delete(turn.messageId);
           await agent.continue();
         } else {
-          permissions.restoreToolHistory(completedToolCalls(agent.state.messages));
-          await agent.prompt(userMessage as any);
+          let compactionFailure: any = null;
+          if (needsContextCompaction(userMessage)) {
+            const compactUser = {
+              role: "user",
+              content: [
+                { type: "text", text: "Compact conversation context." },
+              ],
+              timestamp: Date.now(),
+              kortixWireMessageId: surface.mintMessageId(),
+              kortixCompactionAuto: true,
+            };
+            const compactInfo = {
+              id: compactUser.kortixWireMessageId,
+              role: "user",
+              sessionID: surface.rootId,
+              time: { created: compactUser.timestamp },
+              agent: runtimeAgent,
+              model: effectiveRuntime.model ?? resolvedModel,
+            };
+            surface.publishWire({
+              type: "message.updated",
+              properties: { info: compactInfo },
+            });
+            surface.publishWire({
+              type: "message.part.updated",
+              properties: {
+                part: {
+                  id: `${compactInfo.id}-p0`,
+                  messageID: compactInfo.id,
+                  sessionID: surface.rootId,
+                  type: "compaction",
+                  auto: true,
+                },
+              },
+            });
+            const compacted = await runContextCompaction(compactUser);
+            await turnJournal.refresh();
+            if (
+              compacted.status === "error" ||
+              turnJournal.abortRequested(turn.messageId)
+            ) {
+              const summary = compacted.messages.at(-1);
+              compactionFailure = {
+                ...fauxAssistantMessage([], {
+                  stopReason: turnJournal.abortRequested(turn.messageId)
+                    ? "aborted"
+                    : "error",
+                  errorMessage:
+                    summary?.errorMessage ?? "Context compaction was stopped",
+                }),
+                api: agent.state.model!.api,
+                provider: agent.state.model!.provider,
+                model: agent.state.model!.id,
+                kortixWireMessageId: surface.mintMessageId(),
+                kortixParentMessageId: turn.messageId,
+              };
+            }
+          }
+          if (compactionFailure) {
+            agent.state.messages = [
+              ...agent.state.messages,
+              userMessage as any,
+              compactionFailure,
+            ];
+            await persistCurrentMessages();
+            surface.replaceDurableMessages(
+              agent.state.messages,
+              turnJournal.wireMessages,
+            );
+            lastAgentEndStatus = "error";
+          } else {
+            permissions.restoreToolHistory(
+              completedToolCalls(agent.state.messages),
+            );
+            await agent.prompt(userMessage as any);
+          }
         }
         settling = true;
         clearTimeout(leaseTimer);

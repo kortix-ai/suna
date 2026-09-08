@@ -7,7 +7,7 @@
  *      (shimmer label; the summary text is deliberately NOT streamed into the
  *      transcript — a wall of live markdown read as noise, grew the transcript
  *      under the reader, and made a slow summarize FEEL slower)
- *   2. landed → rule ── [⛁ Context automatically compacted ▾] ── rule — the pill
+ *   2. landed → rule ── [⛁ Context compacted ▾] ── rule — the pill
  *      becomes a button;
  *      the summary stays COLLAPSED until asked for, and expands instantly
  *      (no height animation: an animating block at the end of the transcript
@@ -33,7 +33,7 @@ const PILL_LABEL_CLASS = 'text-muted-foreground text-xs tracking-wide';
 
 /** Transcript copy — sentence case, one idea per line (comms). */
 const COMPACTION_LABEL_LOADING = 'Compacting context…';
-const COMPACTION_LABEL_DONE = 'Context automatically compacted';
+const COMPACTION_LABEL_DONE = 'Context compacted';
 
 /**
  * The summary prose — ONE component whether it renders in the panel detail

@@ -126,3 +126,25 @@ describe('Pi session rewind controls', () => {
     );
   });
 });
+
+describe('Pi command palette configuration controls', () => {
+  test('gates configuration suggestions, search results, pages, and handlers by resolved runtime', () => {
+    expect(commandPaletteSource).toContain(
+      "!projectId || resolveProjectSessionRuntimeIdentity(currentProjectSession) === 'opencode'",
+    );
+    expect(commandPaletteSource).toContain('{sessionConfigurationEnabled && (');
+    expect(commandPaletteSource).toContain('if (sessionConfigurationEnabled) {');
+    expect(commandPaletteSource).toContain(
+      "{page === 'agents' && sessionConfigurationEnabled && (",
+    );
+    expect(commandPaletteSource).toContain(
+      "{page === 'models' && sessionConfigurationEnabled && (",
+    );
+    expect(commandPaletteSource).toContain(
+      'if (!currentSessionId || !sessionConfigurationEnabled) return;',
+    );
+    expect(commandPaletteSource).toContain(
+      'if (!currentAgent || !sessionConfigurationEnabled) return;',
+    );
+  });
+});

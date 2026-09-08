@@ -51,8 +51,8 @@ agents:
 The `sandbox` field selects the execution environment template. The platform owns
 the worker image and identity.
 
-Version 3 defaults to `.kortix/pi`. Version 2 defaults to `.kortix/opencode` and
-requires `runtime: pi` to select Pi. `opencode.config_dir` remains a compatibility
+Version 3 selects Pi and defaults to `.kortix/pi`. Version 2 selects OpenCode
+and defaults to `.kortix/opencode`. Contradictory runtime declarations fail validation. `opencode.config_dir` remains a compatibility
 alias. Setting both directories to different values fails compilation. Directories
 must be relative to the repository. Other fields in the `pi` or `opencode` block
 are rejected by the Pi compiler.

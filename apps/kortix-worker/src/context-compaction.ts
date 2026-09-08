@@ -2,19 +2,23 @@ import {
   buildSessionContext,
   compact,
   estimateContextTokens,
+  estimateTokens,
   prepareCompaction,
   type AgentMessage,
   type Entry,
-} from '@earendil-works/pi-agent-core';
-import type { Api, Model, Models } from '@earendil-works/pi-ai';
+} from "@earendil-works/pi-agent-core";
+import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
-export function transcriptMessagesFromEntries(entries: readonly Entry[]): AgentMessage[] {
+export function transcriptMessagesFromEntries(
+  entries: readonly Entry[],
+): AgentMessage[] {
   return [...entries]
     .sort((a, b) => a.seq - b.seq)
     .flatMap((entry) => {
-      if (entry.type === 'message') return [entry.message];
-      if (entry.type !== 'compaction') return [];
-      const details = entry.details as { kortixDisplayMessages?: AgentMessage[] } | undefined;
+      if (entry.type === "message") return [entry.message];
+      if (entry.type !== "compaction") return [];
+      const details = entry.details as
+        { kortixDisplayMessages?: AgentMessage[] } | undefined;
       return details?.kortixDisplayMessages ?? [];
     });
 }
@@ -24,14 +28,60 @@ export function compactedModelContext(
   entries: readonly Entry[],
 ): AgentMessage[] {
   const ordered = [...entries].sort((a, b) => a.seq - b.seq);
-  const index = ordered.findLastIndex((entry) => entry.type === 'compaction');
+  const index = ordered.findLastIndex((entry) => entry.type === "compaction");
   if (index < 0) return messages;
   const prefix = transcriptMessagesFromEntries(ordered.slice(0, index + 1));
   const anchor = prefix.at(-1) as { kortixWireMessageId?: string } | undefined;
-  const message = messages[prefix.length - 1] as { kortixWireMessageId?: string } | undefined;
-  if (!anchor?.kortixWireMessageId || message?.kortixWireMessageId !== anchor.kortixWireMessageId)
-    throw new Error('Compaction context does not match the durable transcript');
-  return [...buildSessionContext([ordered[index]!]).messages, ...messages.slice(prefix.length)];
+  const message = messages[prefix.length - 1] as
+    { kortixWireMessageId?: string } | undefined;
+  if (
+    !anchor?.kortixWireMessageId ||
+    message?.kortixWireMessageId !== anchor.kortixWireMessageId
+  )
+    throw new Error("Compaction context does not match the durable transcript");
+  return [
+    ...buildSessionContext([ordered[index]!]).messages,
+    ...messages.slice(prefix.length),
+  ];
+}
+
+export function contextNeedsCompaction(
+  messages: AgentMessage[],
+  incoming: AgentMessage,
+  model: Model<Api>,
+  systemPrompt: string,
+  tools: readonly { name: string; description: string; parameters: unknown }[],
+): boolean {
+  if (
+    !messages.length ||
+    !Number.isFinite(model.contextWindow) ||
+    model.contextWindow <= 0
+  )
+    return false;
+  const estimated = estimateContextTokens(messages).tokens;
+  const serialized = messages.reduce(
+    (total, message) => total + estimateTokens(message),
+    0,
+  );
+  const instructions = Math.ceil(
+    (systemPrompt.length +
+      JSON.stringify(
+        tools.map(({ name, description, parameters }) => ({
+          name,
+          description,
+          parameters,
+        })),
+      ).length) /
+      3,
+  );
+  const reserve = Math.min(
+    model.contextWindow / 4,
+    Math.max(8192, Math.floor(model.contextWindow * 0.15)),
+  );
+  return (
+    Math.max(estimated, serialized + instructions) + estimateTokens(incoming) >=
+    model.contextWindow - reserve
+  );
 }
 
 export async function summarizeContext(
@@ -41,19 +91,34 @@ export async function summarizeContext(
   signal: AbortSignal,
 ) {
   const context = buildSessionContext(entries).messages;
-  const tokens = estimateContextTokens(context).tokens;
+  const tokens = context.reduce(
+    (total, message) => total + estimateTokens(message),
+    0,
+  );
   const prepared = prepareCompaction(entries, {
     enabled: true,
-    reserveTokens: Math.min(8192, Math.max(2048, Math.floor(model.contextWindow / 4))),
-    keepRecentTokens: tokens < 4096 ? 0 : Math.min(16000, Math.floor(tokens / 4)),
+    reserveTokens: Math.min(
+      8192,
+      Math.max(2048, Math.floor(model.contextWindow / 4)),
+    ),
+    keepRecentTokens:
+      tokens < 4096 ? 0 : Math.min(16000, Math.floor(tokens / 4)),
   });
   if (!prepared.ok) throw prepared.error;
-  if (!prepared.value) throw new Error('No new conversation context to compact');
+  if (!prepared.value)
+    throw new Error("No new conversation context to compact");
   signal.throwIfAborted();
-  const result = await compact(prepared.value, models, model, undefined, signal, 'off');
+  const result = await compact(
+    prepared.value,
+    models,
+    model,
+    undefined,
+    signal,
+    "off",
+  );
   if (!result.ok) throw result.error;
   signal.throwIfAborted();
   if (!result.value.summary.trim())
-    throw new Error('The model returned an empty compaction summary');
+    throw new Error("The model returned an empty compaction summary");
   return result.value;
 }

@@ -523,6 +523,7 @@ interface RestoredTranscriptMessage {
   kortixWireMessageId?: string;
   kortixParentMessageId?: string;
   kortixCompactionSummary?: boolean;
+  kortixCompactionAuto?: boolean;
   kortixWireCreatedAt?: number;
   kortixWireCompletedAt?: number;
   kortixWirePartIds?: string[];
@@ -674,6 +675,7 @@ export class RuntimeSurface {
 
       const role = message.role === 'user' ? 'user' : 'assistant';
       const parts: Array<
+        | { kind: 'compaction'; auto: boolean }
         | { kind: 'text'; text: string }
         | { kind: 'reasoning'; text: string }
         | { kind: 'tool'; call: any }
@@ -693,6 +695,9 @@ export class RuntimeSurface {
         else if (typeof b.text === 'string' && b.text.length > 0)
           parts.push({ kind: 'text', text: b.text });
         else if (b.type === 'toolCall' && b.name) parts.push({ kind: 'tool', call: b });
+      }
+      if (role === 'user' && typeof message.kortixCompactionAuto === 'boolean') {
+        parts.splice(0, parts.length, { kind: 'compaction', auto: message.kortixCompactionAuto });
       }
       // A message with nothing renderable would show as an empty bubble.
       // Keep a terminal assistant envelope even when the provider returned no
@@ -788,6 +793,16 @@ export class RuntimeSurface {
       parts.forEach((part, index) => {
         if (part.kind === 'tool' && suspendedIndex >= 0 && index > suspendedIndex) return;
         const partId = message.kortixWirePartIds?.[index] ?? `${id}-p${index}`;
+        if (part.kind === 'compaction') {
+          this.transcript.apply({
+            type: 'message.part.updated',
+            properties: {
+              sessionID: this.rootId,
+              part: { id: partId, messageID: id, sessionID: this.rootId, type: 'compaction', auto: part.auto },
+            },
+          });
+          return;
+        }
         if (part.kind === 'text' || part.kind === 'reasoning') {
           this.transcript.apply({
             type: 'message.part.updated',

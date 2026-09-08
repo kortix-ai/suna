@@ -40,7 +40,10 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { resolveProjectSessionCompactionId } from '@/features/session/session-compaction';
+import {
+  resolveProjectSessionCompactionId,
+  resolveProjectSessionRuntimeIdentity,
+} from '@/features/session/session-compaction';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
@@ -973,6 +976,9 @@ export function CommandPalette() {
   const currentProjectSession = projectSessionsList?.find(
     (session) => session.session_id === currentSessionId,
   );
+  const sessionConfigurationEnabled =
+    !!currentSessionId &&
+    (!projectId || resolveProjectSessionRuntimeIdentity(currentProjectSession) === 'opencode');
   const compactSessionId = projectId
     ? resolveProjectSessionCompactionId(currentProjectSession)
     : currentSessionId;
@@ -1315,7 +1321,7 @@ export function CommandPalette() {
     const q = query.trim().toLowerCase();
     const words = q.split(/\s+/).filter(Boolean);
     const items: { id: string; label: string; keywords: string; targetPage: PalettePage }[] = [];
-    if (currentSessionId) {
+    if (sessionConfigurationEnabled) {
       items.push({
         id: 'change-agent',
         label: 'Change Agent',
@@ -1328,6 +1334,8 @@ export function CommandPalette() {
         keywords: 'change model llm switch select provider anthropic openai claude gpt',
         targetPage: 'models',
       });
+    }
+    if (currentSessionId) {
       items.push({
         id: 'jump-to-message',
         label: 'Jump to Message',
@@ -1339,7 +1347,7 @@ export function CommandPalette() {
       const haystack = [item.label, item.keywords].join(' ').toLowerCase();
       return words.every((w) => haystack.includes(w));
     });
-  }, [hasQuery, query, currentSessionId]);
+  }, [hasQuery, query, currentSessionId, sessionConfigurationEnabled]);
 
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
@@ -2250,17 +2258,17 @@ export function CommandPalette() {
 
   const handleSelectAgent = useCallback(
     (agentName: string) => {
-      if (!currentSessionId) return;
+      if (!currentSessionId || !sessionConfigurationEnabled) return;
       modelStore.setSessionAgentName(currentSessionId, agentName);
       successToast(`Agent switched to ${agentName}`);
       close();
     },
-    [currentSessionId, modelStore, close],
+    [currentSessionId, sessionConfigurationEnabled, modelStore, close],
   );
 
   const handleSelectModel = useCallback(
     (providerID: string, modelID: string) => {
-      if (!currentAgent) return;
+      if (!currentAgent || !sessionConfigurationEnabled) return;
       // The SAME slot the composer reads/writes (use-opencode-local.ts):
       // scoped by provider mode + agent. The bare-agent-name slot is the
       // legacy shared fallback — writing there lets a pick made in gateway
@@ -2274,7 +2282,7 @@ export function CommandPalette() {
       successToast(`Model switched to ${model?.modelName || modelID}`);
       close();
     },
-    [currentAgent, modelStore, providers, allModels, close],
+    [currentAgent, sessionConfigurationEnabled, modelStore, providers, allModels, close],
   );
 
   const totalSearchResults = useMemo(() => {
@@ -2412,7 +2420,7 @@ export function CommandPalette() {
                         })}
                       </div>
 
-                      {currentSessionId && (
+                      {sessionConfigurationEnabled && (
                         <>
                           <CommandItem
                             value="suggestion change agent worker switch"
@@ -2452,19 +2460,21 @@ export function CommandPalette() {
                             )}
                             <ChevronRight className="text-muted-foreground/30 size-3" />
                           </CommandItem>
-                          <CommandItem
-                            value="suggestion jump to message go scroll navigate"
-                            onSelect={() => goToPage('messages')}
-                          >
-                            <MessageCircle className="size-4" />
-                            <span className="flex-1">
-                              {tHardcodedUi.raw(
-                                'componentsCommandPalette.line1235JsxTextJumpToMessage',
-                              )}
-                            </span>
-                            <ChevronRight className="text-muted-foreground/30 size-3" />
-                          </CommandItem>
                         </>
+                      )}
+                      {currentSessionId && (
+                        <CommandItem
+                          value="suggestion jump to message go scroll navigate"
+                          onSelect={() => goToPage('messages')}
+                        >
+                          <MessageCircle className="size-4" />
+                          <span className="flex-1">
+                            {tHardcodedUi.raw(
+                              'componentsCommandPalette.line1235JsxTextJumpToMessage',
+                            )}
+                          </span>
+                          <ChevronRight className="text-muted-foreground/30 size-3" />
+                        </CommandItem>
                       )}
 
                       {projectId && (
@@ -2800,7 +2810,7 @@ export function CommandPalette() {
               </>
             )}
 
-            {page === 'agents' && (
+            {page === 'agents' && sessionConfigurationEnabled && (
               <>
                 {primaryAgents.length > 0 && (
                   <CommandGroup heading="Agents" forceMount>
@@ -2898,7 +2908,7 @@ export function CommandPalette() {
               </>
             )}
 
-            {page === 'models' && (
+            {page === 'models' && sessionConfigurationEnabled && (
               <>
                 {groupedModels.map((group) => (
                   <CommandGroup

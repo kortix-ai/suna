@@ -41,6 +41,9 @@ describe('pi starter kit', () => {
     }
     expect(prompt).not.toContain('You have four tools');
     expect(prompt).not.toContain('there is no skill loader');
+    expect(prompt).toContain('**webfetch**');
+    expect(prompt).toContain('**websearch**');
+    expect(prompt).not.toContain('Only what you commit and push survives the session.');
   });
 
   test('is a selectable template id', () => {
@@ -113,14 +116,14 @@ describe('pi starter kit', () => {
 
   // Manifest resource grants stay explicit. Runtime tool availability is
   // described separately by the compiled agent and registered tools.
-  test('does not add implicit skill grants to the manifest', () => {
+  test('explicitly grants project skills to the default Pi agent', () => {
     const manifest = parseManifestText(byPath().get('kortix.yaml')!, 'yaml') as Record<
       string,
       unknown
     >;
     const agents = manifest.agents as Record<string, Record<string, unknown>>;
     for (const [name, block] of Object.entries(agents)) {
-      expect(`${name}:${'skills' in (block ?? {})}`).toBe(`${name}:false`);
+      expect(`${name}:${block.skills}`).toBe(`${name}:all`);
     }
   });
 

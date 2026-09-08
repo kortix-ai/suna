@@ -51,7 +51,7 @@ of each feature or the remaining parity matrix passed.
 | History while stopped | Durable transcript mirror and worker restoration | Full historical message identity preservation |
 | Public conversation while stopped | Sanitized worker transcript or PostgreSQL mirror | Preview: 24 messages preserved byte-for-byte as sanitized envelopes; anonymous HTTP 200, revoked HTTP 410 |
 | Worker/environment lifecycle | Distinct runtime principals, restore/stop/replacement, lease fencing | Race, credential, immutable identity, and live restart tests |
-| Manual context compaction | Native Pi compaction, complete display history, reduced model context, existing UI | Eight HTTP tests cover Stop, retry, queue, replacement, oversize, and crash boundaries; preview pending |
+| Context compaction | Native Pi manual compaction and automatic checks before new prompts; complete display history and reduced model context | Twelve HTTP tests cover thresholds, Stop, retry, queue, replacement, oversize, and crash boundaries; preview UI summary, recall, and exact 29-message restart preservation |
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
 
 Custom Pi modules are supported. OpenCode plugins are not automatically Pi
@@ -63,7 +63,7 @@ extensions. The native Pi lifecycle surface is documented in
 | Capability | Current behavior | Required work |
 |---|---|---|
 | File/image attachments | Pi rejects non-text prompt parts; hosts gate upload controls | Durable bounded attachment storage, model conversion, replay, and UI journeys |
-| Automatic context compaction | Manual compaction is implemented; threshold-triggered compaction is absent | Preview manual compaction proof; automatic threshold and context-overflow recovery |
+| Compaction within an active tool loop | Automatic compaction runs before a new prompt; manual compaction is available | Threshold checks between tool rounds and provider context-overflow recovery |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |

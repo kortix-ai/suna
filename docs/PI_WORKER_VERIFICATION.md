@@ -382,7 +382,11 @@ context. Oversized summaries fail before modifying the context.
 
 Local coverage includes history fidelity, configured model validation, queued
 prompts, idempotent retry, repeated compaction, Stop, oversized output, and both
-crash boundaries. The real preview UI test remains pending deployment.
+crash boundaries. Preview `abda3f6557b30422e910c2dc77b8e9bb542473c9` passes the
+real command-palette action. The UI shows progress, then an expandable summary.
+All 25 earlier message envelopes remain identical. A subsequent prompt recalls
+`PI_RESTART_OK_7D19` and `Blue`. Restart restores all 29 resulting envelopes
+exactly. The control-plane turn and prompt queues are empty.
 Automatic threshold-triggered compaction is not implemented by this change.
 
 Runtime token minting resolves every agent through the shared manifest grant
@@ -390,3 +394,32 @@ resolver. A YAML v3 agent named `meta` does not gain the legacy coordinator gran
 Environment image, token grant, and secret grant resolution use the worker's
 immutable configuration commit. Focused token/environment tests pass: 14 tests,
 39 assertions. The API typecheck passes. The root suite passes all six lanes.
+
+
+## Automatic compaction before prompts — 2026-09-08
+
+Before a new reply-producing prompt, Pi checks the effective model context.
+The estimate includes the incoming prompt, system instructions, and tool schemas.
+It reserves 15% of the context window, with an 8,192-token minimum and 25% cap.
+Provider usage and a conservative serialized estimate both inform the decision.
+The larger estimate wins. Empty history and context-only inputs skip compaction.
+
+The summary commits under the accepted prompt's owner lease. Its marker and
+summary persist separately from the pending prompt. Stop or summary failure
+prevents that prompt from executing. A later prompt can retry. A crash after the
+summary commit preserves it and interrupts the pending prompt without replaying
+its model call. Automatic summaries make no environment call.
+
+Sixteen focused tests pass with 138 assertions. These include four threshold
+tests and twelve HTTP compaction tests. Automatic compaction inside a running
+tool loop and provider context-overflow recovery remain unimplemented.
+The real automatic-compaction preview journey remains pending deployment.
+
+The command palette now gates Pi model and agent changes in suggestions, search,
+pages, and selection handlers. Manual and automatic summary cards use the neutral
+label `Context compacted`. This gating does not implement live reconfiguration.
+
+New Pi starter projects explicitly grant all project skills, matching the base
+starter's behavior. Existing project grants remain unchanged. The starter prompt
+explains worker web tools, pinned configuration commits, and environment file
+persistence. The starter package passes 92 tests with 1,206 assertions.

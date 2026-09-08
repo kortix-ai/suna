@@ -3833,7 +3833,7 @@ describe("prompt tool controls", () => {
 });
 
 describe('durable context compaction', () => {
-  async function fixture() {
+  async function fixture(fullContext = false) {
     const items: SessionLogItem[] = [];
     const config = {
       port: 0,
@@ -3857,8 +3857,159 @@ describe('durable context compaction', () => {
     const history = async (target = worker) => (await request(target, `/session/${sessionID}/message`)).json() as Promise<any[]>;
     worker.faux!.setResponses([fauxAssistantMessage('OLD_ASSISTANT_DETAIL')]);
     expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'OLD_USER_DETAIL: remember the launch code cobalt.' }] })).status).toBe(200);
+    if (fullContext) {
+      for (let index = 0; index < 4; index++) {
+        expect((await post(worker, 'message', { noReply: true, parts: [{ type: 'text', text: `ARCHIVE_${index}: ${'data '.repeat(24000)}` }] })).status).toBe(200);
+      }
+    }
     return { items, config, worker, sessionID, post, compactBody, history };
   }
+
+  test("automatically compacts a full context before the accepted prompt and preserves replay after replacement", async () => {
+    const { items, config, worker, post, history } = await fixture(true);
+    const before = await history();
+    let promptContext = "";
+    worker.faux!.setResponses([
+      fauxAssistantMessage("AUTOMATIC_SUMMARY: launch code cobalt."),
+      (ctx) => {
+        promptContext = JSON.stringify(ctx.messages);
+        return fauxAssistantMessage("cobalt after automatic compaction");
+      },
+    ]);
+    const input = {
+      messageID: mintWireMessageId({ nowMs: Date.now() + 1000 }).id,
+      parts: [{ type: "text", text: "Recall the launch code." }],
+    };
+    expect((await post(worker, "message", input)).status).toBe(200);
+    expect(promptContext).toContain("AUTOMATIC_SUMMARY");
+    expect(promptContext).toContain("Recall the launch code.");
+    expect(promptContext).not.toContain("OLD_USER_DETAIL");
+    const after = await history();
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(
+      after.filter((m) =>
+        m.parts.some((p: any) => p.type === "compaction" && p.auto === true),
+      ),
+    ).toHaveLength(1);
+    expect(after.at(-1).info.parentID).toBe(input.messageID);
+    expect(worker.env.calls).toHaveLength(0);
+    const count = worker.faux!.state.callCount;
+    expect((await post(worker, "message", input)).status).toBe(200);
+    expect(worker.faux!.state.callCount).toBe(count);
+    expect(
+      items.filter(
+        (i: any) => i.kind === "entry" && i.entry.type === "compaction",
+      ),
+    ).toHaveLength(1);
+    await worker.close();
+    const replacement = await startWorker(config);
+    workers.push(replacement);
+    expect(await history(replacement)).toEqual(after);
+    replacement.faux!.setResponses([
+      (ctx) => {
+        promptContext = JSON.stringify(ctx.messages);
+        return fauxAssistantMessage("cobalt again");
+      },
+    ]);
+    expect(
+      (
+        await post(replacement, "message", {
+          parts: [{ type: "text", text: "Recall again." }],
+        })
+      ).status,
+    ).toBe(200);
+    expect(promptContext).toContain("AUTOMATIC_SUMMARY");
+    expect(promptContext).not.toContain("OLD_USER_DETAIL");
+  });
+
+  test('replacement keeps an automatic summary committed before the accepted prompt starts', async () => {
+    const { items, config, worker, post, history } = await fixture(true);
+    const before = await history();
+    let atCrash: SessionLogItem[] = [];
+    worker.faux!.setResponses([
+      fauxAssistantMessage('AUTOMATIC_CRASH_SUMMARY: cobalt.'),
+      () => { atCrash = structuredClone(items); return fauxAssistantMessage('original completed'); },
+    ]);
+    const input = { messageID: mintWireMessageId({ nowMs: Date.now() + 1000 }).id, parts: [{ type: 'text', text: 'Continue after summarizing.' }] };
+    expect((await post(worker, 'message', input)).status).toBe(200);
+    expect(atCrash.filter((i: any) => i.kind === 'entry' && i.entry.type === 'compaction')).toHaveLength(1);
+    await worker.close();
+    const replacement = await startWorker({ ...config, storeUrl: await sharedStore(atCrash) });
+    workers.push(replacement);
+    const restored = await history(replacement);
+    expect(restored.slice(0, before.length)).toEqual(before);
+    expect(restored.some(m => m.parts.some((p: any) => p.text?.includes('AUTOMATIC_CRASH_SUMMARY')))).toBe(true);
+    expect(restored.at(-1).info.parentID).toBe(input.messageID);
+    expect(restored.at(-1).info.error).toBeDefined();
+    expect(replacement.faux!.state.callCount).toBe(0);
+    let nextContext = '';
+    replacement.faux!.setResponses([ctx => { nextContext = JSON.stringify(ctx.messages); return fauxAssistantMessage('cobalt'); }]);
+    expect((await post(replacement, 'message', { parts: [{ type: 'text', text: 'Recall after replacement.' }] })).status).toBe(200);
+    expect(nextContext).toContain('AUTOMATIC_CRASH_SUMMARY');
+    expect(nextContext).not.toContain('OLD_USER_DETAIL');
+  });
+
+  test('a failed automatic summary leaves the accepted prompt unexecuted and permits a later retry', async () => {
+    const { worker, post, history } = await fixture(true);
+    worker.faux!.setResponses([fauxAssistantMessage([], { stopReason: 'error', errorMessage: 'summary provider unavailable' })]);
+    const input = { messageID: mintWireMessageId({ nowMs: Date.now() + 1000 }).id, parts: [{ type: 'text', text: 'Wait for compaction.' }] };
+    await post(worker, 'message', input);
+    expect(worker.faux!.state.callCount).toBe(2);
+    expect((await history()).find(m => m.info.parentID === input.messageID)?.info.error).toBeDefined();
+    worker.faux!.setResponses([
+      fauxAssistantMessage('RECOVERED_AUTOMATIC_SUMMARY'),
+      fauxAssistantMessage('continued'),
+    ]);
+    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'Retry now.' }] })).status).toBe(200);
+    expect((await history()).at(-1).info.error).toBeUndefined();
+  });
+
+  test("Stop during automatic compaction cancels the accepted prompt without running it", async () => {
+    const { worker, items, post, sessionID, history } = await fixture(true);
+    const entered = deferred();
+    worker.faux!.setResponses([
+      async (_ctx, options) => {
+        entered.resolve();
+        await new Promise<void>((resolve) => {
+          if (options?.signal?.aborted) resolve();
+          else
+            options?.signal?.addEventListener("abort", () => resolve(), {
+              once: true,
+            });
+        });
+        return fauxAssistantMessage([], {
+          stopReason: "aborted",
+          errorMessage: "stopped",
+        });
+      },
+    ]);
+    const input = {
+      messageID: mintWireMessageId({ nowMs: Date.now() + 1000 }).id,
+      parts: [{ type: "text", text: "Do not run after Stop." }],
+    };
+    const pending = post(worker, "message", input);
+    await entered.promise;
+    expect(
+      (await history()).some(
+        (m) => m.info.summary === true && !m.info.time.completed,
+      ),
+    ).toBe(true);
+    expect(
+      (await request(worker, `/session/${sessionID}/abort`, { method: "POST" }))
+        .status,
+    ).toBe(200);
+    await pending;
+    expect(worker.faux!.state.callCount).toBe(2);
+    const messages = await history();
+    expect(
+      messages.find((m) => m.info.parentID === input.messageID)?.info.error,
+    ).toBeDefined();
+    expect(
+      items.filter(
+        (i: any) => i.kind === "entry" && i.entry.type === "compaction",
+      ),
+    ).toHaveLength(0);
+  });
 
   test('commits summary and display atomically, preserves history, and compacts the next model context after replacement', async () => {
     const { items, config, worker, post, compactBody, history } = await fixture();

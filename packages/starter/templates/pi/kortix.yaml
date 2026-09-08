@@ -2,10 +2,9 @@
 #
 # Kortix project manifest, schema version 3 — the pi-native version.
 #
-# v3 is v2 with two defaults flipped and no new syntax:
-#
-#   runtime      defaults to `pi`         (v2 defaults to `opencode`)
-#   config_dir   defaults to `.kortix/pi` (v2 defaults to `.kortix/opencode`)
+# Version 3 selects Pi. Version 2 selects OpenCode.
+# The default configuration directory is `.kortix/pi` for v3 and
+# `.kortix/opencode` for v2.
 #
 # So there is no `runtime: pi` line below — the version already says it — and
 # this project's agents live in `.kortix/pi/agents/`, not in a directory named
@@ -44,12 +43,4 @@ agents:
     connectors: all
     secrets: all
     kortix_cli: all
-    # No `skills:` grant. The pi runtime has no skill loader — a pi worker
-    # runs exactly four built-in tools (bash, read, write, edit) and never
-    # reads the `permission.skill` this grant compiles into. Granting it
-    # would name a capability the runtime does not have, and v3 is
-    # deny-by-default, so omitting it is both honest and correct.
-    #
-    # `.kortix/pi/skills/` is still real and still worth writing to: it is
-    # what the LOCAL coding tools read (`.claude/skills`, `.pi/skills`,
-    # `.agents/skills` all link there after `kortix init`).
+    skills: all
