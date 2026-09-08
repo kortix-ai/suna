@@ -885,6 +885,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         _persistedPromptDefaults = P.getProjectSession(projectId, sessionId, {
           showErrors: false,
         }).then((projectSession) => {
+          if (P.isPiWorkerRuntimeMetadata(projectSession.metadata)) return {};
           const modelReference =
             typeof projectSession.metadata?.opencode_model === 'string'
               ? projectSession.metadata.opencode_model.trim()
@@ -1283,11 +1284,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         _agent = agent;
       },
       /**
-       * Provision/resume if needed, then send a text prompt to the agent. A
-       * per-call `{ model, agent }` overrides the sticky setModel/setAgent
-       * choices for this message only.
+       * Provision/resume if needed, then send a text prompt to the agent.
+       * Per-call model and agent choices override handle defaults. Pi uses its
+       * compiled defaults. A reasoning variant applies only to this prompt.
        */
-      send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
+      send: async (text: string, opts?: { model?: SessionModel; agent?: string; variant?: string }) => {
         const { opencodeSessionId, runtimeUrl } = await ensureReady();
         const selectedModel = opts?.model ?? _model;
         const selectedAgent = opts?.agent ?? _agent;
@@ -1299,6 +1300,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           parts: [{ type: 'text', text }],
           ...(model ? { model } : {}),
           ...(agent ? { agent } : {}),
+          ...(opts?.variant === undefined ? {} : { variant: opts.variant }),
         });
       },
       /** Abort the agent's current run in this session. */

@@ -22,12 +22,12 @@ async function start() {
   globals.__KORTIX_COMPILED__ = {
     manifest: { default_agent: 'review' },
     agentConfig: {
-      model: 'openrouter/anthropic/claude-sonnet-4.5',
+      model: 'kortix/anthropic/claude-sonnet-4.5',
       agent: {
         review: {
           description: 'Review the selected change.',
           mode: 'primary',
-          model: 'openrouter/anthropic/claude-sonnet-4.5',
+          model: 'kortix/anthropic/claude-sonnet-4.5',
           variant: 'high',
           temperature: 0.2,
           top_p: 0.8,
@@ -58,7 +58,11 @@ async function start() {
     envCwd: '/workspace',
     envTransport: 'fetch',
     systemPrompt: 'Answer exactly.',
-    modelMode: 'faux',
+    modelMode: 'real',
+    providerId: 'openrouter',
+    modelId: 'anthropic/claude-sonnet-4.5',
+    gatewayUrl: 'http://127.0.0.1:1',
+    apiKey: 'discovery-fixture',
     sessionId: `discovery-routes-${workers.length}`,
     kortixToken: 'runtime-token',
   });
@@ -109,7 +113,7 @@ describe('Pi OpenCode discovery routes', () => {
           { permission: 'skill', pattern: '*', action: 'deny' },
           { permission: 'skill', pattern: 'release', action: 'allow' },
         ]),
-        model: { providerID: 'kortix', modelID: 'openrouter/anthropic/claude-sonnet-4.5' },
+        model: { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4.5' },
         variant: 'high',
         prompt: 'Review carefully.',
         options: { reasoning: 'enabled' },

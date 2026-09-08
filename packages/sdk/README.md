@@ -223,6 +223,13 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
+Pi sessions use the compiled agent and model instead of injecting stored
+OpenCode defaults. `await s.send("Review the change", { variant: "high" })`
+selects reasoning for that prompt only. Pi validates the effort against the
+selected model. The worker persists the choice across queued delivery and
+question recovery. Omit `variant` to use the compiled default.
+The React composer reasoning control remains gated during the Pi rollout.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by

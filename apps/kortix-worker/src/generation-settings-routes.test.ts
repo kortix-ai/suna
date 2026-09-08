@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { startWorker } from './worker.ts';
+import type { WorkerModelLimits } from './model-limits';
 
 const globals = globalThis as Record<string, unknown>;
 const originalCompiled = globals.__KORTIX_COMPILED__;
@@ -21,10 +22,53 @@ afterEach(async () => {
   for (const provider of providers.splice(0)) provider.stop(true);
 });
 
+test('the selected agent reasoning variant reaches every provider request', async () => {
+  const requests = await exercise({ variant: 'high' }, 'openrouter', 'openai/o3');
+  for (const request of requests) {
+    expect(request.body.reasoning_effort ?? request.body.reasoning?.effort).toBe('high');
+  }
+});
+
+test('an empty legacy compiled variant preserves the default', async () => {
+  await exercise({ variant: '' }, 'openrouter', 'openai/gpt-4.1');
+});
+
+test('unsupported compiled reasoning fails before any model request', async () => {
+  await expect(exercise({ variant: 'high' }, 'openrouter', 'openai/gpt-4.1')).rejects.toThrow('reasoning variant');
+});
+
+test('a gateway alias uses its own reasoning effort map', async () => {
+  const requests = await exercise({ variant: 'max' }, 'openrouter', 'gpt-5.6-luna', {
+    model: 'gpt-5.6-luna', context: 1050000, output: 128000,
+    reasoning: true, reasoningEfforts: ['none', 'low', 'high', 'max'],
+  });
+  for (const request of requests) {
+    expect(request.body.reasoning_effort ?? request.body.reasoning?.effort).toBe('max');
+  }
+});
+
+test('a gateway alias cannot silently clamp an unsupported reasoning effort', async () => {
+  await expect(exercise({ variant: 'max' }, 'openrouter', 'gpt-5.6-luna', {
+    model: 'gpt-5.6-luna', context: 1050000, output: 128000,
+    reasoning: true, reasoningEfforts: ['low', 'high'],
+  })).rejects.toThrow('reasoning variant');
+});
+
+test('prompt reasoning overrides last one turn and preserve the compiled default', async () => {
+  const requests = await exercise({ variant: 'high' }, 'openrouter', 'gpt-5.6-luna', {
+    model: 'gpt-5.6-luna', context: 1050000, output: 128000,
+    reasoning: true, reasoningEfforts: ['none', 'low', 'high', 'max'],
+  }, ['max', undefined, 'none', 'low', undefined]);
+  expect(requests.map(request => request.body.reasoning_effort ?? request.body.reasoning?.effort))
+    .toEqual(['max', 'high', 'none', 'low', 'high']);
+});
+
 async function exercise(
   settings: Record<string, unknown>,
   providerId: 'openrouter' | 'anthropic',
   configuredModel?: string,
+  modelLimits?: WorkerModelLimits,
+  variants: (string | undefined)[] = [undefined, undefined],
 ) {
   const requests: { path: string; body: Record<string, any> }[] = [];
   const modelId =
@@ -111,6 +155,7 @@ async function exercise(
     modelMode: 'real',
     providerId,
     modelId,
+    modelLimits,
     gatewayUrl:
       provider.url.toString().replace(/\/$/, '') + (providerId === 'openrouter' ? '/v1' : ''),
     apiKey: 'fixture-provider-token',
@@ -121,20 +166,25 @@ async function exercise(
   const base = `http://127.0.0.1:${worker.port}`;
   const headers = { authorization: 'Bearer runtime-token', 'content-type': 'application/json' };
   const sessions = (await (await fetch(base + '/session', { headers })).json()) as { id: string }[];
-  for (let turn = 0; turn < 2; turn++) {
+  const defaultThinking = worker.agent.state.thinkingLevel;
+  for (const variant of variants) {
     const response = await fetch(base + `/session/${sessions[0]!.id}/message`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ parts: [{ type: 'text', text: 'Reply.' }] }),
+      body: JSON.stringify({ variant, parts: [{ type: 'text', text: 'Reply.' }] }),
     });
     expect(response.status).toBe(200);
     const message = (await response.json()) as any;
+    expect(worker.agent.state.thinkingLevel).toBe(defaultThinking);
     expect(message.info.error).toBeUndefined();
     expect(
       message.parts.some((part: any) => part.type === 'text' && part.text === 'Settings applied.'),
     ).toBe(true);
   }
-  expect(requests).toHaveLength(2);
+  expect(requests).toHaveLength(variants.length);
+  const messages = await (await fetch(base + `/session/${sessions[0]!.id}/message`, { headers })).json() as any[];
+  expect(messages.filter(message => message.info.role === 'user').map(message => message.info.variant))
+    .toEqual(variants.map(variant => variant ?? (settings.variant || undefined)));
   for (const request of requests) expect(request.body.model).toBe(modelId);
   return requests;
 }

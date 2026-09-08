@@ -3,6 +3,7 @@ import { WIRE_MESSAGE_ID, canMintOrderedReplyAfter } from './wire-message-id.ts'
 export interface CompiledPromptRuntime {
   agent?: string | null;
   model?: { providerID: string; modelID: string } | null;
+  variants?: string[];
 }
 
 export interface PromptInput {
@@ -11,12 +12,13 @@ export interface PromptInput {
   system?: string;
   noReply?: boolean;
   tools?: Record<string, boolean>;
+  variant?: string;
 }
 
 export type PromptInputResult = { ok: true; value: PromptInput } | { ok: false; error: string };
 
 const SUPPORTED_FIELDS = new Set([
-  'messageID', 'model', 'agent', 'parts', 'system', 'noReply', 'tools',
+  'messageID', 'model', 'agent', 'parts', 'system', 'noReply', 'tools', 'variant',
 ]);
 const SUPPORTED_TEXT_PART_FIELDS = new Set(['type', 'text']);
 
@@ -42,9 +44,13 @@ export function parsePromptInput(
   }
 
   for (const field of Object.keys(body)) {
-    if (!SUPPORTED_FIELDS.has(field)) {
+    if (!SUPPORTED_FIELDS.has(field) || (field === 'variant' && !runtime.variants)) {
       return { ok: false, error: `prompt field "${field}" is not supported by the Pi worker` };
     }
+  }
+
+  if (own(body, 'variant') && (typeof body.variant !== 'string' || !runtime.variants?.includes(body.variant))) {
+    return { ok: false, error: 'reasoning variant is not supported by the selected model' };
   }
 
   if (own(body, 'system') && typeof body.system !== 'string') {
@@ -152,6 +158,7 @@ export function parsePromptInput(
       ...(typeof body.system === 'string' ? { system: body.system } : {}),
       ...(typeof body.noReply === 'boolean' ? { noReply: body.noReply } : {}),
       ...(own(body, 'tools') ? { tools: body.tools as Record<string, boolean> } : {}),
+      ...(typeof body.variant === 'string' ? { variant: body.variant } : {}),
     },
   };
 }

@@ -1,10 +1,25 @@
 import type { Agent } from '@earendil-works/pi-agent-core';
+import { getSupportedThinkingLevels, type ModelThinkingLevel } from '@earendil-works/pi-ai';
+
+export function applyReasoningVariant(agent: Agent, variant: string): void {
+  const level = variant === 'none' ? 'off' : variant;
+  if (!agent.state.model || !getSupportedThinkingLevels(agent.state.model).includes(level as ModelThinkingLevel)) {
+    throw new Error(`reasoning variant "${variant}" is not supported by the selected model`);
+  }
+  agent.state.thinkingLevel = level as ModelThinkingLevel;
+}
+
+export function supportedReasoningVariants(agent: Agent): string[] {
+  if (!agent.state.model?.reasoning) return [];
+  return getSupportedThinkingLevels(agent.state.model).map(level => level === 'off' ? 'none' : level);
+}
 
 export function applyGenerationSettings(
   agent: Agent,
-  settings: { temperature?: number; top_p?: number } | undefined,
+  settings: { temperature?: number; top_p?: number; variant?: string } | undefined,
 ): void {
   if (!settings) return;
+  if (settings.variant) applyReasoningVariant(agent, settings.variant);
   const { temperature, top_p: topP } = settings;
   for (const [field, value] of [
     ['temperature', temperature],

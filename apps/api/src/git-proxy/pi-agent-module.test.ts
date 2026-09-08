@@ -55,6 +55,14 @@ test('the compiler rejects missing, escaping, and uninstalled imports instead of
     ).rejects.toThrow();
 });
 
+test.each(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', ''])('Pi agent configuration accepts reasoning variant %s', variant => {
+  expect(() => validatePiAgentFrontmatter({ variant }, 'reviewer')).not.toThrow();
+});
+
+test.each([false, 42, null, [], {}].map(variant => [variant] as const))('Pi agent configuration rejects malformed reasoning variant %j', variant => {
+  expect(() => validatePiAgentFrontmatter({ variant }, 'reviewer')).toThrow(/reviewer/);
+});
+
 test('Pi config has one explicit source directory and rejects unsupported behavior fields', () => {
   expect(resolvePiConfigDir({ kortix_version: 3 })).toBe('.kortix/pi');
   expect(

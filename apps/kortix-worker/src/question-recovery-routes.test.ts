@@ -436,7 +436,7 @@ test('a temporary store outage within the owner lease keeps a pending question a
 }, 30000);
 
 test.each([false, true])('an expired owner settles after storage returns, outage reads available=%s', async (outageReadsAvailable) => {
-  const f = await fixture({ ownerLeaseMs: 200, outageReadsAvailable });
+  const f = await fixture({ ownerLeaseMs: 200, outageReadsAvailable, pauseReadAfterCompletion: true });
   try {
     const worker = await f.start();
     expect(
@@ -455,6 +455,9 @@ test.each([false, true])('an expired owner settles after storage returns, outage
     expect(await worker.read('/question')).toEqual([]);
     expect(f.effects).toEqual(['BEFORE_QUESTION']);
     await Bun.sleep(6400);
+    await f.readPaused;
+    expect(await worker.read('/session/status')).toEqual({ [f.sessionID]: { type: 'busy' } });
+    f.releaseRead();
     await f.until(
       () => worker.read('/session/status'),
       (value) => !value[f.sessionID] || value[f.sessionID].type === 'idle',

@@ -2,6 +2,7 @@ import { expect } from 'bun:test';
 import { isDeepStrictEqual } from 'node:util';
 import type { SessionLogItem } from './session-store.ts';
 import { mintRootId } from './wire-message-id.ts';
+import type { WorkerModelLimits } from './model-limits.ts';
 
 export const questions = [
   {
@@ -29,6 +30,9 @@ export async function fixture(
     ownerLeaseMs?: number;
     outageReadsAvailable?: boolean;
     permission?: 'primary' | 'external' | 'doom';
+    modelId?: string;
+    modelLimits?: WorkerModelLimits;
+    pauseReadAfterCompletion?: boolean;
   } = {},
 ) {
   const items: SessionLogItem[] = [];
@@ -38,6 +42,11 @@ export async function fixture(
   const children: ReturnType<typeof Bun.spawn>[] = [];
   let storeUnavailableUntil = 0;
   let failedStoreRequests = 0;
+  let pauseNextRead = false;
+  let markReadPaused!: () => void;
+  let releaseRead!: () => void;
+  const readPaused = new Promise<void>(resolve => { markReadPaused = resolve; });
+  const readReleased = new Promise<void>(resolve => { releaseRead = resolve; });
   let rejectPermissionRelease = options.rejectPermissionRelease ?? false;
   let rejectPermissionUpdates = options.rejectPermissionUpdates ?? false;
   const server = Bun.serve({
@@ -148,7 +157,14 @@ export async function fixture(
         failedStoreRequests++;
         return new Response('Store temporarily unavailable', { status: 503 });
       }
-      if (request.method === 'GET') return Response.json(items);
+      if (request.method === 'GET') {
+        if (pauseNextRead) {
+          pauseNextRead = false;
+          markReadPaused();
+          await readReleased;
+        }
+        return Response.json(items);
+      }
       const item = (await request.json()) as SessionLogItem;
       if (
         rejectPermissionUpdates &&
@@ -168,6 +184,7 @@ export async function fixture(
         return new Response(null, { status: isDeepStrictEqual(byKey.get(key), item) ? 204 : 409 });
       byKey.set(key, structuredClone(item));
       items.push(structuredClone(item));
+      if (options.pauseReadAfterCompletion && item.kind === 'journal' && item.record.type === 'completed') pauseNextRead = true;
       if (
         item.kind === 'journal' &&
         item.stream ===
@@ -190,7 +207,8 @@ export async function fixture(
     systemPrompt: 'Follow the user.',
     modelMode: 'real',
     providerId: 'openrouter',
-    modelId: 'openai/gpt-4.1',
+    modelId: options.modelId ?? 'openai/gpt-4.1',
+    modelLimits: options.modelLimits,
     gatewayUrl: server.url + 'v1',
     apiKey: 'fixture',
     sessionId,
@@ -250,6 +268,8 @@ export async function fixture(
   };
   return {
     items,
+    readPaused,
+    releaseRead,
     allowPermissionRelease: () => {
       rejectPermissionRelease = false;
     },
@@ -266,6 +286,7 @@ export async function fixture(
     start,
     until,
     cleanup: async () => {
+      releaseRead();
       for (const child of children) {
         if (child.exitCode === null) child.kill('SIGKILL');
         await child.exited;

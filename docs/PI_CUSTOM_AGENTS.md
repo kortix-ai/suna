@@ -79,12 +79,13 @@ Use review_text when asked to count words. Explain the result briefly.
 | Markdown body | System prompt |
 | `model` | Initial model; an explicit session model selection takes precedence |
 | `temperature`, `top_p` | Provider sampling settings, subject to model support |
+| `variant` | Default reasoning effort; validated against the selected model |
 | `steps` | Native turn limit; a final response follows the permitted tool steps |
 | `permission` | Tool allow, ask, or deny policy; custom tool names use the same policy |
 | `description`, `mode`, `color`, `hidden` | Agent metadata exposed through the compatibility API |
 | `disable` | Disables this agent; manifest `enabled: false` also disables it |
 
-Unknown fields fail compilation. Nonempty `variant` and `options` are unsupported.
+Unknown fields fail compilation. Nonempty `options` is unsupported.
 Empty legacy `variant: ''` and `options: {}` are tolerated. OpenCode plugins, MCP
 configuration, Pi CLI settings files, and coding-agent TUI extensions are not
 loaded through these fields.
@@ -92,6 +93,16 @@ loaded through these fields.
 Missing, invalid, disabled, or undeclared selected-agent configuration fails
 compilation or session admission. It does not silently substitute another agent.
 A source module is optional. Existing Markdown-only agents keep working.
+
+`variant` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
+Each model supports a subset. Unsupported choices fail before model execution.
+For gateway aliases, the compiled model metadata carries the catalog's effort
+levels. An unknown alias cannot inherit another model's reasoning capabilities.
+The Markdown default takes precedence over a source module's `thinkingLevel`.
+An explicit HTTP prompt or SDK `send` variant applies only to that prompt.
+The worker stores this choice before acknowledgment and restores the default
+after the prompt. Question recovery preserves the stored choice.
+Command overrides and React composer reasoning controls remain gated.
 
 ## Custom source
 

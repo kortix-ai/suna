@@ -4,6 +4,16 @@ import { parseWorkerModelLimits, selectWorkerModelLimits } from './model-limits'
 const luna = { model: 'gpt-5.6-luna', context: 1050000, output: 128000 };
 const other = { model: 'other', context: 200000, output: 32000 };
 
+test('rejects malformed reasoning metadata instead of enabling unsupported levels', () => {
+  for (const settings of [
+    { reasoning: 'yes' },
+    { reasoning: true, reasoningEfforts: ['bogus'] },
+    { reasoning: true, reasoningEfforts: 'high' },
+    { reasoning: false, reasoningEfforts: ['high'] },
+    { reasoningEfforts: ['high'] },
+  ]) expect(() => parseWorkerModelLimits(JSON.stringify({ ...luna, ...settings }))).toThrow();
+});
+
 test('keeps limits attached to their exact model through session overrides', () => {
   expect(selectWorkerModelLimits(luna.model, undefined, luna)).toEqual(luna);
   expect(selectWorkerModelLimits(other.model, other, luna)).toEqual(other);

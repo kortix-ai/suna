@@ -1067,6 +1067,37 @@ test('per-call and handle prompt choices override persisted session defaults', a
   ).toHaveLength(1);
 });
 
+test('Pi sends use compiled defaults and forward explicit per-turn reasoning', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({ url, method: request?.method ?? init?.method ?? 'GET', body: bodyText ? JSON.parse(bodyText) : undefined });
+    if (url.includes('/sessions/SESS-PI-DEFAULTS/start')) {
+      return jsonResponse({ ...sessionStartPayload('sb-pi-defaults', 'ses_pi_defaults'),
+        sandbox: { external_id: 'sb-pi-defaults', metadata: { sandbox_slug: 'pi-worker' } },
+      });
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-PI-DEFAULTS')) {
+      return jsonResponse({ session_id: 'SESS-PI-DEFAULTS', agent_name: 'reviewer',
+        metadata: { sandbox_slug: 'pi-worker', opencode_model: 'kortix/stale-default' },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' })
+    .session('PROJ', 'SESS-PI-DEFAULTS');
+  await handle.send('compiled default');
+  await handle.send('use high reasoning', { variant: 'high' });
+  await handle.send('compiled default again');
+  const prompts = calls.filter(call => call.url.endsWith('/session/ses_pi_defaults/message') && call.method === 'POST');
+  expect(prompts.map(call => call.body)).toEqual([
+    { parts: [{ type: 'text', text: 'compiled default' }] },
+    { parts: [{ type: 'text', text: 'use high reasoning' }], variant: 'high' },
+    { parts: [{ type: 'text', text: 'compiled default again' }] },
+  ]);
+});
+
 test('a failed persisted-default read is retried by the next send', async () => {
   let sessionReads = 0;
   globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {

@@ -19,7 +19,7 @@ const behavior = new Set([
 export function validatePiAgentFrontmatter(fields: Record<string, unknown>, agent: string): void {
   for (const [key, value] of Object.entries(fields)) {
     if (
-      (key === 'variant' && value === '') ||
+      (key === 'variant' && typeof value === 'string' && ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(value)) ||
       (key === 'options' &&
         value &&
         typeof value === 'object' &&

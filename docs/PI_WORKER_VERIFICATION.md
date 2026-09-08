@@ -522,7 +522,17 @@ The API now invalidates ingress after wake and retries a rejected session-list
 credential once with fresh credentials. Pi process bootstrap runs after the
 worker lease becomes active and its compute window reopens. OpenCode skips this
 Pi bootstrap. The 100 related tests pass, including permanent auth rejection.
-Live verification of this fix is recorded after deployment.
+Preview `b1691678d847a075592c7f2698ec45b4d2eea85b` verifies the resume fix.
+The same stopped session that failed before the fix becomes ready in 4,802 ms.
+Its native conversation ID is unchanged. The SSE connection takes 323 ms;
+first text arrives 5,114 ms after message submission. The reply is `READY`.
+Cleanup returns 200 and confirms the session is stopped. This single sample
+proves recovery and protocol behavior; it is not a runtime comparison.
+
+The real API model guard also returns `409 SESSION_MODEL_FIXED_AT_START` on
+that preview SHA. All metadata and the native conversation ID remain unchanged.
+Deployment run 34244103153 succeeds on retry after GitHub's artifact service
+returns an intermediary 403 during the first download attempt.
 
 The latest local full run passes REST/CLI flows (396/396), SDK, worker, browser
 (17 passed, 2 skipped), runner, route coverage, and worktree lanes. Its package
@@ -530,3 +540,30 @@ lane fails two snapshot tests after one times out. Those snapshot cases pass
 11/11 in isolation after their filesystem-staging timeout is corrected.
 A package rerun exposes separate snapshot cleanup, strict timing, and CLI status
 failures. The full local gate is not green; focused passes do not replace it.
+
+The exact `b1691678d847a075592c7f2698ec45b4d2eea85b` full-preview run
+[34245603663](https://github.com/kortix-ai/suna/actions/runs/34245603663) reports
+455/462 API/CLI flows passed, four failed, and three skipped (two quarantined).
+The same four Git shipping flows fail at provider ingress. All 19 browser
+journeys pass. The API/CLI lane takes 635.8 seconds; the browser lane takes 220.4 seconds.
+
+## Reasoning settings and recovery projection — 2026-09-08
+
+Pi agent Markdown now accepts supported reasoning effort names. The worker
+applies the compiled default and accepts per-prompt `variant` values only from
+the selected model's supported levels. Gateway model metadata supplies its
+reasoning flag and effort list. Unknown aliases no longer clone an unrelated
+model's capabilities. Per-prompt settings persist in admission and user-message
+metadata. The worker restores its default after each turn.
+
+Real local provider requests verify default, override, no-reasoning, and next-turn
+behavior. A subprocess test kills a worker during a question, restores `max`,
+executes each workspace action once, sends the next prompt with `none`, and
+compares the complete transcript after another restart. The SDK's direct `send`
+method forwards `variant` and stops injecting stored OpenCode defaults into Pi.
+React composer and command overrides remain gated.
+
+The full worker suite also exposed a status/projection race during outage
+recovery. Two controlled storage tests now block the first read after journal
+completion. The worker must remain busy until the recovered transcript is
+projected. The tests fail before the barrier and pass afterward.

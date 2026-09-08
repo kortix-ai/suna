@@ -12,7 +12,7 @@ import { createOpencodeClient } from '@opencode-ai/sdk/v2/client';
 
 import type { SessionLogItem } from './session-store.ts';
 import { mintWireMessageId, wireIdTime } from './wire-message-id.ts';
-import { startWorker, tapFirstToken } from './worker.ts';
+import { DEFAULT_TURN_OWNER_LEASE_MS, startWorker, tapFirstToken } from './worker.ts';
 
 const workers: Array<Awaited<ReturnType<typeof startWorker>>> = [];
 const supportServers: Array<ReturnType<typeof createServer>> = [];
@@ -3833,7 +3833,7 @@ describe("prompt tool controls", () => {
 });
 
 describe('durable context compaction', () => {
-  async function fixture(fullContext = false) {
+  async function fixture(fullContext = false, turnOwnerLeaseMs = 100) {
     const items: SessionLogItem[] = [];
     const config = {
       port: 0,
@@ -3841,7 +3841,7 @@ describe('durable context compaction', () => {
       envUrlExplicit: true,
       envCwd: '/workspace',
       systemPrompt: 'Follow the user.',
-      turnOwnerLeaseMs: 100,
+      turnOwnerLeaseMs,
       turnOwnerHeartbeatMs: 20,
       modelMode: 'faux' as const,
       sessionId: `compact-${crypto.randomUUID()}`,
@@ -4159,7 +4159,7 @@ describe('durable context compaction', () => {
   });
 
   test('an oversized summary fails before storage mutation and leaves the conversation usable', async () => {
-    const { worker, items, post, compactBody, history } = await fixture();
+    const { worker, items, post, compactBody, history } = await fixture(false, DEFAULT_TURN_OWNER_LEASE_MS);
     const before = await history();
     worker.faux!.setResponses([fauxAssistantMessage('summary'.repeat(100000))]);
     expect((await post(worker, 'summarize', compactBody)).status).toBe(409);

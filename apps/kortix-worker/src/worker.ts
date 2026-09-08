@@ -1,6 +1,6 @@
 import { parseWorkerModelLimits, type WorkerModelLimits } from './model-limits';
 import { installCustomAgent } from './custom-agent.ts';
-import { applyGenerationSettings } from './generation-settings.ts';
+import { applyGenerationSettings, applyReasoningVariant, supportedReasoningVariants } from './generation-settings.ts';
 import { applyAgentSteps } from './agent-steps.ts';
 import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
 /**
@@ -597,21 +597,29 @@ export async function buildHarness(cfg: WorkerConfig) {
     }
     const list = models.getModels(provider.id);
     model = cfg.modelId ? models.getModel(provider.id, cfg.modelId) : list[0];
-    if (!model && cfg.modelId && cfg.gatewayUrl && list[0]) {
-      // Behind the Kortix gateway the model ref is the GATEWAY's contract
-      // (native `<provider>/<model>`), not a catalog-membership question —
-      // the first dev session died here with "no model resolved" because the
-      // baked ref is not an OpenRouter catalog id. Clone a catalog entry for
-      // its field shape, stamp the requested ref, and point it at the
-      // gateway directly so routing does not depend on auth-layer env
-      // plumbing.
-      model = { ...list[0], id: cfg.modelId, name: cfg.modelId, baseUrl: cfg.gatewayUrl, contextWindow: 0 };
+    if (!model && cfg.modelId && cfg.gatewayUrl && cfg.providerId === 'openrouter') {
+      model = {
+        id: cfg.modelId, name: cfg.modelId, api: 'openai-completions',
+        provider: provider.id, baseUrl: cfg.gatewayUrl,
+        reasoning: false, input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 0, maxTokens: 32768,
+      };
     }
     if (!model) throw new Error(`no model resolved for provider ${provider.id}`);
     if (cfg.gatewayUrl) model = { ...model, baseUrl: cfg.gatewayUrl };
     if (cfg.modelLimits) {
       if (cfg.modelLimits.model !== model.id) throw new Error('Model limits do not match the selected model');
       model = { ...model, contextWindow: cfg.modelLimits.context, maxTokens: cfg.modelLimits.output };
+      if (cfg.modelLimits.reasoning !== undefined) model.reasoning = cfg.modelLimits.reasoning;
+      if (cfg.modelLimits.reasoningEfforts !== undefined) {
+        model.thinkingLevelMap = Object.fromEntries(
+          ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(level => {
+            const effort = level === 'off' ? 'none' : level;
+            return [level, cfg.modelLimits!.reasoningEfforts!.includes(effort) ? effort : null];
+          }),
+        );
+      }
     }
   }
 
@@ -1360,8 +1368,12 @@ export async function startWorker(cfg = configFromEnv()) {
     | ((messageId: string) => Promise<'deleted' | 'running' | 'missing'>)
     | null = null;
   let surface!: RuntimeSurface;
+  let recoveryProjectionCount = 0;
+  let recoveryProjectionPending = false;
   const selectedAgentConfig = compiledPayload?.agentConfig?.agent?.[runtimeAgent];
+  const configuredVariant = selectedAgentConfig?.variant || undefined;
   applyGenerationSettings(agent, selectedAgentConfig);
+  effectiveRuntime.variants = supportedReasoningVariants(agent);
   const resumeAgentSteps = applyAgentSteps(agent, selectedAgentConfig?.steps);
   const permissions = new PermissionBroker({
     sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
@@ -1507,9 +1519,10 @@ export async function startWorker(cfg = configFromEnv()) {
       })();
     },
     onStatus: async () => {
-      if (surface.turnProbe(null).turn_in_flight) return { type: 'busy' };
+      if (surface.turnProbe(null).turn_in_flight || recoveryProjectionCount > 0) return { type: 'busy' };
+      if (recoveryProjectionPending) await hydrateDurableState();
       await turnJournal.refresh();
-      return { type: turnJournal.oldestNonterminal() ? 'busy' : 'idle' };
+      return { type: turnJournal.oldestNonterminal() || recoveryProjectionCount > 0 ? 'busy' : 'idle' };
     },
     onDeleteMessage: (messageId) => deleteAdmittedTurn?.(messageId) ?? Promise.resolve('missing'),
   });
@@ -1557,6 +1570,17 @@ export async function startWorker(cfg = configFromEnv()) {
     const journal = await turnJournal.refresh();
     await permissionApprovals.refresh();
     surface.replaceDurableMessages(messages, journal.wireMessages);
+    recoveryProjectionPending = false;
+  };
+  const recoverAndProjectTurn = async (messageId: string): Promise<void> => {
+    recoveryProjectionCount++;
+    recoveryProjectionPending = true;
+    try {
+      await recoverAbandonedTurn(messageId);
+      await hydrateDurableState();
+    } finally {
+      recoveryProjectionCount--;
+    }
   };
 
   const waitForRemoteTurn = async (messageId: string): Promise<TurnCompletion> => {
@@ -1670,11 +1694,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   };
 
-  type PromptOptions = { system?: string; noReply?: boolean; tools?: Record<string, boolean>; compaction?: boolean; compactionAuto?: boolean };
+  type PromptOptions = { system?: string; noReply?: boolean; tools?: Record<string, boolean>; variant?: string; compaction?: boolean; compactionAuto?: boolean };
   const admissionOptions = (options: PromptOptions): JsonObject => ({
     ...(effectiveRuntime.agent ? { agent: effectiveRuntime.agent } : {}),
     ...(effectiveRuntime.model ? { model: effectiveRuntime.model } : {}),
     ...(options.system === undefined ? {} : { system: options.system }),
+    ...((options.variant ?? configuredVariant) === undefined ? {} : { variant: (options.variant ?? configuredVariant)! }),
     ...(options.noReply === true ? { noReply: true } : {}),
     ...(options.compaction === true ? { compaction: true, compactionAuto: options.compactionAuto === true } : {}),
     ...(options.tools === undefined
@@ -1720,8 +1745,7 @@ export async function startWorker(cfg = configFromEnv()) {
           return 'completed';
         }
         if (state === 'started' && sessionLog) {
-          await recoverAbandonedTurn(turn.messageId);
-          await hydrateDurableState();
+          await recoverAndProjectTurn(turn.messageId);
           continue;
         }
         if (state === 'started') return waitForRemoteTurn(turn.messageId);
@@ -1732,8 +1756,7 @@ export async function startWorker(cfg = configFromEnv()) {
           durableHead.messageId !== turn.messageId &&
           sessionLog
         ) {
-          await recoverAbandonedTurn(durableHead.messageId);
-          await hydrateDurableState();
+          await recoverAndProjectTurn(durableHead.messageId);
           if (hasResumableTurn(durableHead.messageId)) {
             const admission = turnJournal.admission(durableHead.messageId);
             if (!admission) throw new Error('recovered interaction lost its admission');
@@ -1849,6 +1872,7 @@ export async function startWorker(cfg = configFromEnv()) {
       }, abortPollMs);
       let completedDurably = false;
       const originalSystemPrompt = agent.state.systemPrompt;
+      const originalThinkingLevel = agent.state.thinkingLevel;
       const originalTools = agent.state.tools;
       let toolReplay: ReturnType<typeof installToolReplay> | null = null;
       if (typeof turn.options.system === 'string' && turn.options.system) {
@@ -1857,6 +1881,7 @@ export async function startWorker(cfg = configFromEnv()) {
           .join('\n');
       }
       try {
+        if (typeof turn.options.variant === 'string') applyReasoningVariant(agent, turn.options.variant);
         await permissionApprovals.refresh();
         agent.state.tools = originalTools.filter((tool) => permissions.toolEnabled(tool.name));
         const created = Number(
@@ -2022,6 +2047,7 @@ export async function startWorker(cfg = configFromEnv()) {
         toolReplay?.close();
         permissions.restoreCheckpoints([]);
         agent.state.systemPrompt = originalSystemPrompt;
+        agent.state.thinkingLevel = originalThinkingLevel;
         agent.state.tools = originalTools;
         settling = true;
         clearTimeout(leaseTimer);
@@ -2139,6 +2165,7 @@ export async function startWorker(cfg = configFromEnv()) {
           agent: runtimeAgent,
           model: effectiveRuntime.model ?? resolvedModel,
           ...(options.system === undefined ? {} : { system: options.system }),
+          ...((options.variant ?? configuredVariant) === undefined ? {} : { variant: (options.variant ?? configuredVariant)! }),
           ...(options.tools === undefined ? {} : { tools: options.tools }),
         },
         parts: [
@@ -2657,6 +2684,7 @@ export async function startWorker(cfg = configFromEnv()) {
               system: parsed.value.system,
               noReply: parsed.value.noReply,
               tools: parsed.value.tools,
+              variant: parsed.value.variant,
             });
             if (admitted.state === 'cancelled') {
               res.writeHead(409, { 'content-type': 'application/json' }).end(

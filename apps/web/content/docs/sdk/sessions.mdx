@@ -139,6 +139,13 @@ For OpenCode REST sessions, the first `send()` on a handle reads the model and
 agent persisted on the Kortix session. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults.
 
+Pi sessions use their compiled agent and model. They do not inject the stored
+OpenCode defaults. Set a per-prompt reasoning effort with
+`await s.send('Review the change', { variant: 'high' })`. The Pi worker validates
+the effort for its selected model and preserves it during question recovery.
+Omit `variant` to use the compiled default. The React composer reasoning
+control remains gated during the Pi rollout.
+
 Prompt choice precedence is:
 
 1. The `send()` call.
@@ -157,6 +164,8 @@ Restarting the runtime is how the change takes effect, so an in-flight turn ends
 `applied_live` is `true` when a running session took it now, `false` when it
 applies at the next start. Only the session owner, or a caller with project-manager
 permissions, may change the model; anyone else gets `403`.
+Pi sessions return `409 SESSION_MODEL_FIXED_AT_START` without changing metadata.
+Start a new Pi session to select another model.
 
 `send()` resolves the runtime, then prompts it. `abort()` stops the current
 run without deleting the session.

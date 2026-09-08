@@ -5453,3 +5453,17 @@ compute window reopens. The worker must not call the API using a stopped lease.
 Enforced by `projects/opencode-mapping-transport.test.ts` and the Pi/OpenCode
 resume cases in `__tests__/e2e-project-session-contract.test.ts`. The live resume
 benchmark records the native conversation ID and cleanup state independently.
+
+## 2026-09-08 — Publish recovered conversation state before reporting idle
+
+A worker outage test observed idle before the interrupted assistant appeared.
+Recovery committed the journal completion before refreshing the in-memory
+transcript. Status read the journal and exposed that interval to the browser.
+
+Keep recovery busy until its transcript projection finishes. A failed projection
+stays pending and must refresh successfully before status can report idle.
+Do not weaken the transcript assertion or delay the browser to hide the race.
+
+Enforced by the two expired-owner cases in `question-recovery-routes.test.ts`.
+The fixture blocks the first storage read after completion. Status must remain
+busy until that read is released. Both cases fail without the projection barrier.
