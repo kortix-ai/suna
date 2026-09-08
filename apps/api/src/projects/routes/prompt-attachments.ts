@@ -1,6 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -9,6 +10,7 @@ import {
   completePromptAttachment,
   deletePromptAttachment,
   readPromptAttachmentChunk,
+  resolveRuntimePromptAttachmentDescriptor,
   uploadPromptAttachmentChunk,
 } from '../prompt-attachments';
 
@@ -20,6 +22,19 @@ const metadata = z.object({
   expires_at: z.string(),
 });
 const scopeParams = z.object({ projectId: z.string().uuid(), attachmentId: z.string().uuid() });
+const descriptor = z.object({
+  version: z.literal(1),
+  command_id: z.string().uuid(),
+  attachment_id: z.string().uuid(),
+  part_index: z.number().int().nonnegative(),
+  filename: z.string(),
+  mime: z.string(),
+  size_bytes: z.number().int().positive(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  target_path: z.string(),
+  download_url: z.string().url(),
+  download_expires_at: z.string(),
+});
 async function scope(c: any) {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'session');
@@ -34,6 +49,49 @@ async function scope(c: any) {
   );
   return { accountId: loaded.row.accountId, projectId, userId: loaded.userId };
 }
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/runtime/prompt-attachments/{attachmentId}',
+    tags: ['sessions'],
+    summary: 'Resolve one running command attachment for its session sandbox',
+    ...auth,
+    request: {
+      params: scopeParams,
+      query: z.object({
+        command_id: z.string().uuid(),
+        part_index: z.string().regex(/^\d{1,3}$/),
+      }),
+    },
+    responses: {
+      200: json(descriptor, 'Short-lived runtime attachment descriptor'),
+      ...errors(400, 401, 403, 404, 409, 503),
+    },
+  }),
+  async (c) => {
+    if (!isSessionSandboxCredential(c)) {
+      return c.json({ error: 'runtime attachment descriptor requires a sandbox token' }, 403);
+    }
+    const accountId = c.get('accountId');
+    const sandboxId = c.get('sandboxId');
+    if (!accountId || !sandboxId) {
+      return c.json({ error: 'runtime attachment descriptor requires a sandbox token' }, 403);
+    }
+    const { projectId, attachmentId } = c.req.valid('param');
+    const query = c.req.valid('query');
+    const result = await resolveRuntimePromptAttachmentDescriptor({
+      accountId,
+      sandboxId,
+      projectId,
+      attachmentId,
+      commandId: query.command_id,
+      partIndex: Number(query.part_index),
+    });
+    c.header('Cache-Control', 'no-store');
+    return c.json(result, 200);
+  },
+);
 
 projectsApp.openapi(
   createRoute({

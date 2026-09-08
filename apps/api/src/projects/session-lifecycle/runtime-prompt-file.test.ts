@@ -1,6 +1,10 @@
 import { afterEach, expect, setSystemTime, test } from 'bun:test';
 
-import { RUNTIME_PROMPT_CHUNK_BYTES, writeRuntimePromptFile } from './runtime-prompt-file';
+import {
+  importRuntimePromptAttachment,
+  RUNTIME_PROMPT_CHUNK_BYTES,
+  writeRuntimePromptFile,
+} from './runtime-prompt-file';
 
 const input = {
   externalId: 'sbx_1',
@@ -13,6 +17,96 @@ const input = {
 };
 
 afterEach(() => setSystemTime());
+
+test('imports a staged attachment with identifiers only when the daemon advertises file.import', async () => {
+  const calls: Array<{ route: string; body: unknown }> = [];
+  const result = await importRuntimePromptAttachment(
+    {
+      externalId: 'sbx_import',
+      sessionId: 'session_1',
+      userId: 'user_1',
+      commandId: '11111111-1111-4111-8111-111111111111',
+      attachmentId: '22222222-2222-4222-8222-222222222222',
+      partIndex: 3,
+    },
+    async (_externalId, _port, _access, _method, route, _query, _headers, body) => {
+      calls.push({
+        route,
+        body: body?.byteLength ? JSON.parse(new TextDecoder().decode(body)) : null,
+      });
+      if (route === '/kortix/health') {
+        return Response.json({ capabilities: ['file.import', 'file.append'] });
+      }
+      return Response.json({
+        path: '/workspace/uploads/.kortix-inbox/command/3-proof.txt',
+        size: 19,
+        sha256: 'a'.repeat(64),
+      });
+    },
+  );
+
+  expect(result).toEqual({
+    path: '/workspace/uploads/.kortix-inbox/command/3-proof.txt',
+    size: 19,
+    sha256: 'a'.repeat(64),
+  });
+  expect(calls).toEqual([
+    { route: '/kortix/health', body: null },
+    {
+      route: '/file/import',
+      body: {
+        command_id: '11111111-1111-4111-8111-111111111111',
+        attachment_id: '22222222-2222-4222-8222-222222222222',
+        part_index: 3,
+      },
+    },
+  ]);
+});
+
+test('returns null without sending bytes when a legacy daemon does not advertise file.import', async () => {
+  const routes: string[] = [];
+  const result = await importRuntimePromptAttachment(
+    {
+      externalId: 'sbx_import_legacy',
+      sessionId: 'session_1',
+      userId: 'user_1',
+      commandId: '11111111-1111-4111-8111-111111111111',
+      attachmentId: '22222222-2222-4222-8222-222222222222',
+      partIndex: 3,
+    },
+    async (_externalId, _port, _access, _method, route) => {
+      routes.push(route);
+      return Response.json({ capabilities: ['file.append'] });
+    },
+  );
+
+  expect(result).toBeNull();
+  expect(routes).toEqual(['/kortix/health']);
+});
+
+test('marks the runtime stale when file.import is advertised but the route is absent', async () => {
+  const result = await importRuntimePromptAttachment(
+    {
+      externalId: 'sbx_import_stale',
+      sessionId: 'session_1',
+      userId: 'user_1',
+      commandId: '11111111-1111-4111-8111-111111111111',
+      attachmentId: '22222222-2222-4222-8222-222222222222',
+      partIndex: 3,
+    },
+    async (_externalId, _port, _access, _method, route) =>
+      route === '/kortix/health'
+        ? Response.json({ capabilities: ['file.import'] })
+        : new Response('<html>old daemon</html>', {
+            status: 404,
+            headers: { 'Content-Type': 'text/html' },
+          }),
+  ).catch((error) => error);
+
+  expect(result).toBeInstanceOf(Error);
+  expect(result.name).toBe('RuntimeStaleDaemonError');
+  expect(result.message).toBe('runtime stale daemon does not support /file/import for 0 bytes');
+});
 
 test('uploads to a temporary path and renames the returned path over the deterministic target', async () => {
   const requests: Array<{ method: string; path: string; body: ArrayBuffer }> = [];

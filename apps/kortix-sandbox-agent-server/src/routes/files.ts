@@ -27,6 +27,127 @@ import { isLikelyBinary, mimeTypeFor } from '../file-mime'
  */
 
 const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
+const MAX_PROMPT_ATTACHMENT_BYTES = 50 * 1024 * 1024
+const IMPORT_TIMEOUT_MS = 120_000
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+type PromptAttachmentImportRequest = {
+  command_id: string
+  attachment_id: string
+  part_index: number
+}
+
+type PromptAttachmentDescriptor = PromptAttachmentImportRequest & {
+  version: 1
+  filename: string
+  mime: string
+  size_bytes: number
+  sha256: string
+  target_path: string
+  download_url: string
+  download_expires_at: string
+}
+
+function parseImportRequest(value: unknown): PromptAttachmentImportRequest | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (
+    Object.keys(record).length !== 3 ||
+    !UUID_PATTERN.test(String(record.command_id ?? '')) ||
+    !UUID_PATTERN.test(String(record.attachment_id ?? '')) ||
+    !Number.isSafeInteger(record.part_index) ||
+    (record.part_index as number) < 0
+  ) return null
+  return {
+    command_id: record.command_id as string,
+    attachment_id: record.attachment_id as string,
+    part_index: record.part_index as number,
+  }
+}
+
+function configuredApiUrl(raw: string): URL {
+  const url = new URL(raw)
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) {
+    throw new Error('invalid API configuration')
+  }
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}${url.pathname.replace(/\/+$/, '').endsWith('/v1') ? '' : '/v1'}`
+  url.search = ''
+  return url
+}
+
+function parseDescriptor(
+  value: unknown,
+  request: PromptAttachmentImportRequest,
+  workspace: string,
+  apiProtocol: string,
+): PromptAttachmentDescriptor | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const row = value as Record<string, unknown>
+  if (
+    row.version !== 1 ||
+    row.command_id !== request.command_id ||
+    row.attachment_id !== request.attachment_id ||
+    row.part_index !== request.part_index ||
+    typeof row.filename !== 'string' || !row.filename ||
+    typeof row.mime !== 'string' || !row.mime ||
+    !Number.isSafeInteger(row.size_bytes) ||
+    (row.size_bytes as number) <= 0 ||
+    (row.size_bytes as number) > MAX_PROMPT_ATTACHMENT_BYTES ||
+    typeof row.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(row.sha256) ||
+    typeof row.target_path !== 'string' ||
+    typeof row.download_url !== 'string' ||
+    typeof row.download_expires_at !== 'string' ||
+    !Number.isFinite(Date.parse(row.download_expires_at)) ||
+    Date.parse(row.download_expires_at) <= Date.now()
+  ) return null
+
+  const commandRoot = path.resolve(workspace, 'uploads', '.kortix-inbox', request.command_id)
+  const target = path.resolve(row.target_path)
+  if (
+    target !== row.target_path ||
+    path.dirname(target) !== commandRoot ||
+    !path.basename(target).startsWith(`${request.part_index}-`)
+  ) return null
+
+  let download: URL
+  try {
+    download = new URL(row.download_url)
+  } catch {
+    return null
+  }
+  if (
+    download.username ||
+    download.password ||
+    download.hash ||
+    !['http:', 'https:'].includes(download.protocol) ||
+    (download.protocol === 'http:' && apiProtocol !== 'http:')
+  ) return null
+  return row as PromptAttachmentDescriptor
+}
+
+async function verifiedFileDigest(filePath: string, expectedSize: number): Promise<string | null> {
+  let handle: fs.FileHandle | undefined
+  try {
+    handle = await fs.open(filePath, 'r')
+    const stat = await handle.stat()
+    if (!stat.isFile() || stat.size !== expectedSize) return null
+    const hash = crypto.createHash('sha256')
+    const buffer = Buffer.allocUnsafe(64 * 1024)
+    let offset = 0
+    while (offset < stat.size) {
+      const read = await handle.read(buffer, 0, Math.min(buffer.length, stat.size - offset), offset)
+      if (read.bytesRead === 0) return null
+      hash.update(buffer.subarray(0, read.bytesRead))
+      offset += read.bytesRead
+    }
+    return hash.digest('hex')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  } finally {
+    await handle?.close()
+  }
+}
 
 async function readFileSnapshot(filePath: string): Promise<{ data: Buffer; size: number }> {
   const handle = await fs.open(filePath, 'r')
@@ -385,6 +506,118 @@ export function createFilesRouter(cfg: Config): Hono {
     } catch (err) {
       logger.warn('[files] status failed', { error: (err as Error).message })
       return c.json([])
+    }
+  })
+
+  /**
+   * Import one persisted prompt attachment without accepting a network target,
+   * destination, header, or integrity value from the proxy caller.
+   */
+  app.post('/import', async (c) => {
+    let request: PromptAttachmentImportRequest | null = null
+    try {
+      request = parseImportRequest(await c.req.json())
+    } catch {
+      // The response below deliberately does not echo the body.
+    }
+    if (!request) return c.json({ error: 'Invalid attachment import request' }, 400)
+    if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) {
+      return c.json({ error: 'Attachment import is not configured' }, 503)
+    }
+
+    let temporaryPath: string | undefined
+    try {
+      const api = configuredApiUrl(cfg.apiUrl)
+      const descriptorUrl = new URL(api)
+      descriptorUrl.pathname = `${api.pathname}/projects/${encodeURIComponent(cfg.projectId)}/runtime/prompt-attachments/${encodeURIComponent(request.attachment_id)}`
+      descriptorUrl.searchParams.set('command_id', request.command_id)
+      descriptorUrl.searchParams.set('part_index', String(request.part_index))
+      const signal = AbortSignal.timeout(IMPORT_TIMEOUT_MS)
+      const descriptorResponse = await fetch(descriptorUrl, {
+        headers: { Authorization: `Bearer ${cfg.sandboxToken}` },
+        redirect: 'error',
+        signal,
+      })
+      if (!descriptorResponse.ok) throw new Error('descriptor request failed')
+      const descriptor = parseDescriptor(
+        await descriptorResponse.json().catch(() => null),
+        request,
+        workspace,
+        api.protocol,
+      )
+      if (!descriptor) throw new Error('descriptor validation failed')
+
+      if ((await verifiedFileDigest(descriptor.target_path, descriptor.size_bytes)) === descriptor.sha256) {
+        return c.json({
+          path: descriptor.target_path,
+          size: descriptor.size_bytes,
+          sha256: descriptor.sha256,
+        })
+      }
+
+      const downloadResponse = await fetch(descriptor.download_url, {
+        redirect: 'error',
+        signal,
+      })
+      if (!downloadResponse.ok || !downloadResponse.body) throw new Error('download failed')
+      const declaredLength = downloadResponse.headers.get('content-length')
+      if (
+        declaredLength !== null &&
+        (!/^\d+$/.test(declaredLength) || Number(declaredLength) > descriptor.size_bytes)
+      ) throw new Error('download size invalid')
+
+      const parent = path.dirname(descriptor.target_path)
+      await fs.mkdir(parent, { recursive: true })
+      const [realWorkspace, realParent] = await Promise.all([fs.realpath(workspace), fs.realpath(parent)])
+      const expectedParent = path.join(
+        realWorkspace,
+        'uploads',
+        '.kortix-inbox',
+        request.command_id,
+      )
+      if (realParent !== expectedParent) throw new Error('attachment target escapes workspace')
+
+      temporaryPath = path.join(parent, `.kortix-import-${crypto.randomUUID()}`)
+      const handle = await fs.open(temporaryPath, 'wx', 0o600)
+      let received = 0
+      const hash = crypto.createHash('sha256')
+      const reader = downloadResponse.body.getReader()
+      try {
+        for (;;) {
+          const chunk = await reader.read()
+          if (chunk.done) break
+          received += chunk.value.byteLength
+          if (received > descriptor.size_bytes) {
+            await reader.cancel()
+            throw new Error('download exceeds expected size')
+          }
+          hash.update(chunk.value)
+          await handle.write(chunk.value)
+        }
+        if (received !== descriptor.size_bytes || hash.digest('hex') !== descriptor.sha256) {
+          throw new Error('download integrity check failed')
+        }
+        await handle.sync()
+      } finally {
+        reader.releaseLock()
+        await handle.close()
+      }
+
+      await fs.rename(temporaryPath, descriptor.target_path)
+      temporaryPath = undefined
+      return c.json({
+        path: descriptor.target_path,
+        size: descriptor.size_bytes,
+        sha256: descriptor.sha256,
+      })
+    } catch (error) {
+      if (temporaryPath) await fs.rm(temporaryPath, { force: true }).catch(() => {})
+      logger.warn('[files] attachment import failed', {
+        command_id: request.command_id,
+        attachment_id: request.attachment_id,
+        reason: error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'failed',
+      })
+      return c.json({ error: 'Attachment import failed' }, 502)
     }
   })
 

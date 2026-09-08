@@ -62,12 +62,13 @@ type Forward = typeof forwardToSandbox;
 
 interface RuntimeAppendCapability {
   supportsAppend: boolean;
+  supportsImport: boolean;
   expiresAt: number;
 }
 
 interface RuntimeAppendCapabilityCacheEntry {
   resolved?: RuntimeAppendCapability;
-  pending?: Promise<boolean>;
+  pending?: Promise<RuntimeAppendCapability>;
 }
 
 const runtimeAppendCapabilities = new WeakMap<Forward, Map<string, RuntimeAppendCapabilityCacheEntry>>();
@@ -81,7 +82,7 @@ function runtimeCapabilityCache(forward: Forward): Map<string, RuntimeAppendCapa
 }
 
 async function forwarded(
-  input: RuntimePromptFileWriteInput,
+  input: Pick<RuntimePromptFileWriteInput, 'externalId' | 'sessionId' | 'userId'>,
   forward: Forward,
   method: string,
   route: string,
@@ -146,10 +147,17 @@ async function runtimeSupportsAppend(
   input: RuntimePromptFileWriteInput,
   forward: Forward,
 ): Promise<boolean> {
+  return (await runtimeCapabilities(input, forward)).supportsAppend;
+}
+
+async function runtimeCapabilities(
+  input: Pick<RuntimePromptFileWriteInput, 'externalId' | 'sessionId' | 'userId'>,
+  forward: Forward,
+): Promise<RuntimeAppendCapability> {
   const cache = runtimeCapabilityCache(forward);
   const cached = cache.get(input.externalId);
   if (cached?.resolved && cached.resolved.expiresAt > Date.now()) {
-    return cached.resolved.supportsAppend;
+    return cached.resolved;
   }
   if (cached?.pending) return cached.pending;
 
@@ -168,14 +176,16 @@ async function runtimeSupportsAppend(
       route: '/kortix/health',
       operation: 'health',
     });
-    const supportsAppend = Array.isArray(body.capabilities) && body.capabilities.includes('file.append');
+    const capabilities = Array.isArray(body.capabilities) ? body.capabilities : [];
+    const resolved = {
+      supportsAppend: capabilities.includes('file.append'),
+      supportsImport: capabilities.includes('file.import'),
+      expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
+    };
     cache.set(input.externalId, {
-      resolved: {
-        supportsAppend,
-        expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
-      },
+      resolved,
     });
-    return supportsAppend;
+    return resolved;
   })();
   cache.set(input.externalId, { pending });
   try {
@@ -187,12 +197,75 @@ async function runtimeSupportsAppend(
 }
 
 function markRuntimeAppendUnsupported(input: RuntimePromptFileWriteInput, forward: Forward): void {
+  const cached = runtimeCapabilityCache(forward).get(input.externalId)?.resolved;
   runtimeCapabilityCache(forward).set(input.externalId, {
     resolved: {
       supportsAppend: false,
+      supportsImport: cached?.supportsImport ?? false,
       expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
     },
   });
+}
+
+export interface RuntimePromptAttachmentImportInput {
+  externalId: string;
+  sessionId: string;
+  userId: string;
+  commandId: string;
+  attachmentId: string;
+  partIndex: number;
+}
+
+/** Import through a capable daemon. Return null when the daemon is legacy. */
+export async function importRuntimePromptAttachment(
+  input: RuntimePromptAttachmentImportInput,
+  forward: Forward = forwardToSandbox,
+): Promise<{ path: string; size: number; sha256: string } | null> {
+  const capabilities = await runtimeCapabilities(input, forward);
+  if (!capabilities.supportsImport) return null;
+  const encoded = new TextEncoder().encode(
+    JSON.stringify({
+      command_id: input.commandId,
+      attachment_id: input.attachmentId,
+      part_index: input.partIndex,
+    }),
+  );
+  const route = '/file/import';
+  const response = await forwarded(
+    input,
+    forward,
+    'POST',
+    route,
+    new Headers({ 'Content-Type': 'application/json' }),
+    encoded.buffer as ArrayBuffer,
+  );
+  if (response.status === 404 || response.status === 405) {
+    throw new RuntimeStaleDaemonError(route, 0);
+  }
+  let result: { path?: unknown; size?: unknown; sha256?: unknown };
+  try {
+    result = await readRuntimeJson({
+      response,
+      method: 'POST',
+      route,
+      operation: 'import',
+    });
+  } catch (error) {
+    if (error instanceof RuntimeRouteUnsupportedError) {
+      throw new RuntimeStaleDaemonError(route, 0);
+    }
+    throw error;
+  }
+  if (
+    typeof result.path !== 'string' ||
+    !Number.isSafeInteger(result.size) ||
+    (result.size as number) <= 0 ||
+    typeof result.sha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(result.sha256)
+  ) {
+    throw new Error('runtime import returned invalid verification metadata');
+  }
+  return { path: result.path, size: result.size as number, sha256: result.sha256 };
 }
 
 

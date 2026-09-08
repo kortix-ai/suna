@@ -199,6 +199,49 @@ export async function createDatabaseSession(
   return sessionId;
 }
 
+/** Bind a freshly minted project PAT to one synthetic live session for internal-route flows. */
+export async function bindDatabaseSessionCredential(
+  env: Env,
+  input: {
+    tokenId: string;
+    commandId: string;
+    sessionId: string;
+    accountId: string;
+    projectId: string;
+  },
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "bind a session credential for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO kortix.session_sandboxes (
+         sandbox_id, session_id, account_id, project_id, status
+       ) VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'provisioning')`,
+      [input.sessionId, input.accountId, input.projectId],
+    );
+    await client.query(
+      `UPDATE kortix.account_tokens
+       SET session_id = $2
+       WHERE token_id = $1::uuid`,
+      [input.tokenId, input.sessionId],
+    );
+    await client.query(
+      `UPDATE kortix.session_lifecycle_commands
+       SET status = 'running', locked_until = now() + interval '10 minutes'
+       WHERE command_id = $1::uuid`,
+      [input.commandId],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    await client.end();
+  }
+}
+
 export async function deleteDatabaseProject(
   env: Env,
   projectId: string,

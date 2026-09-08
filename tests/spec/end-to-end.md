@@ -300,6 +300,10 @@ Warm claim and follow-up enqueue persist handle-only file parts, not base64.
 Identical submissions reuse the same command; a mismatched consumed warm claim
 returns409. Missing handles return404, incomplete uploads409 and oversize bytes413.
 Bound files cannot be deleted. Removing an unbound upload is idempotent.
+The internal descriptor route accepts only a live session sandbox credential.
+It binds the exact running command, attachment reference and part index before it
+returns the canonical path, byte count, SHA-256 and short-lived download URL.
+User JWTs and ordinary project PATs return403.
 
 ---
 

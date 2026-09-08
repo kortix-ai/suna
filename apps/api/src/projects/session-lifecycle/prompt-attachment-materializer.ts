@@ -1,11 +1,17 @@
-import {
-  isModelNativeAttachmentMime,
-  promptFileReferenceXml,
-  sanitizePromptUploadFilename,
-} from '@kortix/shared';
+import { isModelNativeAttachmentMime } from '@kortix/shared';
 
+import { resolvePromptAttachment } from '../prompt-attachments';
 import type { PromptPartWire } from './store';
-import { RuntimeStaleDaemonError } from './runtime-prompt-file';
+import {
+  importRuntimePromptAttachment,
+  RuntimeStaleDaemonError,
+  type RuntimePromptAttachmentImportInput,
+} from './runtime-prompt-file';
+export {
+  buildPromptAttachmentReference,
+  type PromptAttachmentReference,
+} from './prompt-attachment-reference';
+import { buildPromptAttachmentReference } from './prompt-attachment-reference';
 
 export interface RuntimePromptFileWriteInput {
   externalId: string;
@@ -20,6 +26,29 @@ export interface RuntimePromptFileWriteInput {
 export type RuntimePromptFileWriter = (
   input: RuntimePromptFileWriteInput,
 ) => Promise<{ path: string; size: number }>;
+
+export interface ResolvedPromptAttachment {
+  attachmentId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  targetPath: string;
+  readBytes(): Promise<Uint8Array>;
+}
+
+export type PromptAttachmentResolver = (input: {
+  attachmentId: string;
+  commandId: string;
+  projectId: string;
+  accountId: string;
+  sessionId: string;
+  partIndex: number;
+}) => Promise<ResolvedPromptAttachment>;
+
+export type RuntimePromptAttachmentImporter = (
+  input: RuntimePromptAttachmentImportInput,
+) => Promise<{ path: string; size: number; sha256: string } | null>;
 
 export interface PromptAttachmentFailure {
   filename: string;
@@ -54,11 +83,6 @@ export class PromptAttachmentMaterializationError extends Error {
  */
 export const INLINE_PROMPT_BUDGET_BYTES = 64 * 1024;
 
-function safeKey(value: string): string {
-  const safe = value.replace(/[^A-Za-z0-9_-]/g, '_');
-  return safe || 'prompt';
-}
-
 export function parseStagedPromptDataUrl(input: {
   filename?: string;
   mime?: string;
@@ -88,41 +112,17 @@ export function parseStagedPromptDataUrl(input: {
   };
 }
 
-function targetPath(key: string, index: number, filename: string): string {
-  return `/workspace/uploads/.kortix-inbox/${safeKey(key)}/${index}-${sanitizePromptUploadFilename(filename)}`;
-}
-
-export interface PromptAttachmentReference {
-  targetPath: string;
-  filename: string;
-  mime: string;
-  text: string;
-}
-
-/** Build the exact deterministic runtime reference without reading or writing file bytes. */
-export function buildPromptAttachmentReference(input: {
-  part: PromptPartWire;
-  index: number;
-  materializationKey: string;
-}): PromptAttachmentReference {
-  const filename = input.part.filename?.trim() || 'File';
-  const mime = input.part.mime?.trim() || 'application/octet-stream';
-  const path = targetPath(input.materializationKey, input.index, filename);
-  return {
-    targetPath: path,
-    filename,
-    mime,
-    text: promptFileReferenceXml({ path, mime, filename }),
-  };
-}
-
 export async function materializePromptAttachments(input: {
   parts: PromptPartWire[];
   externalId: string;
   sessionId: string;
   userId: string;
+  accountId?: string;
+  projectId?: string;
   materializationKey: string;
   writeFile: RuntimePromptFileWriter;
+  resolveAttachment?: PromptAttachmentResolver;
+  importAttachment?: RuntimePromptAttachmentImporter;
   /**
    * Override the inline budget. The legacy repair passes `Infinity`: it is
    * patching a message the runtime ALREADY holds, native images included, and
@@ -140,66 +140,128 @@ export async function materializePromptAttachments(input: {
   // Walked in order so the decision is deterministic: the earliest attachments
   // keep their native form and the ones that would overflow are written out.
   let inlineBudget = (input.inlineBudgetBytes ?? INLINE_PROMPT_BUDGET_BYTES) - textCost;
-  const candidates = input.parts
-    .map((part, index) => ({ part, index }))
-    .filter(({ part }) => {
-      if (part.type !== 'file') return false;
-      const url = part.url ?? '';
-      const staged = url.toLowerCase().startsWith('data:');
-      if (!isModelNativeAttachmentMime(part.mime ?? '')) return staged;
-      // A native file that is a REMOTE URL costs the URL, not the bytes, and
-      // there are no bytes here to write out: it stays inline whatever the
-      // budget says.
-      if (!staged) return false;
-      const inlineCost = url.length;
-      if (inlineCost > inlineBudget) return true;
-      inlineBudget -= inlineCost;
-      return false;
-    });
-  if (candidates.length === 0) return input.parts;
-
-  const settled = await Promise.allSettled(
-    candidates.map(async ({ part, index }) => {
-      const reference = buildPromptAttachmentReference({
-        part,
-        index,
-        materializationKey: input.materializationKey,
-      });
-      const { bytes } = parseStagedPromptDataUrl(part);
-      await input.writeFile({
-        externalId: input.externalId,
-        sessionId: input.sessionId,
-        userId: input.userId,
-        targetPath: reference.targetPath,
-        filename: reference.filename,
-        mime: reference.mime,
-        bytes,
-      });
-      return {
-        index,
-        part: {
-          type: 'text' as const,
-          text: reference.text,
-        },
-      };
-    }),
-  );
-
+  type Candidate = {
+    part: PromptPartWire;
+    index: number;
+    resolved?: ResolvedPromptAttachment;
+  };
+  const candidates: Candidate[] = [];
   const failures: PromptAttachmentFailure[] = [];
   let stale = false;
   const replacements = new Map<number, PromptPartWire>();
-  settled.forEach((result, resultIndex) => {
-    const candidate = candidates[resultIndex]!;
-    const filename = candidate.part.filename?.trim() || 'File';
-    if (result.status === 'fulfilled') replacements.set(result.value.index, result.value.part);
-    else {
-      if (result.reason instanceof RuntimeStaleDaemonError) stale = true;
-      failures.push({
-        filename,
-        reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
+
+  for (let index = 0; index < input.parts.length; index += 1) {
+    const part = input.parts[index]!;
+    if (part.type !== 'file') continue;
+    if (part.attachment_id) {
+      try {
+        if (!input.accountId || !input.projectId) throw new Error('staged attachment scope is missing');
+        const resolved = await (input.resolveAttachment ?? resolvePromptAttachment)({
+          attachmentId: part.attachment_id,
+          commandId: input.materializationKey,
+          projectId: input.projectId,
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          partIndex: index,
+        });
+        const canonical: PromptPartWire = {
+          type: 'file',
+          filename: resolved.filename,
+          mime: resolved.mime,
+        };
+        if (isModelNativeAttachmentMime(resolved.mime)) {
+          const estimatedCost =
+            `data:${resolved.mime};base64,`.length + 4 * Math.ceil(resolved.size / 3);
+          if (estimatedCost <= inlineBudget) {
+            const bytes = await resolved.readBytes();
+            const url = `data:${resolved.mime};base64,${Buffer.from(bytes).toString('base64')}`;
+            inlineBudget -= url.length;
+            replacements.set(index, { ...canonical, url });
+            continue;
+          }
+        }
+        candidates.push({ part: canonical, index, resolved });
+      } catch (error) {
+        failures.push({
+          filename: part.filename?.trim() || 'File',
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+      continue;
+    }
+
+    const url = part.url ?? '';
+    const staged = url.toLowerCase().startsWith('data:');
+    if (!isModelNativeAttachmentMime(part.mime ?? '')) {
+      if (staged) candidates.push({ part, index });
+      continue;
+    }
+    if (!staged) continue;
+    if (url.length > inlineBudget) candidates.push({ part, index });
+    else inlineBudget -= url.length;
+  }
+
+  // Two imports cap Storage bandwidth and open files. Message limits permit 20
+  // attachments and each can be 50 MiB, so unbounded Promise.all is unsafe.
+  let nextCandidate = 0;
+  const workers = Array.from({ length: Math.min(2, candidates.length) }, async () => {
+    for (;;) {
+      const candidate = candidates[nextCandidate++];
+      if (!candidate) return;
+      const reference = buildPromptAttachmentReference({
+        part: candidate.part,
+        index: candidate.index,
+        materializationKey: input.materializationKey,
       });
+      try {
+        if (candidate.resolved) {
+          const imported = await (input.importAttachment ?? importRuntimePromptAttachment)({
+            externalId: input.externalId,
+            sessionId: input.sessionId,
+            userId: input.userId,
+            commandId: input.materializationKey,
+            attachmentId: candidate.resolved.attachmentId,
+            partIndex: candidate.index,
+          });
+          if (!imported) {
+            const bytes = await candidate.resolved.readBytes();
+            await input.writeFile({
+              externalId: input.externalId,
+              sessionId: input.sessionId,
+              userId: input.userId,
+              targetPath: reference.targetPath,
+              filename: reference.filename,
+              mime: reference.mime,
+              bytes,
+            });
+          }
+        } else {
+          const { bytes } = parseStagedPromptDataUrl(candidate.part);
+          await input.writeFile({
+            externalId: input.externalId,
+            sessionId: input.sessionId,
+            userId: input.userId,
+            targetPath: reference.targetPath,
+            filename: reference.filename,
+            mime: reference.mime,
+            bytes,
+          });
+        }
+        replacements.set(candidate.index, { type: 'text', text: reference.text });
+      } catch (error) {
+        if (error instanceof RuntimeStaleDaemonError) stale = true;
+        failures.push({
+          filename: reference.filename,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   });
+  await Promise.all(workers);
+
+  if (failures.length > 0) {
+    failures.sort((a, b) => a.filename.localeCompare(b.filename));
+  }
   if (failures.length > 0) throw new PromptAttachmentMaterializationError(failures, stale);
   return input.parts.map((part, index) => replacements.get(index) ?? part);
 }

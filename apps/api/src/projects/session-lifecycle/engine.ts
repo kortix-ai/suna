@@ -513,6 +513,8 @@ export async function continueSession(
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
+        accountId: session.accountId,
+        projectId: session.projectId,
       },
     );
     // ACCEPTANCE IS NOT DELIVERY. `prompt_async` answers for the request, and
@@ -2431,6 +2433,8 @@ async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
+    accountId?: string;
+    projectId?: string;
   },
 ): Promise<'accepted' | 'deduplicated' | 'failed'> {
   const parts: PromptPartWire[] =
@@ -2441,6 +2445,8 @@ async function postPrompt(
         externalId,
         sessionId: callerSessionId,
         userId,
+        accountId: prompt.accountId,
+        projectId: prompt.projectId,
         materializationKey: prompt.materializationKey,
         writeFile: writeRuntimePromptFile,
       })

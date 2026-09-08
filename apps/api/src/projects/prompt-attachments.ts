@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   promptAttachments,
   promptAttachmentReferences,
+  sessionSandboxes,
   sessionLifecycleCommands,
 } from '@kortix/db';
 import {
@@ -18,6 +19,7 @@ import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
 import { toPublicStorageUrl } from '../shared/supabase';
 import { config } from '../config';
+import { buildPromptAttachmentReference } from './session-lifecycle/prompt-attachment-reference';
 import type { PromptPartWire } from './session-lifecycle/store';
 
 const BUCKET = 'staged-files';
@@ -760,10 +762,15 @@ export async function resolvePromptAttachment(input: {
   commandId: string;
   projectId: string;
   accountId: string;
-  sessionId?: string;
+  sessionId: string;
+  partIndex: number;
 }) {
   const [found] = await db
-    .select({ attachment: promptAttachments })
+    .select({
+      attachment: promptAttachments,
+      commandStatus: sessionLifecycleCommands.status,
+      commandPayload: sessionLifecycleCommands.payload,
+    })
     .from(promptAttachmentReferences)
     .innerJoin(
       promptAttachments,
@@ -781,17 +788,53 @@ export async function resolvePromptAttachment(input: {
         eq(sessionLifecycleCommands.accountId, input.accountId),
         eq(promptAttachments.projectId, input.projectId),
         eq(promptAttachments.accountId, input.accountId),
-        input.sessionId ? eq(sessionLifecycleCommands.sessionId, input.sessionId) : undefined,
+        eq(sessionLifecycleCommands.sessionId, input.sessionId),
       ),
     )
     .limit(1);
   const row = found?.attachment;
-  if (!row || row.status !== 'ready' || !row.sha256)
+  if (!row)
     throw new PromptAttachmentError(
       'attachment_not_found',
       'The command attachment is unavailable.',
       404,
     );
+  if (found.commandStatus !== 'running')
+    throw new PromptAttachmentError(
+      'attachment_command_not_running',
+      'The command attachment is not active.',
+      409,
+    );
+  const parts = Array.isArray(found.commandPayload.parts)
+    ? (found.commandPayload.parts as PromptPartWire[])
+    : [];
+  const part = parts[input.partIndex];
+  const matchingParts = parts.filter(
+    (candidate) =>
+      candidate?.type === 'file' && candidate.attachment_id === input.attachmentId,
+  );
+  if (
+    !Number.isSafeInteger(input.partIndex) ||
+    input.partIndex < 0 ||
+    part?.type !== 'file' ||
+    part.attachment_id !== input.attachmentId ||
+    matchingParts.length !== 1 ||
+    row.status !== 'ready' ||
+    !row.sha256 ||
+    !/^[0-9a-f]{64}$/.test(row.sha256) ||
+    row.sizeBytes <= 0 ||
+    row.sizeBytes > MAX_PROMPT_ATTACHMENT_BYTES
+  )
+    throw new PromptAttachmentError(
+      'attachment_not_found',
+      'The command attachment is unavailable.',
+      404,
+    );
+  const reference = buildPromptAttachmentReference({
+    part: { type: 'file', filename: row.filename, mime: row.mime },
+    index: input.partIndex,
+    materializationKey: input.commandId,
+  });
   const { data, error } = await storage().createSignedUrl(filePath(row), 5 * 60);
   if (error || !data?.signedUrl)
     throw new PromptAttachmentError(
@@ -806,6 +849,8 @@ export async function resolvePromptAttachment(input: {
     size: row.sizeBytes,
     sha256: row.sha256,
     signedUrl: toPublicStorageUrl(data.signedUrl),
+    targetPath: reference.targetPath,
+    downloadExpiresAt: new Date(Date.now() + 5 * 60_000),
     async readBytes(): Promise<Uint8Array> {
       const bytes = await download(filePath(row));
       if (bytes.byteLength !== row.sizeBytes || digest(bytes) !== row.sha256)
@@ -815,5 +860,55 @@ export async function resolvePromptAttachment(input: {
         );
       return bytes;
     },
+  };
+}
+
+/** Resolve the descriptor available to one live session sandbox credential. */
+export async function resolveRuntimePromptAttachmentDescriptor(input: {
+  sandboxId: string;
+  accountId: string;
+  projectId: string;
+  commandId: string;
+  attachmentId: string;
+  partIndex: number;
+}) {
+  const [sandbox] = await db
+    .select({ sessionId: sessionSandboxes.sessionId })
+    .from(sessionSandboxes)
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, input.sandboxId),
+        eq(sessionSandboxes.accountId, input.accountId),
+        eq(sessionSandboxes.projectId, input.projectId),
+        inArray(sessionSandboxes.status, ['provisioning', 'active']),
+      ),
+    )
+    .limit(1);
+  if (!sandbox)
+    throw new PromptAttachmentError(
+      'attachment_not_found',
+      'The command attachment is unavailable.',
+      404,
+    );
+  const resolved = await resolvePromptAttachment({
+    attachmentId: input.attachmentId,
+    commandId: input.commandId,
+    projectId: input.projectId,
+    accountId: input.accountId,
+    sessionId: sandbox.sessionId,
+    partIndex: input.partIndex,
+  });
+  return {
+    version: 1 as const,
+    command_id: input.commandId,
+    attachment_id: resolved.attachmentId,
+    part_index: input.partIndex,
+    filename: resolved.filename,
+    mime: resolved.mime,
+    size_bytes: resolved.size,
+    sha256: resolved.sha256,
+    target_path: resolved.targetPath,
+    download_url: resolved.signedUrl,
+    download_expires_at: resolved.downloadExpiresAt.toISOString(),
   };
 }

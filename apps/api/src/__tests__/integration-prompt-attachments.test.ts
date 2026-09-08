@@ -3,6 +3,7 @@ import {
   promptAttachments,
   promptAttachmentReferences,
   projects,
+  sessionSandboxes,
   sessionLifecycleCommands,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
@@ -14,6 +15,7 @@ import {
   completePromptAttachment,
   deletePromptAttachment,
   resolvePromptAttachment,
+  resolveRuntimePromptAttachmentDescriptor,
   uploadPromptAttachmentChunk,
 } from '../projects/prompt-attachments';
 import {
@@ -30,6 +32,7 @@ const scope = {
   userId: crypto.randomUUID(),
 };
 const sessionId = crypto.randomUUID();
+const sandboxId = crypto.randomUUID();
 const objects = new Map<string, Uint8Array>();
 const originalFetch = globalThis.fetch;
 let failWrite = false;
@@ -46,6 +49,13 @@ beforeAll(async () => {
   await db.execute(
     sql`INSERT INTO kortix.project_sessions(session_id,account_id,project_id,branch_name,status) VALUES(${sessionId},${scope.accountId}::uuid,${scope.projectId}::uuid,${sessionId},'running')`,
   );
+  await db.insert(sessionSandboxes).values({
+    sandboxId,
+    sessionId,
+    accountId: scope.accountId,
+    projectId: scope.projectId,
+    status: 'active',
+  });
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
@@ -88,6 +98,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   globalThis.fetch = originalFetch;
+  await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sandboxId));
   await db
     .delete(sessionLifecycleCommands)
     .where(eq(sessionLifecycleCommands.projectId, scope.projectId));
@@ -172,21 +183,102 @@ test('command payload and reference commit together; retries do not add referenc
     .from(promptAttachmentReferences)
     .where(eq(promptAttachmentReferences.attachmentId, id));
   expect(refs).toHaveLength(1);
-  const resolved = await resolvePromptAttachment({
-    attachmentId: id,
-    commandId: first.row.commandId,
-    ...scope,
-    sessionId,
-  });
-  expect(await resolved.readBytes()).toEqual(new Uint8Array([1, 2, 3]));
   await expect(
     resolvePromptAttachment({
       attachmentId: id,
       commandId: first.row.commandId,
-      ...scope,
+      projectId: scope.projectId,
+      accountId: scope.accountId,
+      sessionId,
+      partIndex: 0,
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await db
+    .update(sessionLifecycleCommands)
+    .set({ status: 'running' })
+    .where(eq(sessionLifecycleCommands.commandId, first.row.commandId));
+  const resolved = await resolvePromptAttachment({
+    attachmentId: id,
+    commandId: first.row.commandId,
+    projectId: scope.projectId,
+    accountId: scope.accountId,
+    sessionId,
+    partIndex: 0,
+  });
+  expect(await resolved.readBytes()).toEqual(new Uint8Array([1, 2, 3]));
+  await expire(id);
+  expect(
+    await resolvePromptAttachment({
+      attachmentId: id,
+      commandId: first.row.commandId,
+      projectId: scope.projectId,
+      accountId: scope.accountId,
+      sessionId,
+      partIndex: 0,
+    }),
+  ).toMatchObject({ filename: 'proof.txt', size: 3 });
+  await expect(
+    resolvePromptAttachment({
+      attachmentId: id,
+      commandId: first.row.commandId,
+      projectId: scope.projectId,
+      accountId: scope.accountId,
+      sessionId,
+      partIndex: 1,
+    }),
+  ).rejects.toMatchObject({ status: 404 });
+  await expect(
+    resolvePromptAttachment({
+      attachmentId: id,
+      commandId: first.row.commandId,
+      projectId: scope.projectId,
+      accountId: scope.accountId,
       sessionId: crypto.randomUUID(),
+      partIndex: 0,
     }),
   ).rejects.toThrow('unavailable');
+});
+
+test('runtime descriptor requires the live sandbox and exact running command part', async () => {
+  const id = await ready();
+  const command = await enqueue(id);
+  await db
+    .update(sessionLifecycleCommands)
+    .set({ status: 'running' })
+    .where(eq(sessionLifecycleCommands.commandId, command.row.commandId));
+
+  const descriptor = await resolveRuntimePromptAttachmentDescriptor({
+    sandboxId,
+    accountId: scope.accountId,
+    projectId: scope.projectId,
+    commandId: command.row.commandId,
+    attachmentId: id,
+    partIndex: 0,
+  });
+
+  expect(descriptor).toMatchObject({
+    version: 1,
+    command_id: command.row.commandId,
+    attachment_id: id,
+    part_index: 0,
+    filename: 'proof.txt',
+    mime: 'text/plain',
+    size_bytes: 3,
+    target_path: `/workspace/uploads/.kortix-inbox/${command.row.commandId}/0-proof.txt`,
+  });
+  expect(descriptor.sha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(descriptor.download_url).toContain('token=fake');
+  expect(JSON.stringify(descriptor)).not.toContain('object_path');
+  await expect(
+    resolveRuntimePromptAttachmentDescriptor({
+      sandboxId: crypto.randomUUID(),
+      accountId: scope.accountId,
+      projectId: scope.projectId,
+      commandId: command.row.commandId,
+      attachmentId: id,
+      partIndex: 0,
+    }),
+  ).rejects.toMatchObject({ status: 404 });
 });
 
 test('expired, foreign and malformed bindings roll back their newly inserted commands', async () => {

@@ -43,6 +43,149 @@ function materialize(input: Partial<Parameters<typeof materializePromptAttachmen
 }
 
 describe('materializePromptAttachments', () => {
+  test('resolves handles under the command and imports only durable workspace files', async () => {
+    const commandId = '11111111-1111-4111-8111-111111111111';
+    const zipId = '22222222-2222-4222-8222-222222222222';
+    const pngId = '33333333-3333-4333-8333-333333333333';
+    const imports: unknown[] = [];
+    const reads: string[] = [];
+    const result = await materializePromptAttachments({
+      parts: [
+        { type: 'text', text: 'inspect' },
+        { type: 'file', attachment_id: zipId, filename: 'spoof.zip', mime: 'text/plain' },
+        { type: 'file', attachment_id: pngId, filename: 'spoof.png', mime: 'text/plain' },
+      ],
+      externalId: 'sbx_1',
+      sessionId: 'session_1',
+      accountId: 'account_1',
+      projectId: 'project_1',
+      userId: 'user_1',
+      materializationKey: commandId,
+      resolveAttachment: async ({ attachmentId, partIndex }) => ({
+        attachmentId,
+        filename: attachmentId === zipId ? 'canonical.zip' : 'canonical.png',
+        mime: attachmentId === zipId ? 'application/zip' : 'image/png',
+        size: attachmentId === zipId ? 4 : 3,
+        sha256: 'a'.repeat(64),
+        targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/${partIndex}-canonical`,
+        readBytes: async () => {
+          reads.push(attachmentId);
+          return attachmentId === zipId
+            ? new Uint8Array([80, 75, 3, 4])
+            : new Uint8Array([1, 2, 3]);
+        },
+      }),
+      importAttachment: async (value) => {
+        imports.push(value);
+        return { path: '/workspace/imported', size: 4, sha256: 'a'.repeat(64) };
+      },
+      writeFile: async () => {
+        throw new Error('capable daemon must not receive file bytes');
+      },
+    });
+
+    expect(imports).toEqual([
+      {
+        externalId: 'sbx_1',
+        sessionId: 'session_1',
+        userId: 'user_1',
+        commandId,
+        attachmentId: zipId,
+        partIndex: 1,
+      },
+    ]);
+    expect(reads).toEqual([pngId]);
+    expect(result[1]).toEqual({
+      type: 'text',
+      text: expect.stringContaining('filename="canonical.zip"'),
+    });
+    expect(result[2]).toEqual({
+      type: 'file',
+      filename: 'canonical.png',
+      mime: 'image/png',
+      url: 'data:image/png;base64,AQID',
+    });
+  });
+
+  test('uses verified resolver bytes with the existing writer when the daemon is legacy', async () => {
+    const commandId = '11111111-1111-4111-8111-111111111111';
+    const attachmentId = '22222222-2222-4222-8222-222222222222';
+    const writes: Array<{ targetPath: string; bytes: number[] }> = [];
+    const result = await materializePromptAttachments({
+      parts: [{ type: 'file', attachment_id: attachmentId, filename: 'spoof.zip' }],
+      externalId: 'sbx_legacy_import',
+      sessionId: 'session_1',
+      accountId: 'account_1',
+      projectId: 'project_1',
+      userId: 'user_1',
+      materializationKey: commandId,
+      resolveAttachment: async () => ({
+        attachmentId,
+        filename: 'canonical.zip',
+        mime: 'application/zip',
+        size: 4,
+        sha256: 'a'.repeat(64),
+        targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/0-canonical.zip`,
+        readBytes: async () => new Uint8Array([80, 75, 3, 4]),
+      }),
+      importAttachment: async () => null,
+      writeFile: async ({ targetPath, bytes }) => {
+        writes.push({ targetPath, bytes: [...bytes] });
+        return { path: targetPath, size: bytes.byteLength };
+      },
+    });
+
+    expect(writes).toEqual([{
+      targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/0-canonical.zip`,
+      bytes: [80, 75, 3, 4],
+    }]);
+    expect(result[0]?.type).toBe('text');
+    expect(result[0]?.text).toContain('filename="canonical.zip"');
+  });
+
+  test('runs no more than two daemon imports at once', async () => {
+    const commandId = '11111111-1111-4111-8111-111111111111';
+    const attachmentIds = [
+      '22222222-2222-4222-8222-222222222220',
+      '22222222-2222-4222-8222-222222222221',
+      '22222222-2222-4222-8222-222222222222',
+      '22222222-2222-4222-8222-222222222223',
+    ];
+    let active = 0;
+    let maximum = 0;
+    await materializePromptAttachments({
+      parts: attachmentIds.map((attachment_id) => ({ type: 'file', attachment_id })),
+      externalId: 'sbx_bounded_imports',
+      sessionId: 'session_1',
+      accountId: 'account_1',
+      projectId: 'project_1',
+      userId: 'user_1',
+      materializationKey: commandId,
+      resolveAttachment: async ({ attachmentId, partIndex }) => ({
+        attachmentId,
+        filename: `${partIndex}.zip`,
+        mime: 'application/zip',
+        size: 4,
+        sha256: 'a'.repeat(64),
+        targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/${partIndex}-${partIndex}.zip`,
+        readBytes: async () => new Uint8Array([80, 75, 3, 4]),
+      }),
+      importAttachment: async () => {
+        active += 1;
+        maximum = Math.max(maximum, active);
+        await Bun.sleep(5);
+        active -= 1;
+        return { path: '/workspace/imported', size: 4, sha256: 'a'.repeat(64) };
+      },
+      writeFile: async () => {
+        throw new Error('capable daemon must not receive file bytes');
+      },
+    });
+
+    expect(maximum).toBe(2);
+    expect(active).toBe(0);
+  });
+
   // A model-native attachment is only worth inlining if the prompt body can
   // still reach the box. Past the budget it is written to the workspace like
   // any other file — a JPEG the runtime never receives is worth less than a

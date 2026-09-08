@@ -134,13 +134,13 @@ describe('daemon file write routes', () => {
     })
   }
 
-  it('health advertises file.append while preserving existing health fields', async () => {
+  it('health advertises file import and append while preserving existing health fields', async () => {
     const response = await fetch(`${base}/kortix/health`)
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       daemon: 'ok',
       opencode: 'ok',
-      capabilities: ['file.append'],
+      capabilities: ['file.import', 'file.append'],
     })
   })
 

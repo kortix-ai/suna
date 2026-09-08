@@ -7,7 +7,10 @@
  * retryable when staged non-native bytes are absent.
  */
 import { flow } from '../core/flow';
-import { createDatabaseSession } from '../fixtures/database-project';
+import {
+  bindDatabaseSessionCredential,
+  createDatabaseSession,
+} from '../fixtures/database-project';
 
 flow('SESS-28', {
   domain: 'sessions', requires: ['database'], timeoutMs: 180_000,
@@ -20,6 +23,9 @@ flow('SESS-28', {
     'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
     'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
     'GET /v1/projects/:projectId/sessions/:sessionId',
+    'GET /v1/projects/:projectId/runtime/prompt-attachments/:attachmentId',
+    'POST /v1/projects/:projectId/cli-token',
+    'DELETE /v1/projects/:projectId/cli-token/:tokenId',
   ],
 }, async (ctx) => {
   const project = await ctx.fixtures.project();
@@ -83,6 +89,46 @@ flow('SESS-28', {
     (await owner.post(target, duplicate, options)).status(400);
     const missing = { ...body, client_message_id: 'SESS-28-missing', parts: [{ type: 'file', attachment_id: crypto.randomUUID() }] };
     (await owner.post(target, missing, options)).status(404);
+
+    const token = await owner.post('/v1/projects/:projectId/cli-token', { name: 'SESS-28 descriptor' }, { params: base });
+    token.status(201);
+    const tokenBody = token.json<any>();
+    const descriptorPath = '/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId';
+    const descriptorOptions = {
+      params: { ...base, attachmentId },
+      query: { command_id: first.json<any>().prompt_id, part_index: 1 },
+    };
+    (await owner.get(descriptorPath, descriptorOptions)).status(403);
+    (await ctx.client.withBearer(tokenBody.secret_key, 'plain project PAT').get(descriptorPath, descriptorOptions)).status(403);
+
+    await bindDatabaseSessionCredential(ctx.env, {
+      tokenId: tokenBody.token_id,
+      commandId: first.json<any>().prompt_id,
+      sessionId,
+      accountId: ctx.P.OWNER.accountId!,
+      projectId: project.id,
+    });
+    const descriptor = await ctx.client.withBearer(tokenBody.secret_key, 'session PAT').get(descriptorPath, descriptorOptions);
+    descriptor.status(200);
+    const descriptorBody = descriptor.json<any>();
+    if (
+      descriptorBody.command_id !== first.json<any>().prompt_id ||
+      descriptorBody.attachment_id !== attachmentId ||
+      descriptorBody.part_index !== 1 ||
+      descriptorBody.filename !== 'eager.txt' ||
+      descriptorBody.mime !== 'text/plain' ||
+      descriptorBody.size_bytes !== bytes.length ||
+      !String(descriptorBody.target_path).endsWith(`/1-eager.txt`) ||
+      !String(descriptorBody.download_url).startsWith('http') ||
+      !/^[0-9a-f]{64}$/.test(descriptorBody.sha256)
+    ) throw new Error('Descriptor did not return canonical, verified command metadata');
+    (await ctx.client.withBearer(tokenBody.secret_key, 'session PAT').get(descriptorPath, {
+      ...descriptorOptions,
+      query: { command_id: first.json<any>().prompt_id, part_index: 0 },
+    })).status(404);
+    (await owner.del('/v1/projects/:projectId/cli-token/:tokenId', {
+      params: { ...base, tokenId: tokenBody.token_id },
+    })).status(200);
   });
   await ctx.step('remove an unfinished upload twice and keep it unavailable', async () => {
     const created = await owner.post(begin, { filename: 'removed.txt', mime: 'text/plain', size: 1 }, { params: base }); created.status(201);

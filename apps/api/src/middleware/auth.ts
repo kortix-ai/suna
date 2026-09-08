@@ -339,7 +339,12 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     // without a sandbox hop. Write-only, about the caller's own session, and
     // the handler re-checks the token's sandbox against `session_sandboxes`
     // (sandbox id -> session -> account) before it stores anything.
-    path.endsWith('/runtime-projection');
+    path.endsWith('/runtime-projection') ||
+    // A legacy sandbox credential can fetch one descriptor for one persisted
+    // prompt attachment. The route handler re-checks sandbox, session,
+    // account, project, command, reference, and part index. Keep this exact
+    // shape: a broader attachment prefix would expose user upload routes.
+    /^\/v1\/projects\/[^/]+\/runtime\/prompt-attachments\/[^/]+$/.test(path);
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
