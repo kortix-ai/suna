@@ -34,7 +34,7 @@ describe('sanitizeAuthReturnUrl', () => {
   });
 
   test('returns the canonical path, so later rules see what the browser opens', () => {
-    expect(sanitizeAuthReturnUrl('/marketplace/../invites/abc')).toBe('/invites/abc');
+    expect(sanitizeAuthReturnUrl('/templates/../invites/abc')).toBe('/invites/abc');
     // A dot segment must not sneak a legacy path past its own prefix check.
     expect(sanitizeAuthReturnUrl('/invites/../dashboard')).toBe(PROJECT_LANDING_PATH);
     // Normalization must not disturb an ordinary path, its query, or its hash.
@@ -113,7 +113,7 @@ describe('resolveNewAccountReturnUrl', () => {
     expect(resolveNewAccountReturnUrl('/use-cases/research-agent')).toBe(
       '/use-cases/research-agent',
     );
-    expect(resolveNewAccountReturnUrl('/marketplace/acme/tool')).toBe('/marketplace/acme/tool');
+    expect(resolveNewAccountReturnUrl('/templates/acme/tool')).toBe('/templates/acme/tool');
   });
 
   test('keeps the landing door itself', () => {
@@ -132,12 +132,12 @@ describe('resolveNewAccountReturnUrl', () => {
 
   test('matches on segment boundaries, not raw string prefixes', () => {
     // A lookalike path must not inherit an allowlisted prefix's exemption.
-    expect(isSignupSafeReturnUrl('/marketplace-evil')).toBe(false);
+    expect(isSignupSafeReturnUrl('/templates-evil')).toBe(false);
     expect(isSignupSafeReturnUrl('/invitesomething')).toBe(false);
     expect(isSignupSafeReturnUrl('/projects/startle')).toBe(false);
-    expect(isSignupSafeReturnUrl('/marketplace')).toBe(true);
-    expect(isSignupSafeReturnUrl('/marketplace/acme')).toBe(true);
-    expect(isSignupSafeReturnUrl('/marketplace?q=1')).toBe(true);
+    expect(isSignupSafeReturnUrl('/templates')).toBe(true);
+    expect(isSignupSafeReturnUrl('/templates/acme')).toBe(true);
+    expect(isSignupSafeReturnUrl('/templates?q=1')).toBe(true);
   });
 
   test('is default-deny: an unknown route is not signup-safe', () => {
@@ -156,11 +156,11 @@ describe('resolveNewAccountReturnUrl', () => {
   test('a dot segment cannot smuggle a foreign project past the allowlist', () => {
     // Every consumer rebuilds this path through `new URL()`, which collapses
     // dot segments — so testing the raw string tests a path the browser never
-    // visits. `/marketplace/../projects/<id>` would pass a `/marketplace`
+    // visits. `/templates/../projects/<id>` would pass a `/templates`
     // check and then open `/projects/<id>`: the exact bug, through the fix.
     for (const crafted of [
-      '/marketplace/../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
-      '/marketplace/%2e%2e/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/templates/../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/templates/%2e%2e/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
       '/invites/../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
       '/use-cases/a/../../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
     ]) {

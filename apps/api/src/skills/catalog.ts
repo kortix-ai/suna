@@ -18,17 +18,11 @@
  * (see apps/api/Dockerfile), so the served text ships with the deploy and cannot
  * drift from the running version. No git clone, no network fetch, no cache to
  * invalidate.
- *
- * `getMarketplaceFiles()` is included alongside the starter walk because one
- * managed name — `kortix-computer` — lives in the `marketplace` template layer
- * rather than the base/general-knowledge-worker layers. Without it that skill
- * would be listed in `KORTIX_MANAGED_SKILL_NAMES` but unresolvable here.
  */
 
 import { parseFrontmatter } from '@kortix/registry';
 import {
   getManagedSkillFiles,
-  getMarketplaceFiles,
   getStarterFiles,
   isKortixManagedSkillName,
 } from '@kortix/starter';
@@ -64,7 +58,7 @@ export interface ManagedSkillSummary {
 }
 
 /**
- * Walk the starter + marketplace template trees and group the managed `kortix-*`
+ * Walk the starter template trees and group the managed `kortix-*`
  * skills by name. Pure (no I/O beyond @kortix/starter's own template read) and
  * exported for unit tests; production callers use the memoized `managedSkills()`.
  */
@@ -72,7 +66,6 @@ export function buildManagedSkills(): Map<string, ManagedSkill> {
   const files = [
     ...getManagedSkillFiles(),
     ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
-    ...getMarketplaceFiles(),
   ];
 
   const grouped = new Map<string, ManagedSkillFile[]>();

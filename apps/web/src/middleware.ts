@@ -45,7 +45,7 @@ const MARKETING_ROUTES = [
   '/download',
   '/enterprise',
   '/legal',
-  '/marketplace',
+  '/templates',
   '/pricing',
   '/security',
   '/self-hosted',
@@ -57,7 +57,7 @@ const MARKETING_ROUTES = [
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
 // app. Functional public routes (/auth, /docs, /legal, /support,
-// /marketplace, /share, /download, /maintenance, …) stay reachable; only the
+// /templates, /share, /download, /maintenance, …) stay reachable; only the
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
@@ -92,7 +92,7 @@ const PUBLIC_ROUTES = [
   '/legal',
   '/api/auth',
   '/share', // Shared content should be public
-  '/marketplace', // Public read-only marketplace directory; installs still require auth
+  '/templates', // The public template catalog. Kept public deliberately: an unauthenticated hit should 404, not bounce through /auth and land on the same 404
   '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
@@ -190,7 +190,7 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/tunnel',
   '/github',
   '/cli',
-  '/marketplace',
+  '/templates',
   '/maintenance',
   '/countryerror',
   '/debug',
@@ -609,7 +609,7 @@ export async function middleware(request: NextRequest) {
   // marketing surface is deactivated: the homepage and every marketing route
   // bounce straight to the app — authenticated users to /projects, everyone
   // else to /auth. Functional public routes (/docs, /legal, /support,
-  // /marketplace, /share, …) are unaffected. Read via process.env directly —
+  // /templates, /share, …) are unaffected. Read via process.env directly —
   // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
   // carry the image's placeholder value; the runtime container env
   // (KORTIX_PUBLIC_/NEXT_PUBLIC_ set at `docker run`) is what must win here,

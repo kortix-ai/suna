@@ -11,7 +11,7 @@
  * `http://169.254.169.254/` is also blocked.
  *
  * Used by every external-URL egress site that takes a caller-influenced URL:
- * connector spec/route/graphql/mcp fetches, marketplace source add, and
+ * connector spec/route/graphql/mcp fetches and
  * audit-webhook delivery. See F-1 (weekly pentest, runs #1–#4) and
  * https://github.com/kortix-ai/suna/issues/4442.
  */

@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  decodeRelayMeta,
-  decodeRelayStatus,
-  encodeRelayMeta,
-  encodeRelayStatus,
   RELAY_EOS_BYTES,
   RELAY_ERROR_HEADER,
   RELAY_META_HEADER,
@@ -15,6 +11,10 @@ import {
   RELAY_VERSION_HEADER,
   RelayCodecError,
   type SecretRelayMeta,
+  decodeRelayMeta,
+  decodeRelayStatus,
+  encodeRelayMeta,
+  encodeRelayStatus,
 } from '../secret-relay';
 
 const META: SecretRelayMeta = {
@@ -126,7 +126,9 @@ describe('the decoder is a security boundary, so it validates rather than trusts
 
   test('rejects garbage that is not base64url JSON', () => {
     expect(() => decodeRelayMeta('!!!not base64!!!')).toThrow(RelayCodecError);
-    expect(() => decodeRelayMeta(Buffer.from('{oops').toString('base64url'))).toThrow(RelayCodecError);
+    expect(() => decodeRelayMeta(Buffer.from('{oops').toString('base64url'))).toThrow(
+      RelayCodecError,
+    );
   });
 
   test('rejects an encoded meta over the header budget', () => {
@@ -144,8 +146,12 @@ describe('the decoder is a security boundary, so it validates rather than trusts
   });
 
   test('rejects a negative or non-integer body length', () => {
-    expect(() => decodes({ ...META, body: { present: true, length: -1 } })).toThrow(RelayCodecError);
-    expect(() => decodes({ ...META, body: { present: true, length: 1.5 } })).toThrow(RelayCodecError);
+    expect(() => decodes({ ...META, body: { present: true, length: -1 } })).toThrow(
+      RelayCodecError,
+    );
+    expect(() => decodes({ ...META, body: { present: true, length: 1.5 } })).toThrow(
+      RelayCodecError,
+    );
   });
 });
 
@@ -240,9 +246,7 @@ describe('the end-of-stream sentinel is an optional, additive field', () => {
 
   test('status round-trips a hex sentinel of exactly RELAY_EOS_BYTES', () => {
     const eos = 'ab'.repeat(RELAY_EOS_BYTES);
-    const status = decodeRelayStatus(
-      encodeRelayStatus({ v: 1, status: 200, headers: [], eos }),
-    );
+    const status = decodeRelayStatus(encodeRelayStatus({ v: 1, status: 200, headers: [], eos }));
     expect(status.eos).toBe(eos);
     expect(Buffer.from(status.eos!, 'hex').byteLength).toBe(RELAY_EOS_BYTES);
   });

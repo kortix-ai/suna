@@ -15,8 +15,7 @@
  * database and no GitHub network access.
  *
  * `mock.module` is process-global in bun:test — same caveat as
- * `../lib/triggers-fire-durable.test.ts` / `./marketplace-install-prompts.test.ts`'s
- * neighbors — so this MUST run in its own file (as `--isolate` already does
+ * `../lib/triggers-fire-durable.test.ts`'s neighbors — so this MUST run in its own file (as `--isolate` already does
  * per test file; see `scripts/test.sh`), never folded into another suite.
  * Runs ungated (no TEST_DATABASE_URL) — mocking the registration layer means
  * there is no database to gate against.

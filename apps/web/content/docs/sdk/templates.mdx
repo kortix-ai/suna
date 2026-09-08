@@ -1,0 +1,135 @@
+---
+title: Templates
+description: Browse the template catalog and install a template from the SDK and from React.
+---
+
+A **template** is a Kortix project you install into your own: a public GitHub
+repository whose `kortix.yaml` declares agents, skills, connectors and
+triggers. This page covers the SDK surface: the public catalog reads, the
+per-project install, the exported types, and the React hooks.
+
+For the product — the flag, the catalog, what an install does — read
+[Templates](/docs/feature-flags/templates).
+
+```ts
+const catalog = kortix.templates; // public — needs no token
+const install = kortix.project(projectId).templates; // per project
+```
+
+:::info[Install is a feature flag; the catalog is not]
+`project(id).templates.install()` answers `403` with
+`{ error, code: "feature_disabled", feature: "templates" }` until the project
+turns Templates on. Use `isFeatureDisabledError(error)` to branch on it. The
+catalog reads take no token and no flag. See [Feature flags](/docs/feature-flags).
+:::
+
+## The catalog — `kortix.templates`
+
+| Method                     | Wraps                         | What it does                                                            |
+| -------------------------- | ----------------------------- | ----------------------------------------------------------------------- |
+| `templates.list(options?)` | `GET /public/templates`       | Every template; `options.q` narrows by title, description, repo or slug |
+| `templates.get(slug)`      | `GET /public/templates/:slug` | One template, or a `TemplateError` with `status: 404`                   |
+
+All of these are anonymous by design. They are not built on the authenticated
+client, so a server render with `getToken: () => null` can read them, and a
+signed-in visitor's token never leaks into a cached page.
+
+## The repository — `kortix.templates.files` / `.file`
+
+A template IS a public GitHub repository pinned to a commit. The catalog says
+what it declares; these two say what it contains, which is what a person reads
+before installing it.
+
+| Method                       | Wraps                                    | What it does                                                                 |
+| ---------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `templates.files(slug)`      | `GET /public/templates/:slug/files`      | Readable files at the pinned commit, plus the `default_path` a page opens on |
+| `templates.file(slug, path)` | `GET /public/templates/:slug/file?path=` | One file's text                                                              |
+
+Three properties are worth relying on:
+
+- **Everything listed can be opened.** Binaries are absent from the listing, so
+  a file browser never offers a row it cannot render.
+- **The listing is the allowlist.** `file()` resolves only a path `files()`
+  returned; anything else — traversal, an absolute path, a real file the
+  template does not publish — is the same `404`, so the route cannot be used to
+  probe a repository.
+- **An empty listing is a normal answer, not an error.** These are the only
+  template reads that leave our process, and an unreachable repository degrades
+  to `{ files: [], default_path: null }` rather than failing the page. Render
+  the file browser only when `files.length > 0`.
+
+Content is immutable for a template's pinned commit, so a response never needs
+invalidating.
+
+## The install — `kortix.project(id).templates`
+
+| Method                    | Wraps                                           | What it does                                                                      |
+| ------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
+| `templates.install(slug)` | `POST /projects/:pid/templates/install-session` | Starts the agent session that installs the template; resolves to `{ session_id }` |
+
+`install` returns a **session id**, not a result. The agent inside that session
+reads both manifests, merges, and opens one change request a human reviews.
+The project changes when that change request merges. Reverting it is the
+uninstall, which is why there is no `list`, no `uninstall` and no activation
+call here.
+
+```ts
+const { templates } = await kortix.templates.list({ q: 'seo' });
+const { session_id } = await kortix.project(projectId).templates.install(templates[0].slug);
+// Open the session; the agent does the merge and opens the change request.
+```
+
+## Types
+
+| Type                         | Shape                                                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Template`                   | `slug`, `title`, `description`, `repo` (`owner/repo`), `repo_owner`, `repo_name`, `git_ref`, `resolved_sha`, `agents`, `triggers`, `connectors`, `skills`, `env_required` |
+| `TemplateAgent`              | `name`, `description`                                                                                                                                                     |
+| `TemplateTrigger`            | `slug`, `name`, `type`, `cron`, `agent`, `enabled`                                                                                                                        |
+| `TemplateConnector`          | `slug`, `provider`, `app`                                                                                                                                                 |
+| `TemplateListing`            | `{ templates }`                                                                                                                                                           |
+| `TemplateFile`               | `path`, `size` — one readable file in the template's repository                                                                                                           |
+| `TemplateFileListing`        | `{ files, default_path }` — the README, else the manifest, else the first file                                                                                            |
+| `ListTemplateCatalogOptions` | `{ q? }`                                                                                                                                                                  |
+| `TemplateError`              | `Error` with a numeric `status` — `404` for an unknown slug, `429` when rate limited                                                                                      |
+
+`resolved_sha` is the commit the card was derived from and the commit the
+install reads. A template's trigger `enabled` values describe the source
+repository; the install ships every trigger disabled regardless.
+
+## React
+
+```tsx
+import { useTemplateInstall, useTemplateCatalog } from '@kortix/sdk/react';
+
+function Templates({ projectId }: { projectId: string }) {
+  const catalog = useTemplateCatalog();
+  const install = useTemplateInstall(projectId);
+  return (
+    <ul>
+      {catalog.data?.templates.map((template) => (
+        <li key={template.slug}>
+          {template.title}
+          <button onClick={() => install.mutate(template.slug)}>Install</button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+| Hook                            | What it does                                                  |
+| ------------------------------- | ------------------------------------------------------------- |
+| `useTemplateCatalog(options?)`  | The catalog, keyed on `options.q`                             |
+| `useTemplate(slug)`             | One template; disabled without a slug                         |
+| `useTemplateInstall(projectId)` | A mutation over `install(slug)`; resolves to `{ session_id }` |
+| `useTemplateFiles(slug)`        | The repository file tree; disabled without a slug             |
+| `useTemplateFile(slug, path)`   | One file's text; takes `{ initialData }` for an SSR'd body    |
+
+Key factories `templateCatalogKey(options?)`, `templateKey(slug)`,
+`templateFilesKey(slug)` and `templateFileKey(slug, path)` are exported for
+manual invalidation.
+
+`useTemplateFile`'s `initialData` is how a server-rendered page hands over the
+document it already shipped — the default file must not flash a spinner on a
+page whose prose is already in the HTML.

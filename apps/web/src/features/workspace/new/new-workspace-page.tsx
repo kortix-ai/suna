@@ -1,13 +1,13 @@
 'use client';
 
-import { readCloneParam } from '@/features/workspace/new/clone-param';
-import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
-import { readSourceParam } from '@/features/workspace/new/source-param';
-import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
+
+import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
+import { readSourceParam } from '@/features/workspace/new/source-param';
+import { useTranslations } from '@/i18n/use-translations';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
@@ -122,14 +122,13 @@ export function NewWorkspacePage() {
   const t = useTranslations('newWorkspace');
   const { user, isLoading: authLoading } = useAuth();
   const searchParams = useSearchParams();
-  const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
   const router = useRouter();
 
   useSignedOutRedirect();
 
-  // Same `useSearchParams()` result the clone param reads — one subscription,
-  // two params. Non-null only between "the workspace was created" and "the
-  // user finished or skipped onboarding for it".
+  // Same `useSearchParams()` result `readSourceParam` reads below — one
+  // subscription, two params. Non-null only between "the workspace was
+  // created" and "the user finished or skipped onboarding for it".
   const onboardingProjectId = readOnboardingParam(
     new URLSearchParams(searchParams?.toString() ?? ''),
   );
@@ -142,7 +141,6 @@ export function NewWorkspacePage() {
 
   const [state, setState] = useState<NewWorkspaceFormState>(() => ({
     ...INITIAL_FORM_STATE,
-    templateId: cloneItemId,
     ...(initialSource ? { source: initialSource } : {}),
   }));
   const [touched, setTouched] = useState(false);
@@ -370,10 +368,6 @@ export function NewWorkspacePage() {
                 void create(effectiveState);
               }}
             >
-              {state.templateId && (
-                <p className="text-muted-foreground text-center text-xs">{t('templateSeed')}</p>
-              )}
-
               {/* No card. A single question does not need a bordered surface
                     to group it — the border was drawing a box around one field
                     on an otherwise empty page, which reads as chrome rather than

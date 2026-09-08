@@ -66,7 +66,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/enterprise',
   '/connectors',
   '/legal',
-  '/marketplace',
+  '/templates',
   '/pricing',
   '/security',
   '/self-hosted',
@@ -109,14 +109,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'marketplace',
-    title: 'Kortix Marketplace',
-    description:
-      'Browse skills, agents, and commands from every source. Add them to a Kortix project in one click.',
-    htmlPath: '/marketplace',
-  },
-  {
-    kind: 'marketing',
     slug: 'developers',
     title: 'Kortix for developers',
     description:
@@ -155,6 +147,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     description:
       'How teams put a workforce of AI agents to work — the loops they engineer, the deliverables they ship, and the reviewed changes that make the company better every day.',
     htmlPath: '/use-cases',
+  },
+  {
+    kind: 'marketing',
+    slug: 'templates',
+    title: 'Kortix Templates',
+    description:
+      'Browse the Kortix template catalog. Each template carries the agents, skills, connectors and triggers that run one loop end to end — installed into your own repo as files you own and review.',
+    htmlPath: '/templates',
   },
   {
     kind: 'marketing',

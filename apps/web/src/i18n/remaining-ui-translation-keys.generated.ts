@@ -295,6 +295,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Manager: 'text8b2085f74dfa',
   Markdown: 'text0e52f6b9d025',
   Marketplace: 'textc608981d8d68',
+  Templates: 'text56b564b75c7f',
   'Marketplace — Clone a ready-made Kortix project': 'text7eebc3924618',
   Member: 'text7c968fb71f50',
   "Members, billing, roles, and audit live in each organization's own settings.":

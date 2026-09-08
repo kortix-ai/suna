@@ -189,7 +189,6 @@ describe('starter catalog source map', () => {
       'base',
       'general-knowledge-worker',
       'managed',
-      'marketplace',
     ]);
   });
 });

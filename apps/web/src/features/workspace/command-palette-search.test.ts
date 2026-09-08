@@ -223,17 +223,36 @@ describe('queries return the rows they name', () => {
     expect(hits('customize')).toEqual(['nav:proj-customize']);
   });
 
-  test('"project" returns the two rows that say the word, not every project-scoped row', () => {
+  // Two rows carry the word "project" as visible text — the account hub's
+  // "Projects" pane and the top-level Projects row. `proj-templates` carries
+  // `requiresFlag: 'templates'`, so only a project that HAS the surface is
+  // ever offered it, and its keyword bag names what it installs (templates),
+  // not the word "project".
+  const SAYS_PROJECT = ['nav:account-access-projects', 'nav:nav-projects'];
+
+  test('"project" returns the rows that say the word, not every project-scoped row', () => {
     // `account-access-projects` is the account hub's "Projects" pane — the
     // word is its own label, which is exactly the bar this file sets. Ten
     // `proj-*` rows used to answer this by their ids.
-    expect(hits('project').sort()).toEqual(['nav:account-access-projects', 'nav:nav-projects']);
+    expect(hits('project').sort()).toEqual([...SAYS_PROJECT].sort());
   });
 
   test('"proj" matches nothing by id', () => {
-    // Ten `proj-*` rows used to answer this. The two that survive both carry
-    // "Projects" as visible label text.
-    expect(hits('proj').sort()).toEqual(['nav:account-access-projects', 'nav:nav-projects']);
+    // Ten `proj-*` rows used to answer this. The ones that survive carry the
+    // word as visible text — two as the label "Projects".
+    expect(hits('proj').sort()).toEqual([...SAYS_PROJECT].sort());
+  });
+
+  test('"marketplace" reaches the Templates tab, and only it; "templates" reaches it too', () => {
+    // "marketplace" is what the surface was called before the rename, and
+    // what a person who remembers it types, so it stays a keyword and has to
+    // answer alone. "templates" is the name the docs
+    // (`docs/feature-flags/templates`), the feature flag and `kortix templates`
+    // use, so it must answer as well — but not alone: the Sandboxes settings
+    // row legitimately says the word too (sandbox templates), and both rows
+    // are right to.
+    expect(hits('marketplace')).toEqual(['nav:proj-templates']);
+    expect(hits('templates')).toContain('nav:proj-templates');
   });
 
   test('"nav" and "pref" are not queries at all', () => {
@@ -320,7 +339,7 @@ describe('queries return the rows they name', () => {
     expect(hits('agents')).toContain('nav:proj-agents');
     expect(hits('skills')).not.toContain('nav:restart-config');
     expect(hits('skills')).toContain('nav:proj-skills');
-    // The Marketplace installs both and used to keep the words. It is a
+    // The Templates installs both and used to keep the words. It is a
     // section of `/projects/<id>/config` now, and that row deliberately drops
     // 'agents'/'skills': it would shadow the two rows above, which ARE those
     // pages, and `filteredNavItems` preserves declaration order rather than

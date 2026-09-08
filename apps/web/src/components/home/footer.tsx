@@ -60,7 +60,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'SDK', href: '/docs/sdk' },
       { label: 'Quickstart', href: '/docs/quickstart' },
       { label: 'For developers', href: '/developers' },
-      { label: 'Marketplace', href: '/marketplace' },
+      { label: 'Templates', href: '/templates' },
       { label: 'GitHub', href: 'https://github.com/kortix-ai/suna', external: true },
     ],
   },

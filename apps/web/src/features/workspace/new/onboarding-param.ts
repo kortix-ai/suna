@@ -6,7 +6,10 @@
  * mid-onboarding would drop the user back on an empty create form with a
  * workspace they never saw.
  *
- * Sibling of `clone-param.ts`, and validated the same way — emptiness only.
+ * Validated for emptiness only — a project id has no shape this module can
+ * check, unlike its sibling `source-param.ts`, whose value is an enum. (The
+ * other emptiness-only param used to be `?clone=<id>`, which seeded the create
+ * form from a skills-marketplace item; it went with that surface.)
  *
  * A project id the caller cannot read does NOT fail safe, and it is worth being
  * exact about why: `useProjectOnboarding` derives `hydrated` from

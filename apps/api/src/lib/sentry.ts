@@ -88,7 +88,7 @@ export const SENTRY_IGNORE_ERRORS = [
   'max clients reached in session mode',
   'EMAXCONNSESSION',
   // Expected source-address validation rejection from
-  // `assertAllowedSourceAddress` (the marketplace LFI/SSRF guard — non-https
+  // `assertAllowedSourceAddress` (the source-address LFI/SSRF guard — non-https
   // URL, private host, local-folder path). The throw is now a TYPED
   // `AllowedSourceValidationError` (code `invalid_source_address`) that the
   // connector `POST /connectors` + `POST /connectors/auth-discovery` route

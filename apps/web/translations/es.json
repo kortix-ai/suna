@@ -945,9 +945,9 @@
       "permission": "Necesitas permiso para editar la personalización del proyecto para cambiar una función.",
       "updateFailed": "No se pudo actualizar {key}",
       "flags": {
-        "marketplace": {
-          "name": "Marketplace",
-          "description": "Explora e instala habilidades de registros de la comunidad y proveedores. Las fuentes, actualizaciones y ámbitos de equipo aún cambian."
+        "templates": {
+          "name": "Plantillas",
+          "description": "Explora el catálogo de plantillas e instala una plantilla — con sus agentes, skills, conectores y disparadores — en este proyecto mediante una solicitud de cambio."
         },
         "agent_tunnel": {
           "name": "Túnel al ordenador del agente",
@@ -18362,6 +18362,7 @@
       "text830ec669b118": "En esa etapa, los equipos pierden cerca de una semana al mes en",
       "text3685aac7952f": "conciliación manual. Creamos un agente que cierra",
       "textb38cb5e18525": "ese ciclo y muestra su trabajo. ¿Tienes veinte minutos?",
+      "text56b564b75c7f": "Plantillas",
       "textff5bd8333c4e": "Tú y cualquiera que pueda administrar este proyecto",
       "text36d8691ae566": "Cualquiera con la URL, además de tu equipo",
       "text4fb2abecc0a6": "Cualquiera con la contraseña, además de tu equipo"

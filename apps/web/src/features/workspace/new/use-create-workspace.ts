@@ -57,7 +57,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * Deliberately NOT the full form state. `icon` and `defaultBranch` are
  * refinements a user can still be adjusting between a failed submit and a
  * retry — a retry must reuse the SAME key, not mint a new one just because
- * the icon changed. `name`, `accountId`, `templateId` and `source` are what
+ * the icon changed. `name`, `accountId` and `source` are what
  * actually identifies a genuinely different workspace: keying on those means
  * creating "suna-web" then, moments later, "kortix-api" in the same account
  * mints two independent keys instead of the second create silently returning
@@ -65,12 +65,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
-  return [
-    state.accountId ?? 'default',
-    state.name.trim(),
-    state.templateId ?? '',
-    state.source,
-  ].join(':');
+  return [state.accountId ?? 'default', state.name.trim(), state.source].join(':');
 }
 
 /**
@@ -216,10 +211,11 @@ export function buildGitHubImportPayload(
  * server, a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
  * until an operator configures it. 502 (an upstream/gateway fault) keeps the
- * retryable generic message, matching every OTHER call site that reuses
- * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
- * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
- * between the toast those use and the inline message here.
+ * retryable generic message, matching the OTHER call site that reuses
+ * `isManagedGitUnavailableError`
+ * (`components/use-cases/template-session-install-dialog.tsx:114`) — same
+ * title, so the wording never drifts between the toast it uses and the inline
+ * message here.
  *
  * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`

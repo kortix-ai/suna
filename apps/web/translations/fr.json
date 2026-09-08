@@ -945,9 +945,9 @@
       "permission": "Vous devez disposer de l’autorisation de modification de la personnalisation du projet pour changer une fonctionnalité.",
       "updateFailed": "Impossible de mettre à jour {key}",
       "flags": {
-        "marketplace": {
-          "name": "Place de marché",
-          "description": "Parcourez et installez des compétences depuis des registres communautaires et fournisseurs. Les sources, mises à jour et portées d’équipe évoluent encore."
+        "templates": {
+          "name": "Modèles",
+          "description": "Parcourez le catalogue de modèles et installez un modèle — avec ses agents, compétences, connecteurs et déclencheurs — dans ce projet via une demande de modification."
         },
         "agent_tunnel": {
           "name": "Tunnel d’ordinateur pour agent",
@@ -18362,6 +18362,7 @@
       "text830ec669b118": "À ce stade, les équipes perdent environ une semaine par mois en",
       "text3685aac7952f": "rapprochement manuel. Nous avons créé un agent qui boucle",
       "textb38cb5e18525": "ce processus et montre son travail. Vous avez vingt minutes ?",
+      "text56b564b75c7f": "Modèles",
       "textff5bd8333c4e": "Vous et toute personne pouvant gérer ce projet",
       "text36d8691ae566": "Toute personne disposant du lien, ainsi que votre équipe",
       "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe"

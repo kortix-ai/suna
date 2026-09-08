@@ -5,8 +5,8 @@ import { join } from 'node:path';
 /**
  * The page cannot be rendered here — `apps/web`'s `bun test` runs WITHOUT
  * `--isolate`, so mocking `next/navigation` or `@tanstack/react-query` would
- * be process-wide across the run. Source scan, same technique as the sibling
- * `clone-param.test.ts` integration block.
+ * be process-wide across the run. Source scan instead — the same technique
+ * `new-workspace-page.test.ts` applies to this page for the same reason.
  */
 const source = readFileSync(join(import.meta.dir, 'new-workspace-page.tsx'), 'utf8');
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');

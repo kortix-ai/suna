@@ -31,7 +31,6 @@ const GROUPS = [
   'grants',
   'groups',
   'hosts',
-  'marketplace',
   'members',
   'models',
   'permissions',

@@ -175,30 +175,20 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 ### 13. Triggers / scheduled tasks  🟡
 `projects-client/triggers.ts` ✅ (client) ; `useProjectTriggers` now in `@kortix/sdk/react` ✅ (list + create/update/remove/fire, invalidation-wired); the web app's own `hooks/scheduled-tasks` hook hasn't migrated onto it yet.
 
-### 13b. Marketplace / registry install (project-scoped)  ✅
-Installing/updating/removing a catalog item onto a project's default branch (a commit, not a runtime call) — distinct from browsing the catalog itself (client fns in `projects-client/marketplace-catalog.ts`, now also wrapped on the facade as top-level `kortix.marketplace.*` — see §13c). `projects-client/marketplace.ts` ✅; facade `project(id).marketplace.{list,install,updates,update,updateAll,remove}` and the identical `project(id).registry.{...}` alias ✅:
+### 13b. Templates — the public catalog + the project-scoped install  ✅
+A template is a public GitHub repository whose `kortix.yaml` declares agents,
+skills, connectors and triggers. The catalog is static and anonymous; installing
+starts an agent session that merges the template into a project by change
+request. Client fns in `projects-client/template-catalog.ts`; facade
+`kortix.templates.{list, get}` (top-level, no token) and
+`project(id).templates.install(slug)`; React `useTemplateCatalog`,
+`useTemplate`, `useTemplateInstall`. Nothing records what is installed — the
+change request is the record and reverting it is the uninstall.
 | op | REST |
 |---|---|
-| install | `POST /v1/projects/:id/marketplace/install` (+ `/registry/install` alias) |
-| list installed | `GET /v1/projects/:id/marketplace` (+ `/registry` alias) |
-| check for updates | `GET /v1/projects/:id/marketplace/updates` (+ `/registry/updates` alias) |
-| update one / update all | `POST /v1/projects/:id/marketplace/{update,update-all}` (+ `/registry/...` alias) |
-| remove | `DELETE /v1/projects/:id/marketplace/:name` (+ `/registry/:name` alias) |
-
-### 13c. Marketplace catalog browse (public) + sources  ✅
-Previously OUT OF SCOPE ("Marketplace catalog browsing"). Now wrapped
-end-to-end: client fns in `projects-client/marketplace-catalog.ts` are on the
-facade as `kortix.marketplace.{items, item, itemFile, marketplaces, featured,
-sources: {list, add, remove}}` (top-level — distinct from the install-scoped
-`project(id).marketplace.*` in §13b):
-| op | REST |
-|---|---|
-| browse catalog items (query/type/source filter) | `GET /v1/marketplace/items` |
-| distinct marketplaces + item counts | `GET /v1/marketplace/marketplaces` |
-| curated featured marketplaces | `GET /v1/marketplace/marketplaces/featured` |
-| item detail | `GET /v1/marketplace/items/:id` |
-| item file content | `GET /v1/marketplace/items/:id/file?path=` |
-| sources CRUD (authed, platform-global "Add a marketplace") | `GET/POST /v1/marketplace/sources`, `DELETE /v1/marketplace/sources/:id` |
+| list the catalog (`q` filter) | `GET /v1/public/templates` |
+| one template | `GET /v1/public/templates/:slug` |
+| install into a project (returns a session id) | `POST /v1/projects/:id/templates/install-session` — flag `templates`, `project.write` |
 
 ### 13d. Agent-minted setup links  ✅
 Short-lived links the in-sandbox agent mints so a human can enter a secret
@@ -303,8 +293,7 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Models, Agents, Commands, Tools, MCP, PTY | ✅ complete |
 | **Workspace files (read/write/status/search)** | ✅ full client in SDK (`@kortix/sdk/files`); hooks web-local |
 | Token minting (account + project-scoped CLI PATs) | ✅ complete — `projects-client/tokens.ts`, facade `kortix.accounts.tokens.*` / `project(id).tokens.*` |
-| Marketplace/registry install (project-scoped) | ✅ complete — `projects-client/marketplace.ts`, facade `project(id).marketplace.*` / `.registry.*` |
-| Public marketplace catalog browse + sources | ✅ complete — `projects-client/marketplace-catalog.ts`, facade `kortix.marketplace.*` |
+| Templates (public catalog + project-scoped install session) | ✅ complete — `projects-client/template-catalog.ts`, facade `kortix.templates.*` / `project(id).templates.install` |
 | Billing mutations (checkout/subscription/credits) | ✅ complete — `projects-client/billing.ts`, facade `kortix.billing.{checkout, subscription, credits}` |
 | Unified session costs | ✅ complete — `projects-client/session-costs.ts`, facade `kortix.billing.sessionCosts.{list,get}` / `session(pid,sid).cost()` |
 | Setup links, manifest validate, git token | ✅ complete — facade `project(id).{setupLinks, validateManifest, gitToken}` |

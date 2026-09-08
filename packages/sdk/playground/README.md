@@ -36,7 +36,6 @@ Stack must be up (`pnpm dev` from the repo root; `curl localhost:8008/v1/health`
 | 15 | `accounts/15-accounts-and-tokens.ts` | validateToken, accounts, PAT create→list→revoke CRUD | no |
 | 16 | `billing/16-billing.ts` | account state, transactions, credit breakdown, usage, tiers | no |
 | 17 | `gateway/17-gateway-observability.ts` | LLM cost/latency overview, series, breakdown, logs, budgets, keys | no |
-| 18 | `marketplace/18-marketplace.ts` | public catalog + project registry installed/updates | no |
 | 19 | `connectors/19-connectors.ts` | connectStatus, connector list + config + policies | no |
 | 20 | `access/20-access-and-policies.ts` | members, invites, requests, resource grants, policies | no |
 | 21 | `git/21-files-and-git.ts` | repo files list/read, commits, branches, commit diff | no |
@@ -50,13 +49,13 @@ Stack must be up (`pnpm dev` from the repo root; `curl localhost:8008/v1/health`
 | 30 | `sessions/30-session-crud.ts` | `generateSessionId` client-id create → get → rename → stop → delete → verify gone | no |
 | 31 | `session-extras/31-files-deep.ts` | files create/readBlob/copy/rename/findText round-trip in a temp dir | **yes** |
 | 32 | `env/32-personal-secrets.ts` | personal secret setPersonal → list → removePersonal | no |
-| 33 | `projects/33-models-and-search.ts` | llmCatalog, modelDefaults.get, repo search, file history, single commit, marketplace featured/item, pipedream apps | no |
+| 33 | `projects/33-models-and-search.ts` | llmCatalog, modelDefaults.get, repo search, file history, single commit, pipedream apps | no |
 | 34 | `server/34-server-scoped.ts` | `@kortix/sdk/server`: createScopedKortix + runWithKortix (incl. concurrent runs) | no |
 | 35 | `session-extras/35-shares.ts` | session public-share create→list→revoke + sandboxShares.list (known local 502) | **yes** |
 
 ## Deliberately NOT covered (and why)
 
-- **Mutations that change your project/account for real** — marketplace install,
+- **Mutations that change your project/account for real** — template install,
   trigger create/fire, `updateAgentConfig`/`setAgentScope`,
   experimental-feature toggles, access invites, connector create, channel
   connect/disconnect (except opt-in Slack), meet voice/bot mutations,

@@ -1,17 +1,21 @@
 import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
-  visibleCapabilityTabs,
-  type CapabilityTabFlags,
-} from '@/features/workspace/capabilities/shared/capability-tabs';
+import { visibleCapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
-import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
+import { FEATURE_FLAG_KEYS, type FeatureFlagKey } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { join, resolve } from 'node:path';
 import { menuRegistry } from './menu-registry';
 
-const ALL_FLAGS_OFF: CapabilityTabFlags = {
-  reviewEnabled: false,
+/**
+ * Every flag a capability tab gates itself on, all off. Written out rather
+ * than left as `{}` — both read as off (the gate is fail-closed), but an
+ * explicit `false` is the state a project is actually in, and a new gated tab
+ * then shows up as a missing key here instead of passing silently.
+ */
+const ALL_FLAGS_OFF: Partial<Record<FeatureFlagKey, boolean>> = {
+  review_center: false,
+  templates: false,
 };
 
 /**
@@ -46,25 +50,28 @@ describe('menu registry feature-flag gating', () => {
   test('Review Center is reachable behind its flag and removed features stay absent', () => {
     // Review is a capability tab since 2026-09-02, gated by the bar itself
     // (`visibleCapabilityTabs`), so this asserts the BEHAVIOUR rather than a
-    // declaration — a flag that hides the tab hides every way in. Voice and
-    // Marketplace have no flag any more: both were removed from the product.
-    const keysFor = (flags: CapabilityTabFlags) =>
+    // declaration — a flag that hides the tab hides every way in. Voice has no
+    // flag any more: it was removed from the product. Templates is a
+    // capability tab on the `templates` flag, so it must answer to its OWN
+    // flag and stay hidden while only `review_center` is on.
+    const keysFor = (flags: Partial<Record<FeatureFlagKey, boolean>>) =>
       visibleCapabilityTabs({}, flags).map((tab) => tab.key);
 
     const off = keysFor(ALL_FLAGS_OFF);
     expect(off).not.toContain('review');
     expect(off).not.toContain('voice');
-    expect(off).not.toContain('marketplace');
+    expect(off).not.toContain('templates');
 
-    expect(keysFor({ ...ALL_FLAGS_OFF, reviewEnabled: true })).toContain('review');
-    expect(keysFor({ ...ALL_FLAGS_OFF, reviewEnabled: true })).not.toContain('marketplace');
+    expect(keysFor({ ...ALL_FLAGS_OFF, review_center: true })).toContain('review');
+    expect(keysFor({ ...ALL_FLAGS_OFF, review_center: true })).not.toContain('templates');
+    expect(keysFor({ ...ALL_FLAGS_OFF, templates: true })).toContain('templates');
 
     // None of them is a settings tab any more, so the derived palette list
     // must not offer one — that would open the overlay on nothing.
     const paletteTabs = settingsPaletteGroups({ hasProject: true }).flatMap((group) =>
       group.items.map((item) => item.tab as string),
     );
-    for (const key of ['review', 'voice', 'marketplace']) {
+    for (const key of ['review', 'voice', 'templates']) {
       expect(paletteTabs).not.toContain(key);
     }
   });

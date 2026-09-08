@@ -223,7 +223,7 @@ triggers:
 | `type`         | yes                   | —                     | `cron`, `webhook`, or `monitor` (experimental).                                                       |
 | `prompt`       | yes                   | —                     | Non-empty. Supports templating.                                                                       |
 | `name`         | no                    | slug                  | Human label.                                                                                          |
-| `agent`        | no                    | `default_agent`       | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`.      |
+| `agent`        | no                    | `default_agent`       | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`.     |
 | `enabled`      | no                    | `true`                | `false` skips the entry.                                                                              |
 | `model`        | no                    | resolves at fire time | Wire form `provider/model`. Pins the fired session to that model. See [Models](/docs/project/models). |
 | `session_mode` | no                    | `fresh`               | `fresh`, `reuse`, `pinned`, or `keyed`.                                                               |
@@ -315,7 +315,7 @@ agents:
 | `connectors`          | `none`  | Which connector slugs this agent may call. `all` means every connector.                                                                                                                                   |
 | `connectors_required` | `none`  | Connector slugs that must resolve an active, strategy-compatible authorization before sandbox startup. Must be a subset of `connectors`. A missing authorization returns `CONNECTOR_CONNECTION_REQUIRED`. |
 | `secrets`             | `none`  | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`.                                                                                                                   |
-| `kortix_cli`          | `none`  | Which Kortix CLI and API permissions this agent may exercise. `all` means everything the launching user's roles allow — an agent can never exceed its launcher.                                            |
+| `kortix_cli`          | `none`  | Which Kortix CLI and API permissions this agent may exercise. `all` means everything the launching user's roles allow — an agent can never exceed its launcher.                                           |
 | `skills`              | `none`  | Which skills this agent may load.                                                                                                                                                                         |
 | `workspace`           | —       | Git-boundary mode: `runtime`, `read`, or `branch`. Validated against the enum; any other value is rejected.                                                                                               |
 

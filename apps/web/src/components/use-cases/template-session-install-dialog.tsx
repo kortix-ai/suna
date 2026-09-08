@@ -1,6 +1,6 @@
 'use client';
 
-import { listAccounts, provisionProject } from '@kortix/sdk';
+import { createTemplateInstallSession, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   SignInIcon as LogIn,
@@ -25,15 +25,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
+import { useProjectPicker } from '@/features/projects/use-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
-import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 
-// First-party use-case templates ship in the bundled `kortix-starter` registry,
-// so a use-case slug maps to the catalog id the install-session resolves by.
-const TEMPLATE_CATALOG_NAMESPACE = 'kortix-starter';
-
+// A use-case slug is handed to the template install-session as the template
+// slug. The registry this used to resolve against (`kortix-starter:<slug>`)
+// was removed with the old skills marketplace; the static template catalog
+// (`apps/api/src/templates/catalog.ts`) is what replaces it.
+//
+// UNVERIFIED, on purpose: no template with a use-case slug is in that catalog
+// yet, so this install answers 404 until one is added.
+// The alternative was dropping the only CTA on an indexed acquisition page.
 // Same sentinel the unified AddToProjectModal uses: "create a project inline,
 // then install into it" as one Select choice next to the existing projects.
 const NEW_PROJECT = '__new__';
@@ -100,10 +103,7 @@ export function TemplateSessionInstallDialog({
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
         projectId = project.project_id;
       }
-      const { session_id } = await installMarketplaceItemAsSession(
-        projectId,
-        `${TEMPLATE_CATALOG_NAMESPACE}:${templateId}`,
-      );
+      const { session_id } = await createTemplateInstallSession(projectId, templateId);
       // nav-contract: prefetch-only — `session_id` comes back from the install
       // POST, and the project may be provisioned in the same click, so neither
       // half of this href exists before the click.

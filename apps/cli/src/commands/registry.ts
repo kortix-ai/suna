@@ -8,8 +8,8 @@
  *   kortix registry search <reg> --query <q>
  *
  * The format is shadcn-compatible (registry.json / registry-item.json), so any
- * Kortix repo with a registry.json is marketplace-addressable and readable by
- * shadcn tooling for plain files.
+ * Kortix repo with a registry.json is addressable by this command and readable
+ * by shadcn tooling for plain files.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';

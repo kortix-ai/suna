@@ -75,6 +75,7 @@ import {
   LinuxLogoIcon as LinuxLogoBase,
   ListChecksIcon as ListChecksBase,
   MinusIcon as MinusBase,
+  PackageIcon as PackageBase,
   PaperPlaneTiltIcon as PaperPlaneTiltBase,
   PathIcon as PathBase,
   PhoneCallIcon as PhoneCallBase,
@@ -172,6 +173,7 @@ export const KeyIcon = withDefaultWeight(KeyBase);
 export const LinuxLogoIcon = withDefaultWeight(LinuxLogoBase);
 export const ListChecksIcon = withDefaultWeight(ListChecksBase);
 export const MinusIcon = withDefaultWeight(MinusBase);
+export const PackageIcon = withDefaultWeight(PackageBase);
 export const PaperPlaneTiltIcon = withDefaultWeight(PaperPlaneTiltBase);
 export const PathIcon = withDefaultWeight(PathBase);
 export const PhoneCallIcon = withDefaultWeight(PhoneCallBase);

@@ -389,37 +389,25 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
     // plain starter. Rows with no marker predate the recording and get the
     // default starter — the same thing the web create flow asks for.
     const recorded = readManagedRepoSeedState(row.metadata);
-    const { STARTER_TEMPLATE_IDS } = await import('@kortix/starter');
     const { normalizeStarterTemplateId } = await import('./starter');
-    const recordedTemplate = recorded?.template;
-    const sourceItemId =
-      recordedTemplate && !(STARTER_TEMPLATE_IDS as readonly string[]).includes(recordedTemplate)
-        ? recordedTemplate
-        : null;
-    const template = normalizeStarterTemplateId(recordedTemplate);
+    // A recorded template that is not a starter id used to name a marketplace
+    // source item to clone. The marketplace is gone, so `normalizeStarterTemplateId`
+    // folds any such legacy value onto the default starter — a repair that seeds
+    // the plain scaffold, never one that cannot run.
+    const template = normalizeStarterTemplateId(recorded?.template);
     const repoFullName = remote.repoName ?? row.name;
-    const { buildProjectSeedFiles, buildProjectSeedFilesFromItem, defaultAgentFromSeedFiles } =
-      await import('./seed-files');
-    const seed = sourceItemId
-      ? await buildProjectSeedFilesFromItem({
-          id: sourceItemId,
-          projectName: row.name,
-          repoFullName,
-          extraMarketplaceItems: [],
-          now: new Date().toISOString(),
-        })
-      : await buildProjectSeedFiles({
-          projectName: row.name,
-          repoFullName,
-          template,
-          marketplaceItems: [],
-          now: new Date().toISOString(),
-        });
+    const { buildProjectSeedFiles, defaultAgentFromSeedFiles } = await import('./seed-files');
+    const seed = await buildProjectSeedFiles({
+      projectName: row.name,
+      repoFullName,
+      template,
+      now: new Date().toISOString(),
+    });
 
     console.warn(
       `[managed-repo-seed] repairing empty managed repo project=${projectId} ` +
         `provider=${remote.provider} branch=${row.defaultBranch} ` +
-        `source=${sourceItemId ?? template} trigger=${trigger}`,
+        `source=${template} trigger=${trigger}`,
     );
     await pushVerifiedSeed({
       projectId,
@@ -449,7 +437,7 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
               expected: true,
               reason: 'self_healed',
               at: new Date().toISOString(),
-              template: sourceItemId ?? template,
+              template,
             }),
           },
         }),

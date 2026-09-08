@@ -23,10 +23,6 @@ mock.module('@kortix/sdk', () => ({
   },
 }));
 
-mock.module('@/lib/marketplace-client', () => ({
-  listDefaultProjectMarketplaceItems: async () => [{ id: 'kortix-starter:agent-browser' }],
-}));
-
 const EXISTING = {
   project_id: '11111111-1111-4111-8111-111111111111',
   account_id: 'acct_1',

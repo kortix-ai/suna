@@ -69,7 +69,7 @@ Options:
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
 
-Adding more marketplace items later is an agent import, not part of init:
+Adding more capabilities later is an agent import, not part of init:
 start a session and ask the agent to bring one in.
 `;
 

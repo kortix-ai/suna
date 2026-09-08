@@ -110,27 +110,14 @@ describe('MIGRATE_TO_V2_PROMPT — the core migration artifact', () => {
     expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('do not open a second one');
   });
 
-  test('refreshes the marketplace baseline before touching the manifest', () => {
-    expect(MIGRATE_TO_V2_PROMPT).toContain('kortix marketplace updates');
-    expect(MIGRATE_TO_V2_PROMPT).toContain('kortix marketplace update --all');
-    const refresh = MIGRATE_TO_V2_PROMPT.indexOf('kortix marketplace update --all');
-    const shape = MIGRATE_TO_V2_PROMPT.indexOf('The v2 shape');
-    expect(refresh).toBeGreaterThan(-1);
-    expect(shape).toBeGreaterThan(refresh);
-  });
-
-  test('warns that marketplace update commits directly to main, outside the CR', () => {
-    expect(MIGRATE_TO_V2_PROMPT).toMatch(/commits directly to `main`/i);
-  });
-
-  test('scopes the baseline refresh to marketplace-tracked items only', () => {
-    expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('orphaned');
-    expect(MIGRATE_TO_V2_PROMPT).toContain('leave every one of them untouched');
-  });
+  // The prompt used to open with a "refresh the marketplace baseline" section
+  // (`kortix marketplace updates` / `update --all`, orphaned-item handling).
+  // The marketplace was removed from the product and managed skills converge
+  // through runtime-assets, so there is no catalog diff to run before the
+  // manifest edit and those three tests went with the section.
 
   test('handles an advanced main: rebase, and redo the conversion on conflict rather than reverting', () => {
     expect(MIGRATE_TO_V2_PROMPT).toContain('git fetch origin');
-    expect(MIGRATE_TO_V2_PROMPT).toContain('git rebase origin/main');
     expect(MIGRATE_TO_V2_PROMPT).toContain('git rebase --abort');
     expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('redo the conversion');
     expect(MIGRATE_TO_V2_PROMPT).toContain('--force-with-lease');

@@ -23,8 +23,11 @@ const LEGACY_AUTH_RETURN_PREFIXES = [
  *    invite, a CLI pairing code, an OAuth consent screen). Dropping these
  *    strands the very flow that sent the user to sign up.
  *  - *public* pages — nothing behind them is account-scoped, so a brand-new
- *    identity renders them exactly like an old one. These are the marketplace
- *    and use-case CTAs that started the signup in the first place.
+ *    identity renders them exactly like an old one. `/use-cases` is the live
+ *    one: its CTA is what started the signup. `/templates` is held for the
+ *    public template catalog, so a return there answers
+ *    `404` rather than being blocked — the right failure, and the reason the
+ *    prefix stays rather than being removed and re-added.
  *
  * Everything else is account-scoped, and a brand-new account cannot own a
  * resource that existed before it did. See `resolveNewAccountReturnUrl`.
@@ -37,11 +40,11 @@ const SIGNUP_SAFE_RETURN_PREFIXES = [
   '/slack/login',
   '/teams/login',
   '/github/setup',
-  '/marketplace',
+  '/templates',
   '/use-cases',
 ] as const;
 
-/** Prefix match on path segment boundaries, so `/marketplace` never matches `/marketplace-evil`. */
+/** Prefix match on path segment boundaries, so `/templates` never matches `/templates-evil`. */
 function matchesReturnPrefix(value: string, prefix: string): boolean {
   return value === prefix || value.startsWith(`${prefix}/`) || value.startsWith(`${prefix}?`);
 }
@@ -77,7 +80,7 @@ export function sanitizeAuthReturnUrl(
   // password flow to attach auth_event, the callback to prepend the origin —
   // and that collapses dot segments. So a prefix test against the raw string
   // is testing a path the browser will never visit:
-  // `/marketplace/../projects/<id>` passes a `/marketplace` check and then
+  // `/templates/../projects/<id>` passes a `/templates` check and then
   // lands on `/projects/<id>`, which is exactly the foreign-project bug the
   // signup rule below exists to prevent (and would equally slip a
   // `/x/../dashboard` past LEGACY_AUTH_RETURN_PREFIXES). Normalizing here

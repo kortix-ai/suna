@@ -80,14 +80,8 @@ const EXEMPT_FRAGMENTS = [
   '/start', // unified session open: provision/resume + pin
   // resolve
   '/commit-push', // host-driven git commit+push
-  '/marketplace/install', // marketplace item install — git-bound like
-  // /commit-push (fetch + hash + commit + push)
-  '/registry/install', // registry item install — same git-bound path
-  '/marketplace/update', // marketplace item update(s) — also matches
-  // /marketplace/update-all (path.includes), and
-  // (intentionally) the GET .../updates
-  // drift-listing routes, which are
-  // GitHub-scan-heavy and legitimately long
+  '/registry/install', // registry item install — git-bound path
+  // (fetch + hash + commit + push)
   '/registry/update', // registry item update — same git-bound path,
   // plus its GET .../updates drift-listing route
   '/snapshots', // sandbox template builds

@@ -29,7 +29,6 @@ const SCRIPTS = [
   "accounts/15-accounts-and-tokens.ts",
   "billing/16-billing.ts",
   "gateway/17-gateway-observability.ts",
-  "marketplace/18-marketplace.ts",
   "connectors/19-connectors.ts",
   "access/20-access-and-policies.ts",
   "git/21-files-and-git.ts",

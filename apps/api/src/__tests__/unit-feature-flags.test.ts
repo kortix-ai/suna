@@ -126,11 +126,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
   });
 
-  test('marketplace defaults ON platform-wide and is turned off only explicitly', () => {
-    expect(resolveFeatureFlag({}, 'marketplace')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { marketplace: false } }, 'marketplace')).toBe(false);
-  });
-
   test('teams is explicit opt-in and needs no operator env var', () => {
     expect(resolveFeatureFlag({}, 'teams')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { teams: true } }, 'teams')).toBe(true);
@@ -207,8 +202,8 @@ describe('resolveFeatureFlag — explicit override wins', () => {
       expect(resolveFeatureFlag({ experimental: { apps: garbage } }, 'apps')).toBe(
         resolveFeatureFlag({}, 'apps'),
       );
-      expect(resolveFeatureFlag({ experimental: { marketplace: garbage } }, 'marketplace')).toBe(
-        resolveFeatureFlag({}, 'marketplace'),
+      expect(resolveFeatureFlag({ experimental: { teams: garbage } }, 'teams')).toBe(
+        resolveFeatureFlag({}, 'teams'),
       );
     }
   });
@@ -216,7 +211,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
   test('a malformed experimental subtree never throws', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
       expect(typeof resolveFeatureFlag(metadata, 'review_center')).toBe('boolean');
-      expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'teams')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'agent_tunnel')).toBe('boolean');
     }
   });

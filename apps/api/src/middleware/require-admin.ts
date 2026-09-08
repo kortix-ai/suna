@@ -13,7 +13,7 @@ export async function requireAdmin(c: Context, next: Next) {
   // REAL operator's user id (impersonation leaves `userId` untouched), so a
   // platform-admin operator would otherwise pass every requireAdmin-gated
   // router — /v1/admin, /v1/platform/github-app, /v1/ops,
-  // /v1/marketplace/sources — while the request is attributed to the customer
+  // an operator-only source registration — while the request is attributed to the customer
   // account. Enforce the block here, at the one gate they all share, instead
   // of enumerating their path prefixes in the impersonation deny-list.
   if (getImpersonationContext()) {

@@ -771,9 +771,9 @@
       "permission": "You need the project's customize-write permission to change a feature flag.",
       "updateFailed": "Failed to update {key}",
       "flags": {
-        "marketplace": {
-          "name": "Marketplace",
-          "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
+        "templates": {
+          "name": "Templates",
+          "description": "Browse the template catalog and install a template — its agents, skills, connectors and triggers — into this project by change request."
         },
         "agent_tunnel": {
           "name": "Agent Computer Tunnel",
@@ -18362,6 +18362,7 @@
       "text830ec669b118": "Teams at that stage lose about a week a month to",
       "text3685aac7952f": "manual reconciliation. We built an agent that closes",
       "textb38cb5e18525": "that loop and shows its working. Worth twenty minutes?",
+      "text56b564b75c7f": "Templates",
       "textff5bd8333c4e": "You, and anyone who can manage this project",
       "text36d8691ae566": "Anyone with the URL, plus your team",
       "text4fb2abecc0a6": "Anyone with the password, plus your team"

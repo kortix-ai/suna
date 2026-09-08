@@ -114,15 +114,7 @@ const EOS_HEX = new RegExp(`^[0-9a-f]{${RELAY_EOS_BYTES * 2}}$`);
 export const RELAY_META_MAX_BYTES = 65536;
 
 /** Methods the relay carries. Mirrors `SecretBrokerRequestSchema.method`. */
-export const RELAY_METHODS = [
-  'GET',
-  'POST',
-  'PUT',
-  'PATCH',
-  'DELETE',
-  'HEAD',
-  'OPTIONS',
-] as const;
+export const RELAY_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 export type RelayMethod = (typeof RELAY_METHODS)[number];
 
 /** Same cap as the legacy broker's `headers` record. */
@@ -202,7 +194,8 @@ function parseHeaders(raw: unknown, field: string): Array<[string, string]> {
   if (raw.length > MAX_HEADERS) invalid(`${field} must contain at most ${MAX_HEADERS} entries`);
   const headers: Array<[string, string]> = [];
   for (const entry of raw) {
-    if (!Array.isArray(entry) || entry.length !== 2) invalid(`${field} entries must be [name, value]`);
+    if (!Array.isArray(entry) || entry.length !== 2)
+      invalid(`${field} entries must be [name, value]`);
     const [name, value] = entry as [unknown, unknown];
     if (typeof name !== 'string' || typeof value !== 'string') {
       invalid(`${field} entries must be strings`);

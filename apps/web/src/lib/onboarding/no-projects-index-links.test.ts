@@ -5,7 +5,9 @@ import { join } from 'node:path';
 /**
  * The removed `/projects` index took two query-string forms with it:
  * `?new=1` opened the create modal, `?clone=<id>` seeded it from a
- * marketplace item. Both now live on `/new` (see `clone-param.ts`).
+ * skills-marketplace item. Create now lives at `/new`; `?clone=` has no
+ * successor at all — the skills marketplace it seeded from was removed from
+ * the product, so nothing has an item id to clone from any more.
  *
  * Scoped to the query-string forms deliberately, not to the bare `/projects`
  * string: `/projects` itself is still a real prefix for `/projects/:id`, so a

@@ -116,16 +116,14 @@ describe('withRepositorySource', () => {
     expect(withRepositorySource(managed, 'github-import').defaultBranch).toBe('develop');
   });
 
-  test('keeps the name, icon and template — only the source-owned fields reset', () => {
+  test('keeps the name and icon — only the source-owned fields reset', () => {
     const withIcon: NewWorkspaceFormState = {
       ...base,
       icon: { emoji: '🚀' },
-      templateId: 'kortix-projects:support-agent-kit',
     };
     const next = withRepositorySource(withIcon, 'github-create');
     expect(next.name).toBe('Support desk');
     expect(next.icon).toEqual({ emoji: '🚀' });
-    expect(next.templateId).toBe('kortix-projects:support-agent-kit');
   });
 });
 
@@ -153,12 +151,13 @@ describe('buildCreateRepoPayload', () => {
     expect(payload).not.toHaveProperty('default_branch');
   });
 
-  test('forwards the clone template and the icon, each under its own key', () => {
+  test('forwards the icon under its own key', () => {
     const emoji = buildCreateRepoPayload(
-      { ...base, icon: { emoji: '🚀' }, templateId: 'item-1', installationId: '84' },
+      { ...base, icon: { emoji: '🚀' }, installationId: '84' },
       'acc-1',
     );
-    expect(emoji).toMatchObject({ icon: '🚀', source_item_id: 'item-1' });
+    expect(emoji).toMatchObject({ icon: '🚀' });
+    expect(emoji).not.toHaveProperty('source_item_id');
     expect(emoji).not.toHaveProperty('icon_glyph');
 
     const glyph = buildCreateRepoPayload(

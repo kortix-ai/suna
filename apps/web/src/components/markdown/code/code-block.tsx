@@ -4,7 +4,7 @@ import { CopyButton } from '@/components/markdown/copy-button';
 import { languageLabel } from '@/components/markdown/unified-markdown-utils';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   highlightAsync,
@@ -14,6 +14,38 @@ import {
   SHIKI_THEME_LIGHT,
   type CodeThemeName,
 } from './shiki-highlighter';
+
+const NEVER_CHANGES = () => () => {};
+
+/**
+ * `false` for the server render and for the hydrating client render; `true`
+ * from the next render on, and immediately `true` for a component that mounts
+ * client-side (a soft navigation, a chat message).
+ *
+ * It exists because of a bug this component had for as long as anything
+ * server-rendered its markdown. The palette comes from `resolvedTheme`, which a
+ * server render cannot know, so the server always emitted `min-light` while a
+ * dark-mode client rendered `min-dark`. React does not reconcile
+ * `dangerouslySetInnerHTML` on a hydration mismatch — it keeps the server's DOM
+ * and warns — and the effect below then computed the SAME dark string it
+ * already held, so `setHtml` bailed out, no re-render happened, and nothing
+ * ever wrote the correct markup. A dark-mode reader was left with light code
+ * blocks permanently, not for a frame.
+ *
+ * Gating on hydration removes the mismatch at its source rather than silencing
+ * it: the first client render now matches the server exactly, the effect then
+ * sees a genuinely different theme, and the resulting state change is what
+ * patches the DOM. `useSyncExternalStore` is what makes this free for the chat
+ * — a client-side mount never hydrates, so it reads `true` on its first render
+ * and picks the right palette immediately, with no extra pass and no flash.
+ */
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    NEVER_CHANGES,
+    () => true,
+    () => false,
+  );
+}
 
 export function HighlightedCode({
   code,
@@ -34,8 +66,14 @@ export function HighlightedCode({
   unbounded?: boolean;
 }) {
   const { resolvedTheme } = useTheme();
+  const hydrated = useHydrated();
   // Which half of the one palette to draw. There is no third option.
-  const theme: CodeThemeName = resolvedTheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
+  //
+  // While hydrating we deliberately ignore `resolvedTheme` and draw the light
+  // half, because that is what the server drew and the two renders MUST agree.
+  // See {@link useHydrated} for what goes wrong when they do not.
+  const theme: CodeThemeName =
+    hydrated && resolvedTheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
   const opts = useMemo(() => ({ unbounded }), [unbounded]);
   const [html, setHtml] = useState<string | null>(() => highlightSync(code, language, theme, opts));
 
@@ -55,6 +93,9 @@ export function HighlightedCode({
   }, [code, language, theme, opts]);
 
   if (html) {
+    // No `suppressHydrationWarning` here, on purpose. The server and the first
+    // client render now agree (see `useHydrated`), so any mismatch React
+    // reports on this element is a real one worth seeing.
     return <code className={SHIKI_RESET} dangerouslySetInnerHTML={{ __html: html }} />;
   }
   return <code className="font-mono text-sm leading-[1.65] whitespace-pre">{children}</code>;

@@ -945,9 +945,9 @@
       "permission": "Você precisa de permissão para editar a personalização do projeto para alterar um recurso.",
       "updateFailed": "Não foi possível atualizar {key}",
       "flags": {
-        "marketplace": {
-          "name": "Marketplace",
-          "description": "Explore e instale habilidades de registros da comunidade e de fornecedores. Fontes, atualizações e escopos de equipe ainda estão mudando."
+        "templates": {
+          "name": "Modelos",
+          "description": "Navegue pelo catálogo de modelos e instale um modelo — com seus agentes, skills, conectores e gatilhos — neste projeto por meio de uma solicitação de alteração."
         },
         "agent_tunnel": {
           "name": "Túnel para computador do agente",
@@ -18362,6 +18362,7 @@
       "text830ec669b118": "Equipes nessa fase perdem cerca de uma semana por mês com",
       "text3685aac7952f": "reconciliação manual. Criamos um agente que fecha",
       "textb38cb5e18525": "esse ciclo e mostra seu trabalho. Tem vinte minutos?",
+      "text56b564b75c7f": "Modelos",
       "textff5bd8333c4e": "Você e qualquer pessoa que possa gerenciar este projeto",
       "text36d8691ae566": "Qualquer pessoa com a URL, além da sua equipe",
       "text4fb2abecc0a6": "Qualquer pessoa com a senha, além da sua equipe"

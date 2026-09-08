@@ -17,7 +17,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
-import { assertAllowedSourceAddress } from '../marketplace/catalog';
+import { assertAllowedSourceAddress } from '../shared/allowed-source-address';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
 import { flushAuditEvents, recordAuditEvent } from '../shared/audit';
 import {
@@ -582,7 +582,7 @@ auditRouter.openapi(
     }
     // SSRF guard: reject private/link-local/internal targets (e.g. cloud
     // metadata at 169.254.169.254). This endpoint fires a server-side test
-    // delivery immediately on create, so the same guard used for marketplace
+    // delivery immediately on create, so the same guard used for connector
     // source URLs applies here.
     try {
       assertAllowedSourceAddress(url);
