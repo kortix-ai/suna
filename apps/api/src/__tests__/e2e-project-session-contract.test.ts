@@ -1272,6 +1272,21 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  test('v3 keeps its declared agent when the OpenCode meta-agent experiment is enabled', async () => {
+    enablePiWorker();
+    projectRow.metadata = { experimental: { meta_agent: true, pi_worker: false, llm_gateway: true } };
+    const response = await createApp().request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ agent_name: 'default', metadata: { sandbox_slug: 'pi-worker' } });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput).toMatchObject({ sandboxSlug: 'pi-worker', agentName: 'default' });
+    expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_META_AGENT');
+    expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_BOOTSTRAP_OPENCODE_SESSION');
+  });
+
   test('v3 selects Pi with the pi_worker feature disabled', async () => {
     enablePiWorker();
     projectRow.metadata = { experimental: { pi_worker: false, llm_gateway: true } };

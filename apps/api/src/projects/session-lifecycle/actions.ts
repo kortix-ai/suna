@@ -1,3 +1,4 @@
+import { ensurePiWorkerIdentity } from '../lib/ensure-pi-worker-identity';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
@@ -16,7 +17,6 @@ import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
 import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
-  piWorkerRuntimeIdentityFromSessionMetadata,
   piWorkerSandboxProviderMatches,
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
@@ -223,7 +223,7 @@ export async function restartSession(input: {
     .where(eq(sessionSandboxes.sandboxId, sessionId))
     .limit(1);
   const piWorkerClaimed = sessionMetadataClaimsPiWorker(session.metadata);
-  const piWorkerIdentity = piWorkerRuntimeIdentityFromSessionMetadata(session.metadata);
+  const piWorkerIdentity = await ensurePiWorkerIdentity({ projectId, sessionId, metadata: session.metadata });
 
   const provisionReplacementRuntime = async () => {
     const initialPrompt = session.opencodeSessionId

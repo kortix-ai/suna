@@ -1013,7 +1013,35 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  const loadedAgents = await loadProjectAgents(project, {
+  // Resolve the version and worker artifact from the same immutable commit.
+  // V3 selects Pi without a feature flag. V2 and legacy absence select OpenCode.
+  // An invalid or unreadable runtime decision fails before session persistence.
+  let piWorkerIdentity: { ref: string; sha: string } | null = null;
+  try {
+    const authedProject = await withProjectGitAuth(project);
+    const ref = (baseRef ?? '').trim() || project.defaultBranch;
+    const sha = await resolveCommitSha(authedProject, ref);
+    const runtime = await resolveManifestRuntimeForPiSession(authedProject, sha);
+    if (runtime === 'pi') {
+      piWorkerIdentity = { ref, sha };
+    }
+  } catch (err) {
+    console.warn(
+      `[sessions] pi worker resolution failed for ${projectId}; rejecting session create:`,
+      err instanceof Error ? err.message : err,
+    );
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'Pi runtime selection could not be resolved from the session Git commit',
+          code: 'PI_WORKER_RUNTIME_RESOLUTION_FAILED',
+        },
+      },
+    };
+  }
+
+  const loadedAgents = await loadProjectAgents(piWorkerIdentity ? { ...project, defaultBranch: piWorkerIdentity.sha } : project, {
     forceRefresh: true,
     rethrowReadErrors: true,
   });
@@ -1025,11 +1053,9 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // The meta coordinator is a per-project experimental opt-in
-  // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
-  // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
-  // agent name.
-  const metaAgentEnabled = resolveFeatureFlag(project.metadata, 'meta_agent');
+  // The platform OpenCode coordinator applies only to legacy/v2 projects.
+  // Pi projects always use their declared agent selection.
+  const metaAgentEnabled = !piWorkerIdentity && resolveFeatureFlag(project.metadata, 'meta_agent');
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
@@ -1384,36 +1410,7 @@ export async function createProjectSession(input: {
   // Validate the requested sandbox template up front so the user gets a clean
   // 400 instead of an async session-failed if they typed a slug that doesn't
   // exist. The platform default is always valid.
-  // Resolve the version and worker artifact from the same immutable commit.
-  // V3 selects Pi without a feature flag. V2 and legacy absence select OpenCode.
-  // An invalid or unreadable runtime decision fails before session persistence.
-  let piWorkerIdentity: { ref: string; sha: string } | null = null;
-  if (!platformMetaAgent) {
-    try {
-      const authedProject = await withProjectGitAuth(project);
-      const ref = (baseRef ?? '').trim() || project.defaultBranch;
-      const sha = await resolveCommitSha(authedProject, ref);
-      const runtime = await resolveManifestRuntimeForPiSession(authedProject, sha);
-      if (runtime === 'pi') {
-        piWorkerIdentity = { ref, sha };
-        sandboxSlug = PI_WORKER_SANDBOX_SLUG;
-      }
-    } catch (err) {
-      console.warn(
-        `[sessions] pi worker resolution failed for ${projectId}; rejecting session create:`,
-        err instanceof Error ? err.message : err,
-      );
-      return {
-        error: {
-          status: 409,
-          body: {
-            error: 'Pi runtime selection could not be resolved from the session Git commit',
-            code: 'PI_WORKER_RUNTIME_RESOLUTION_FAILED',
-          },
-        },
-      };
-    }
-  }
+  if (piWorkerIdentity) sandboxSlug = PI_WORKER_SANDBOX_SLUG;
 
   // Pi v0 has no native-provider credential path. Its immutable worker image
   // receives neither project secrets nor OpenCode's provider configuration;

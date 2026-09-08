@@ -87,7 +87,7 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
 
   test('the pi decision reads the runtime from the exact resolved commit', async () => {
     const source = await sessionsSource();
-    const decision = source.indexOf("if (!platformMetaAgent) {");
+    const decision = source.indexOf('let piWorkerIdentity:');
     const resolveTip = source.indexOf(
       'const sha = await resolveCommitSha(authedProject, ref)',
       decision,

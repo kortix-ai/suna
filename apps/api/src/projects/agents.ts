@@ -130,6 +130,7 @@ export interface AgentParseError {
 }
 
 export interface LoadedAgents {
+  runtime?: 'pi';
   specs: AgentSpec[];
   errors: AgentParseError[];
   /**
@@ -154,6 +155,11 @@ export interface LoadedAgents {
  *     `extractAgentsV2`.
  */
 export function extractAgents(manifest: ParsedManifest): LoadedAgents {
+  const loaded = extractManifestAgents(manifest);
+  return manifest.schemaVersion === 3 ? { ...loaded, runtime: 'pi' } : loaded;
+}
+
+function extractManifestAgents(manifest: ParsedManifest): LoadedAgents {
   const filename = manifest.path || MANIFEST_FILENAME;
   const raw = manifest.raw.agents;
   if (raw === undefined || raw === null) {
@@ -343,11 +349,11 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // token, so the deny-all overwrote the coordinator's real grant on its first
   // turn (every later `kortix` call then 403'd) and the null made the re-mint
   // refuse the prompt outright. Its grant is platform-owned, at mint and here.
-  if (isMetaAgentName(agentName)) return platformMetaAgentGrant();
+  if (isMetaAgentName(agentName) && loaded.runtime !== 'pi') return platformMetaAgentGrant();
 
   // No [[agents]] section parsed and no errors → project hasn't adopted
   // per-agent governance → no restriction (today's behavior).
-  if (loaded.specs.length === 0 && loaded.errors.length === 0) return null;
+  if (loaded.runtime !== 'pi' && loaded.specs.length === 0 && loaded.errors.length === 0) return null;
 
   const spec = loaded.specs.find((s) => s.name === agentName && s.enabled);
   if (spec) {

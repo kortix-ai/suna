@@ -1,4 +1,4 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { createExecutionOnlyRuntime } from './execution-only'
@@ -1139,19 +1139,24 @@ async function runEnvironmentMode(
     bootState.workspaceReady = true
     bootMark('environment-ready')
     scheduleRuntimeAssetsReconcile(cfg)
-    const onBoot = await resolveSandboxOnBoot(cfg)
-    if (onBoot) {
-      const logPath = '/var/log/kortix-on-boot.log'
-      mkdirSync(dirname(logPath), { recursive: true })
-      const out = openSync(logPath, 'a')
-      const child = spawn('bash', ['-lc', onBoot], {
-        cwd: cfg.projectTarget,
-        env: process.env,
-        detached: true,
-        stdio: ['ignore', out, out],
-      })
-      child.on('error', (err) => logger.warn('[environment] on_boot failed', { error: err.message }))
-      child.unref()
+    try {
+      const onBoot = await resolveSandboxOnBoot(cfg)
+      if (onBoot) {
+        const logPath = '/var/log/kortix-on-boot.log'
+        mkdirSync(dirname(logPath), { recursive: true })
+        const out = openSync(logPath, 'a')
+        const child = spawn('bash', ['-lc', onBoot], {
+          cwd: cfg.projectTarget,
+          env: process.env,
+          detached: true,
+          stdio: ['ignore', out, out],
+        })
+        closeSync(out)
+        child.on('error', (err) => logger.warn('[environment] on_boot failed', { error: err.message }))
+        child.unref()
+      }
+    } catch (err) {
+      logger.warn('[environment] on_boot setup failed', { error: (err as Error).message })
     }
   } catch (err) {
     bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)

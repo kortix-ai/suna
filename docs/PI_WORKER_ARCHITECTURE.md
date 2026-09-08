@@ -401,3 +401,10 @@ session checkout. Missing storage during recovery is an error.
 
 Workspace files remain on the provider sandbox disk. PostgreSQL stores the
 conversation outside both sandboxes. These operations do not use Durable Objects.
+
+
+### Existing Pi sessions and the meta-agent experiment
+
+Legacy Pi sessions recover their immutable ref and SHA from the installed worker bundle. Recovery reads the manifest without executing the bundle. It verifies the project identity and persists the recovered selector before environment startup or replacement. It never resolves the current Git branch to replace an existing selector.
+
+The platform OpenCode meta-agent experiment applies to legacy/v2 projects. A v3 project keeps its declared default agent even when that experiment is enabled. A declared v3 agent named `meta` uses its own grants. Pi coordination remains part of the remaining subagent work.

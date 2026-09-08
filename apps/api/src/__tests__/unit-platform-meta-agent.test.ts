@@ -51,6 +51,11 @@ describe('platform meta agent', () => {
     expect(config.open_code_default_agent).toBe('meta');
   });
 
+  test('does not replace the declared default or agents of a v3 project', () => {
+    const config = { manifest: { kortix_version: 3 }, agents: [{ name: 'reviewer' }], open_code_default_agent: 'reviewer' } as unknown as Parameters<typeof addPlatformMetaAgent>[0];
+    expect(addPlatformMetaAgent(config)).toBe(config);
+  });
+
   test('defines an OpenCode agent that follows the platform guide', () => {
     expect(JSON.parse(buildPlatformMetaOpenCodeConfig())).toEqual({
       agent: {

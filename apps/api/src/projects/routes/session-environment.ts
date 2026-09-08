@@ -23,10 +23,10 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { withProjectGitAuth } from '../lib/git';
+import { ensurePiWorkerIdentity } from '../lib/ensure-pi-worker-identity';
 import { UUID_V4_REGEX } from '../lib/serializers';
 import {
   environmentSandboxSlugFromSessionMetadata,
-  piWorkerRuntimeIdentityFromSessionMetadata,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
 
@@ -180,7 +180,7 @@ projectsApp.openapi(
       manifestPath: string | null;
     };
     try {
-      const identity = piWorkerRuntimeIdentityFromSessionMetadata(gate.session.metadata);
+      const identity = await ensurePiWorkerIdentity({ projectId: gate.projectId, sessionId: gate.sessionId, metadata: gate.session.metadata });
       if (!identity) {
         return c.json({ error: 'Pi runtime identity is incomplete' }, 409);
       }

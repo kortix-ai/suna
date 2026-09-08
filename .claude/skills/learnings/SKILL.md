@@ -5371,3 +5371,11 @@ roll back to a daemon that starts OpenCode.
 checks dirty files and a user-selected branch with an unreachable remote.
 `apps/api/src/platform/services/environment-runtime-bootstrap.test.ts` executes
 the provider bootstrap and checks digest rejection, file preservation, and retry.
+
+## 2026-09-08 — Preserve the installed commit when introducing Pi identity fields
+
+**Incident:** Preview `4fa2d4a06a` made `/environment/ensure` return `409` for older Pi sessions. These sessions predated the durable `pi_worker_ref` and `pi_worker_sha` fields.
+
+**Rule:** Recover legacy runtime identity from the installed, server-provisioned bundle before enforcing a new identity contract. Never resolve the current branch HEAD for an existing conversation. Reject mismatched projects and malformed explicit identities. Keep transcript and workspace state intact.
+
+**Enforcement:** `pi-worker-identity-recovery.test.ts` checks artifact parsing without code execution, immutable commit recovery, project isolation, and malformed-identity rejection. Environment ensure, cold allocation, and replacement restart share `ensurePiWorkerIdentity`.

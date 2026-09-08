@@ -104,6 +104,7 @@ describe('execution-only environment', () => {
   })
 
   test('the real daemon ignores inherited OpenCode warm-seed and initial-session flags', async () => {
+    await writeFile(join(workspace, 'kortix.yaml'), 'kortix_version: 3\nsandbox:\n  on_boot: \"exit 1\"\n')
     const home = join(workspace, 'home')
     const bin = join(home, 'bin')
     await mkdir(bin, { recursive: true })
@@ -154,6 +155,7 @@ describe('execution-only environment', () => {
       const logs = `${await output}\n${await errors}`
       expect(logs).not.toContain('[seed]')
       expect(logs).not.toContain('opencode-spawned')
+      expect(logs).not.toContain('[environment] workspace setup failed')
     }
   }, 15000)
 })

@@ -13,6 +13,7 @@ import type { AgentGrant } from '@kortix/db';
 import type { ProjectConfigSummary } from '../git/types';
 
 export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfigSummary {
+  if (config.manifest?.kortix_version === 3) return config;
   return {
     ...config,
     open_code_default_agent: META_AGENT_NAME,

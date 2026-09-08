@@ -1,3 +1,4 @@
+import { ensurePiWorkerIdentity } from '../lib/ensure-pi-worker-identity';
 import type {
   ProjectSessionSandbox,
   SessionStartFailure,
@@ -23,7 +24,6 @@ import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
-  piWorkerRuntimeIdentityFromSessionMetadata,
   piWorkerSandboxProviderMatches,
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
@@ -449,7 +449,7 @@ export async function allocateRuntimeOnOpen(
 ): Promise<SessionStartResult | null> {
   const providerName = session.sandboxProvider as SandboxProviderName;
   const piWorkerClaimed = sessionMetadataClaimsPiWorker(session.metadata);
-  const piWorkerIdentity = piWorkerRuntimeIdentityFromSessionMetadata(session.metadata);
+  const piWorkerIdentity = await ensurePiWorkerIdentity({ projectId, sessionId, metadata: session.metadata });
   if (
     (piWorkerClaimed && !piWorkerIdentity) ||
     (piWorkerIdentity && !piWorkerSandboxProviderMatches(providerName))
