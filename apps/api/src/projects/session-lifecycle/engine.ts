@@ -16,6 +16,7 @@ import { serviceKeyForExternalId } from '../../platform/service-key';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
+import { ENV_SYNCED_FOR_HEADER, envSyncedForValue } from '../../sandbox-proxy/env-synced-header';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
 import {
@@ -533,6 +534,8 @@ export async function continueSession(
   // KORTIX_URL rotation, stale secrets, a stale model catalog. The sync is
   // cheap and self-deduping (revision + model signature); an unchanged box
   // costs one skipped push.
+  let syncedFor: { externalId: string; agent: string | null } | null = null;
+  let deliveredAgent: AgentDeliveryResolution | null = null;
   {
     const sandbox = opened.sandbox as {
       external_id?: string | null;
@@ -554,6 +557,21 @@ export async function continueSession(
         resolveSandboxIngress(externalId, { port: DAEMON_PORT, transport: 'http' }),
       ]);
       if (!serviceKey) throw new Error('sandbox service key is unavailable');
+      // THE AGENT FIRST, THEN THE SYNC — in that order on purpose.
+      //
+      // This sync used to run with no agent, so the proxy had to sync AGAIN on
+      // arrival to apply the running agent's secret grant: ~1.1 s per queued
+      // prompt on two calls that looked identical (dev 2026-09-08, deliver
+      // env-sync=+569ms then proxy env-sync=+555ms). Resolving the deliverable
+      // agent here makes THIS the agent-scoped sync, so the proxy can skip its
+      // own — see ENV_SYNCED_FOR_HEADER. Same resolution the forward uses, so
+      // the two cannot disagree.
+      deliveredAgent = await resolveAgentForDelivery(
+        externalId,
+        sessionId,
+        userId,
+        command.overrides,
+      );
       await syncSessionRuntimesEnvForPrompt({
         projectId: session.projectId,
         sessionId,
@@ -563,7 +581,9 @@ export async function continueSession(
         providerHeaders: ingress.headers,
         providerName,
         opencodeEnv: command.opencodeEnv,
+        requestedAgent: deliveredAgent.agent,
       });
+      syncedFor = { externalId, agent: deliveredAgent.agent };
     } catch (err) {
       console.warn('[session-lifecycle] runtime env sync failed before prompt delivery', {
         sessionId,
@@ -597,6 +617,10 @@ export async function continueSession(
         parts: command.parts,
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
+        // Only for the box we actually synced: a retry that healed onto another
+        // one carries no claim and the proxy syncs it as before.
+        syncedFor: syncedFor?.externalId === externalId ? syncedFor : null,
+        resolvedAgent: syncedFor?.externalId === externalId ? deliveredAgent : null,
       }),
   });
 }
@@ -2159,6 +2183,40 @@ async function sessionRuntimeAgentRoster(
   });
 }
 
+/**
+ * THE AGENT THE RUNTIME CAN ACTUALLY RUN — see `agent-availability.ts`.
+ *
+ * `prompt_async` answers 204 for an agent it does not have and then never runs
+ * the turn, so forwarding an unknown name is the delivery loop reading
+ * "delivered", retiring the inbox row, and the user's message ceasing to exist.
+ * Dropping the name instead runs the prompt under the runtime's own default,
+ * exactly as a send with no pick always has.
+ *
+ * Lifted out of `postPrompt` so the env sync can run FOR this agent before the
+ * forward, which is what lets the proxy skip a second sync. One roster read
+ * either way: the caller passes the result back in.
+ */
+async function resolveAgentForDelivery(
+  externalId: string,
+  callerSessionId: string,
+  userId: string,
+  overrides: PromptOverridesWire | undefined,
+): Promise<AgentDeliveryResolution> {
+  return resolveDeliverableAgent(
+    overrides?.agent ?? null,
+    overrides?.agent
+      ? await sessionRuntimeAgentRoster(
+          externalId,
+          callerSessionId,
+          userId,
+          // Same directory expression the forward uses, so the roster read and
+          // the prompt forward always agree.
+          overrides?.directory || WORKSPACE,
+        )
+      : { names: null },
+  );
+}
+
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
@@ -2175,6 +2233,11 @@ async function postPrompt(
     parts?: PromptPartWire[];
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
+    /** The agent the caller already resolved (and synced the env for). */
+    resolvedAgent?: AgentDeliveryResolution | null;
+    /** The box + agent the caller already synced, so the proxy can skip its
+     *  own sync. Null on a retry that healed onto a different box. */
+    syncedFor?: { externalId: string; agent: string | null } | null;
   },
 ): Promise<boolean> {
   const parts: PromptPartWire[] =
@@ -2187,19 +2250,9 @@ async function postPrompt(
   // "delivered", retiring the inbox row, and the user's message ceasing to
   // exist. Dropping the name instead runs the prompt under the runtime's own
   // default, exactly as a send with no pick always has.
-  const deliverableAgent = resolveDeliverableAgent(
-    overrides?.agent ?? null,
-    overrides?.agent
-      ? await sessionRuntimeAgentRoster(
-          externalId,
-          callerSessionId,
-          userId,
-          // Same directory expression the forward uses at the bottom of this
-          // function, so the roster read and the prompt forward always agree.
-          overrides?.directory || WORKSPACE,
-        )
-      : { names: null },
-  );
+  const deliverableAgent =
+    prompt?.resolvedAgent ??
+    (await resolveAgentForDelivery(externalId, callerSessionId, userId, overrides));
   if (deliverableAgent.dropped) {
     logger.warn('[session-lifecycle] dropped an agent the runtime does not have', {
       session_id: callerSessionId,
@@ -2241,6 +2294,16 @@ async function postPrompt(
         // (`prompt-wire-id-repair.ts`) has nothing to add — one fewer sandbox
         // round-trip per queued message. Direct clients never send this.
         ...(prompt?.wireMessageId ? { [WIRE_ID_PLACED_HEADER]: '1' } : {}),
+        // This box's env is already synced FOR THIS AGENT (see the sync above
+        // and ENV_SYNCED_FOR_HEADER); without this the proxy repeats it.
+        ...(prompt?.syncedFor && prompt.syncedFor.externalId === externalId
+          ? {
+              [ENV_SYNCED_FOR_HEADER]: envSyncedForValue(
+                externalId,
+                deliverableAgent.agent,
+              ),
+            }
+          : {}),
       }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',

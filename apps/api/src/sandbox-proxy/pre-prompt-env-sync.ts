@@ -39,35 +39,15 @@ import {
   type generateSessionTitleFromFirstPrompt,
 } from '../projects/session-title-generate';
 
-/**
- * WHY A DELIVERED PROMPT SYNCS ITS ENV TWICE, AND WHY THAT IS NOT (YET) A BUG
- * TO DELETE.
- *
- * Measured on dev 2026-09-08, one delivered prompt, from the API's own
- * provision-timeline:
- *
- *   deliver total=4253ms  ...  env-sync=+569ms  delivered=+1242ms
- *   proxy   total=1241ms  ...  env-sync=+555ms  upstream=+606ms
- *
- * ~1.1 s per queued prompt on two calls that look identical. They are not, and
- * the obvious dedup — a header from the delivery loop saying "already synced",
- * the trick WIRE_ID_PLACED_HEADER already uses for the wire id — is unsafe in
- * BOTH directions:
- *
- *  - The proxy's sync passes `requestedAgent`, so it applies (or refuses) THAT
- *    agent's secret grant, and `remintGrant` below re-points the token at it.
- *    The comment there is the reason: a manifest that narrowed the grant in the
- *    previous turn must be enforced from the first call of this one. Skipping
- *    it because the delivery loop synced would forward against an env nobody
- *    checked for this agent.
- *  - The delivery loop's sync (engine.ts) passes `opencodeEnv`, the per-command
- *    env, which this one does not. Dropping that one loses it.
- *
- * So the saving is real but it is not a deletion: it needs `requestedAgent` and
- * `opencodeEnv` threaded into ONE sync, which moves the agent resolution
- * currently inside `postPrompt` to before the sync. Left undone deliberately
- * rather than traded for a grant that stops being enforced.
- */
+import {
+  ENV_SYNCED_FOR_HEADER,
+  envSyncedForValue,
+  needsPrePromptEnvSync,
+} from './env-synced-header';
+
+// Re-exported so every existing import path keeps working, exactly as this
+// module already re-exports through routes/preview.ts.
+export { ENV_SYNCED_FOR_HEADER, envSyncedForValue, needsPrePromptEnvSync };
 
 /** One JSON error body with the proxy's CORS pair applied. Lives here rather
  *  than in the route because every refusal below builds one, and the route must
@@ -343,19 +323,29 @@ export async function runPrePromptEnvSync(
     externalId: record.externalId,
     userId,
   });
+  // The delivery loop syncs before it forwards, for this box and this agent.
+  // Doing it again costs the prompt ~555 ms and changes nothing.
+  // See ENV_SYNCED_FOR_HEADER — and note remintGrant below still runs.
+  const alreadySynced = !needsPrePromptEnvSync(
+    input.incomingHeaders,
+    record.externalId,
+    requestedAgent,
+  );
   try {
-    await deps.syncEnv({
-      projectId: record.projectId,
-      sessionId: record.sessionId,
-      externalId: record.externalId,
-      serviceKey: input.serviceKey,
-      previewUrl: input.previewUrl,
-      providerHeaders: input.providerHeaders,
-      providerName: record.provider as ProviderName,
-      // The secret grant is resolved from the agent this prompt actually runs,
-      // not the session's create-time column — see projects/lib/secret-grant.ts.
-      requestedAgent,
-    });
+    if (!alreadySynced) {
+      await deps.syncEnv({
+        projectId: record.projectId,
+        sessionId: record.sessionId,
+        externalId: record.externalId,
+        serviceKey: input.serviceKey,
+        previewUrl: input.previewUrl,
+        providerHeaders: input.providerHeaders,
+        providerName: record.provider as ProviderName,
+        // The secret grant is resolved from the agent this prompt actually runs,
+        // not the session's create-time column — see projects/lib/secret-grant.ts.
+        requestedAgent,
+      });
+    }
     // The env sync above applied the running agent's secret grant, or refused it
     // when the optional strict lock is enabled. Re-point the token's
     // connector/CLI grant at the agent that will actually run — it was frozen at
