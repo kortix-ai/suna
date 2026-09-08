@@ -423,3 +423,17 @@ New Pi starter projects explicitly grant all project skills, matching the base
 starter's behavior. Existing project grants remain unchanged. The starter prompt
 explains worker web tools, pinned configuration commits, and environment file
 persistence. The starter package passes 92 tests with 1,206 assertions.
+
+
+## Gateway model context limits — 2026-09-08
+
+The Pi fallback previously borrowed the first OpenRouter catalogue entry's limit.
+For `gpt-5.6-luna`, that meant 131,072 instead of 1,050,000 tokens. The compiler
+now carries the selected gateway model's context and output limits. Explicit
+session model overrides carry their own limits through the worker environment.
+Unknown aliases have no automatic-compaction threshold. They do not inherit
+another model's context window. Health reports the effective limits.
+
+Fifty-five focused tests pass with 195 assertions. Real subprocess tests check
+the compiled default, an explicit override, and an unknown alias. API and worker
+typechecks pass. Live limit verification remains pending deployment.

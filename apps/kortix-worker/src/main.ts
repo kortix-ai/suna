@@ -1,3 +1,4 @@
+import { selectWorkerModelLimits, type WorkerModelLimits } from './model-limits';
 /**
  * Bundle entrypoint for the compiled worker runtime.
  *
@@ -22,6 +23,7 @@ import type { PiSkill } from './skill-runtime.ts';
 import { type WorkerConfig, configFromEnv, startWorker } from './worker.ts';
 
 interface CompiledPayload {
+  modelLimits?: WorkerModelLimits;
   manifest?: {
     project_id?: string;
     ref?: string;
@@ -83,6 +85,7 @@ function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
       out.modelId = native.slice(slash + 1);
     }
   }
+  out.modelLimits = selectWorkerModelLimits(out.modelId, cfg.modelLimits, compiled.modelLimits);
   return out;
 }
 

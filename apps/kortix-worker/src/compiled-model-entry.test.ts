@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-async function bootModel(compiledModel: string, environmentModel?: string) {
+async function bootModel(compiledModel: string, environmentModel?: string, limits?: { baked?: { model: string; context: number; output: number }; override?: { model: string; context: number; output: number } }) {
   const requests: any[] = [];
   const gateway = Bun.serve({
     port: 0,
@@ -33,6 +33,7 @@ async function bootModel(compiledModel: string, environmentModel?: string) {
   const entry = path.join(directory, "entry.mjs");
   const compiled = {
     manifest: { default_agent: "build" },
+    modelLimits: limits?.baked,
     agentConfig: {
       model: compiledModel,
       agent: { build: { model: compiledModel, prompt: "Follow the user." } },
@@ -52,6 +53,7 @@ async function bootModel(compiledModel: string, environmentModel?: string) {
       KORTIX_TOKEN: "compiled-model-fixture",
       KORTIX_SESSION_ID: "compiled-model-entry",
       ...(environmentModel ? { KORTIX_MODEL: environmentModel } : {}),
+      ...(limits?.override ? { KORTIX_MODEL_LIMITS: JSON.stringify(limits.override) } : {}),
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -99,7 +101,8 @@ async function bootModel(compiledModel: string, environmentModel?: string) {
       ),
     ).toBe(true);
     expect(requests).toHaveLength(1);
-    return { request: requests[0], answer };
+    const health = await (await fetch(base + "/kortix/health", { headers })).json() as any;
+    return { request: requests[0], answer, health };
   } finally {
     clearTimeout(timeout);
     reader.releaseLock();
@@ -124,4 +127,26 @@ test("an explicit session model takes precedence over a short compiled model", a
   const { request, answer } = await bootModel("gpt-5.6-luna", "openai/gpt-4.1");
   expect(request.model).toBe("openai/gpt-4.1");
   expect(answer.info.modelID).toBe("openai/gpt-4.1");
+});
+
+
+test('a compiled gateway alias uses its own context and output limits', async () => {
+  const { health } = await bootModel('kortix/gpt-5.6-luna', undefined, {
+    baked: { model: 'gpt-5.6-luna', context: 1050000, output: 128000 },
+  });
+  expect(health.model_context_window).toBe(1050000);
+  expect(health.model_max_output).toBe(128000);
+});
+
+test('an explicit model uses its override limits rather than the compiled model limits', async () => {
+  const { health } = await bootModel('gpt-5.6-luna', 'openai/gpt-4.1', {
+    baked: { model: 'gpt-5.6-luna', context: 1050000, output: 128000 },
+    override: { model: 'openai/gpt-4.1', context: 1047576, output: 32768 },
+  });
+  expect(health.model_context_window).toBe(1047576);
+});
+
+test('an unknown gateway alias does not inherit the first provider catalog context window', async () => {
+  const { health } = await bootModel('unknown-test-alias');
+  expect(health.model_context_window).toBeNull();
 });

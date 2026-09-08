@@ -20,6 +20,7 @@
  * apps/kortix-worker/src/main.ts reads before starting).
  */
 import { createHash } from 'node:crypto';
+import type { PiModelLimits } from './pi-model-limits';
 import type { PiAgentModule } from './pi-agent-module';
 import type { CompiledPiCommand } from '../projects/lib/compile-pi-commands';
 import type { CompiledPiSkill } from '../projects/lib/compile-pi-skills';
@@ -31,6 +32,7 @@ export const COMPILED_PI_RUNTIME_CONTENT_TYPE =
 export interface CompiledPiRuntimeManifest {
   format: typeof COMPILED_PI_RUNTIME_FORMAT;
   engine: 'pi';
+  model_limits?: PiModelLimits;
   project_id: string;
   ref: string;
   source_sha: string;
@@ -58,6 +60,7 @@ export interface CompilePiRuntimeInput {
   /** Server-compiled agent config JSON (compile-agent-config.ts), or null for
    *  a project whose manifest is not `kortix_version: 2`. */
   agentConfig?: string | null;
+  modelLimits?: PiModelLimits;
   /** Project commands compiled from the same exact Git SHA as the agent. */
   commands?: CompiledPiCommand[];
   /** Approved skill Markdown compiled from the same exact Git SHA as the agent. */
@@ -117,6 +120,7 @@ Object.assign(process.env, compiledEnv);
 
 globalThis.__KORTIX_COMPILED__ = {
   manifest,
+  modelLimits: manifest.model_limits,
   agentConfig: manifest.agent_config ? JSON.parse(manifest.agent_config) : null,
   commands: manifest.command_config ? JSON.parse(manifest.command_config) : [],
   skills: manifest.skill_config ? JSON.parse(manifest.skill_config) : [],
@@ -139,6 +143,7 @@ export function compilePiRuntime(input: CompilePiRuntimeInput): CompiledPiRuntim
   const manifest: CompiledPiRuntimeManifest = {
     format: COMPILED_PI_RUNTIME_FORMAT,
     engine: 'pi',
+    ...(input.modelLimits ? { model_limits: input.modelLimits } : {}),
     project_id: input.projectId,
     ref: input.ref,
     source_sha: input.sourceSha,

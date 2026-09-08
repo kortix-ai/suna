@@ -5401,3 +5401,19 @@ the provider bootstrap and checks digest rejection, file preservation, and retry
 **Near miss:** Runtime token minting treated every agent named `meta` as the platform coordinator. YAML v3 can declare a custom agent with that name.
 **Rule:** The shared grant resolver decides platform authority. Token minting does not infer authority from an agent name. Environment credentials and injected secrets resolve grants at the worker's immutable configuration commit.
 **Enforcer:** `session-runtime-token.test.ts` checks restricted custom `meta` grants for worker and environment tokens. `session-environment-race.test.ts` checks the immutable grant ref.
+
+
+### Keep gateway model limits bound to their wire model (2026-09-08)
+
+**Near-miss:** The Pi gateway fallback cloned the first OpenRouter catalogue entry.
+Luna inherited Aion's 131,072-token context instead of its own 1,050,000-token limit.
+Automatic compaction would therefore discard detailed model context too early.
+
+**Rule:** Resolve limits from the gateway catalogue for the exact selected model.
+Carry default limits in the compiled bundle and explicit override limits in the
+worker environment. Reject mismatched overrides. An unknown limit disables the
+automatic threshold; it never borrows a different model's capacity.
+
+**Enforcer:** `pi-model-limits.test.ts`, `model-limits.test.ts`, and
+`compiled-model-entry.test.ts` check alias normalization, defaults, overrides,
+unknown aliases, and real process health metadata.

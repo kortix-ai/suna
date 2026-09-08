@@ -1,3 +1,4 @@
+import type { PiModelLimits } from '../../git-proxy/pi-model-limits';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { agentConfigEtag } from './compile-agent-config';
 import { workspaceModeAllowsFullRepository } from './session-sandbox-metadata';
@@ -184,6 +185,7 @@ export function buildPiWorkerSessionEnvVars(input: {
   apiUrl: string;
   frontendUrl?: string;
   opencodeModel?: string | null;
+  modelLimits?: PiModelLimits;
 }): Record<string, string> {
   return {
     KORTIX_PROJECT_ID: input.projectId,
@@ -216,5 +218,6 @@ export function buildPiWorkerSessionEnvVars(input: {
     // compiled artifact's own baked model is used — which is why this stays
     // conditional and must not fall back to the platform resolution.
     ...(input.opencodeModel ? { KORTIX_MODEL: input.opencodeModel } : {}),
+    ...(input.modelLimits ? { KORTIX_MODEL_LIMITS: JSON.stringify(input.modelLimits) } : {}),
   };
 }

@@ -1,3 +1,4 @@
+import { piModelLimits } from './pi-model-limits';
 import { resolvePiAgentModule } from "./resolve-pi-agent-module";
 /**
  * Build-and-cache for compiled pi runtime artifacts — the `engine: 'pi'`
@@ -129,7 +130,8 @@ function hasSelectedAgentConfig(
   }
   try {
     const parsed = JSON.parse(manifest.agent_config) as {
-      agent?: Record<string, unknown>;
+      model?: string;
+    agent?: Record<string, unknown>;
     };
     if (!parsed.agent || Object.keys(parsed.agent).length !== 1) return false;
     const selectedAgent = parsed.agent[selectedAgentName];
@@ -312,6 +314,7 @@ async function compileArtifact(
     resolveCompiledPiSkillsForSession(project, sourceSha),
   ]);
   const parsedAgentConfig = JSON.parse(agentConfig) as {
+    model?: string;
     agent?: Record<string, unknown>;
   };
   const selectedAgent = parsedAgentConfig.agent?.[baked];
@@ -330,6 +333,7 @@ async function compileArtifact(
     ref,
     sourceSha,
     agentConfig,
+    modelLimits: piModelLimits(project.projectId, (selectedAgent as { model?: string }).model ?? parsedAgentConfig.model),
     defaultAgent: baked,
     commands,
     skills,

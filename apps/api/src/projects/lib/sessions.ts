@@ -1,3 +1,4 @@
+import { piModelLimits } from '../../git-proxy/pi-model-limits';
 import { randomUUID } from 'node:crypto';
 import {
   projectSessionConnectorBindings,
@@ -423,6 +424,7 @@ export async function buildPiWorkerSessionSandboxEnvVars(input: {
   const runtimeContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   return {
     ...buildPiWorkerSessionEnvVars({
+      modelLimits: piModelLimits(input.projectId, input.opencodeModel),
       projectId: input.projectId,
       sessionId: input.sessionId,
       agentName: input.agentName,

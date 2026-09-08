@@ -1,3 +1,4 @@
+import { parseWorkerModelLimits, type WorkerModelLimits } from './model-limits';
 import { installCustomAgent } from './custom-agent.ts';
 import { applyGenerationSettings } from './generation-settings.ts';
 import { applyAgentSteps } from './agent-steps.ts';
@@ -452,6 +453,7 @@ export interface WorkerConfig {
   modelMode: 'faux' | 'real';
   providerId?: string;
   modelId?: string;
+  modelLimits?: WorkerModelLimits;
   apiKey?: string;
   gatewayUrl?: string;
   /** Durable session store. Absent = in-memory only (conversation dies with the process). */
@@ -504,6 +506,7 @@ export function configFromEnv(): WorkerConfig {
     modelMode: mode,
     providerId: process.env.KORTIX_PROVIDER ?? 'openrouter',
     modelId: process.env.KORTIX_MODEL,
+    modelLimits: parseWorkerModelLimits(process.env.KORTIX_MODEL_LIMITS),
     fauxScript: mode === 'faux' ? parseFauxScript(process.env.KORTIX_FAUX_SCRIPT) : undefined,
     // The platform injects the session credential and the gateway base under
     // its OWN names (KORTIX_TOKEN / KORTIX_LLM_BASE_URL, see
@@ -602,10 +605,14 @@ export async function buildHarness(cfg: WorkerConfig) {
       // its field shape, stamp the requested ref, and point it at the
       // gateway directly so routing does not depend on auth-layer env
       // plumbing.
-      model = { ...list[0], id: cfg.modelId, name: cfg.modelId, baseUrl: cfg.gatewayUrl };
+      model = { ...list[0], id: cfg.modelId, name: cfg.modelId, baseUrl: cfg.gatewayUrl, contextWindow: 0 };
     }
     if (!model) throw new Error(`no model resolved for provider ${provider.id}`);
     if (cfg.gatewayUrl) model = { ...model, baseUrl: cfg.gatewayUrl };
+    if (cfg.modelLimits) {
+      if (cfg.modelLimits.model !== model.id) throw new Error('Model limits do not match the selected model');
+      model = { ...model, contextWindow: cfg.modelLimits.context, maxTokens: cfg.modelLimits.output };
+    }
   }
 
   // THE SEAM. Every default tool is bound to the remote environment once.
@@ -2743,6 +2750,8 @@ export async function startWorker(cfg = configFromEnv()) {
         // this session answers but the answers are worthless.
         model_mode: modelError ? 'faux' : cfg.modelMode,
         model_error: modelError,
+        model_context_window: agent.state.model?.contextWindow || null,
+        model_max_output: agent.state.model?.maxTokens ?? null,
         // The pi worker has no OpenCode store to pin — the start path must not
         // wait for one.
         opencode_session_id: surface.rootId,

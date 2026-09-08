@@ -103,6 +103,15 @@ afterEach(() => {
 });
 
 describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
+  test('bakes the selected gateway model limits into the immutable artifact', async () => {
+    const { project, sha } = makeProject({
+      manifest: 'kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n',
+      agentFiles: { '.kortix/pi/agents/build.md': '---\nmodel: kortix/gpt-5.6-luna\n---\nBuild safely.\n' },
+    });
+    const artifact = await buildCompiledPiRuntimeArtifact(project, 'main', sha, 'build');
+    expect(artifact.manifest.model_limits).toMatchObject({ model: 'gpt-5.6-luna', context: 1050000 });
+  });
+
   test("rejects malformed selected-agent frontmatter instead of baking a null config", async () => {
     const { project, sha } = makeProject({
       manifest:

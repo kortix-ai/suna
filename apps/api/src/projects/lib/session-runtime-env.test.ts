@@ -431,3 +431,10 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
 });
+
+
+test('an explicit Pi model receives the limits resolved for that same model', () => {
+  const limits = { model: 'gpt-5.6-luna', context: 1050000, output: 128000 };
+  const env = buildPiWorkerSessionEnvVars({ projectId: 'p', sessionId: 's', agentName: 'build', apiUrl: 'https://api.example.test', opencodeModel: limits.model, modelLimits: limits });
+  expect(JSON.parse(env.KORTIX_MODEL_LIMITS!)).toEqual(limits);
+});
