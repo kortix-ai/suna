@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=62
+// EXPECTED_PASSES=64
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -382,6 +382,33 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   // answered nothing — while every health field said it was fine. Measured on
   // dev 2026-09-07: sessions dee5338a and 5b482709 ran turns to `done` with no
   // model behind them.
+
+  // WHICH MODEL A SESSION GETS WHEN THE PLATFORM NAMES NONE.
+  //
+  // The control plane sends no model to a cell, so this fallback IS the model
+  // for every session — it is not an edge case. It must therefore be the
+  // platform's own default (PLATFORM_DEFAULT_MODEL_ID in packages/llm-catalog),
+  // not whatever answered 200 the day it was written. Measured on dev
+  // 2026-09-08, same cell and gateway, best of two: deepseek-v4-flash 2438 ms
+  // total against glm-5.3-flash 5864 ms, and real turns on glm cost 8.5-23.8 s
+  // of upstream time while the cell itself spends 3 ms.
+  {
+    const gw = makeCell(AgentCell, {
+      ...ENV, KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt",
+    });
+    const m = await (await gw.fetch("/model?c=s")).json();
+    check("a gateway session with no platform model falls back to the PLATFORM default",
+      m.active?.id === "deepseek-v4-flash", JSON.stringify(m.active));
+    // The fallback is only a floor: a platform that names a model still wins,
+    // or an operator could never move a session off the default.
+    const named = makeCell(AgentCell, {
+      ...ENV, KORTIX_LLM_BASE_URL: "https://gw.example/v1", KORTIX_TOKEN: "kt", KORTIX_MODEL: "glm-5.3-flash",
+    });
+    const mn = await (await named.fetch("/model?c=s")).json();
+    check("and a model the platform DOES name still wins over it",
+      mn.active?.id === "glm-5.3-flash", JSON.stringify(mn.active));
+  }
+
   {
     // With the EMPTY wrangler defaults present, which is what a real cell has:
     // MODEL_PROVIDER and MODEL_BASE_URL are declared as "" so the bindings

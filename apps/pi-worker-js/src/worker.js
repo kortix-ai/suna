@@ -152,9 +152,26 @@ function toolsFor(env, sessionId, sql, owner) {
  * model without the platform's names getting in the way.
  */
 // The model a gateway session falls back to when the platform names none.
-// Measured against the dev gateway on 2026-09-07: this one answers 200 with a
-// completion, and an empty model answers 400 `model_not_found`.
-const GATEWAY_FALLBACK_MODEL = "glm-5.3-flash";
+// An empty model is not an option: the gateway answers 400 `model_not_found`.
+//
+// THIS MUST BE THE PLATFORM'S OWN DEFAULT, not a model that merely works.
+// It is `PLATFORM_DEFAULT_MODEL_ID` in packages/llm-catalog — the value
+// `config.LLM_GATEWAY_DEFAULT_MODEL` takes when an operator names none — and
+// picking anything else here silently overrides a deployment-wide choice for
+// every cell session, because the control plane does not send a model at all.
+//
+// It used to be `glm-5.3-flash`, chosen on 2026-09-07 for no better reason than
+// that it answered 200. Measured on dev 2026-09-08, same cell, same gateway,
+// same prompt, best of two:
+//
+//   deepseek-v4-flash    headers  906 ms   total  2438 ms
+//   glm-5.3-flash        headers 5816 ms   total  5864 ms
+//
+// and on real session turns glm took 8.5 s, 23.4 s and 23.8 s of upstream time
+// (the gateway's own log). So the arbitrary pick was costing every turn several
+// seconds and the sessions felt slow for a reason that had nothing to do with
+// the cell, which spends 3 ms.
+const GATEWAY_FALLBACK_MODEL = "deepseek-v4-flash";
 
 function normalizeModelEnv(env) {
   // `??` IS THE WRONG OPERATOR HERE, and it cost a whole session.
