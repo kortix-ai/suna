@@ -6,9 +6,11 @@ describe('manifest version selects the runtime', () => {
     [2, undefined, true],
     [2, 'opencode', true],
     [2, 'pi', false],
+    [2, null, false],
     [3, undefined, true],
     [3, 'pi', true],
     [3, 'opencode', false],
+    [3, null, false],
   ] as const)('version %s with runtime %s is valid: %s', (version, runtime, valid) => {
     const result = validateManifest({
       kortix_version: version,

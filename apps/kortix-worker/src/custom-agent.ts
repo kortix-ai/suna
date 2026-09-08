@@ -104,6 +104,7 @@ export async function installCustomAgent(
     'todowrite',
     'todoread',
     'websearch',
+    'webfetch',
     'skill',
   ]);
   for (const tool of definition.tools ?? []) {

@@ -677,10 +677,10 @@ describe('resolveManifestRuntimeForPiSession', () => {
     expect(await resolveManifestRuntimeForPiSession(PROJECT)).toBeNull();
   });
 
-  test('throws on an invalid explicit runtime', async () => {
+  test.each(['[invalid]', 'null'])('throws on invalid explicit runtime %s', async (runtime) => {
     manifestFile = {
       path: 'kortix.yaml',
-      content: 'kortix_version: 3\nruntime: [invalid]\nagents:\n  support: {}\n',
+      content: `kortix_version: 3\nruntime: ${runtime}\nagents:\n  support: {}\n`,
     };
 
     await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(

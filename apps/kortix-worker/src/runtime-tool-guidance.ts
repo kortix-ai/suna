@@ -20,6 +20,9 @@ export function appendRuntimeToolGuidance(
   if (names.has('websearch')) {
     lines.push('Use websearch for current information and cite the returned source URLs.');
   }
+  if (names.has('webfetch')) {
+    lines.push('Use webfetch to open public source URLs. Use environment tools for private workspace services and downloads.');
+  }
   if (names.has('skill')) {
     lines.push('Use skill to load an available compiled skill. Read and execute its support files in the environment with the workspace tools.');
   }

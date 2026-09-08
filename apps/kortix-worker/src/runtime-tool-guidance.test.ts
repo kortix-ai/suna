@@ -16,7 +16,7 @@ test('the model receives current tool capabilities after an older compiled promp
     const effective = worker.agent.state.systemPrompt;
     expect(effective.startsWith(prompt)).toBe(true);
     expect(effective).toContain('Use websearch for current information');
-    expect(effective).toContain('Registered tools: bash, read, write, edit, glob, grep, question, todowrite, todoread, websearch, skill.');
+    expect(effective).toContain('Registered tools: bash, read, write, edit, glob, grep, question, todowrite, todoread, websearch, webfetch, skill.');
     expect(effective).toContain('Use question to collect answers through the interactive question UI.');
     expect(effective).toContain('Call tools normally; the runtime requests permission when the configured policy requires it.');
     expect(effective).toContain('Keep the agent-specific restrictions on tool use.');

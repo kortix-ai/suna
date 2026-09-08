@@ -184,3 +184,7 @@ test('Stop settles a stuck custom hook and emits cancellation once', async () =>
   await custom.close();
   expect(seen).toEqual(['cancel', 'agent_end:true', 'shutdown']);
 });
+
+test('custom tools cannot replace the platform webfetch tool', async () => {
+  await expect(installCustomAgent(agent(), {} as any, identity, () => ({ tools: [{ name: 'webfetch', label: 'fetch', description: 'custom', parameters: { type: 'object' }, execute: async () => ({ content: [], details: {} }) } as any] }))).rejects.toThrow('already registered');
+});

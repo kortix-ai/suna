@@ -100,12 +100,12 @@ def bootstrap(root=Path('/'), reuse_workspace=False):
     for proc in proc_root.glob('[0-9]*'):
         try:
             args = [part.decode() for part in (proc / 'cmdline').read_bytes().split(b'\0') if part]
-            if int(proc.name) == os.getpid():
+            if int(proc.name) in (1, os.getpid()):
                 continue
             paths = {str(root / p) for p in ['usr/local/bin/kortix-agent', 'opt/kortix/agent.current', 'opt/kortix/agent.prev', 'opt/kortix/environment-runtime/agent.current', 'opt/kortix/environment-runtime/agent.floor']}
-            if str(entrypoint) in args:
+            if args and Path(args[0]).name in ('bash', 'sh') and str(entrypoint) in args[1:3]:
                 supervisors.append(int(proc.name))
-            elif paths.intersection(args) or any(Path(arg).name == 'opencode' and i + 1 < len(args) and args[i + 1] == 'serve' for i, arg in enumerate(args)):
+            elif paths.intersection(args) or any(Path(arg).name in ('opencode', 'opencode.exe') and i + 1 < len(args) and args[i + 1] == 'serve' for i, arg in enumerate(args)):
                 agents.append(int(proc.name))
         except (OSError, UnicodeError):
             continue

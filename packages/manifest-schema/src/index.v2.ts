@@ -309,7 +309,7 @@ export function validateRequiredConnectorFields(
 
 /** v2 dispatch: called from `index.ts`'s `validateManifestBodyV2`. */
 export function validateRuntimeV2(node: unknown, path: string, issues: ManifestIssue[], version = 2): void {
-  if (node === undefined || node === null) return;
+  if (node === undefined) return;
   const v = typeof node === 'string' ? node.trim() : '';
   if (!(V2_RUNTIME_VALUES as readonly string[]).includes(v)) {
     issues.push({

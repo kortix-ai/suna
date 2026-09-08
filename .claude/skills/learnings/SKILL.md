@@ -5387,3 +5387,10 @@ the provider bootstrap and checks digest rejection, file preservation, and retry
 **Incident:** Pi preview `092f25309c` returned Cloudflare `403 / error code: 1010` for Python's default user agent before the API authenticated the environment.
 **Rule:** send the explicit `kortix-environment-bootstrap/1` user agent with the environment credential. Keep digest verification and existing authorization gates.
 **Enforcer:** `environment-runtime-bootstrap.test.ts` rejects download requests without that user agent and checks upgrade, idempotency, and corrupt-artifact preservation.
+
+
+### Never match a provider init process as a workload supervisor (2026-09-08)
+
+**Incident:** Daytona PID 1 includes the Kortix entrypoint in its arguments. The Pi environment upgrade matched that argument and terminated the provider process before installing the workload marker.
+**Rule:** Exclude PID 1 from workload process control. Match the executable and its argument position, not an arbitrary argument containing an entrypoint path.
+**Enforcer:** `environment-runtime-bootstrap.test.ts` runs a provider process whose arguments contain the entrypoint. The upgrade must preserve that process, replace the daemon, and preserve workspace bytes.

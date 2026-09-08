@@ -171,6 +171,9 @@ function permissionRequest(
       externalPath: requestedPath.externalPath,
     };
   }
+  if (toolName === 'webfetch') {
+    return { permission, patterns: [stringField(input, 'url') ?? '*'], always: ['*'], metadata: structuredClone(input) };
+  }
   if (toolName === 'websearch') {
     return {
       permission,

@@ -51,6 +51,7 @@ import { protectToolsWithPermissions } from './permission-tools.ts';
 import { QuestionBroker } from './question-broker.ts';
 import { QuestionCheckpointStore, type QuestionCheckpoint } from './question-checkpoint.ts';
 import { planQuestionReplay } from './question-replay.ts';
+import { createWebFetchTool } from './web-fetch-tool.ts';
 import { createWebSearchTool } from './web-search-tool.ts';
 import { createTodoTools } from './todo-tools.ts';
 import { createQuestionTool } from './question-tool.ts';
@@ -1320,6 +1321,7 @@ export async function startWorker(cfg = configFromEnv()) {
       createQuestionTool(questions, (toolCallId) => wireAdapter.toolContext(toolCallId)),
       ...todos.tools,
       createWebSearchTool(),
+      createWebFetchTool({ authorizeRedirect: (url) => permissions.requirePreauthorized('webfetch', url) }),
       createSkillTool(compiledPayload?.skills ?? [], cfg.envCwd),
     ],
     permissions,

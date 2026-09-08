@@ -195,6 +195,13 @@ export class PermissionBroker {
     return rule?.pattern !== '*' || rule.action !== 'deny';
   }
 
+  requirePreauthorized(permission: string, pattern: string): void {
+    const rules = [...this.rules, ...(this.options.state?.().rules ?? this.sessionRules), ...this.approvedRules()];
+    const action = evaluatePermission(permission, pattern, rules).action;
+    if (action === 'deny') throw new PermissionDeniedError(permission, [pattern]);
+    if (action === 'ask') throw new Error(`Redirect requires a separate ${permission} call and approval: ${pattern}`);
+  }
+
   authorize(input: PermissionAuthorization): Promise<void> {
     return this.options.refresh ? this.refreshAndAuthorize(input) : this.authorizeCurrent(input);
   }

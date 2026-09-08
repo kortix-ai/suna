@@ -312,3 +312,40 @@ path. No speculative Git API or Cloudflare forwarding change was applied.
 - Dev and production deployments remain outside this branch-only delivery.
 
 Production readiness: **NOT YET**.
+
+
+## Execution-only environment and web retrieval — 2026-09-08
+
+YAML v3 selects Pi. YAML v2 selects OpenCode. An explicit contradictory runtime
+or `runtime: null` fails validation. Pi session creation no longer depends on the
+legacy `pi_worker` flag. Existing conversations retain their installed config SHA.
+
+The Pi environment daemon serves files, shell, Git, PTY, and previews. It reports
+`workload: environment` and `opencode: disabled`. Upgrades preserve workspace
+bytes and the selected Git branch. The process matcher excludes provider PID 1.
+The regression test includes a provider command containing the Kortix entrypoint.
+Live upgrade verification is pending the next preview deployment.
+
+The worker adds `webfetch` for public HTTP(S) pages. It returns Markdown, text,
+or HTML. It does not start the environment. It validates DNS destinations and
+redirects, pins the connection to the validated address, and retains TLS hostname
+verification. URL permissions apply before the request and to redirect targets.
+A redirect requiring approval returns its URL for a separate approved tool call.
+The worker sends no session credential or browser cookie to a page.
+
+Limits: five redirects, 30 seconds by default, a configurable maximum of 120
+seconds, 5 MiB of received or decompressed data, and 128 KiB of returned text.
+Stop cancels DNS, header waits, and streamed bodies. Binary downloads use the
+environment. Custom tools cannot replace the built-in `webfetch` tool.
+
+Local verification:
+
+- `pnpm exec bun test apps/kortix-worker/src`: 614 pass, 0 fail, 3,173 assertions.
+- `pnpm --filter @kortix/worker typecheck`: exit 0.
+- Built worker artifact and Node permission tests: 7 pass, 0 fail, 71 assertions.
+- Compiler, manifest, and provider bootstrap tests: 72 pass, 0 fail, 121 assertions.
+- Node 22 with filesystem permissions denied reads `https://example.com`, verifies
+  TLS, and returns `Example Domain` as Markdown. The same process cannot read
+  `/etc/hosts` or write files.
+
+Preview verification and the remaining parity matrix remain required.

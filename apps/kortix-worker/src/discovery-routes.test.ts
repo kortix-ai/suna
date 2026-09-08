@@ -132,7 +132,7 @@ describe('Pi OpenCode discovery routes', () => {
     expect(listResult.error).toBeUndefined();
     const ids: ToolIds = idsResult.data ?? [];
     const tools: ToolList = listResult.data ?? [];
-    expect(ids).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'todowrite', 'todoread', 'websearch', 'skill']);
+    expect(ids).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'todowrite', 'todoread', 'websearch', 'webfetch', 'skill']);
     expect(tools.map((tool) => tool.id)).toEqual(ids);
     for (const tool of tools) {
       expect(tool.description.length).toBeGreaterThan(0);

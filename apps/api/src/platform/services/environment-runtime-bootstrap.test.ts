@@ -44,6 +44,10 @@ http.server.HTTPServer(('127.0.0.1',int(os.environ['KORTIX_SERVICE_PORT'])),Hand
     ...process.env, KORTIX_SERVICE_PORT: String(port), KORTIX_WORKLOAD: 'session',
     KORTIX_TOKEN: 'test-environment-token', KORTIX_API_URL: api.url.origin,
   };
+  const provider = Bun.spawn(['python3', '-c', 'import time; time.sleep(60)'], { stdout: 'ignore', stderr: 'ignore' });
+  cleanups.push(async () => { provider.kill(); await provider.exited; });
+  await mkdir(join(root, 'proc', String(provider.pid)), { recursive: true });
+  await writeFile(join(root, 'proc', String(provider.pid), 'cmdline'), `${join(root, 'usr/local/bin/daytona')}\0${join(root, 'usr/local/bin/kortix-entrypoint')}\0`);
   const oldPath = join(root, 'usr/local/bin/kortix-agent');
   await mkdir(join(root, 'usr/local/bin'), { recursive: true });
   await writeFile(oldPath, agent);
@@ -63,7 +67,7 @@ http.server.HTTPServer(('127.0.0.1',int(os.environ['KORTIX_SERVICE_PORT'])),Hand
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     return { code, stderr, report: JSON.parse(stdout.trim().split('\n').at(-1)!) };
   };
-  return { root, run, health, downloads: () => downloads, old };
+  return { root, run, health, downloads: () => downloads, old, provider };
 }
 
 describe('environment daemon bootstrap through the provider process contract', () => {
@@ -73,6 +77,7 @@ describe('environment daemon bootstrap through the provider process contract', (
     const first = await f.run();
     expect(first).toMatchObject({ code: 0, stderr: '', report: { ready: true, changed: true } });
     expect(await f.health()).toMatchObject({ workload: 'environment' });
+    expect(await Promise.race([f.provider.exited, Bun.sleep(20).then(() => 'running')])).toBe('running');
     expect(await readFile(join(f.root, 'workspace/working-file.txt'), 'utf8')).toBe('preserve uncommitted work\n');
     expect(await readFile(join(f.root, 'opt/kortix/workload'), 'utf8')).toBe('environment\n');
     expect(f.downloads()).toBe(2);
