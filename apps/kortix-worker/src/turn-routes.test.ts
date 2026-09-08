@@ -1306,8 +1306,8 @@ describe('raw OpenCode turn routes', () => {
       sessionId: 'live-owner-handoff',
       kortixToken: 'runtime-token',
       storeUrl,
-      turnOwnerHeartbeatMs: 10,
-      turnOwnerLeaseMs: 50,
+      turnOwnerHeartbeatMs: 50,
+      turnOwnerLeaseMs: 1_000,
     };
     const first = await startWorker(config);
     workers.push(first);
@@ -1336,7 +1336,7 @@ describe('raw OpenCode turn routes', () => {
       workers.push(worker);
       return worker;
     });
-    await Bun.sleep(120);
+    await Bun.sleep(config.turnOwnerLeaseMs + 200);
     expect(replacementSettled).toBe(false);
     expect(items.some((item) => item.kind === 'journal' && item.record.type === 'heartbeat')).toBe(
       true,

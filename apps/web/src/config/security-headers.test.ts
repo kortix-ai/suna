@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 /**
  * JAY: Task 8. No `Strict-Transport-Security` header existed anywhere in
@@ -47,9 +47,7 @@ describe('Strict-Transport-Security header', () => {
     // Match the literal header assignment, not just the string anywhere in
     // the file (e.g. inside this test's own describe name if it were ever
     // copy-pasted back into next.config.ts).
-    const match = nextConfig.match(
-      /key:\s*'Strict-Transport-Security',\s*value:\s*'([^']+)'/,
-    );
+    const match = nextConfig.match(/key:\s*'Strict-Transport-Security',\s*value:\s*'([^']+)'/);
     expect(match).not.toBeNull();
     const value = match?.[1] ?? '';
 

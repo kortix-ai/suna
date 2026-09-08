@@ -1,5 +1,6 @@
 'use client';
 
+import type { UiTranslator } from '@/i18n/translator';
 import { Fragment, useState } from 'react';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -12,16 +13,21 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { resolvePreset, type CostRange, type CostRangePreset } from '@/components/ui/date-range-picker';
+import {
+  resolvePreset,
+  type CostRange,
+  type CostRangePreset,
+} from '@/components/ui/date-range-picker';
 import { IconChevronLeft } from '@/components/ui/kortix-icons';
 import { useCostSummary } from '@/hooks/billing/use-cost-explorer';
 import { useSessionCostDetail, useSessionCostProjects } from '@/hooks/billing/use-session-costs';
 import { cn } from '@/lib/utils';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { SessionCostDetailContent } from '../session-cost-detail';
 import { CostLevelShell } from './cost-level-shell';
 import { ProjectsLevel } from './projects-level';
 import { SessionsLevel } from './sessions-level';
-import { SessionCostDetailContent } from '../session-cost-detail';
 
 /** The whole explorer's default landing preset — matches `DEFAULT_RANGE_PRESET`
  *  in `projects-level.tsx`'s own `onResetRange`. Kept as a second literal
@@ -30,7 +36,12 @@ import { SessionCostDetailContent } from '../session-cost-detail';
  *  range" click resolves to. Same value, deliberately un-shared. */
 const DEFAULT_RANGE_PRESET: Exclude<CostRangePreset, 'custom'> = '30d';
 
-const RESOLVABLE_PRESETS: readonly Exclude<CostRangePreset, 'custom'>[] = ['24h', '7d', '30d', '90d'];
+const RESOLVABLE_PRESETS: readonly Exclude<CostRangePreset, 'custom'>[] = [
+  '24h',
+  '7d',
+  '30d',
+  '90d',
+];
 
 function isResolvablePreset(value: string): value is Exclude<CostRangePreset, 'custom'> {
   return (RESOLVABLE_PRESETS as readonly string[]).includes(value);
@@ -280,11 +291,12 @@ export interface ExplorerCrumb {
 export function buildBreadcrumbCrumbs(
   state: ExplorerState,
   projectLabel: string | null,
+  tI18nComplete: UiTranslator,
 ): ExplorerCrumb[] {
   const crumbs: ExplorerCrumb[] = [
     {
       key: 'usage',
-      label: 'Usage',
+      label: tI18nComplete.raw('text8d59829c1e15'),
       current: state.projectId === null,
       target: { range: state.range, projectId: null, sessionId: null },
     },
@@ -395,6 +407,7 @@ function SessionLedgerLevel({
  * `?tab=transactions`) survives untouched.
  */
 export function CostExplorer() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -419,7 +432,7 @@ export function CostExplorer() {
     pushState({ range: state.range, projectId, sessionId: null });
   const handleSelectSession = (sessionId: string) => pushState({ ...state, sessionId });
 
-  const crumbs = buildBreadcrumbCrumbs(state, projectLabel);
+  const crumbs = buildBreadcrumbCrumbs(state, projectLabel, tI18nComplete);
   const backIndex = firstClickableCrumbIndex(crumbs);
 
   return (
@@ -434,7 +447,9 @@ export function CostExplorer() {
               {index > 0 ? <BreadcrumbSeparator /> : null}
               <BreadcrumbItem>
                 {crumb.current ? (
-                  <BreadcrumbPage className={crumb.key === 'session' ? 'font-mono text-xs' : undefined}>
+                  <BreadcrumbPage
+                    className={crumb.key === 'session' ? 'font-mono text-xs' : undefined}
+                  >
                     {crumb.label}
                   </BreadcrumbPage>
                 ) : (

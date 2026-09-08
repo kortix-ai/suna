@@ -5,6 +5,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { useSubscriptionStore } from '@/stores/subscription-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { resolvedPlan } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback } from 'react';
 
 interface UseDownloadRestrictionOptions {
@@ -53,6 +54,7 @@ interface UseDownloadRestrictionReturn {
 export function useDownloadRestriction(
   options?: UseDownloadRestrictionOptions,
 ): UseDownloadRestrictionReturn {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const accountState = useSubscriptionStore((state) => state.accountState);
   const { openUpgradeDialog } = useUpgradeDialogStore();
 
@@ -71,8 +73,8 @@ export function useDownloadRestriction(
     const featureName = options?.featureName || 'files';
 
     // Show toast notification at top center
-    errorToast(`Upgrade to download ${featureName}`, {
-      description: 'Downloads are available on paid plans.',
+    errorToast(tI18nComplete('texte2add2aa32a0', { value0: featureName }), {
+      description: tI18nComplete.raw('text332f54c83d00'),
       position: 'top-center',
       duration: 5000,
     });
@@ -81,9 +83,9 @@ export function useDownloadRestriction(
     // store, whose modal is never mounted, so only the toast ever appeared.
     openUpgradeDialog({
       reason: 'subscription_required',
-      message: `Upgrade to download your ${featureName} and more`,
+      message: tI18nComplete('textc6c90c48b495', { value0: featureName }),
     });
-  }, [openUpgradeDialog, options?.featureName]);
+  }, [openUpgradeDialog, options?.featureName, tI18nComplete]);
 
   const withRestrictionCheck = useCallback(
     <T extends (...args: any[]) => any>(callback: T) => {

@@ -21,6 +21,7 @@
  */
 
 import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useTheme } from 'next-themes';
 import { useEffect } from 'react';
 
@@ -45,6 +46,49 @@ const DENSITY_OPTIONS: { id: ConversationDensity; label: string; description: st
     description: 'One status line until you expand it.',
   },
 ];
+
+type ThemeValue = (typeof THEME_OPTIONS)[number]['value'];
+
+export interface AppearanceTabCopy {
+  theme: string;
+  themeDescription: string;
+  conversationDensity: string;
+  conversationDensityDescription: string;
+  wallpaper: string;
+  wallpaperDescription: string;
+  defaultWallpaper: string;
+  themes: Record<ThemeValue, string>;
+  densities: Record<ConversationDensity, { label: string; description: string }>;
+  wallpapers: Record<Wallpaper['id'], string>;
+}
+
+export const DEFAULT_APPEARANCE_TAB_COPY: AppearanceTabCopy = {
+  theme: 'Theme',
+  themeDescription: 'Choose how Kortix looks on this device.',
+  conversationDensity: 'Conversation density',
+  conversationDensityDescription:
+    'How much detail the agent shows in the conversation while it works.',
+  wallpaper: 'Wallpaper',
+  wallpaperDescription: 'The background behind your workspace.',
+  defaultWallpaper: 'Default',
+  themes: { light: 'Light', dark: 'Dark', system: 'System' },
+  densities: {
+    normal: {
+      label: 'Normal',
+      description: 'Steps and thinking stream live while Kortix works.',
+    },
+    minimal: { label: 'Minimal', description: 'One status line until you expand it.' },
+  },
+  wallpapers: {
+    dither: 'Dither',
+    brandmark: 'Brandmark',
+    nebula: 'Pixel Beams',
+    silk: 'Silk',
+    grain: 'Grain',
+    neuro: 'Neuro',
+    blank: 'Blank',
+  },
+};
 
 /**
  * Skeleton mock of the live activity burst at each density, drawn with the
@@ -136,6 +180,7 @@ export interface AppearanceTabViewProps {
   onWallpaperSelect?: (id: Wallpaper['id']) => void;
   conversationDensity?: ConversationDensity;
   onConversationDensityChange?: (density: ConversationDensity) => void;
+  copy?: AppearanceTabCopy;
 }
 
 /** Presentational only — no hooks, no store read. Every prop is optional with
@@ -148,6 +193,7 @@ export function AppearanceTabView({
   onWallpaperSelect = () => {},
   conversationDensity = 'normal',
   onConversationDensityChange = () => {},
+  copy = DEFAULT_APPEARANCE_TAB_COPY,
 }: AppearanceTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -155,23 +201,20 @@ export function AppearanceTabView({
 
       {/* Theme */}
       <section className="flex flex-col items-start justify-between gap-4 md:flex-row md:gap-10">
-        <SettingsSubsectionHeader
-          title="Theme"
-          description="Choose how Kortix looks on this device."
-        />
+        <SettingsSubsectionHeader title={copy.theme} description={copy.themeDescription} />
         <div className="bg-foreground/10 flex w-fit items-center gap-1 rounded-md p-0.5">
-          {THEME_OPTIONS.map(({ value, label, Icon }) => (
+          {THEME_OPTIONS.map(({ value, Icon }) => (
             <button
               key={value}
               type="button"
-              aria-label={label}
+              aria-label={copy.themes[value]}
               aria-pressed={theme === value}
               className="text-foreground duration-normal inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-[color,background-color,scale] ease-out active:scale-[0.96] [&>svg]:size-4"
               style={{ backgroundColor: theme === value ? 'var(--background)' : 'transparent' }}
               onClick={() => onThemeChange(value)}
             >
               <Icon />
-              <span className="text-sm font-medium">{label}</span>
+              <span className="text-sm font-medium">{copy.themes[value]}</span>
             </button>
           ))}
         </div>
@@ -182,18 +225,18 @@ export function AppearanceTabView({
       {/* Conversation density */}
       <section className="flex flex-col items-start justify-between gap-4 space-y-3 md:flex-row md:gap-10">
         <SettingsSubsectionHeader
-          title="Conversation density"
-          description="How much detail the agent shows in the conversation while it works."
+          title={copy.conversationDensity}
+          description={copy.conversationDensityDescription}
         />
         <div
           role="radiogroup"
-          aria-label="Conversation density"
+          aria-label={copy.conversationDensity}
           className="grid w-full max-w-xs grid-cols-2 gap-2"
         >
           {DENSITY_OPTIONS.map((option) => (
             <DensityCard
               key={option.id}
-              option={option}
+              option={{ id: option.id, ...copy.densities[option.id] }}
               isActive={conversationDensity === option.id}
               onSelect={() => onConversationDensityChange(option.id)}
             />
@@ -205,18 +248,16 @@ export function AppearanceTabView({
 
       {/* Wallpaper */}
       <section className="space-y-3">
-        <SettingsSubsectionHeader
-          title="Wallpaper"
-          description="The background behind your workspace."
-        />
+        <SettingsSubsectionHeader title={copy.wallpaper} description={copy.wallpaperDescription} />
         <div className="grid w-full grid-cols-3 gap-2">
           {WALLPAPERS.map((wp) => (
             <WallpaperCard
               key={wp.id}
-              wallpaper={wp}
+              wallpaper={{ ...wp, name: copy.wallpapers[wp.id] }}
               thumbSrc={wp.thumbs ? (isLightTheme ? wp.thumbs.light : wp.thumbs.dark) : undefined}
               isActive={wallpaperId === wp.id}
               onSelect={() => onWallpaperSelect(wp.id)}
+              defaultLabel={copy.defaultWallpaper}
             />
           ))}
         </div>
@@ -228,6 +269,7 @@ export function AppearanceTabView({
 /** Container: owns every hook (next-themes, the preferences store) and
  *  renders `AppearanceTabView`. Only ever mounted while this tab is active. */
 export function AppearanceTab() {
+  const t = useTranslations('settings.appearance');
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   const wallpaperId = useUserPreferencesStore(
@@ -250,6 +292,35 @@ export function AppearanceTab() {
 
   return (
     <AppearanceTabView
+      copy={{
+        theme: t('theme'),
+        themeDescription: t('themeDescription'),
+        conversationDensity: t('conversationDensity'),
+        conversationDensityDescription: t('conversationDensityDescription'),
+        wallpaper: t('wallpaper'),
+        wallpaperDescription: t('wallpaperDescription'),
+        defaultWallpaper: t('defaultWallpaper'),
+        themes: { light: t('themes.light'), dark: t('themes.dark'), system: t('themes.system') },
+        densities: {
+          normal: {
+            label: t('densities.normal.label'),
+            description: t('densities.normal.description'),
+          },
+          minimal: {
+            label: t('densities.minimal.label'),
+            description: t('densities.minimal.description'),
+          },
+        },
+        wallpapers: {
+          dither: t('wallpapers.dither'),
+          brandmark: t('wallpapers.brandmark'),
+          nebula: t('wallpapers.nebula'),
+          silk: t('wallpapers.silk'),
+          grain: t('wallpapers.grain'),
+          neuro: t('wallpapers.neuro'),
+          blank: t('wallpapers.blank'),
+        },
+      }}
       theme={theme ?? 'system'}
       onThemeChange={setTheme}
       wallpaperId={wallpaperId}

@@ -1,5 +1,6 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { ReactNode } from 'react';
 import { automations } from './content';
 import { Passage } from './passage';
@@ -26,5 +27,5 @@ import { Passage } from './passage';
  * Copy and its accuracy gate live in `content.ts`. Read that before editing.
  */
 export function AutomationsSection(): ReactNode {
-  return <Passage passage={automations} />;
+  return <Passage passage={useLocalizedUiCatalog(automations)} />;
 }

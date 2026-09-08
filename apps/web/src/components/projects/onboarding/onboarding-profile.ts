@@ -32,10 +32,30 @@ export interface UseCaseOption {
  * (7), Support/CS (7), Ops (5), Marketing (5), HR/Recruiting (4).
  */
 export const USE_CASE_OPTIONS: readonly UseCaseOption[] = [
-  { value: 'sales', label: 'Sales', description: 'Follow up on leads, keep the CRM clean',weight: 'regular' },
-  { value: 'support', label: 'Customer support', description: 'Triage tickets, draft replies',weight: 'duotone' },
-  { value: 'marketing', label: 'Marketing', description: 'Watch the market, refresh content',weight: 'duotone' },
-  { value: 'engineering', label: 'Engineering', description: 'Triage errors, chase upgrades',weight: 'regular' },
+  {
+    value: 'sales',
+    label: 'Sales',
+    description: 'Follow up on leads, keep the CRM clean',
+    weight: 'regular',
+  },
+  {
+    value: 'support',
+    label: 'Customer support',
+    description: 'Triage tickets, draft replies',
+    weight: 'duotone',
+  },
+  {
+    value: 'marketing',
+    label: 'Marketing',
+    description: 'Watch the market, refresh content',
+    weight: 'duotone',
+  },
+  {
+    value: 'engineering',
+    label: 'Engineering',
+    description: 'Triage errors, chase upgrades',
+    weight: 'regular',
+  },
   {
     value: 'finance_ops',
     label: 'Finance & operations',
@@ -46,9 +66,14 @@ export const USE_CASE_OPTIONS: readonly UseCaseOption[] = [
     value: 'hr_recruiting',
     label: 'HR & recruiting',
     description: 'Onboarding, scheduling, sourcing',
-      weight: 'duotone',
+    weight: 'duotone',
   },
-  { value: 'other', label: 'Something else', description: 'We’ll start you with the basics',weight: 'regular' },
+  {
+    value: 'other',
+    label: 'Something else',
+    description: 'We’ll start you with the basics',
+    weight: 'regular',
+  },
 ] as const;
 
 /**
@@ -231,8 +256,7 @@ const STARTER_PROMPTS: Record<OnboardingUseCase, StarterPrompt[]> = {
     {
       template: 'error-triage',
       title: 'Triage new errors',
-      prompt:
-        'Group this week’s new production errors by root cause and rank them by user impact.',
+      prompt: 'Group this week’s new production errors by root cause and rank them by user impact.',
     },
     {
       template: 'oncall-triage',
@@ -274,7 +298,8 @@ const STARTER_PROMPTS: Record<OnboardingUseCase, StarterPrompt[]> = {
     {
       template: 'interview-scheduler',
       title: 'Schedule interviews',
-      prompt: 'Find times that work for the panel and draft the invites for this week’s candidates.',
+      prompt:
+        'Find times that work for the panel and draft the invites for this week’s candidates.',
     },
     {
       template: 'candidate-sourcing',
@@ -319,18 +344,32 @@ export function starterPromptsFor(useCase: OnboardingUseCase | null): StarterPro
  * company"). The agent's real, live-researched reply is what actually reads
  * as Kortix talking — far better than any hardcoded greeting could.
  */
-export function buildOnboardingKickoffPrompt(domain: string, connectedTools: number): string {
+export interface OnboardingKickoffCopy {
+  noDomain: (toolsClause: string) => string;
+  withDomain: (domain: string, toolsClause: string) => string;
+  tools: (count: number) => string;
+}
+
+const ENGLISH_KICKOFF_COPY: OnboardingKickoffCopy = {
+  noDomain: (toolsClause) =>
+    `I just finished setting up my workspace.${toolsClause} Introduce yourself, tell me what you can do, and ask me what I'd like help with first.`,
+  withDomain: (domain, toolsClause) =>
+    `I just finished setting up my workspace for ${domain}. Take a look at the company and tell me what you find.${toolsClause} Then ask me what I'd like help with first.`,
+  tools: (count) =>
+    ` I also connected ${count} ${count === 1 ? 'tool' : 'tools'} — use ${count === 1 ? 'it' : 'them'} if it helps.`,
+};
+
+export function buildOnboardingKickoffPrompt(
+  domain: string,
+  connectedTools: number,
+  copy: OnboardingKickoffCopy = ENGLISH_KICKOFF_COPY,
+): string {
   const trimmedDomain = domain.trim();
-  const toolsClause =
-    connectedTools > 0
-      ? ` I also connected ${connectedTools} ${connectedTools === 1 ? 'tool' : 'tools'} — use ${
-          connectedTools === 1 ? 'it' : 'them'
-        } if it helps.`
-      : '';
+  const toolsClause = connectedTools > 0 ? copy.tools(connectedTools) : '';
 
   if (!trimmedDomain) {
-    return `I just finished setting up my workspace.${toolsClause} Introduce yourself, tell me what you can do, and ask me what I'd like help with first.`;
+    return copy.noDomain(toolsClause);
   }
 
-  return `I just finished setting up my workspace for ${trimmedDomain}. Take a look at the company and tell me what you find.${toolsClause} Then ask me what I'd like help with first.`;
+  return copy.withDomain(trimmedDomain, toolsClause);
 }

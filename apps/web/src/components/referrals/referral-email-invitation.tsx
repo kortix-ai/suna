@@ -6,7 +6,7 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useSendReferralEmails } from '@/hooks/referrals/use-referrals';
 import { cn } from '@/lib/utils';
 import { CheckIcon as Check, EnvelopeIcon as Mail, XIcon as X } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import * as React from 'react';
 import { errorToast } from '../ui/toast';
 
@@ -22,6 +22,7 @@ interface EmailStatus {
 const MAX_EMAILS = 3;
 
 export function ReferralEmailInvitation({ className }: ReferralEmailProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.referrals');
   const sendEmailsMutation = useSendReferralEmails();
 
@@ -40,17 +41,17 @@ export function ReferralEmailInvitation({ className }: ReferralEmailProps) {
     if (!trimmedEmail) return;
 
     if (emails.length >= MAX_EMAILS) {
-      errorToast(`Maximum ${MAX_EMAILS} emails allowed`);
+      errorToast(tI18nComplete('text15831467e37e', { value0: MAX_EMAILS }));
       return;
     }
 
     if (!isValidEmail(trimmedEmail)) {
-      errorToast('Please enter a valid email address');
+      errorToast(tI18nComplete.raw('text91b27757c3fd'));
       return;
     }
 
     if (emails.some((e) => e.email === trimmedEmail)) {
-      errorToast('Email already added');
+      errorToast(tI18nComplete.raw('textaa7020ee5fa0'));
       return;
     }
 

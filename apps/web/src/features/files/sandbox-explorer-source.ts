@@ -3,12 +3,7 @@
 import type { FileExplorerSource } from '@/features/project-files/explorer-source';
 import { downloadFile } from './api/runtime-files';
 import { workspaceFileSource } from './file-source';
-import {
-  useFileEventInvalidation,
-  useFileSearch,
-  useGitStatus,
-  useServerHealth,
-} from './hooks';
+import { useFileEventInvalidation, useFileSearch, useGitStatus, useServerHealth } from './hooks';
 import { useDirectoryDownload } from './hooks/use-directory-download';
 import { useFileCommitDiff, useFileHistory } from './hooks/use-file-history';
 import { useFileList } from './hooks/use-file-list';

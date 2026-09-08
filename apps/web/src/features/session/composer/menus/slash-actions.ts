@@ -1,3 +1,6 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import type { ContextUsage } from '../context-ring';
 
 export type SlashActionId =
@@ -72,6 +75,10 @@ export const SLASH_ACTIONS: SlashAction[] = [
     description: 'Token usage, cost, and what fills the context window',
   },
 ];
+
+export function localizedSlashActions(tI18nComplete: UiTranslator): SlashAction[] {
+  return localizeUiCatalog(SLASH_ACTIONS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}
 
 /*
  * `set-scope` used to be a sixth row here. It was REMOVED, not forgotten: no

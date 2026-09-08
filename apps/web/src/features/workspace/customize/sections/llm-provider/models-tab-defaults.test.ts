@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 import { wireToModelKey } from '@kortix/sdk/react';
@@ -42,7 +42,10 @@ describe('the identity a badged row is decided by', () => {
    * quietly loses its badge — no error, no failing render.
    */
   test('wireToModelKey keeps the whole wire id in modelID', () => {
-    expect(wireToModelKey('glm-5.3-flash')).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
+    expect(wireToModelKey('glm-5.3-flash')).toEqual({
+      providerID: 'kortix',
+      modelID: 'glm-5.3-flash',
+    });
   });
 
   test('a BYOK provider/model wire id is NOT split across the two fields', () => {
@@ -53,7 +56,11 @@ describe('the identity a badged row is decided by', () => {
   });
 
   test('the round trip a row comparison depends on holds for both id shapes', () => {
-    for (const wire of ['glm-5.3-flash', 'anthropic/claude-opus-4-8', 'us.anthropic.claude-opus-4-8']) {
+    for (const wire of [
+      'glm-5.3-flash',
+      'anthropic/claude-opus-4-8',
+      'us.anthropic.claude-opus-4-8',
+    ]) {
       expect(wireToModelKey(wire).modelID).toBe(wire);
     }
   });
@@ -81,8 +88,8 @@ describe('ModelsTab offers both default scopes', () => {
     // row as often as your own, and "my" in a badge is ambiguous about whose
     // "my" it is; the menu item that SETS it still says "my", because there
     // the reader is the actor.
-    expect(tabSource).toContain('<Tag>project default</Tag>');
-    expect(tabSource).toContain('<Tag>your default</Tag>');
+    expect(tabSource).toContain("raw('text5e06ae1125b5')");
+    expect(tabSource).toContain("raw('text071c0f5e8495')");
   });
 
   /**
@@ -156,5 +163,28 @@ describe('selecting a model does not resize the layout above the list', () => {
     expect(tabSource).not.toContain(
       'className="flex items-center justify-between gap-3 px-1 pb-2.5"',
     );
+  });
+});
+
+/**
+ * A search that matches nothing must leave the search box on screen.
+ *
+ * The no-match message used to be an early `return` placed ABOVE the JSX that
+ * holds the search row, so typing "gpt 6" unmounted the input and its clear
+ * button. `ownSearch` kept the string; nothing rendered could edit it. The
+ * tab sat on "Nothing matches" until it was remounted.
+ */
+describe('a no-match search keeps the search input mounted', () => {
+  test('the no-match message is not an early return', () => {
+    // The only early return left is the one for an EMPTY catalogue, which has
+    // nothing to search. `groups.length === 0` must render inside the layout.
+    expect(tabSource).not.toMatch(/if \(groups\.length === 0\) \{\s*return \(/);
+  });
+
+  test('the no-match message renders below the search row, in the list slot', () => {
+    const searchRow = tabSource.indexOf('{(ownsSearch || !enablement.usingDefaults) && (');
+    const noMatch = tabSource.indexOf("tI18nComplete('textb475669b9d30'");
+    expect(searchRow).toBeGreaterThan(-1);
+    expect(noMatch).toBeGreaterThan(searchRow);
   });
 });

@@ -1,5 +1,8 @@
 'use client';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
+import { useTranslations } from '@/i18n/use-translations';
 // Shared "GitHub isn't connected yet" panel — shown in place of the
 // create/import UI whenever there's no usable managed git on this server
 // (self-host with no GitHub App or PAT configured yet). Routes the user to
@@ -8,7 +11,6 @@
 // deployment (there's no hosted Kortix App to install on self-host).
 
 import { GithubLogoIcon as Github } from '@phosphor-icons/react';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -48,32 +50,31 @@ export function GitHubSetupRequiredPanel({
   size = 'default',
   className,
 }: GitHubSetupRequiredPanelProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <EmptyState
       icon={Github}
       size={size}
       className={className}
-      title="GitHub isn't connected on this server yet"
+      title={tI18nComplete.raw('text50c3e706a3c2')}
       description={
-        isAdmin
-          ? "Every Kortix project is a git repository. Connect GitHub once in this account's Git settings."
-          : "Every Kortix project is a git repository. Ask your admin to connect GitHub in this account's Git settings."
+        isAdmin ? tI18nComplete.raw('text02d7798e74f6') : tI18nComplete.raw('textc9b3285ac7b3')
       }
       action={
-        // An anchor once the account resolves, so Next prefetches Git settings
-        // and the click cannot degrade into a full document load. With no
-        // account there is no target, so it stays a disabled button.
+        // A `HubLink` once the account resolves: it opens the hub's Git pane
+        // over this page instead of navigating, and hovering warms its chunk.
+        // With no account there is no target, so it stays a disabled button.
         accountId ? (
           <Button size="sm" className="gap-1.5" asChild>
-            <Link href={`/accounts/${accountId}?tab=git`} prefetch onClick={onNavigate}>
+            <HubLink to={hubTarget(accountId, { tab: 'git' })} onClick={onNavigate}>
               <Github className="size-4" />
-              Set up GitHub
-            </Link>
+              {tI18nComplete.raw('text9917a73035f8')}
+            </HubLink>
           </Button>
         ) : (
           <Button type="button" size="sm" className="gap-1.5" disabled>
             <Github className="size-4" />
-            Set up GitHub
+            {tI18nComplete.raw('text9917a73035f8')}
           </Button>
         )
       }

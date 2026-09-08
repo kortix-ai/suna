@@ -1,5 +1,6 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
 import {
   ArrowBendUpLeftIcon,
@@ -37,6 +38,7 @@ import {
   UsersThreeIcon,
 } from '@phosphor-icons/react';
 import { m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 
 /**
@@ -386,13 +388,14 @@ function SignalArtifact({ reduceMotion }: ArtifactProps): ReactNode {
  * Prior output is abstracted to bars, so nothing is claimed that isn't real.
  */
 function TerminalArtifact({ reduceMotion }: ArtifactProps): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Band className="justify-center gap-2.5 font-mono text-xs">
       <Bar width="64%" index={0} reduceMotion={reduceMotion} />
       <Bar width="42%" index={1} reduceMotion={reduceMotion} />
       <m.span className="mt-1 flex items-center gap-2" {...reveal(2, reduceMotion)}>
         <span className="text-foreground">$</span>
-        <span className="text-muted-foreground/60">kortix</span>
+        <span className="text-muted-foreground/60">{tI18nComplete.raw('text388f7968512c')}</span>
         <span
           className={cn(
             'bg-foreground inline-block h-3.5 w-[0.4rem]',
@@ -651,13 +654,14 @@ const DIGEST = 'a7f3c1d2e9b40856';
 
 /** The digest resolves once. An unsigned request never gets one. */
 function SignatureArtifact({ reduceMotion }: ArtifactProps): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const digest = useHexScramble(DIGEST, !reduceMotion);
   const settled = digest === DIGEST;
 
   return (
     <Band className="gap-3">
       <MonoRow>
-        <span className="tracking-wider uppercase">sha256</span>
+        <span className="tracking-wider uppercase">{tI18nComplete.raw('text5d5b09f6dcb2')}</span>
         <span className="bg-border h-px flex-1" />
         <span
           className={cn(
@@ -792,15 +796,16 @@ function ReplyArtifact({ reduceMotion }: ArtifactProps): ReactNode {
 
 /** The decision is two buttons on a card, not a console someone has to open. */
 function ApproveArtifact({ reduceMotion }: ArtifactProps): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Band className="gap-3.5">
       <Bar width="76%" index={0} reduceMotion={reduceMotion} />
       <m.span className="relative flex items-center gap-2" {...reveal(2, reduceMotion)}>
         <span className="border-foreground/50 bg-foreground/10 text-foreground rounded-sm border px-2.5 py-1 font-mono text-[11px]">
-          Approve
+          {tI18nComplete.raw('text6007acbe30b2')}
         </span>
         <span className="border-border text-muted-foreground/40 rounded-sm border px-2.5 py-1 font-mono text-[11px]">
-          Deny
+          {tI18nComplete.raw('text05a2d7332eb9')}
         </span>
         {reduceMotion ? null : (
           <m.span
@@ -943,9 +948,10 @@ const POLICY_ROWS = [
 
 /** Three verdicts. Every tool call resolves to exactly one of them. */
 function PolicyArtifact({ reduceMotion }: ArtifactProps): ReactNode {
+  const rows = useLocalizedUiCatalog(POLICY_ROWS);
   return (
     <Band className="gap-3">
-      {POLICY_ROWS.map((row, i) => (
+      {rows.map((row, i) => (
         <m.span key={row.label} {...reveal(i, reduceMotion)}>
           <MonoRow active={row.active}>
             <span
@@ -1016,9 +1022,10 @@ const PRINCIPALS = [
 
 /** Two kinds of actor, one permission model. */
 function PrincipalsArtifact({ reduceMotion }: ArtifactProps): ReactNode {
+  const rows = useLocalizedUiCatalog(PRINCIPALS);
   return (
     <Band className="gap-4">
-      {PRINCIPALS.map((row, i) => (
+      {rows.map((row, i) => (
         <m.span key={row.label} className="flex items-center gap-3" {...reveal(i, reduceMotion)}>
           <span
             className={cn(
@@ -1174,13 +1181,14 @@ function GrantsArtifact({ reduceMotion }: ArtifactProps): ReactNode {
 
 /** The identity provider asserts; the app accepts. No second password. */
 function SsoArtifact({ reduceMotion }: ArtifactProps): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Band className="flex-row items-center gap-3">
       <m.span
         className="border-border bg-background/50 text-muted-foreground/70 flex size-10 shrink-0 items-center justify-center rounded-sm border font-mono text-[11px] uppercase"
         {...reveal(0, reduceMotion)}
       >
-        idp
+        {tI18nComplete.raw('text0c1eeccce6f1')}
       </m.span>
 
       <span className="relative h-10 flex-1">
@@ -1193,7 +1201,7 @@ function SsoArtifact({ reduceMotion }: ArtifactProps): ReactNode {
             transition={{ duration: 0.85, delay: LEAD + 0.12, ease: EASE_OUT }}
           >
             <span className="border-foreground/40 bg-card text-foreground -translate-x-1/2 rounded-full border px-1.5 py-px font-mono text-[10px] uppercase">
-              saml
+              {tI18nComplete.raw('text78e43414e313')}
             </span>
           </m.span>
         )}

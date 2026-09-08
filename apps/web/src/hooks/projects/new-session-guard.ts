@@ -74,7 +74,9 @@ export const useNewSessionGuardStore = create<NewSessionGuardState>((set, get) =
   },
   target: (projectId, sessionId) =>
     set((state) =>
-      state.pending[projectId] ? { pending: { ...state.pending, [projectId]: { sessionId } } } : state,
+      state.pending[projectId]
+        ? { pending: { ...state.pending, [projectId]: { sessionId } } }
+        : state,
     ),
   settle: (projectId) =>
     set((state) => {

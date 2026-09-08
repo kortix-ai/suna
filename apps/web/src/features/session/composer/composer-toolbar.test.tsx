@@ -22,6 +22,13 @@ import { ComposerToolbar } from './composer-toolbar';
  */
 
 const noop = () => {};
+const messages = {
+  threads: {
+    sendMessage: 'Send message',
+    sending: 'Sending',
+    stop: 'Stop',
+  },
+};
 
 function render(
   toolbarSlot?: React.ReactNode,
@@ -40,7 +47,7 @@ function render(
       ]
     : [];
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={{}} onError={noop}>
+    <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >

@@ -4,6 +4,7 @@ import {
   channelsHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { hubTarget, type HubTarget } from '@/stores/account-panel-store';
 import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import type { ProjectSetupStepKey } from './setup-steps';
@@ -14,8 +15,6 @@ export type SetupTile = {
    * completion probe keys off this — see `ProjectSetupStepKey`.
    */
   key: ProjectSetupStepKey;
-  title: string;
-  desc: string;
   // Every tile is a route now. Agents, Connectors, Skills and Triggers are
   // capability tabs of their own (`capabilities/capability-tab-routes.ts`);
   // anything else is a tab of the Settings overlay (`settings/settings-tabs.ts`),
@@ -37,6 +36,8 @@ export type SetupTile = {
    * loading): the tile does nothing rather than navigating to a broken URL.
    */
   href?: (projectId: string, accountId?: string) => string | undefined;
+  /** The account hub — a modal, not a route. Mutually exclusive with `href`. */
+  to?: (projectId: string, accountId?: string) => HubTarget | undefined;
   /**
    * Every IAM leaf the tile's destination asserts. ALL of them must be allowed
    * or the tile is not rendered — hidden, never disabled, because a control a
@@ -64,29 +65,21 @@ export const isCapabilityTabKey = (
 export const PROJECT_SETUP_TILES: SetupTile[] = [
   {
     key: 'connectors',
-    title: 'Connect a tool',
-    desc: 'Connect tools your agent can act in.',
     section: 'connectors',
     actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ],
   },
   {
     key: 'triggers',
-    title: 'Schedule a trigger',
-    desc: 'Run work on a repeating schedule, or when another app sends a signal.',
     section: 'triggers',
     actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_TRIGGER_READ],
   },
   {
     key: 'skills',
-    title: 'Add a skill',
-    desc: 'Repeatable workflows your agent reuses.',
     section: 'skills',
     actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_SKILL_READ],
   },
   {
     key: 'slack',
-    title: 'Connect Slack',
-    desc: 'Run this project right from chat.',
     section: 'connectors',
     href: channelsHref,
     // Channels is a SCOPE of the Connectors page, so it asserts exactly what
@@ -95,21 +88,19 @@ export const PROJECT_SETUP_TILES: SetupTile[] = [
   },
   {
     key: 'team',
-    title: 'Invite your team',
-    desc: 'Invite people to run and review work.',
     // Members graduated into the account hub's Access tab — this tile always
     // routes through `href` (below), which needs the project's `account_id`.
     // `section` is unused for this tile but still has to satisfy the type;
     // 'general' is an arbitrary valid placeholder, never read.
     section: 'workspace',
-    href: (projectId, accountId) =>
-      accountId ? `/accounts/${accountId}?tab=access-projects&project=${projectId}` : undefined,
+    to: (projectId, accountId) =>
+      accountId
+        ? hubTarget(accountId, { tab: 'access-projects', project: projectId })
+        : undefined,
     actions: [PROJECT_ACTIONS.PROJECT_MEMBERS_READ],
   },
   {
     key: 'agent',
-    title: 'Set up your agent',
-    desc: 'Shape how your agent thinks and acts.',
     // 'agent' (the route segment), not the old 'agents' overlay section —
     // `isCapabilityTabKey` matches on the key, so the wrong spelling would
     // silently fall through to the Settings tab and land on its default
@@ -140,8 +131,25 @@ export function setupTileHref(
   projectId: string,
   accountId?: string,
 ): string | undefined {
+  // A tile that names a hub target has no href at all — see `setupTileTo`.
+  if (tile.to) return undefined;
   if (tile.href) return tile.href(projectId, accountId);
   return isCapabilityTabKey(tile.section)
     ? capabilityTabHref(projectId, tile.section)
     : `/projects/${projectId}/settings/${tile.section}`;
+}
+
+/**
+ * The tile's destination when it is the account hub — a modal over this page,
+ * which has no URL to prefetch and so cannot be an `href`.
+ *
+ * `undefined` for every other tile, and for "Invite your team" while
+ * `account_id` is still in flight.
+ */
+export function setupTileTo(
+  tile: SetupTile,
+  projectId: string,
+  accountId?: string,
+): HubTarget | undefined {
+  return tile.to?.(projectId, accountId);
 }

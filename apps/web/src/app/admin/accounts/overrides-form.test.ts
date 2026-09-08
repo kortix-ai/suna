@@ -133,7 +133,9 @@ describe('overridesPatch — only what changed', () => {
   test('re-typing the same number is not a change, so the expiry survives', () => {
     // The patch carries no `expires_at`, so ANY entry it sends makes the grant
     // permanent. Not sending an unchanged row is what keeps a timed grant timed.
-    const stored = { computeRateMultiplier: { value: 0.5, expires_at: '2026-09-01T00:00:00.000Z' } };
+    const stored = {
+      computeRateMultiplier: { value: 0.5, expires_at: '2026-09-01T00:00:00.000Z' },
+    };
     const result = overridesPatch({ ...EMPTY, computeRateMultiplier: '0.50' }, stored);
     expect(result).toEqual({ ok: true, patch: {} });
   });

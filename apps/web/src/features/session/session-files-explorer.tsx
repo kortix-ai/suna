@@ -22,6 +22,7 @@ import {
 import { getSessionFilesStore } from '@/features/session/session-files-store-registry';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { ArrowRightIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
@@ -96,6 +97,7 @@ function SessionFilesExplorerInner({
   initialMode?: SessionPanelMode;
   ephemeral?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The git branch == the ROUTE session id; the chat session id is passed in.
   const { id: routeProjectId, sessionId: gitSessionId } = useParams<{
     id: string;
@@ -184,7 +186,7 @@ function SessionFilesExplorerInner({
                 disabled={asking}
               >
                 {asking ? <Loading className="size-3.5 shrink-0" /> : null}
-                Propose changes
+                {tI18nComplete.raw('text73eeb5083986')}
               </Button>
             )}
           </div>
@@ -204,13 +206,15 @@ function SessionFilesExplorerInner({
                   />
                   {/* The arrow is decorative, so the relationship is stated once
                   for anyone who cannot see it. */}
-                  <span className="sr-only">into</span>
+                  <span className="sr-only">{tI18nComplete.raw('text6b847a0ed0b2')}</span>
                 </>
               )}
               <Badge variant="outline" size="sm" className="max-w-32 min-w-0 font-mono">
                 <span className="truncate">{baseRef}</span>
               </Badge>
-              <span className="text-muted-foreground text-xs">not applied yet</span>
+              <span className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('text4c31974fceb2')}
+              </span>
             </div>
             <div className="min-h-0 flex-1">
               <SessionDiffViewer />
@@ -224,6 +228,7 @@ function SessionFilesExplorerInner({
 
 /** The tab strip, shared by both branches so it renders identically on each. */
 function PanelTabs({ changedCount }: { changedCount: number }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     // The row draws the rule, so the list keeps only the sliding underline,
     // and fills the row's height so that underline lands on the row's border.
@@ -231,10 +236,10 @@ function PanelTabs({ changedCount }: { changedCount: number }) {
     // own left edge.
     <TabsList type="underline" className="h-full gap-5 border-b-0">
       <TabsTrigger value="files" className="w-fit flex-none px-0">
-        All files
+        {tI18nComplete.raw('text866956901fd1')}
       </TabsTrigger>
       <TabsTrigger value="changes" className="w-fit flex-none gap-1.5 px-0">
-        Changes
+        {tI18nComplete.raw('textbbd4b6a86bc6')}
         {changedCount > 0 && (
           <Badge variant="secondary" size="tabular">
             {changedCount}

@@ -30,14 +30,17 @@ function required(name: string): string {
 
 function positiveInteger(name: string): number {
   const result = Number(required(name));
-  if (!Number.isSafeInteger(result) || result < 1) throw new Error(`${name} must be a positive integer`);
+  if (!Number.isSafeInteger(result) || result < 1)
+    throw new Error(`${name} must be a positive integer`);
   return result;
 }
 
 function provider(): SandboxPreviewProvider {
   const selected = value('PREVIEW_SANDBOX_PROVIDER', 'auto').toLowerCase();
   if (selected === 'auto' || selected === 'platinum' || selected === 'daytona') return selected;
-  throw new Error(`PREVIEW_SANDBOX_PROVIDER must be auto, platinum, or daytona; received ${selected}`);
+  throw new Error(
+    `PREVIEW_SANDBOX_PROVIDER must be auto, platinum, or daytona; received ${selected}`,
+  );
 }
 
 async function writeOutput(name: string, outputValue: string): Promise<void> {
@@ -189,9 +192,10 @@ if (action === 'deploy') {
   // A branch-deleted event carries the branch and no pull request, so the number
   // is optional whenever the branch is known.
   const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
-  const prNumber = branchEnv && !process.env.PREVIEW_PR_NUMBER?.trim()
-    ? undefined
-    : positiveInteger('PREVIEW_PR_NUMBER');
+  const prNumber =
+    branchEnv && !process.env.PREVIEW_PR_NUMBER?.trim()
+      ? undefined
+      : positiveInteger('PREVIEW_PR_NUMBER');
   const [platinumDeleted, daytonaDeleted] = await Promise.all([
     teardownPlatinumPreview({
       ...platinum,

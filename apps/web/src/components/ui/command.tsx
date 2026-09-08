@@ -1,6 +1,7 @@
 'use client';
 
 import { Command as CommandPrimitive } from 'cmdk';
+import { useTranslations } from '@/i18n/use-translations';
 import * as React from 'react';
 
 import {
@@ -35,8 +36,8 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
 }
 
 function CommandDialog({
-  title = 'Command Palette',
-  description = 'Search for a command to run...',
+  title,
+  description,
   children,
   className,
   showCloseButton = true,
@@ -60,11 +61,13 @@ function CommandDialog({
    */
   shouldFilter?: boolean;
 }) {
+  const t = useTranslations('commandPalette');
+
   return (
     <Dialog {...props}>
       <DialogHeader className="sr-only">
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
+        <DialogTitle>{title ?? t('title')}</DialogTitle>
+        <DialogDescription>{description ?? t('description')}</DialogDescription>
       </DialogHeader>
       <DialogContent
         className={cn('p-0 shadow-[0_0_50px_0] shadow-black/50', className)}

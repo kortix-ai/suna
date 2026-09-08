@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +35,7 @@ const ROWS: ReadonlyArray<{ role: 'user' | 'assistant'; widths: readonly string[
 ];
 
 export function SessionTranscriptSkeleton({ className }: { className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div
       className={cn('mx-auto w-full max-w-3xl space-y-8 px-4 py-8', className)}
@@ -43,7 +45,7 @@ export function SessionTranscriptSkeleton({ className }: { className?: string })
       // real transcript replaces it.
       role="status"
       aria-busy="true"
-      aria-label="Loading conversation"
+      aria-label={tI18nComplete.raw('text9deef600048b')}
     >
       {ROWS.map((row, rowIndex) => (
         <div

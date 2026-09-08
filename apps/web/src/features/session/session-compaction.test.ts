@@ -94,7 +94,7 @@ describe('Pi session compaction controls', () => {
 
   test('gates the header action and modal with the resolved compaction id', () => {
     expect(sessionHeaderSource).toContain('{compactSessionId && (');
-    expect(sessionHeaderSource).toContain('Summarize conversation');
+    expect(sessionHeaderSource).toContain("tI18nHardcoded.raw('i18nComplete.textca838377bb5a')");
     expect(sessionHeaderSource).toContain('<CompactModal\n          sessionId={compactSessionId}');
   });
 

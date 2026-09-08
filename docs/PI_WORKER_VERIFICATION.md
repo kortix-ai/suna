@@ -991,3 +991,58 @@ web reports 9,469 passed. SDK typecheck and the packed Node installation smoke
 pass. Standalone frontend `tsc --noEmit` passes; focused ESLint reports zero
 errors and 36 existing warnings. Benchmark:
 `tests/test-results/local/benchmark-1788901485635.json`.
+
+
+Image checkpoint `1186af73086ca6f58885dcd487579092c93941ff` deploys successfully
+in run `34278659422`. Remote Git, API/gateway/frontend image tags, and public
+API health match the exact SHA. The deployed browser journey passes: upload PUT,
+immutable inbox file reference, decoded 400-by-240 thumbnail, lazy GET `200`, 50
+text deltas, and nine distinct visible streaming text lengths. UI Stop interrupts
+a long response with `MessageAbortedError`; the next prompt succeeds. Stop/resume
+preserves the complete transcript and exact PNG bytes. The SDK submits another
+image successfully. No environment exists, and the fixture is stopped afterward.
+Evidence: `/tmp/pi-image-preview.json`, `/tmp/pi-image-preview.png`, and
+`/tmp/pi-image-deployed-sha.log`. Session:
+`a453fb09-fe08-4db4-be7b-599e9cf90f5b`; native ID:
+`ses_pic6ceb70cfde325ab822b8708`; worker:
+`2491e4c4-7a0a-47da-a9f0-577eb9d8dc5d`.
+
+
+## Image preview full gate — 2026-09-08
+
+- Commit: `1186af73086ca6f58885dcd487579092c93941ff`.
+- Run: `34279668235`; `pnpm test -- --target-full` completed in 543.5 seconds.
+- Browser: all 19 journeys passed in 225.3 seconds.
+- REST/CLI: 455/463 passed, five failed, three existing skips.
+- SHIP-1, SHIP-4, SHIP-6, and SHIP-9 hit the existing Platinum ingress 5xx failure in 41.2–46.4 seconds.
+- SESS-29 read exact attachment bytes but rejected the compressed response's weak ETag. Captured headers prove `Content-Encoding: zstd` and `ETag: W/"<matching SHA-256>"`. Cloudflare preserved the digest. The flow now computes SHA-256 from the returned content and accepts the corresponding strong or weak ETag.
+- Main sync preserves the upstream attachment flow's SESS-27 identifier. The Pi transcript-log flow becomes SESS-30; SESS-28 and SESS-29 remain unchanged.
+
+
+Image viewer follow-up on the same deployed image session:
+- Clicking the saved thumbnail opens the image dialog with the original 400×240 pixels.
+- Clicking the image applies the existing 2× zoom; Close returns to the composer.
+- Authenticated lazy image GET returns 200. Environment GET remains 404.
+- The test stops its worker afterward.
+
+## Main integration — 2026-09-09
+
+The canonical `pi-worker` branch integrates main `4dcbbe4832b8f5eeef22f81b81117884df0e8849`.
+The merge preserves v3 Pi selection, the execution-only environment, custom
+agent hooks, immutable image prompts, and fixed model/agent controls.
+
+- SSE replay activity retains the original event timestamp after the upstream
+  message-ID fallback and delta deduplication changes. The focused SDK suite
+  passes 202 tests and 395 assertions after three replay regressions fail first.
+- Upstream staged first-prompt attachments keep SESS-27. The Pi transcript-log
+  flow moves to SESS-30. SESS-28 and SESS-29 retain their IDs.
+- Pi and filesystem SDK guides join the Blume documentation navigation.
+- Pi workspace, question-submission, permission-submission, and loading labels
+  have translations in all nine supported locales.
+- The first full run found a local Supabase user-create timeout, two preview
+  test assumptions, an undersized test-only heartbeat lease, stale frontend
+  test expectations, and a browser HMR race caused by editing during the run.
+  These findings do not justify quarantining flows or changing production leases.
+- The second full run passes all 398 REST/CLI flows, SDK, worker quality, runner
+  units, route coverage, and worktree units. Browser and package gates remain
+  in progress at this checkpoint. Final deployment proof is recorded separately.

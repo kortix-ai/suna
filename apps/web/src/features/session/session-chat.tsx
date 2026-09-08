@@ -31,7 +31,7 @@ import {
   PlayIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -87,6 +87,12 @@ import {
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
+import {
+  resolveFirstPromptHandover,
+  transcriptCarriesFirstPrompt,
+} from '@/features/session/first-prompt-handover';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '@/features/session/outcomes/session-outcomes-provider';
@@ -419,6 +425,7 @@ function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] 
 // ============================================================================
 
 function AnsweredQuestionCard({ part }: { part: ToolPart }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [expanded, setExpanded] = useState(false);
   const input = (part.state as any)?.input ?? {};
   const metadata = (part.state as any)?.metadata ?? {};
@@ -445,9 +452,11 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
           variant="popover"
           className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2 text-left"
         >
-          <span className="text-foreground text-xs font-medium">Questions</span>
+          <span className="text-foreground text-xs font-medium">
+            {tI18nComplete.raw('text9a72221a2747')}
+          </span>
           <span className="text-muted-foreground text-xs tabular-nums">
-            {answeredCount} answered
+            {answeredCount} {tI18nComplete.raw('text68c780cd132a')}
           </span>
           <ChevronDown
             className={cn(
@@ -461,7 +470,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         <div className="space-y-2 px-3.5 py-2">
           {questions.map((q, i) => {
             const answer = answers[i] || [];
-            const answerText = answer.join(', ') || 'No answer';
+            const answerText = answer.join(', ') || tI18nComplete.raw('text7e49c68db30e');
             return (
               <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
@@ -659,6 +668,11 @@ interface SessionTurnProps {
    * in the bubble's own meta row — the bubble IS the queue entry.
    */
   queueRow?: SessionPrompt | null;
+  /** Files this turn is known to carry that its parts do not show yet — see `UserMessage`. */
+  pendingAttachments?: ReadonlyArray<{ filename: string; mime: string }>;
+  uploadStatus?: AttachmentUploadStatus;
+  /** The prompt's text as the sender knew it — see `UserMessage`. */
+  pendingText?: string;
   queueHeld?: boolean;
   onQueueRemove?: (promptId: string) => void;
   onQueueSendNow?: (promptId: string) => void;
@@ -721,6 +735,7 @@ export function SessionReportCard({
   report: SessionReport;
   onOpen: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const complete = report.status === 'COMPLETE';
   return (
     // A real <button>: Enter, Space and the focus ring come free, where the
@@ -745,7 +760,7 @@ export function SessionReportCard({
 
       <span className="min-w-0 flex-1">
         <span className="text-foreground block truncate text-sm font-medium">
-          Worker {complete ? 'complete' : 'failed'}
+          {tI18nComplete.raw('texta67b04cd5c49')} {complete ? 'complete' : 'failed'}
         </span>
         {/* One meta line, truncated by CSS against the real available width —
             the old 60-character slice cut mid-word at every viewport and still
@@ -754,7 +769,10 @@ export function SessionReportCard({
           <span className="text-muted-foreground block truncate text-xs">
             {report.project}
             {report.project && report.prompt && (
-              <span className="text-muted-foreground/40"> &bull; </span>
+              <span className="text-muted-foreground/40">
+                {' '}
+                {tI18nComplete.raw('text3b9453dad42b')}{' '}
+              </span>
             )}
             {report.prompt}
           </span>
@@ -781,6 +799,9 @@ function SessionTurnImpl({
   suppressBusyIndicator,
   pending,
   queueRow,
+  pendingAttachments,
+  uploadStatus,
+  pendingText,
   queueHeld,
   onQueueRemove,
   onQueueSendNow,
@@ -800,6 +821,7 @@ function SessionTurnImpl({
   onEditCancel,
   onEditSend,
 }: SessionTurnProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
@@ -1208,11 +1230,11 @@ function SessionTurnImpl({
     const msgs: KortixSystemMessage[] = [];
     for (const p of turn.userMessage.parts) {
       if (isTextPart(p) && (p as TextPart).text) {
-        msgs.push(...extractKortixSystemMessages((p as TextPart).text!));
+        msgs.push(...extractKortixSystemMessages((p as TextPart).text!, tI18nComplete));
       }
     }
     return msgs;
-  }, [turn.userMessage.parts]);
+  }, [tI18nComplete, turn.userMessage.parts]);
 
   const hasVisibleUserContent = useMemo(() => {
     // Session reports render as their own card — don't show as user bubble
@@ -1260,9 +1282,21 @@ function SessionTurnImpl({
   const lastStatusChangeRef = useRef(statusThrottleStart);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
+  // A turn the agent has not started has no status to report, and
+  // `getTurnStatus` says so with its fallback phrase — "Figuring out what's
+  // next…", which is a claim about a turn already under way. On a turn with no
+  // assistant message at all it is simply untrue, and the 2.5s throttle below
+  // then swaps the waiting row's honest "Thinking" for it while the prompt is
+  // still queued at the server (dev, 2026-09-06, on video).
+  //
+  // Gated at the SOURCE, not at the prop: the throttle ignores an empty status
+  // (`if (!newStatus) return`), so `throttledStatus` stays '' — the row keeps
+  // the default word AND grows no elapsed clock — until real content arrives,
+  // and the first real status then applies immediately.
+  const hasAssistantContent = turn.assistantMessages.length > 0;
   const rawStatus = useMemo(
-    () => getTurnStatus(allParts, childMessages),
-    [allParts, childMessages],
+    () => (hasAssistantContent ? getTurnStatus(allParts, childMessages) : ''),
+    [allParts, childMessages, hasAssistantContent],
   );
   const [throttledStatus, setThrottledStatus] = useState('');
   // How long the status has read the same thing. Past STATUS_STALL_AFTER_MS
@@ -1559,12 +1593,15 @@ function SessionTurnImpl({
           data-turn-pending={pending || interruptedBeforeRun || undefined}
           data-turn-queue-state={queueState ?? undefined}
           className={cn(
-            'transition-opacity duration-500',
+            'duration-slow transition-opacity',
             (pending || interruptedBeforeRun) && QUEUED_BUBBLE_OPACITY_CLASS,
           )}
         >
           <UserMessage
             message={turn.userMessage}
+            pendingAttachments={pendingAttachments}
+            uploadStatus={uploadStatus}
+            pendingText={pendingText}
             agentNames={agentNames}
             commandInfo={commandMessages?.get(turn.userMessage.info.id)}
             commands={commands}
@@ -1676,7 +1713,7 @@ function SessionTurnImpl({
           every turn in the DOM, so select-all across the transcript copied each
           answer twice. The visible markdown is already in the a11y tree. */}
       <div className="sr-only" aria-live="polite">
-        {!working && response ? 'Response complete' : ''}
+        {!working && response ? tHardcodedUi.raw('i18nComplete.text7889d06f7235') : ''}
       </div>
 
       {/* Inline content: text and answered questions rendered in natural order.
@@ -1728,7 +1765,7 @@ function SessionTurnImpl({
                 <div className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg">
                   <div className="text-foreground flex min-w-0 items-center justify-between gap-2 p-3 pb-0 text-xs [&>svg]:size-4">
                     <span
-                      className="bg-popover text-foreground/95 dark:bg-card min-w-0 truncate rounded-[calc(var(--radius-sm)-0.5px)] border px-1.5 py-[0.08rem] align-baseline font-mono text-[0.95em] font-medium wrap-anywhere whitespace-nowrap"
+                      className="bg-popover text-foreground min-w-0 truncate rounded-sm border px-1.5 py-0.5 align-baseline font-mono text-xs font-medium wrap-anywhere whitespace-nowrap"
                       title={`/${commandForTurn.name}`}
                     >
                       {commandForTurn.name}
@@ -1837,13 +1874,13 @@ function SessionTurnImpl({
           duration / cost would be permanently invisible, and tap-emulated
           `:hover` would leave exactly one arbitrary turn's bar lit. */}
       {!working && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
+        <div className="duration-normal flex items-center gap-0.5 opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
           {response ? (
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={handleCopy}
-              aria-label={copied ? 'Copied' : 'Copy response'}
+              aria-label={copied ? 'Copied' : tHardcodedUi.raw('i18nComplete.textf0f755afea88')}
               className="hit-area-3"
             >
               <span className="relative inline-flex shrink-0 items-center justify-center">
@@ -1857,9 +1894,9 @@ function SessionTurnImpl({
                     className="absolute inset-0 inline-flex items-center justify-center"
                   >
                     {copied ? (
-                      <CheckIcon className="text-foreground/70 size-[1.05rem]" />
+                      <CheckIcon className="text-muted-foreground size-[1.05rem]" />
                     ) : (
-                      <Copy className="text-foreground/70 size-[1.05rem]" />
+                      <Copy className="text-muted-foreground size-[1.05rem]" />
                     )}
                   </m.span>
                 </AnimatePresence>
@@ -2162,6 +2199,27 @@ export function SessionChat({
   // crash cannot lose it, and the server — not this component — decides whether
   // it runs now or waits for the turn in flight.
   const promptInbox = useSessionPrompts(projectId, projectSessionId);
+  /**
+   * What the first prompt's attachment strip should say while its files are
+   * still travelling to the box.
+   *
+   * The runtime creates the user's message only after every attachment has
+   * landed, so for the whole upload the preview bubble is the only thing on
+   * screen — and it used to show tiles with no word about what was happening.
+   * The undelivered row is the witness: it carries the names, and `last_error`
+   * is the one place a failed upload is ever named.
+   */
+  const firstPromptUploadStatus = useMemo((): AttachmentUploadStatus | undefined => {
+    const row = promptInbox.prompts.find((p) => (p.attachments?.length ?? 0) > 0);
+    if (!row) return undefined;
+    // `state`, never `last_error` alone: the API writes `last_error` on rows
+    // it keeps `queued` and retries, and never clears it on success — read
+    // as a failure it turned every transient retry into "upload failed"
+    // (review finding, 2026-09-05).
+    return row.state === 'failed'
+      ? { state: 'failed', message: row.last_error ?? 'Upload failed' }
+      : { state: 'uploading' };
+  }, [promptInbox.prompts]);
 
   // T10: the most recently issued stop/cancel's `AbortSettlement`
   // promise for this session, so `stopThenSendNow` (used by
@@ -2826,6 +2884,65 @@ export function SessionChat({
     }
     return ids;
   }, [messages, sessionId, promptInbox.prompts]);
+  /**
+   * The transcript's ONE user message, when there is exactly one and this tab
+   * did not paint it — the only shape in which a row can be claimed by
+   * elimination. See `claimFirstTurnRow`.
+   *
+   * Whether it has been ANSWERED does not matter, and briefly requiring that it
+   * had not was wrong: the stale cached row this exists for outlives the start
+   * of the answer by exactly the window the user can see (the row is gone from
+   * the server the moment the turn is accepted; the tab learns that one poll
+   * later), so the claim has to hold through the first tokens.
+   */
+  const onlyUserMessage = useMemo(() => {
+    const store = useSessionStateStore.getState();
+    let only: { id: string; text: string } | null = null;
+    let users = 0;
+    for (const message of messages ?? []) {
+      if (message.info.role !== 'user') continue;
+      users += 1;
+      if (store.isOptimisticMessage(sessionId, message.info.id)) {
+        only = null;
+        continue;
+      }
+      // The bubble's own words: the non-synthetic text parts, joined.
+      const text = message.parts
+        .filter((part) => part.type === 'text' && !(part as { synthetic?: boolean }).synthetic)
+        .map((part) => (part as { text?: string }).text ?? '')
+        .join('\n');
+      only = { id: message.info.id, text };
+    }
+    return users === 1 ? only : null;
+  }, [messages, sessionId]);
+  /**
+   * The row whose message is on screen under an id the row has not reported
+   * yet — the re-mint window. Claimed by elimination, never by id; every
+   * refusal is documented in `claimFirstTurnRow`.
+   */
+  const firstTurnClaim = useMemo(
+    () =>
+      claimFirstTurnRow({
+        prompts: promptInbox.prompts,
+        onlyUserMessage,
+        claimedIds: transcriptUserMessageIds,
+      }),
+    [promptInbox.prompts, onlyUserMessage, transcriptUserMessageIds],
+  );
+  /**
+   * The claim's row ids folded into the SAME set every id-matching consumer
+   * reads, so one decision reaches all of them: `queuedSyntheticMessages` stops
+   * minting a second bubble, and `projectQueueRows` stops listing the row.
+   * Nothing downstream needed changing.
+   */
+  const transcriptClaimedIds = useMemo(() => {
+    if (!firstTurnClaim) return transcriptUserMessageIds;
+    const ids = new Set(transcriptUserMessageIds);
+    ids.add(firstTurnClaim.rowMessageId);
+    if (firstTurnClaim.rowWireMessageId) ids.add(firstTurnClaim.rowWireMessageId);
+    if (firstTurnClaim.rowClientMessageId) ids.add(firstTurnClaim.rowClientMessageId);
+    return ids;
+  }, [transcriptUserMessageIds, firstTurnClaim]);
   // The row names the re-minted id, and it is the ONLY thing that does: the
   // runtime's echo carries no client id, and this tab strips the part ids that
   // would otherwise correlate it. So every prompt in the inbox announces its
@@ -2863,20 +2980,27 @@ export function SessionChat({
         if (wireEcho) byId.set(wireEcho, prompt);
       }
     }
+    // The bubble claimed by elimination carries its row's chrome too — the X,
+    // send-now, retry and any error. Hiding the duplicate must not cost the
+    // surviving copy the controls the row is the only source of.
+    if (firstTurnClaim) {
+      const claimed = promptInbox.prompts.find((p) => p.prompt_id === firstTurnClaim.promptId);
+      if (claimed) byId.set(firstTurnClaim.messageId, claimed);
+    }
     return byId;
     // `messages` is a dependency because the aliases this reads are registered
     // by the effect above, i.e. AFTER the render that first sees a row. The
     // store write that follows changes `messages`, which is what brings this
     // map back for the ids the alias just added.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promptInbox.prompts, sessionId, messages]);
+  }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
   const queueRows = useMemo(
     () =>
       projectQueueRows({
         prompts: promptInbox.prompts,
-        transcriptMessageIds: transcriptUserMessageIds,
+        transcriptMessageIds: transcriptClaimedIds,
       }),
-    [promptInbox.prompts, transcriptUserMessageIds],
+    [promptInbox.prompts, transcriptClaimedIds],
   );
   const queuedMessages = queueRows.queued;
   const failedQueuedMessages = queueRows.failed;
@@ -2925,10 +3049,10 @@ export function SessionChat({
         const detail = error instanceof Error && error.message.trim() ? error.message.trim() : null;
         errorToast(
           status === 409
-            ? (detail ?? 'The agent is already answering that prompt')
+            ? (detail ?? tHardcodedUi.raw('i18nComplete.text3e739b3b4329'))
             : status === 404
-              ? 'That prompt is no longer in the queue'
-              : (detail ?? 'Could not remove that prompt'),
+              ? tHardcodedUi.raw('i18nComplete.text128773c76940')
+              : (detail ?? tHardcodedUi.raw('i18nComplete.text42fcd9dda5f6')),
         );
         return;
       }
@@ -2947,7 +3071,7 @@ export function SessionChat({
       // gating every removal behind a modal would make it unusable, and the
       // thing being removed is a draft, not data. Reversible beats guarded.
       const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
-      infoToast('Removed from queue', {
+      infoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
         id: undoToastId,
         duration: 5000,
         button: (
@@ -2965,10 +3089,10 @@ export function SessionChat({
               mintMessageId: () => mintSessionWireMessageId(sessionId),
               enqueue: promptInbox.enqueue,
               dismiss: () => dismissToast(undoToastId),
-              onError: () => errorToast('Could not restore that prompt'),
+              onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
             })}
           >
-            Undo
+            {tHardcodedUi.raw('i18nComplete.texta737e54996f8')}
           </Button>
         ),
       });
@@ -2981,7 +3105,9 @@ export function SessionChat({
     (id: string) => {
       // Re-queued UNDER ITS ORIGINAL WIRE ID, so a delivery that actually
       // landed is still absorbed by the proxy instead of running twice.
-      void promptInbox.retry(id).catch(() => errorToast('Could not retry that prompt'));
+      void promptInbox
+        .retry(id)
+        .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text4869b2a820dd')));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [promptInbox.retry],
@@ -3219,8 +3345,8 @@ export function SessionChat({
     for (const prompt of promptInbox.prompts) {
       if (prompt.state === 'failed') continue;
       if (!prompt.text.trim()) continue;
-      if (prompt.message_id && transcriptUserMessageIds.has(prompt.message_id)) continue;
-      if (prompt.wire_message_id && transcriptUserMessageIds.has(prompt.wire_message_id)) continue;
+      if (prompt.message_id && transcriptClaimedIds.has(prompt.message_id)) continue;
+      if (prompt.wire_message_id && transcriptClaimedIds.has(prompt.wire_message_id)) continue;
       if (isOptimisticSessionPrompt(prompt)) continue; // painted by this tab already
       const id = prompt.message_id || `queued-${prompt.prompt_id}`;
       const sentAt =
@@ -3248,7 +3374,7 @@ export function SessionChat({
       } as unknown as NonNullable<typeof messages>[number]);
     }
     return out;
-  }, [promptInbox.prompts, transcriptUserMessageIds, sessionId]);
+  }, [promptInbox.prompts, transcriptClaimedIds, sessionId]);
   const rawTurns = useMemo(
     () =>
       messages || queuedSyntheticMessages.length > 0
@@ -3315,24 +3441,106 @@ export function SessionChat({
   const clearFirstPromptPreview = useFirstPromptPreviewStore(
     (state) => state.clearFirstPromptPreview,
   );
-  // "The transcript has it" means a user message WITH text on screen — the
-  // info frame and the text part arrive separately, and a bubble with no text
-  // renders nothing. Until then the preview stands in.
+  // Two different questions, and they used to be one.
+  //
+  // WHEN DOES THE STAND-IN STEP ASIDE? The frame the transcript shows the
+  // text. Holding it past that stacked a second bubble on top of the real one
+  // for the whole text-first window (review finding, 2026-09-05).
+  //
+  // WHEN IS THE PREVIEW FORGOTTEN? Only once the transcript's message carries
+  // the attachments it promised — the runtime streams the text part first and
+  // the file parts seconds later, and forgetting on text alone was what left
+  // the real bubble with no tiles for those seconds. Until then the preview's
+  // file NAMES are handed to the real turn to draw as pending tiles, so the
+  // strip never blinks out. See `first-prompt-handover.ts`.
   const transcriptShowsFirstPrompt = useMemo(
-    () =>
-      turns.some((turn) =>
-        turn.userMessage.parts.some(
-          (part) =>
-            isTextPart(part) && !!part.text?.trim() && !(part as { synthetic?: boolean }).synthetic,
-        ),
-      ),
+    () => transcriptCarriesFirstPrompt(turns, 0),
     [turns],
   );
-  const showFirstPromptPreview = !!firstPromptPreview && !transcriptShowsFirstPrompt;
+  const previewAttachmentCount = firstPromptPreview?.files.length ?? 0;
+  const transcriptCarriesFirstPromptFiles = useMemo(
+    () => transcriptCarriesFirstPrompt(turns, previewAttachmentCount),
+    [turns, previewAttachmentCount],
+  );
+  // A RELEASE IS A LATCH. The transcript's first message briefly has no parts
+  // while the store swaps the optimistic copy for the runtime's echo (~176 ms
+  // as the file parts land, on video 2026-09-06); a live boolean brought the
+  // stand-in back at full opacity over the dimmed real turn for those frames.
+  // Once released, the real turn owns the prompt — see
+  // `resolveFirstPromptHandover`.
+  const [firstPromptReleased, setFirstPromptReleased] = useState(false);
+  /**
+   * THIS COMPONENT'S OWN COPY of the first prompt, kept past the store's.
+   *
+   * Two things read `useFirstPromptPreviewStore`, and they need it for
+   * different lengths of time. The BOOT SHELL (and the route, which pins the
+   * shell while a preview exists) needs it only until the transcript shows the
+   * prompt — one frame longer and the shell's copy dissolves over the real
+   * bubble during the crossfade, two bubbles for the length of the fade
+   * (measured 2026-09-08: both stand-ins at full opacity, ~200 ms). This
+   * component needs the TEXT for longer: the runtime's echo arrives as an info
+   * frame with its text part following separately, and on the project-home
+   * path nothing bridges the two (the producer POSTed a durable row, not an
+   * optimistic message), so the bubble drew nothing for that gap — the blank
+   * thread on the 2026-09-06 recording.
+   *
+   * So the store keeps its original, short life — cleared the frame the
+   * transcript carries the prompt — and the longer life is local: a snapshot
+   * this component holds until the prompt is SETTLED (answered, or the session
+   * is finished with it: idle, nothing left in the inbox). Local state cannot
+   * pin the route's shell, cannot outlive a navigation, and is invisible to
+   * every other reader of the store.
+   */
+  // SETTLED: answered, or the session is finished with it (idle, nothing left
+  // in the inbox — Stop, a failure, a delivery that never ran).
+  const firstPromptSettled =
+    turns.length > 0 &&
+    (turns[0].assistantMessages.length > 0 || (!isBusy && promptInbox.prompts.length === 0));
+  // Guarded render-phase updates, the same shape as `contentPainted` below:
+  // mirror the store's copy while the prompt is live, drop it once settled. The
+  // mirror is suppressed once settled, or the two would re-adopt and re-drop
+  // each other on every render.
+  const [firstPromptKeep, setFirstPromptKeep] = useState<typeof firstPromptPreview>(null);
+  if (firstPromptSettled) {
+    if (firstPromptKeep) setFirstPromptKeep(null);
+  } else if (firstPromptPreview && firstPromptKeep !== firstPromptPreview) {
+    setFirstPromptKeep(firstPromptPreview);
+  }
+  const firstPromptSource = firstPromptPreview ?? firstPromptKeep;
+  const handover = resolveFirstPromptHandover({
+    hasPreview: !!firstPromptSource,
+    transcriptShowsText: transcriptShowsFirstPrompt,
+    transcriptCarriesFiles: transcriptCarriesFirstPromptFiles,
+    releasedBefore: firstPromptReleased,
+    transcriptEmpty: turns.length === 0,
+  });
+  useEffect(() => {
+    if (handover.released && !firstPromptReleased) setFirstPromptReleased(true);
+  }, [handover.released, firstPromptReleased]);
+  const showFirstPromptPreview = handover.showStandIn;
+  // The STORE's copy is forgotten the frame the transcript carries the prompt —
+  // the original rule, and the one the shell's crossfade depends on.
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
-    if (transcriptShowsFirstPrompt) clearFirstPromptPreview(projectSessionId);
-  }, [projectSessionId, firstPromptPreview, transcriptShowsFirstPrompt, clearFirstPromptPreview]);
+    if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
+  }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
+
+  /** What the real first turn is handed once the stand-in has stepped aside:
+   *  the prompt's text and its files' names, so it keeps drawing the bubble
+   *  and the pending tiles through any frame where its own parts are still
+   *  streaming. Nothing once the transcript carries the files itself. */
+  const firstTurnHandover = useMemo(
+    (): { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> } | undefined => {
+      if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
+      const attachments = firstPromptSource.files.map((file) =>
+        file.kind === 'local'
+          ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
+          : { filename: file.filename, mime: file.mime },
+      );
+      return { text: firstPromptSource.text, attachments };
+    },
+    [firstPromptSource, handover.handOverToRealTurn],
+  );
 
   /**
    * Which turn, if any, draws the plan.
@@ -3376,8 +3584,11 @@ export function SessionChat({
       if (prompt.message_id) ids.add(prompt.message_id);
       if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
     }
+    // …and the id the claimed row is actually on screen under, or the surviving
+    // bubble would read as running while the server still holds the prompt.
+    if (firstTurnClaim) ids.add(firstTurnClaim.messageId);
     return ids;
-  }, [promptInbox.prompts]);
+  }, [promptInbox.prompts, firstTurnClaim]);
   const workingTurn = useMemo(
     () => resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds }),
     [turns, working.turnId, unrunTurnIds],
@@ -3405,6 +3616,30 @@ export function SessionChat({
     const newest = wt.assistantMessages[wt.assistantMessages.length - 1];
     return !!(newest.info as { time?: { completed?: number } }).time?.completed;
   }, [turns, workingTurn]);
+  /**
+   * Is ANY turn going to draw the waiting row?
+   *
+   * `resolveWorkingTurn` deliberately declines to name a turn in two states,
+   * and both are states in which the session is very much working:
+   *
+   *  - every prompt on screen is still held by the server AND no turn has
+   *    assistant content yet — the fresh-session case, where rule 4 has no
+   *    "newest turn with content" to fall back to and returns null;
+   *  - the fallback landed on a turn whose answer is COMPLETE while queued
+   *    prompts wait below it (`suppressWorkingTurnBusy`).
+   *
+   * Neither is wrong: the shimmer must not sit on a prompt the agent has not
+   * reached, nor on a finished answer. But nothing else drew the row either,
+   * so the whole surface read as idle while the composer showed Stop — the
+   * user's session going INACTIVE with their prompt in flight (dev,
+   * 2026-09-06, on video: ~11s of it on the first prompt, ~1s on the second).
+   *
+   * The row below is that missing fallback. It is the same element and the
+   * same wording every other surface uses, and it is already what a session
+   * with no turns at all shows.
+   */
+  const someTurnDrawsBusyRow =
+    lastTurnWorking && workingTurn.workingTurnId !== null && !suppressWorkingTurnBusy;
   /**
    * ONE render key per turn. A turn keeps the id its bubble was FIRST painted
    * under (the optimistic origin), so a re-minted echo re-renders the same
@@ -3632,11 +3867,11 @@ export function SessionChat({
     try {
       await sessionState.restoreRewind();
     } catch (error) {
-      errorToast('Session restore failed', {
+      errorToast(tHardcodedUi.raw('i18nComplete.text8f43efcd9139'), {
         description: formatCommandError(error),
       });
     }
-  }, [sessionState]);
+  }, [sessionState, tHardcodedUi]);
 
   // ============================================================================
   // Send / Stop / Command handlers
@@ -4155,9 +4390,11 @@ export function SessionChat({
         }
         if (removed > 0) {
           infoToast(
-            removed === 1 ? 'Queued message removed' : `${removed} queued messages removed`,
+            removed === 1
+              ? tHardcodedUi.raw('i18nComplete.textcd165519e204')
+              : tHardcodedUi('i18nComplete.textba6a7b88050c', { value0: removed }),
             {
-              description: 'They were written for the messages this rewind discards.',
+              description: tHardcodedUi.raw('i18nComplete.text8190a722b30a'),
             },
           );
         }
@@ -4187,14 +4424,14 @@ export function SessionChat({
           useSessionStateStore.getState().commitSessionRevert(sessionState.opencodeSessionId);
         }
       } catch (error) {
-        errorToast('Session rewind failed', {
+        errorToast(tHardcodedUi.raw('i18nComplete.text810b28e5110c'), {
           description: formatCommandError(error),
         });
       } finally {
         setEditSendPending(false);
       }
     },
-    [sessionState, promptInbox.prompts, promptInbox.remove, handleSend],
+    [sessionState, promptInbox.prompts, promptInbox.remove, handleSend, tHardcodedUi],
   );
 
   const handleStop = useCallback(async () => {
@@ -4250,8 +4487,8 @@ export function SessionChat({
         // stop did not also pause the queue, and that pressing Stop again (or
         // Resume/Send-now) is how they recover.
         console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
-        errorToast('Stopped, but the queue could not be paused', {
-          description: 'Queued prompts may still send. Press Stop again to pause them.',
+        errorToast(tHardcodedUi.raw('i18nComplete.text57a524b52549'), {
+          description: tHardcodedUi.raw('i18nComplete.text45eca4a01ff2'),
         });
       }),
       new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
@@ -4275,7 +4512,9 @@ export function SessionChat({
       await promptInbox.hold(false);
     } catch (error) {
       console.warn('[session-chat] failed to release the prompt inbox hold', error);
-      errorToast('Could not resume the queue', { description: 'Try again in a moment.' });
+      errorToast(tHardcodedUi.raw('i18nComplete.text06619384104c'), {
+        description: tHardcodedUi.raw('i18nComplete.text29cc3339fce9'),
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.hold]);
@@ -4314,7 +4553,9 @@ export function SessionChat({
         // the one that runs and the rest of the queue follows it. Releasing
         // the hold separately first is what made the oldest row run instead.
         dispatch: async () => {
-          await promptInbox.retry(id).catch(() => errorToast('Could not send that prompt'));
+          await promptInbox
+            .retry(id)
+            .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text7f8b8908c573')));
         },
       });
     },
@@ -4723,15 +4964,18 @@ export function SessionChat({
   useEffect(() => {
     panelRef.current = panel;
   }, [panel]);
-  const handleOpenCompactionSummary = useCallback((turnId: string, summary: string) => {
-    panelRef.current?.openDetail({
-      key: `compaction:${turnId}`,
-      title: 'Compaction summary',
-      icon: <Layers weight="duotone" className="size-4" />,
-      padded: true,
-      body: <CompactionSummaryBody summary={summary} />,
-    });
-  }, []);
+  const handleOpenCompactionSummary = useCallback(
+    (turnId: string, summary: string) => {
+      panelRef.current?.openDetail({
+        key: `compaction:${turnId}`,
+        title: tHardcodedUi.raw('i18nComplete.text9859804cb618'),
+        icon: <Layers weight="duotone" className="size-4" />,
+        padded: true,
+        body: <CompactionSummaryBody summary={summary} />,
+      });
+    },
+    [tHardcodedUi],
+  );
 
   /**
    * The session's files, handed to the composer so the `/` palette can offer
@@ -4789,8 +5033,9 @@ export function SessionChat({
             <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm">
               <PauseIcon weight="fill" className="size-4 shrink-0" />
               <span className="truncate">
-                Queue paused — {heldQueueCount} {heldQueueCount === 1 ? 'prompt' : 'prompts'}{' '}
-                waiting
+                {tHardcodedUi.raw('i18nComplete.text1dd1ec642eed')} {heldQueueCount}{' '}
+                {heldQueueCount === 1 ? 'prompt' : 'prompts'}{' '}
+                {tHardcodedUi.raw('i18nComplete.text80cfa3e7f28d')}
               </span>
             </div>
             <Button
@@ -4800,7 +5045,7 @@ export function SessionChat({
               onClick={() => void handleResumeQueue()}
             >
               <PlayIcon weight="fill" className="size-3.5" />
-              Resume
+              {tHardcodedUi.raw('i18nComplete.textd640c7421da0')}
             </Button>
           </div>
         ) : null}
@@ -4820,8 +5065,8 @@ export function SessionChat({
             className={cn(
               'w-full overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
               questionPromptVisible
-                ? 'max-h-130 translate-y-0 opacity-100 duration-300'
-                : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
+                ? 'duration-slow max-h-130 translate-y-0 opacity-100'
+                : 'duration-slow pointer-events-none max-h-0 -translate-y-1 opacity-0',
             )}
           >
             <QuestionPrompt
@@ -4848,6 +5093,7 @@ export function SessionChat({
       queueRows.held,
       heldQueueCount,
       handleResumeQueue,
+      tHardcodedUi,
     ],
   );
 
@@ -5070,9 +5316,11 @@ export function SessionChat({
             className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
             data-testid="session-transcript-error"
           >
-            <p className="text-muted-foreground text-sm">Couldn&apos;t load this conversation.</p>
+            <p className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw('i18nComplete.text8d0cef2d3405')}
+            </p>
             <Button variant="outline" size="sm" onClick={() => retryTranscript()}>
-              Retry
+              {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
             </Button>
           </div>
         </div>
@@ -5265,7 +5513,7 @@ export function SessionChat({
                             className="text-muted-foreground flex items-center gap-2 py-1 text-xs"
                           >
                             <Loading className="size-3.5 shrink-0" />
-                            Loading older messages
+                            {tHardcodedUi.raw('i18nComplete.text85bf890776a7')}
                           </div>
                         )}
                         {!showOlderLoading &&
@@ -5277,13 +5525,13 @@ export function SessionChat({
                               size="sm"
                               onClick={() => void handleLoadOlder()}
                             >
-                              Load older messages
+                              {tHardcodedUi.raw('i18nComplete.textf17671d83db0')}
                             </Button>
                           )}
                         {olderPullFailed && !showOlderLoading && (
                           <div className="flex items-center gap-2">
                             <span className="text-muted-foreground text-xs">
-                              Couldn&apos;t load older messages.
+                              {tHardcodedUi.raw('i18nComplete.textb03a0041ce33')}
                             </span>
                             <Button
                               type="button"
@@ -5291,7 +5539,7 @@ export function SessionChat({
                               size="sm"
                               onClick={() => void handleLoadOlder()}
                             >
-                              Retry
+                              {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
                             </Button>
                           </div>
                         )}
@@ -5319,13 +5567,19 @@ export function SessionChat({
                         were crossfading into each other. The waiting row is suppressed
                         only when a turn is already drawing its own. */}
                         {showFirstPromptPreview &&
-                          firstPromptPreview &&
+                          firstPromptSource &&
                           queuedMessages.length === 0 && (
                             <OptimisticTurn
                               text={buildOptimisticPromptTextWithUploads(
-                                firstPromptPreview.text,
-                                firstPromptPreview.files,
+                                firstPromptSource.text,
+                                firstPromptSource.files,
                               )}
+                              // The bytes are still being written to the box
+                              // chunk by chunk; without this the strip's
+                              // "Uploading N files…" line vanished the instant
+                              // the boot shell handed over to this component,
+                              // mid-upload.
+                              uploadStatus={firstPromptUploadStatus}
                               agentNames={agentNames}
                               onFileClick={openFileInComputer}
                               sessionId={sessionId}
@@ -5410,6 +5664,19 @@ export function SessionChat({
                                   questions={pendingQuestions}
                                   agentNames={agentNames}
                                   isFirstTurn={turnIndex === 0}
+                                  // Handed over only once the stand-in has stepped
+                                  // aside — while it is up it draws these itself.
+                                  pendingText={turnIndex === 0 ? firstTurnHandover?.text : undefined}
+                                  pendingAttachments={
+                                    turnIndex === 0 && firstTurnHandover?.attachments.length
+                                      ? firstTurnHandover.attachments
+                                      : undefined
+                                  }
+                                  uploadStatus={
+                                    turnIndex === 0 && firstTurnHandover?.attachments.length
+                                      ? (firstPromptUploadStatus ?? { state: 'uploading' })
+                                      : undefined
+                                  }
                                   sessionWorking={lastTurnWorking}
                                   isWorkingTurn={
                                     turn.userMessage.info.id === workingTurn.workingTurnId
@@ -5545,10 +5812,33 @@ export function SessionChat({
                       onSendNow={handleQueueSendNow}
                       onRetry={handleRetryQueuedMessage}
                     />
-                    {/* Busy with no turn to attach it to yet — the same waiting row
+                    {/* Busy with no turn to attach it to — the same waiting row
                         the optimistic turn and every live turn use, so it never
-                        changes shape as the first turn materialises. */}
-                    {isBusy && turns.length === 0 && <SessionBusyIndicator sessionId={sessionId} />}
+                        changes shape as the first turn materialises.
+
+                        "No turn to attach it to" is not only the empty
+                        transcript. A prompt the SERVER still holds is never the
+                        working turn (`resolveWorkingTurn`), and neither is a
+                        finished answer with queued prompts under it
+                        (`suppressWorkingTurnBusy`) — so on a fresh session the
+                        row vanished the moment the first bubble appeared and
+                        stayed gone until the agent answered, with Stop showing
+                        the whole time. See `someTurnDrawsBusyRow`.
+
+                        Not drawn when the boot stand-in is drawing its own row
+                        (`OptimisticTurn busy`), or the two would stack. */}
+                    {isBusy &&
+                      !someTurnDrawsBusyRow &&
+                      !(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0) && (
+                        <SessionBusyIndicator
+                          sessionId={sessionId}
+                          // Matches the stand-in's row spacing under a bubble
+                          // (`OptimisticTurn`), so the crossfade into the real
+                          // transcript does not move it. Nothing above it when
+                          // the transcript is empty, so no margin there.
+                          className={turns.length === 0 ? undefined : 'mt-6'}
+                        />
+                      )}
                   </div>
                   {/* Spacer — the transcript's anchor space. It is sized from
                       the scroll container so the newest turn
@@ -5568,15 +5858,15 @@ export function SessionChat({
                   style={{
                     left: `${selectionPopup.x}px`,
                     top: `${selectionPopup.y}px`,
-                    transform: 'translate(-50%, -100%)',
+                    transform: "translate(-50%, -100%)",
                   }}
                 >
                   <Button
                     onClick={handleSelectionReply}
                     size="sm"
-                    className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
+                    className="animate-in fade-in-0 zoom-in-95 duration-normal origin-bottom px-3 text-xs ease-out has-[>svg]:px-3"
                   >
-                    Reply
+                    {tHardcodedUi.raw('i18nComplete.textc253f451bdd5')}
                     <ArrowBendUpLeftIcon className="size-4 shrink-0" />
                   </Button>
                 </div>
@@ -5604,8 +5894,8 @@ export function SessionChat({
                     'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
                     'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
                     showScrollButton
-                      ? 'scale-100 opacity-100 duration-150'
-                      : 'scale-[0.97] opacity-0 duration-100',
+                      ? 'duration-normal scale-100 opacity-100'
+                      : 'duration-fast scale-[0.97] opacity-0',
                   )}
                   onClick={smoothScrollToAbsoluteBottom}
                 >

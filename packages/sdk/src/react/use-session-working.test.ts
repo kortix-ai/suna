@@ -221,7 +221,7 @@ describe('buildWorkingInputs', () => {
     expect(inputs.server).toEqual({ turns: [], lastEnded: undefined, atMs: T0 - 500 });
   });
 
-  test('busy and retry frames are working; every other status is idle', () => {
+  test('only an explicit idle frame is idle; unknown runtime states fail safe as working', () => {
     const at = (status: { type: string } | undefined) =>
       buildWorkingInputs({
         turn: undefined,
@@ -238,9 +238,44 @@ describe('buildWorkingInputs', () => {
     expect(at({ type: 'busy' })).toEqual({ type: 'busy', origin: 'wire', atMs: T0 });
     expect(at({ type: 'retry' })).toEqual({ type: 'retry', origin: 'wire', atMs: T0 });
     expect(at({ type: 'idle' })).toEqual({ type: 'idle', origin: 'wire', atMs: T0 });
+    // Runtime adapters must speak the OpenCode vocabulary, but a newer or
+    // malformed active state must not hide the user's Stop control.
+    expect(at({ type: 'running' })).toEqual({ type: 'busy', origin: 'wire', atMs: T0 });
+    expect(at({ type: 'compacting' })).toEqual({ type: 'busy', origin: 'wire', atMs: T0 });
     // No status frame observed at all is NOT an idle frame — silence is not
     // an observation, and treating it as one is how a live turn got unmasked.
     expect(at(undefined)).toBeNull();
+  });
+
+  test('an unknown active status cannot hide a long server-authorized turn', () => {
+    const nowMs = T0 + STREAM_OBSERVATION_MAX_MS + 1;
+    const inputs = buildWorkingInputs({
+      turn: {
+        turns: [
+          {
+            turn_token: 'tt-pi',
+            state: 'active' as const,
+            message_id: 'msg-pi',
+            opencode_session_id: 'ses-pi',
+            started_at: new Date(T0).toISOString(),
+            accepted_at: null,
+          },
+        ],
+        atMs: nowMs,
+      },
+      inbox: undefined,
+      status: { type: 'running' } as never,
+      statusAtMs: T0,
+      activityAtMs: T0,
+      optimistic: null,
+      nowMs,
+    });
+
+    expect(projectWorking(inputs)).toMatchObject({
+      state: 'working',
+      source: 'server',
+      serverOpenTurnToken: 'tt-pi',
+    });
   });
 
   test('a local origin is threaded through to the stream input', () => {
@@ -478,6 +513,31 @@ describe('readSessionTurnObservation', () => {
     // Stamped from the SERVER's clock. Stamping arrival would let a shared
     // bundle claim to be newer than the read it came from.
     expect(observation.atMs).toBe(Date.parse(BUNDLE_AT));
+  });
+
+  test('a repeat read asks /turn even while a bundle is claimable', async () => {
+    // Same window as the inbox reader's: a bundle stays claimable for seconds,
+    // and a read issued BECAUSE something changed — the drain-floor
+    // invalidation, a status frame — must not be answered by the snapshot
+    // taken before the change. Only the open burst (no read held yet) shares.
+    resetSessionOpenBundles();
+    const urls = mockFetch((url) =>
+      url.includes('/snapshot')
+        ? {
+            observed_at: BUNDLE_AT,
+            turn: { known: true, turns: [] },
+            queue: { known: true, prompts: [], held: false },
+            transcript: { known: true, requested: false },
+            config: { known: true },
+            models: { known: false, reason: 'x' },
+            session: { session_id: 'S1' },
+          }
+        : { turns: [{ turn_token: 'tt-3', state: 'active' }] },
+    );
+    openSessionBundle('P1', 'S1');
+    const observation = await readSessionTurnObservation('P1', 'S1', { bundle: false });
+    expect(urls.some((u) => u.endsWith('/turn'))).toBe(true);
+    expect(observation.turns[0]?.turn_token).toBe('tt-3');
   });
 
   test('reads /turn when no bundle is in flight — the steady-state poll', async () => {

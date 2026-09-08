@@ -9,8 +9,8 @@
 // reimplements just the props the vendored viewers actually use on top of
 // the `@radix-ui/react-scroll-area` primitive already used elsewhere in the
 // app, so the vendor diff in pdf-viewer.tsx stays a single import swap.
-import * as React from 'react';
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area';
+import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -46,7 +46,8 @@ type ScrollAreaCompatProps = Omit<
    * satisfy Radix's own nominal type anyway.
    */
   viewportProps?: React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Viewport> & {
-    ref?: ((instance: HTMLDivElement | null) => void) | React.RefObject<HTMLDivElement | null> | null;
+    ref?:
+      ((instance: HTMLDivElement | null) => void) | React.RefObject<HTMLDivElement | null> | null;
   };
   viewportRef?: React.Ref<HTMLDivElement>;
 };

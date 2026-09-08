@@ -79,53 +79,70 @@ describe('provider-neutral preview lifecycle', () => {
     }
   });
 
-  it('reclaims disk both before the pull and after the stack is proven', () => {
-    // A branch environment is reused forever, so nothing else ever reclaims the
-    // images each deploy supersedes: ~3 GB per deploy on a 50 GB disk filled it
-    // to 100% and the stack stopped coming up.
-    //
-    // TWO prunes, deliberately, because one is not enough:
-    //  - AFTER the health assertion is the steady-state pass. The running
-    //    containers pin exactly the images worth keeping, so it is the safest
-    //    place to reclaim. It was also the ONLY pass, and that was the bug: it
-    //    is gated on a health check, and a full disk is precisely the state
-    //    that prevents the stack becoming healthy. The cleanup sat behind the
-    //    failure it existed to prevent.
-    //  - BEFORE the ~3 GB pull, gated on the disk actually being tight, is the
-    //    one that can rescue a box already full.
-    // Neither may ever fail a deploy that is otherwise healthy.
+  it('keeps a branch environment serving through the three ways it went dark', () => {
+    // pi.kortix.com, 2026-09-04: 34 GB of images and 0 bytes free took the
+    // stack down; a failed deploy then left every container in Created; and
+    // the next deploys died at checkout because the reused sandbox's pnpm
+    // store predated a dependency the branch had added. Each has its own line
+    // in the bootstrap now, and each is asserted here by the text a deploy
+    // actually runs.
     const script = buildPreviewBootstrapScript({
       repository: 'kortix-ai/suna',
       ref: 'pi-worker',
       sha: 'a'.repeat(40),
       prNumber: 6998,
-      origin: 'https://x.example.test',
+      origin: 'https://pi.example.test',
       runTests: false,
     });
-    const health = script.lastIndexOf('$HEALTH');
-    expect(script.indexOf('docker image prune')).toBeLessThan(health);
-    expect(script.lastIndexOf('docker image prune')).toBeGreaterThan(health);
+    // 1. The offline install is the fast path, not the only path.
+    expect(script).toContain('pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile');
+    // 2. Disk is reclaimed BEFORE the ~2.5 GB pull, gated on the disk being tight.
+    const prune = script.indexOf('docker image prune -af');
+    const pull = script.indexOf('pull --policy always');
+    expect(prune).toBeGreaterThan(-1);
+    expect(prune).toBeLessThan(pull);
+    expect(script).toContain('if [ "${used:-0}" -ge 70 ]; then');
+    // 3. A stack that cannot come up puts the last good image set back and
+    //    still fails the deploy — a fallback, never a pass.
+    expect(script).toContain('restore_last_good() {');
+    expect(script).toContain('cp "$STATE/last-good.env"');
+    expect(script).toContain('test "$stack_attempt" -lt 2 || restore_last_good');
+    const restoreBody = script.slice(script.indexOf('restore_last_good() {'), script.indexOf('pull --policy always'));
+    expect(restoreBody).toContain('exit 1');
+    // The copy that makes the fallback possible is taken only AFTER the
+    // health check proves this image set on this commit.
+    const health = script.indexOf('curl -fsS --max-time 10 "$HEALTH"');
+    const saved = script.indexOf('"$STATE/last-good.env"', health);
+    expect(saved).toBeGreaterThan(health);
+    // 4. The guard is installed as soon as docker is up, before configure or
+    //    stack can fail — a dead deploy still leaves a watcher behind.
+    const guard = script.indexOf('docker run -d --name kortix-preview-guard');
+    // The phase markers are written with a REAL newline inside the quotes (the
+    // template's \n), so the search string needs one too.
+    const configure = script.indexOf("printf 'configure\n' > \"$PHASE\"");
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(configure);
+    expect(script).toContain("<<'KORTIX_PREVIEW_GUARD_EOF'");
+    expect(script).toContain('-e KORTIX_PREVIEW_INSTANCE=pr-6998');
+    // Same instance dir the deploy uses; the guard's compose resolves the same files.
+    expect(script).toContain('-v /workspace/kortix-preview:/workspace/kortix-preview');
+  });
 
-    // The early pass runs only when the disk is tight — an unconditional prune
-    // before every pull would throw away the layer cache the pull relies on.
-    const prePull = script.slice(0, health);
-    expect(prePull).toMatch(/if \[ "\$\{used:-0\}" -ge 80 \]/);
-    // An unreadable df must read as 0 and prune nothing, never as "prune".
-    expect(prePull).toContain('${used:-0}');
+  it('repairs the Node floor inside a reused branch sandbox before pnpm runs', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'i18n-complete-serbian',
+      sha: 'a'.repeat(40),
+      prNumber: 7109,
+      origin: 'https://preview.example.test',
+    });
+    const repair = script.indexOf('node-v22.22.2-linux-x64.tar.xz');
+    const install = script.indexOf('pnpm install --offline --frozen-lockfile');
 
-    // No age filter: `until=24h` reclaimed 0 B on the real box, because a
-    // branch environment redeploys several times a day and every superseded
-    // image is younger than a day. Unfiltered it freed 20.35 GB.
-    const pruneLines = script
-      .split('\n')
-      .filter((l) => l.trimStart().startsWith('docker ') && l.includes('prune'));
-    expect(pruneLines).toHaveLength(5);
-    for (const line of pruneLines) {
-      // Never fatal — a healthy deploy must not fail because a prune did.
-      expect(line).toContain('|| true');
-      expect(line).not.toContain('until=');
-    }
-    expect(pruneLines.some((l) => l.includes('docker image prune -af'))).toBe(true);
+    expect(repair).toBeGreaterThan(-1);
+    expect(repair).toBeLessThan(install);
+    expect(script).toContain('88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a');
+    expect(script).toContain('test "$(node --version)" = "v22.22.2"');
   });
 
   it('health-checks the stack locally, never through the public name', () => {
@@ -398,7 +415,9 @@ describe('unhealthy-container recovery', () => {
     expect(s).toContain('docker restart');
     // Before the wait, not after: the retry loop reruns the same comparison
     // and reaches the same no-op, so recovering on failure would never fire.
-    expect(s.indexOf('health=unhealthy')).toBeLessThan(s.indexOf('up -d --wait'));
+    const stackLoop = s.indexOf('for stack_attempt in 1 2; do');
+    expect(s.indexOf('health=unhealthy')).toBeLessThan(stackLoop);
+    expect(stackLoop).toBeLessThan(s.indexOf('up -d --wait', stackLoop));
   });
 
   it('scopes the restart to this instance, never a co-tenant container', () => {
@@ -407,8 +426,10 @@ describe('unhealthy-container recovery', () => {
 
   it('is a restart, never a recreate — volumes and data must survive', () => {
     const s = script();
-    expect(s).not.toContain('docker rm ');
-    expect(s).not.toContain('--force-recreate');
+    const recovery = s.slice(s.indexOf('unhealthy="'), s.indexOf('for stack_attempt in 1 2; do'));
+    expect(recovery).toContain('xargs -r docker restart');
+    expect(recovery).not.toContain('docker rm ');
+    expect(recovery).not.toContain('--force-recreate');
   });
 });
 

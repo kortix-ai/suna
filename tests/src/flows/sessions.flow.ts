@@ -742,7 +742,7 @@ flow(
 );
 
 /**
- * SESS-27 — the pi worker transcript is a control-plane log. This flow calls
+ * SESS-30 — the pi worker transcript is a control-plane log. This flow calls
  * the real HTTP routes as a project owner. The local fixture writes the
  * project and session directly to PostgreSQL, so this proves append
  * idempotency, conflict detection, ordering, and stopped-runtime readability
@@ -751,7 +751,7 @@ flow(
  * runtime credential.
  */
 flow(
-  'SESS-27',
+  'SESS-30',
   {
     domain: 'sessions',
     routes: [
@@ -1351,7 +1351,8 @@ flow('SESS-29', {
     response.status(200);
     if (response.text() !== content) throw new Error('attachment bytes changed');
     if (response.header('content-type') !== 'text/plain') throw new Error('attachment MIME changed');
-    if (response.header('etag') !== `"${sha256}"`) throw new Error('attachment digest changed');
+    if (createHash('sha256').update(response.text()).digest('hex') !== sha256) throw new Error('attachment digest changed');
+    if (response.header('etag')?.replace(/^W\//, '') !== `"${sha256}"`) throw new Error('attachment ETag changed');
     if (!response.header('cache-control')?.includes('private')) throw new Error('attachment is publicly cacheable');
     if (response.header('x-content-type-options') !== 'nosniff') throw new Error('attachment can be MIME-sniffed');
   });

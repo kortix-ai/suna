@@ -1,9 +1,9 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { getFileStatus } from '../api/runtime-files';
 import type { GitFileStatus } from '@/features/file-browser/types';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import { getFileStatus } from '../api/runtime-files';
 import { useCurrentProject, useServerHealth } from './use-server-health';
 
 export const gitStatusKeys = {

@@ -2,22 +2,14 @@ import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
-import {
-  back,
-  commands,
-  connect,
-  custom,
-  hero,
-  rules,
-  surfaces,
-  thread,
-} from '@/features/marketing/channels/content';
+import { getLocalizedChannelsContent } from '@/features/marketing/channels/content';
+import { ChannelsHeroVisual } from '@/features/marketing/channels/hero-visual';
 import { SurfaceTable } from '@/features/marketing/channels/surface-table';
 import { ThreadMock } from '@/features/marketing/channels/thread-mock';
-import { ChannelsHeroVisual } from '@/features/marketing/channels/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
+import { getTranslations } from '@/i18n/get-translations';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -39,7 +31,10 @@ function SectionDivider(): ReactNode {
  * Re-verify against `packages/manifest-schema/src/constants.ts` before adding a
  * surface to this page.
  */
-export default function ChannelsPage(): ReactNode {
+export default async function ChannelsPage(): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { back, commands, connect, custom, hero, rules, surfaces, thread } =
+    getLocalizedChannelsContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero

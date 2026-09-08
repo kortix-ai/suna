@@ -18,17 +18,13 @@ import {
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import type {
-  SortField,
-  SortOrder,
-  ViewMode,
-} from '@/features/file-browser/store/files-store';
+import type { SortField, SortOrder, ViewMode } from '@/features/file-browser/store/files-store';
 import { isWithinRoot, useFilesStore } from '@/features/file-browser/store/files-store';
 import { cn } from '@/lib/utils';
 import {
   CaretRightIcon as ChevronRight,
-  DownloadIcon as Download,
   DotsThreeIcon as DotsThree,
+  DownloadIcon as Download,
   FilePlusIcon,
   FolderPlusIcon,
   SquaresFourIcon as LayoutGrid,
@@ -38,7 +34,7 @@ import {
   MagnifyingGlassIcon as Search,
   UploadSimpleIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   useCallback,
   useEffect,
@@ -179,9 +175,7 @@ export function DrivePathBar({ rootLabel, as = 'inline', className }: DrivePathB
   const isRow = as === 'row';
   if (isRow && !isEditing && visibleSegments.length === 0) return null;
 
-  const rowClass = isRow
-    ? 'border-border/60 h-9 w-full shrink-0 border-b px-2'
-    : 'min-w-0 flex-1';
+  const rowClass = isRow ? 'border-border/60 h-9 w-full shrink-0 border-b px-2' : 'min-w-0 flex-1';
 
   if (isEditing) {
     return (
@@ -319,6 +313,7 @@ export function DriveViewMenu({
   showSearch = false,
   showHiddenToggle = false,
 }: DriveViewMenuProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const viewMode = useFilesStore((s) => s.viewMode);
   const setViewMode = useFilesStore((s) => s.setViewMode);
   const sortBy = useFilesStore((s) => s.sortBy);
@@ -331,12 +326,12 @@ export function DriveViewMenu({
 
   return (
     <DropdownMenu>
-      <Hint label="View options" side="bottom">
+      <Hint label={tI18nComplete.raw('text1d55ff7c387c')} side="bottom">
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="View options"
+            aria-label={tI18nComplete.raw('text1d55ff7c387c')}
             className="text-muted-foreground hover:text-foreground active:scale-[0.96]"
           >
             <DotsThree className="size-4" />
@@ -349,7 +344,7 @@ export function DriveViewMenu({
             trigger already answers "what is it set to?" without opening. */}
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <span className="min-w-0 flex-1">View</span>
+            <span className="min-w-0 flex-1">{tI18nComplete.raw('textdcc839a4015c')}</span>
             <span className="text-muted-foreground/70">{VIEW_LABEL[viewMode]}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-40">
@@ -359,11 +354,11 @@ export function DriveViewMenu({
             >
               <DropdownMenuRadioItem value="list">
                 <ListSolid />
-                List
+                {tI18nComplete.raw('text6f202f54a7b2')}
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="grid">
                 <LayoutGrid />
-                Grid
+                {tI18nComplete.raw('text0d7d12ac624c')}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
@@ -371,13 +366,17 @@ export function DriveViewMenu({
 
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <span className="min-w-0 flex-1">Sort by</span>
+            <span className="min-w-0 flex-1">{tI18nComplete.raw('textc9129025bd3f')}</span>
             <span className="text-muted-foreground/70">{SORT_LABEL[sortBy]}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-44">
             <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as SortField)}>
-              <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="type">Type</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="name">
+                {tI18nComplete.raw('textdcd1d5223f73')}
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="type">
+                {tI18nComplete.raw('textbaaddf70fb5d')}
+              </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
             {/* Two named options, not one button labelled with the state it is
@@ -387,8 +386,12 @@ export function DriveViewMenu({
               value={sortOrder}
               onValueChange={(v) => setSortOrder(v as SortOrder)}
             >
-              <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="asc">
+                {tI18nComplete.raw('text77184595bde3')}
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="desc">
+                {tI18nComplete.raw('text79479a6c76d8')}
+              </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
@@ -400,23 +403,23 @@ export function DriveViewMenu({
           // above already put theirs. One column for "this is the current
           // value", one column for action icons.
           <DropdownMenuCheckboxItem reverse checked={showHidden} onCheckedChange={toggleHidden}>
-            Show hidden files
+            {tI18nComplete.raw('textb5ede7fb45df')}
           </DropdownMenuCheckboxItem>
         )}
         {showSearch && (
           <DropdownMenuItem onClick={toggleSearch}>
             <Search />
-            Find a file
-            <DropdownMenuShortcut>⌘P</DropdownMenuShortcut>
+            {tI18nComplete.raw('text4230011827fe')}
+            <DropdownMenuShortcut>{tI18nComplete.raw('text5eeb1e6ce9d5')}</DropdownMenuShortcut>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={onRefresh} disabled={isRefreshing}>
           {isRefreshing ? <Loading className="size-4 shrink-0" /> : <RefreshCw />}
-          Refresh
+          {tI18nComplete.raw('text0e9161011702')}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onDownloadDir} disabled={isDownloading}>
           {isDownloading ? <Loading className="size-4 shrink-0" /> : <Download />}
-          Download folder
+          {tI18nComplete.raw('text9e4c47f88d69')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -473,39 +476,46 @@ export function DriveNewMenuItems({
   onNewFile?: () => void;
   onNewFolder?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       <Item onClick={onUpload}>
         <UploadSimpleIcon className="size-3.5 shrink-0" />
-        Upload files
+        {tI18nComplete.raw('text4118deee6e13')}
       </Item>
       <MenuSeparator />
       <Item onClick={onNewFile}>
         <FilePlusIcon className="size-3.5 shrink-0" />
-        New file
+        {tI18nComplete.raw('text44dedd0f97fe')}
       </Item>
       <Item onClick={onNewFolder}>
         <FolderPlusIcon className="size-3.5 shrink-0" />
-        New folder
+        {tI18nComplete.raw('textcf28f49ec597')}
       </Item>
     </>
   );
 }
 
 export function DriveNewMenu({ onUpload, onNewFile, onNewFolder, compact }: DriveNewMenuProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!hasWriteActions({ onUpload, onNewFile, onNewFolder })) return null;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {compact ? (
-          <Button variant="secondary" size="icon-sm" aria-label="New" className="active:scale-[0.96]">
+          <Button
+            variant="secondary"
+            size="icon-sm"
+            aria-label={tI18nComplete.raw('text18fdd549b2ed')}
+            className="active:scale-[0.96]"
+          >
             <PlusIcon className="size-4" />
           </Button>
         ) : (
           <Button variant="secondary" size="sm" className="gap-1.5 active:scale-[0.96]">
             <PlusIcon className="size-3.5 shrink-0" />
-            New
+            {tI18nComplete.raw('text18fdd549b2ed')}
           </Button>
         )}
       </DropdownMenuTrigger>

@@ -1,6 +1,7 @@
 'use client';
 
 import type { CostSummary } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { DateRangePicker, type CostRange } from '@/components/ui/date-range-picker';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -50,6 +51,7 @@ export function CostLevelShell({
   controls,
   children,
 }: CostLevelShellProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -58,7 +60,7 @@ export function CostLevelShell({
       </div>
 
       {summaryError ? (
-        <InfoBanner tone="destructive" title="Failed to load cost summary">
+        <InfoBanner tone="destructive" title={tI18nComplete.raw('textbb53fb4d70fa')}>
           {summaryError.message}
         </InfoBanner>
       ) : null}

@@ -26,13 +26,13 @@ import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/pr
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
   SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
@@ -43,7 +43,8 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(na
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
   const { state, setOpenMobile, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
@@ -71,9 +72,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       <span className="shrink-0">
         <NavigationArrowIcon className="rotate-90" />
       </span>
-      <span>
-        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491')}
-      </span>
+      <span>{t('newSession')}</span>
       <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/menu-button:opacity-100">
         <Kbd>{modSymbol}</Kbd>
         <Kbd>J</Kbd>
@@ -115,7 +114,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       // square fill behind the flyout card and it showed at all four corners.
       className="[scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
-      <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
+      <SidebarHeader
+        className="space-y-2"
+        style={{
+          paddingTop:
+            'max(calc(var(--spacing) * 2), env(safe-area-inset-top, 0px), var(--kx-titlebar-inset, 0px))',
+        }}
+      >
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
             single layout. Three controls on one 240px row, all 32px tall: the
             merged brand/switcher control, search, and the panel's own collapse
@@ -144,7 +149,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               side="bottom"
               label={
                 <span className="flex items-center gap-1.5">
-                  Search
+                  {t('search')}
                   <KbdGroup>
                     <Kbd className="font-mono">{modSymbol}</Kbd>
                     <Kbd className="font-mono">K</Kbd>
@@ -154,7 +159,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             >
               <Button
                 type="button"
-                aria-label="Search"
+                aria-label={t('search')}
                 variant="ghost"
                 size="icon"
                 onClick={handleOpenSearch}
@@ -173,7 +178,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
                 label={
                   <span className="flex items-center gap-1.5">
-                    {isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                    {isExpanded ? t('collapse') : t('pin')}
                     <KbdGroup>
                       <Kbd className="font-mono">{modSymbol}</Kbd>
                       <Kbd className="font-mono">B</Kbd>
@@ -183,7 +188,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               >
                 <Button
                   type="button"
-                  aria-label={isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                  aria-label={isExpanded ? t('collapse') : t('pin')}
                   variant="ghost"
                   size="icon"
                   onClick={toggleSidebar}
@@ -247,7 +252,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         </div>
       </SidebarContent>
 
-      <SidebarRail />
+      <SidebarRail aria-label={t('resize')} title={t('resizeHelp')} />
     </Sidebar>
   );
 }

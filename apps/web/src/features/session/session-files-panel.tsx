@@ -1,7 +1,8 @@
 'use client';
 
 import { GitDiffIcon as FileDiff, SparkleIcon as Sparkles } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -47,6 +48,7 @@ export function SessionFilesPanel({
   chatSessionId?: string;
 } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const statusBadges = useLocalizedUiCatalog(STATUS_BADGE);
   // The git branch == the ROUTE session id; SessionLayout's `sessionId` prop is
   // the OpenCode chat session id (used to message the agent).
   const { id: projectId, sessionId: gitSessionId } = useParams<{
@@ -82,9 +84,9 @@ export function SessionFilesPanel({
     if (!chatSessionId) {
       try {
         await navigator.clipboard.writeText(prompt);
-        successToast('Prompt copied — paste it into the chat to ask your agent.');
+        successToast(tHardcodedUi.raw('i18nComplete.textd8bdf30bcb89'));
       } catch {
-        errorToast('Could not copy to clipboard.');
+        errorToast(tHardcodedUi.raw('i18nComplete.text9dca2ddf3bf7'));
       }
       return;
     }
@@ -92,10 +94,10 @@ export function SessionFilesPanel({
     setAsking(true);
     try {
       await sendToSession(chatSessionId, prompt);
-      successToast('Asked your agent to propose these changes for review.');
+      successToast(tHardcodedUi.raw('i18nComplete.textcf02eea4aa80'));
     } catch (err) {
       errorToast(
-        err instanceof Error ? err.message : 'Could not reach the agent. Please try again.',
+        err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.textfb09096cada7'),
       );
     } finally {
       setAsking(false);
@@ -147,7 +149,7 @@ export function SessionFilesPanel({
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <div className="text-muted-foreground/60 mb-2 flex items-center gap-1.5 px-1 text-xs font-medium tracking-wide uppercase">
           <FileDiff className="size-3.5" />
-          Changes
+          {tHardcodedUi.raw('i18nComplete.textbbd4b6a86bc6')}
           {changedCount > 0 && <span className="text-muted-foreground/40">· {changedCount}</span>}
         </div>
 
@@ -159,7 +161,7 @@ export function SessionFilesPanel({
         ) : changedCount > 0 ? (
           <div className="space-y-0.5">
             {changedFiles.map((file) => {
-              const badge = STATUS_BADGE[file.status] ?? STATUS_BADGE.modified;
+              const badge = statusBadges[file.status] ?? statusBadges.modified;
               const name = file.path.split('/').pop() || file.path;
               const dir = file.path.slice(0, file.path.length - name.length);
               return (
@@ -170,10 +172,7 @@ export function SessionFilesPanel({
                   className="hover:bg-muted/60 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors"
                 >
                   <span
-                    className={cn(
-                      'w-3 shrink-0 text-center font-mono font-semibold',
-                      badge.cls,
-                    )}
+                    className={cn('w-3 shrink-0 text-center font-mono font-semibold', badge.cls)}
                     title={badge.label}
                   >
                     {badge.letter}

@@ -94,9 +94,7 @@ describe('runSignOut, happy path', () => {
     // running it second would silently stop revoking anything.
     const r = recorder();
     return runSignOut(r.steps, FAST).then(() => {
-      expect(r.calls.indexOf('finalizeServerSession')).toBeLessThan(
-        r.calls.indexOf('endSession'),
-      );
+      expect(r.calls.indexOf('finalizeServerSession')).toBeLessThan(r.calls.indexOf('endSession'));
     });
   });
 });
@@ -378,7 +376,9 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
     });
 
     const started = Date.now();
-    await runSignOut(r.steps, { budgets: { finalizeServerSession: 20, endSession: 20, resetClientState: 20 } });
+    await runSignOut(r.steps, {
+      budgets: { finalizeServerSession: 20, endSession: 20, resetClientState: 20 },
+    });
     const elapsed = Date.now() - started;
 
     // Four bounded steps at 20ms. Generous ceiling so a loaded CI box does not

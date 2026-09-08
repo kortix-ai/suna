@@ -3,15 +3,6 @@ title: TypeScript SDK
 description: Install, authenticate, and send your first message with the typed SDK.
 ---
 
-import { Card, Cards } from '@/components/markdown/docs-card';
-import {
-  AtomIcon,
-  BookOpenIcon,
-  ClipboardTextIcon,
-  GitBranchIcon,
-  KeyIcon,
-} from '@/lib/icons/ssr';
-
 `@kortix/sdk` is the typed client for the Kortix platform. It wraps the Kortix
 REST API and OpenCode REST runtime in one interface. The core client is
 fetch-based and runs in Node, Bun, and browsers.
@@ -85,20 +76,20 @@ An agent-minted session token already carries its project scope. Use
 
 `createKortix` gives you an imperative client: call methods for every action, like projects, sessions, secrets, and triggers. `@kortix/sdk/react` gives you hooks for live UI data — `useSession` runs a whole session in one hook.
 
-<Cards>
-  <Card icon={<ClipboardTextIcon />} title="Full example" href="/docs/sdk/example">
+<CardGroup>
+  <Card icon="clipboard-list" title="Full example" href="/docs/sdk/example">
     Zero to a streaming agent reply.
   </Card>
-  <Card icon={<KeyIcon />} title="Auth" href="/docs/sdk/auth">
+  <Card icon="key" title="Auth" href="/docs/sdk/auth">
     API keys and Supabase JWTs.
   </Card>
-  <Card icon={<GitBranchIcon />} title="Sessions" href="/docs/sdk/sessions">
+  <Card icon="git-branch" title="Sessions" href="/docs/sdk/sessions">
     Lifecycle, streaming, and error handling.
   </Card>
-  <Card icon={<AtomIcon />} title="React hooks" href="/docs/sdk/react">
+  <Card icon="atom" title="React hooks" href="/docs/sdk/react">
     `useSession` and other reactive hooks.
   </Card>
-  <Card icon={<BookOpenIcon />} title="Reference" href="/docs/sdk/reference">
+  <Card icon="book-open" title="Reference" href="/docs/sdk/reference">
     The full client, modules, turns, and distribution.
   </Card>
-</Cards>
+</CardGroup>

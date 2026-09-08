@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `IdentityConfetti` — the burst made of ONE workspace's own icon.
  *
@@ -46,6 +47,7 @@ const SAMPLES = [
 ] as const;
 
 export function ConfettiSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The burst fires on mount, so a repeat needs a new mount. One counter per
   // row, used as the `key` — no imperative handle to hold, and no way for two
   // rows to interfere with each other's burst.
@@ -54,10 +56,7 @@ export function ConfettiSection() {
   return (
     <div>
       <p className="text-muted-foreground mb-6 text-base leading-relaxed">
-        A celebration should be about the thing being celebrated. This burst is made of the
-        workspace&apos;s own icon — its glyph in its own colour, its emoji as-is, or the chalk
-        initial tile it wears when it has neither. The precedence is EntityAvatar&apos;s, extracted
-        into src/lib/confetti-identity.ts, so the particles can never show a face the tile does not.
+        {tI18nComplete.raw('textdbf8335a82da')}
       </p>
 
       <div className="space-y-2">
@@ -79,7 +78,7 @@ export function ConfettiSection() {
                 setBursts((current) => ({ ...current, [sample.id]: (current[sample.id] ?? 0) + 1 }))
               }
             >
-              Throw it
+              {tI18nComplete.raw('textd81e7196d898')}
             </Button>
             {bursts[sample.id] ? (
               <IdentityConfetti

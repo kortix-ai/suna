@@ -2,7 +2,10 @@ import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { ROLES_TRANSLATION_KEYS } from '@/i18n/roles-translation-keys.generated';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ArtifactPanel } from './artifact';
@@ -30,18 +33,24 @@ const MODE_STEP: Record<RoleContent['cadence']['modes'][number]['id'], string> =
  * The accuracy gate that governs every word on these pages lives in
  * `./types.ts`. Read it before editing any role file.
  */
-export function RolePage({ role }: { role: RoleContent }): ReactNode {
-  const others = ROLES.filter((item) => item.slug !== role.slug);
+export function RolePage({ role: sourceRole }: { role: RoleContent }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const role = localizeUiCatalog(sourceRole, tI18nComplete, ROLES_TRANSLATION_KEYS);
+  const others = localizeUiCatalog(
+    ROLES.filter((item) => item.slug !== role.slug),
+    tI18nComplete,
+    ROLES_TRANSLATION_KEYS,
+  );
 
   return (
     <div className="bg-background relative">
       <CapabilityHero
-        eyebrow={`Solutions · ${role.name}`}
+        eyebrow={tI18nComplete('text2b3168198f05', { role: role.name })}
         title={role.hero.title}
         sub={role.hero.sub}
-        ctaPrimary="Get started"
+        ctaPrimary={tI18nComplete.raw('text61e8d44ad423')}
         ctaPrimaryHref="/auth"
-        ctaSecondary="Talk to us"
+        ctaSecondary={tI18nComplete.raw('text1d1d94fb5397')}
         ctaSecondaryHref="/contact"
         visual={<RoleHeroVisual role={role} />}
       />
@@ -49,7 +58,7 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
       {/* ── 1 · what you hand off ───────────────────────────────────────── */}
       <Section id="handoff">
         <SectionHeader
-          eyebrow="The handoff"
+          eyebrow={tI18nComplete.raw('textea4e9e8cf07c')}
           title={role.handoff.title}
           description={role.handoff.sub}
         />
@@ -80,7 +89,7 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
       {/* ── 2 · what comes back ─────────────────────────────────────────── */}
       <Section id="output">
         <SectionHeader
-          eyebrow="The output"
+          eyebrow={tI18nComplete.raw('text3e7e7aaae723')}
           title={role.output.title}
           description={role.output.sub}
         />
@@ -124,7 +133,7 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
       {/* ── 3 · where it reaches ────────────────────────────────────────── */}
       <Section id="reach">
         <SectionHeader
-          eyebrow="Where it reaches"
+          eyebrow={tI18nComplete.raw('textd1b087579f06')}
           title={role.reach.title}
           description={role.reach.sub}
         />
@@ -147,7 +156,7 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
       {/* ── 4 · how it runs ─────────────────────────────────────────────── */}
       <Section id="cadence">
         <SectionHeader
-          eyebrow="How it runs"
+          eyebrow={tI18nComplete.raw('text934baec253f2')}
           title={role.cadence.title}
           description={role.cadence.sub}
         />
@@ -195,10 +204,10 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
         <Reveal delay={0.1}>
           <div className="mt-6 flex flex-wrap gap-3">
             <Button size="lg" variant="secondary" asChild>
-              <Link href="/security">How the isolation works</Link>
+              <Link href="/security">{tI18nComplete.raw('text35cf7d0a206e')}</Link>
             </Button>
             <Button size="lg" variant="secondary" asChild>
-              <Link href="/connectors">How connectors are brokered</Link>
+              <Link href="/connectors">{tI18nComplete.raw('text0922d984c6b6')}</Link>
             </Button>
           </div>
         </Reveal>
@@ -210,11 +219,10 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
       <Section id="other-teams">
         <Reveal>
           <h2 className="text-foreground text-2xl font-medium tracking-tight sm:text-3xl">
-            The same platform, the other teams
+            {tI18nComplete.raw('textbc06bb3d377c')}
           </h2>
           <p className="text-muted-foreground mt-4 max-w-2xl text-base leading-relaxed">
-            One project, one set of connectors, one memory that compounds. Each team writes the
-            skills for its own work; nobody stands up a second system.
+            {tI18nComplete.raw('text9d1b6cac564e')}
           </p>
         </Reveal>
 
@@ -241,7 +249,7 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
             href="/solutions"
             className="text-foreground hover:text-muted-foreground mt-6 inline-block font-mono text-xs tracking-wider uppercase transition-colors"
           >
-            All solutions →
+            {tI18nComplete.raw('text503b88a2f820')}
           </Link>
         </Reveal>
       </Section>

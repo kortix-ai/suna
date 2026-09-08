@@ -17,12 +17,14 @@
 
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
@@ -32,19 +34,17 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
-import { markPostAuthIntent } from '@/lib/onboarding/post-auth-intent';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
   type CredentialsMode,
   type EmailFlowMode,
-  SIGNUPS_CLOSED_MESSAGE,
-  SSO_REQUIRED_MESSAGE,
   credentialsCopy,
   parseAuthMethods,
   passwordFailureCopy,
 } from '@/lib/auth/unified-auth-flow';
 import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
+import { markPostAuthIntent } from '@/lib/onboarding/post-auth-intent';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import {
   createClient as createBrowserSupabaseClient,
@@ -82,6 +82,7 @@ function PasswordInput({
   autoFocus?: boolean;
   invalid?: boolean;
 }) {
+  const t = useTranslations('auth.unified');
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
@@ -101,7 +102,7 @@ function PasswordInput({
         type="button"
         tabIndex={-1}
         onClick={() => setShow((s) => !s)}
-        aria-label={show ? 'Hide password' : 'Show password'}
+        aria-label={show ? t('hidePassword') : t('showPassword')}
         className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex w-10 items-center justify-center transition-colors"
       >
         {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -119,6 +120,8 @@ function AuthCardForm({
   returnUrl: string;
   mobileCallbackState: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('auth.unified');
   const prefersReducedMotion = useReducedMotion();
   const enabledMethods = useMemo(() => parseAuthMethods(getEnv().AUTH_METHODS), []);
   const magicLinkEnabled = enabledMethods.includes('magic');
@@ -297,7 +300,7 @@ function AuthCardForm({
       }
     } catch (err: any) {
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      failWith(err?.message || 'An unexpected error occurred');
+      failWith(err?.message || t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -370,7 +373,7 @@ function AuthCardForm({
     const trimmed = email.trim();
     if (!trimmed) {
       clearNotices();
-      setInfo('Enter your work email above, then choose single sign-on.');
+      setInfo(t('sso.enterWorkEmail'));
       emailRef.current?.focus();
       return;
     }
@@ -380,9 +383,7 @@ function AuthCardForm({
       const outcome = await attemptSsoRedirect(trimmed);
       if (outcome === 'none') {
         const domain = emailDomain(trimmed) ?? trimmed;
-        failWith(
-          `Single sign-on isn't set up for "${domain}". Ask your admin to configure it, or continue with email.`,
-        );
+        failWith(t('sso.notConfigured', { domain }));
       }
     } finally {
       setPendingAction(null);
@@ -425,13 +426,13 @@ function AuthCardForm({
       }
       const { mode: resolved } = await resolveAuthMode(trimmed);
       if (resolved === 'closed') {
-        failWith(SIGNUPS_CLOSED_MESSAGE);
+        failWith(t('errors.signupsClosed'));
         return;
       }
       if (resolved === 'sso') {
         // Enforced-SSO domain that slipped past the probe above (e.g. SAML
         // temporarily unreachable) — never open the password door.
-        failWith(SSO_REQUIRED_MESSAGE);
+        failWith(t('errors.ssoRequired'));
         return;
       }
       setCredMode(resolved);
@@ -458,11 +459,11 @@ function AuthCardForm({
     try {
       const { mode: resolved } = await resolveAuthMode(target);
       if (resolved === 'closed') {
-        failWith(SIGNUPS_CLOSED_MESSAGE);
+        failWith(t('errors.signupsClosed'));
         return;
       }
       if (resolved === 'sso') {
-        failWith(SSO_REQUIRED_MESSAGE);
+        failWith(t('errors.ssoRequired'));
         return;
       }
       setCredMode(resolved);
@@ -486,7 +487,7 @@ function AuthCardForm({
       formData.set('mobileCallback', 'true');
       formData.set('mobileCallbackState', mobileCallbackState);
     }
-    const copy = credentialsCopy(credMode);
+    const copy = credentialsCopy(credMode, tI18nComplete);
     if (copy.submitsAs === 'signup') {
       // Single password field (with reveal toggle) — the server still expects
       // a confirmation value, so mirror it.
@@ -507,28 +508,40 @@ function AuthCardForm({
         (!('success' in result) || !(result as any).success) &&
         !(result as any).requiresEmailConfirmation
       ) {
-        const failure = passwordFailureCopy({
-          mode: credMode,
-          code: (result as any).code ?? null,
-          fallback: result.message as string,
-        });
+        const failureCode = (result as any).code ?? null;
+        const failure = passwordFailureCopy(
+          {
+            mode: credMode,
+            code: failureCode,
+            fallback: result.message as string,
+          },
+          tI18nComplete,
+        );
         // The attempt itself proved the account exists (e.g. the existence
         // check was degraded, or it raced an account created elsewhere) —
         // relabel the step so the retry reads as the sign-in it really is.
         if (failure.switchToSignin) setCredMode('signin');
-        failWith(failure.message);
+        const localizedFailure =
+          failureCode === 'invalid_credentials' && credMode === 'signin'
+            ? t('errors.incorrectPassword')
+            : failureCode === 'existing_account_wrong_password' && credMode === 'signup'
+              ? t('errors.existingAccountWrongPassword')
+              : failureCode === 'existing_account_wrong_password'
+                ? t('errors.incorrectPassword')
+                : failure.message;
+        failWith(localizedFailure);
         return;
       }
 
       if (result && (result as any).requiresEmailConfirmation) {
-        setInfo((result as any).message || 'Check your email to confirm your account');
+        setInfo((result as any).message || t('errors.confirmAccount'));
         return;
       }
 
       await establishSessionAndRedirect(result);
     } catch (err: any) {
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      failWith(err?.message || 'An unexpected error occurred');
+      failWith(err?.message || t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -546,14 +559,14 @@ function AuthCardForm({
       const result = await verifyOtp(null, formData);
 
       if (result && (!('success' in result) || !(result as any).success)) {
-        failWith(((result as any).message as string) || 'Invalid or expired code');
+        failWith(((result as any).message as string) || t('errors.invalidCode'));
         return;
       }
 
       await establishSessionAndRedirect(result);
     } catch (err: any) {
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      failWith(err?.message || 'An unexpected error occurred');
+      failWith(err?.message || t('errors.unexpected'));
     } finally {
       setVerifying(false);
     }
@@ -577,7 +590,7 @@ function AuthCardForm({
   // when the interstitial opened, so this is a synchronous relabel + step move.
   const usePasswordFromSso = () => {
     if (ssoFallbackMode === 'closed') {
-      failWith(SIGNUPS_CLOSED_MESSAGE);
+      failWith(t('errors.signupsClosed'));
       return;
     }
     clearNotices();
@@ -593,13 +606,13 @@ function AuthCardForm({
       <>
         <m.div {...rise(0)}>
           <StepHeader
-            title="Use single sign-on"
-            description={
-              <>
-                <span className="text-foreground font-medium wrap-break-word">{email}</span> can sign in
-                through your organization&apos;s identity provider.
-              </>
-            }
+            title={t('sso.title')}
+            description={t.rich('sso.description', {
+              email,
+              address: (chunks) => (
+                <span className="text-foreground font-medium wrap-break-word">{chunks}</span>
+              ),
+            })}
           />
         </m.div>
 
@@ -615,7 +628,7 @@ function AuthCardForm({
               window.location.href = ssoUrl;
             }}
           >
-            Continue with SSO
+            {t('sso.continue')}
           </Button>
 
           <div className="text-muted-foreground mt-6 space-y-2 text-sm">
@@ -627,7 +640,7 @@ function AuthCardForm({
                   disabled={pending}
                   className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
                 >
-                  Use a password instead
+                  {t('usePasswordInstead')}
                 </button>
               )}
               {passwordEnabled && magicLinkEnabled && (
@@ -642,7 +655,7 @@ function AuthCardForm({
                   disabled={pending}
                   className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
                 >
-                  {pendingAction === 'code' ? 'Sending…' : 'Email me a code instead'}
+                  {pendingAction === 'code' ? t('sending') : t('emailCodeInstead')}
                 </button>
               )}
             </p>
@@ -652,7 +665,7 @@ function AuthCardForm({
                 onClick={goToEntry}
                 className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
               >
-                Use a different email
+                {t('useDifferentEmail')}
               </button>
             </p>
           </div>
@@ -667,13 +680,13 @@ function AuthCardForm({
       <>
         <m.div {...rise(0)}>
           <StepHeader
-            title="Check your email"
-            description={
-              <>
-                We sent a code to{' '}
-                <span className="text-foreground font-medium wrap-break-word">{sentEmail}</span>
-              </>
-            }
+            title={t('code.title')}
+            description={t.rich('code.description', {
+              email: sentEmail ?? '',
+              address: (chunks) => (
+                <span className="text-foreground font-medium wrap-break-word">{chunks}</span>
+              ),
+            })}
           />
         </m.div>
 
@@ -694,14 +707,16 @@ function AuthCardForm({
             {verifying ? (
               <div className="flex items-center gap-2">
                 <Loading className="text-muted-foreground size-4 shrink-0" />
-                <span>Verifying…</span>
+                <span>{t('code.verifying')}</span>
               </div>
             ) : (
               <>
                 <p>
-                  Didn&apos;t receive a code?{' '}
+                  {t('code.notReceived')}{' '}
                   {resendIn > 0 ? (
-                    <span className="tabular-nums">Resend in {resendIn}</span>
+                    <span className="tabular-nums">
+                      {t('code.resendIn', { seconds: resendIn })}
+                    </span>
                   ) : (
                     <button
                       type="button"
@@ -709,7 +724,7 @@ function AuthCardForm({
                       disabled={pending}
                       className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
                     >
-                      {pendingAction === 'resend' ? 'Sending…' : 'Resend'}
+                      {pendingAction === 'resend' ? t('sending') : t('code.resend')}
                     </button>
                   )}
                 </p>
@@ -722,7 +737,7 @@ function AuthCardForm({
                     onClick={goToEntry}
                     className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
                   >
-                    Use a different email
+                    {t('useDifferentEmail')}
                   </button>
                   {passwordEnabled && (
                     <>
@@ -735,7 +750,7 @@ function AuthCardForm({
                         disabled={pending}
                         className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
                       >
-                        {pendingAction === 'password' ? 'One moment…' : 'Use password instead'}
+                        {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
                       </button>
                     </>
                   )}
@@ -750,11 +765,20 @@ function AuthCardForm({
 
   /* ── Credentials step (password, with email-code alternative) ── */
   if (step === 'credentials') {
-    const copy = credentialsCopy(credMode);
+    const copy = credentialsCopy(credMode, tI18nComplete);
+    const credentialKey =
+      credMode === 'signin' ? 'signin' : credMode === 'signup' ? 'signup' : 'unknown';
     return (
       <>
         <m.div {...rise(0)}>
-          <StepHeader title={copy.title} description={copy.description ?? undefined} />
+          <StepHeader
+            title={t(`credentials.${credentialKey}.title`)}
+            description={
+              credentialKey === 'unknown'
+                ? undefined
+                : t(`credentials.${credentialKey}.description`)
+            }
+          />
         </m.div>
 
         <m.div {...rise(0.06)}>
@@ -762,7 +786,7 @@ function AuthCardForm({
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
             <div className="space-y-3">
-              <FieldLabel htmlFor="email-locked">Email</FieldLabel>
+              <FieldLabel htmlFor="email-locked">{t('email')}</FieldLabel>
               <div className="relative">
                 <Input
                   id="email-locked"
@@ -775,30 +799,30 @@ function AuthCardForm({
                 <button
                   type="button"
                   onClick={goToEntry}
-                  aria-label="Change email"
+                  aria-label={t('changeEmail')}
                   className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center px-3 text-sm font-medium transition-colors"
                 >
-                  Edit
+                  {t('edit')}
                 </button>
               </div>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <FieldLabel htmlFor="password">{t('password')}</FieldLabel>
                 {copy.showForgotPassword && (
                   <Link
                     href="/auth/forgot-password"
                     className="text-muted-foreground hover:text-foreground text-sm transition-colors"
                   >
-                    Forgot your password?
+                    {t('forgotPassword')}
                   </Link>
                 )}
               </div>
               <PasswordInput
                 id="password"
                 name="password"
-                placeholder={copy.passwordPlaceholder}
+                placeholder={t(`credentials.${credentialKey}.passwordPlaceholder`)}
                 autoComplete={copy.passwordAutoComplete}
                 autoFocus
                 invalid={!!errorMessage}
@@ -807,7 +831,7 @@ function AuthCardForm({
 
             <Button type="submit" size="lg" disabled={pending} className="w-full">
               {pendingAction === 'continue' ? <Loading className="size-4 shrink-0" /> : null}
-              Continue
+              {t('continue')}
             </Button>
           </form>
 
@@ -823,7 +847,7 @@ function AuthCardForm({
               {pendingAction === 'code' ? (
                 <Loading className="text-foreground! size-4 shrink-0" />
               ) : null}
-              Email me a code instead
+              {t('emailCodeInstead')}
             </Button>
           )}
         </m.div>
@@ -835,7 +859,7 @@ function AuthCardForm({
   return (
     <>
       <m.div {...rise(0)}>
-        <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
+        <StepHeader title={t('welcome')} tagline={t('tagline')} />
       </m.div>
 
       <m.div {...rise(0.06)}>
@@ -854,14 +878,14 @@ function AuthCardForm({
 
         <form onSubmit={handleEntryContinue} className="space-y-5">
           <div className="space-y-3">
-            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <FieldLabel htmlFor="email">{t('email')}</FieldLabel>
             <Input
               ref={emailRef}
               id="email"
               name="email"
               type="email"
               size="md"
-              placeholder="Your email address"
+              placeholder={t('emailPlaceholder')}
               value={email}
               onChange={(e) => {
                 if (errorMessage) setErrorMessage(null);
@@ -875,7 +899,7 @@ function AuthCardForm({
           </div>
           <Button type="submit" size="lg" disabled={pending} className="w-full">
             {pendingAction === 'continue' ? <Loading className="size-4 shrink-0" /> : null}
-            Continue
+            {t('continue')}
           </Button>
         </form>
 
@@ -891,18 +915,14 @@ function AuthCardForm({
               disabled={pending}
               className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
             >
-              {pendingAction === 'sso'
-                ? 'Looking up your identity provider…'
-                : 'Use single sign-on (SSO)'}
+              {pendingAction === 'sso' ? t('sso.lookingUp') : t('sso.use')}
             </button>
           </p>
         )}
 
         {/* One system: no sign-in/sign-up toggle. Continue routes new emails
             into registration and existing ones into sign-in automatically. */}
-        <p className="text-muted-foreground mt-8 text-sm">
-          New here? Continue creates your account automatically.
-        </p>
+        <p className="text-muted-foreground mt-8 text-sm">{t('automaticAccount')}</p>
       </m.div>
     </>
   );
@@ -922,6 +942,7 @@ function AuthCardForm({
 const STALE_SESSION_FALLBACK_MS = 2500;
 
 function AuthContent() {
+  const t = useTranslations('auth.unified');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { supabase, user, session, isLoading } = useAuth();
@@ -1015,14 +1036,19 @@ function AuthContent() {
   }, [trustedUser]);
 
   // A session is already established — the effect above is redirecting (or
-  // handing off to mobile). Keep the quiet branded frame up instead of a
-  // spinner, a blank screen, or a dead form.
+  // handing off to mobile). This is a hand-off, not a screen, so it shows the
+  // SAME frame the destination shows: `/projects/start` and the project access
+  // boundary both render `ProjectPendingScreen`, so the redirect produces no
+  // visual change at all.
+  //
+  // It used to render `<AuthFrame footerVariant="default">` with the entry
+  // step's own "Welcome to Kortix" / "Your AI Command Center" header. That is
+  // the headline a signed-OUT visitor is greeted with, so replaying it the
+  // instant a password is accepted read as the form bouncing backwards — and
+  // the legal footer it pinned then vanished one navigation later. Three
+  // different frames in a row is what made signing in look glitchy.
   if (trustedUser) {
-    return (
-      <AuthFrame footerVariant="default">
-        <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
-      </AuthFrame>
-    );
+    return <ProjectPendingScreen />;
   }
 
   // Render the form immediately — even while the session check is still in

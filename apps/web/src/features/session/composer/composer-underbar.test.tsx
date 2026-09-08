@@ -31,6 +31,12 @@ import { ComposerUnderbar } from './composer-underbar';
  */
 
 const noop = () => {};
+const messages = {
+  threads: {
+    attachFiles: 'Attach files',
+    selectAgent: 'Select agent',
+  },
+};
 
 function render(props?: {
   noAccessibleAgents?: boolean;
@@ -40,7 +46,7 @@ function render(props?: {
   agentSelectorLocked?: boolean;
 }): string {
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={{}} onError={noop}>
+    <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
       {/* Both providers live higher up the tree in the app than this
           component: the row's own tooltips need one, and a descendant
           selector reads through TanStack Query. Neither needs a DOM. Retries

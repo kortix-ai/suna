@@ -11,7 +11,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import type { RefObject } from 'react';
 import {
   lazy,
@@ -72,7 +72,7 @@ import { useMenuRevalidation } from './hooks/use-file-search';
 import {
   availableSlashActions,
   controlToOpenFor,
-  SLASH_ACTIONS,
+  localizedSlashActions,
   type SlashAction,
 } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
@@ -466,6 +466,7 @@ function ComposerImpl({
   escCount = 0,
   parentClassName,
 }: SessionChatInputProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -901,10 +902,13 @@ function ComposerImpl({
    * Kept out of `submitDisabled` on purpose: that value also gates the voice
    * recorder, and dictation is one of the ways out of this state.
    */
-  const commandAttachmentPlan = planCommandAttachments({
-    isCommand: draftWillRunCommand(draftCommandChipLabel, commands),
-    attachmentCount: effectiveAttachedFiles.length,
-  });
+  const commandAttachmentPlan = planCommandAttachments(
+    {
+      isCommand: draftWillRunCommand(draftCommandChipLabel, commands),
+      attachmentCount: effectiveAttachedFiles.length,
+    },
+    tI18nComplete,
+  );
 
   const prefillId = prefill?.id;
   const prefillText = prefill?.text ?? '';
@@ -1043,7 +1047,7 @@ function ComposerImpl({
     // Rows whose handler this host did not provide are dropped, not shown
     // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
     // highlights, offers "Use", and does nothing is worse than no row.
-    const available = availableSlashActions(SLASH_ACTIONS, {
+    const available = availableSlashActions(localizedSlashActions(tI18nComplete), {
       canSwitchAgent: Boolean(onAgentChange) && !agentSelectorLocked,
       canSwitchModel: Boolean(onModelChange),
       canSetReasoningEffort: Boolean(onVariantChange),
@@ -1072,6 +1076,7 @@ function ComposerImpl({
     onCompactClick,
     onContextClick,
     contextUsage,
+    tI18nComplete,
   ]);
 
   const handleSelectAction = useCallback(
@@ -1133,7 +1138,7 @@ function ComposerImpl({
         readOnly: disabled,
       });
       if (submissionBlocker) {
-        const copy = sendBlockerMessage(submissionBlocker);
+        const copy = sendBlockerMessage(submissionBlocker, tI18nComplete);
         errorToast(copy.message, copy.description ? { description: copy.description } : undefined);
         return;
       }
@@ -1186,10 +1191,13 @@ function ComposerImpl({
         // rather than two that can drift. Nothing is sent, nothing is cleared,
         // and the reason is already on screen next to the send button; the toast
         // covers the keyboard path, which no disabled button can gate.
-        const guard = planCommandAttachments({
-          isCommand: true,
-          attachmentCount: filesNow.length,
-        });
+        const guard = planCommandAttachments(
+          {
+            isCommand: true,
+            attachmentCount: filesNow.length,
+          },
+          tI18nComplete,
+        );
         if (guard.kind === 'refuse') {
           errorToast(guard.message, { description: guard.description });
           return;
@@ -1223,7 +1231,7 @@ function ComposerImpl({
           runtimeReady,
         });
         if (blocker) {
-          const copy = sendBlockerMessage(blocker);
+          const copy = sendBlockerMessage(blocker, tI18nComplete);
           errorToast(
             copy.message,
             copy.description ? { description: copy.description } : undefined,
@@ -1309,8 +1317,6 @@ function ComposerImpl({
       }
     },
     [
-      submitDisabled,
-      modelUnavailable,
       agentUnavailable,
       clearOnSend,
       onSend,
@@ -1323,12 +1329,25 @@ function ComposerImpl({
       attachedFiles,
       attachmentsEnabled,
       lockForQuestion,
+      modelUnavailable,
       lockForApproval,
+      disabled,
+      attachedFiles,
+      commands,
+      lockForQuestion,
+      submitDisabled,
+      clearOnSend,
+      tI18nComplete,
+      sessionWorking,
+      isBusy,
+      runtimeReady,
+      onCommand,
+      clearSavedDraft,
       onCustomAnswer,
       questionAcceptsCustom,
       questionPending,
       onQuestionAction,
-      clearSavedDraft,
+      onSend,
     ],
   );
 
@@ -1471,7 +1490,7 @@ function ComposerImpl({
                 >
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
-                    {'Sub-session of'}{' '}
+                    {tHardcodedUi.raw('i18nComplete.text09b4cb469c91')}{' '}
                     <span className="text-foreground/80 font-medium">
                       {threadContext.parentTitle}
                     </span>
@@ -1573,7 +1592,7 @@ function ComposerImpl({
             className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center"
           >
             <span className="text-foreground bg-sidebar/80 rounded-md px-3 py-1.5 text-sm font-medium">
-              Drop files to attach
+              {tHardcodedUi.raw('i18nComplete.text1ab1b095c1ed')}
             </span>
           </div>
         )}

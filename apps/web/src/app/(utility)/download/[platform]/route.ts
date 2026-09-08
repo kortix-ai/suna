@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { isMobilePlatform, normalizePlatform } from '@/features/marketing/download/detect-os';
 import {

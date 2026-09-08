@@ -15,15 +15,15 @@
  *   - Returns structured results with name, path, isDir
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { findText } from '../api/runtime-files';
-import type { FindMatch } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
   parseWorkspacePaths,
   rankWorkspaceSearchEntry,
 } from '@/features/file-browser/search/workspace-search-core';
+import type { FindMatch } from '@/features/file-browser/types';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { findText } from '../api/runtime-files';
 import {
   searchWorkspaceFileEntries,
   searchWorkspaceFilePaths,

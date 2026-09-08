@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { FILE_VERBS, fileVerb, filePhase } from './file-verb';
+import { FILE_VERBS, filePhase, fileVerb } from './file-verb';
 
 describe('fileVerb — one vocabulary for every row that touches a file', () => {
   test('a running call is a present participle, a settled one is past tense', () => {

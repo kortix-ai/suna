@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
 
+import { useAuth } from '@/features/providers/auth-provider';
 import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-workspace-key';
 import {
   buildCreateRepoPayload,
@@ -17,19 +18,18 @@ import {
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { onboardingPath } from '@/features/workspace/new/onboarding-param';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
 } from '@/lib/onboarding/ensure-first-project';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
   linkRepository,
+  PROVISION_IN_FLIGHT_CODE,
   provisionProject,
   provisionProjectStream,
-  PROVISION_IN_FLIGHT_CODE,
   type CreateProjectRepoInput,
   type KortixAccount,
   type KortixProject,
@@ -65,9 +65,12 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
-  return [state.accountId ?? 'default', state.name.trim(), state.templateId ?? '', state.source].join(
-    ':',
-  );
+  return [
+    state.accountId ?? 'default',
+    state.name.trim(),
+    state.templateId ?? '',
+    state.source,
+  ].join(':');
 }
 
 /**
@@ -136,14 +139,18 @@ export function resolveTargetAccountId(
   userId: string | null,
 ): string | undefined {
   if (isForeignAccountList(creatableAccounts, userId)) {
-    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+    throw new Error(
+      'Could not verify the target account for this workspace. Refresh and try again.',
+    );
   }
   const resolved =
     state.accountId ?? resolveDefaultCreatableAccountId(creatableAccounts, userId) ?? undefined;
   if (resolved === undefined) return undefined;
   const isCreatable = creatableAccounts.some((account) => account.account_id === resolved);
   if (!isCreatable) {
-    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+    throw new Error(
+      'Could not verify the target account for this workspace. Refresh and try again.',
+    );
   }
   return resolved;
 }
@@ -187,7 +194,10 @@ export function buildGitHubImportPayload(
   creatableAccounts: KortixAccount[],
   userId: string | null,
 ): LinkRepositoryInput {
-  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
+  return buildLinkRepositoryPayload(
+    state,
+    resolveTargetAccountId(state, creatableAccounts, userId),
+  );
 }
 
 /**
@@ -237,7 +247,9 @@ export function messageFor(error: unknown): string {
   const status = (error as { status?: number } | null | undefined)?.status;
   const message = error instanceof Error ? error.message : undefined;
   if (isProjectLimitError(error)) {
-    return message || "This account has reached its plan's workspace limit. Upgrade to create another.";
+    return (
+      message || "This account has reached its plan's workspace limit. Upgrade to create another."
+    );
   }
   if (status === 403) {
     return 'You need owner or admin access in this account to create a workspace.';
@@ -571,7 +583,12 @@ async function runSourceAttempt(
     throw new Error('runCreate: the managed source requires an idempotency key');
   }
   return client.runCreateAttempt(
-    buildCreatePayload(state, creatableAccounts, idempotencyKey, userId) as unknown as ProvisionProjectInput,
+    buildCreatePayload(
+      state,
+      creatableAccounts,
+      idempotencyKey,
+      userId,
+    ) as unknown as ProvisionProjectInput,
   );
 }
 
@@ -625,7 +642,13 @@ export async function runCreate(
     : null;
 
   try {
-    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, userId ?? null, client);
+    const project = await runSourceAttempt(
+      state,
+      creatableAccounts,
+      idempotencyKey,
+      userId ?? null,
+      client,
+    );
     if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Inline "agent needs your permission" prompt, pinned above the composer — the
  * opencode tool-permission twin of `SessionApprovalPrompt` (connector
@@ -121,6 +122,7 @@ export function SessionPermissionPrompt({
   permissions,
   onReply,
 }: SessionPermissionPromptProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Only the /projects/[id]/sessions/[sessionId] route has a project in scope —
   // on plain /sessions/[id], `id` IS the session, so no config surface.
   const params = useParams<{ id?: string; sessionId?: string }>();
@@ -139,9 +141,9 @@ export function SessionPermissionPrompt({
   const submitPermissionMode = useMemo(
     () => createPermissionModeSubmission(
       (enabled) => setBusy(enabled === null ? null : enabled ? 'session-all' : 'session-off'),
-      (error) => errorToast(error instanceof Error ? error.message : 'Failed to update session permissions'),
+      (error) => errorToast(error instanceof Error ? error.message : tI18nComplete.raw('textb4c89a8de9da')),
     ),
-    [],
+    [tI18nComplete],
   );
   // Request ids currently showing their full (untruncated) detail text.
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -160,12 +162,12 @@ export function SessionPermissionPrompt({
       try {
         await onReply(requestId, kind);
       } catch (e) {
-        errorToast(e instanceof Error ? e.message : 'Failed to answer the permission request');
+        errorToast(e instanceof Error ? e.message : tI18nComplete.raw('text088abd95f7eb'));
       } finally {
         setBusy(null);
       }
     },
-    [onReply],
+    [onReply, tI18nComplete],
   );
 
   const allowAllForSession = useCallback(async () => {
@@ -177,10 +179,10 @@ export function SessionPermissionPrompt({
       },
       () => {
         setAutoApproveAll(sessionId, true);
-        successToast("Allowed — won't ask again for anything this session");
+        successToast(tI18nComplete.raw('text672a76cd238a'));
       },
     );
-  }, [sessionId, permissions, onReply, setAutoApproveAll, submitPermissionMode]);
+  }, [sessionId, permissions, onReply, setAutoApproveAll, submitPermissionMode, tI18nComplete]);
 
   const turnOffAutoApprove = useCallback(async () => {
     await submitPermissionMode(false, () => resetSessionPermissions(sessionId), () => {
@@ -215,16 +217,16 @@ export function SessionPermissionPrompt({
         await Promise.all(covered.map((p) => onReply(p.id, 'once')));
         successToast(
           type === '*'
-            ? 'Saved — permissions are always allowed in this project now'
-            : `Saved — "${PERMISSION_LABELS[type] || type}" is always allowed in this project now`,
+            ? tI18nComplete.raw('texte5776302ca62')
+            : tI18nComplete('text51a4eefaba47', { value0: PERMISSION_LABELS[type] || type }),
         );
       } catch (e) {
-        errorToast(e instanceof Error ? e.message : 'Failed to update the project config');
+        errorToast(e instanceof Error ? e.message : tI18nComplete.raw('text14085878939d'));
       } finally {
         setBusy(null);
       }
     },
-    [config, updateConfig, permissions, onReply],
+    [config?.permission, updateConfig, permissions, tI18nComplete, onReply],
   );
 
   // Client-side backstop for "allow everything this session": auto-approve any
@@ -252,10 +254,10 @@ export function SessionPermissionPrompt({
       <div className="border-border bg-popover flex w-full items-center gap-2 rounded-md border px-3 py-2">
         <ShieldCheck className="text-kortix-green size-4" />
         <span className="text-muted-foreground flex-1 text-xs">
-          Auto-allowing all permission requests for this session
+          {tI18nComplete.raw('text60d3eb13fad7')}
         </span>
         <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => void turnOffAutoApprove()}>
-          <PendingLabel pending={busy === 'session-off'}>Turn off</PendingLabel>
+          <PendingLabel pending={busy === 'session-off'}>{tI18nComplete.raw('text06f0e210b27d')}</PendingLabel>
         </Button>
       </div>
     );
@@ -271,10 +273,12 @@ export function SessionPermissionPrompt({
         <ShieldAlert className="text-kortix-orange size-4" />
         <span className="text-foreground text-xs font-medium">
           {permissions.length === 1
-            ? 'The agent needs your permission'
-            : `${permissions.length} actions need your permission`}
+            ? tI18nComplete.raw('text9ef61f308b40')
+            : tI18nComplete('textc49ce59d0871', { value0: permissions.length })}
         </span>
-        <span className="text-muted-foreground text-xs">— it's paused until you decide</span>
+        <span className="text-muted-foreground text-xs">
+          {tI18nComplete.raw('text9532a08e3f63')}
+        </span>
       </div>
       <ul className="divide-border divide-y">
         {permissions.map((p) => {
@@ -323,16 +327,20 @@ export function SessionPermissionPrompt({
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'reject')}
                 >
-                  <PendingLabel pending={busy === `${p.id}:reject`}>Deny</PendingLabel>
+                  <PendingLabel pending={busy === `${p.id}:reject`}>
+                    {tI18nComplete.raw('text05a2d7332eb9')}
+                  </PendingLabel>
                 </Button>
                 <Button
                   size="xs"
                   variant="muted"
-                  title="Allow this action for the rest of this session — the agent won't ask again for it"
+                  title={tI18nComplete.raw('text403595dd63ea')}
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'always')}
                 >
-                  <PendingLabel pending={busy === `${p.id}:always`}>Allow for session</PendingLabel>
+                  <PendingLabel pending={busy === `${p.id}:always`}>
+                    {tI18nComplete.raw('textec9f8a9109ec')}
+                  </PendingLabel>
                 </Button>
                 <Button
                   size="xs"
@@ -340,7 +348,9 @@ export function SessionPermissionPrompt({
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'once')}
                 >
-                  <PendingLabel pending={busy === `${p.id}:once`}>Allow once</PendingLabel>
+                  <PendingLabel pending={busy === `${p.id}:once`}>
+                    {tI18nComplete.raw('text168511d24d9e')}
+                  </PendingLabel>
                 </Button>
               </div>
             </li>
@@ -348,16 +358,20 @@ export function SessionPermissionPrompt({
         })}
       </ul>
       <div className="border-border flex items-center gap-2 border-t px-3 py-2">
-        <span className="text-muted-foreground text-xs">This session:</span>
+        <span className="text-muted-foreground text-xs">
+          {tI18nComplete.raw('text16324ed5894b')}
+        </span>
         <Button
           size="xs"
           variant="ghost"
           className="text-muted-foreground hover:text-foreground"
-          title="Allow every permission request for the rest of this session"
+          title={tI18nComplete.raw('text2c1a881dfca8')}
           disabled={!!busy}
           onClick={() => void allowAllForSession()}
         >
-          <PendingLabel pending={busy === 'session-all'}>Allow everything</PendingLabel>
+          <PendingLabel pending={busy === 'session-all'}>
+            {tI18nComplete.raw('text1f05c7f5b64d')}
+          </PendingLabel>
         </Button>
       </div>
       {canWriteConfig.allowed ? (
@@ -365,7 +379,8 @@ export function SessionPermissionPrompt({
         // project's permission config — every future session stops asking.
         <div className="bg-muted/40 border-border flex flex-wrap items-center gap-2 border-t px-3 py-2">
           <span className="text-muted-foreground text-xs">
-            Project config <span className="opacity-70">(applies to future sessions)</span>:
+            {tI18nComplete.raw('text689997c79ba6')}{' '}
+            <span className="opacity-70">{tI18nComplete.raw('textea73705db65f')}</span>:
           </span>
           {uniqueTypes.map((type) => (
             <Button
@@ -377,7 +392,8 @@ export function SessionPermissionPrompt({
               onClick={() => void allowInConfig(type)}
             >
               <PendingLabel pending={busy === `config:${type}`}>
-                Always allow "{PERMISSION_LABELS[type] || type}"
+                {tI18nComplete.raw('text78facd7b499c')}
+                {PERMISSION_LABELS[type] || type}"
               </PendingLabel>
             </Button>
           ))}
@@ -388,7 +404,9 @@ export function SessionPermissionPrompt({
             disabled={!!busy}
             onClick={() => void allowInConfig('*')}
           >
-            <PendingLabel pending={busy === 'config:*'}>Always allow everything</PendingLabel>
+            <PendingLabel pending={busy === 'config:*'}>
+              {tI18nComplete.raw('text84f8c40b31a7')}
+            </PendingLabel>
           </Button>
         </div>
       ) : null}

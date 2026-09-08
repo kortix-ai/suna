@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
@@ -620,6 +620,7 @@ function SessionContextModalBody({
   providers,
   allSessions,
 }: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
   const pricingLookup = useModelPricingLookup(providers);
   const [rawOpen, setRawOpen] = useState(false);
@@ -753,7 +754,7 @@ function SessionContextModalBody({
             <ModalClose asChild>
               <Button variant="ghost" className="size-8 p-0">
                 <Close className="text-primary size-4 stroke-1" />
-                <span className="sr-only">Close</span>
+                <span className="sr-only">{tI18nComplete.raw('text7d9eb7acb13e')}</span>
               </Button>
             </ModalClose>
           </div>

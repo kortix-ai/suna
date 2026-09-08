@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
@@ -231,7 +231,7 @@ test('an active App never looks undeployed while its signed preview URL loads', 
   expect(view).toContain(
     "data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}",
   );
-  expect(view).toContain('Preparing preview');
+  expect(view).toContain("raw('text2158038765cc')");
   expect(view).not.toContain('if (!app.active_deployment_id || !url)');
 });
 
@@ -266,7 +266,7 @@ test("the header separates the App's actions from the window's Close", () => {
   // App" and "shut this panel" read as peers. It sits outside now, and it is
   // ghost rather than outline because it is chrome, not an action.
   const groupEndsAt = header.indexOf('</ButtonGroup>');
-  const closeAt = header.indexOf('aria-label="Close"');
+  const closeAt = header.indexOf('text7d9eb7acb13e');
   expect(groupEndsAt).toBeGreaterThan(-1);
   expect(closeAt).toBeGreaterThan(groupEndsAt);
   expect(header.slice(groupEndsAt)).toContain('variant="ghost"');
@@ -278,7 +278,7 @@ test('Delete lives in the header menu, never buried in the version drawer', () =
 
   // A destructive action reachable only by first opening a history panel is an
   // action you find by looking for something else.
-  expect(header).toContain('Delete App');
+  expect(header).toContain("raw('textd1b0a6e3985a')");
   expect(header).toContain('variant="destructive"');
   // …and it still goes through the confirm step.
   expect(view).toContain('<ConfirmDialog');
@@ -334,7 +334,7 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // VIEWPORT rather than the container: it is this element's own padding, and
   // this element IS `@container/apps`, so it cannot query itself. The column
   // ladder inside it stays container-based.
-  expect(view).toContain('max-w-7xl flex-col px-4 md:px-8 py-6 pb-20');
+  expect(view).toContain('max-w-7xl flex-col px-4 py-6 pb-20 md:px-8');
   expect(view).not.toContain('max-w-5xl flex-col');
   expect(view).toContain('APP_GRID_CONTAINER,');
   expect(view).toContain("export const APP_GRID_CONTAINER = '@container/apps';");

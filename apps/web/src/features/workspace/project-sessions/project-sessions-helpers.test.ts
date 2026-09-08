@@ -1,6 +1,7 @@
 import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   buildSessionSearchIndex,
   filterProjectSessions,
@@ -59,18 +60,27 @@ describe('session inventory identity and access labels', () => {
   });
 
   test('distinguishes permission from a missing or archived runtime', () => {
-    expect(sessionAccessMeta(makeSession({ can_access: false }))).toMatchObject({
+    expect(sessionAccessMeta(makeSession({ can_access: false }), testUiTranslator)).toMatchObject({
       label: 'Metadata only',
       canOpen: false,
     });
     expect(
-      sessionAccessMeta(makeSession({ can_access: true, runtime_status: 'archived' })),
+      sessionAccessMeta(
+        makeSession({ can_access: true, runtime_status: 'archived' }),
+        testUiTranslator,
+      ),
     ).toMatchObject({ label: 'Runtime unavailable', canOpen: false });
     expect(
-      sessionAccessMeta(makeSession({ can_access: true, status: 'stopped', runtime_status: null })),
+      sessionAccessMeta(
+        makeSession({ can_access: true, status: 'stopped', runtime_status: null }),
+        testUiTranslator,
+      ),
     ).toMatchObject({ label: 'Runtime unavailable', canOpen: false });
     expect(
-      sessionAccessMeta(makeSession({ can_access: true, runtime_status: 'active' })),
+      sessionAccessMeta(
+        makeSession({ can_access: true, runtime_status: 'active' }),
+        testUiTranslator,
+      ),
     ).toMatchObject({ label: 'Can open', canOpen: true });
   });
 });
@@ -92,7 +102,9 @@ describe('sessionDetailFields', () => {
       owner_type: undefined,
     });
 
-    const values = sessionDetailFields(bare, FORMATTED).map((field) => field.value);
+    const values = sessionDetailFields(bare, FORMATTED, testUiTranslator).map(
+      (field) => field.value,
+    );
     for (const placeholder of [
       'Not created',
       'Missing',
@@ -107,14 +119,16 @@ describe('sessionDetailFields', () => {
   });
 
   test('omits trigger fields for a chat and includes them for a trigger fire', () => {
-    const chatLabels = sessionDetailFields(makeSession(), FORMATTED).map((field) => field.label);
+    const chatLabels = sessionDetailFields(makeSession(), FORMATTED, testUiTranslator).map(
+      (field) => field.label,
+    );
     expect(chatLabels).not.toContain('Trigger');
     expect(chatLabels).not.toContain('Source');
 
     const cron = makeSession({
       metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'nightly-audit' },
     });
-    const cronFields = sessionDetailFields(cron, FORMATTED);
+    const cronFields = sessionDetailFields(cron, FORMATTED, testUiTranslator);
     expect(cronFields).toContainEqual({ label: 'Source', value: 'Scheduled', mono: undefined });
     expect(cronFields).toContainEqual({
       label: 'Trigger',
@@ -137,6 +151,7 @@ describe('sessionDetailFields', () => {
         owner_type: undefined,
       }),
       FORMATTED,
+      testUiTranslator,
     );
     expect(fields.length).toBeLessThanOrEqual(6);
   });
@@ -148,7 +163,7 @@ describe('sessionDetailFields', () => {
       sandbox_id: 'df4276b5-28b7',
       branch_name: 'df4276b5-28b7',
     });
-    const labels = sessionDetailFields(coincident, FORMATTED).map((f) => f.label);
+    const labels = sessionDetailFields(coincident, FORMATTED, testUiTranslator).map((f) => f.label);
     expect(labels).toContain('Session ID');
     expect(labels).not.toContain('Branch');
     expect(labels).not.toContain('Sandbox ID');
@@ -160,7 +175,7 @@ describe('sessionDetailFields', () => {
       sandbox_id: 'sbx-9',
       branch_name: 'kx/nightly-audit',
     });
-    const labels = sessionDetailFields(distinct, FORMATTED).map((f) => f.label);
+    const labels = sessionDetailFields(distinct, FORMATTED, testUiTranslator).map((f) => f.label);
     expect(labels).toContain('Branch');
     expect(labels).toContain('Sandbox ID');
   });
@@ -169,10 +184,15 @@ describe('sessionDetailFields', () => {
     const open = sessionDetailFields(
       makeSession({ can_access: true, runtime_status: 'active' }),
       FORMATTED,
+      testUiTranslator,
     );
     expect(open.map((field) => field.label)).not.toContain('Your access');
 
-    const restricted = sessionDetailFields(makeSession({ can_access: false }), FORMATTED);
+    const restricted = sessionDetailFields(
+      makeSession({ can_access: false }),
+      FORMATTED,
+      testUiTranslator,
+    );
     expect(restricted).toContainEqual({
       label: 'Your access',
       value: 'Metadata only',
@@ -181,9 +201,9 @@ describe('sessionDetailFields', () => {
   });
 
   test('counts conversations only when the session has any', () => {
-    expect(sessionDetailFields(makeSession(), FORMATTED).map((f) => f.label)).not.toContain(
-      'Conversations',
-    );
+    expect(
+      sessionDetailFields(makeSession(), FORMATTED, testUiTranslator).map((f) => f.label),
+    ).not.toContain('Conversations');
 
     const withConversations = makeSession({
       opencode_sessions: [
@@ -191,7 +211,7 @@ describe('sessionDetailFields', () => {
         { id: 'b', parent_id: 'a', archived_at: '2026-07-20T10:00:00.000Z' },
       ] as ProjectSession['opencode_sessions'],
     });
-    expect(sessionDetailFields(withConversations, FORMATTED)).toContainEqual({
+    expect(sessionDetailFields(withConversations, FORMATTED, testUiTranslator)).toContainEqual({
       label: 'Conversations',
       value: '2 · 1 archived',
     });
@@ -225,23 +245,31 @@ describe('selection', () => {
 describe('summarizeBulkDelete', () => {
   test('reports a clean batch', () => {
     expect(
-      summarizeBulkDelete([
-        { sessionId: 'a', ok: true },
-        { sessionId: 'b', ok: true },
-      ]).message,
+      summarizeBulkDelete(
+        [
+          { sessionId: 'a', ok: true },
+          { sessionId: 'b', ok: true },
+        ],
+        testUiTranslator,
+      ).message,
     ).toBe('Deleted 2 sessions');
   });
 
   test('singularises a batch of one', () => {
-    expect(summarizeBulkDelete([{ sessionId: 'a', ok: true }]).message).toBe('Deleted 1 session');
+    expect(summarizeBulkDelete([{ sessionId: 'a', ok: true }], testUiTranslator).message).toBe(
+      'Deleted 1 session',
+    );
   });
 
   test('never claims success when part of the batch failed', () => {
-    const summary = summarizeBulkDelete([
-      { sessionId: 'a', ok: true },
-      { sessionId: 'b', ok: false },
-      { sessionId: 'c', ok: false },
-    ]);
+    const summary = summarizeBulkDelete(
+      [
+        { sessionId: 'a', ok: true },
+        { sessionId: 'b', ok: false },
+        { sessionId: 'c', ok: false },
+      ],
+      testUiTranslator,
+    );
     expect(summary.message).toBe('Deleted 1 of 3. 2 failed.');
     expect(summary.succeeded).toEqual(['a']);
     expect(summary.failed).toEqual(['b', 'c']);
@@ -249,10 +277,13 @@ describe('summarizeBulkDelete', () => {
 
   test('reports a total failure as a failure', () => {
     expect(
-      summarizeBulkDelete([
-        { sessionId: 'a', ok: false },
-        { sessionId: 'b', ok: false },
-      ]).message,
+      summarizeBulkDelete(
+        [
+          { sessionId: 'a', ok: false },
+          { sessionId: 'b', ok: false },
+        ],
+        testUiTranslator,
+      ).message,
     ).toBe('Could not delete 2 sessions');
   });
 });
@@ -318,7 +349,9 @@ describe('filterProjectSessions', () => {
     const unrelated = makeSession({ session_id: 'third', name: 'Email report' });
 
     expect(
-      filterProjectSessions([older, unrelated, newer], [], [], 'slack').map((s) => s.session_id),
+      filterProjectSessions([older, unrelated, newer], [], [], 'slack', testUiTranslator).map(
+        (s) => s.session_id,
+      ),
     ).toEqual(['newer', 'older']);
   });
 
@@ -326,9 +359,15 @@ describe('filterProjectSessions', () => {
     const failedDeploy = makeSession({ name: 'Deploy API', status: 'failed' });
     const runningDeploy = makeSession({ name: 'Deploy web', status: 'running' });
 
-    expect(filterProjectSessions([failedDeploy, runningDeploy], ['failed'], [], 'deploy')).toEqual([
-      failedDeploy,
-    ]);
+    expect(
+      filterProjectSessions(
+        [failedDeploy, runningDeploy],
+        ['failed'],
+        [],
+        'deploy',
+        testUiTranslator,
+      ),
+    ).toEqual([failedDeploy]);
   });
 
   // The view passes a memoised index so typing never rebuilds the haystacks.
@@ -339,11 +378,11 @@ describe('filterProjectSessions', () => {
       makeSession({ session_id: 'b', name: 'Deploy web' }),
       makeSession({ session_id: 'c', name: 'Slack deploy' }),
     ];
-    const index = buildSessionSearchIndex(sessions);
+    const index = buildSessionSearchIndex(sessions, testUiTranslator);
 
     for (const query of ['slack', 'deploy', 'nothing', '']) {
-      expect(filterProjectSessions(sessions, [], [], query, index)).toEqual(
-        filterProjectSessions(sessions, [], [], query),
+      expect(filterProjectSessions(sessions, [], [], query, testUiTranslator, index)).toEqual(
+        filterProjectSessions(sessions, [], [], query, testUiTranslator),
       );
     }
   });
@@ -354,20 +393,25 @@ describe('filterProjectSessions', () => {
 
     // An index built before `late` arrived: it must fall back to computing the
     // haystack rather than treating the row as a non-match.
-    const staleIndex = buildSessionSearchIndex([known]);
+    const staleIndex = buildSessionSearchIndex([known], testUiTranslator);
 
     expect(
-      filterProjectSessions([known, late], [], [], 'slack', staleIndex).map((s) => s.session_id),
+      filterProjectSessions([known, late], [], [], 'slack', testUiTranslator, staleIndex).map(
+        (s) => s.session_id,
+      ),
     ).toEqual(['known', 'late']);
   });
 });
 
 describe('buildSessionSearchIndex', () => {
   test('indexes one lowercased haystack per session id', () => {
-    const index = buildSessionSearchIndex([
-      makeSession({ session_id: 'a', name: 'Slack Triage' }),
-      makeSession({ session_id: 'b', name: 'Deploy Web' }),
-    ]);
+    const index = buildSessionSearchIndex(
+      [
+        makeSession({ session_id: 'a', name: 'Slack Triage' }),
+        makeSession({ session_id: 'b', name: 'Deploy Web' }),
+      ],
+      testUiTranslator,
+    );
 
     expect(index.size).toBe(2);
     expect(index.get('a')).toContain('slack triage');
@@ -375,6 +419,6 @@ describe('buildSessionSearchIndex', () => {
   });
 
   test('an empty list indexes nothing', () => {
-    expect(buildSessionSearchIndex([]).size).toBe(0);
+    expect(buildSessionSearchIndex([], testUiTranslator).size).toBe(0);
   });
 });

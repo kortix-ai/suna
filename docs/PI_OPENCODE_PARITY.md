@@ -1,6 +1,6 @@
 # Pi runtime parity audit
 
-Updated: 2026-09-08. Canonical branch: `pi-worker`.
+Updated: 2026-09-09. Canonical branch: `pi-worker`.
 Draft PR: [#6998](https://github.com/kortix-ai/suna/pull/6998).
 Preview: [pi.kortix.com](https://pi.kortix.com).
 
@@ -52,6 +52,7 @@ of each feature or the remaining parity matrix passed.
 | Public conversation while stopped | Sanitized worker transcript or PostgreSQL mirror | Preview: 24 messages preserved byte-for-byte as sanitized envelopes; anonymous HTTP 200, revoked HTTP 410 |
 | Worker/environment lifecycle | Distinct runtime principals, restore/stop/replacement, lease fencing | Race, credential, immutable identity, and live restart tests |
 | Context compaction | Manual and automatic checks before new prompts and between tool rounds; bounded retention and complete display history | HTTP threshold, Stop, retry, queue, replacement, oversize, and crash tests; real Luna with an 8,192-token fixture window, one tool execution, saved summary, exact restart, and recall; preview manual-compaction UI |
+| Native user images | Immutable PostgreSQL references, native provider hydration, session-scoped SDK upload, composer picker, and authenticated image viewer | Preview `1186af73`: 4,687-byte PNG, 50 text deltas, nine visible streaming states, Stop/next prompt, exact stop/resume history, image zoom/close, and absent environment |
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
 | Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls; preview UI High/None/Auto payloads and provider results; reload, nine-message stop/resume, and question recovery |
 | Structured output | Prompt-scoped JSON Schema, `info.structured`, validation retries, terminal errors, and SDK `send(..., { format })` | Draft 7/2020-12 object schemas and local references through real Luna; HTTP validation, queue, cancellation, lifecycle, crash, and question-recovery tests |
@@ -82,9 +83,14 @@ White-label fixed agent/model controls and real incremental streaming passed
 against the preview API. The saved reply, empty turn queue, and absent environment
 match the browser. These controls do not implement live reconfiguration.
 
-The full preview suite currently fails four Git shipping flows at Platinum
-ingress. All 19 browser journeys pass. Large-context automatic compaction is
-also blocked by that upload failure. See the verification log for exact probes.
+The latest full preview gate at `1186af73` passes 455 of 463 REST/CLI flows,
+with five failures and three existing skips. All 19 browser journeys pass.
+Four Git shipping failures occur at Platinum ingress. The fifth is a strict
+ETag assertion: the proxy compresses the exact attachment bytes and returns a
+weak ETag with the same SHA-256. The corrected assertion verifies the response
+bytes and accepts that representation marker; its preview rerun is pending.
+Large-context automatic compaction remains blocked by the ingress upload failure.
+See the verification log for exact probes.
 
 ## Benchmarks
 

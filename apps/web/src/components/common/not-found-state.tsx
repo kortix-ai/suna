@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { ArrowLeftIcon as ArrowLeft, BookOpenIcon as BookOpen } from '@phosphor-icons/react';
 import { m } from 'motion/react';
@@ -41,7 +41,7 @@ export function NotFoundCard({
     },
     {
       href: '/docs',
-      label: 'Documentation',
+      label: tHardcodedUi.raw('i18nComplete.textc205924de0fe'),
       icon: <BookOpen className="h-4 w-4" />,
       variant: 'outline',
     },
@@ -96,13 +96,14 @@ export function NotFoundCard({
  * positioned, so the parent must be `relative`.
  */
 export function NotFoundNoise() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div
       className="pointer-events-none absolute inset-0 z-0 opacity-[0.02] dark:opacity-[0.035]"
       style={{
-        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+        backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
         backgroundRepeat: 'repeat',
-        backgroundSize: '256px 256px',
+        backgroundSize: "256px 256px",
       }}
     />
   );

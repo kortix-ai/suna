@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ProjectTrigger } from '@kortix/sdk';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   CUSTOM_TIMING_LABEL,
   describeCadence,
@@ -135,7 +136,7 @@ describe('triggerName', () => {
 
 describe('triggerStatus — what it is, not what you can do to it', () => {
   test('enabled reads Active and tints green', () => {
-    const status = triggerStatus(true);
+    const status = triggerStatus(true, testUiTranslator);
     expect(status.label).toBe('Active');
     expect(status.active).toBe(true);
     expect(status.tileClassName).toContain('kortix-green');
@@ -143,7 +144,7 @@ describe('triggerStatus — what it is, not what you can do to it', () => {
   });
 
   test('disabled reads Paused and stays neutral', () => {
-    const status = triggerStatus(false);
+    const status = triggerStatus(false, testUiTranslator);
     expect(status.label).toBe('Paused');
     expect(status.active).toBe(false);
     expect(status.tileClassName).not.toContain('kortix-');
@@ -218,14 +219,17 @@ describe('describeRunLocation — no wire words', () => {
 
 describe('describeSecurity', () => {
   test('a signing secret reads as Signed and names the secret', () => {
-    const state = describeSecurity(trigger({ type: 'webhook', secret_env: 'WEBHOOK_X_SECRET' }));
+    const state = describeSecurity(
+      trigger({ type: 'webhook', secret_env: 'WEBHOOK_X_SECRET' }),
+      testUiTranslator,
+    );
     expect(state.label).toBe('Signed');
     expect(state.signed).toBe(true);
     expect(state.detail).toContain('WEBHOOK_X_SECRET');
   });
 
   test('no secret reads as a plain warning, not "unsigned" or "HMAC"', () => {
-    const state = describeSecurity(trigger({ type: 'webhook' }));
+    const state = describeSecurity(trigger({ type: 'webhook' }), testUiTranslator);
     expect(state.label).toBe('Not signed');
     expect(state.signed).toBe(false);
     expect(state.detail).toContain('Anyone with this address');
@@ -253,19 +257,19 @@ describe('matchesQuery — searches what is on screen', () => {
 
   for (const query of ['daily', 'DIGEST', 'writer', 'every day', 'active', 'daily-digest']) {
     test(`"${query}" matches`, () => {
-      expect(matchesQuery(row, query)).toBe(true);
+      expect(matchesQuery(row, query, testUiTranslator)).toBe(true);
     });
   }
 
   test('an empty query matches everything', () => {
-    expect(matchesQuery(row, '   ')).toBe(true);
+    expect(matchesQuery(row, '   ', testUiTranslator)).toBe(true);
   });
 
   test('an unrelated query does not match', () => {
-    expect(matchesQuery(row, 'webhook')).toBe(false);
+    expect(matchesQuery(row, 'webhook', testUiTranslator)).toBe(false);
   });
 
   test('a paused row is findable by its status word', () => {
-    expect(matchesQuery(trigger({ enabled: false }), 'paused')).toBe(true);
+    expect(matchesQuery(trigger({ enabled: false }), 'paused', testUiTranslator)).toBe(true);
   });
 });

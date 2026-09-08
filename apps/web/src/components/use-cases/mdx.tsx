@@ -1,6 +1,9 @@
+'use client';
+
 import { Children, cloneElement, isValidElement, type ReactNode } from 'react';
 
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
 /**
@@ -122,6 +125,7 @@ export function Figure({
   caption?: string;
   aspect?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <figure className="my-8">
       {src ? (
@@ -139,7 +143,9 @@ export function Figure({
         >
           <span className="flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
             <KortixAsterisk index={0} parentClass="size-3.5" variant="solid" />
-            {caption ? `Screenshot — ${caption}` : 'Screenshot'}
+            {caption
+              ? tI18nComplete('text9b1a9ce91460', { value0: caption })
+              : tI18nComplete.raw('text907c7115cf85')}
           </span>
         </div>
       )}

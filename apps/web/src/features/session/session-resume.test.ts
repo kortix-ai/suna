@@ -126,9 +126,9 @@ describe('isSandboxResumable — a preserved-unavailable identity is never resum
   });
 
   test('an ordinary parked box (no identity state) stays resumable', () => {
-    expect(
-      isSandboxResumable({ status: 'stopped', external_id: 'sbx_1', metadata: {} }),
-    ).toBe(true);
+    expect(isSandboxResumable({ status: 'stopped', external_id: 'sbx_1', metadata: {} })).toBe(
+      true,
+    );
   });
 
   test('auto-resume never fires against an unavailable identity', () => {

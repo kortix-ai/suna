@@ -1,7 +1,8 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
- * The settings sidebar — the 300px left column of every `/accounts/**` route.
+ * The settings sidebar — the 300px left column of the account hub modal.
  *
  * Top to bottom: `Back to app` with the search and collapse controls, the
  * **Accounts** group — every account the caller belongs to, the current one
@@ -11,7 +12,7 @@
  * `/settings/<tab>`, outside this shell.
  *
  * Which sections the current account lists is `useAccountHubSection`'s
- * verdict, the same batched probe the page reads, so a nav item and its pane
+ * verdict, the same batched probe the body reads, so a nav item and its pane
  * can never disagree about whether this caller may open it.
  */
 
@@ -22,8 +23,6 @@ import {
   QuestionIcon,
   type Icon,
 } from '@phosphor-icons/react';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
 import { Fragment, Suspense, useMemo, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -44,10 +43,13 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-
+import { ACCOUNT_HUB_TRANSLATION_KEYS } from '@/i18n/account-hub-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
-import { NAV_GROUPS, type AccountNavItem } from './sections';
+import { closeAccountPanel, hubTarget, type HubTarget } from '@/stores/account-panel-store';
+
+import { HubLink, useAccountPanelId } from './account-hub-location';
+import { localizedAccountNavGroups, type AccountNavItem } from './sections';
 import { useAccountHubSection } from './use-account-hub-access';
 import { useAccountMembers } from './use-account-members';
 
@@ -70,14 +72,9 @@ const FOOTER_LINKS: ReadonlyArray<{ label: string; href: string; icon: Icon }> =
 interface NavEntry {
   key: string;
   label: string;
-  href: string;
+  to: HubTarget;
   icon?: Icon;
   active: boolean;
-  /**
-   * Section links replace history and keep scroll, exactly as the pane's own
-   * `navigate()` does — a `?tab=` change is a view switch, not a page.
-   */
-  replace?: boolean;
   trailing?: ReactNode;
 }
 
@@ -87,10 +84,8 @@ function NavRow({ entry }: { entry: NavEntry }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={entry.active} className={ROW_CLASS}>
-        <Link
-          href={entry.href}
-          replace={entry.replace}
-          scroll={entry.replace ? false : undefined}
+        <HubLink
+          to={entry.to}
           aria-current={entry.active ? 'page' : undefined}
           onClick={() => {
             // The mobile sidebar is a sheet over the page; a pick closes it.
@@ -106,7 +101,7 @@ function NavRow({ entry }: { entry: NavEntry }) {
           {Glyph ? <Glyph className="size-4 shrink-0" /> : null}
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
           {entry.trailing}
-        </Link>
+        </HubLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -131,12 +126,15 @@ function NavSkeleton() {
 }
 
 /**
- * The nav body. Reads the route (`useParams`) and `?tab=`, so it renders under
- * a `Suspense` boundary — see `AccountSettingsSidebar`.
+ * The nav body. Reads `?tab=` through `useSearchParams`, so it renders under a
+ * `Suspense` boundary — see `AccountSettingsSidebar`.
  */
 function SettingsNav() {
-  const params = useParams<{ id?: string }>();
-  const accountId = params?.id;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const navGroups = localizedAccountNavGroups(tI18nComplete);
+  // From `?accountId=`, the only place it lives. `useParams()` would be
+  // meaningless: this sidebar renders over some other route.
+  const accountId = useAccountPanelId();
   const accountsQuery = useAccountsList();
   const { sectionVisible, activeSection, canReadMembers } = useAccountHubSection(accountId);
   const membersQuery = useAccountMembers(accountId, canReadMembers);
@@ -153,19 +151,20 @@ function SettingsNav() {
     sectionVisible.members && !membersQuery.isLoading ? (membersQuery.data ?? []).length : null;
 
   const sectionGroups = accountId
-    ? NAV_GROUPS.map((group) => ({
-        label: group.label,
-        items: group.items.filter((item) => sectionVisible[item.id]),
-      })).filter((group) => group.items.length > 0)
+    ? navGroups
+        .map((group) => ({
+          label: group.label,
+          items: group.items.filter((item) => sectionVisible[item.id]),
+        }))
+        .filter((group) => group.items.length > 0)
     : [];
 
   const sectionEntry = (item: AccountNavItem): NavEntry => ({
     key: `section:${item.id}`,
     label: item.label,
-    href: `/accounts/${accountId}?tab=${item.id}`,
+    to: hubTarget(accountId, { tab: item.id }),
     icon: item.icon,
     active: item.id === activeSection,
-    replace: true,
     trailing:
       item.id === 'members' && memberCount !== null ? (
         <span className="text-muted-foreground ml-auto text-xs tabular-nums">{memberCount}</span>
@@ -175,14 +174,14 @@ function SettingsNav() {
   const accountEntry = (account: { account_id: string; name?: string | null }): NavEntry => ({
     key: `account:${account.account_id}`,
     label: account.name || 'Account',
-    href: `/accounts/${account.account_id}`,
+    to: hubTarget(account.account_id),
     active: account.account_id === accountId,
   });
 
   return (
     <>
       <SidebarGroup className="px-2 py-0">
-        <GroupLabel>Accounts</GroupLabel>
+        <GroupLabel>{tI18nComplete.raw('text8a7c8b67fe8b')}</GroupLabel>
         {accountsQuery.isLoading ? (
           <div className="space-y-1">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -190,7 +189,9 @@ function SettingsNav() {
             ))}
           </div>
         ) : accountsQuery.isError ? (
-          <p className="text-muted-foreground px-2.5 py-2 text-xs">Accounts failed to load.</p>
+          <p className="text-muted-foreground px-2.5 py-2 text-xs">
+            {tI18nComplete.raw('textb170e6a477b8')}
+          </p>
         ) : (
           <SidebarMenu>
             {accounts.map((account) => {
@@ -225,7 +226,31 @@ function SettingsNav() {
   );
 }
 
+/**
+ * The one way out, top-left.
+ *
+ * It closes, it does not navigate: the page you came from is still mounted
+ * underneath, and `closeAccountPanel` pops the single history entry the modal
+ * pushed — so you land exactly where you were, at the scroll position you
+ * left. Same effect as Escape.
+ */
+function BackToApp({ label }: { label: string }) {
+  return (
+    <Button
+      variant="ghost"
+      size="xs"
+      className="text-muted-foreground hover:text-foreground gap-1 text-xs"
+      onClick={() => closeAccountPanel()}
+    >
+      <ArrowLeftIcon className="size-4 shrink-0" />
+      {label}
+    </Button>
+  );
+}
+
 export function AccountSettingsSidebar() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const footerLinks = localizeUiCatalog(FOOTER_LINKS, tI18nComplete, ACCOUNT_HUB_TRANSLATION_KEYS);
   return (
     // `--surface` is this shell's pane color, one rung off canvas. The child
     // variant is required: `className` lands on the positioning container,
@@ -237,30 +262,20 @@ export function AccountSettingsSidebar() {
     >
       <SidebarHeader className="gap-0 px-2 pt-0 pb-1">
         <div className="flex h-11 items-center justify-between py-2 pr-0.5">
-          <Button
-            asChild
-            variant="ghost"
-            size="xs"
-            className="text-muted-foreground hover:text-foreground gap-1 text-xs"
-          >
-            <Link href={PROJECT_LANDING_PATH}>
-              <ArrowLeftIcon className="size-4 shrink-0" />
-              Back to app
-            </Link>
-          </Button>
+          <BackToApp label={tI18nComplete.raw('texta6989680b352')} />
           <div className="flex items-center gap-px">
-            <Hint label="Search" side="bottom">
+            <Hint label={tI18nComplete.raw('text49c266baaaa7')} side="bottom">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Search"
+                aria-label={tI18nComplete.raw('text49c266baaaa7')}
                 onClick={() => openCommandPalette()}
               >
                 <MagnifyingGlassIcon className="text-muted-foreground size-4" />
               </Button>
             </Hint>
-            <Hint label="Hide sidebar" side="bottom">
+            <Hint label={tI18nComplete.raw('textd1db29ebc76d')} side="bottom">
               <SidebarTrigger className="text-muted-foreground" />
             </Hint>
           </div>
@@ -275,7 +290,7 @@ export function AccountSettingsSidebar() {
 
       <SidebarFooter className="p-2">
         <SidebarMenu>
-          {FOOTER_LINKS.map((link) => (
+          {footerLinks.map((link) => (
             <SidebarMenuItem key={link.href}>
               <SidebarMenuButton asChild className={ROW_CLASS}>
                 <a href={link.href} target="_blank" rel="noreferrer">

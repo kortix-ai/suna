@@ -64,6 +64,7 @@ jobs:
       ref: ${{ steps.preview.outputs.ref }}
       lockfile_sha256: ${{ steps.preview.outputs.lockfile_sha256 }}
       head_branch: ${{ steps.preview.outputs.head_branch }}
+      persistent_branch: ${{ steps.preview.outputs.persistent_branch }}
       public_origin: ${{ steps.preview.outputs.public_origin }}
       public_worker: ${{ steps.preview.outputs.public_worker }}
       provider: ${{ steps.preview.outputs.provider }}
@@ -129,13 +130,19 @@ jobs:
             exit 1
           }
 
+          branch="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.ref)"
+          # A manual Daytona run verifies the exact PR SHA on an ephemeral
+          # origin after Platinum fails. It must not claim or replace the
+          # branch's persistent Platinum identity.
+          persistent_branch=$([ "$EVENT_NAME" = workflow_dispatch ] && [ "$provider" = daytona ] && printf '' || printf '%s' "$branch")
+
           {
             echo "pr_number=$num"
             echo "sha=$sha"
             echo "ref=refs/pull/${num}/head"
             echo "lockfile_sha256=$lockfile_sha256"
-            branch="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.ref)"
             echo "head_branch=$branch"
+            echo "persistent_branch=$persistent_branch"
             # A branch MAY be fronted by a stable hostname instead of being
             # reached at the provider's own url. PREVIEW_PUBLIC_ORIGINS maps
             # `branch=https://host`, one per line; anything unlisted — which is
@@ -334,7 +341,7 @@ jobs:
       # --target-full on each one would make the label unusable for working in.
       # Re-run it any time from the Actions tab with 'Run workflow'.
       PREVIEW_RUN_TESTS: ${{ (github.event.action == 'labeled' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
-      PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.head_branch }}
+      PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.persistent_branch }}
       PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}
       PREVIEW_PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
       PREVIEW_SHA: ${{ needs.authorize.outputs.sha }}

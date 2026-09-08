@@ -1,4 +1,5 @@
 import { ArrowRightIcon as HiArrowRight } from '@/lib/icons/ssr';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import { Reveal } from '@/components/home/reveal';
@@ -11,6 +12,7 @@ import KortixGrid from '@/components/ui/marketing/gridder';
  * treatment (KortixGrid field + card) so the section reads as one platform.
  */
 export function UseCasesCta() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <section className="relative mx-auto max-w-6xl px-6 py-24 md:py-30 lg:px-0">
       <Reveal>
@@ -18,28 +20,26 @@ export function UseCasesCta() {
           <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
             <div className="col-span-5 flex flex-col items-start justify-center space-y-4 p-8 sm:p-10">
               <Badge variant="kortix" className="rounded">
-                Loop Engineering
+                {tI18nComplete.raw('text7cdb8d6538c7')}
               </Badge>
               <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                Engineer your first loop
+                {tI18nComplete.raw('textd2c165305573')}
               </h2>
               <p className="text-muted-foreground text-sm leading-relaxed">
-                Give your company a workforce of agents that run on a schedule, ship real
-                deliverables, and improve one reviewed change at a time. Free to self-host, managed
-                cloud from $20.
+                {tI18nComplete.raw('text102fd4438086')}
               </p>
               <p className="text-muted-foreground text-xs tracking-wider">
-                Open source · SSO · RBAC · on-prem · no lock-in
+                {tI18nComplete.raw('text21d4eb49638e')}
               </p>
               <div className="mt-2 grid w-full grid-cols-1 gap-2 sm:max-w-xs">
                 <Button asChild size="lg" className="w-full">
                   <Link href="/auth">
-                    Get started
+                    {tI18nComplete.raw('text61e8d44ad423')}
                     <HiArrowRight className="size-4" />
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="secondary" className="w-full">
-                  <Link href="/enterprise">Talk to sales</Link>
+                  <Link href="/enterprise">{tI18nComplete.raw('textcfd0b0225710')}</Link>
                 </Button>
               </div>
             </div>

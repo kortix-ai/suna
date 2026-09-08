@@ -28,6 +28,7 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
 import { useWorkspaceSearch } from '@/features/files';
 import { fetchChangeRequests } from '@/features/project-files/api/change-requests';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
@@ -78,36 +79,32 @@ import {
 } from '@/features/workspace/workspace-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
-import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
+import {
+  type MenuItemDef,
+  type SettingsTabId,
+  getItemsForSurface,
+  translateMenuItem,
+} from '@/lib/menu-registry';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { track } from '@/lib/track';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import {
-  buildWebProxyUrl,
-  normalizeExternalInput,
-  parseLocalhostUrl,
-  toInternalUrl,
-} from '@/lib/utils/sandbox-url';
-import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useProjectSwitchStore } from '@/stores/project-switch-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import {
   type FeatureFlagKey,
   type KortixAccount,
@@ -134,7 +131,6 @@ import {
   useCreateRuntimeSession,
   useModelStore,
   useRuntimeAgents,
-  useRuntimeMessages,
   useRuntimeProviders,
 } from '@kortix/sdk/react';
 import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
@@ -150,7 +146,6 @@ import {
   FileTextIcon as FileText,
   FlaskIcon as Flask,
   GitBranchIcon as FolderGit2,
-  GlobeIcon as Globe,
   HashIcon as Hash,
   ChatCircleIcon as MessageCircle,
   MinusIcon as Minus,
@@ -161,7 +156,6 @@ import {
   UsersIcon as UsersSolid,
 } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -170,7 +164,6 @@ type PalettePage =
   | 'root'
   | 'agents'
   | 'models'
-  | 'messages'
   | 'workspaces'
   | 'accounts'
   | 'sessions'
@@ -444,7 +437,9 @@ function FileSearchPage({
     return (
       <div className="flex items-center justify-center gap-2 py-10">
         <TextShimmer>
-          {isContentSearch ? 'Searching file contents…' : 'Searching files…'}
+          {isContentSearch
+            ? tHardcodedUi.raw('i18nComplete.textde0825bcf9bc')
+            : tHardcodedUi.raw('i18nComplete.text0d9498215681')}
         </TextShimmer>
       </div>
     );
@@ -457,7 +452,8 @@ function FileSearchPage({
           <Search className="text-muted-foreground size-4" />
         </div>
         <span className="text-muted-foreground text-sm">
-          No {isContentSearch ? 'content matches' : 'files'}{' '}
+          {tHardcodedUi.raw('i18nComplete.text1ea442a134b2')}{' '}
+          {isContentSearch ? tHardcodedUi.raw('i18nComplete.text7aea792d4556') : 'files'}{' '}
           {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextFor')}
           {effectiveQuery}
           {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextText')}
@@ -528,83 +524,6 @@ function FileSearchPage({
   );
 }
 
-function MessagesPage({
-  sessionId,
-  query,
-  onSelect,
-}: {
-  sessionId: string;
-  query: string;
-  onSelect: (messageId: string) => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: messages, isLoading } = useRuntimeMessages(sessionId);
-
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
-
-  const items = useMemo(() => {
-    const result: { id: string; text: string }[] = [];
-    for (const turn of turns) {
-      const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
-      const raw = textParts.map((p) => p.text).join(' ');
-      const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
-      if (stripped.length > 0) {
-        result.push({ id: turn.userMessage.info.id, text: stripped });
-      }
-    }
-    return result;
-  }, [turns]);
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return items;
-    const q = query.trim().toLowerCase();
-    return items.filter((item) => (item.text || '').toLowerCase().includes(q));
-  }, [items, query]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>
-          {tHardcodedUi.raw('componentsCommandPalette.line328JsxTextLoadingMessages')}
-        </TextShimmer>
-      </div>
-    );
-  }
-
-  if (filtered.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-12">
-        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <MessageCircle className="text-muted-foreground/30 size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query ? `No messages matching "${query}"` : 'No messages in this session'}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <CommandGroup heading={`Messages (${filtered.length})`} forceMount>
-      {filtered.map((item, index) => (
-        <CommandItem
-          key={item.id}
-          value={sanitizeCmdkValue(`message ${index} ${item.text.slice(0, 80)}`)}
-          onSelect={() => onSelect(item.id)}
-        >
-          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 shrink-0" />
-          <span className="text-muted-foreground/50 w-6 shrink-0 text-right text-xs tabular-nums">
-            #{index + 1}
-          </span>
-          <span className="flex-1 truncate text-sm">
-            {item.text.length > 80 ? `${item.text.slice(0, 80)}...` : item.text}
-          </span>
-        </CommandItem>
-      ))}
-    </CommandGroup>
-  );
-}
-
 /**
  * The 'changes' page — this workspace's OPEN change requests, listed by number
  * and title, each opening its own detail dialog.
@@ -632,6 +551,7 @@ function ChangeRequestsPage({
   query: string;
   onSelect: (crId: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isLoading } = useQuery({
     queryKey: changeRequestKeys.list(projectId, 'open'),
     queryFn: () => fetchChangeRequests(projectId, 'open'),
@@ -650,7 +570,7 @@ function ChangeRequestsPage({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>Loading change requests…</TextShimmer>
+        <TextShimmer>{tI18nComplete.raw('text73d66adbfd39')}</TextShimmer>
       </div>
     );
   }
@@ -662,14 +582,16 @@ function ChangeRequestsPage({
           <FileDiff className="text-muted-foreground size-4" />
         </div>
         <span className="text-muted-foreground/60 text-sm">
-          {query.trim() ? `No change requests matching "${query.trim()}"` : 'Nothing to review'}
+          {query.trim()
+            ? tI18nComplete('textd717d6d02f4f', { value0: query.trim() })
+            : tI18nComplete.raw('text1a60b0977a4f')}
         </span>
       </div>
     );
   }
 
   return (
-    <CommandGroup heading={`Open change requests`} forceMount>
+    <CommandGroup heading={tI18nComplete.raw('text7190acb3b105')} forceMount>
       {changeRequests.map((cr) => (
         <CommandItem
           key={cr.cr_id}
@@ -718,6 +640,7 @@ function FeatureFlagsPage({
   query: string;
   onNavigate: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const projectQuery = useQuery({
     queryKey: qk.project.summary(projectId),
@@ -754,10 +677,12 @@ function FeatureFlagsPage({
       if (variables.key === 'llm_gateway') {
         refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
       }
-      successToast(`${variables.key} ${variables.next ? 'enabled' : 'disabled'}`);
+      successToast(
+        `${variables.key} ${variables.next ? tI18nComplete.raw('textfb9cf75606b4') : tI18nComplete.raw('text17eb3c0168d0')}`,
+      );
     },
     onError: (error: Error, variables) => {
-      errorToast(error.message || `Failed to update ${variables.key}`);
+      errorToast(error.message || tI18nComplete('text6926cad8145a', { value0: variables.key }));
     },
   });
 
@@ -783,7 +708,7 @@ function FeatureFlagsPage({
   if (projectQuery.isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>Loading feature flags…</TextShimmer>
+        <TextShimmer>{tI18nComplete.raw('text38839cc3827c')}</TextShimmer>
       </div>
     );
   }
@@ -796,15 +721,15 @@ function FeatureFlagsPage({
         </div>
         <span className="text-muted-foreground/60 text-sm">
           {query.trim()
-            ? `No feature matching "${query.trim()}"`
-            : 'This deployment exposes no feature flags'}
+            ? tI18nComplete('textdb41b06d8460', { value0: query.trim() })
+            : tI18nComplete.raw('textcc5de74822b5')}
         </span>
       </div>
     );
   }
 
   return (
-    <CommandGroup heading="Feature flags" forceMount>
+    <CommandGroup heading={tI18nComplete.raw('text20a2e59ba129')} forceMount>
       {features.map((feature) => {
         const pending = feature.key in pendingValues;
         return (
@@ -851,6 +776,9 @@ function FeatureFlagsPage({
 
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSettingsRail = useTranslations('settings.rail');
+  const densityPageOptions = useLocalizedUiCatalog(DENSITY_PAGE_OPTIONS);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState<PalettePage>('root');
@@ -883,7 +811,6 @@ export function CommandPalette() {
   }, [params?.sessionId, pathname]);
   const sidebarCtx = useContext(SidebarContext);
   const sidebarOpen = sidebarCtx?.open ?? false;
-  const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
   const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
@@ -1062,10 +989,10 @@ export function CommandPalette() {
         href: `/terminal/${pty.id}`,
       });
     } catch {
-      errorToast('Failed to open terminal');
+      errorToast(tHardcodedUi.raw('i18nComplete.text6300be841ac6'));
     }
     close();
-  }, [createPty, close]);
+  }, [createPty, close, tHardcodedUi]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -1153,7 +1080,8 @@ export function CommandPalette() {
   const queryLongEnough = query.trim().length >= 2;
   const allPaletteItems = useMemo(() => {
     const result: MenuItemDef[] = [];
-    for (const item of getItemsForSurface('commandPalette')) {
+    for (const sourceItem of getItemsForSurface('commandPalette')) {
+      const item = translateMenuItem(sourceItem, tI18nComplete);
       if (LEGACY_PALETTE_HIDDEN.has(item.id)) continue;
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
@@ -1168,6 +1096,10 @@ export function CommandPalette() {
       // already declare `requiresProject: true` and are filtered above;
       // `{accountId}` rows are filtered here, off the token itself, so a new
       // account-scoped row can never ship without the guard.
+      // An account row cannot resolve without a selected account, exactly as
+      // an `{accountId}` href could not. Same guard, off the kind instead of
+      // off a token, so a new account row can never ship without it.
+      if (item.kind === 'account' && !selectedAccountId) continue;
       let href = item.href;
       if (href?.includes('{projectId}')) {
         if (!projectId) continue;
@@ -1188,6 +1120,7 @@ export function CommandPalette() {
     selectedAccountId,
     sidebarCtx,
     projectFlags,
+    tI18nComplete,
   ]);
 
   const filteredNavItems = useMemo(() => {
@@ -1222,8 +1155,8 @@ export function CommandPalette() {
   // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
   // own sub-nav composes them. Nothing left in the rail varies by flag.
   const allSettingsGroups = useMemo(
-    () => settingsPaletteGroups({ hasProject: !!projectId }),
-    [projectId],
+    () => settingsPaletteGroups({ hasProject: !!projectId }, (key) => tSettingsRail(key as never)),
+    [projectId, tSettingsRail],
   );
 
   const filteredSettingsGroups = useMemo(
@@ -1324,30 +1257,22 @@ export function CommandPalette() {
     if (sessionConfigurationEnabled) {
       items.push({
         id: 'change-agent',
-        label: 'Change Agent',
+        label: tHardcodedUi.raw('i18nComplete.text6fb2caa0ee1c'),
         keywords: 'change agent worker switch select bot assistant',
         targetPage: 'agents',
       });
       items.push({
         id: 'change-model',
-        label: 'Change Model',
+        label: tHardcodedUi.raw('i18nComplete.text9cb6d01d8b29'),
         keywords: 'change model llm switch select provider anthropic openai claude gpt',
         targetPage: 'models',
-      });
-    }
-    if (currentSessionId) {
-      items.push({
-        id: 'jump-to-message',
-        label: 'Jump to Message',
-        keywords: 'jump message go scroll navigate find conversation chat',
-        targetPage: 'messages',
       });
     }
     return items.filter((item) => {
       const haystack = [item.label, item.keywords].join(' ').toLowerCase();
       return words.every((w) => haystack.includes(w));
     });
-  }, [hasQuery, query, currentSessionId, sessionConfigurationEnabled]);
+  }, [hasQuery, query, currentSessionId, sessionConfigurationEnabled, tHardcodedUi]);
 
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
@@ -1370,7 +1295,7 @@ export function CommandPalette() {
         // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
-          title: 'New session',
+          title: tHardcodedUi.raw('i18nComplete.textcffdba22adf2'),
           type: 'session',
           href: `/sessions/${session.id}`,
         });
@@ -1379,9 +1304,9 @@ export function CommandPalette() {
         });
         close();
       })
-      .catch(() => errorToast('Failed to create session'))
+      .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.textb6f7df17e0a2')))
       .finally(() => setIsCreating(false));
-  }, [isCreating, projectId, newSession, createSession, openProjectTab, close]);
+  }, [isCreating, projectId, newSession, createSession, openProjectTab, close, tHardcodedUi]);
 
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
@@ -1512,11 +1437,11 @@ export function CommandPalette() {
 
   const filteredDensityOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return DENSITY_PAGE_OPTIONS;
-    return DENSITY_PAGE_OPTIONS.filter((option) =>
+    if (!q) return densityPageOptions;
+    return densityPageOptions.filter((option) =>
       `${option.label} ${option.description}`.toLowerCase().includes(q),
     );
-  }, [query]);
+  }, [densityPageOptions, query]);
 
   const filteredProjectSessionsList = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1576,8 +1501,14 @@ export function CommandPalette() {
     const rows = hasQuery ? filteredNavItems : rootSuggestionItems;
     for (const item of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
       const href = item.href;
+      // An account row opens a modal, so what it needs warmed is the hub's JS
+      // chunk, not an RSC payload.
+      if (item.kind === 'account') {
+        preloadAccountHub();
+        continue;
+      }
       if (item.kind !== 'navigate' || !href) continue;
-      if (href.startsWith('/projects') || href.startsWith('/accounts')) router.prefetch(href);
+      if (href.startsWith('/projects')) router.prefetch(href);
     }
   }, [open, page, hasQuery, filteredNavItems, rootSuggestionItems, router]);
 
@@ -1627,8 +1558,10 @@ export function CommandPalette() {
   // fallback stays cold on purpose: it exists only for the window before that.
   useEffect(() => {
     if (!open || !projectId || !inviteMembersAccountId) return;
-    router.prefetch(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
-  }, [open, projectId, inviteMembersAccountId, router]);
+    // The destination is the account hub, which is a modal: what needs warming
+    // is its chunk, not an RSC payload.
+    preloadAccountHub();
+  }, [open, projectId, inviteMembersAccountId]);
 
   const hasSessionResults = rootSessionResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
@@ -1670,156 +1603,6 @@ export function CommandPalette() {
     [projectId, router, close],
   );
 
-  const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
-
-  const handleJumpToMessage = useCallback(
-    (messageId: string) => {
-      jumpToMessage(messageId);
-      close();
-    },
-    [jumpToMessage, close],
-  );
-
-  const detectedUrl = useMemo(() => {
-    const q = query.trim();
-    if (!q) return null;
-
-    const localhostParsed = parseLocalhostUrl(q.startsWith('http') ? q : `http://${q}`);
-    if (localhostParsed) {
-      return { kind: 'localhost' as const, ...localhostParsed };
-    }
-
-    if (/^\d{2,5}$/.test(q)) {
-      const port = Number.parseInt(q, 10);
-      if (port >= 1 && port <= 65535) {
-        return {
-          kind: 'localhost' as const,
-          originalUrl: `http://localhost:${port}/`,
-          port,
-          path: '/',
-        };
-      }
-    }
-
-    const normalized = normalizeExternalInput(q);
-    if (normalized) {
-      if (!q.includes('/')) {
-        const ext = q.split('.').pop()?.toLowerCase() || '';
-        const FILE_EXTS = new Set([
-          'ts',
-          'tsx',
-          'js',
-          'jsx',
-          'json',
-          'md',
-          'mdx',
-          'css',
-          'scss',
-          'less',
-          'html',
-          'xml',
-          'yaml',
-          'yml',
-          'toml',
-          'txt',
-          'log',
-          'env',
-          'lock',
-          'sql',
-          'db',
-          'py',
-          'rb',
-          'rs',
-          'go',
-          'java',
-          'sh',
-          'bash',
-          'zsh',
-          'conf',
-          'cfg',
-          'ini',
-          'svg',
-          'png',
-          'jpg',
-          'jpeg',
-          'gif',
-          'ico',
-          'woff',
-          'woff2',
-          'ttf',
-          'eot',
-          'map',
-          'd',
-          'mjs',
-          'cjs',
-          'mts',
-          'cts',
-          'vue',
-          'svelte',
-          'astro',
-          'wasm',
-          'zip',
-          'tar',
-          'gz',
-          'pdf',
-          'docx',
-          'pptx',
-          'xlsx',
-        ]);
-        if (FILE_EXTS.has(ext)) return null;
-      }
-      return { kind: 'external' as const, url: normalized };
-    }
-
-    return null;
-  }, [query]);
-
-  const handleOpenUrl = useCallback(() => {
-    if (!detectedUrl) return;
-
-    if (detectedUrl.kind === 'localhost') {
-      const { port, path } = detectedUrl;
-      const internalUrl = toInternalUrl(port, path);
-      const proxied = buildProxyUrl(internalUrl) || internalUrl;
-      const tabId = `preview:${port}`;
-      openTabAndNavigate({
-        id: tabId,
-        title: `localhost:${port}`,
-        type: 'preview',
-        href: `/p/${port}`,
-        metadata: enrichPreviewMetadata({
-          url: proxied,
-          port,
-          originalUrl: internalUrl,
-          path,
-        }),
-      });
-    } else {
-      const extUrl = detectedUrl.url;
-      const proxyUrl = buildWebProxyUrl(extUrl, subdomainOpts) || extUrl;
-      let displayHost: string;
-      try {
-        displayHost = new URL(extUrl).hostname;
-      } catch {
-        displayHost = extUrl;
-      }
-
-      openTabAndNavigate({
-        id: `preview:web`,
-        title: displayHost,
-        type: 'preview',
-        href: '/p/web',
-        metadata: enrichPreviewMetadata({
-          url: proxyUrl,
-          port: 0,
-          originalUrl: extUrl,
-          path: '/',
-        }),
-      });
-    }
-    close();
-  }, [detectedUrl, buildProxyUrl, subdomainOpts, close]);
-
   const handleToggleSidebar = useCallback(() => {
     // Reached by keyboard, from a palette the user is already typing in — the
     // panel must be there the moment the palette closes, not 240ms later.
@@ -1846,9 +1629,16 @@ export function CommandPalette() {
       if (next === conversationDensity) return;
       track('conversation_density_switched', { to: next });
       useUserPreferencesStore.getState().setConversationDensity(next);
-      successToast(`Conversation density set to ${next === 'minimal' ? 'Minimal' : 'Normal'}`);
+      successToast(
+        tHardcodedUi('i18nComplete.textca094a828cb9', {
+          value0:
+            next === tHardcodedUi.raw('i18nComplete.texta703788f8320')
+              ? tHardcodedUi.raw('i18nComplete.text057b5de48d7b')
+              : tHardcodedUi.raw('i18nComplete.texta7248eeb45eb'),
+        }),
+      );
     },
-    [close, conversationDensity],
+    [close, conversationDensity, tHardcodedUi],
   );
 
   /**
@@ -2001,13 +1791,18 @@ export function CommandPalette() {
     // redirect to exactly this destination (it resolves the account id itself
     // and appends the same `&project=` scoping), so the unresolved case costs
     // one extra hop instead of the click doing nothing.
-    // nav-contract: prefetch-only — the destination depends on whether
-    // `inviteMembersAccountId` has resolved, so it is not known at render.
-    router.push(
-      inviteMembersAccountId
-        ? `/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`
-        : `/projects/${projectId}/members`,
-    );
+    if (inviteMembersAccountId) {
+      // The hub over the page you are on — no navigation at all.
+      openAccountPanel(
+        hubTarget(inviteMembersAccountId, { tab: 'access-projects', project: projectId }),
+      );
+      close();
+      return;
+    }
+    // nav-contract: prefetch-only — the fallback only runs in the window
+    // before `inviteMembersAccountId` resolves; that route redirects to the
+    // same hub destination, resolving the account id itself.
+    router.push(`/projects/${projectId}/members`);
     close();
   }, [close, projectId, inviteMembersAccountId, router]);
 
@@ -2100,11 +1895,11 @@ export function CommandPalette() {
     systemReload('dispose-only')
       .then((r) =>
         r.success
-          ? successToast('Config reloaded')
-          : errorToast(r.errors[0] ?? 'The sandbox did not confirm the reload'),
+          ? successToast(tHardcodedUi.raw('i18nComplete.textd46e628bda3a'))
+          : errorToast(r.errors[0] ?? tHardcodedUi.raw('i18nComplete.text42b8d7c5357a')),
       )
       .catch((err: unknown) => errorToast(reloadErrorMessage(err)));
-  }, [close]);
+  }, [close, tHardcodedUi]);
 
   const handleReconcileSession = useCallback(() => {
     if (!currentSessionId) return;
@@ -2115,15 +1910,17 @@ export function CommandPalette() {
     )
       .then((disposition) =>
         successToast(
-          disposition === 'queued'
-            ? 'Branch sync queued after the current turn'
-            : 'Asked the agent to sync the branch',
+          disposition === tHardcodedUi.raw('i18nComplete.textd36be6494248')
+            ? tHardcodedUi.raw('i18nComplete.textb11e0f2cb028')
+            : tHardcodedUi.raw('i18nComplete.texta56be319eda4'),
         ),
       )
       .catch((err: unknown) =>
-        errorToast(err instanceof Error ? err.message : 'Could not reach the agent'),
+        errorToast(
+          err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text29490fc13cfc'),
+        ),
       );
-  }, [close, currentProjectSession?.base_ref, currentSessionId, sendToSession]);
+  }, [close, currentProjectSession?.base_ref, currentSessionId, sendToSession, tHardcodedUi]);
 
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
@@ -2180,6 +1977,16 @@ export function CommandPalette() {
   const handleRegistryItem = useCallback(
     (item: MenuItemDef) => {
       switch (item.kind) {
+        // The account hub has no route: it is `?accountId=` over the page you
+        // are on, so this row opens a modal rather than navigating. `close()`
+        // then leaves the palette, and the hub is already there — no fetch, no
+        // transition, and Escape puts you back on this same page.
+        case 'account': {
+          if (!selectedAccountId) break;
+          openAccountPanel(hubTarget(selectedAccountId, { tab: item.accountTab }));
+          close();
+          break;
+        }
         case 'navigate': {
           const href = item.href || '';
 
@@ -2201,7 +2008,7 @@ export function CommandPalette() {
             break;
           }
 
-          if (href.startsWith('/projects') || href.startsWith('/accounts')) {
+          if (href.startsWith('/projects')) {
             // nav-contract: prefetch-only — a cmdk row activated by keyboard,
             // and `href` is resolved from the registry item at click time. The
             // root-navigation effect warms the rendered rows.
@@ -2253,6 +2060,7 @@ export function CommandPalette() {
       handleSetTheme,
       handleSetWallpaper,
       actionHandlers,
+      selectedAccountId,
     ],
   );
 
@@ -2260,10 +2068,10 @@ export function CommandPalette() {
     (agentName: string) => {
       if (!currentSessionId || !sessionConfigurationEnabled) return;
       modelStore.setSessionAgentName(currentSessionId, agentName);
-      successToast(`Agent switched to ${agentName}`);
+      successToast(tHardcodedUi('i18nComplete.text8a85cfbe71eb', { value0: agentName }));
       close();
     },
-    [currentSessionId, sessionConfigurationEnabled, modelStore, close],
+    [currentSessionId, sessionConfigurationEnabled, tHardcodedUi, modelStore, close],
   );
 
   const handleSelectModel = useCallback(
@@ -2279,10 +2087,12 @@ export function CommandPalette() {
       );
       modelStore.pushRecent({ providerID, modelID });
       const model = allModels.find((m) => m.providerID === providerID && m.modelID === modelID);
-      successToast(`Model switched to ${model?.modelName || modelID}`);
+      successToast(
+        tHardcodedUi('i18nComplete.text8d5ee8fe6a2e', { value0: model?.modelName || modelID }),
+      );
       close();
     },
-    [currentAgent, sessionConfigurationEnabled, modelStore, providers, allModels, close],
+    [currentAgent, sessionConfigurationEnabled, tHardcodedUi, modelStore, providers, allModels, close],
   );
 
   const totalSearchResults = useMemo(() => {
@@ -2292,10 +2102,10 @@ export function CommandPalette() {
     if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'density') return filteredDensityOptions.length;
-    // 0, like 'messages': these pages fetch and filter their own rows, so the
-    // count lives inside them (the 'changes' group heading carries it) rather
-    // than being lifted here only to be recomputed.
-    if (page === 'messages' || page === 'changes' || page === 'flags') return 0;
+    // 0: these pages fetch and filter their own rows, so the count lives
+    // inside them (the 'changes' group heading carries it) rather than being
+    // lifted here only to be recomputed.
+    if (page === 'changes' || page === 'flags') return 0;
     if (!hasQuery) return 0;
     return (
       filteredNavItems.length +
@@ -2321,32 +2131,30 @@ export function CommandPalette() {
   ]);
 
   const placeholder = useMemo(() => {
-    if (page === 'agents') return 'Search agents...';
-    if (page === 'models') return 'Search models...';
-    if (page === 'files') return 'Search files in this project...';
-    if (page === 'messages') return 'Search messages...';
-    if (page === 'workspaces') return 'Search workspaces...';
-    if (page === 'accounts') return 'Search accounts...';
-    if (page === 'sessions') return 'Search sessions...';
-    if (page === 'density') return 'Choose conversation density...';
-    if (page === 'changes') return 'Search change requests...';
-    if (page === 'flags') return 'Search feature flags...';
-    return 'Search commands, sessions...';
-  }, [page]);
+    if (page === 'agents') return tI18nComplete.raw('text32f4468b0b6f');
+    if (page === 'models') return tI18nComplete.raw('text37b90680b842');
+    if (page === 'files') return tI18nComplete.raw('text19608ade89b8');
+    if (page === 'workspaces') return tI18nComplete.raw('text5c192a3e6f23');
+    if (page === 'accounts') return tI18nComplete.raw('text72eb3689cab9');
+    if (page === 'sessions') return tI18nComplete.raw('textf41875714fdc');
+    if (page === 'density') return tI18nComplete.raw('textf0f41388d721');
+    if (page === 'changes') return tI18nComplete.raw('text3db1f0d55a5b');
+    if (page === 'flags') return tI18nComplete.raw('textfd20bd366efb');
+    return tI18nComplete.raw('text7b355872be1c');
+  }, [page, tI18nComplete]);
 
   const pageTitle = useMemo(() => {
-    if (page === 'agents') return 'Change Agent';
-    if (page === 'models') return 'Change Model';
-    if (page === 'files') return 'Search Files';
-    if (page === 'messages') return 'Jump to Message';
-    if (page === 'workspaces') return 'Switch Workspace';
-    if (page === 'accounts') return 'Switch Account';
-    if (page === 'sessions') return 'Open Session';
-    if (page === 'density') return 'Conversation Density';
-    if (page === 'changes') return 'Review changes';
-    if (page === 'flags') return 'Feature flags';
+    if (page === 'agents') return tI18nComplete.raw('text6fb2caa0ee1c');
+    if (page === 'models') return tI18nComplete.raw('text9cb6d01d8b29');
+    if (page === 'files') return tI18nComplete.raw('text5a5bc0c4ce6e');
+    if (page === 'workspaces') return tI18nComplete.raw('text9ad6baffd025');
+    if (page === 'accounts') return tI18nComplete.raw('text4ecda5e7a644');
+    if (page === 'sessions') return tI18nComplete.raw('text113463edeb06');
+    if (page === 'density') return tI18nComplete.raw('textd0fffb7fa940');
+    if (page === 'changes') return tI18nComplete.raw('text6a47708f4e14');
+    if (page === 'flags') return tI18nComplete.raw('text20a2e59ba129');
     return null;
-  }, [page]);
+  }, [page, tI18nComplete]);
 
   return (
     <>
@@ -2354,7 +2162,7 @@ export function CommandPalette() {
         open={open}
         onOpenChange={setOpen}
         className={cn(
-          'origin-center transition-transform duration-150 ease-in-out sm:max-w-[680px]',
+          'duration-normal origin-center transition-transform ease-in-out sm:max-w-[680px]',
           backScale && 'scale-[0.99]',
         )}
         showCloseButton={false}
@@ -2384,8 +2192,8 @@ export function CommandPalette() {
                             : Icon;
                           const displayLabel = isToggleSidebar
                             ? sidebarOpen
-                              ? 'Collapse Sidebar'
-                              : 'Expand Sidebar'
+                              ? tHardcodedUi.raw('i18nComplete.text9da0bf42ad07')
+                              : tHardcodedUi.raw('i18nComplete.text2060803eeb71')
                             : item.label;
 
                           const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
@@ -2462,22 +2270,15 @@ export function CommandPalette() {
                           </CommandItem>
                         </>
                       )}
+                      {/* `currentSessionId`, not `projectId`. File search runs
+                          against the SESSION's sandbox daemon
+                          (`useWorkspaceSearch` -> `getActiveServerUrl()` ->
+                          `findFiles`/`findText`), so with no session mounted
+                          every query resolved to a swallowed fetch error and
+                          rendered "No files for …" — indistinguishable from a
+                          real zero-result search. A project id is not enough
+                          to make this row work; a session is. */}
                       {currentSessionId && (
-                        <CommandItem
-                          value="suggestion jump to message go scroll navigate"
-                          onSelect={() => goToPage('messages')}
-                        >
-                          <MessageCircle className="size-4" />
-                          <span className="flex-1">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1235JsxTextJumpToMessage',
-                            )}
-                          </span>
-                          <ChevronRight className="text-muted-foreground/30 size-3" />
-                        </CommandItem>
-                      )}
-
-                      {projectId && (
                         <CommandItem
                           value="suggestion search files find file grep repo content"
                           onSelect={() => goToPage('files')}
@@ -2489,7 +2290,7 @@ export function CommandPalette() {
                             )}
                           </span>
                           <Badge variant="kortix" size="sm">
-                            repo
+                            {tHardcodedUi.raw('i18nComplete.text071ca2227754')}
                           </Badge>
                           <ChevronRight className="text-muted-foreground/40 size-3" />
                         </CommandItem>
@@ -2572,8 +2373,6 @@ export function CommandPalette() {
                           >
                             {item.id === 'change-agent' ? (
                               <Bot className="size-4" />
-                            ) : item.id === 'jump-to-message' ? (
-                              <MessageCircle className="size-4" />
                             ) : (
                               <Cpu className="size-4" />
                             )}
@@ -2597,12 +2396,12 @@ export function CommandPalette() {
                             : Icon;
                           const displayLabel = isToggleSidebar
                             ? sidebarOpen
-                              ? 'Collapse Sidebar'
-                              : 'Expand Sidebar'
+                              ? tHardcodedUi.raw('i18nComplete.text9da0bf42ad07')
+                              : tHardcodedUi.raw('i18nComplete.text2060803eeb71')
                             : isTogglePanelMode
                               ? panelMode === 'easy'
-                                ? 'Switch to Advanced View'
-                                : 'Switch to Easy View'
+                                ? tHardcodedUi.raw('i18nComplete.text5f7c8d97889a')
+                                : tHardcodedUi.raw('i18nComplete.text9b21dbb9a947')
                               : item.label;
                           const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
                           const isActiveWallpaper =
@@ -2631,7 +2430,9 @@ export function CommandPalette() {
                               )}
                               {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
                               {(isActiveTheme || isActiveWallpaper) && (
-                                <span className="text-primary/60 text-xs font-medium">Active</span>
+                                <span className="text-primary/60 text-xs font-medium">
+                                  {tHardcodedUi.raw('i18nComplete.text92340695899b')}
+                                </span>
                               )}
                               {submenuPage && (
                                 <ChevronRight className="text-muted-foreground/30 size-3" />
@@ -2730,33 +2531,7 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {detectedUrl && (
-                      <CommandGroup
-                        heading={tHardcodedUi.raw(
-                          'componentsCommandPalette.line1419JsxAttrHeadingOpenURL',
-                        )}
-                        forceMount
-                      >
-                        <CommandItem
-                          value={sanitizeCmdkValue(
-                            `open url browser preview ${query.trim()} localhost port`,
-                          )}
-                          onSelect={handleOpenUrl}
-                        >
-                          <Globe className="text-kortix-blue size-4" />
-                          <span className="flex-1 truncate">
-                            {detectedUrl.kind === 'localhost'
-                              ? `Open localhost:${detectedUrl.port}${detectedUrl.path !== '/' ? detectedUrl.path : ''}`
-                              : `Open ${new URL(detectedUrl.url).hostname}`}
-                          </span>
-                          <Badge variant="kortix" size="sm">
-                            browser
-                          </Badge>
-                        </CommandItem>
-                      </CommandGroup>
-                    )}
-
-                    {queryLongEnough && !detectedUrl && projectId && (
+                    {queryLongEnough && currentSessionId && (
                       <CommandGroup
                         heading={tHardcodedUi.raw(
                           'componentsCommandPalette.line1437JsxAttrHeadingFileSearch',
@@ -2777,7 +2552,7 @@ export function CommandPalette() {
                             {tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextText')}
                           </span>
                           <Badge variant="kortix" size="sm">
-                            repo
+                            {tHardcodedUi.raw('i18nComplete.text071ca2227754')}
                           </Badge>
                           <ChevronRight className="text-muted-foreground/40 size-3" />
                         </CommandItem>
@@ -2797,10 +2572,17 @@ export function CommandPalette() {
                             {query.trim()}
                             {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}
                           </span>
+                          {/* The "Search files" half of this hint points at a
+                              row that only exists on a session — see the
+                              `currentSessionId` guards above. Off a session it
+                              named a control that was not on screen, so the
+                              generic half is all that is offered there. */}
                           <p className="text-muted-foreground/30 mt-1 text-xs">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
-                            )}
+                            {currentSessionId
+                              ? tHardcodedUi.raw(
+                                  'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
+                                )
+                              : tHardcodedUi.raw('i18nComplete.textce18e358bf01')}
                           </p>
                         </div>
                       </div>
@@ -2901,7 +2683,9 @@ export function CommandPalette() {
                       <Bot className="text-muted-foreground size-4" />
                     </div>
                     <span className="text-muted-foreground/60 text-sm">
-                      {query ? `No agents matching "${query}"` : 'No agents available'}
+                      {query
+                        ? tI18nComplete('text20caf3bcf39b', { value0: query })
+                        : tHardcodedUi.raw('i18nComplete.textda9108359944')}
                     </span>
                   </div>
                 )}
@@ -2974,14 +2758,16 @@ export function CommandPalette() {
                   <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
                     <Cpu className="text-muted-foreground/30 size-5" />
                     <span className="text-muted-foreground/60 text-sm">
-                      {query ? `No models matching "${query}"` : 'No models available'}
+                      {query
+                        ? tI18nComplete('textfc89d36d845d', { value0: query })
+                        : tHardcodedUi.raw('i18nComplete.texta5a9895b0241')}
                     </span>
                   </div>
                 )}
               </>
             )}
 
-            {page === 'files' && projectId && (
+            {page === 'files' && currentSessionId && (
               <FileSearchPage query={query} onSelect={handleSelectFile} />
             )}
 
@@ -3032,7 +2818,9 @@ export function CommandPalette() {
                             "No workspaces yet" over a list that simply has not
                             arrived is a lie the sidebar already learned not to
                             tell — hence the loading branch above. */}
-                        {query ? `No workspaces match "${query}"` : 'No workspaces yet'}
+                        {query
+                          ? tI18nComplete('textbe27a86a69e5', { value0: query })
+                          : tHardcodedUi.raw('i18nComplete.text97d0b1171f3e')}
                       </span>
                     </>
                   )}
@@ -3066,14 +2854,19 @@ export function CommandPalette() {
                 <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
                   <UsersSolid weight="fill" className="text-muted-foreground size-5" />
                   <span className="text-muted-foreground/60 text-sm">
-                    {query ? `No accounts matching "${query}"` : 'No accounts'}
+                    {query
+                      ? tI18nComplete('text7433280153b9', { value0: query })
+                      : tHardcodedUi.raw('i18nComplete.text177116ee5177')}
                   </span>
                 </div>
               ))}
 
             {page === 'density' &&
               (filteredDensityOptions.length > 0 ? (
-                <CommandGroup heading="Conversation Density" forceMount>
+                <CommandGroup
+                  heading={tHardcodedUi.raw('i18nComplete.textd0fffb7fa940')}
+                  forceMount
+                >
                   {filteredDensityOptions.map((option) => {
                     // Minimal is one line, Normal is many — let the glyphs say so.
                     const OptionIcon = option.id === 'minimal' ? Minus : TextAlignLeft;
@@ -3099,7 +2892,7 @@ export function CommandPalette() {
                 <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
                   <TextAlignLeft className="text-muted-foreground/30 size-5" />
                   <span className="text-muted-foreground/60 text-sm">
-                    {`No density option matching "${query}"`}
+                    {tI18nComplete('textec0ea7563cde', { value0: query })}
                   </span>
                 </div>
               ))}
@@ -3133,18 +2926,12 @@ export function CommandPalette() {
                     <MessageCircle className="text-muted-foreground size-5" />
                   </div>
                   <span className="text-muted-foreground text-sm">
-                    {query ? `No sessions matching "${query}"` : 'No sessions yet'}
+                    {query
+                      ? tI18nComplete('text6e51f320662f', { value0: query })
+                      : tHardcodedUi.raw('i18nComplete.textf502267deff4')}
                   </span>
                 </div>
               ))}
-
-            {page === 'messages' && currentSessionId && (
-              <MessagesPage
-                sessionId={currentSessionId}
-                query={query}
-                onSelect={handleJumpToMessage}
-              />
-            )}
 
             {page === 'changes' && projectId && (
               <ChangeRequestsPage
@@ -3168,11 +2955,11 @@ export function CommandPalette() {
           <div className="flex items-center gap-1">
             <ArrowUp className="size-3" />
             <ArrowDown className="size-3" />
-            <span>navigate</span>
+            <span>{tHardcodedUi.raw('i18nComplete.textd0cda6559bb3')}</span>
           </div>
           <div className="flex items-center gap-1">
             <CornerDownLeft className="size-3" />
-            <span>select</span>
+            <span>{tHardcodedUi.raw('i18nComplete.textb1a36d25d963')}</span>
           </div>
           {page === 'files' && (
             <div className="flex items-center justify-center gap-1">
@@ -3184,7 +2971,8 @@ export function CommandPalette() {
           )}
           {totalSearchResults > 0 && (
             <span className="ml-auto tabular-nums">
-              {totalSearchResults} result{totalSearchResults !== 1 ? 's' : ''}
+              {totalSearchResults} {tHardcodedUi.raw('i18nComplete.textf6a214f7a5fc')}
+              {totalSearchResults !== 1 ? 's' : ''}
             </span>
           )}
         </CommandFooter>
@@ -3229,7 +3017,9 @@ export function CommandPalette() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={loggingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={loggingOut}>
+              {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
+            </AlertDialogCancel>
             <AlertDialogAction variant="destructive" disabled={loggingOut} onClick={performLogout}>
               {loggingOut ? <Loading className="size-4 shrink-0" /> : null}
               {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}

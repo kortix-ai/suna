@@ -98,10 +98,8 @@ describe('nav contract — no full page reload on an in-app navigation', () => {
         );
       }
 
-      expect(violations).toEqual([]);
-    },
-    120_000,
-  );
+    expect(violations).toEqual([]);
+  }, 120_000);
 
   test('both rules are wired at error level, not warn', () => {
     // As warnings they sat under ~400 react-hooks messages and nobody saw them.

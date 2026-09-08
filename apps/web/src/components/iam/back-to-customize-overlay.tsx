@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `BackToCustomizeOverlay` — the way back to the project you came from, and
  * deliberately NOT part of the account hub's layout.
@@ -33,12 +34,23 @@
  * Skills, Triggers, Secrets, Settings — which no single URL can name. That is
  * safe here because `?from=customize` is set by ONE link, so the entry is
  * always in history; nothing else in the app produces that param.
+ *
+ * ## What changed on 2026-09-08, and what did not
+ *
+ * The Members link now opens the hub as an OVERLAY over the Customize page
+ * rather than navigating to it (`account-hub-panel.tsx`), so the trip is no
+ * longer one-way in the first place — Escape gets you back too. This button
+ * still works, and by the same mechanism: the overlay pushes exactly one
+ * history entry, so `router.back()` pops it, the `accountId` param goes with
+ * it, and the Customize tab underneath is already mounted. On the `/accounts`
+ * ROUTE mount — a cold load or a Cmd-click — nothing about it has changed.
  */
 
 import { CaretLeftIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 
 export function BackToCustomizeOverlay() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4 sm:inset-x-auto sm:left-6 sm:justify-start sm:px-0">
@@ -48,7 +60,7 @@ export function BackToCustomizeOverlay() {
         className="bg-background/80 text-muted-foreground hover:text-foreground border-border pointer-events-auto flex items-center gap-1.5 rounded-full border py-2 pr-4 pl-3 text-sm shadow-sm backdrop-blur-md transition-colors"
       >
         <CaretLeftIcon className="size-3.5 shrink-0" />
-        Back to Customize
+        {tI18nComplete.raw('text1d280015aac2')}
       </button>
     </div>
   );

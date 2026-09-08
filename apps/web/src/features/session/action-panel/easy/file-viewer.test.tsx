@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, test } from 'bun:test';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { getFileCategory } from '@/features/file-viewer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { isRich, reportsIntrinsicSize } from './file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';
 
@@ -354,5 +354,24 @@ describe('FileViewer — markdown frontmatter', () => {
   test('the metadata renders through the shared card, not a bespoke one', () => {
     // Same component the chat's inline preview uses, so the two panes agree.
     expect(FILE_VIEWER_SOURCE).toContain('MarkdownFrontmatterCard');
+  });
+});
+
+describe('FileViewer — source pane inset', () => {
+  // The detail layer opens a file with `padded: false` (the viewer owns its
+  // toolbar), so each view inside `FileBody` supplies its own inset. Markdown
+  // did (`p-6`); the code pane rendered `pb-4` only and the text sat flush
+  // against the panel's left edge under a padded toolbar.
+  test('the code pane is inset on every side, the same 4-step the toolbar uses', () => {
+    const txt = render('notes.txt', 'hi');
+    expect(txt).toMatch(/class="[^"]*\bp-4\b[^"]*\[&amp;_code\]:text-\[13px\]/);
+    expect(txt).not.toMatch(/class="[^"]*\bpb-4 \[&amp;_code\]/);
+  });
+
+  test('the inset survives a horizontal scroll — the wrapper grows with its longest line', () => {
+    const txt = render('notes.txt', 'hi');
+    expect(txt).toMatch(
+      /class="[^"]*\bw-fit\b[^"]*\bmin-w-full\b[^"]*\[&amp;_code\]:text-\[13px\]/,
+    );
   });
 });

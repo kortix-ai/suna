@@ -1,4 +1,5 @@
 'use client';
+
 import { Badge } from '@/components/ui/badge';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
@@ -21,9 +22,11 @@ import {
   ArrowClockwiseIcon as RefreshCw,
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const action = (input.action as string) || 'list';
@@ -35,7 +38,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
         const sourceType = (input.source_type as string) || '';
         const created = output.match(/Trigger created:\s*(\S+)/)?.[1];
         return {
-          title: 'Create Trigger',
+          title: tI18nComplete.raw('textb1d805e9f2e3'),
           subtitle: created || name || 'Creating...',
           icon: <Plus className="text-muted-foreground size-3.5" />,
           args: sourceType ? [sourceType] : undefined,
@@ -45,7 +48,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
         const countMatch = output.match(/TRIGGERS\s*\((\d+)\)/);
         const count = countMatch ? countMatch[1] : undefined;
         return {
-          title: 'List Triggers',
+          title: tI18nComplete.raw('textd8348ec82718'),
           subtitle: count
             ? `${count} trigger${count === '1' ? '' : 's'}`
             : output
@@ -59,7 +62,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
         const id = (input.trigger_id as string) || '';
         const deleted = output.toLowerCase().includes('deleted');
         return {
-          title: 'Delete Trigger',
+          title: tI18nComplete.raw('text8d657f373582'),
           subtitle: deleted ? 'Deleted' : id ? id.slice(0, 8) + '...' : 'Deleting...',
           icon: <Trash2 className="text-muted-foreground size-3.5" />,
           args: deleted ? ['deleted'] : undefined,
@@ -68,7 +71,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       case 'get': {
         const id = (input.trigger_id as string) || (input.name as string) || '';
         return {
-          title: 'Trigger Details',
+          title: tI18nComplete.raw('textef71b15f38c6'),
           subtitle: id ? (id.length > 20 ? id.slice(0, 20) + '...' : id) : 'Loading...',
           icon: <CalendarClock className="text-muted-foreground size-3.5" />,
           args: undefined,
@@ -77,7 +80,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       case 'update': {
         const name = (input.name as string) || (input.trigger_id as string) || '';
         return {
-          title: 'Update Trigger',
+          title: tI18nComplete.raw('textf44c4c67ce1e'),
           subtitle: name || 'Updating...',
           icon: <RefreshCw className="text-muted-foreground size-3.5" />,
           args: output ? ['updated'] : undefined,
@@ -86,7 +89,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       case 'test': {
         const name = (input.name as string) || (input.trigger_id as string) || '';
         return {
-          title: 'Test Trigger',
+          title: tI18nComplete.raw('textd57fa956f0a4'),
           subtitle: name || 'Testing...',
           icon: <MonitorPlay className="text-muted-foreground size-3.5" />,
           args: output ? ['tested'] : undefined,
@@ -95,7 +98,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       case 'pause': {
         const name = (input.name as string) || (input.trigger_id as string) || '';
         return {
-          title: 'Pause Trigger',
+          title: tI18nComplete.raw('texte630a4b77462'),
           subtitle: name || 'Pausing...',
           icon: <Ban className="text-muted-foreground size-3.5" />,
           args: output ? ['paused'] : undefined,
@@ -104,7 +107,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       case 'resume': {
         const name = (input.name as string) || (input.trigger_id as string) || '';
         return {
-          title: 'Resume Trigger',
+          title: tI18nComplete.raw('text60f718418db9'),
           subtitle: name || 'Resuming...',
           icon: <RefreshCw className="text-muted-foreground size-3.5" />,
           args: output ? ['resumed'] : undefined,
@@ -112,13 +115,13 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       }
       default:
         return {
-          title: 'Triggers',
+          title: tI18nComplete.raw('texte62f2148a64d'),
           subtitle: action,
           icon: <CalendarClock className="text-muted-foreground size-3.5" />,
           args: undefined,
         };
     }
-  }, [action, input, output]);
+  }, [action, input.name, input.source_type, input.trigger_id, output, tI18nComplete]);
 
   const triggerLines = useMemo(() => {
     if (!output) return [];
@@ -203,9 +206,9 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
           <div className="p-3">
             <TextShimmer>
               {action === 'create'
-                ? 'Creating trigger...'
+                ? tI18nComplete.raw('text005c9bcbce1e')
                 : action === 'delete'
-                  ? 'Deleting trigger...'
+                  ? tI18nComplete.raw('textf4abf9b04196')
                   : 'Loading...'}
             </TextShimmer>
           </div>
@@ -217,7 +220,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
             so it folds. */}
         {action === 'create' && typeof input.prompt === 'string' && (
           <div className="border-border/30 mt-2 border-t pt-2">
-            <FoldedSection label="Prompt">
+            <FoldedSection label={tI18nComplete.raw('text5c39123805ff')}>
               <OutputBlock
                 text={input.prompt.slice(0, 400) + (input.prompt.length > 400 ? '...' : '')}
               />

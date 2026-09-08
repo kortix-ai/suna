@@ -237,6 +237,13 @@ export {
  */
 export type { HeadlessAuthApi, AuthSession, AuthUser, AuthSessionResult, AuthRequestOptions } from '../core/rest/platform-client/auth';
 export type { KortixSession, KortixSessionOptions, KortixSessionStorage } from '../core/auth/session';
+export { createKortixAppGuard } from './app-guard';
+export type {
+  KortixAppGuard,
+  KortixAppGuardOptions,
+  KortixAppGuardResult,
+  KortixGuardedViewer,
+} from './app-guard';
 
 /**
  * Kortix Apps — the viewer the Apps gate signs into every request. See

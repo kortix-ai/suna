@@ -1,5 +1,6 @@
 'use client';
 
+import { filePhase, fileVerb } from '@/features/session/tool/shared/file-verb';
 import {
   BasicTool,
   DiagnosticsDisplay,
@@ -13,10 +14,10 @@ import {
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
-import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
@@ -48,6 +49,7 @@ export function writeStat(content: string): { additions: number; deletions: numb
 }
 
 export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const status = partStatus(part);
@@ -61,10 +63,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   // `isErrorOutput` trims the whole output and attempts a `JSON.parse` over it.
   // A written file's output is not small, and this ran on every render of the row.
-  const isError = useMemo(
-    () => status === 'completed' && isErrorOutput(output),
-    [status, output],
-  );
+  const isError = useMemo(() => status === 'completed' && isErrorOutput(output), [status, output]);
   const stat = useMemo(() => writeStat(content), [content]);
   // Unmemoised this ran on every frame of a COLLAPSED row: `partOutput` plus two
   // full-string `includes`, and — when the output carries `<file_diagnostics>` —
@@ -119,7 +118,9 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         // shimmer this used to draw promised content that could never arrive,
         // on every restored session, forever.
         <ToolResultCard bodyClassName="px-2 py-1.5">
-          <span className="text-muted-foreground/60 text-xs">No content received</span>
+          <span className="text-muted-foreground/60 text-xs">
+            {tI18nComplete.raw('text93168435f3ae')}
+          </span>
         </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
@@ -9,7 +10,6 @@ import { ProjectOnboardingWizard } from '@/components/projects/project-onboardin
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
-import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { useBrandingScope } from '@/features/branding/branding-provider';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -26,6 +26,7 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
   clearLastProjectId,
@@ -265,8 +266,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 }
 
 const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
-  const { state, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
-  const isExpanded = state === 'expanded';
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { state, isMobile, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const isExpanded = !isMobile && state === 'expanded';
   // The sidebar hides fully when collapsed (offcanvas everywhere, no icon
   // rail), so a hidden sidebar means no seam border and no way back from the
   // panel itself. On the desktop shell the reopen control lives HERE, in the
@@ -289,10 +291,17 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
           session header indents its leading buttons past it below md. */}
 
       {desktopShell && !isExpanded && (
-        <Hint label={peek ? 'Pin sidebar' : 'Open sidebar'} side="bottom">
+        <Hint
+          label={
+            peek ? tI18nComplete.raw('textbc44e1fccb68') : tI18nComplete.raw('text45609089ee73')
+          }
+          side="bottom"
+        >
           <Button
             type="button"
-            aria-label={peek ? 'Pin sidebar' : 'Open sidebar'}
+            aria-label={
+              peek ? tI18nComplete.raw('textbc44e1fccb68') : tI18nComplete.raw('text45609089ee73')
+            }
             onClick={toggleSidebar}
             onPointerEnter={peekEnter}
             onPointerLeave={peekLeave}
@@ -308,7 +317,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             // are generated from one table — see globals.css and
             // apps/desktop-electron/src/window-chrome.js. They also carry the
             // Win/Linux values, so there is no platform branch here.
-            className="text-muted-foreground hover:text-foreground fixed top-[var(--kx-titlebar-control-top)] left-[var(--kx-titlebar-control-left)] z-50 flex h-[var(--kx-titlebar-control-size)] w-[var(--kx-titlebar-control-size)] shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96]"
+            className="text-muted-foreground hover:text-foreground duration-normal fixed top-[var(--kx-titlebar-control-top)] left-[var(--kx-titlebar-control-left)] z-50 flex h-[var(--kx-titlebar-control-size)] w-[var(--kx-titlebar-control-size)] shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96]"
           >
             <PanelLeft className="cn-rtl-flip size-4" />
           </Button>

@@ -20,7 +20,7 @@ import {
   type Pty,
 } from '@kortix/sdk/react';
 import { PlusIcon as Plus, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -96,7 +96,7 @@ export function SessionTerminalPanel({
     ensuringRef.current = true;
     createPty
       .mutateAsync({
-        title: 'Session terminal',
+        title: tI18nHardcoded.raw('i18nComplete.textf63857b7ed7e'),
         env: { ...PTY_ENV },
       })
       .then((created) => {
@@ -106,7 +106,7 @@ export function SessionTerminalPanel({
       .catch(() => {
         ensuringRef.current = false;
       });
-  }, [createPty, serverUrl, sessionId, setTerminalPty, workspacePhase]);
+  }, [createPty, serverUrl, sessionId, setTerminalPty, workspacePhase, tI18nHardcoded]);
 
   useEffect(() => {
     if (serverUrl) {
@@ -213,7 +213,7 @@ export function SessionTerminalPanel({
         <Loading className="text-muted-foreground size-4" />
         <span className="text-muted-foreground mt-2 text-xs">
           {sandboxWaking
-            ? 'Waking up the workspace…'
+            ? tI18nHardcoded.raw('i18nComplete.text5e3de76869f3')
             : tI18nHardcoded.raw(
                 'autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70',
               )}
@@ -224,11 +224,11 @@ export function SessionTerminalPanel({
     content = (
       <ErrorState
         size="sm"
-        title="Terminal connection failed"
-        description="The terminal service did not respond. Retry the connection."
+        title={tI18nHardcoded.raw('i18nComplete.text5c1fff90cce6')}
+        description={tI18nHardcoded.raw('i18nComplete.texta06dbdcd0f3d')}
         action={
           <Button variant="outline" size="sm" onClick={retryTerminal}>
-            Retry
+            {tI18nHardcoded.raw('i18nComplete.text942087cc2d41')}
           </Button>
         }
         className="h-full"

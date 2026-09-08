@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { KortixAccount } from '@kortix/sdk';
 import {
   INITIAL_FORM_STATE,
   buildProvisionPayload,
@@ -9,7 +10,6 @@ import {
   resolveDefaultCreatableAccountId,
   shouldShowAccountLine,
 } from './new-workspace-form';
-import type { KortixAccount } from '@kortix/sdk';
 
 const owner: KortixAccount = { account_id: 'a1', name: 'Owner Co', account_role: 'owner' };
 const admin: KortixAccount = { account_id: 'a2', name: 'Admin Co', account_role: 'admin' };
@@ -121,9 +121,7 @@ describe('resolveDefaultCreatableAccountId', () => {
       account_role: 'owner',
       is_primary_owner: true,
     };
-    expect(resolveDefaultCreatableAccountId([team, primary], 'someone-elses-id')).toBe(
-      'a-primary',
-    );
+    expect(resolveDefaultCreatableAccountId([team, primary], 'someone-elses-id')).toBe('a-primary');
   });
 
   test('falls back to the first creatable account when nothing else matches', () => {
@@ -172,9 +170,17 @@ describe('resolveDefaultCreatableAccountId: order-independent default when a use
 });
 
 describe('isForeignAccountList', () => {
-  const own: KortixAccount = { account_id: 'me', name: "me@x.com's Account", account_role: 'owner' };
+  const own: KortixAccount = {
+    account_id: 'me',
+    name: "me@x.com's Account",
+    account_role: 'owner',
+  };
   const foreign1: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
-  const foreign2: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+  const foreign2: KortixAccount = {
+    account_id: 'org-2',
+    name: 'Widgets Co',
+    account_role: 'admin',
+  };
 
   test('false for zero creatable accounts', () => {
     expect(isForeignAccountList([], 'me')).toBe(false);
@@ -205,9 +211,21 @@ describe('isForeignAccountList', () => {
 });
 
 describe('shouldShowAccountLine', () => {
-  const ownSole: KortixAccount = { account_id: 'me', name: "me@x.com's Account", account_role: 'owner' };
-  const foreignSole: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
-  const foreignSecond: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+  const ownSole: KortixAccount = {
+    account_id: 'me',
+    name: "me@x.com's Account",
+    account_role: 'owner',
+  };
+  const foreignSole: KortixAccount = {
+    account_id: 'org-1',
+    name: 'Acme Inc',
+    account_role: 'admin',
+  };
+  const foreignSecond: KortixAccount = {
+    account_id: 'org-2',
+    name: 'Widgets Co',
+    account_role: 'admin',
+  };
 
   test('sole OWN account: false — AccountPicker renders the identity line alone (A2.2)', () => {
     expect(shouldShowAccountLine([ownSole], 'me')).toBe(false);
@@ -244,9 +262,9 @@ describe('isSubmittable', () => {
   });
 
   test('true once an account is chosen', () => {
-    expect(
-      isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 3),
-    ).toBe(true);
+    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 3)).toBe(
+      true,
+    );
   });
 
   test('false when the name breaks the charset rule', () => {
@@ -258,7 +276,9 @@ describe('isSubmittable', () => {
   });
 
   test('false at zero accounts even when an account id is somehow set', () => {
-    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 0)).toBe(false);
+    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 0)).toBe(
+      false,
+    );
   });
 });
 

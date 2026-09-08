@@ -4,6 +4,7 @@ import { PublicShareLinkButton } from '@/components/projects/public-share-link-b
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import {
@@ -17,7 +18,6 @@ import {
   ArrowsInSimpleIcon as Minimize2,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import {
   useCallback,
   useEffect,
@@ -264,11 +264,11 @@ export function FilePreviewModal({
     if (!selectedFilePath) return;
     try {
       await source.download(selectedFilePath, fileName);
-      successToast(`Downloaded ${fileName}`);
+      successToast(tI18nHardcoded('i18nComplete.text7eca5e05f915', { value0: fileName }));
     } catch {
-      errorToast(`Failed to download ${fileName}`);
+      errorToast(tI18nHardcoded('i18nComplete.textc85c359673e0', { value0: fileName }));
     }
-  }, [selectedFilePath, fileName, source]);
+  }, [selectedFilePath, source, fileName, tI18nHardcoded]);
 
   if (!isOpen) return null;
   // Portal to <body>: this fixed overlay is rendered inside constrained
@@ -279,11 +279,11 @@ export function FilePreviewModal({
   const toolbar = (
     <>
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Hint label="Back" side="bottom">
+        <Hint label={tI18nHardcoded.raw('i18nComplete.text76900f1bfd16')} side="bottom">
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Back"
+            aria-label={tI18nHardcoded.raw('i18nComplete.text76900f1bfd16')}
             className="text-muted-foreground hover:text-foreground h-8 w-8 shrink-0 active:scale-[0.96]"
             onClick={onClose}
           >
@@ -309,11 +309,18 @@ export function FilePreviewModal({
 
       <div className="flex shrink-0 items-center gap-0.5">
         {isMarkdownFile && (
-          <Hint label={markdownPreview ? 'View source' : 'Preview'} side="bottom">
+          <Hint
+            label={
+              markdownPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
+            }
+            side="bottom"
+          >
             <Button
               variant="ghost"
               size="icon"
-              aria-label={markdownPreview ? 'View source' : 'Preview'}
+              aria-label={
+                markdownPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
+              }
               aria-pressed={!markdownPreview}
               className={cn(
                 'h-8 w-8 active:scale-[0.96]',
@@ -349,10 +356,10 @@ export function FilePreviewModal({
           size="sm"
           className="h-8 gap-1.5 px-3 text-xs font-medium"
           onClick={handleDownload}
-          aria-label="Download"
+          aria-label={tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
         >
           <Download className="h-3.5 w-3.5" />
-          Download
+          {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
         </Button>
         {shareContext && (
           <PublicShareLinkButton
@@ -367,11 +374,14 @@ export function FilePreviewModal({
         )}
         {extraActions}
         {embedded && (
-          <Hint label={expanded ? 'Collapse to panel' : 'Expand'} side="bottom">
+          <Hint
+            label={expanded ? tI18nHardcoded.raw('i18nComplete.textde12e3c7c7a8') : 'Expand'}
+            side="bottom"
+          >
             <Button
               variant="ghost"
               size="icon"
-              aria-label={expanded ? 'Collapse to panel' : 'Expand'}
+              aria-label={expanded ? tI18nHardcoded.raw('i18nComplete.textde12e3c7c7a8') : 'Expand'}
               aria-pressed={expanded}
               className="text-muted-foreground hover:text-foreground h-8 w-8 active:scale-[0.96]"
               onClick={() => setExpanded((v) => !v)}
@@ -473,7 +483,9 @@ export function FilePreviewModal({
         ref={surfaceRef}
         data-file-preview-embedded=""
         role="dialog"
-        aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
+        aria-label={tI18nHardcoded('i18nComplete.text4a7346d46cf6', {
+          value0: fileName ? `: ${fileName}` : '',
+        })}
         tabIndex={-1}
         className="bg-background animate-in fade-in-0 absolute inset-0 z-20 flex flex-col overflow-hidden duration-150 outline-none"
       >
@@ -495,7 +507,9 @@ export function FilePreviewModal({
         data-file-preview-overlay=""
         role="dialog"
         aria-modal="true"
-        aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
+        aria-label={tI18nHardcoded('i18nComplete.text4a7346d46cf6', {
+          value0: fileName ? `: ${fileName}` : '',
+        })}
         tabIndex={-1}
         className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-xl border shadow-lg duration-150 outline-none sm:inset-4"
         style={{ zIndex: dialogContentZ(dialogDepth + 1) }}

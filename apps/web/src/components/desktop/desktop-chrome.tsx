@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   desktopPlatform,
@@ -84,7 +84,7 @@ function WindowControls() {
       <button
         type="button"
         className="kx-desktop-ctrl"
-        aria-label="Minimize"
+        aria-label={tHardcodedUi.raw('i18nComplete.textd72e311c4dda')}
         onClick={() => void desktopWindow.minimize()}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
@@ -94,7 +94,7 @@ function WindowControls() {
       <button
         type="button"
         className="kx-desktop-ctrl"
-        aria-label="Maximize"
+        aria-label={tHardcodedUi.raw('i18nComplete.textfba6c2c5d946')}
         onClick={() => void desktopWindow.toggleMaximize()}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
@@ -104,7 +104,7 @@ function WindowControls() {
       <button
         type="button"
         className="kx-desktop-ctrl kx-desktop-ctrl-close"
-        aria-label="Close"
+        aria-label={tHardcodedUi.raw('i18nComplete.text7d9eb7acb13e')}
         onClick={() => void desktopWindow.close()}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `SessionPanelProvider` — the single owner of everything a session's panel
  * surfaces show, hoisted above BOTH of them.
@@ -159,6 +160,7 @@ export function SessionPanelProvider({
     projectRuntimeIdentity: resolveProjectSessionRuntimeIdentity(projectSessionRow),
     sandboxIsPiWorker,
   });
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const parts = useMemo(() => collectAllToolParts(messages), [messages]);
   const steps = useMemo(() => groupSteps(parts), [parts]);
   const latestIds = useMemo(() => latestRunCallIds(messages), [messages]);
@@ -688,11 +690,11 @@ export function SessionPanelProvider({
   const openAudit = useCallback(() => {
     openDetail({
       key: 'audit',
-      title: 'Audit',
+      title: tI18nComplete.raw('textbb6aea287396'),
       padded: false,
       body: <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />,
     });
-  }, [openDetail, projectId, projectSessionId]);
+  }, [openDetail, projectId, projectSessionId, tI18nComplete]);
 
   /**
    * The opt-in File Explorer (Marko's ask). Never a default view and never a

@@ -26,6 +26,8 @@
  * the portal lands back here.
  */
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { Button } from '@/components/ui/button';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,6 +35,7 @@ import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { usePermission } from '@/lib/use-permission';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { SettingsTabHeader } from '../settings-tab-header';
 
@@ -43,6 +46,7 @@ function planReturnUrl(): string {
 }
 
 export function PlanTab({ accountId }: { accountId: string | undefined }) {
+  const t = useTranslations('settings.plan');
   const canWrite = usePermission(accountId, 'account.write');
 
   return (
@@ -63,19 +67,16 @@ export function PlanTab({ accountId }: { accountId: string | undefined }) {
               wallet-first `AccountOverviewTab`. Balance, credit composition,
               period spend and limits are the Credits pane's subject now
               (`tabs/credits-tab.tsx`), one row above this one in the rail.
-              `/accounts/[id]?tab=billing` passes nothing and keeps the
+              the hub's Billing pane passes nothing and keeps the
               wallet-first layout unchanged. */}
           <BillingTab returnUrl={planReturnUrl()} isActive showWallet={false} />
           <GlobalUpgradeModal />
         </BillingAccountProvider>
       ) : (
         <SettingsRowGroup>
-          <SettingsRow
-            label="Managed by an account admin"
-            description="Only admins of this account can change its plan or buy credits."
-          >
+          <SettingsRow label={t('managedByAdmin')} description={t('adminOnly')}>
             <Button asChild variant="secondary" size="sm">
-              <Link href={`/accounts/${accountId}`}>Open account</Link>
+              <HubLink to={hubTarget(accountId)}>{t('openAccount')}</HubLink>
             </Button>
           </SettingsRow>
         </SettingsRowGroup>

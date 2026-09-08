@@ -6,24 +6,20 @@
 // no-op), leaving a page about permissions that was read-only. These pins keep
 // the triggers wired and the page on the shared access primitives.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'member-access-panel.tsx'), 'utf8');
 const flat = source.replace(/\s+/g, ' ');
-const legacyRouteSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/accounts/[id]/members/[userId]/page.tsx'),
-  'utf8',
-);
 const hubSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/accounts/[id]/page.tsx'),
+  join(import.meta.dir, '../../features/accounts/hub/account-hub-content.tsx'),
   'utf8',
 );
 
 describe('member-detail actions are reachable', () => {
   test('an actions dropdown menu is rendered with an accessible label', () => {
     expect(source).toContain('DropdownMenuTrigger');
-    expect(source).toContain('Actions for ${memberLabel}');
+    expect(source).toContain("tI18nComplete('text33da220b1a34', { value0: memberLabel })");
   });
 
   test('"View as this member" opens the simulator dialog', () => {
@@ -45,7 +41,8 @@ describe('member-detail uses the shared access primitives', () => {
     expect(source).toContain('AccessDetailShell');
     // Back goes to the members LIST in the same pane — a callback, not a
     // route change, so the hub's left rail stays put.
-    expect(flat).toContain("back={{ label: 'All members', onClick: onBack }}");
+    expect(flat).toContain("raw('text3d6fe3e703f6')");
+    expect(flat).toContain('onClick: onBack');
   });
 
   test('both lists are AccessList/AccessRow', () => {
@@ -55,7 +52,7 @@ describe('member-detail uses the shared access primitives', () => {
 
   test('a project grant is edited through AccessDialog, not a local dialog', () => {
     expect(source).toContain('AccessDialog');
-    expect(flat).toContain("label: 'Edit access'");
+    expect(flat).toContain("label: tI18nComplete.raw('texta514a684676a')");
     expect(flat).toContain("kind: 'edit'");
   });
 
@@ -88,11 +85,14 @@ describe('the member detail renders inside the account hub, not on its own route
     expect(source).not.toContain('/groups/${');
   });
 
-  test('the old standalone route redirects so bookmarks keep working', () => {
-    expect(legacyRouteSource).toContain('router.replace');
-    expect(legacyRouteSource.replace(/\s+/g, ' ')).toContain(
-      '`/accounts/${accountId}?tab=members&member=${encodeURIComponent(userId)}`',
-    );
-    expect(legacyRouteSource).not.toContain('AccessDetailShell');
+  // The hub is where a member detail lives, and it is named by the hub's own
+  // `member` param — not by a URL, because the hub has no route. The
+  // standalone `/accounts/[id]/members/[userId]` route that used to redirect
+  // here was deleted on 2026-09-08 with the rest of the account routes.
+  test('the hub opens a member detail through its own param, never a route', () => {
+    const flatHub = hubSource.replace(/\s+/g, ' ');
+    expect(flatHub).toContain("searchParams.get('member')");
+    expect(flatHub).toContain('selectedAccessMemberId');
+    expect(hubSource).not.toContain('/members/${');
   });
 });

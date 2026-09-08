@@ -1,12 +1,12 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { SignOutIcon } from '@phosphor-icons/react';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import {
   clearAutoProjectSuppression,
   isAutoProjectSuppressed,
@@ -15,8 +15,9 @@ import {
 } from '@/lib/onboarding/ensure-first-project';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { resolveLandingDestination } from '@/lib/onboarding/resolve-landing-destination';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { SignOutIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -64,9 +65,7 @@ export default function ProjectStartPage() {
   const resolving = useRef(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [failed, setFailed] = useState(false);
-  const [terminal, setTerminal] = useState<ReturnType<typeof classifyLandingTerminal> | null>(
-    null,
-  );
+  const [terminal, setTerminal] = useState<ReturnType<typeof classifyLandingTerminal> | null>(null);
 
   useSignedOutRedirect();
 
@@ -140,7 +139,12 @@ export default function ProjectStartPage() {
       // project, or the rare cross-site-navigation edge. `/projects` is a
       // redirect back to THIS route (Task 21), so bouncing there would loop
       // forever — render the terminal state inline instead.
-      setTerminal(classifyLandingTerminal({ canCreate: resolution.canCreate, suppressed: resolution.suppressed }));
+      setTerminal(
+        classifyLandingTerminal({
+          canCreate: resolution.canCreate,
+          suppressed: resolution.suppressed,
+        }),
+      );
     } catch (err) {
       // A concurrent, healthy provision — this account's OTHER tab or entry
       // point is mid-create with the same persisted idempotency key — is not
@@ -208,7 +212,7 @@ export default function ProjectStartPage() {
     );
   }
 
-  return <ProjectStartSkeleton />;
+  return <ProjectStartLoadingFrame />;
 }
 
 /**
@@ -223,6 +227,7 @@ export default function ProjectStartPage() {
  * contract is about create controls that would 403 — not about this exit.
  */
 function StartSignOutButton() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [pending, setPending] = useState(false);
 
   return (
@@ -247,7 +252,7 @@ function StartSignOutButton() {
         ) : (
           <SignOutIcon className="size-4 shrink-0" />
         )}
-        Log out
+        {tI18nComplete.raw('text49616145514e')}
       </Button>
     </div>
   );
@@ -262,18 +267,17 @@ function StartSignOutButton() {
  * failing resolve a beat later instead of offering anything new.
  */
 function ProjectStartError({ onRetry }: { onRetry: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
       <div className="space-y-1">
-        <p className="text-base font-medium">We could not open your project</p>
-        <p className="text-muted-foreground text-sm">
-          Something went wrong on our side. Your work is safe.
-        </p>
+        <p className="text-base font-medium">{tI18nComplete.raw('text68e8259bdf2a')}</p>
+        <p className="text-muted-foreground text-sm">{tI18nComplete.raw('text4a5e6b5db2ba')}</p>
       </div>
       <div className="flex items-center gap-2">
-        <Button onClick={onRetry}>Try again</Button>
+        <Button onClick={onRetry}>{tI18nComplete.raw('textd8b8392e2c54')}</Button>
         <Button variant="secondary" asChild>
-          <Link href="/new">Create a workspace</Link>
+          <Link href="/new">{tI18nComplete.raw('text954bd1fe66b4')}</Link>
         </Button>
       </div>
     </div>
@@ -281,34 +285,17 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
 }
 
 /**
- * The first frame. Shaped like the project page it is about to become — header
- * bar, title, composer — so the swap to `/projects/<id>` reads as the page
- * filling in rather than as a second navigation.
+ * The first frame.
+ *
+ * This used to be a skeleton of the project page — header bar, title, composer,
+ * chips. It was a guess: this route never renders that page, it resolves a
+ * project id and replaces the URL with `/projects/<id>`, so the skeleton only
+ * ever flashed a layout the user was not about to receive.
+ *
+ * `ProjectPendingScreen` is shared with `loading.tsx` above and with
+ * `ProjectAccessBoundary` on the far side of the redirect, so the whole
+ * open-a-project path paints one frame instead of three different ones.
  */
-function ProjectStartSkeleton() {
-  return (
-    <div className="flex min-h-screen flex-col" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Opening your project</span>
-      <div className="w-full border-b">
-        <div className="kx-app-header px-mobile mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 py-4 sm:gap-3">
-          <Skeleton className="h-5 w-32 rounded-md" />
-          <Skeleton className="h-8 w-20 rounded-full" />
-        </div>
-      </div>
-      <main className="bg-background px-mobile flex flex-1 items-center py-10 sm:py-12">
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-          <div className="space-y-3">
-            <Skeleton className="mx-auto h-9 w-64 rounded-md" />
-            <Skeleton className="mx-auto h-5 w-96 max-w-full rounded-md" />
-          </div>
-          <Skeleton className="h-32 w-full rounded-lg" />
-          <div className="flex flex-wrap justify-center gap-2">
-            <Skeleton className="h-8 w-28 rounded-full" />
-            <Skeleton className="h-8 w-36 rounded-full" />
-            <Skeleton className="h-8 w-24 rounded-full" />
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+function ProjectStartLoadingFrame() {
+  return <ProjectPendingScreen />;
 }

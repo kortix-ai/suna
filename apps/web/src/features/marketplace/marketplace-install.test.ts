@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   buildInstallSuccessSummary,
   capabilityCount,
@@ -11,20 +12,20 @@ import { buildTemplateSetupPrompt } from './marketplace-setup-prompt';
 
 describe('buildInstallSuccessSummary', () => {
   test('singularizes "file" for a single-file install', () => {
-    const summary = buildInstallSuccessSummary('Code Review', { file_count: 1 });
+    const summary = buildInstallSuccessSummary('Code Review', { file_count: 1 }, testUiTranslator);
 
     expect(summary.title).toBe('Added Code Review');
     expect(summary.description).toBe('Committed 1 file — live in the next session.');
   });
 
   test('pluralizes "files" for multi-file installs', () => {
-    const summary = buildInstallSuccessSummary('Bundle', { file_count: 4 });
+    const summary = buildInstallSuccessSummary('Bundle', { file_count: 4 }, testUiTranslator);
 
     expect(summary.description).toBe('Committed 4 files — live in the next session.');
   });
 
   test('pluralizes for a zero-file install', () => {
-    const summary = buildInstallSuccessSummary('Empty', { file_count: 0 });
+    const summary = buildInstallSuccessSummary('Empty', { file_count: 0 }, testUiTranslator);
 
     expect(summary.description).toBe('Committed 0 files — live in the next session.');
   });

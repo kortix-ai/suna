@@ -28,7 +28,10 @@ mock.module('@/lib/web-notifications', () => ({
   notifySessionError: () => {},
   notifyTaskComplete: () => {},
 }));
-await import('./kortix-config');
+const { ensureKortixConfigured } = await import('./kortix-config');
+const { createTranslator } = await import('next-intl');
+const { default: messages } = await import('../../translations/en.json');
+ensureKortixConfigured(createTranslator({ locale: 'en', messages, namespace: 'hardcodedUi.i18nComplete' }));
 afterEach(() => {
   __resetAuthTokenCacheForTests();
 });

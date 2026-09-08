@@ -26,6 +26,7 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { useKortixComputerStore, type QuickView } from '@/stores/kortix-computer-store';
 import { sessionPreviewTabId } from '@/stores/session-browser-store';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import {
   FolderOpenIcon,
   GlobeIcon,
@@ -52,7 +53,8 @@ export function MobileToolDrawer({
 }) {
   const view = useKortixComputerStore((s) => s.mobileToolView);
   const closeMobileTool = useKortixComputerStore((s) => s.closeMobileTool);
-  const meta = view ? TOOL_META[view] : null;
+  const toolMeta = useLocalizedUiCatalog(TOOL_META);
+  const meta = view ? toolMeta[view] : null;
 
   return (
     <Drawer open={view !== null} onOpenChange={(next) => !next && closeMobileTool()}>

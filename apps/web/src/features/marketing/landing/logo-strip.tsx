@@ -9,6 +9,7 @@ import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Notion } from '@/features/icon/icons/notion';
 import { OpenAI } from '@/features/icon/icons/open-ai';
 import { Slack } from '@/features/icon/icons/slack';
+import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
 import type { ReactNode } from 'react';
 
@@ -59,25 +60,26 @@ function Row({ label, keys, extra }: { label: string; keys: IconKey[]; extra?: R
 
 /** The transition between the hero and the first real section. */
 export function LogoStrip() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
-    <section aria-label="Models and tools Kortix works with" className="py-14 sm:py-16">
+    <section aria-label={tI18nComplete.raw('textc5a93b3848b7')} className="py-14 sm:py-16">
       <div className="mx-auto flex max-w-7xl flex-col items-center gap-8 px-6 lg:flex-row lg:justify-between">
         <Row
-          label="Runs any model"
+          label={tI18nComplete.raw('text4c5e843ac136')}
           keys={MODELS}
           extra={
             // No vector mark ships for OpenRouter in features/icon, so its own
             // brand icon is served locally rather than hotlinked.
             <Image
               src="/media/brands/openrouter.png"
-              alt="OpenRouter"
+              alt={tI18nComplete.raw('texteb70c3bc14fa')}
               width={24}
               height={24}
               className="size-6 object-contain"
             />
           }
         />
-        <Row label="3,000+ apps, any MCP or API" keys={TOOLS} />
+        <Row label={tI18nComplete.raw('text277dd4ba341d')} keys={TOOLS} />
       </div>
     </section>
   );

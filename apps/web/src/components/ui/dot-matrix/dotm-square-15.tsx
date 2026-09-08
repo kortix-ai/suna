@@ -1,12 +1,10 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { useCyclePhase } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase } from '@/lib/dotmatrix-core';
+import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmSquare15Props = DotMatrixCommonProps;
 
@@ -19,30 +17,34 @@ const STRAND_LOOPS = 2;
 
 export function DotmSquare15({
   speed = 1.25,
-  pattern = "full",
+  pattern = 'full',
   animated = true,
   hoverAnimated = false,
   ...rest
 }: DotmSquare15Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const animPhase = useCyclePhase({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1600,
-    speed
+    speed,
   });
 
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
-      const u = reducedMotion || phase === "idle" ? 0 : animPhase;
+      const u = reducedMotion || phase === 'idle' ? 0 : animPhase;
       const rowPhase = u * STRAND_LOOPS * 2 * Math.PI + row * 1.24;
       const left = Math.round(1 + Math.sin(rowPhase));
       const right = 4 - left;

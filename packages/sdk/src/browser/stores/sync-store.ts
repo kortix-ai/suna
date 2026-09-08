@@ -288,6 +288,7 @@ interface SyncState {
 		field: string,
 		delta: string,
 		eventID?: string,
+		emittedAt?: number,
 	) => void;
 	/**
 	 * `emittedAt` is when the RUNTIME produced the frame. A REPLAYED status —
@@ -668,6 +669,42 @@ const isOptimistic = (sessionID: string, messageID: string) =>
 	hasTrackedId(optimisticIds, sessionID, messageID);
 const isDispatched = (sessionID: string, messageID: string) =>
 	hasTrackedId(dispatchedOptimisticIds, sessionID, messageID);
+
+/**
+ * Could a part for `messageID` belong to the ECHO of a prompt this tab has
+ * sent and not yet seen come back?
+ *
+ * Asked in one place: the safety net in `message.part.updated` that invents a
+ * message when a part outruns its own `message.updated`. That net has to guess
+ * a role, and it guesses `assistant` — right for an assistant's reply, and
+ * wrong for a user echo in a way the user can see. The control plane re-mints a
+ * queued prompt's wire id when it delivers it, so the echo arrives under an id
+ * this tab has never seen, and its first part carries the USER's own text: the
+ * net painted the prompt a second time, in the agent's voice, beside the bubble
+ * it was already in (reported 2026-09-08 — "the same prompt duplicated, then it
+ * goes back to single and starts").
+ *
+ * Two ways to know, both already recorded here:
+ *  - the pairing is known (`registerOptimisticEcho` ran, from the inbox row's
+ *    two ids), so the id IS a user message;
+ *  - a send is outstanding whose echo this could be — the same test
+ *    `message.updated` calls `eligible`: dispatched, and with no other echo
+ *    already claimed.
+ *
+ * Answering yes only suppresses the GUESS. The part is still stored, and the
+ * `message.updated` that follows creates the message and picks it up.
+ */
+const awaitsUserEcho = (sessionID: string, messageID: string): boolean => {
+	if (optimisticOrigins.get(sessionID)?.has(messageID)) return true;
+	const pending = optimisticIds.get(sessionID);
+	if (!pending) return false;
+	for (const id of pending) {
+		if (!isDispatched(sessionID, id)) continue;
+		if (optimisticEchoes.get(sessionID)?.get(id)) continue;
+		return true;
+	}
+	return false;
+};
 // Track message IDs where optimistic parts were bridged to the real message,
 // keyed by session — same shape and same reason as optimisticIds above. When
 // the first real part arrives for a bridged message, the bridged parts are
@@ -1277,8 +1314,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
 
-	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
+	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID, emittedAt) => {
 		trackId(deltaActiveParts, sessionID, partID);
+		let applied = false;
 		set((s) => {
 			const list = s.parts[messageID];
 			if (!list) return s;
@@ -1317,8 +1355,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				| undefined;
 			(part as Record<string, unknown>)[field] = (existing ?? "") + delta;
 			next[result.index] = part as Part;
+			applied = true;
 			return { parts: { ...s.parts, [messageID]: next } };
 		});
+		// The delta changed the visible transcript. This is the runtime itself
+		// producing output, so it refreshes the activity evidence used by
+		// `projectWorking`. Stamp only after a real apply: reconnect replays with
+		// an already-consumed event id are history, not current activity.
+		if (applied) get().noteSessionActivity(sessionID, emittedAt);
 	},
 
 	setStatus: (sessionID, status, origin = "wire", emittedAt) =>
@@ -2456,15 +2500,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.part.updated": {
 				const part = (event.properties as { part: Part }).part;
 				if (!part?.messageID) return;
-				// The runtime just produced output. This is the evidence
-				// `projectWorking` trusts above every observer — see
-				// `sessionActivityAt`.
-				{
-					const sid =
-						part.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid, emittedAt);
-				}
-
 				const eventSessionID =
 					(event.properties as { sessionID?: string })?.sessionID;
 				let resolvedSessionID: string | undefined =
@@ -2480,6 +2515,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 				}
 
+				// The runtime just produced output. This is the evidence
+				// `projectWorking` trusts above every observer — see
+				// `sessionActivityAt`. Stamp AFTER the message-id fallback: some
+				// producers omit sessionID from the part while still updating a
+				// known message, and that visible output is runtime activity too.
+				if (resolvedSessionID) get().noteSessionActivity(resolvedSessionID, emittedAt);
+
 				const existingMsgs = resolvedSessionID
 					? get().messages[resolvedSessionID]
 					: undefined;
@@ -2487,7 +2529,30 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// to sit beside it as a first disjunct could only agree with it or
 				// miss on a list that is not id-sorted.
 				const exists = existingMsgs?.some((m) => m.id === part.messageID);
-				if (!exists && resolvedSessionID) {
+				// The net for a part that outran its own message frame — but never
+				// over a send still waiting for its echo, and never as the FIRST
+				// message of a session. `role: "assistant"` is a guess, and for the
+				// echo of a re-minted prompt it is a guess that puts the user's own
+				// words on screen twice, the second time in the agent's voice.
+				//
+				// `awaitsUserEcho` catches that when this tab painted the prompt.
+				// It cannot on the project-home route, where the prompt is a
+				// server-created inbox row and there is no optimistic message to
+				// see — so the second condition carries it: an assistant part is a
+				// REPLY, and a session with nothing to reply to yet is not what
+				// this net is for. `message.part.delta` below has guarded on
+				// exactly this since it was written; this is the same rule on the
+				// frame that actually creates the message.
+				//
+				// The part is stored either way; only the invented message waits
+				// for the frame that knows.
+				const sessionHasUserMessage = existingMsgs?.some((m) => m.role === "user") ?? false;
+				if (
+					!exists &&
+					resolvedSessionID &&
+					sessionHasUserMessage &&
+					!awaitsUserEcho(resolvedSessionID, part.messageID)
+				) {
 					store.upsertMessage(resolvedSessionID, {
 						id: part.messageID,
 						sessionID: resolvedSessionID,
@@ -2530,20 +2595,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					delta: string;
 				};
 				if (!props.messageID || !props.partID || !props.field) return;
-
-				// A delta IS runtime output — the same evidence
-				// `message.part.updated` stamps above, and the input
-				// `projectWorking` ranks first ("CONTENT FIRST" in
-				// core/session/working.ts). Only the snapshot path stamped it,
-				// which was harmless while every runtime streamed snapshots.
-				// It stopped being harmless when pi started sending real
-				// deltas: its text then arrived as ~280 deltas and ~6
-				// snapshots per answer, so `sessionActivityAt` went stale
-				// mid-generation and the projection fell back to the `/turn`
-				// ledger — the laggy observer, which on pi leaves rows open —
-				// and the composer showed Stop off a poll instead of off the
-				// stream.
-				if (props.sessionID) get().noteSessionActivity(props.sessionID, emittedAt);
 
 				// Ensure the part exists before applying the delta.
 				// message.part.delta can arrive before message.part.updated
@@ -2597,6 +2648,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					props.field,
 					props.delta,
 					event.id,
+					emittedAt,
 				);
 				if (props.field === "text") {
 					const updated = get().parts[props.messageID]?.find(

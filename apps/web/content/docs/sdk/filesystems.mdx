@@ -3,8 +3,6 @@ title: Filesystems
 description: Shared volumes of project state that outlive every session — a Google Drive between your agents.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 A **filesystem** is a named volume of files scoped to a project. Every agent in
 that project reads and writes the same bytes, and the volume is alive whether or
 not any session is running — so one agent can leave state for the next one
@@ -71,12 +69,12 @@ const back = await fs.read('reports', 'q3/chart.png');
 back.bytes.length === png.length;   // true
 ```
 
-<Callout type="warn" title="Content type is stored, and echoed back">
+:::warning[Content type is stored, and echoed back]
 The type you write is the type a read returns. Reads are served with
 `X-Content-Type-Options: nosniff` and `Content-Disposition: attachment`, so a
 file written as `text/html` cannot execute in a browser on the API origin — but
 do not treat filesystem contents as trusted input to something that renders them.
-</Callout>
+:::
 
 ## Paths
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useState } from 'react';
 
 import {
@@ -25,6 +26,7 @@ function useChatGptConnectDialog(projectId: string) {
 }
 
 export function ProjectChatGptConnectNavItem({ projectId }: { projectId: string }) {
+  const t = useTranslations('sidebar');
   const { show } = useShowChatGptConnectPrompt(projectId);
   const { open, setOpen, openDialog } = useChatGptConnectDialog(projectId);
 
@@ -38,7 +40,7 @@ export function ProjectChatGptConnectNavItem({ projectId }: { projectId: string 
           className="group/customize-button text-sidebar-foreground relative flex items-center justify-start"
         >
           <OpenAI className="text-foreground" />
-          Connect GPT subscription
+          {t('connectGpt')}
         </SidebarMenuButton>
       </SidebarMenuItem>
       <ChatGptSubscriptionConnectDialog projectId={projectId} open={open} onOpenChange={setOpen} />
@@ -47,6 +49,7 @@ export function ProjectChatGptConnectNavItem({ projectId }: { projectId: string 
 }
 
 export function ProjectChatGptConnectRailItem({ projectId }: { projectId: string }) {
+  const t = useTranslations('sidebar');
   const { show } = useShowChatGptConnectPrompt(projectId);
   const { open, setOpen, openDialog } = useChatGptConnectDialog(projectId);
 
@@ -54,8 +57,8 @@ export function ProjectChatGptConnectRailItem({ projectId }: { projectId: string
 
   return (
     <>
-      <Hint label="Connect GPT subscription">
-        <SidebarMenuButton type="button" aria-label="Connect GPT subscription" onClick={openDialog}>
+      <Hint label={t('connectGpt')}>
+        <SidebarMenuButton type="button" aria-label={t('connectGpt')} onClick={openDialog}>
           <OpenAI className="text-foreground size-4.5!" />
         </SidebarMenuButton>
       </Hint>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * Admin activity analytics — "how active are our users?" at a glance.
  *
@@ -79,6 +80,7 @@ const burnConfig = {
 } satisfies ChartConfig;
 
 export default function AdminAnalyticsPage() {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [range, setRange] = useState<string>('30');
   const days = Number(range);
 
@@ -113,8 +115,8 @@ export default function AdminAnalyticsPage() {
 
   return (
     <AdminPageShell
-      title="Analytics"
-      description="Daily platform activity and credit burn. Every bucket is a UTC day."
+      title={tI18nComplete.raw('text94c116ee118a')}
+      description={tI18nComplete.raw('text5a32374d30b4')}
       action={<AdminRefreshButton busy={isFetching} onRefresh={refresh} />}
       filters={
         <Tabs value={range} onValueChange={setRange}>
@@ -130,11 +132,13 @@ export default function AdminAnalyticsPage() {
     >
       {error ? (
         <ErrorState
-          title="Could not load analytics"
-          description={error instanceof Error ? error.message : 'The analytics request failed.'}
+          title={tI18nComplete.raw('text4a6562501752')}
+          description={
+            error instanceof Error ? error.message : tI18nComplete.raw('text59845e809cc9')
+          }
           action={
             <Button variant="outline" size="sm" onClick={refresh}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -144,31 +148,39 @@ export default function AdminAnalyticsPage() {
         <>
           <StatGrid>
             <StatTile
-              label="Sessions last 7 days"
+              label={tI18nComplete.raw('text6312bece1004')}
               value={formatCount(sessionsLast7d)}
-              hint={delta ?? `${formatCount(sessionsPrev7d)} in the previous 7 days`}
+              hint={
+                delta ?? tI18nComplete('text01e9e629cbb0', { value0: formatCount(sessionsPrev7d) })
+              }
               tone={deltaTone(sessionsLast7d, sessionsPrev7d)}
             />
             <StatTile
-              label="DAU / WAU / MAU"
+              label={tI18nComplete.raw('text240580c01610')}
               value={`${formatCount(summary?.dau ?? 0)} / ${formatCount(summary?.wau ?? 0)} / ${formatCount(summary?.mau ?? 0)}`}
-              hint="Distinct users who started a session"
+              hint={tI18nComplete.raw('texte8eb61063713')}
             />
             <StatTile
-              label={`New accounts (${days}d)`}
+              label={tI18nComplete('textd196b7afe1d9', { value0: days })}
               value={formatCount(newAccountsInWindow)}
-              hint={`${formatCount(summary?.totalAccounts ?? 0)} accounts in total`}
+              hint={tI18nComplete('text2309cb81f4b9', {
+                value0: formatCount(summary?.totalAccounts ?? 0),
+              })}
             />
             <StatTile
-              label={`Credit burn (${days}d)`}
+              label={tI18nComplete('textfd537cf32a82', { value0: days })}
               value={formatUsd(usageSummary?.totalUsd ?? 0)}
-              hint={`${formatCount(usageSummary?.payingAccountsLast7d ?? 0)} accounts spent in the last 7 days`}
+              hint={tI18nComplete('textec58b394f1e2', {
+                value0: formatCount(usageSummary?.payingAccountsLast7d ?? 0),
+              })}
             />
           </StatGrid>
 
           <AdminSection
-            title="Sessions created per day"
-            description={`${formatCount(summary?.totalProjects ?? 0)} projects on the platform.`}
+            title={tI18nComplete.raw('text3d7978401c4c')}
+            description={tI18nComplete('textdc261f20dba9', {
+              value0: formatCount(summary?.totalProjects ?? 0),
+            })}
           >
             <AdminPanel>
               {hasActivity ? (
@@ -212,15 +224,15 @@ export default function AdminAnalyticsPage() {
                   </BarChart>
                 </ChartContainer>
               ) : (
-                <NoData label="No sessions were created in this window." />
+                <NoData label={tI18nComplete.raw('textbe20f8439a89')} />
               )}
             </AdminPanel>
           </AdminSection>
 
           <div className="grid gap-5 lg:grid-cols-2">
             <AdminSection
-              title="Active accounts per day"
-              description="Accounts that started at least one session."
+              title={tI18nComplete.raw('text85afe431118b')}
+              description={tI18nComplete.raw('text86103057a0df')}
             >
               <AdminPanel>
                 {hasActivity ? (
@@ -267,16 +279,20 @@ export default function AdminAnalyticsPage() {
                     </AreaChart>
                   </ChartContainer>
                 ) : (
-                  <NoData label="No accounts were active in this window." />
+                  <NoData label={tI18nComplete.raw('text4da168d59932')} />
                 )}
               </AdminPanel>
             </AdminSection>
 
             <AdminSection
-              title="Credit burn per day"
+              title={tI18nComplete.raw('text8fd4602d9483')}
               description={
                 usageSummary
-                  ? `${formatUsd(usageSummary.llmUsd)} LLM · ${formatUsd(usageSummary.computeUsd)} compute · ${formatUsd(usageSummary.otherUsd)} other.`
+                  ? tI18nComplete('text8e643cba1dff', {
+                      value0: formatUsd(usageSummary.llmUsd),
+                      value1: formatUsd(usageSummary.computeUsd),
+                      value2: formatUsd(usageSummary.otherUsd),
+                    })
                   : undefined
               }
             >
@@ -325,7 +341,7 @@ export default function AdminAnalyticsPage() {
                     </BarChart>
                   </ChartContainer>
                 ) : (
-                  <NoData label="No credits were spent in this window." />
+                  <NoData label={tI18nComplete.raw('texteda00b33d3af')} />
                 )}
               </AdminPanel>
             </AdminSection>
@@ -351,9 +367,15 @@ function AnalyticsSkeleton() {
 }
 
 function NoData({ label }: { label: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex h-[220px] items-center justify-center">
-      <EmptyState icon={ChartBarIcon} size="sm" title="No activity" description={label} />
+      <EmptyState
+        icon={ChartBarIcon}
+        size="sm"
+        title={tI18nComplete.raw('text0cf9505f9f97')}
+        description={label}
+      />
     </div>
   );
 }

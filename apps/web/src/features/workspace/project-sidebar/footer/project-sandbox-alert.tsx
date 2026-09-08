@@ -2,7 +2,7 @@
 
 import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -168,6 +168,7 @@ export function useSandboxHealth(projectId: string) {
 }
 
 export function useSandboxRecovery(projectId: string) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -179,20 +180,20 @@ export function useSandboxRecovery(projectId: string) {
   const retry = useMutation({
     mutationFn: (slug?: string) => rebuildProjectSnapshot(projectId, slug),
     onSuccess: () => {
-      successToast('Rebuild started');
+      successToast(tI18nComplete.raw('text92a4120f7589'));
       invalidate();
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to start build'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text34c50a6ee575')),
   });
 
   const fixWithAgent = useMutation({
     mutationFn: () => fixSandboxWithAgent(projectId),
     onSuccess: ({ session_id }) => {
-      successToast('Started a session to fix the sandbox build');
+      successToast(tI18nComplete.raw('text4b303ca7f76c'));
       router.push(`/projects/${projectId}/sessions/${session_id}`);
       invalidate();
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not start the fix session'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text02d6613cab50')),
   });
 
   return { retry, fixWithAgent };
@@ -242,7 +243,7 @@ function SandboxAlertContent({
   const detailsButton = canOpenDetails ? (
     <Button asChild size="sm" variant="outline" className={ACTION_BUTTON}>
       <Link href={sandboxSectionHref} prefetch>
-        Details
+        {tI18nHardcoded.raw('i18nComplete.text45989de49fb7')}
       </Link>
     </Button>
   ) : null;

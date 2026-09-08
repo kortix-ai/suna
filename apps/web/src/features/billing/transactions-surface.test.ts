@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { PANE_META } from '@/features/accounts/hub/sections';
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from '@/i18n/test-source';
+import { join } from 'node:path';
 
 const webSource = join(import.meta.dir, '../..');
 const transactionsTabPath = join(webSource, 'features/accounts/settings/transactions-tab.tsx');

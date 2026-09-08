@@ -1,9 +1,11 @@
 import { Button } from '@/components/ui/button';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { useTranslations } from '@/i18n/use-translations';
 import { BookOpenIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { railItemForTab } from './rail';
+import { useSettingsRailChromeCopy, useSettingsRailItem } from './rail-copy-context';
 import type { SettingsTab } from './settings-tabs';
 
 /**
@@ -15,14 +17,6 @@ import type { SettingsTab } from './settings-tabs';
  * `/projects/[id]/config`. That page was retired on 2026-09-02 and its panes
  * are rail rows now, so one lookup answers for every pane.
  */
-function headerCopy(
-  tab: string,
-): { label: string; description?: string; docsHref?: string } | undefined {
-  // `railItemForTab` compares ids as strings, so a non-`SettingsTab` id simply
-  // finds nothing rather than misbehaving.
-  return railItemForTab(tab as SettingsTab);
-}
-
 /**
  * The pane heading for one settings tab: title, description, and the action row.
  *
@@ -39,7 +33,11 @@ function headerCopy(
  * pane's id actually resolves.
  */
 export function SettingsTabHeader({ tab, action }: { tab: string; action?: React.ReactNode }) {
-  const item = headerCopy(tab);
+  const contextItem = useSettingsRailItem(tab as SettingsTab);
+  const tSettingsRail = useTranslations('settings.rail');
+  const item =
+    contextItem ?? railItemForTab(tab as SettingsTab, (key) => tSettingsRail(key as never));
+  const chrome = useSettingsRailChromeCopy();
   if (!item) return null;
 
   const docs = item.docsHref ? (
@@ -48,7 +46,7 @@ export function SettingsTabHeader({ tab, action }: { tab: string; action?: React
           in place would discard whatever the person was doing behind it. */}
       <Link href={item.docsHref} target="_blank" rel="noreferrer">
         <BookOpenIcon className="size-3.5 shrink-0" />
-        Docs
+        {chrome.docs}
       </Link>
     </Button>
   ) : null;

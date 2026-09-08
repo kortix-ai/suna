@@ -1,9 +1,10 @@
 'use client';
 
 import { ChatIcon as MessageSquare } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { AssistantTurn, UserBubble } from '../chat/chat-turn';
-import { Composer, HOME_PROMPT_MESSAGES } from '../chat/composer';
+import { Composer } from '../chat/composer';
+import { localizedScenarios } from '../chat/scenarios';
 import type { DemoConversation } from '../chat/use-demo-conversation';
 
 export function ChatPage({
@@ -14,9 +15,14 @@ export function ChatPage({
   onSkillClick?: (name: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const homePromptMessages = [
+    tI18nComplete.raw('textbe3f588110fe'),
+    ...localizedScenarios(tI18nComplete).map((scenario) => scenario.prompt),
+  ];
   const sessionName = convo.scenario?.sessionName ?? 'new-session';
-  const busy =  convo.phase === 'streaming';
-  const others = HOME_PROMPT_MESSAGES.filter((p) => p !== convo.userText).slice(0, 3);
+  const busy = convo.phase === 'streaming';
+  const others = homePromptMessages.filter((p) => p !== convo.userText).slice(0, 3);
 
   return (
     <div className="flex h-full flex-col">

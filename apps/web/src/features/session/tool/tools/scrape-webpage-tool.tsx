@@ -32,7 +32,7 @@ import {
   WarningIcon as DangerTriangleSolid,
   GlobeIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 const MAX_CONTENT_CHARS = 8000;
@@ -160,10 +160,7 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
               const n = seen.get(result.url) ?? 0;
               seen.set(result.url, n + 1);
               return (
-                <ScrapeResultItem
-                  key={n ? `${result.url}#${n}` : result.url}
-                  result={result}
-                />
+                <ScrapeResultItem key={n ? `${result.url}#${n}` : result.url} result={result} />
               );
             });
           })()}

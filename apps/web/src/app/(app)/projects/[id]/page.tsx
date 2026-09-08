@@ -6,7 +6,8 @@ import {
   runtimePromptFilesError,
 } from '@/features/session/composer/runtime-prompt-contract';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { attachedFilesToDataUrlParts } from '@/features/session/uploaded-file-refs';
+import { stageFirstPromptAttachments } from '@/features/session/uploaded-file-refs';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
@@ -36,6 +37,7 @@ import { promptFromSearchParams } from './prompt-from-search-params';
 const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-shown';
 
 export default function ProjectIndexPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const pathname = usePathname();
@@ -71,8 +73,10 @@ export default function ProjectIndexPage() {
     if (window.localStorage.getItem(storageKey) === '1') return;
 
     window.localStorage.setItem(storageKey, '1');
-    openUpgradeDialog(billingDialogArgs('no_subscription', accountState, projectAccountId));
-  }, [accountState, projectAccountId, openUpgradeDialog]);
+    openUpgradeDialog(
+      billingDialogArgs('no_subscription', accountState, projectAccountId, tI18nComplete),
+    );
+  }, [accountState, projectAccountId, openUpgradeDialog, tI18nComplete]);
 
   // `/projects/start?q=<prompt>` forwards its query string onto this route
   // unchanged (see `withCurrentQuery` in `../start/page.tsx`), landing here as
@@ -124,7 +128,9 @@ export default function ProjectIndexPage() {
       // sandbox grant are allowed through because their state is `active`.
       const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
       if (isBillingEnabled() && !billingLoading && !billingStateAllowsRun(billingState)) {
-        openUpgradeDialog(billingDialogArgs(billingState, accountState, projectAccountId));
+        openUpgradeDialog(
+          billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
+        );
         return;
       }
 
@@ -144,11 +150,11 @@ export default function ProjectIndexPage() {
       // API turns this whole pending_prompt into a durable inbox row in the
       // same transaction as the session, so the message survives a closed tab
       // from this moment on. Over the cap, the refusal names the way out.
-      let parts: Awaited<ReturnType<typeof attachedFilesToDataUrlParts>>;
+      let parts: Awaited<ReturnType<typeof stageFirstPromptAttachments>>;
       try {
-        parts = await attachedFilesToDataUrlParts(files);
+        parts = await stageFirstPromptAttachments(files);
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Attachments are too large');
+        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'));
         setSending(false);
         return;
       }
@@ -200,6 +206,7 @@ export default function ProjectIndexPage() {
       openUpgradeDialog,
       newSession,
       runtimePromptOverridesAllowed,
+      tI18nComplete,
     ],
   );
 

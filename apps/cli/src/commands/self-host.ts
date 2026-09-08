@@ -1226,6 +1226,17 @@ function selfHostStatus(flags: GlobalFlags): number {
   compose(flags.instance, ['ps']);
   process.stdout.write('\n');
 
+  // Preview origins do not depend on the updater. Render their configured
+  // state even when the stack is stopped and no updater report is available.
+  if (reachabilityMode(env) === 'domain') {
+    const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
+    process.stdout.write(
+      previewDomain
+        ? `  ${status.ok('preview origins')}${C.dim} — *.${previewDomain}${C.reset}\n`
+        : `  ${status.err('preview origins NOT configured')}${C.dim} — browsers get /v1/p/ path previews, which break root-absolute links. Run \`kortix self-host doctor\`${C.reset}\n`,
+    );
+  }
+
   if (!report) {
     process.stdout.write(`  ${status.err('update status unavailable')}${C.dim} (kortix-updater not reachable — is the stack running?)${C.reset}\n\n`);
     writePreviewStatus();

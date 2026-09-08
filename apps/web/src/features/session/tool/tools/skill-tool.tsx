@@ -20,6 +20,7 @@ import {
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { FileDashedIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useMemo } from 'react';
 
 /**
@@ -31,6 +32,7 @@ import { useCallback, useMemo } from 'react';
  * listed files sit in {@link ToolResultCard}, matching a directory read.
  */
 export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
@@ -74,7 +76,7 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     <BasicTool
       icon={<FileDashedIcon className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Skill',
+        title: tI18nComplete.raw('text6df1bb18a59a'),
         subtitle: rawName || undefined,
       }}
       onSubtitleClick={docPath ? openSkillDoc : undefined}

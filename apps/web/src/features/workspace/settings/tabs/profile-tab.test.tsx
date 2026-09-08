@@ -13,6 +13,26 @@ const headings = (html: string): string[] =>
 const html = () => renderToStaticMarkup(<ProfileTabView />);
 
 describe('ProfileTabView', () => {
+  test('renders injected locale copy instead of fixed English labels', () => {
+    const out = renderToStaticMarkup(
+      <ProfileTabView
+        copy={{
+          profilePicture: 'Профилна слика',
+          email: 'Имејл',
+          name: 'Име',
+          dangerZone: 'Опасна зона',
+          deleteAccount: 'Обриши налог',
+        }}
+      />,
+    );
+
+    for (const label of ['Профилна слика', 'Имејл', 'Име', 'Опасна зона', 'Обриши налог']) {
+      expect(out).toContain(label);
+    }
+    expect(out).not.toContain('>Profile picture<');
+    expect(out).not.toContain('>Danger zone<');
+  });
+
   test('renders the pane heading and each section label, in order', () => {
     expect(headings(html())).toEqual(['Profile', 'Danger zone']);
   });
@@ -46,7 +66,10 @@ describe('ProfileTabView', () => {
 
     test('lists each account with a link to its settings', () => {
       const out = withAccounts();
-      expect(out).toContain('href="/accounts/acc_1"');
+      // `?accountId=acc_1` — the hub is a modal on the current page, not a
+      // route. Rendered with no router context, the href is the query-only
+      // relative form.
+      expect(out).toContain('href="?accountId=acc_1"');
       expect(out).toContain('>Acme<');
     });
 

@@ -17,7 +17,7 @@
 // this file names `router.push` / `router.replace` only inside string
 // constants — never in prose that a future slice could pick up.
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from '@/i18n/test-source';
 import { dirname, relative, resolve } from 'node:path';
 
 const WEB_SRC = resolve(import.meta.dir, '../..');
@@ -91,7 +91,7 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
     name: "/new's Log out",
     file: 'features/workspace/new/new-workspace-page.tsx',
     from: 'fallbackLabel={user?.email}',
-    to: 'Log out',
+    to: '</Button>',
   },
   {
     name: "phone verification's Sign out",
@@ -206,7 +206,11 @@ describe('nothing on an identity change can wait forever', () => {
     // Each one spends its OWN budget, not a shared number: the server revoke
     // must not be bounded tighter than its own `AbortSignal.timeout(3_000)`,
     // and the reset needs far less than either.
-    for (const budget of ['budgets.finalizeServerSession', 'budgets.endSession', 'budgets.resetClientState']) {
+    for (const budget of [
+      'budgets.finalizeServerSession',
+      'budgets.endSession',
+      'budgets.resetClientState',
+    ]) {
       expect(sequence).toContain(budget);
     }
   });
@@ -282,11 +286,13 @@ describe('the signed-out route guards do not race the exit', () => {
     // deletion of a guard reads as a failure rather than as a passing regex.
     for (const file of [
       'features/workspace/project-layout/project-shell.tsx',
-      'app/(app)/accounts/layout.tsx',
-      'app/(app)/accounts/page.tsx',
-      'app/(app)/accounts/[id]/page.tsx',
-      'app/(app)/accounts/[id]/scim-setup/page.tsx',
-      'app/(app)/accounts/[id]/sso-setup/page.tsx',
+      // The `/accounts/**` routes were deleted on 2026-09-08 — the account hub
+      // is a modal over the current page now — so the two surfaces that
+      // survived them are the hub's own bodies. The two guided-setup pages
+      // went with the routes; their wizards are panes of the Identity section
+      // and inherit this guard from `account-hub-content.tsx`.
+      'features/accounts/hub/account-list-content.tsx',
+      'features/accounts/hub/account-hub-content.tsx',
       'app/(app)/projects/start/page.tsx',
       'features/workspace/new/new-workspace-page.tsx',
     ]) {
@@ -434,7 +440,7 @@ describe('the three bare logout controls now say something is happening', () => 
       name: "/new's Log out",
       file: 'features/workspace/new/new-workspace-page.tsx',
       handler: ['<AccountPicker', 'Log out'],
-      control: ['<AccountPicker', 'Log out'],
+      control: ['<AccountPicker', '</Button>'],
       holdsDialog: false,
     },
   ];

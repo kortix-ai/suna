@@ -2,6 +2,7 @@
 
 import { CreditCardIcon, KeyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -24,6 +25,7 @@ export function ModelConnectionGate({
   size?: 'sm' | 'default';
   className?: string;
 }) {
+  const t = useTranslations('sessionUi.modelGate');
   const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
     useModelConnectionGate(EMPTY_MODELS);
 
@@ -34,22 +36,18 @@ export function ModelConnectionGate({
         className={className}
         icon={KeyIcon}
         size={size}
-        title="Connect a model to start chatting"
-        description={
-          showUpgradeOption
-            ? "This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider."
-            : 'This session needs an LLM connected before it can respond. Bring your own API key from any provider.'
-        }
+        title={t('title')}
+        description={showUpgradeOption ? t('upgradeDescription') : t('description')}
         action={
           showUpgradeOption ? (
             <Button type="button" size="sm" onClick={openUpgrade}>
               <CreditCardIcon className="size-3.5" />
-              Upgrade
+              {t('upgrade')}
             </Button>
           ) : (
             <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
               <KeyIcon className="size-3.5" />
-              Bring your own key
+              {t('bringKey')}
             </Button>
           )
         }
@@ -62,7 +60,7 @@ export function ModelConnectionGate({
               onClick={() => openConnectProvider('providers')}
             >
               <KeyIcon className="size-3.5" />
-              Bring your own key
+              {t('bringKey')}
             </Button>
           ) : undefined
         }
@@ -106,6 +104,7 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
  * animation assumes it renders once with the final answer, not per-query.
  */
 export function ModelConnectionBar({ show }: { show: boolean }) {
+  const t = useTranslations('sessionUi.modelGate');
   const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
     useModelConnectionGate(EMPTY_MODELS);
   const reduceMotion = useReducedMotion();
@@ -145,19 +144,19 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
                   <KeyIcon className="size-3.5 shrink-0" />
                   <span className="truncate">
-                    No model connected
-                    <span className="hidden sm:inline"> — connect one to start chatting</span>
+                    {t('barTitle')}
+                    <span className="hidden sm:inline"> — {t('barDescription')}</span>
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {showUpgradeOption && (
                     <Button type="button" variant="ghost" size="xs" onClick={openUpgrade}>
                       <CreditCardIcon className="size-3.5 shrink-0" />
-                      Upgrade
+                      {t('upgrade')}
                     </Button>
                   )}
                   <Button type="button" size="xs" onClick={() => openConnectProvider('providers')}>
-                    Connect model
+                    {t('connectModel')}
                   </Button>
                 </div>
               </div>

@@ -1,22 +1,13 @@
 'use client';
 
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useMemo,
-  useRef,
-  ReactNode,
-} from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { User, Session } from '@supabase/supabase-js';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { setBootstrapAuthToken, setCachedAuthToken } from '@/lib/auth-token';
 import { IDENTITY_MARKER_KEY, shouldResetClientState } from '@/lib/auth/identity-marker';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { resetClientState } from '@/lib/utils/reset-client-state';
 import { safeGetItem, safeSetItem } from '@/lib/storage/managed-storage';
+import { createClient } from '@/lib/supabase/client';
+import { resetClientState } from '@/lib/utils/reset-client-state';
+import { Session, SupabaseClient, User } from '@supabase/supabase-js';
+import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 // Auth tracking moved to AuthEventTracker component (handles OAuth redirects)
 
 type AuthContextType = {
@@ -56,6 +47,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (mustReset) {
+        // Cross-tab SIGNED_IN can replace the user without SIGNED_OUT.
+        // Fence pending requests before cleanup yields or the new token lands.
+        setBootstrapAuthToken(null);
+        setCachedAuthToken(null);
         try {
           await resetClientState();
         } catch (error) {
@@ -122,72 +117,67 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     getInitialSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
-        const nextUserId = newSession?.user?.id;
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      const nextUserId = newSession?.user?.id;
 
-        // INITIAL_SESSION is here, and not only in the switch below, for one
-        // reason: a cross-user COLD LOAD arrives as INITIAL_SESSION, and it
-        // arrives before `getInitialSession()` has finished its `getUser()`
-        // round trip. Publishing first would hand the previous account's
-        // mounted caches to the new user for the whole length of the reset,
-        // which is long enough for every consumer that reads on mount to fetch
-        // against them.
-        if (nextUserId && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
-          await adoptUser(nextUserId);
-        }
+      // INITIAL_SESSION is here, and not only in the switch below, for one
+      // reason: a cross-user COLD LOAD arrives as INITIAL_SESSION, and it
+      // arrives before `getInitialSession()` has finished its `getUser()`
+      // round trip. Publishing first would hand the previous account's
+      // mounted caches to the new user for the whole length of the reset,
+      // which is long enough for every consumer that reads on mount to fetch
+      // against them.
+      if (nextUserId && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
+        await adoptUser(nextUserId);
+      }
 
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
+      setSession(newSession);
+      setUser(newSession?.user ?? null);
 
-        // Functional update: the previous `if (isLoading)` read a stale
-        // `isLoading` captured at mount (the effect only depends on `supabase`),
-        // so the guard never short-circuited. This is behavior-equivalent but
-        // doesn't rely on a stale closure value.
-        setIsLoading((prev) => (prev ? false : prev));
-        switch (event) {
-          case 'SIGNED_IN': {
-            if (newSession?.access_token) {
-              setCachedAuthToken(newSession.access_token);
-              setBootstrapAuthToken(null);
-            }
-            break;
-          }
-          case 'SIGNED_OUT':
+      // Only getInitialSession clears initial loading, after validation and
+      // identity cleanup. INITIAL_SESSION can arrive before either finishes.
+      switch (event) {
+        case 'SIGNED_IN': {
+          if (newSession?.access_token) {
+            setCachedAuthToken(newSession.access_token);
             setBootstrapAuthToken(null);
-            setCachedAuthToken(null);
-            await resetClientState();
-            // This branch no longer calls `safeRemoveItem(IDENTITY_MARKER_KEY)`
-            // directly — an earlier revision did, which deleted the exact
-            // value the next `SIGNED_IN` compares against, so after an
-            // explicit logout the cross-user reset could never fire. But the
-            // marker does NOT survive this branch: `resetClientState()` above
-            // -> `clearUserLocalStorage()` runs a PREFIX sweep, and
-            // `IDENTITY_MARKER_KEY` ('kortix-last-user-id') matches
-            // `APP_STORAGE_PREFIXES[0]` ('kortix-') and is not on
-            // `KEEP_STORAGE_KEYS` — so it is swept like every other per-user
-            // key. That is SAFE, not a residual hole: `shouldResetClientState`
-            // reads an absent marker as UNKNOWN, and unknown resets (see its
-            // own doc comment). The next sign-in rewrites the marker
-            // unconditionally (`safeSetItem` in `adoptUser`, above) regardless
-            // of whether this branch ran.
-            break;
-          case 'TOKEN_REFRESHED':
-            if (newSession?.access_token) {
-              setCachedAuthToken(newSession.access_token);
-              setBootstrapAuthToken(null);
-            }
-            break;
-          case 'MFA_CHALLENGE_VERIFIED':
-            if (newSession?.access_token) {
-              setCachedAuthToken(newSession.access_token);
-              setBootstrapAuthToken(null);
-            }
-            break;
-          default:
+          }
+          break;
         }
-      },
-    );
+        case 'SIGNED_OUT':
+          setBootstrapAuthToken(null);
+          setCachedAuthToken(null);
+          await resetClientState();
+          // This branch no longer calls `safeRemoveItem(IDENTITY_MARKER_KEY)`
+          // directly — an earlier revision did, which deleted the exact
+          // value the next `SIGNED_IN` compares against, so after an
+          // explicit logout the cross-user reset could never fire. But the
+          // marker does NOT survive this branch: `resetClientState()` above
+          // -> `clearUserLocalStorage()` runs a PREFIX sweep, and
+          // `IDENTITY_MARKER_KEY` ('kortix-last-user-id') matches
+          // `APP_STORAGE_PREFIXES[0]` ('kortix-') and is not on
+          // `KEEP_STORAGE_KEYS` — so it is swept like every other per-user
+          // key. That is SAFE, not a residual hole: `shouldResetClientState`
+          // reads an absent marker as UNKNOWN, and unknown resets (see its
+          // own doc comment). The next sign-in rewrites the marker
+          // unconditionally (`safeSetItem` in `adoptUser`, above) regardless
+          // of whether this branch ran.
+          break;
+        case 'TOKEN_REFRESHED':
+          if (newSession?.access_token) {
+            setCachedAuthToken(newSession.access_token);
+            setBootstrapAuthToken(null);
+          }
+          break;
+        case 'MFA_CHALLENGE_VERIFIED':
+          if (newSession?.access_token) {
+            setCachedAuthToken(newSession.access_token);
+            setBootstrapAuthToken(null);
+          }
+          break;
+        default:
+      }
+    });
 
     return () => {
       authListener?.subscription.unsubscribe();

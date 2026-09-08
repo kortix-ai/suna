@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getTranslations } from '@/i18n/get-translations';
 import Image from 'next/image';
 import { notFound } from 'next/navigation';
 
@@ -6,6 +7,8 @@ import { BlogContent } from '@/components/blog/blog-content';
 import { BlogCover } from '@/components/blog/blog-cover';
 import { PostByline } from '@/components/blog/post-byline';
 import { PostCard } from '@/components/blog/post-card';
+import { BLOG_TRANSLATION_KEYS } from '@/i18n/blog-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { getAllPosts, getPostEntry, resolveAuthor } from '@/lib/blog';
 import type { BlogPostEntry } from '@/lib/blog-posts';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
@@ -64,9 +67,11 @@ export function generateStaticParams() {
 }
 
 export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const { slug } = await props.params;
-  const entry = getPostEntry(slug);
-  if (!entry) return {};
+  const sourceEntry = getPostEntry(slug);
+  if (!sourceEntry) return {};
+  const entry = localizeUiCatalog(sourceEntry, tI18nComplete, BLOG_TRANSLATION_KEYS);
 
   const url = `${siteMetadata.url}/blog/${slug}`;
   const ogImage = entry.cover
@@ -105,16 +110,18 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
 }
 
 export default async function BlogPostPage(props: PageProps) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const { slug } = await props.params;
-  const entry = getPostEntry(slug);
-  if (!entry) notFound();
+  const sourceEntry = getPostEntry(slug);
+  if (!sourceEntry) notFound();
+  const entry = localizeUiCatalog(sourceEntry, tI18nComplete, BLOG_TRANSLATION_KEYS);
   if (entry.draft && process.env.NODE_ENV === 'production') notFound();
 
   const author = resolveAuthor(entry.author);
   // The first tag is the post's topic and leads the header as an eyebrow; the
   // rest are navigation and render at the foot of the article.
   const topic = entry.tags[0];
-  const more = getAllPosts()
+  const more = localizeUiCatalog(getAllPosts(), tI18nComplete, BLOG_TRANSLATION_KEYS)
     .filter((p) => p.slug !== slug)
     .slice(0, 2);
 
@@ -203,7 +210,7 @@ export default async function BlogPostPage(props: PageProps) {
         {more.length > 0 && (
           <div className="border-border/60 mt-16 border-t pt-14">
             <h2 className="text-muted-foreground mb-10 font-mono text-xs tracking-wider uppercase">
-              More from the blog
+              {tI18nComplete.raw('text492d03736dfa')}
             </h2>
             <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2">
               {more.map((post) => (

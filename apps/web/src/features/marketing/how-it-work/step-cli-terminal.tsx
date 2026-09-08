@@ -8,6 +8,7 @@ import {
 } from '@/components/home/interactive-demo/cli/terminal';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useRef, type HTMLAttributes, type ReactNode } from 'react';
 
 export type StepCliBlock = { cmd: Line; out: Line[] };
@@ -26,6 +27,7 @@ export function StepCliTerminal({
   director: StepCliDirector;
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
 }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { scrollback, typed, running } = director;
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -45,7 +47,7 @@ export function StepCliTerminal({
       >
         <span className="text-muted-foreground ml-1.5 inline-flex items-center gap-1 text-[11px] font-medium">
           <KortixLogo size={12} />
-          Kortix
+          {tI18nComplete.raw('textab54cf5e1d9d')}
         </span>
       </div>
 

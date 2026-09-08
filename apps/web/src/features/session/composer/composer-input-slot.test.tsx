@@ -13,12 +13,12 @@
  * an `AuthProvider` to render, so its width is measured in the browser harness
  * at /debug/approvals instead.
  */
-import type { SessionAuditAction } from '@kortix/sdk';
-import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SessionApprovalNotice } from '@/features/session/session-approval-prompt';
 import { approvalNoticeRows } from '@/features/session/session-approval-review';
+import type { SessionAuditAction } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { COMPOSER_INPUT_SLOT_CLASS } from './composer';
 
 const pending: SessionAuditAction = {

@@ -3,6 +3,7 @@
 import { cn } from '@/lib/utils';
 import { BookOpenIcon as BookOpen, CheckIcon as Check } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 import { skillDescription } from './match-skills';
 import type { DemoPhase } from './use-demo-conversation';
@@ -18,6 +19,7 @@ export function SkillsRead({
   phase: DemoPhase;
   onSkillClick?: (name: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [readCount, setReadCount] = useState(0);
 
   useEffect(() => {
@@ -69,7 +71,9 @@ export function SkillsRead({
               >
                 <div className="flex items-center gap-2 px-3 py-2 text-xs">
                   <BookOpen className="text-muted-foreground size-3.5 shrink-0" />
-                  <span className="text-foreground font-mono font-medium">skill</span>
+                  <span className="text-foreground font-mono font-medium">
+                    {tI18nComplete.raw('text9c53c074d7ac')}
+                  </span>
                   <span className="text-muted-foreground truncate">· {name}</span>
                   {done ? (
                     <Check className="ml-auto size-3.5 shrink-0 text-emerald-500" />

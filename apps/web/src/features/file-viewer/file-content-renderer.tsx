@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { CodeEditor } from '@/components/file-editors/code-editor';
@@ -477,9 +477,9 @@ export function FileContentRenderer({
     try {
       await source.download(filePath, fileName);
     } catch {
-      errorToast(`Failed to download ${fileName}`);
+      errorToast(tHardcodedUi('i18nComplete.textc85c359673e0', { value0: fileName }));
     }
-  }, [filePath, fileName, source]);
+  }, [fileName, source, filePath, tHardcodedUi]);
 
   // Save handler — called by CodeEditor (Cmd+S) and by the header Save button.
   // When called from the header button we pass latestContentRef.current.
@@ -502,9 +502,16 @@ export function FileContentRenderer({
         if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
         saveFlashTimerRef.current = setTimeout(() => setSaveFlash(false), 2000);
         onSaved?.();
-        successToast('File saved');
+        successToast(tI18nHardcoded.raw('i18nComplete.text8d63209935bf'));
       } catch (err) {
-        errorToast(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errorToast(
+          tHardcodedUi('i18nComplete.texta35cc9aee543', {
+            value0:
+              err instanceof Error
+                ? err.message
+                : tI18nHardcoded.raw('i18nComplete.text27c2ccd962c2'),
+          }),
+        );
       } finally {
         setIsSaving(false);
       }
@@ -686,13 +693,13 @@ export function FileContentRenderer({
             {!readOnly && hasUnsavedChanges && (
               <Badge variant="warning" size="sm" className="shrink-0">
                 <StatusDot tone="warning" pulse />
-                Edited
+                {tI18nHardcoded.raw('i18nComplete.text7117f0807129')}
               </Badge>
             )}
             {!readOnly && saveFlash && !hasUnsavedChanges && (
               <Badge variant="success" size="sm" className="shrink-0">
                 <Check className="h-3 w-3" />
-                Saved
+                {tI18nHardcoded.raw('i18nComplete.textb5c120b316c2')}
               </Badge>
             )}
             {readOnly && (
@@ -740,7 +747,7 @@ export function FileContentRenderer({
                   ) : (
                     <Save className="h-3.5 w-3.5" />
                   )}
-                  Save
+                  {tI18nHardcoded.raw('i18nComplete.text1509f561f241')}
                 </Button>
                 <Hint label={discardLabel} side="bottom">
                   <Button
@@ -758,11 +765,18 @@ export function FileContentRenderer({
 
             {/* HTML preview toggle */}
             {isHtmlFile && (
-              <Hint label={isHtmlPreview ? 'View source' : 'Preview'} side="bottom">
+              <Hint
+                label={
+                  isHtmlPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
+                }
+                side="bottom"
+              >
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label={isHtmlPreview ? 'View source' : 'Preview'}
+                  aria-label={
+                    isHtmlPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
+                  }
                   aria-pressed={isHtmlPreview}
                   className={cn('h-7 w-7 active:scale-[0.96]', isHtmlPreview && 'text-primary')}
                   onClick={() => setIsHtmlPreview((v) => !v)}
@@ -774,11 +788,22 @@ export function FileContentRenderer({
 
             {/* JSON tree toggle */}
             {isJsonFile && fileContent?.type === 'text' && (
-              <Hint label={isJsonTreeView ? 'View source' : 'Tree view'} side="bottom">
+              <Hint
+                label={
+                  isJsonTreeView
+                    ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3')
+                    : tI18nHardcoded.raw('i18nComplete.text4f50bda41e87')
+                }
+                side="bottom"
+              >
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label={isJsonTreeView ? 'View source' : 'Tree view'}
+                  aria-label={
+                    isJsonTreeView
+                      ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3')
+                      : tI18nHardcoded.raw('i18nComplete.text4f50bda41e87')
+                  }
                   aria-pressed={isJsonTreeView}
                   className={cn('h-7 w-7 active:scale-[0.96]', isJsonTreeView && 'text-primary')}
                   onClick={() => setIsJsonTreeView((v) => !v)}
@@ -790,11 +815,22 @@ export function FileContentRenderer({
 
             {/* Markdown preview toggle */}
             {isMarkdownFile && fileContent?.type === 'text' && (
-              <Hint label={isMarkdownPreview ? 'View source' : 'Preview'} side="bottom">
+              <Hint
+                label={
+                  isMarkdownPreview
+                    ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3')
+                    : 'Preview'
+                }
+                side="bottom"
+              >
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label={isMarkdownPreview ? 'View source' : 'Preview'}
+                  aria-label={
+                    isMarkdownPreview
+                      ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3')
+                      : 'Preview'
+                  }
                   aria-pressed={isMarkdownPreview}
                   className={cn('h-7 w-7 active:scale-[0.96]', isMarkdownPreview && 'text-primary')}
                   onClick={() => setIsMarkdownPreview((v) => !v)}
@@ -813,10 +849,10 @@ export function FileContentRenderer({
               className="h-7 gap-1.5 px-3 text-xs font-medium"
               onClick={handleDownload}
               disabled={!fileContent && !blobUrl && !rawBlob}
-              aria-label="Download"
+              aria-label={tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
             >
               <Download className="h-3.5 w-3.5" />
-              Download
+              {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
             </Button>
           </div>
         </div>
@@ -841,7 +877,7 @@ export function FileContentRenderer({
               </p>
               <Button variant="outline" size="sm" onClick={handleDownload}>
                 <Download className="mr-1.5 h-3.5 w-3.5" />
-                Download
+                {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
               </Button>
             </div>
           )}
@@ -860,12 +896,14 @@ export function FileContentRenderer({
           {contentError && !showLoadingState && isSandboxWaking && (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
               <Loading className="text-muted-foreground/40 h-4 w-4" />
-              <p className="text-muted-foreground text-sm font-medium">Waking up the workspace…</p>
+              <p className="text-muted-foreground text-sm font-medium">
+                {tI18nHardcoded.raw('i18nComplete.text5e3de76869f3')}
+              </p>
               <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
                 {filePath}
               </p>
               <p className="text-muted-foreground/40 max-w-xs text-xs">
-                The sandbox is starting. This file will load automatically.
+                {tI18nHardcoded.raw('i18nComplete.textd4707c58c4a4')}
               </p>
             </div>
           )}
@@ -1052,7 +1090,7 @@ export function FileContentRenderer({
                 </p>
                 <Button variant="outline" size="sm" className="" onClick={handleDownload}>
                   <Download className="mr-1.5 h-3.5 w-3.5" />
-                  Download
+                  {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
                 </Button>
               </div>
             )}
@@ -1168,7 +1206,9 @@ function JsonNode({
     return (
       <div style={{ paddingLeft: depth * 20 }}>
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-muted-foreground/50 italic">null</span>
+        <span className="text-muted-foreground/50 italic">
+          {tHardcodedUi.raw('i18nComplete.text74234e98afe7')}
+        </span>
       </div>
     );
   }
@@ -1210,7 +1250,7 @@ function JsonNode({
             rel="noopener noreferrer"
             className="text-kortix-blue/70 hover:text-kortix-blue ml-1 text-xs"
           >
-            open
+            {tHardcodedUi.raw('i18nComplete.text2348f9987442')}
           </a>
         )}
       </div>
@@ -1234,7 +1274,8 @@ function JsonNode({
           {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
           {isCollapsed ? (
             <span className="text-muted-foreground/40">
-              [{count} item{count !== 1 ? 's' : ''}]
+              [{count} {tHardcodedUi.raw('i18nComplete.text4a33eacd5fa6')}
+              {count !== 1 ? 's' : ''}]
             </span>
           ) : (
             <span className="text-muted-foreground/30">[</span>

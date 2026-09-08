@@ -76,6 +76,7 @@ export {
   uploadTimeoutMsForBytes,
   writeFile,
 } from './core/files/client';
+export type { UploadFileOptions, UploadProgressEvent } from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
@@ -391,6 +392,9 @@ export {
   refreshSession,
   resetPassword,
   updatePassword,
+  updateUserMetadata,
+  signInWithSso,
+  authMfa,
   authUser,
   signOut,
   HeadlessAuthError,

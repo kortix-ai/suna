@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import type { Agent, MessageWithParts } from '@kortix/sdk/react';
 import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
@@ -85,7 +85,7 @@ export function ComposerUnderbar({
   variant = 'row',
   toolbarSlot,
 }: ComposerUnderbarProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const t = useTranslations('threads');
 
   /*
     The agent picker is UNCONDITIONAL. It used to earn its slot
@@ -132,14 +132,14 @@ export function ComposerUnderbar({
         {onAttachClick && (
           <Hint
             side="top"
-            label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
+            label={t('attachFiles')}
           >
             <Button
               type="button"
               variant="ghost"
               size="icon-base"
               onClick={onAttachClick}
-              aria-label="Attach files"
+              aria-label={t('attachFiles')}
               // `hit-area-1` — the same extension the toolbar's send
               // buttons carry. The visible chip stays 32px; the pressable box
               // grows to 40, on a mouse as well as on a finger.

@@ -25,7 +25,9 @@ export function isMaintenanceProductRoute(pathname: string): boolean {
   // redirect for an account with no app access lands there
   // (`app/(auth)/auth/callback/route.ts`), so leaving it out would walk that
   // user straight past a blocking maintenance screen.
-  return ['/projects', '/accounts', '/invites', '/settings'].some(
+  // `/accounts` is absent on purpose: the account hub is a modal over one of
+  // these paths (`?accountId=`), never a route of its own.
+  return ['/projects', '/invites', '/settings'].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }

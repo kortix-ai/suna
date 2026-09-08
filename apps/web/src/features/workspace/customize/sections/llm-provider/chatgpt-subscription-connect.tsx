@@ -18,7 +18,7 @@ import {
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { subscriptionIsConnected, subscriptionPrimaryAction } from './subscription-control';
@@ -79,7 +79,7 @@ export function ChatGptSubscriptionConnect({
         if (cancelledRef.current) return;
         if (res.status === 'success') {
           setPhase('done');
-          successToast('ChatGPT subscription connected to this project');
+          successToast(tHardcodedUi.raw('i18nComplete.text3f86a31c64fc'));
           queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected('codex');
@@ -109,7 +109,7 @@ export function ChatGptSubscriptionConnect({
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
-  }, [projectId, queryClient, onConnected]);
+  }, [projectId, tHardcodedUi, queryClient, onConnected]);
 
   // What the PROJECT holds, not what this component remembers doing. A
   // credential connected in another tab, another surface, or before this page
@@ -132,14 +132,16 @@ export function ChatGptSubscriptionConnect({
     // the product called it.
     mutationFn: () => deleteProjectProviderOAuth(projectId, 'openai'),
     onSuccess: () => {
-      successToast('ChatGPT subscription disconnected');
+      successToast(tHardcodedUi.raw('i18nComplete.text555cd401b3c3'));
       setPhase('idle');
       setError(null);
       queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) =>
-      errorToast(err instanceof Error ? err.message : 'Failed to disconnect the subscription'),
+      errorToast(
+        err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text7b7e67f5f919'),
+      ),
   });
 
   const waiting = phase === 'waiting';
@@ -185,7 +187,9 @@ export function ChatGptSubscriptionConnect({
           )}
           <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
             <Loading className="size-3.5 shrink-0" />
-            {challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
+            {challenge
+              ? tHardcodedUi.raw('i18nComplete.text2f938f9b118b')
+              : tHardcodedUi.raw('i18nComplete.textf29674479db4')}
           </div>
         </div>
       )}
@@ -207,7 +211,7 @@ export function ChatGptSubscriptionConnect({
       <div className="mt-3 flex flex-wrap gap-2">
         {waiting ? (
           <Button type="button" size="sm" variant="outline" className="px-4" onClick={reset}>
-            Cancel
+            {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
           </Button>
         ) : action === 'disconnect' ? (
           <Button
@@ -218,7 +222,9 @@ export function ChatGptSubscriptionConnect({
             disabled={disconnect.isPending}
             onClick={() => disconnect.mutate()}
           >
-            {disconnect.isPending ? 'Disconnecting…' : 'Disconnect ChatGPT'}
+            {disconnect.isPending
+              ? tHardcodedUi.raw('i18nComplete.textcb2b6a572a85')
+              : tHardcodedUi.raw('i18nComplete.textc4e46df5702b')}
           </Button>
         ) : (
           <Button
@@ -228,7 +234,9 @@ export function ChatGptSubscriptionConnect({
             className="px-4"
             onClick={handleConnect}
           >
-            {action === 'reconnect' ? 'Reconnect ChatGPT' : 'Connect ChatGPT'}
+            {action === 'reconnect'
+              ? tHardcodedUi.raw('i18nComplete.textd9c95c52010d')
+              : tHardcodedUi.raw('i18nComplete.textaa023456aca4')}
           </Button>
         )}
       </div>

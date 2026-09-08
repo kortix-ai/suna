@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'connector-settings.tsx'), 'utf8');
@@ -21,7 +21,8 @@ describe('connector settings write path', () => {
   test('the authorization lockedReason is byte-identical to the reviewed wording', () => {
     const lockedReason =
       'Set when the connector was added. To change it, remove the connector and add it again — saved connections and tool rules are lost.';
-    expect(source).toContain(`lockedReason="${lockedReason}"`);
+    expect(source).toContain("raw('text2c8a38c525f7')");
+    expect(source).toContain(lockedReason);
   });
 
   test('the owner is explained exactly once — no paragraph restating the field', () => {
@@ -29,10 +30,10 @@ describe('connector settings write path', () => {
     // which is unreachable, the value is locked), the field's own row
     // description and the lockedReason — four statements of one fact. The
     // section label plus the field is the whole explanation now.
-    expect(source).toContain('<Label>Connects as</Label>');
+    expect(source).toContain("raw('textfa065317dfc5')");
     expect(source).not.toContain('Project — one account everyone uses');
     const section = source.slice(
-      source.indexOf('<Label>Connects as'),
+      source.indexOf("raw('textfa065317dfc5')"),
       source.indexOf('</section>'),
     );
     expect(section).not.toMatch(/<p\b/);

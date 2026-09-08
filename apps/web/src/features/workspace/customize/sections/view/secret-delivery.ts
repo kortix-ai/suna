@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 import type {
   AdminConnector,
   SecretConsumer,
@@ -154,6 +158,7 @@ export function secretDeliveryTarget(
 export function connectorBindingOptions(
   connectors: readonly AdminConnector[],
   secretIdentifier: string,
+  tI18nComplete?: UiTranslator,
 ): ConnectorBindingOption[] {
   return connectors.map((connector) => {
     const selected = connector.secretIdentifier === secretIdentifier;
@@ -171,6 +176,11 @@ export function connectorBindingOptions(
     } else if (connector.secretIdentifier && !selected) {
       disabled = true;
       description = `Already uses ${connector.secretIdentifier}. Unbind it there first.`;
+    }
+    if (tI18nComplete) {
+      description = description.startsWith('Already uses ')
+        ? tI18nComplete('text2758aea1d017', { identifier: connector.secretIdentifier ?? '' })
+        : localizeUiCatalog(description, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS);
     }
     return { slug: connector.slug, name: connector.name, selected, disabled, description };
   });
@@ -285,22 +295,33 @@ export type SecretDeliveryLegendEntry = SecretDeliveryPresentation & {
  * not explain a value the picker never offers, or the page reintroduces exactly
  * the network-boundary confusion the flag hides.
  */
-export function secretDeliveryLegend(showEnforced = true): SecretDeliveryLegendEntry[] {
+export function secretDeliveryLegend(
+  showEnforced = true,
+  tI18nComplete?: UiTranslator,
+): SecretDeliveryLegendEntry[] {
+  const exposurePresentations = tI18nComplete
+    ? localizeUiCatalog(EXPOSURE_PRESENTATIONS, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS)
+    : EXPOSURE_PRESENTATIONS;
+  const assignedUsagePresentations = tI18nComplete
+    ? localizeUiCatalog(
+        ASSIGNED_USAGE_PRESENTATIONS,
+        tI18nComplete,
+        PRODUCT_CATALOG_TRANSLATION_KEYS,
+      )
+    : ASSIGNED_USAGE_PRESENTATIONS;
   return [
-    ...(Object.keys(EXPOSURE_PRESENTATIONS) as SecretExposure[])
+    ...(Object.keys(exposurePresentations) as SecretExposure[])
       .filter((key) => showEnforced || key !== 'enforced')
       .map((key) => ({
         key,
         kind: 'exposure' as const,
-        ...EXPOSURE_PRESENTATIONS[key],
+        ...exposurePresentations[key],
       })),
-    ...(Object.keys(ASSIGNED_USAGE_PRESENTATIONS) as Exclude<SecretUsage, 'agent'>[]).map(
-      (key) => ({
-        key,
-        kind: 'usage' as const,
-        ...ASSIGNED_USAGE_PRESENTATIONS[key],
-      }),
-    ),
+    ...(Object.keys(assignedUsagePresentations) as Exclude<SecretUsage, 'agent'>[]).map((key) => ({
+      key,
+      kind: 'usage' as const,
+      ...assignedUsagePresentations[key],
+    })),
   ];
 }
 
@@ -333,14 +354,26 @@ export function secretDeliveryPresentation(
      *  wording) so callers that cannot know stay accurate for gateway
      *  projects. */
     llmGatewayEnabled?: boolean;
+    tI18nComplete?: UiTranslator;
   },
 ): SecretDeliveryPresentation {
   const usage = secretUsage(strategy, consumer);
   if (usage === 'llm_gateway' && opts?.llmGatewayEnabled === false) {
-    return NATIVE_MODEL_KEY_PRESENTATION;
+    return opts.tI18nComplete
+      ? localizeUiCatalog(
+          NATIVE_MODEL_KEY_PRESENTATION,
+          opts.tI18nComplete,
+          PRODUCT_CATALOG_TRANSLATION_KEYS,
+        )
+      : NATIVE_MODEL_KEY_PRESENTATION;
   }
-  if (usage && usage !== 'agent') return ASSIGNED_USAGE_PRESENTATIONS[usage];
-  return EXPOSURE_PRESENTATIONS[secretExposure(strategy, consumer)];
+  const presentation =
+    usage && usage !== 'agent'
+      ? ASSIGNED_USAGE_PRESENTATIONS[usage]
+      : EXPOSURE_PRESENTATIONS[secretExposure(strategy, consumer)];
+  return opts?.tI18nComplete
+    ? localizeUiCatalog(presentation, opts.tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS)
+    : presentation;
 }
 
 /**
@@ -512,15 +545,20 @@ export type SecretExposureOption = SecretDeliveryPresentation & {
  * always `environment`, so hiding `enforced` never leaves the picker pointing
  * at an option that is not present.
  */
-export function secretExposureOptions(egressAvailable: boolean): SecretExposureOption[] {
-  return (Object.keys(EXPOSURE_PRESENTATIONS) as SecretExposure[])
+export function secretExposureOptions(
+  egressAvailable: boolean,
+  tI18nComplete?: UiTranslator,
+): SecretExposureOption[] {
+  const presentations = tI18nComplete
+    ? localizeUiCatalog(EXPOSURE_PRESENTATIONS, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS)
+    : EXPOSURE_PRESENTATIONS;
+  return (Object.keys(presentations) as SecretExposure[])
     .filter((exposure) => egressAvailable || exposure !== 'enforced')
     .map((exposure) => ({
       exposure,
-      ...EXPOSURE_PRESENTATIONS[exposure],
+      ...presentations[exposure],
     }));
 }
-
 
 export type SecretDeliveryBlockedReason = 'no_agent_grant';
 
@@ -561,10 +599,13 @@ export type MissingAgentGrantNotice = {
   manifest: string;
 };
 
-export function missingAgentGrantNotice(identifier: string): MissingAgentGrantNotice {
+export function missingAgentGrantNotice(
+  identifier: string,
+  tI18nComplete: UiTranslator,
+): MissingAgentGrantNotice {
   return {
-    title: 'No agent can receive this secret',
-    body: `List ${identifier} under an agent's secrets in kortix.yaml, then run the session with that agent. "secrets: all" does not grant this delivery mode — only an explicit list does.`,
+    title: tI18nComplete.raw('texte391550d9883'),
+    body: tI18nComplete('texta1202377b257', { identifier }),
     manifest: agentGrantSnippet(identifier, null),
   };
 }
@@ -702,10 +743,14 @@ export type AgentGrantConfirmation = { title: string; body: string; confirmLabel
  * deny-by-default (apps/api/src/projects/agents.ts), so agents that are not
  * listed lose the runtime secrets they use today.
  */
-export function agentGrantConfirmation(identifier: string, agent: string): AgentGrantConfirmation {
+export function agentGrantConfirmation(
+  identifier: string,
+  agent: string,
+  tI18nComplete: UiTranslator,
+): AgentGrantConfirmation {
   return {
-    title: 'Start governing agents in kortix.yaml',
-    body: `This project declares no agents yet, so every agent receives every project secret. Granting ${identifier} to ${agent} writes the first agents: block. From then on an agent that is not listed receives no project secrets — including the sandbox secrets that work today. Add the other agents to kortix.yaml to keep their access.`,
+    title: tI18nComplete.raw('text4ae4a15481d2'),
+    body: tI18nComplete('texte4dffbc6d224', { identifier, agent }),
     confirmLabel: `Grant to ${agent}`,
   };
 }
@@ -717,22 +762,28 @@ export type AgentGrantOutcome = {
 };
 
 /** Report what the server actually did — an idempotent call changed nothing. */
-export function agentGrantOutcome(result: {
-  identifier: string;
-  agent: string;
-  already_granted: boolean;
-  adopted_governance: boolean;
-}): AgentGrantOutcome {
+export function agentGrantOutcome(
+  result: {
+    identifier: string;
+    agent: string;
+    already_granted: boolean;
+    adopted_governance: boolean;
+  },
+  tI18nComplete: UiTranslator,
+): AgentGrantOutcome {
   if (result.already_granted) {
     return {
       tone: 'info',
-      message: `${result.agent} already receives ${result.identifier}`,
-      description: 'kortix.yaml was not changed.',
+      message: tI18nComplete('text63dfd8608fb2', {
+        value0: result.agent,
+        value1: result.identifier,
+      }),
+      description: tI18nComplete.raw('textf11c4a01aa71'),
     };
   }
   return {
     tone: 'success',
-    message: `Granted ${result.identifier} to ${result.agent}`,
+    message: tI18nComplete('textb32e10370ffe', { value0: result.identifier, value1: result.agent }),
     description: result.adopted_governance
       ? 'kortix.yaml now declares agents. An agent that is not listed receives no project secrets.'
       : undefined,
@@ -809,6 +860,7 @@ export function readSecretDeliverySync(result: unknown): SecretDeliverySync | nu
 export function secretDeliverySyncWarning(
   identifier: string,
   result: unknown,
+  tI18nComplete: UiTranslator,
 ): { message: string; description: string } | null {
   const sync = readSecretDeliverySync(result);
   if (!sync || sync.ok) return null;
@@ -816,7 +868,7 @@ export function secretDeliverySyncWarning(
   const scope =
     count > 0 ? `${count} running session${count === 1 ? '' : 's'}` : 'the running sessions';
   return {
-    message: `Saved ${identifier}, but it is not applied to ${scope}`,
+    message: tI18nComplete('text9ac2a173f2b7', { value0: identifier, value1: scope }),
     description: sync.failures[0]?.reason ?? 'No failure reason was reported.',
   };
 }
@@ -896,6 +948,7 @@ export type LegacyInjectionDetail = {
  */
 export function legacyInjectionDetail(
   policy: SecretEgressPolicy | null | undefined,
+  tI18nComplete: UiTranslator,
 ): LegacyInjectionDetail | null {
   const inject = policy?.inject;
   if (!inject) return null;
@@ -913,8 +966,8 @@ export function legacyInjectionDetail(
   const path = policy?.rules.find((rule) => rule.path)?.path;
   if (path) lines.push(`Path: ${path}`);
   return {
-    title: 'This secret still writes a fixed slot',
-    body: 'It was created before Kortix substituted handles in place. Kortix keeps writing the slot below exactly as it does today. Remove it to serve the secret by substitution instead — the approved hosts stay the same.',
+    title: tI18nComplete.raw('texta6ef528ee73a'),
+    body: tI18nComplete.raw('textac9d246b7a96'),
     lines,
   };
 }
@@ -944,11 +997,11 @@ export type SecretEchoNotice = {
  * The probe names the first declared host so it can be run as-is; with no host
  * typed yet it falls back to a placeholder rather than an empty URL.
  */
-export function enforcedEchoNotice(hosts: string): SecretEchoNotice {
+export function enforcedEchoNotice(hosts: string, tI18nComplete: UiTranslator): SecretEchoNotice {
   const host = parseEnforcedHosts(hosts)[0] ?? 'api.example.com';
   return {
-    title: 'A blocked echo comes back as [REDACTED]',
-    body: 'A response that would carry this value back into the sandbox comes back with [REDACTED] in its place, so an ordinary 200 is the policy working. An empty reply or a connection error on an approved host is a real failure, not the policy doing its job.',
+    title: tI18nComplete.raw('text58f9595c7f1d'),
+    body: tI18nComplete.raw('text37c1bfd249c6'),
     probe: [
       '# Probe an endpoint that USES the credential, never one that echoes headers.',
       `curl -s -o /dev/null -w '%{http_code}\\n' https://${host}/<authenticated-path>`,

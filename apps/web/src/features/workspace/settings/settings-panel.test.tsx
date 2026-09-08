@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Modal } from '@/components/ui/modal';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { railGroups } from './rail';
+import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from './rail-copy-context';
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   buildSettingsPanelSettingsNav,
@@ -67,6 +68,7 @@ function baseProps(overrides: Partial<SettingsPanelShellProps> = {}): SettingsPa
     accountId: undefined,
     groups: allGroups,
     allItems,
+    chrome: DEFAULT_SETTINGS_RAIL_CHROME_COPY,
     ...overrides,
   };
 }
@@ -141,7 +143,12 @@ describe('SettingsPanelShell — desktop rail', () => {
       expect(html).toContain(`>${allGroups[0].label}<`);
       expect(html).toContain('>Organizations<');
       expect(html).toContain('Mirkos Org');
-      expect(html).toContain('href="/accounts/acc-1"');
+      // `?accountId=acc-1`, not `/accounts/acc-1`: the account hub has no
+      // route — it is a modal addressed by a query param on whatever page it
+      // opens over (`stores/account-panel-store.ts`). Rendered with no router
+      // context, as this shell deliberately is, `HubLink` emits the
+      // query-only relative form, which resolves against the current page.
+      expect(html).toContain('href="?accountId=acc-1"');
     });
   });
 

@@ -2,6 +2,7 @@ import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { SolutionsHeroVisual } from './hero-visual';
@@ -19,15 +20,16 @@ import { DefinitionRows, Eyebrow, Section, SectionDivider } from './shared';
  */
 
 export function SolutionsHubPage(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="bg-background relative">
       <CapabilityHero
         eyebrow="Solutions"
-        title="One platform. Eight teams with completely different work."
-        sub="The same project, the same connectors, the same memory — and eight different jobs underneath. Each team writes the skills for its own work, and nobody stands up a second system to do it."
-        ctaPrimary="Get started"
+        title={tI18nComplete.raw('textbf05bba3082b')}
+        sub={tI18nComplete.raw('text420962cdca94')}
+        ctaPrimary={tI18nComplete.raw('text61e8d44ad423')}
         ctaPrimaryHref="/auth"
-        ctaSecondary="Talk to us"
+        ctaSecondary={tI18nComplete.raw('text1d1d94fb5397')}
         ctaSecondaryHref="/contact"
         visual={<SolutionsHeroVisual />}
       />
@@ -35,9 +37,9 @@ export function SolutionsHubPage(): ReactNode {
       {/* ── the eight roles ─────────────────────────────────────────────── */}
       <Section id="roles">
         <SectionHeader
-          eyebrow="By role"
-          title="Start with the work, not the platform."
-          description="Every page below is written about that team's actual week — what it can hand off, which connectors make sense for it, and what the output looks like when it comes back."
+          eyebrow={tI18nComplete.raw('textc78b5e29dfe3')}
+          title={tI18nComplete.raw('texte1ecf8a598e7')}
+          description={tI18nComplete.raw('text3ab40f6192f6')}
         />
 
         <Reveal delay={0.06}>
@@ -56,7 +58,7 @@ export function SolutionsHubPage(): ReactNode {
                     {role.navDescription}
                   </span>
                   <span className="text-muted-foreground mt-auto pt-6 font-mono text-[10px] tracking-widest uppercase">
-                    Read →
+                    {tI18nComplete.raw('texta5490cf22d33')}
                   </span>
                 </Link>
               </li>
@@ -70,9 +72,9 @@ export function SolutionsHubPage(): ReactNode {
       {/* ── what does not change between them ───────────────────────────── */}
       <Section id="constant">
         <SectionHeader
-          eyebrow="What never changes"
-          title="Eight kinds of work. One set of rules underneath."
-          description="The pages differ because the work differs. What sits under all of them is identical, and it is worth reading once rather than eight times."
+          eyebrow={tI18nComplete.raw('text0e613afafe9e')}
+          title={tI18nComplete.raw('textdaa5af1847ed')}
+          description={tI18nComplete.raw('text6a212e980319')}
         />
 
         <Reveal delay={0.06}>
@@ -80,24 +82,24 @@ export function SolutionsHubPage(): ReactNode {
             <DefinitionRows
               rows={[
                 {
-                  k: 'A session is a machine',
-                  v: 'Every session boots its own disposable Linux computer and cuts its own branch. Thousands can run in parallel on one configuration without touching each other. The machine is real: the agent has a shell, a filesystem and the network.',
+                  k: tI18nComplete.raw('texte3d24b442025'),
+                  v: tI18nComplete.raw('text184486387f75'),
                 },
                 {
-                  k: 'Work lands through a change request',
-                  v: 'What an agent means to keep is committed on the session branch and proposed back toward main. Merge is default-deny for agents; an admin can grant project.cr.merge in kortix.yaml, and widening that grant is itself a reviewed change.',
+                  k: tI18nComplete.raw('texta6d9e74b6d8a'),
+                  v: tI18nComplete.raw('text46866b323e0b'),
                 },
                 {
-                  k: 'Approval gates are off until you set them',
-                  v: 'The shipped default is permissive — an action runs unless you have said otherwise. Set Ask on what should pause and Block on what should never happen, per action or with a pattern rule that can read the arguments in the call.',
+                  k: tI18nComplete.raw('textb71608b2cdaf'),
+                  v: tI18nComplete.raw('text8959f78a7385'),
                 },
                 {
-                  k: 'Connector credentials never enter the machine',
-                  v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. The real credential is decrypted server-side and attached to the outbound call. A runtime secret you deliberately grant is different: it is a real environment value the agent can read.',
+                  k: tI18nComplete.raw('textd87cb0774bec'),
+                  v: tI18nComplete.raw('textc2989475638c'),
                 },
                 {
-                  k: 'Everything is a file you own',
-                  v: 'Agents, skills, connectors, triggers and memory are text in a git repo. You can read the whole company, diff what changed, and revert it. Open source and self-hostable — Kortix Cloud, your own VPC, or your own on-prem network.',
+                  k: tI18nComplete.raw('texta5d3555619a3'),
+                  v: tI18nComplete.raw('text7d5f66c6d997'),
                 },
               ]}
             />
@@ -107,13 +109,13 @@ export function SolutionsHubPage(): ReactNode {
         <Reveal delay={0.1}>
           <div className="mt-6 flex flex-wrap gap-3">
             <Button size="lg" variant="secondary" asChild>
-              <Link href="/agent-computer">The agent computer</Link>
+              <Link href="/agent-computer">{tI18nComplete.raw('text495a8a5d24a9')}</Link>
             </Button>
             <Button size="lg" variant="secondary" asChild>
-              <Link href="/connectors">Connectors</Link>
+              <Link href="/connectors">{tI18nComplete.raw('textc3d2e79ebdd0')}</Link>
             </Button>
             <Button size="lg" variant="secondary" asChild>
-              <Link href="/security">Security</Link>
+              <Link href="/security">{tI18nComplete.raw('text8f6fb4eb7f42')}</Link>
             </Button>
           </div>
         </Reveal>

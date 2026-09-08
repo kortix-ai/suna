@@ -8,6 +8,23 @@ const headings = (html: string): string[] =>
 const html = () => renderToStaticMarkup(<SecurityTabView />);
 
 describe('SecurityTabView', () => {
+  test('renders injected locale copy instead of fixed English labels', () => {
+    const out = renderToStaticMarkup(
+      <SecurityTabView
+        copy={{
+          twoFactorTitle: 'Двофакторска аутентификација',
+          authenticatorApp: 'Апликација за аутентификацију',
+          addAuthenticatorApp: 'Додај апликацију за аутентификацију',
+          devices: 'Уређаји',
+          signOutOtherDevices: 'Одјави друге уређаје',
+        }}
+      />,
+    );
+    expect(out).toContain('Двофакторска аутентификација');
+    expect(out).toContain('Одјави друге уређаје');
+    expect(out).not.toContain('>Two-factor authentication<');
+  });
+
   test('renders the pane heading and each section, in order', () => {
     expect(headings(html())).toEqual(['Security', 'Two-factor authentication', 'Devices']);
   });

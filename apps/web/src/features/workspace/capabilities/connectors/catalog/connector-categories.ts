@@ -305,6 +305,10 @@ export function sectionTitle(key: string): string {
   return CURATED_TITLE.get(key) ?? humanizeCategory(key);
 }
 
+export function localizedSectionTitle(key: string, tI18nComplete: UiTranslator): string {
+  return translateUiCatalogText(sectionTitle(key), tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}
+
 /**
  * The sections one item belongs to — the single definition of membership, used
  * both to build the buckets and to count a category without building them.
@@ -412,3 +416,6 @@ export function humanizeCategory(raw: string): string {
   const spaced = raw.trim().replace(/-/g, ' ');
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
+import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';

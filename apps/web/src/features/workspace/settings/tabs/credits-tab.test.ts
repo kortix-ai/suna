@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { AccountState } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
 import {
   canOfferTopup,
@@ -43,6 +43,20 @@ function stateWith(patch: {
 }
 
 describe('creditBuckets', () => {
+  test('uses the supplied locale copy for every bucket', () => {
+    expect(
+      creditBuckets(stateWith({}), {
+        monthly: { label: 'Кредити плана', hint: 'Истичу на крају периода' },
+        daily: { label: 'Дневни кредити', hint: 'Допуњују се по распореду' },
+        extra: { label: 'Купљени', hint: 'Никада не истичу' },
+      }).map(({ label, hint }) => [label, hint]),
+    ).toEqual([
+      ['Кредити плана', 'Истичу на крају периода'],
+      ['Дневни кредити', 'Допуњују се по распореду'],
+      ['Купљени', 'Никада не истичу'],
+    ]);
+  });
+
   test('splits the balance into the three buckets that sum to it', () => {
     const buckets = creditBuckets(
       stateWith({ credits: { total: 16, monthly: 10, daily: 2, extra: 4 } }),
@@ -91,19 +105,41 @@ describe('planGrantMeter', () => {
   });
 
   test('turns orange at 90% of the grant and red at the cap', () => {
-    expect(planGrantMeter(stateWith({ credits: { monthly: 2 }, tierMonthlyCredits: 20 }))?.tone).toBe(
-      'low',
-    );
-    expect(planGrantMeter(stateWith({ credits: { monthly: 0 }, tierMonthlyCredits: 20 }))?.tone).toBe(
-      'spent',
-    );
-    expect(planGrantMeter(stateWith({ credits: { monthly: 10 }, tierMonthlyCredits: 20 }))?.tone).toBe(
-      'ok',
-    );
+    expect(
+      planGrantMeter(stateWith({ credits: { monthly: 2 }, tierMonthlyCredits: 20 }))?.tone,
+    ).toBe('low');
+    expect(
+      planGrantMeter(stateWith({ credits: { monthly: 0 }, tierMonthlyCredits: 20 }))?.tone,
+    ).toBe('spent');
+    expect(
+      planGrantMeter(stateWith({ credits: { monthly: 10 }, tierMonthlyCredits: 20 }))?.tone,
+    ).toBe('ok');
   });
 });
 
 describe('describeDailyRefresh', () => {
+  test('uses locale-aware amount and countdown formatters', () => {
+    const state = stateWith({
+      credits: {
+        daily_refresh: {
+          enabled: true,
+          daily_amount: 4,
+          refresh_interval_hours: 24,
+          seconds_until_refresh: 15120,
+        },
+      },
+    });
+    expect(
+      describeDailyRefresh(state, {
+        amount: (credits, hours) => `+${credits} кредита на сваких ${hours} ч`,
+        countdown: () => 'за приближно 4 ч 12 мин',
+      }),
+    ).toEqual({
+      amountLine: '+400 кредита на сваких 24 ч',
+      countdown: 'за приближно 4 ч 12 мин',
+    });
+  });
+
   test('reads the amount and the interval the API computed', () => {
     expect(
       describeDailyRefresh(
@@ -136,6 +172,17 @@ describe('describeDailyRefresh', () => {
 });
 
 describe('formatCountdown', () => {
+  test('supports localized countdown copy', () => {
+    const copy = {
+      anyMoment: 'Сваког тренутка',
+      minutes: (minutes: number) => `за приближно ${minutes} мин`,
+      hours: (hours: number) => `за приближно ${hours} ч`,
+      hoursMinutes: (hours: number, minutes: number) => `за приближно ${hours} ч ${minutes} мин`,
+    };
+    expect(formatCountdown(15120, copy)).toBe('за приближно 4 ч 12 мин');
+    expect(formatCountdown(45, copy)).toBe('Сваког тренутка');
+  });
+
   test('drops a zero minutes component rather than printing "4h 0m"', () => {
     expect(formatCountdown(14400)).toBe('in ~4h');
   });
@@ -156,6 +203,12 @@ describe('formatCountdown', () => {
 });
 
 describe('formatPeriod', () => {
+  test('formats dates with the selected locale', () => {
+    expect(formatPeriod('2026-08-24T00:00:00Z', '2026-09-03T00:00:00Z', 'sr')).toBe(
+      '24. авг – 3. сеп',
+    );
+  });
+
   test('renders an en-dashed range with no year', () => {
     expect(formatPeriod('2026-08-24T00:00:00Z', '2026-09-03T00:00:00Z')).toContain('–');
   });
@@ -172,10 +225,7 @@ describe('formatPeriod', () => {
 
 describe('canOfferTopup', () => {
   /** Only the two fields this gate reads. */
-  function purchaseState(
-    canPurchaseCredits: boolean,
-    canManageBilling?: boolean,
-  ): AccountState {
+  function purchaseState(canPurchaseCredits: boolean, canManageBilling?: boolean): AccountState {
     return {
       subscription: { can_purchase_credits: canPurchaseCredits },
       ...(canManageBilling === undefined ? {} : { can_manage_billing: canManageBilling }),

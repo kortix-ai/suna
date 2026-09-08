@@ -1,3 +1,6 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
 import {
   InfoIcon,
@@ -91,3 +94,11 @@ export const AVAILABLE_SERVICES = [
 
 export type ServiceId = (typeof AVAILABLE_SERVICES)[number]['id'];
 export type ServiceLabel = (typeof AVAILABLE_SERVICES)[number]['label'];
+
+export function localizedMaintenanceLevels(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(MAINTENANCE_LEVELS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}
+
+export function localizedAvailableServices(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(AVAILABLE_SERVICES, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}

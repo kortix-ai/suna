@@ -1,7 +1,7 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import Link from 'next/link';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/item';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { buildAccountSettingsHref } from '@/stores/account-settings-modal-store';
+import { accountSettingsTarget } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
@@ -142,8 +142,9 @@ function isUsageLimitError(text: string): boolean {
 }
 
 function UsageLimitCard({ errorText, className }: { errorText: string; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
-  const billingHref = buildAccountSettingsHref({ tab: 'billing', accountId });
+  const billingTo = accountSettingsTarget({ tab: 'billing', accountId });
 
   return (
     <ErrorRow role="status" className={className}>
@@ -157,10 +158,10 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
       </ItemContent>
       <ItemActions className={ROW_ACTIONS}>
         <Button asChild size="sm" className="active:scale-[0.96]">
-          <Link href={billingHref} prefetch>
+          <HubLink to={billingTo}>
             <LightningIcon className="size-3.5 shrink-0" />
-            Upgrade plan
-          </Link>
+            {tI18nComplete.raw('text39b7ec1e8402')}
+          </HubLink>
         </Button>
       </ItemActions>
     </ErrorRow>
@@ -185,11 +186,7 @@ function InsufficientCreditsCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const balance = parseBalance(errorText);
-  const billingHref = buildAccountSettingsHref({
-    tab: 'billing',
-    highlight: 'credits',
-    accountId,
-  });
+  const billingTo = accountSettingsTarget({ tab: 'billing', accountId });
   const title = tHardcodedUi.raw(
     'componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits',
   );
@@ -209,15 +206,15 @@ function InsufficientCreditsCard({
       </ItemContent>
       <ItemActions className={ROW_ACTIONS}>
         <Button asChild size="sm" className="active:scale-[0.96]">
-          <Link href={billingHref} prefetch>
+          <HubLink to={billingTo}>
             <LightningIcon className="size-3.5 shrink-0" />
             {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
-          </Link>
+          </HubLink>
         </Button>
         <Button asChild variant="outline" size="sm" className="active:scale-[0.96]">
-          <Link href={billingHref} prefetch>
+          <HubLink to={billingTo}>
             {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
-          </Link>
+          </HubLink>
         </Button>
       </ItemActions>
     </ErrorRow>
@@ -267,6 +264,7 @@ function GatewayMetaLine({
  * `error-details.tsx` uses for a stack.
  */
 function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDetails }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const failures = details?.attemptFailures;
   if (!failures?.length) return null;
 
@@ -280,13 +278,17 @@ function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDeta
         )}
       >
         <CaretRightIcon className="size-3 shrink-0 group-open/failures:rotate-90" />
-        {failures.length === 1 ? '1 attempt' : `${failures.length} attempts`}
+        {failures.length === 1
+          ? tI18nComplete.raw('textce4c96225f63')
+          : `${failures.length} attempts`}
       </summary>
       <ol className="text-muted-foreground mt-1 list-decimal space-y-1 pl-4 wrap-anywhere">
         {failures.map((failure) => (
           <li key={failure.attempt}>
             <span className="text-foreground font-medium">{failureTarget(failure)}</span> ·{' '}
-            {failure.status !== undefined ? `HTTP ${failure.status} · ` : ''}
+            {failure.status !== undefined
+              ? tI18nComplete('textf6a6d0e934f4', { value0: failure.status })
+              : ''}
             {String(failure.code)} · {failure.message}
           </li>
         ))}

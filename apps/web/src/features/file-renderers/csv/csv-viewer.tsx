@@ -11,6 +11,7 @@ import type {
   Theme,
 } from '@glideapps/glide-data-grid';
 import { CompactSelection, emptyGridSelection } from '@glideapps/glide-data-grid';
+import { useTranslations } from '@/i18n/use-translations';
 import * as React from 'react';
 
 import '@glideapps/glide-data-grid/dist/index.css';
@@ -244,6 +245,7 @@ function CsvFileActionsMenu({
   downloadDisabled: boolean;
   onDownload: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -252,7 +254,7 @@ function CsvFileActionsMenu({
           variant="ghost"
           size="icon-sm"
           className="transition-transform active:scale-[0.96]"
-          aria-label="Open CSV actions"
+          aria-label={tI18nComplete.raw('text55412336c1c2')}
         >
           <Ellipsis className="size-4" />
         </Button>
@@ -260,7 +262,7 @@ function CsvFileActionsMenu({
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
           <Download className="size-4" />
-          Download
+          {tI18nComplete.raw('textd6eafe823591')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -293,6 +295,7 @@ function CsvSearchPopover({
   controlsDisabled: boolean;
   onGridSelectionChange: (selection: GridSelection) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [searchDraft, setSearchDraft] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
   const [searchResults, setSearchResults] = React.useState<CsvSearchResult[]>([]);
@@ -414,14 +417,14 @@ function CsvSearchPopover({
 
   return (
     <Popover>
-      <ToolbarTooltip label="Search CSV">
+      <ToolbarTooltip label={tI18nComplete.raw('textca3ff6018449')}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             className="transition-transform active:scale-[0.96]"
-            aria-label="Search CSV"
+            aria-label={tI18nComplete.raw('textca3ff6018449')}
             disabled={controlsDisabled}
           >
             <Search className="size-4" />
@@ -431,7 +434,7 @@ function CsvSearchPopover({
       <PopoverContent align="end" className="w-72">
         <div className="space-y-3">
           <Input
-            placeholder="Search CSV"
+            placeholder={tI18nComplete.raw('textca3ff6018449')}
             value={searchDraft}
             onChange={(event) => setSearchDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -471,7 +474,7 @@ function CsvSearchPopover({
                 variant="outline"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
-                aria-label="Previous result"
+                aria-label={tI18nComplete.raw('text965bc32426d7')}
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(-1)}
               >
@@ -482,7 +485,7 @@ function CsvSearchPopover({
                 variant="outline"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
-                aria-label="Next result"
+                aria-label={tI18nComplete.raw('textbf56a193cb9f')}
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(1)}
               >
@@ -492,7 +495,7 @@ function CsvSearchPopover({
           </div>
           <div className="flex justify-end">
             <Button type="button" variant="outline" size="sm" onClick={clearSearch}>
-              Clear
+              {tI18nComplete.raw('text83b12c2216ef')}
             </Button>
           </div>
         </div>
@@ -537,6 +540,7 @@ export function CsvViewer({
   showToolbar = true,
   toolbarActions,
 }: CsvViewerProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const gridRef = React.useRef<DataEditorRef | null>(null);
   const isDark = useIsDarkTheme();
   const [glide, setGlide] = React.useState<GlideDataGridModule | null>(null);
@@ -671,12 +675,12 @@ export function CsvViewer({
           <TooltipProvider>
             <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
               <div className="flex flex-none items-center gap-1">
-                <ToolbarTooltip label="Zoom out">
+                <ToolbarTooltip label={tI18nComplete.raw('textbc7b631a689b')}>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     className="transition-transform active:scale-[0.96]"
-                    aria-label="Zoom out"
+                    aria-label={tI18nComplete.raw('textbc7b631a689b')}
                     disabled={zoom <= ZOOM_OPTIONS[0]}
                     onClick={() => stepZoom(-1)}
                   >
@@ -690,7 +694,7 @@ export function CsvViewer({
                   <SelectTrigger
                     size="sm"
                     className="w-[84px] min-w-[84px] tabular-nums"
-                    aria-label="Zoom level"
+                    aria-label={tI18nComplete.raw('text3926ced4e6c4')}
                   >
                     <SelectValue>{Math.round(zoom * 100)}%</SelectValue>
                   </SelectTrigger>
@@ -702,12 +706,12 @@ export function CsvViewer({
                     ))}
                   </SelectContent>
                 </Select>
-                <ToolbarTooltip label="Zoom in">
+                <ToolbarTooltip label={tI18nComplete.raw('text0e47f09a748f')}>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     className="transition-transform active:scale-[0.96]"
-                    aria-label="Zoom in"
+                    aria-label={tI18nComplete.raw('text0e47f09a748f')}
                     disabled={zoom >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]}
                     onClick={() => stepZoom(1)}
                   >
@@ -753,9 +757,10 @@ export function CsvViewer({
         ) : parsed.rows.length === 0 ? (
           <div className="bg-muted/30 grid h-full place-items-center p-4">
             <div className="bg-background max-w-md rounded-lg border p-4 text-center text-sm shadow-xs">
-              <p className="font-medium">No data to preview</p>
+              <p className="font-medium">{tI18nComplete.raw('textcf5bca2b2046')}</p>
               <p className="text-muted-foreground mt-1">
-                Pass delimited text with the <code>data</code> prop.
+                {tI18nComplete.raw('text16e6c9d96191')} <code>data</code>{' '}
+                {tI18nComplete.raw('text4089e67b1111')}
               </p>
             </div>
           </div>

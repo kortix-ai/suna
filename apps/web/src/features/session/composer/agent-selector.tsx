@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
 
@@ -54,6 +54,7 @@ export function AgentSelector({
   unavailableHint?: string | null;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const t = useTranslations('threads');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -146,7 +147,7 @@ export function AgentSelector({
             </span>
             {meta && (
               <Badge variant="outline" size="xs" className="shrink-0 font-normal">
-                Platform
+                {tHardcodedUi.raw('i18nComplete.textc78ffe195710')}
               </Badge>
             )}
           </div>
@@ -208,7 +209,7 @@ export function AgentSelector({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          aria-label="Select agent"
+          aria-label={t('selectAgent')}
           className="text-foreground/70 rounded-lg"
         >
           {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}

@@ -104,9 +104,9 @@ describe('planPanelRows — what the body lists', () => {
   test('a one-step running plan keeps its only row, so the card never opens onto nothing', () => {
     // Without the fallback this filters to [], and the chevron rewards a click
     // with an empty box.
-    expect(planPanelRows(parseTodos([{ content: 'Only step', status: 'in_progress' }]))).toHaveLength(
-      1,
-    );
+    expect(
+      planPanelRows(parseTodos([{ content: 'Only step', status: 'in_progress' }])),
+    ).toHaveLength(1);
   });
 
   test('rows keep the keys they had while the running step was present', () => {

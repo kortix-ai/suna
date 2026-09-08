@@ -14,7 +14,7 @@ function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {
         // in-tooltip look is defined — `tooltip-content` must not restyle keys
         // with a descendant `[&_kbd]` rule, or it also hits `KbdGroup`.
         // '[[data-slot=tooltip-content]_&]:bg-background/20 [[data-slot=tooltip-content]_&]:text-background',
-        ' [[data-slot=tooltip-content]_&]:text-background',
+        '[[data-slot=tooltip-content]_&]:text-background',
         className,
       )}
       {...props}

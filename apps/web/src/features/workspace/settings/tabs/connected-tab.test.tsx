@@ -1,3 +1,4 @@
+import { hubTarget } from '@/stores/account-panel-store';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -40,6 +41,30 @@ const rowLabelIndex = (html: string, label: string): number => {
 const skeletons = (html: string): number => [...html.matchAll(/animate-pulse/g)].length;
 
 describe('ConnectedAccountsTabView', () => {
+  test('renders injected locale copy instead of fixed English labels', () => {
+    const out = renderToStaticMarkup(
+      <ConnectedAccountsTabView
+        canManageAccount
+        copy={{
+          checking: 'Провера налога.',
+          connectedAs: (name) => `Повезано као ${name}.`,
+          unavailable: 'Статус није доступан.',
+          install: 'Инсталирајте GitHub App.',
+          disconnect: 'Прекини везу',
+          connect: 'Повежи',
+          github: 'GitHub',
+          moreInstallations: (count) => `Још инсталација: ${count}`,
+          adminOnly: 'Само администратор може да повеже GitHub.',
+          disconnectedToast: 'GitHub веза је прекинута',
+          disconnectFailed: 'Прекид GitHub везе није успео',
+        }}
+      />,
+    );
+    expect(out).toContain('Инсталирајте GitHub App.');
+    expect(out).toContain('Повежи');
+    expect(out).not.toContain('>Connect<');
+  });
+
   test('renders exactly one provider row — GitHub', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
     expect(headings(out)).toEqual(['Connected accounts']);
@@ -148,11 +173,14 @@ describe('ConnectedAccountsTabView', () => {
         githubStatus="connected"
         githubInstallationName="github.com/acme"
         githubOtherInstallationsCount={2}
-        githubManageAllHref="/accounts/acc_1?tab=git"
+        githubManageAllTo={hubTarget('acc_1', { tab: 'git' })}
       />,
     );
     expect([...out.matchAll(/<button/g)]).toHaveLength(1);
-    expect(out).toContain('href="/accounts/acc_1?tab=git"');
+    // The account hub has no route: the link carries the hub's params, and
+    // with no router context it renders the query-only relative form, which a
+    // browser resolves against whatever page the tab is open on.
+    expect(out).toContain('href="?accountId=acc_1&amp;accountTab=git"');
     expect(out).toMatch(/\+2 more installations/);
   });
 
@@ -163,7 +191,7 @@ describe('ConnectedAccountsTabView', () => {
         githubStatus="connected"
         githubInstallationName="github.com/acme"
         githubOtherInstallationsCount={0}
-        githubManageAllHref="/accounts/acc_1?tab=git"
+        githubManageAllTo={hubTarget('acc_1', { tab: 'git' })}
       />,
     );
     expect(out).not.toContain('manage all');

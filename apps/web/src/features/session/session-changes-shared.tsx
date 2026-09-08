@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Shared primitives for surfacing a session's uncommitted changes — used by
  * both the in-panel <SessionVersionHeader> and the header
@@ -115,6 +116,7 @@ export function useSessionBaseRef(
  * chat session to message, the prompt is copied to the clipboard instead.
  */
 export function useOpenChangeRequest(chatSessionId: string | undefined, baseRef: string) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const sendToSession = useChatSendStore((s) => s.sendToSession);
   const [asking, setAsking] = useState(false);
 
@@ -125,9 +127,9 @@ export function useOpenChangeRequest(chatSessionId: string | undefined, baseRef:
     if (!chatSessionId) {
       try {
         await navigator.clipboard.writeText(prompt);
-        successToast('Prompt copied — paste it into the chat to ask your agent.');
+        successToast(tI18nComplete.raw('text1d421d3dc4ae'));
       } catch {
-        errorToast('Could not copy to clipboard.');
+        errorToast(tI18nComplete.raw('textc24d4a79738f'));
       }
       return;
     }
@@ -135,15 +137,13 @@ export function useOpenChangeRequest(chatSessionId: string | undefined, baseRef:
     setAsking(true);
     try {
       await sendToSession(chatSessionId, prompt);
-      successToast('Asked your agent to propose these changes for review.');
+      successToast(tI18nComplete.raw('textcf9ab0648479'));
     } catch (err) {
-      errorToast(
-        err instanceof Error ? err.message : 'Could not reach the agent. Please try again.',
-      );
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfb09096cada7'));
     } finally {
       setAsking(false);
     }
-  }, [asking, baseRef, chatSessionId, sendToSession]);
+  }, [asking, baseRef, chatSessionId, sendToSession, tI18nComplete]);
 
   return { asking, openChangeRequest };
 }
