@@ -5,7 +5,9 @@ description: Configure prompts, native Pi hooks, and custom tools for Pi worker 
 
 The Pi worker preview supports project-specific source. Each agent joins three
 files: its entry in `kortix.yaml`, its Markdown prompt, and an optional TypeScript
-factory. Commit the source and start a session from that Git commit.
+factory. Declare the agent and its grants on the project's default branch first.
+Commit the source and start a session from that Git commit. A session's `base_ref`
+does not authorize an undeclared agent.
 
 ```yaml
 kortix_version: 3

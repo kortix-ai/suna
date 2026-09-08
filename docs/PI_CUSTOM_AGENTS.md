@@ -4,6 +4,10 @@ This contract applies to the `pi-worker` preview. It is not a production release
 Pi runs in the worker sandbox. The environment sandbox runs the execution daemon,
 files, and processes. This design uses no Durable Objects.
 
+The current environment image also starts an inherited OpenCode server. Pi custom
+tools call the execution RPC. Removing that legacy service belongs to the next
+environment infrastructure phase. The environment runs no second Pi worker.
+
 ## Configuration ownership
 
 | Location | Purpose |
@@ -14,6 +18,10 @@ files, and processes. This design uses no Durable Objects.
 | `.kortix/pi/skills/<name>/SKILL.md` | Skills compiled into the worker, subject to the agent's skill grant |
 | `.kortix/pi/commands/*.md` | Compiled slash commands |
 | `.kortix/pi/package.json` and `package-lock.json` | Optional locked dependencies for custom source |
+
+Declare new agents and their platform grants on the project's configured default
+branch before creating sessions. A session's `base_ref` selects its source version;
+it does not authorize an agent absent from that project declaration.
 
 The manifest agent name joins the Markdown file and source module. One artifact
 contains one selected agent. The compiler pins source, behavior, and dependencies
