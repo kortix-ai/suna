@@ -235,6 +235,13 @@ Cron triggers need exactly one of `cron` (a 6-field expression) or `run_at` (a o
 
 ## Spaces — `spaces:`
 
+**Behind a feature flag.** Spaces are gated by the **`spaces`** flag, off by
+default — turn it on per project in Settings → Feature flags. While it is off,
+every `/projects/:id/spaces` route answers `403 feature_disabled`, filing a
+session into a space is refused, and the surface is hidden; the `spaces:` block
+in the manifest is simply not read. See
+[Feature flags](/docs/feature-flags).
+
 A space is a named container inside the project: it groups sessions under one effort, owns the triggers that name it, may declare agents of its own, and is an IAM object granted like an agent. Every space is **one block of `kortix.yaml`**, under the `spaces:` map and keyed by its slug.
 
 ```yaml

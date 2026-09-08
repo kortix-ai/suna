@@ -41,7 +41,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { listProjectSessions, type ProjectSession } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { CaretRightIcon, FolderSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
@@ -55,6 +55,7 @@ const NESTED_LIMIT = 6;
 
 export function SpacesSidebarGroup({ projectId }: { projectId: string }) {
   const pathname = usePathname();
+  const spacesFlag = useFeatureFlag(projectId, 'spaces');
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
   const canCreate = canWrite.allowed === true;
   const [createOpen, setCreateOpen] = useState(false);
@@ -95,6 +96,9 @@ export function SpacesSidebarGroup({ projectId }: { projectId: string }) {
   // Anything else keeps the group while the probe or the list is in flight,
   // so a slow permission check cannot flash the `+` away from someone who
   // does have it.
+  // Flag off ⇒ no group at all, not even the "+" someone who may create would
+  // otherwise still see. `useProjectSpaces` has already stopped fetching.
+  if (!spacesFlag.enabled) return null;
   if (isEmpty && canWrite.allowed === false) return null;
   if (!query.isLoading && isEmpty && !canCreate) return null;
 

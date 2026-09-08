@@ -1064,7 +1064,7 @@ export async function createProjectSession(input: {
           error: {
             status: 400,
             body: {
-              error: `Agent "${requested}" is not usable ${space ? `in space "${space}"` : 'at the project level'} — it is declared by space "${owner}" (kortix-${owner}.yaml). Reference it there with \`agents.${requested}: { from: ${owner} }\`, or pick one of: ${usableAgentNames(loadedAgents, spaceSpec).join(', ') || '(none)'}`,
+              error: `Agent "${requested}" is not usable ${space ? `in space "${space}"` : 'at the project level'} — it is declared by space "${owner}" (spaces.${owner}.agents). Reference it there with \`agents.${requested}: { from: ${owner} }\`, or pick one of: ${usableAgentNames(loadedAgents, spaceSpec).join(', ') || '(none)'}`,
               code: 'AGENT_NOT_IN_SPACE',
               usable_agents: usableAgentNames(loadedAgents, spaceSpec),
             },

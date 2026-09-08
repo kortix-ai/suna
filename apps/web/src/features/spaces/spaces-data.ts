@@ -27,7 +27,7 @@ import {
   type AssignmentObjectType,
   type ProjectTrigger,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 
@@ -37,10 +37,21 @@ import { useCallback } from 'react';
  * mutations, which invalidate `qk.project.spaces(projectId)`.
  */
 export function useProjectSpaces(projectId: string, enabled = true) {
+  // The one place the `spaces` flag reaches every picker. Off ⇒ the request is
+  // never made and every consumer reads zero spaces, so the composer tray, the
+  // schedule modal's picker and the move menu all empty themselves without
+  // knowing the flag exists. It reads the same `qk.project.detail` entry the
+  // rest of the page already has, so this costs no extra fetch, and it is
+  // fail-closed: `false` until that detail resolves.
+  //
+  // Surfaces that still render something at zero spaces — the sidebar group's
+  // "+" for someone who may create, and the move menu's submenu — carry their
+  // own check; this hook cannot hide their chrome for them.
+  const spacesFlag = useFeatureFlag(projectId, 'spaces');
   return useQuery({
     queryKey: qk.project.spaces(projectId),
     queryFn: () => listProjectSpaces(projectId),
-    enabled: enabled && !!projectId,
+    enabled: enabled && spacesFlag.enabled && !!projectId,
     ...contract('config'),
   });
 }

@@ -12,6 +12,8 @@ import {
   sharingChangeKeepsEditorAccess,
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
+import { featureDisabledBody, requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -130,6 +132,10 @@ projectsApp.openapi(
   // that never pass through here (trigger fires).
   const requestedSpace = normalizeString(body.space);
   if (requestedSpace) {
+    // The flag has no back door: with Spaces off, filing a session into one is
+    // refused here, not just hidden in the UI and blocked on /spaces.
+    const spacesGate = requireFeatureFlag(c, loaded.row.metadata, 'spaces');
+    if (spacesGate) return spacesGate;
     const declared = await loadProjectSpaces(await withProjectGitAuth(loaded.row));
     const spec = declared.specs.find((s) => s.slug === requestedSpace);
     if (!spec) {
@@ -591,6 +597,16 @@ projectsApp.openapi(
   // CLI's `sessions new` inheritance is the only thing that reads it there.
   if (hasOwn(body, 'space')) {
     const target = normalizeString(body.space);
+    // Moving INTO a space needs the flag; moving OUT (`null`) never does.
+    // Turning Spaces off must not strand a session that is already filed in
+    // one — un-filing it is the way back, so it stays open.
+    //
+    // Spelled out rather than via `requireFeatureFlag` because this handler is
+    // typed by its OpenAPI route config, which will not accept that helper's
+    // bare `Response`. Same predicate, same body, same 403.
+    if (target && !resolveFeatureFlag(loaded.row.metadata, 'spaces')) {
+      return c.json(featureDisabledBody('spaces'), 403);
+    }
     if (target !== (existing.space ?? null)) {
       // A move changes WHO CAN READ the session: everyone granted a `shared`
       // space reads every session in it (spec §2). That is the sharing
@@ -637,7 +653,7 @@ projectsApp.openapi(
           const owner = agents.specs.find((a) => a.name === agentName)?.space;
           return c.json(
             {
-              error: `This session runs "${agentName}", which is not usable ${target ? `in space "${target}"` : 'at the project level'} — it is declared by space "${owner}" (kortix-${owner}.yaml). Reference it there with \`agents.${agentName}: { from: ${owner} }\`, or move the session somewhere it runs.`,
+              error: `This session runs "${agentName}", which is not usable ${target ? `in space "${target}"` : 'at the project level'} — it is declared by space "${owner}" (spaces.${owner}.agents). Reference it there with \`agents.${agentName}: { from: ${owner} }\`, or move the session somewhere it runs.`,
               code: 'AGENT_NOT_IN_SPACE',
               usable_agents: usableAgentNames(agents, spec),
             },

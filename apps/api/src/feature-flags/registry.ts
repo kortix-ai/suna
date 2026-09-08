@@ -292,6 +292,20 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
   },
+  {
+    key: 'spaces',
+    name: 'Spaces',
+    description:
+      'Named containers inside a project: group sessions under one effort, give each its own default agent and scheduled work, declare agents usable only inside it, and grant it to people like an agent. Declared in kortix.yaml under `spaces:`. The shape and the surface are still in flux.',
+    stability: 'experimental',
+    // Pure manifest + DB + web surface — the routes ship with the app, so no
+    // operator env gates it. Same posture as review_center.
+    available: () => true,
+    // Explicit opt-in, and the point of the flag: Spaces stay dark until we
+    // decide we want them (user, 2026-09-08).
+    platformDefault: () => false,
+    enforcement: 'routes',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

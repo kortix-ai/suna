@@ -255,7 +255,7 @@ function agentNotUsable(
   const owner = loadedAgents.specs.find((s) => s.name === agent)?.space;
   return {
     ok: false,
-    error: `Agent "${agent}" is not usable ${draft.space ? `in space "${draft.space}"` : 'at the project level'} — it is declared by space "${owner}" (kortix-${owner}.yaml)`,
+    error: `Agent "${agent}" is not usable ${draft.space ? `in space "${draft.space}"` : 'at the project level'} — it is declared by space "${owner}" (spaces.${owner}.agents)`,
     status: 400,
     code: 'AGENT_NOT_IN_SPACE',
   };

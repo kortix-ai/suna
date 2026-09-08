@@ -58,7 +58,7 @@ import {
   type Space,
   type SpaceSessionsMode,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import {
   DotsThreeIcon,
   FolderSimpleIcon,
@@ -82,12 +82,39 @@ export function grantsForSpace(
 }
 
 export function SpacePage({ projectId, slug }: { projectId: string; slug: string }) {
+  const spacesFlag = useFeatureFlag(projectId, 'spaces');
   const query = useQuery({
     queryKey: qk.project.space(projectId, slug),
     queryFn: () => getProjectSpace(projectId, slug),
+    // Off ⇒ the route 403s. Don't ask, and don't let the 404 copy below claim
+    // the space was removed or ungranted when the truth is the feature is off.
+    enabled: spacesFlag.enabled,
     retry: false,
     ...contract('config'),
   });
+
+  if (spacesFlag.isLoading) return <SpacePageSkeleton />;
+  if (!spacesFlag.enabled) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl px-6 py-16">
+          <EmptyState
+            icon={FolderSimpleIcon}
+            size="sm"
+            title="Spaces are off for this project"
+            description="Turn Spaces on in Settings → Feature flags to group sessions under a named effort."
+            action={
+              <Button asChild variant="outline" size="sm">
+                <HoverPrefetchLink href={`/projects/${projectId}`}>
+                  Back to the project
+                </HoverPrefetchLink>
+              </Button>
+            }
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (query.isLoading) return <SpacePageSkeleton />;
 

@@ -6,6 +6,9 @@
  * for edit, mutate it in memory, commit with a compare-and-swap retry.
  *
  * Gates:
+ *  - flag  → `spaces` must be enabled for the project, or every route here is
+ *            `403 feature_disabled`. Checked AFTER membership authz so a
+ *            non-member cannot probe which features a project has.
  *  - read  → `loadProjectForUser(read)` + `project.read`, then the per-object
  *            fold (`lib/space-access.ts`), so a member sees only the
  *            spaces granted to them and an ungranted one is a 404.
@@ -18,6 +21,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../../iam';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
+import { requireFeatureFlag } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
 import {
   assertProjectCapability,
@@ -275,6 +279,10 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // AFTER membership authz, so a non-member learns nothing about which
+    // features this project has (gate.ts's rule).
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'spaces');
+    if (gate) return gate;
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -314,6 +322,10 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // AFTER membership authz, so a non-member learns nothing about which
+    // features this project has (gate.ts's rule).
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'spaces');
+    if (gate) return gate;
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -395,6 +407,10 @@ projectsApp.openapi(
     const slug = c.req.param('slug');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // AFTER membership authz, so a non-member learns nothing about which
+    // features this project has (gate.ts's rule).
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'spaces');
+    if (gate) return gate;
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -436,6 +452,10 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // AFTER membership authz, so a non-member learns nothing about which
+    // features this project has (gate.ts's rule).
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'spaces');
+    if (gate) return gate;
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -491,6 +511,10 @@ projectsApp.openapi(
     const slug = c.req.param('slug');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // AFTER membership authz, so a non-member learns nothing about which
+    // features this project has (gate.ts's rule).
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'spaces');
+    if (gate) return gate;
     await assertProjectCapability(
       c,
       loaded.userId,

@@ -214,6 +214,9 @@ export function ProjectSessionList({
   space,
   unfiledOnly = false,
 }: ProjectSessionListProps) {
+  // With Spaces off the rows still CARRY a space (the column is untouched),
+  // but a badge naming one would advertise a feature that is not there.
+  const spacesEnabled = useFeatureFlag(projectId, 'spaces').enabled;
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const { holdPeek } = useSidebar();
@@ -437,7 +440,7 @@ export function ProjectSessionList({
               }
             }}
             displayTitle={getSessionDisplayTitle(session)}
-            showSpace={space === undefined}
+            showSpace={space === undefined && spacesEnabled}
             childCount={children.length}
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
             changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
