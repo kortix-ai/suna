@@ -25,6 +25,8 @@
 
 import { GearSixIcon as CogOne, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useQueries } from '@tanstack/react-query';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
@@ -210,17 +212,15 @@ export function WorkspaceMenuSection() {
       {switcherAccountId ? (
         <>
           <div className="p-0.5">
-            {/* An anchor, not a handler. A `router.push` from a menu row runs
-                the RSC fetch cold at click time, and that fetch turns into a
-                full document load whenever it comes back wrong — an auth
-                bounce, a build-id skew mid-deploy, a network blip. A
-                prefetched `<Link>` already holds the payload, so the click
-                never runs it. `prefetch` explicitly, not the `auto` default. */}
+            {/* Still an anchor, so Cmd-click opens this page with the hub
+                already on that account — but a plain click opens the modal
+                over the page behind this menu, with no navigation at all and
+                the chunk warmed on hover. */}
             <DropdownMenuItem asChild className="cursor-pointer px-1.5">
-              <Link href={`/accounts/${switcherAccountId}`} prefetch>
+              <HubLink to={hubTarget(switcherAccountId)}>
                 <CogOne />
                 <span className="min-w-0 flex-1 truncate">{t('workspace.accountSettings')}</span>
-              </Link>
+              </HubLink>
             </DropdownMenuItem>
           </div>
           <DropdownMenuSeparator />
@@ -265,26 +265,8 @@ export function WorkspaceMenuSection() {
                   // full document load whenever it answers wrong — an auth
                   // bounce, a build-id skew mid-deploy, a network blip.
                   const target = resolveWorkspaceRowNavigation(workspace, activeProjectId);
-                  return (
-                    <DropdownMenuItem
-                      key={workspace.project_id}
-                      asChild
-                      disabled={loading}
-                      className={cn(
-                        'group/workspace-row cursor-pointer px-1.5',
-                        active && 'bg-muted/80',
-                      )}
-                    >
-                      {/* Default `auto` prefetch, not `prefetch`. This list is
-                          every workspace in every account, so a forced full
-                          prefetch would render one `/projects/<id>` RSC payload
-                          per visible row on every submenu open. `auto` fills the
-                          segment cache to `projects/[id]/loading.tsx`, which is
-                          the boundary the click needs. */}
-                      <Link
-                        href={target.href}
-                        onClick={(event) => startWorkspaceRow(event, workspace, target)}
-                      >
+                  const rowBody = (
+                    <>
                         {/* Same union as the trigger above — see `workspace-switcher.tsx`.
                             Without `glyph`, every glyph-icon workspace in this
                             list falls back to its initial. */}
@@ -316,7 +298,38 @@ export function WorkspaceMenuSection() {
                             />
                           </span>
                         ) : null}
-                      </Link>
+                    </>
+                  );
+                  return (
+                    <DropdownMenuItem
+                      key={workspace.project_id}
+                      asChild
+                      disabled={loading}
+                      className={cn(
+                        'group/workspace-row cursor-pointer px-1.5',
+                        active && 'bg-muted/80',
+                      )}
+                    >
+                      {/* Default `auto` prefetch, not `prefetch`. This list is
+                          every workspace in every account, so a forced full
+                          prefetch would render one `/projects/<id>` RSC payload
+                          per visible row on every submenu open. `auto` fills the
+                          segment cache to `projects/[id]/loading.tsx`, which is
+                          the boundary the click needs. */}
+                      {/* Two kinds of destination, one row body. A switch is
+                          a real navigation; the active row opens the account
+                          hub, which is a modal over this page and so must not
+                          be a `<Link>` at all. */}
+                      {target.kind === 'account-settings' ? (
+                        <HubLink to={target.to}>{rowBody}</HubLink>
+                      ) : (
+                        <Link
+                          href={target.href}
+                          onClick={(event) => startWorkspaceRow(event, workspace, target)}
+                        >
+                          {rowBody}
+                        </Link>
+                      )}
                     </DropdownMenuItem>
                   );
                 })}

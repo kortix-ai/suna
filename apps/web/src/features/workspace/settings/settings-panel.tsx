@@ -30,12 +30,13 @@ import {
 import { useProjectCans, type CanResult } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 import { getProjectDetail, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { ArrowLeftIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { useCallback, useEffect, useMemo } from 'react';
 import { isRailItemActive, railGroups } from './rail';
 import { SettingsRailCopyProvider, type SettingsRailChromeCopy } from './rail-copy-context';
@@ -328,9 +329,13 @@ export interface SettingsPanelViewProps {
   allItems: readonly RailItem[];
   /**
    * The organizations the person belongs to, drawn under the Personal group
-   * as links to each one's own settings page (`/accounts/<id>`). Members,
+   * as links to each one's own settings surface. Members,
    * billing, roles and audit live THERE, not in this overlay (Marko,
    * 2026-09-03) — the overlay is personal, and this list is the way over.
+   *
+   * Since 2026-09-08 "over" is a swap between two modals, not a page load —
+   * there is no `/accounts` route any more. `ModalClose` closes this one and
+   * `HubLink` opens the account hub over the same page, one frame later.
    * Optional so the shell stays renderable without a query client.
    */
   organizations?: readonly AccountMembership[];
@@ -494,14 +499,13 @@ export function SettingsPanelShell({
               {organizations.length > 0
                 ? organizations.map((account) => (
                     <ModalClose asChild key={account.account_id}>
-                      <Link
-                        href={`/accounts/${account.account_id}`}
-                        prefetch
+                      <HubLink
+                        to={hubTarget(account.account_id)}
                         className="text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
                       >
                         {account.name?.trim() || organizationCopy.fallbackAccountName}
                         <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
-                      </Link>
+                      </HubLink>
                     </ModalClose>
                   ))
                 : null}
@@ -586,9 +590,8 @@ export function SettingsPanelShell({
                     {organizations.map((account) => (
                       <li key={account.account_id}>
                         <ModalClose asChild>
-                          <Link
-                            href={`/accounts/${account.account_id}`}
-                            prefetch
+                          <HubLink
+                            to={hubTarget(account.account_id)}
                             className={cn(
                               'group/org flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-sm',
                               'text-foreground hover:bg-hover transition-colors',
@@ -608,7 +611,7 @@ export function SettingsPanelShell({
                               aria-hidden
                               className="text-muted-foreground/60 group-hover/org:text-foreground size-3.5 shrink-0 transition-colors"
                             />
-                          </Link>
+                          </HubLink>
                         </ModalClose>
                       </li>
                     ))}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -169,8 +170,8 @@ export function ProjectHome({
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
   // count, so the bell can paint before the destination exists.
-  const accessRequestsHref = accountId
-    ? `/accounts/${accountId}?tab=access-projects&project=${projectId}`
+  const accessRequestsTo = accountId
+    ? hubTarget(accountId, { tab: 'access-projects', project: projectId })
     : null;
 
   const handleSend = useCallback(
@@ -269,7 +270,7 @@ export function ProjectHome({
         {toolbar}
         <AccessRequestsBell
           count={pendingAccessCount}
-          href={accessRequestsHref}
+          to={accessRequestsTo}
           className="static top-auto right-auto"
         />
       </div>

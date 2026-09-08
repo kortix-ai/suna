@@ -156,6 +156,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     refresh: A.refreshSession,
     resetPassword: A.resetPassword,
     updatePassword: A.updatePassword,
+    updateUserMetadata: A.updateUserMetadata,
+    signInWithSso: A.signInWithSso,
+    mfa: A.authMfa,
     user: A.authUser,
     signOut: A.signOut,
     session: createKortixSession,
@@ -1301,8 +1304,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           options?: { type?: 'file' | 'directory'; limit?: number },
         ) => F.findFiles(query, options, (await ensureReady()).runtimeUrl),
         findText: async (pattern: string) => F.findText(pattern, (await ensureReady()).runtimeUrl),
-        upload: async (file: File | Blob, targetPath?: string, filename?: string) =>
-          F.uploadFile(file, targetPath, filename, (await ensureReady()).runtimeUrl),
+        upload: async (
+          file: File | Blob,
+          targetPath?: string,
+          filename?: string,
+          options?: F.UploadFileOptions,
+        ) =>
+          F.uploadFile(file, targetPath, filename, (await ensureReady()).runtimeUrl, options),
         /**
          * Overwrite `filePath` in place. The daemon's upload endpoint never
          * overwrites (it uniquifies a colliding name), so a plain `upload` over

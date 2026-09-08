@@ -11,12 +11,8 @@ import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'member-access-panel.tsx'), 'utf8');
 const flat = source.replace(/\s+/g, ' ');
-const legacyRouteSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/accounts/[id]/members/[userId]/page.tsx'),
-  'utf8',
-);
 const hubSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/accounts/[id]/page.tsx'),
+  join(import.meta.dir, '../../features/accounts/hub/account-hub-content.tsx'),
   'utf8',
 );
 
@@ -89,11 +85,14 @@ describe('the member detail renders inside the account hub, not on its own route
     expect(source).not.toContain('/groups/${');
   });
 
-  test('the old standalone route redirects so bookmarks keep working', () => {
-    expect(legacyRouteSource).toContain('router.replace');
-    expect(legacyRouteSource.replace(/\s+/g, ' ')).toContain(
-      '`/accounts/${accountId}?tab=members&member=${encodeURIComponent(userId)}`',
-    );
-    expect(legacyRouteSource).not.toContain('AccessDetailShell');
+  // The hub is where a member detail lives, and it is named by the hub's own
+  // `member` param — not by a URL, because the hub has no route. The
+  // standalone `/accounts/[id]/members/[userId]` route that used to redirect
+  // here was deleted on 2026-09-08 with the rest of the account routes.
+  test('the hub opens a member detail through its own param, never a route', () => {
+    const flatHub = hubSource.replace(/\s+/g, ' ');
+    expect(flatHub).toContain("searchParams.get('member')");
+    expect(flatHub).toContain('selectedAccessMemberId');
+    expect(hubSource).not.toContain('/members/${');
   });
 });

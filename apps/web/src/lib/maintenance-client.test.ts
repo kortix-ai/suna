@@ -16,7 +16,10 @@ describe('maintenance client fallback', () => {
   test('redirects product routes but keeps public and admin routes available', () => {
     expect(isMaintenanceProductRoute('/projects')).toBe(true);
     expect(isMaintenanceProductRoute('/projects/project-id')).toBe(true);
-    expect(isMaintenanceProductRoute('/accounts')).toBe(true);
+    // `/accounts` is not a route: the account hub is a modal over one of the
+    // paths above (`?accountId=`), so the page it opens on is what this gates.
+    expect(isMaintenanceProductRoute('/accounts')).toBe(false);
+    expect(isMaintenanceProductRoute('/projects/p1?accountId=acc_1')).toBe(true);
     expect(isMaintenanceProductRoute('/invites/token')).toBe(true);
     // The post-sign-in destination for an account with no app access.
     expect(isMaintenanceProductRoute('/settings')).toBe(true);

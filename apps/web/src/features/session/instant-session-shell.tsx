@@ -9,6 +9,7 @@ import { ComposerChatInput, type ComposerOptions } from '@/features/session/comp
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -16,7 +17,7 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { QueuedPromptBubbles } from '@/features/session/turn/queued-prompt-bubbles';
 import {
-  attachedFilesToDataUrlParts,
+  stageFirstPromptAttachments,
   buildOptimisticPromptTextWithUploads,
 } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
@@ -67,6 +68,7 @@ export function InstantSessionShell({
   stage,
   boundAgentName,
   onSubmit,
+  hasTranscript = false,
 }: {
   projectId: string;
   /** The route's session id (== the pending-prompt namespace the page migrates). */
@@ -77,6 +79,19 @@ export function InstantSessionShell({
   /** Fired on the first send so the page can mount the real chat (which auto-sends
    *  the handed-off prompt) and crossfade it in. */
   onSubmit?: () => void;
+  /**
+   * The real chat underneath already holds the prompt in its transcript.
+   *
+   * This shell dissolves over that chat during the crossfade, and for the
+   * length of the fade both are on screen. While the shell still paints its own
+   * copy of the prompt, that is two copies — measured 2026-09-08: both
+   * stand-ins at full opacity, then the shell's fading over the real bubble.
+   * The transcript's copy is the one that stays, so the moment it exists the
+   * shell's steps aside. The shell keeps everything else (header, composer,
+   * the queued rows behind the first prompt); only the bubble it was standing
+   * in for goes.
+   */
+  hasTranscript?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // `ready` is the backend's authoritative "runtime is up" signal (POST /start).
@@ -137,9 +152,32 @@ export function InstantSessionShell({
   // written by a pre-deploy tab.
   const promptInbox = useSessionPrompts(projectId, sessionId, { enabled: hydrated });
   const pendingRowSubmission = useMemo(() => {
-    const row = promptInbox.prompts.find((p) => p.text.trim().length > 0);
+    // A row with NO text is still a real send — an attachment-only prompt is a
+    // legal message — so the first row that carries either wins.
+    const row = promptInbox.prompts.find(
+      (p) => p.text.trim().length > 0 || (p.attachments?.length ?? 0) > 0,
+    );
     if (!row) return null;
-    return { text: row.text, files: [] as AttachedFile[] };
+    // `files` stays empty: this tab never held the bytes. The row's attachment
+    // NAMES are what the bubble draws, as pending tiles, so a reloaded tab
+    // shows the same seven files the sending tab did instead of a bare
+    // sentence (2026-09-04).
+    return {
+      text: row.text,
+      files: [] as AttachedFile[],
+      attachments: row.attachments ?? [],
+      // The row IS the upload's progress. Its bytes are written to the box
+      // one chunk at a time before the runtime creates the message, so an
+      // undelivered row with attachments means "still going up" — and
+      // `last_error` is the only place a failed upload is ever named.
+      // `state`, never `last_error` alone: the API writes `last_error` on
+      // rows it keeps `queued` and retries, and never clears it on success.
+      uploadStatus: (row.attachments?.length ?? 0) > 0
+        ? row.state === 'failed'
+          ? ({ state: 'failed', message: row.last_error ?? 'Upload failed' } as const)
+          : ({ state: 'uploading' } as const)
+        : undefined,
+    };
   }, [promptInbox.prompts]);
   // The queue behind the first prompt: every durable row after the first,
   // plus the sends this shell has made that no row lists yet (matched by
@@ -159,8 +197,46 @@ export function InstantSessionShell({
   const previewSubmission = useFirstPromptPreviewStore(
     (s) => s.previewBySession[sessionId] ?? null,
   );
-  const effectiveSubmission =
-    submission ?? previewSubmission ?? pendingRowSubmission ?? stashedSubmission;
+  /**
+   * The four sources, resolved so ATTACHMENTS ARE NEVER LOST.
+   *
+   * This was a plain `??` chain, and the durable row sat ahead of the stash.
+   * The row is the cross-navigation truth for TEXT, but it never carries the
+   * user's `File`s — this tab may not have sent it. So on the one navigation
+   * people make most (home composer → new session) the row would land first,
+   * win, and drop three attachments the stash was still holding: the bubble
+   * appeared with the prompt and no tiles, and the files only reappeared
+   * minutes later when the runtime finally echoed the message. First-non-null
+   * let the POOREST source win.
+   *
+   * Text still follows the old precedence. Files are taken from whichever
+   * source actually has them, and the row's attachment NAMES are the fallback
+   * for a tab that never held the bytes (a reload).
+   */
+  const textSource = submission ?? previewSubmission ?? pendingRowSubmission ?? stashedSubmission;
+  const localFiles =
+    submission?.files.length
+      ? submission.files
+      : previewSubmission?.files.length
+        ? previewSubmission.files
+        : (stashedSubmission?.files ?? []);
+  const effectiveSubmission: {
+    text: string;
+    files: AttachedFile[];
+    attachments?: ReadonlyArray<{ filename: string; mime: string }>;
+    uploadStatus?: AttachmentUploadStatus;
+  } | null = textSource
+    ? {
+        text: textSource.text,
+        files: localFiles,
+        // Only when this tab holds no bytes of its own — otherwise the local
+        // files already draw every tile and these names would double them.
+        attachments: localFiles.length > 0 ? [] : (pendingRowSubmission?.attachments ?? []),
+        // Sourced from the row either way: it is the only witness to bytes
+        // still travelling to the box, whether or not this tab holds them.
+        uploadStatus: pendingRowSubmission?.uploadStatus,
+      }
+    : null;
   const submitted = effectiveSubmission?.text ?? null;
 
   // Starter-prompt → composer prefill, identical to the project-home composer.
@@ -193,7 +269,7 @@ export function InstantSessionShell({
       try {
         const parts = [
           { type: 'text' as const, text },
-          ...(await attachedFilesToDataUrlParts(files)),
+          ...(await stageFirstPromptAttachments(files)),
         ];
         await startSessionWithPrompt(projectId, sessionId, {
           parts,
@@ -322,7 +398,7 @@ export function InstantSessionShell({
                 used to claim. It had stopped being true: this column ran
                 `px-3 py-6 sm:px-6` against the chat's `px-7 pt-6 md:pr-4`. */}
             <div className={SESSION_TRANSCRIPT_CLASS}>
-              {effectiveSubmission && (
+              {effectiveSubmission && !hasTranscript && (
                 <div className="flex min-w-0 flex-col">
                   {/* The optimistic turn, rendered by the component SessionChat
                     also renders — not a copy of it. `deferPreview` is the one
@@ -335,6 +411,8 @@ export function InstantSessionShell({
                       effectiveSubmission.text,
                       effectiveSubmission.files,
                     )}
+                    attachments={effectiveSubmission.attachments}
+                    uploadStatus={effectiveSubmission.uploadStatus}
                     agentNames={agentNames}
                     onFileClick={openFileInComputer}
                     deferPreview

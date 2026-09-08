@@ -81,8 +81,12 @@ function productSurfaceRoutes(projectId: string, accountId: string): string[] {
   return [
     "/new",
     "/connections",
-    "/accounts",
-    `/accounts/${accountId}`,
+    // The account hub has no route since 2026-09-08 — it is a modal addressed
+    // by `?accountId=` on the page it opens over. Both census entries follow
+    // it there, so the hub's own strings stay covered: an empty value is its
+    // account list, a real id is that account's panes.
+    `/projects/${projectId}?accountId=`,
+    `/projects/${projectId}?accountId=${accountId}`,
     `/projects/${projectId}`,
     `/projects/${projectId}/customize/agents`,
     `/projects/${projectId}/customize/skills`,
@@ -371,10 +375,21 @@ async function assertLocalizedRoute(
 }
 
 async function chooseLocale(page: Page, locale: Locale): Promise<void> {
+  // The locale write goes to KORTIX, not to Supabase.
+  //
+  // This waited for `PUT .../auth/v1/user` — a direct GoTrue call from a
+  // Supabase client in the browser. `useLanguage` now writes through
+  // `updateProfileMetadata` -> `@kortix/sdk` -> `PATCH /v1/auth/user`, which is
+  // the point of taking apps/web off the Supabase SDK. The old call is never
+  // made, so the wait could only time out.
+  //
+  // Asserting the request as well as the result is deliberate: a locale that
+  // renders correctly while persisting nowhere would still pass a
+  // DOM-only check, and that is exactly the regression this guards.
   const responsePromise = page.waitForResponse(
     (response) =>
-      response.request().method() === "PUT" &&
-      new URL(response.url()).pathname.endsWith("/auth/v1/user"),
+      response.request().method() === "PATCH" &&
+      new URL(response.url()).pathname.endsWith("/auth/user"),
   );
 
   const combobox = page.getByRole("combobox").first();
@@ -386,10 +401,12 @@ async function chooseLocale(page: Page, locale: Locale): Promise<void> {
 
   const response = await responsePromise;
   expect(response.status()).toBe(200);
+  // `{ user: … }`, the shape the route documents — GoTrue's bare user object
+  // was what the Supabase call returned.
   const body = (await response.json()) as {
-    user_metadata?: { locale?: string };
+    user?: { user_metadata?: { locale?: string } };
   };
-  expect(body.user_metadata?.locale).toBe(locale);
+  expect(body.user?.user_metadata?.locale).toBe(locale);
 
   await expect(page.locator("html")).toHaveAttribute("lang", locale);
 }

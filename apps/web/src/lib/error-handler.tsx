@@ -1,3 +1,4 @@
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
@@ -5,14 +6,13 @@ import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
 import { isBillingEnabled } from '@/lib/config';
 import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
 import {
-  buildAccountSettingsHref,
+  accountSettingsTarget,
   useAccountSettingsModalStore,
 } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import type { BillingState } from '@kortix/sdk';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
 import * as Sentry from '@sentry/nextjs';
-import Link from 'next/link';
 
 const MANAGE_PLAN_LABEL = 'Manage plan';
 
@@ -307,9 +307,9 @@ export const handleApiError = (
         duration: 6000,
         button: (
           <Button size="sm" asChild>
-            <Link href={buildAccountSettingsHref({ tab: 'billing' })} prefetch>
+            <HubLink to={accountSettingsTarget({ tab: 'billing' })}>
               {MANAGE_PLAN_LABEL}
-            </Link>
+            </HubLink>
           </Button>
         ),
       });

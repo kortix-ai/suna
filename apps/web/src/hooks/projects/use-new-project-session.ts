@@ -112,7 +112,6 @@ export type NewProjectSessionOpts = {
 };
 
 export function useNewProjectSession(projectId: string | undefined) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('threads');
   const router = useRouter();
   const pathname = usePathname();
@@ -256,8 +255,15 @@ export function useNewProjectSession(projectId: string | undefined) {
       };
 
       const createSession = () =>
-        loadingToast(tI18nComplete('textc18101edc3ea'), takeOrCreateSession(), {
-          success: tI18nComplete('text492f00cce740'),
+        // `threads.*`, not `hardcodedUi.i18nComplete.*`. The two
+        // i18nComplete slots these used to read hold the literal strings
+        // "startingSession" and "sessionStarted" in en, fr, de, pt, sr and
+        // zh — the key id was written into the value slot — so the toast
+        // rendered its own key name. `threads.startingSession` /
+        // `threads.sessionStarted` are the canonical entries and are
+        // correctly translated in all nine catalogs.
+        loadingToast(t('startingSession'), takeOrCreateSession(), {
+          success: t('sessionStarted'),
         });
 
       createScopedSession({
@@ -321,11 +327,11 @@ export function useNewProjectSession(projectId: string | undefined) {
             });
           } else {
             errorToast(
-              err instanceof Error ? err.message : tI18nComplete('text4eaca6d61bca'),
+              err instanceof Error ? err.message : t('failedToStartSession'),
             );
           }
         } else if (action === 'toast') {
-          errorToast(err instanceof Error ? err.message : tI18nComplete('text4eaca6d61bca'));
+          errorToast(err instanceof Error ? err.message : t('failedToStartSession'));
         }
         // 'silent': the global 429 handler already surfaced the session cap.
         // No navigation happened, so release the claim now — the user stays
@@ -343,7 +349,6 @@ export function useNewProjectSession(projectId: string | undefined) {
       openUpgradeDialog,
       accountId,
       t,
-      tI18nComplete,
       queryClient,
       openConnectorGate,
     ],

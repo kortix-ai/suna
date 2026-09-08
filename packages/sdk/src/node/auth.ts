@@ -51,6 +51,24 @@ export interface KortixAuthOptions {
   fetch?: KortixFetch;
   /** Clock, for tests. */
   now?: () => number;
+  /**
+   * `SameSite` for the session and transaction cookies. Default `'lax'`.
+   *
+   * Set `'none'` only for an App that must complete sign-in while EMBEDDED in
+   * another origin — a Kortix App inside the Kortix UI, a dashboard in a
+   * customer's page. A `Lax` cookie is not sent on a cross-site frame request,
+   * so the callback cannot see its own transaction and the flow fails with
+   * `state_mismatch` no matter how correct everything else is.
+   *
+   * `'none'` REQUIRES a secure context; browsers reject it otherwise. This
+   * option therefore does nothing over plain http, and that is not a bug to
+   * work around — it is the same rule that makes third-party cookies opt-in.
+   *
+   * Default stays `'lax'` because it is the safer choice for the ordinary
+   * top-level app, and widening it for everyone to serve the embedded case
+   * would be exactly backwards.
+   */
+  cookieSameSite?: 'lax' | 'none';
 }
 
 export interface KortixViewer {
@@ -242,8 +260,11 @@ export function createKortixAuth(options: KortixAuthOptions): KortixAuth {
   let now = options.now ?? (() => Date.now());
   const nowS = () => Math.floor(now() / 1000);
 
+  // `None` is only legal alongside `Secure`, so an insecure origin silently
+  // keeps `Lax` rather than emitting a cookie every browser will drop.
+  const sameSite = options.cookieSameSite === 'none' && secure ? 'None' : 'Lax';
   const cookieLine = (name: string, value: string, maxAge: number) =>
-    `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+    `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? '; Secure' : ''}`;
   const clearLine = (name: string) => cookieLine(name, '', 0);
 
   const redirectTo = (location: string, cookies: string[] = []): Response => {

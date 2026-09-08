@@ -38,9 +38,9 @@ describe('session navigation loading boundaries', () => {
     // The mirror of the `return null` rule above: a runtime-not-ready RETRY
     // must stay invisible, but the very FIRST project fetch owns the whole
     // viewport, so it has to show something rather than a blank screen.
-    expect(projectAccessSource).toContain('if (query.isLoading)');
+    expect(projectAccessSource).toContain('if (!authReady || query.isPending)');
     expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
-    expect(projectAccessSource).not.toMatch(/query\.isLoading\)\s*return null/);
+    expect(projectAccessSource).not.toMatch(/query\.isPending\)\s*return null/);
   });
 
   test('the first-fetch loader carries no legal footer', () => {
@@ -61,7 +61,7 @@ describe('session navigation loading boundaries', () => {
     // key is a constant now because three call sites share it, so assert the
     // constant's value and its use rather than one inlined literal.
     expect(projectAccessSource).toContain("const QUERY_KEY = 'project-access-boundary'");
-    expect(projectAccessSource).toContain('queryKey: [QUERY_KEY, projectId]');
+    expect(projectAccessSource).toContain('queryKey: [QUERY_KEY, projectId, user?.id]');
     expect(projectAccessSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('listProjectAccess(projectId');

@@ -233,8 +233,13 @@ async function openMembersSection(page: Page, projectId: string) {
     waitUntil: "domcontentloaded",
   });
   await dismissOnboarding(page);
+  // The account hub is a MODAL over the current page since 2026-09-08 —
+  // `/accounts/**` is deleted — so the redirect keeps you on the project and
+  // opens the hub on Access > Projects, scoped to it.
   await expect(page).toHaveURL(
-    new RegExp(`/accounts/[0-9a-f-]+\\?tab=access-projects&project=${projectId}`),
+    new RegExp(
+      `/projects/${projectId}\\?accountId=[0-9a-f-]+&accountTab=access-projects&accountProject=${projectId}`,
+    ),
     { timeout: 30_000 },
   );
   await expect(page.getByText(/^Access · \d+$/).first()).toBeVisible({
@@ -661,10 +666,12 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       page.getByText(`${initialProjectName} Admin`).first(),
     ).toBeVisible();
 
+    // The hub opens over a real page (`?accountId=`), because it has no route
+    // of its own any more.
     await installBrowserSessionDirect(
       page,
       ownerSession,
-      `/accounts/${account.account_id}`,
+      `/projects/${project.project_id}?accountId=${account.account_id}`,
       authOptions,
     );
     await expect(
@@ -792,7 +799,7 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     await installBrowserSessionDirect(
       page,
       memberSession,
-      `/accounts/${account.account_id}`,
+      `/projects/${project.project_id}?accountId=${account.account_id}`,
       authOptions,
     );
     await expect(
@@ -878,9 +885,10 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
               { timeout: 5_000 },
             )
             .catch(() => null);
-          await page.goto(`/accounts/${account.account_id}`, {
-            waitUntil: "domcontentloaded",
-          });
+          await page.goto(
+            `/projects/${project.project_id}?accountId=${account.account_id}`,
+            { waitUntil: "domcontentloaded" },
+          );
           if ((await accountResponse)?.status() !== 200) return false;
           return invitedMembersHeading
             .waitFor({ state: "visible", timeout: 5_000 })

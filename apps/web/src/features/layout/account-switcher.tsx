@@ -2,8 +2,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -19,6 +18,8 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { Plus } from '@/features/icon/icons/plus';
 import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
@@ -26,7 +27,12 @@ import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
-import { buildAccountSettingsHref } from '@/stores/account-settings-modal-store';
+import { accountSettingsTarget } from '@/stores/account-settings-modal-store';
+import {
+  hubTarget,
+  openAccountPanel,
+  readAccountPanelUrl,
+} from '@/stores/account-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { type KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
@@ -43,6 +49,7 @@ export function AccountSwitcher({ className }: { className?: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const billingActive = isBillingEnabled();
@@ -91,19 +98,18 @@ export function AccountSwitcher({ className }: { className?: string }) {
     requestAnimationFrame(() => fn());
   };
 
-  const onAccountsRoute = pathname?.startsWith('/accounts/') ?? false;
+  // Whether the account hub modal is currently open (`?accountId=`). A row in
+  // this menu switches the app's selected account; when the hub happens to be
+  // open behind the menu, it should follow along rather than keep showing the
+  // account you just switched away from.
+  const hubOpen = readAccountPanelUrl(`${pathname ?? ''}?${searchParams.toString()}`) !== null;
 
-  // Warm the rows the user can reach from here. A row is not an anchor — it
-  // also writes the selected account, and it must not navigate off any other
-  // route — so the push stays, and the prefetch keeps it out of a cold RSC
-  // fetch. Only while the menu is open, and only on /accounts/ where the push
-  // actually fires.
+  // Warm the hub's chunk while the menu is open, so a switch that moves the
+  // modal has nothing left to fetch. Cheap and idempotent.
   useEffect(() => {
-    if (!menuOpen || !onAccountsRoute) return;
-    for (const account of filteredAccounts) {
-      router.prefetch(`/accounts/${account.account_id}`);
-    }
-  }, [menuOpen, onAccountsRoute, filteredAccounts, router]);
+    if (!menuOpen || !hubOpen) return;
+    preloadAccountHub();
+  }, [menuOpen, hubOpen]);
 
   // The create-account destination is a module constant, so warm it the moment
   // the modal opens — the push below runs after the create POST resolves.
@@ -115,10 +121,10 @@ export function AccountSwitcher({ className }: { className?: string }) {
   const switchAccount = (account: KortixAccount) => {
     setSelectedAccountId(account.account_id);
     close();
-    if (onAccountsRoute) {
-      // nav-contract: prefetch-only — the row switches account first and only navigates while already under /accounts/.
-      router.push(`/accounts/${account.account_id}`);
-    }
+    // No navigation, ever: switching accounts changes what the app is scoped
+    // to, not which page you are on. The one thing that follows is the hub
+    // modal, and only when it is already open behind this menu.
+    if (hubOpen) openAccountPanel(hubTarget(account.account_id));
   };
 
   const label = activeAccount?.name || 'Account';
@@ -207,21 +213,21 @@ export function AccountSwitcher({ className }: { className?: string }) {
 
         {activeAccount && (
           <DropdownMenuItem asChild onSelect={close}>
-            <Link href={`/accounts/${activeAccount.account_id}`} prefetch>
+            <HubLink to={hubTarget(activeAccount.account_id)}>
               <CogOneSolid weight="fill" className="size-3.5" />
               <span className="flex-1 truncate text-sm font-medium">
                 {tI18nHardcoded.raw(
                   'autoFeaturesLayoutAccountSwitcherJsxTextAccountSettings2afa9a37',
                 )}
               </span>
-            </Link>
+            </HubLink>
           </DropdownMenuItem>
         )}
 
         {/* <DropdownMenuItem
           onSelect={() => {
             close();
-            router.push('/accounts');
+            openAccountPanel(hubTarget(null));
           }}
         >
           <ArrowUpRight className="size-3.5" />
@@ -240,18 +246,17 @@ export function AccountSwitcher({ className }: { className?: string }) {
         )}
         {billingActive && canManageBilling && (
           <DropdownMenuItem asChild onSelect={close}>
-            <Link
-              href={buildAccountSettingsHref({
+            <HubLink
+              to={accountSettingsTarget({
                 tab: 'billing',
                 accountId: activeAccount?.account_id ?? null,
               })}
-              prefetch
             >
               <CreditCardSolid weight="fill" className="size-3.5" />
               <span className="flex-1 truncate text-sm font-medium">
                 {tI18nHardcoded.raw('i18nComplete.text3ac8bbca9a74')}
               </span>
-            </Link>
+            </HubLink>
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
@@ -267,7 +272,7 @@ export function AccountSwitcher({ className }: { className?: string }) {
         onOpenChange={setCreateOpen}
         onCreated={(account: KortixAccount) => {
           // The reader's OWN key — see the identical seed in
-          // `app/(app)/accounts/page.tsx`.
+          // `features/accounts/hub/account-list-content.tsx`.
           queryClient.setQueryData<KortixAccount[]>(accountsQueryKey, (accounts) => {
             const current = accounts ?? [];
             return current.some((item) => item.account_id === account.account_id)
