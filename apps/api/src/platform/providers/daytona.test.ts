@@ -61,6 +61,50 @@ beforeEach(() => {
   getDaytonaSandbox = () => new Promise<never>(() => {});
 });
 
+test.each(['starting', 'started'])('start joins a concurrent provider wake in state %s', async (state) => {
+  const conflict = Object.assign(new Error('Sandbox state change in progress'), { statusCode: 409 });
+  const starts: number[] = [];
+  const waits: number[] = [];
+  let reads = 0;
+  getDaytonaSandbox = async () => ++reads === 1
+    ? { start: async (timeout: number) => { starts.push(timeout); throw conflict; } }
+    : { state, waitUntilStarted: async (timeout: number) => { waits.push(timeout); } };
+  const { DaytonaProvider } = await import('./daytona');
+  await expect(new DaytonaProvider().start('sbx_concurrent')).resolves.toBeUndefined();
+  expect(starts).toEqual([1.2]);
+  expect(waits).toEqual(state === 'starting' ? [1.2] : []);
+  expect(reads).toBe(2);
+});
+
+test.each(['stopped', 'stopping', 'error'])('start rejects a conflict when state %s does not prove another wake', async (state) => {
+  const conflict = Object.assign(new Error('Sandbox state change in progress'), { statusCode: 409 });
+  let reads = 0;
+  getDaytonaSandbox = async () => ++reads === 1
+    ? { start: async () => { throw conflict; } }
+    : { state, waitUntilStarted: async () => { throw new Error('Must not wait'); } };
+  const { DaytonaProvider } = await import('./daytona');
+  await expect(new DaytonaProvider().start('sbx_conflict')).rejects.toBe(conflict);
+});
+
+test('start preserves non-conflict provider failures', async () => {
+  const failure = Object.assign(new Error('Disk quota reached'), { statusCode: 400 });
+  let reads = 0;
+  getDaytonaSandbox = async () => { reads++; return { start: async () => { throw failure; } }; };
+  const { DaytonaProvider } = await import('./daytona');
+  await expect(new DaytonaProvider().start('sbx_quota')).rejects.toBe(failure);
+  expect(reads).toBe(1);
+});
+
+test('start bounds a concurrent wake that never becomes ready', async () => {
+  const conflict = Object.assign(new Error('Sandbox state change in progress'), { statusCode: 409 });
+  let reads = 0;
+  getDaytonaSandbox = async () => ++reads === 1
+    ? { start: async () => { throw conflict; } }
+    : { state: 'starting', waitUntilStarted: () => new Promise<never>(() => {}) };
+  const { DaytonaProvider } = await import('./daytona');
+  await expect(new DaytonaProvider().start('sbx_waiting')).rejects.toThrow('timed out after 1200ms');
+});
+
 test('renewLifecycle refreshes provider activity for a running sandbox', async () => {
   getDaytonaSandbox = async () => ({
     id: 'sbx_active',

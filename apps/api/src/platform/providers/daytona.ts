@@ -411,7 +411,17 @@ export class DaytonaProvider implements SandboxProvider {
       `Daytona get(${externalId})`,
     );
     await withTimeout(
-      sandbox.start(),
+      (async () => {
+        try {
+          await sandbox.start(PROVIDER_CALL_TIMEOUT_MS / 1000);
+        } catch (error) {
+          if ((error as { statusCode?: number } | null)?.statusCode !== 409) throw error;
+          const current = await daytona.get(externalId);
+          if (current.state === SandboxState.STARTED) return;
+          if (!['starting', 'pending_start', 'restoring'].includes(String(current.state))) throw error;
+          await current.waitUntilStarted(PROVIDER_CALL_TIMEOUT_MS / 1000);
+        }
+      })(),
       PROVIDER_CALL_TIMEOUT_MS,
       `Daytona start(${externalId})`,
     ).catch((err) => reportIfDiskQuotaError(err, 'resume'));

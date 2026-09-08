@@ -5263,3 +5263,18 @@ Automation: Daytona command tests cover shell, paths, source pinning, and errors
 Bootstrap tests cover per-attempt markers and bounded readiness windows. Real
 PostgreSQL integration tests prove a single concurrent claim and reject stale
 readiness writes, stopped rows, and concurrent turn updates.
+
+
+## 2026-09-08 — Join a confirmed concurrent provider start
+
+An HTTP 409 from Daytona start can mean another caller already started the sandbox.
+Read the provider state again. Accept started, or wait for a confirmed starting
+state within the existing timeout. Preserve errors for stopped or terminal states
+and for non-conflict responses. Do not send another start request.
+
+Incident: an SSE reconnect and session resume both started the same stopped worker.
+One start returned 409, “Sandbox state change in progress.” The VM started, but
+the losing session wake recorded a failure and cooldown. A real provider test
+reproduced one rejection before the fix and two successful callers after it.
+Automation: Daytona provider tests cover concurrent starting/started states,
+stopped/stopping/error conflicts, unrelated errors, and bounded waiting.
