@@ -47,6 +47,8 @@ const RUNTIME_RESTART_CLEARED_KEYS = [
   'runtimeWakeRetryAfterAt',
   'runtimeWakeProgressAt',
   'stopReason',
+  'sessionRuntimeBootstrapFor',
+  'sessionRuntimeBootstrapAt',
 ] as const;
 
 function parseTimestampMs(value: unknown): number | null {

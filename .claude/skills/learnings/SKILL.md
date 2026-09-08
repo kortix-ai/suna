@@ -25,7 +25,7 @@ linked, not inlined.
 
 **When:** claiming a new resume of an existing sandbox.
 **Incident:** the Pi preview restored once, then skipped bootstrap after a second stop because its old attempt marker remained.
-**Rule:** clear bootstrap attempt markers in each wake claim. Preserve failure counts and retry cooldowns.
+**Rule:** clear bootstrap markers on each wake or explicit restart. Preserve automatic retry budgets; reset them only for an explicit restart.
 **Enforcer:** `session-runtime-bootstrap.test.ts` proves the same box earns a new attempt while its failure budget survives. Live repeated stop/resume checks compare the complete transcript.
 
 ### Execute provider bootstrap commands through a real shell (2026-09-08)

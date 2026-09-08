@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS, shouldBootstrapSessionRuntime } from './shared';
+import { prepareInPlaceRestartMetadata } from '../session-lifecycle/readiness-clocks';
 
 /**
  * Measured on pi.kortix.com 2026-08-29, with a stop/resume on live sessions:
@@ -74,4 +75,21 @@ test('a new wake of the same box can bootstrap again without resetting its failu
   expect(shouldBootstrapSessionRuntime({ ...input, attemptedForExternalId: nextWake.sessionRuntimeBootstrapFor })).toBe(true);
   expect(nextWake.sessionRuntimeBootstrapAt).toBeUndefined();
   expect(nextWake.runtimeStartFailureCount).toBe(1);
+});
+
+
+test('an explicit restart earns another bootstrap attempt and resets the failure episode', () => {
+  const restarted = prepareInPlaceRestartMetadata({
+    sessionRuntimeBootstrapFor: 'box-1',
+    sessionRuntimeBootstrapAt: '2026-09-08T08:00:00.000Z',
+    runtimeStartFailureCount: 2,
+  });
+  expect(shouldBootstrapSessionRuntime({
+    reason: 'unreachable',
+    externalId: 'box-1',
+    attemptedForExternalId: restarted.sessionRuntimeBootstrapFor,
+    providerSupportsBootstrap: true,
+  })).toBe(true);
+  expect(restarted.sessionRuntimeBootstrapAt).toBeUndefined();
+  expect(restarted.runtimeStartFailureCount).toBeUndefined();
 });
