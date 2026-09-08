@@ -49,6 +49,7 @@ import {
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
+import { READY_POLL_MIN_MS, nextReadyPollMs } from './ready-poll';
 import {
   type PlacementTipMessage,
   boxClockSkewMs,
@@ -97,7 +98,6 @@ import type {
 const WORKSPACE = '/workspace';
 const DAEMON_PORT = 8000;
 const READY_DEADLINE_MS = 300_000;
-const POLL_INTERVAL_MS = 3_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -501,6 +501,8 @@ export async function continueSession(
   }
 
   const deadline = Date.now() + READY_DEADLINE_MS;
+  let pollMs = READY_POLL_MIN_MS;
+  const pollStartedAt = Date.now();
   let opened: Awaited<ReturnType<typeof openOnce>>;
   for (;;) {
     opened = await openOnce();
@@ -518,7 +520,8 @@ export async function continueSession(
       });
       return 'pending';
     }
-    await sleep(POLL_INTERVAL_MS);
+    await sleep(pollMs);
+    pollMs = nextReadyPollMs(Date.now() - pollStartedAt, pollMs);
   }
 
   // Converge the box BEFORE the prompt goes on the wire — every time, not only
