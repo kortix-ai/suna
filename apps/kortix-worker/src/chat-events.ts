@@ -129,7 +129,9 @@ export function toolResultMetadata(details: unknown): Record<string, unknown> {
 export function assistantMessageError(message: {
   stopReason?: unknown;
   errorMessage?: unknown;
+  kortixStructuredOutputError?: AssistantMessage['error'];
 }): AssistantMessage['error'] | undefined {
+  if (message.kortixStructuredOutputError) return message.kortixStructuredOutputError;
   const detail =
     typeof message.errorMessage === 'string' && message.errorMessage.trim()
       ? message.errorMessage
@@ -463,7 +465,7 @@ export class ChatEventAdapter {
             },
           },
         ];
-        if (stop === 'error' || stop === 'length') {
+        if (terminalError && stop !== 'aborted') {
           out.push({
             type: 'session.error',
             properties: {
@@ -473,6 +475,29 @@ export class ChatEventAdapter {
           });
         }
         return out;
+      }
+
+      case 'turn_end': {
+        const message = event.message;
+        if (!message || (!Object.hasOwn(message, 'kortixStructured') && !message.kortixStructuredOutputError)) return [];
+        const error = assistantMessageError(message);
+        const events: Wire[] = [{
+          type: 'message.updated',
+          properties: { sessionID, info: {
+            id: this.currentMessageId, role: 'assistant', sessionID,
+            ...(this.currentParentId ? { parentID: this.currentParentId } : {}),
+            time: { created: this.currentMessageCreatedAt, completed: message.kortixWireCompletedAt },
+            modelID: this.model?.modelID ?? message.model,
+            providerID: this.model?.providerID ?? message.provider,
+            ...assistantContractFields(message.usage, { agent: this.agent, mode: this.mode, workspace: this.workspace }),
+            ...(Object.hasOwn(message, 'kortixStructured') ? { structured: message.kortixStructured } : {}),
+            ...(error ? { error } : {}),
+          } },
+        }];
+        if (error && message.content.some((part: any) => part.type === 'toolCall')) {
+          events.push({ type: 'session.error', properties: { sessionID, error } });
+        }
+        return events;
       }
 
       case 'agent_end':

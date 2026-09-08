@@ -531,6 +531,9 @@ interface RestoredTranscriptMessage {
   kortixWireTextParts?: DurableWireTextPart[];
   kortixWireToolStarts?: Record<string, number>;
   kortixWireToolTime?: { start: number; end: number };
+  kortixStructured?: unknown;
+  kortixStructuredOutputError?: import('@opencode-ai/sdk/v2').AssistantMessage['error'];
+  kortixOutputFormat?: import('@opencode-ai/sdk/v2').OutputFormat;
 }
 
 interface RestoredWireMessage {
@@ -769,6 +772,7 @@ export class RuntimeSurface {
               time: { created },
               agent,
               model: resolvedModel,
+              ...(message.kortixOutputFormat === undefined ? {} : { format: message.kortixOutputFormat }),
             }
           : {
               id,
@@ -776,6 +780,7 @@ export class RuntimeSurface {
               sessionID: this.rootId,
               parentID: message.kortixParentMessageId ?? lastUserId!,
               ...(message.kortixCompactionSummary ? { summary: true } : {}),
+              ...(Object.hasOwn(message, 'kortixStructured') ? { structured: message.kortixStructured } : {}),
               time: { created, completed: message.kortixWireCompletedAt ?? created },
               modelID: resolvedModel.modelID,
               providerID: resolvedModel.providerID,

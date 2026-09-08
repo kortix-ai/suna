@@ -236,6 +236,29 @@ worker's config. It does not use the project catalog for this choice. Selections
 persist per session and model; clearing the choice restores the compiled default.
 Older workers without a capability projection expose no reasoning choices.
 
+Request validated JSON for one prompt with `format`. Read the result from
+`response.data.info.structured`. Check `info.error` before using the result.
+
+```ts
+const response = await s.send("Return the answer to 6 × 7", {
+  format: {
+    type: "json_schema",
+    schema: {
+      type: "object",
+      properties: { answer: { type: "integer" } },
+      required: ["answer"],
+      additionalProperties: false,
+    },
+    retryCount: 2,
+  },
+});
+```
+
+Pi preserves the schema, validation outcome, and result across worker restart.
+Invalid schemas return `400` before model execution. Validation defaults to two
+retries; exhaustion returns `StructuredOutputError`. The next prompt uses ordinary
+text unless it supplies another format. `{ type: "text" }` selects text explicitly.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by

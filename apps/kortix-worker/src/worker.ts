@@ -44,6 +44,8 @@ import {
 import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
 import { parsePromptInput, type CompiledPromptRuntime } from './prompt-input.ts';
+import { installStructuredOutput } from './structured-output.ts';
+import type { OutputFormat } from '@opencode-ai/sdk/v2';
 import { PermissionBroker } from './permission-broker.ts';
 import { PermissionApprovalStore } from './permission-store.ts';
 import { PermissionCheckpointStore, type PermissionCheckpoint } from './permission-checkpoint.ts';
@@ -245,11 +247,11 @@ function promptRuntime(agent: string | null, model: string | null): CompiledProm
 
 export function terminalAgentStatus(messages: readonly unknown[]): 'idle' | 'error' {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index] as { role?: unknown; stopReason?: unknown } | undefined;
+    const message = messages[index] as { role?: unknown; stopReason?: unknown; kortixStructuredOutputError?: unknown } | undefined;
     if (message?.role !== 'assistant') continue;
     return message.stopReason === 'error' ||
       message.stopReason === 'aborted' ||
-      message.stopReason === 'length'
+      message.stopReason === 'length' || message.kortixStructuredOutputError
       ? 'error'
       : 'idle';
   }
@@ -839,6 +841,7 @@ export async function buildHarness(cfg: WorkerConfig) {
               Date.now(),
           ),
           kortixWireMessageId: admission.messageId,
+          ...(admission.options.format === undefined ? {} : { kortixOutputFormat: admission.options.format }),
         };
         await session.appendMessage(toDurable(user) as any);
         restoredMessages.push(user);
@@ -851,7 +854,9 @@ export async function buildHarness(cfg: WorkerConfig) {
       const terminal = [...assistants]
         .reverse()
         .find((message: any) =>
-          ['stop', 'length', 'error', 'aborted'].includes(String(message.stopReason)),
+          ['stop', 'length', 'error', 'aborted'].includes(String(message.stopReason)) ||
+          ((Object.hasOwn(message, 'kortixStructured') || message.kortixStructuredOutputError) &&
+            !hasIncompleteToolHistory(restoredMessages.slice(restoredMessages.indexOf(user)))),
         );
       const checkpoint = !terminal && !turnJournal.abortRequested(messageId)
         ? await questionCheckpoints.active(messageId)
@@ -898,6 +903,7 @@ export async function buildHarness(cfg: WorkerConfig) {
                 Date.now(),
             ),
             kortixWireMessageId: admission.messageId,
+            ...(admission.options.format === undefined ? {} : { kortixOutputFormat: admission.options.format }),
           };
           await session.appendMessage(toDurable(user) as any);
           restoredMessages.push(user);
@@ -1066,6 +1072,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     replayEventHandler = handler;
   };
   agent.subscribe(event => { replayEventHandler?.(event); });
+  const structuredOutput = installStructuredOutput(agent);
   let persistedMessages = restoredMessages.length;
   const persistCurrentMessages = async () => {
     if (!session || agent.state.messages.length <= persistedMessages) return;
@@ -1274,6 +1281,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     persistCurrentMessages,
     compactContext,
     setToolRoundCompaction,
+    structuredOutput,
     needsContextCompaction: (incoming: any) => !!session && contextNeedsCompaction(
       compactedModelContext(agent.state.messages, restoredBranchEntries), incoming,
       model, agent.state.systemPrompt, agent.state.tools,
@@ -1320,6 +1328,7 @@ export async function startWorker(cfg = configFromEnv()) {
     persistCurrentMessages,
     compactContext,
     setToolRoundCompaction,
+    structuredOutput,
     needsContextCompaction,
     setToolReplayEventHandler,
     turnJournal,
@@ -1756,11 +1765,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   };
 
-  type PromptOptions = { system?: string; noReply?: boolean; tools?: Record<string, boolean>; variant?: string; compaction?: boolean; compactionAuto?: boolean };
+  type PromptOptions = { system?: string; noReply?: boolean; tools?: Record<string, boolean>; variant?: string; format?: OutputFormat; compaction?: boolean; compactionAuto?: boolean };
   const admissionOptions = (options: PromptOptions): JsonObject => ({
     ...(effectiveRuntime.agent ? { agent: effectiveRuntime.agent } : {}),
     ...(effectiveRuntime.model ? { model: effectiveRuntime.model } : {}),
     ...(options.system === undefined ? {} : { system: options.system }),
+    ...(options.format === undefined ? {} : { format: options.format as unknown as JsonObject }),
     ...((options.variant ?? configuredVariant) === undefined ? {} : { variant: (options.variant ?? configuredVariant)! }),
     ...(options.noReply === true ? { noReply: true } : {}),
     ...(options.compaction === true ? { compaction: true, compactionAuto: options.compactionAuto === true } : {}),
@@ -1783,6 +1793,7 @@ export async function startWorker(cfg = configFromEnv()) {
   const turnQueue = new TurnQueue<WorkerTurn>({
     id: (turn) => turn.messageId,
     run: async function runOwnedTurn(turn) {
+      if (closing) return 'interrupted';
       // A durable cancellation can be in flight while the preceding turn
       // finishes. Wait for its commit before this input crosses the model
       // boundary. This closes the queue-drain/cancel race.
@@ -1795,6 +1806,7 @@ export async function startWorker(cfg = configFromEnv()) {
       sessionLog?.assertWritable();
       let resumingInteraction = false;
       while (true) {
+        if (closing) return 'interrupted';
         if (hasResumableTurn(turn.messageId) && await turnJournal.heartbeat(turn.messageId)) {
           resumingInteraction = true;
           break;
@@ -1851,6 +1863,7 @@ export async function startWorker(cfg = configFromEnv()) {
           }
         }
       }
+      if (closing) return 'interrupted';
       turn.modelStarted = turn.options.noReply !== true;
       // The at-most-once boundary committed above. A process that restarts with
       // this state interrupts model turns instead of replaying unknown tool
@@ -1945,7 +1958,11 @@ export async function startWorker(cfg = configFromEnv()) {
       try {
         if (typeof turn.options.variant === 'string') applyReasoningVariant(agent, turn.options.variant);
         await permissionApprovals.refresh();
+        if (closing) return 'interrupted';
         agent.state.tools = originalTools.filter((tool) => permissions.toolEnabled(tool.name));
+        const inputIndex = agent.state.messages.findLastIndex((message: any) => message.kortixWireMessageId === turn.messageId);
+        structuredOutput.begin(turn.options.format as OutputFormat | undefined,
+          inputIndex >= 0 ? agent.state.messages.slice(inputIndex) : []);
         const created = Number(
           (turn.wireUserMessage.info.time as { created?: unknown } | undefined)?.created ??
             Date.now(),
@@ -1957,6 +1974,7 @@ export async function startWorker(cfg = configFromEnv()) {
           // Persisted with Pi's own message entry. The restore projection uses
           // it instead of inventing a different wire id after every restart.
           kortixWireMessageId: turn.messageId,
+          ...(turn.options.format === undefined ? {} : { kortixOutputFormat: turn.options.format }),
           ...(turn.options.compaction ? { kortixCompactionAuto: turn.options.compactionAuto === true } : {}),
         };
         if (turn.options.compaction === true) {
@@ -1982,6 +2000,7 @@ export async function startWorker(cfg = configFromEnv()) {
           resumeAgentSteps(plan.completedSteps);
           resumableQuestions.delete(turn.messageId);
           resumablePermissions.delete(turn.messageId);
+          if (closing) return 'interrupted';
           await agent.continue();
         } else {
           let compactionFailure: any = null;
@@ -2023,8 +2042,21 @@ export async function startWorker(cfg = configFromEnv()) {
             lastAgentEndStatus = "error";
           } else {
             permissions.restoreToolHistory([]);
+            if (closing) return 'interrupted';
             await agent.prompt(userMessage as any);
           }
+        }
+        const missingStructured = !turn.options.noReply && !turn.options.compaction ? structuredOutput.missingError() : null;
+        if (missingStructured) {
+          agent.state.messages.push({
+            ...fauxAssistantMessage([], { stopReason: 'error', errorMessage: missingStructured.data.message }),
+            kortixWireMessageId: surface.mintMessageId(),
+            kortixParentMessageId: turn.messageId,
+            kortixStructuredOutputError: missingStructured,
+          } as any);
+          await persistCurrentMessages();
+          surface.replaceDurableMessages(agent.state.messages, turnJournal.wireMessages);
+          lastAgentEndStatus = 'error';
         }
         settling = true;
         clearTimeout(leaseTimer);
@@ -2070,6 +2102,7 @@ export async function startWorker(cfg = configFromEnv()) {
         // the next worker drains by exact message id.
         relayDrain.wake();
       } finally {
+        structuredOutput.end();
         setToolReplayEventHandler(null);
         toolReplay?.close();
         permissions.restoreCheckpoints([]);
@@ -2192,6 +2225,7 @@ export async function startWorker(cfg = configFromEnv()) {
           agent: runtimeAgent,
           model: effectiveRuntime.model ?? resolvedModel,
           ...(options.system === undefined ? {} : { system: options.system }),
+          ...(options.format === undefined ? {} : { format: options.format as unknown as JsonObject }),
           ...((options.variant ?? configuredVariant) === undefined ? {} : { variant: (options.variant ?? configuredVariant)! }),
           ...(options.tools === undefined ? {} : { tools: options.tools }),
         },
@@ -2720,6 +2754,7 @@ export async function startWorker(cfg = configFromEnv()) {
               noReply: parsed.value.noReply,
               tools: parsed.value.tools,
               variant: parsed.value.variant,
+              format: parsed.value.format,
             });
             if (admitted.state === 'cancelled') {
               res.writeHead(409, { 'content-type': 'application/json' }).end(
@@ -3159,6 +3194,9 @@ export async function startWorker(cfg = configFromEnv()) {
       admissionRetries.clear();
       relayDrain.close();
       try {
+        agent.abort();
+        await agent.waitForIdle();
+        await turnQueue.waitForIdle();
         await customAgent.close();
       } finally {
         await new Promise<void>((r) => server.close(() => r()));

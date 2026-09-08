@@ -8,6 +8,14 @@ const runtime = {
 };
 
 describe('parsePromptInput', () => {
+  test('preserves validated output formats and rejects a string format', () => {
+    for (const format of [{ type: 'text' }, { type: 'json_schema', schema: { type: 'object' } }] as const) {
+      expect(parsePromptInput(JSON.stringify({ format, parts: [{ type: 'text', text: 'answer' }] }), runtime))
+        .toEqual({ ok: true, value: { text: 'answer', format } });
+    }
+    expect(parsePromptInput(JSON.stringify({ format: 'x', parts: [{ type: 'text', text: 'answer' }] }), runtime))
+      .toEqual({ ok: false, error: 'format must be an object' });
+  });
   test('keeps the wire id and every text part in order', () => {
     const messageID = 'msg_01990f4ca010abcdefghijklmn';
     expect(
@@ -113,7 +121,7 @@ describe('parsePromptInput', () => {
     },
   );
 
-  test.each(['variant', 'format', 'temperature', 'modle'])(
+  test.each(['variant', 'temperature', 'modle'])(
     'rejects unsupported %s instead of acknowledging and ignoring it',
     (field) => {
       const result = parsePromptInput(

@@ -148,6 +148,30 @@ reasoning choices from the pinned worker config. The composer offers those
 choices after runtime readiness. Selections persist per session and model;
 Auto clears the override. Older workers without this projection hide the control.
 
+Use `format` to request validated JSON for one prompt:
+
+```ts
+const response = await s.send('Return the answer to 6 × 7', {
+  format: {
+    type: 'json_schema',
+    schema: {
+      type: 'object',
+      properties: { answer: { type: 'integer' } },
+      required: ['answer'],
+      additionalProperties: false,
+    },
+    retryCount: 2,
+  },
+});
+if (response.data?.info.error) throw new Error(response.data.info.error.name);
+console.log(response.data?.info.structured);
+```
+
+Pi saves the schema and validated result with the conversation. Invalid schemas
+return `400` before model execution. Validation defaults to two retries.
+Exhaustion returns `StructuredOutputError`. The format applies to this prompt
+only; omit it or pass `{ type: 'text' }` for the next text response.
+
 `useSession().sendParts()` and `useSession().runCommand()` preserve reasoning
 options while omitting stale Pi model and agent selections. A slash command
 uses its request variant, then its compiled command variant, then the agent

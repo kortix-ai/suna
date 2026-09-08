@@ -54,6 +54,7 @@ of each feature or the remaining parity matrix passed.
 | Context compaction | Manual and automatic checks before new prompts and between tool rounds; bounded retention and complete display history | HTTP threshold, Stop, retry, queue, replacement, oversize, and crash tests; real Luna with an 8,192-token fixture window, one tool execution, saved summary, exact restart, and recall; preview manual-compaction UI |
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
 | Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls; preview UI High/None/Auto payloads and provider results; reload, nine-message stop/resume, and question recovery |
+| Structured output | Prompt-scoped JSON Schema, `info.structured`, validation retries, terminal errors, and SDK `send(..., { format })` | Draft 7/2020-12 object schemas and local references through real Luna; HTTP validation, queue, cancellation, lifecycle, crash, and question-recovery tests |
 
 Custom Pi modules are supported. OpenCode plugins are not automatically Pi
 extensions. The native Pi lifecycle surface is documented in
@@ -70,7 +71,6 @@ extensions. The native Pi lifecycle surface is documented in
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
 | MCP configuration | No native Pi MCP loader | Governed compiled config, remote/stdio execution placement, authorization, cancellation, and discovery |
 | Live model and agent switching | Config is fixed; API and host controls reject unsupported changes | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
-| Structured output | Unsupported prompt fields fail validation | Provider mapping, validation, durable options, and host controls |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |
 | Multiple named environments | One lazy environment per session | Target selection, permissions, lifecycle, and billing |

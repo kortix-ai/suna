@@ -106,6 +106,7 @@ export async function installCustomAgent(
     'websearch',
     'webfetch',
     'skill',
+    'StructuredOutput',
   ]);
   for (const tool of definition.tools ?? []) {
     if (names.has(tool.name)) throw new Error(`Pi agent tool "${tool.name}" is already registered`);

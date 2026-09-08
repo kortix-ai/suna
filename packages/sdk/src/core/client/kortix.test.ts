@@ -1098,6 +1098,30 @@ test('Pi sends use compiled defaults and forward explicit per-turn reasoning', a
   ]);
 });
 
+test.each(['pi', 'opencode'])('send forwards per-call output formats through the %s session runtime', async engine => {
+  const sessionId = `SESS-FORMAT-${engine}`;
+  const nativeId = `ses_format_${engine}`;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    const body = await request.clone().text();
+    calls.push({ url: request.url, method: request.method, body: body ? JSON.parse(body) : undefined });
+    if (request.url.includes(`/sessions/${sessionId}/start`)) {
+      return jsonResponse({ ...sessionStartPayload(`sb-format-${engine}`, nativeId),
+        sandbox: { external_id: `sb-format-${engine}`, metadata: { sandbox_slug: engine === 'pi' ? 'pi-worker' : 'opencode' } },
+      });
+    }
+    if (request.url.endsWith(`/sessions/${sessionId}`)) return jsonResponse({ session_id: sessionId, metadata: { sandbox_slug: engine === 'pi' ? 'pi-worker' : 'opencode' } });
+    return jsonResponse({ info: { structured: { answer: 42 } } });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).session('PROJ', sessionId);
+  const format = { type: 'json_schema' as const, schema: { type: 'object', properties: { answer: { type: 'integer' } } }, retryCount: 1 };
+  expect((await handle.send('structured answer', { format })).data?.info.structured).toEqual({ answer: 42 });
+  await handle.send('explicit text', { format: { type: 'text' } });
+  await handle.send('default text');
+  const prompts = calls.filter(call => call.url.endsWith(`/session/${nativeId}/message`) && call.method === 'POST');
+  expect(prompts.map(call => (call.body as { format?: unknown }).format)).toEqual([format, { type: 'text' }, undefined]);
+});
+
 test('separate identical sends carry distinct submission keys and retain authentication', async () => {
   const submissions: Array<{ key: string | null; authorization: string | null; body: unknown }> = [];
   let rejectedToken = false;

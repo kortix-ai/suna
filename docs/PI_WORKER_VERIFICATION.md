@@ -798,3 +798,62 @@ compaction and worker replacement with a provider-omitted reasoning block.
 The focused restoration checks pass 20 tests. The complete worker suite passes
 687 tests. Worker typecheck, build, and seven real Node bundle/lockdown checks
 pass. Deployed verification of the new fix follows below.
+
+Deployment [34263718363](https://github.com/kortix-ai/suna/actions/runs/34263718363)
+serves `9d911adc2cdfba068de79c1d6230688154a491b2`. Public health, remote Git HEAD,
+and API/frontend/gateway image tags match. This push deployment skips target-full.
+
+A real browser session, `a2a5e916-71a2-4b0a-bbdc-c3cc3ae6e3a9`, selects High,
+sends `variant: high`, and receives `inspect_effort` with `effort: high`.
+Manual compaction returns `200` and displays **Context compacted**. The entire
+pre-compaction transcript remains byte-for-byte equal. The next answer recalls
+`cobalt`. SSE delivers 19 text deltas. All seven messages survive stop/resume
+unchanged, with native ID `ses_pi277167e3fa4b1c3345a7197c`.
+The environment route remains `404`. The fixture session is stopped afterward.
+
+## 2026-09-08 — Structured output and shutdown
+
+`session.send(text, { format })` forwards the same OpenCode-compatible contract
+for Pi and OpenCode. Pi validates the schema before admission. It persists
+`info.format`, returns the validated value in `info.structured`, and retains
+both across replacement. Schemas can use local references. Draft 7 and
+2020-12 object schemas have real-provider coverage. Non-object root schemas
+and providers outside the OpenAI-compatible gateway remain unverified.
+
+The worker registers `StructuredOutput` for that prompt only. Custom modules
+cannot replace it. Native lifecycle hooks still run. The model receives a
+required tool choice while tools remain available. Validation defaults to
+two retries; `retryCount: 0` permits only the first attempt. Exhaustion and
+an early lifecycle stop return `StructuredOutputError`. Stop, provider errors,
+and failed automatic compaction retain their original errors. A completed
+formatter prevents later tools in the same batch from executing.
+
+Question recovery restores the remaining validation budget. Cached failed
+tool results do not consume that budget again. Recovery also recognizes a
+saved structured result when the process dies before the turn journal commits
+completion. An incomplete tool batch still interrupts instead of rerunning
+unknown side effects.
+
+Shutdown previously depended on an optional custom module. A worker without
+that module could leave its provider request running. `close()` now aborts
+the agent and drains the active turn before closing custom hooks and HTTP.
+Queued requests cannot start during shutdown. They retain their durable
+admission for the replacement worker.
+
+The local real-gateway check returns `{ answer: 42 }` and `{ code: 'cobalt' }`.
+The second schema uses a 2020-12 local reference. The next text prompt returns
+`READY` without the formatter. Six messages survive exact restart, and the
+next real-model reply recalls `42 cobalt`. No environment calls execute.
+The temporary gateway key is revoked in cleanup.
+
+SDK TDD records two failing forwarding tests before implementation. The final
+SDK gates pass: typecheck, 2,874 tests, and packed-tarball Node import smoke.
+The complete local and deployed checks for this change follow below.
+
+`pnpm test -- --full` passes all eight lanes in 403.9 seconds. Worker quality
+passes 716 tests, typecheck, bundle construction, and seven compiled Node
+artifact/permission checks. REST/CLI passes 396/396 flows. Browser journeys
+pass 17 tests and skip two. SDK, package, route-coverage, runner, and worktree
+lanes pass. The package lane includes 9,466 passing web tests. The benchmark
+record is `tests/test-results/local/benchmark-1788895269919.json`; it records
+the pre-commit base `9d911adc2c` with this change applied in the worktree.

@@ -1,4 +1,6 @@
 import { WIRE_MESSAGE_ID, canMintOrderedReplyAfter } from './wire-message-id.ts';
+import type { OutputFormat } from '@opencode-ai/sdk/v2';
+import { parseOutputFormat } from './structured-output.ts';
 
 export interface CompiledPromptRuntime {
   agent?: string | null;
@@ -13,12 +15,13 @@ export interface PromptInput {
   noReply?: boolean;
   tools?: Record<string, boolean>;
   variant?: string;
+  format?: OutputFormat;
 }
 
 export type PromptInputResult = { ok: true; value: PromptInput } | { ok: false; error: string };
 
 const SUPPORTED_FIELDS = new Set([
-  'messageID', 'model', 'agent', 'parts', 'system', 'noReply', 'tools', 'variant',
+  'messageID', 'model', 'agent', 'parts', 'system', 'noReply', 'tools', 'variant', 'format',
 ]);
 const SUPPORTED_TEXT_PART_FIELDS = new Set(['type', 'text']);
 
@@ -47,6 +50,12 @@ export function parsePromptInput(
     if (!SUPPORTED_FIELDS.has(field) || (field === 'variant' && !runtime.variants)) {
       return { ok: false, error: `prompt field "${field}" is not supported by the Pi worker` };
     }
+  }
+
+  let format: OutputFormat | undefined;
+  if (own(body, 'format')) {
+    try { format = parseOutputFormat(body.format); }
+    catch (error) { return { ok: false, error: (error as Error).message }; }
   }
 
   if (own(body, 'variant') && (typeof body.variant !== 'string' || !runtime.variants?.includes(body.variant))) {
@@ -159,6 +168,7 @@ export function parsePromptInput(
       ...(typeof body.noReply === 'boolean' ? { noReply: body.noReply } : {}),
       ...(own(body, 'tools') ? { tools: body.tools as Record<string, boolean> } : {}),
       ...(typeof body.variant === 'string' ? { variant: body.variant } : {}),
+      ...(format === undefined ? {} : { format }),
     },
   };
 }

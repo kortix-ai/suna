@@ -21,6 +21,20 @@ linked, not inlined.
 
 ## Register
 
+### Stop the core agent before optional custom shutdown hooks (2026-09-08)
+
+**When:** closing or replacing a Pi worker.
+**Incident:** structured-output recovery tests found that workers without a custom module did not abort the provider; queued work could start during close.
+**Rule:** abort and drain the core agent independently of optional hooks. Fence queued turns before every asynchronous model-start boundary.
+**Enforcer:** `worker-shutdown.test.ts` requires an aborted provider, a closed HTTP server, and zero additional provider calls for queued work.
+
+### Preserve formatter outcomes and retry budgets across tool replay (2026-09-08)
+
+**When:** translating Pi structured output into durable turns.
+**Incident:** new formatter recovery tests reproduced duplicated validation failures and lost completed results before journal completion.
+**Rule:** persist validated outcomes before turn completion. Count cached tool failures once. Preserve provider and cancellation errors when formatting never starts.
+**Enforcer:** `structured-output-routes.test.ts` exercises question replay, crash boundaries, retry exhaustion, Stop, and failed compaction through HTTP.
+
 ### Persist streamed display parts independently of provider content (2026-09-08)
 
 **When:** translating Pi streams into the durable conversation transcript.
