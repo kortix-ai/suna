@@ -22,11 +22,28 @@
  * them. Sharing across projects or accounts is NOT done here and should not be
  * without a tenant story.
  *
- * OFF BY DEFAULT. `KORTIX_CELL_SHARED_HOST_ENABLED` gates it, because a shared
- * box changes what ending one session may do to another: the reaper stops a box
+ * MEASURED END TO END, dev 2026-09-08, with the flag ON for one project. Four
+ * sessions, ONE box (`pi-cell-3637ef187346a4ac`) — the first made it, the rest
+ * adopted it and created no sandbox at all:
+ *
+ *   session          -> ready      -> first assistant text
+ *   1 (creates)       2920 ms       7294 ms
+ *   2 (adopts)         750 ms       2540 ms
+ *   3 (adopts)         662 ms       2404 ms
+ *   4 (adopts)         682 ms       2185 ms
+ *
+ * 4.3x to ready and 3.0x to an answer, and the remaining ~2.2 s is mostly the
+ * model. The earlier per-component figures above predicted this and are now
+ * confirmed at the level a user actually feels.
+ *
+ * STILL GATED. `KORTIX_CELL_SHARED_HOST_ENABLED` remains off by default and is
+ * set only on the dev stack. The reason it was off — "the reaper stops a box
  * when its session is done, and nothing here yet teaches it that a host is
- * shared. Turn it on where that is understood, measure, and fix reaping before
- * it goes further.
+ * shared" — is fixed (projects/reaping/shared-box-stop.ts: a box another ACTIVE
+ * session is on is released, not stopped). What is NOT yet done, and what a
+ * wider rollout needs: a host outlives every session on it, so nothing stops it
+ * when the last one ends, and no tenant story exists for sharing beyond one
+ * project.
  */
 import { createHash } from 'node:crypto';
 import { config } from '../../config';
