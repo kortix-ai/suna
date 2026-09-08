@@ -225,3 +225,33 @@ export async function markReaperVisited(sandboxIds: string[], now: Date): Promis
       console.warn('[reaper] visit stamp failed:', err instanceof Error ? err.message : err),
     );
 }
+
+/**
+ * How many OTHER live sessions are running on this same provider box.
+ *
+ * A cell sandbox can carry many sessions (cell-host-platinum.ts), and stopping
+ * it powers off every one of them. Two sessions never share an `external_id`
+ * unless a shared host put them there, so for an ordinary box this is always 0
+ * and the reaper behaves exactly as before.
+ *
+ * ACTIVE only, and never the row being reaped: a stopped or failed row is not
+ * somebody's runtime, and counting it would strand a shared box forever after
+ * its last real user left.
+ */
+export async function countOtherActiveSessionsOnBox(
+  externalId: string,
+  exceptSandboxId: string,
+): Promise<number> {
+  if (!externalId) return 0;
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(sessionSandboxes)
+    .where(
+      and(
+        eq(sessionSandboxes.externalId, externalId),
+        eq(sessionSandboxes.status, 'active'),
+        not(eq(sessionSandboxes.sandboxId, exceptSandboxId)),
+      ),
+    );
+  return row?.n ?? 0;
+}

@@ -16,12 +16,14 @@ import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/ba
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import type { StopReason } from '../stop-reason';
 import {
+  countOtherActiveSessionsOnBox,
   type ReapCandidate,
   claimExpiredSandboxStop,
   releaseSandboxStopClaim,
 } from './box-queries';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from './policy';
 import { applyStoppedState } from './sandbox-state-sync';
+import { decideSharedBoxStop } from './shared-box-stop';
 
 export type StopBoxOutcome = 'stopped' | 'skipped' | 'errors';
 
@@ -143,6 +145,30 @@ export async function stopExpiredBox(
   // came from `reapCandidatePredicate` (status = 'active'), so the box can
   // plausibly still be running one — best-effort, never gates the stop below.
   await abortLiveTurnBeforeStop({ sandboxId: row.sandboxId, externalId: row.externalId });
+
+  // A BOX SOMEBODY ELSE IS STILL ON IS NOT THIS SESSION'S TO POWER OFF.
+  //
+  // A cell sandbox can carry many sessions, which is what makes a session cost
+  // 194 ms instead of 2443 ms (cell-host-platinum.ts). The reaper reaps ONE
+  // session, so stopping its box would end sessions nobody asked to end — the
+  // stated reason KORTIX_CELL_SHARED_HOST_ENABLED is off by default. This
+  // session's row is still retired below; only the provider stop is skipped.
+  // Two sessions never share an external id unless a shared host put them
+  // there, so this is a no-op for every ordinary box.
+  const others = await countOtherActiveSessionsOnBox(row.externalId, row.sandboxId).catch(() => 0);
+  if (decideSharedBoxStop(others) === 'release_this_session_only') {
+    await applyStoppedState({
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      externalId: row.externalId,
+      stopReason,
+      now,
+    });
+    console.log(
+      `[reaper] released session ${row.sessionId} from shared box ${row.externalId} — ${others} live session(s) remain`,
+    );
+    return 'stopped';
+  }
 
   try {
     await getProvider(row.provider).stop(row.externalId);
