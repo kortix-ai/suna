@@ -1449,6 +1449,7 @@ export async function startWorker(cfg = configFromEnv()) {
     tools: agent.state.tools,
     defaultModel: runtimeModel,
     resolvedModel: effectiveRuntime.model ?? resolvedModel,
+    reasoningVariants: effectiveRuntime.variants,
     workspace: cfg.envCwd,
     permissions,
     permissionConfig: selectedAgentConfig?.permission,

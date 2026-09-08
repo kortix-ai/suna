@@ -2201,8 +2201,8 @@ export function SessionChat({
     return settlement;
   }, [sessionId, projectSessionId, sessionState, abortSession]);
 
-  // Pi compiles one model into the worker. Keep model and effort controls
-  // closed until the control plane proves this is an OpenCode project session.
+  // Pi compiles one model into the worker. Model changes require OpenCode.
+  // Reasoning choices come from the selected worker through the SDK.
   // The sandbox projection is a second fail-closed signal for a stale row.
   const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
     enabled: !!projectId && !!projectSessionId,
@@ -2253,6 +2253,8 @@ export function SessionChat({
     projectRuntimeIdentity: projectSessionRuntimeIdentity,
     sandboxIsPiWorker,
   });
+  const runtimeReasoningAllowed = runtimePromptOverridesAllowed ||
+    (isPiWorkerSession && local.model.variant.list.length > 0);
   const historyMutationsEnabled =
     !isPiWorkerSession && (!projectSessionId || projectSessionRuntimeIdentity === 'opencode');
   const compactSessionId = projectSessionId
@@ -2438,11 +2440,11 @@ export function SessionChat({
       localModelSet(stash.model as ModelKey, { autoSeed: true });
     }
     if (runtimePromptOverridesAllowed && stash.agent) localAgentSet(stash.agent);
-    if (runtimePromptOverridesAllowed && stash.variant) localVariantSet(stash.variant);
+    if (runtimeReasoningAllowed && stash.variant) localVariantSet(stash.variant);
     const stashRuntimeSelection = resolveRuntimePromptOverrides({
       agentEnabled: runtimePromptOverridesAllowed,
       modelEnabled: runtimePromptOverridesAllowed,
-      variantEnabled: runtimePromptOverridesAllowed,
+      variantEnabled: runtimeReasoningAllowed,
       overrideAgent: stash.agent ?? null,
       overrideModel: stashModelValid ? (stash.model as ModelKey) : null,
       overrideVariant: stash.variant ?? null,
@@ -3799,7 +3801,7 @@ export function SessionChat({
       const options: Record<string, unknown> = resolveRuntimePromptOverrides({
         agentEnabled: runtimePromptOverridesAllowed,
         modelEnabled: runtimePromptOverridesAllowed,
-        variantEnabled: runtimePromptOverridesAllowed,
+        variantEnabled: runtimeReasoningAllowed,
         overrideAgent: overrides?.agent,
         // The name the picker is SHOWING, not `local.agent.current`: an
         // inaccessible project default resolves to the first agent this user
@@ -4057,6 +4059,7 @@ export function SessionChat({
       local.model.sendKey,
       local.model.variant.current,
       runtimePromptOverridesAllowed,
+      runtimeReasoningAllowed,
       anchorTurn,
       smoothScrollToAbsoluteBottom,
       scrollRef,
@@ -4470,7 +4473,7 @@ export function SessionChat({
       const runtimeSelection = resolveRuntimePromptOverrides({
         agentEnabled: runtimePromptOverridesAllowed,
         modelEnabled: runtimePromptOverridesAllowed,
-        variantEnabled: runtimePromptOverridesAllowed,
+        variantEnabled: runtimeReasoningAllowed,
         selectedAgent: composerAgentName,
         selectedModel: local.model.sendKey,
         selectedVariant: local.model.variant.current,
@@ -4571,6 +4574,7 @@ export function SessionChat({
       local.model.sendKey,
       local.model.variant.current,
       runtimePromptOverridesAllowed,
+      runtimeReasoningAllowed,
     ],
   );
 
@@ -5648,7 +5652,7 @@ export function SessionChat({
                 }
                 variants={local.model.variant.list}
                 selectedVariant={local.model.variant.current ?? null}
-                onVariantChange={runtimePromptOverridesAllowed ? handleVariantChange : undefined}
+                onVariantChange={runtimeReasoningAllowed ? handleVariantChange : undefined}
                 messages={messages}
                 sessionId={sessionId}
                 projectId={projectId}

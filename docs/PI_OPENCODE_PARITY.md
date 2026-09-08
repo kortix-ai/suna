@@ -53,6 +53,7 @@ of each feature or the remaining parity matrix passed.
 | Worker/environment lifecycle | Distinct runtime principals, restore/stop/replacement, lease fencing | Race, credential, immutable identity, and live restart tests |
 | Context compaction | Native Pi manual compaction and automatic checks before new prompts; complete display history and reduced model context | Twelve HTTP tests cover thresholds, Stop, retry, queue, replacement, oversize, and crash boundaries; preview UI summary, recall, and exact 29-message restart preservation |
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
+| Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls, question recovery, provider HTTP, and React remount tests; new composer UI verification pending deployment |
 
 Custom Pi modules are supported. OpenCode plugins are not automatically Pi
 extensions. The native Pi lifecycle surface is documented in
@@ -69,7 +70,6 @@ extensions. The native Pi lifecycle surface is documented in
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
 | MCP configuration | No native Pi MCP loader | Governed compiled config, remote/stdio execution placement, authorization, cancellation, and discovery |
 | Live model and agent switching | Config is fixed; API and host controls reject unsupported changes | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
-| Reasoning variants | Compiled defaults, prompt/command overrides, and shared SDK paths validate against model support; settings survive question recovery; eight live cases pass | Enable React composer controls from worker capabilities |
 | Structured output | Unsupported prompt fields fail validation | Provider mapping, validation, durable options, and host controls |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |

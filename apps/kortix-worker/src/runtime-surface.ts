@@ -474,6 +474,7 @@ export interface RuntimeSurfaceOptions {
   tools?: readonly AgentTool[];
   defaultModel?: string | null;
   resolvedModel?: { providerID: string; modelID: string };
+  reasoningVariants?: readonly string[];
   workspace?: string;
   permissions?: PermissionBroker;
   permissionConfig?: PermissionConfig;
@@ -1178,6 +1179,14 @@ export class RuntimeSurface {
     }));
   }
 
+  private reasoningProviderConfig() {
+    const model = this.opts.resolvedModel;
+    if (!model || !this.opts.reasoningVariants) return {};
+    return { provider: { [model.providerID]: { models: { [model.modelID]: {
+      variants: Object.fromEntries(this.opts.reasoningVariants.map(level => [level, {}])),
+    } } } } };
+  }
+
   private stateDoc() {
     const agents = Object.entries(this.opts.agents ?? {}).map(([name, agent]) => ({
       name,
@@ -1215,6 +1224,7 @@ export class RuntimeSurface {
       config: {
         known: true,
         value: {
+          ...this.reasoningProviderConfig(),
           model: this.opts.resolvedModel
             ? `${this.opts.resolvedModel.providerID}/${this.opts.resolvedModel.modelID}`
             : this.opts.defaultModel ?? null,
@@ -1689,6 +1699,7 @@ export class RuntimeSurface {
     }
     if (url.pathname === '/config' || url.pathname === '/global/config') {
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        ...this.reasoningProviderConfig(),
         default_agent: this.opts.agentName ?? 'build',
         model: this.opts.resolvedModel
           ? `${this.opts.resolvedModel.providerID}/${this.opts.resolvedModel.modelID}`

@@ -24,7 +24,7 @@ describe('existing project session composer runtime contract', () => {
       'onModelChange={runtimePromptOverridesAllowed ? handleModelChange : undefined}',
     );
     expect(sessionChat).toContain(
-      'onVariantChange={runtimePromptOverridesAllowed ? handleVariantChange : undefined}',
+      'onVariantChange={runtimeReasoningAllowed ? handleVariantChange : undefined}',
     );
     expect(sessionChat).toContain('attachmentsEnabled={runtimePromptOverridesAllowed}');
   });
@@ -38,7 +38,7 @@ describe('existing project session composer runtime contract', () => {
 
     expect(optionsBlock).toContain('agentEnabled: runtimePromptOverridesAllowed');
     expect(optionsBlock).toContain('modelEnabled: runtimePromptOverridesAllowed');
-    expect(optionsBlock).toContain('variantEnabled: runtimePromptOverridesAllowed');
+    expect(optionsBlock).toContain('variantEnabled: runtimeReasoningAllowed');
     expect(sessionChat.indexOf('const fileError = runtimePromptFilesError({')).toBeLessThan(
       partsStart,
     );

@@ -5509,3 +5509,17 @@ Enforced by `packages/sdk/src/core/client/kortix.test.ts`. Two identical sends
 produce distinct keys; an authentication retry preserves the first key and uses
 the refreshed token. The live reasoning journey repeats its original prompt and
 asserts one new user message per call.
+
+## 2026-09-08 — Scope runtime config and reasoning choices to their owner
+
+Reasoning-control review found a global runtime config cache key. Navigating
+between workers could reuse a different session's model configuration forever.
+The project model catalog also cannot prove the pinned worker supports an effort.
+
+Key runtime config by URL and capture that URL before starting its read. Preserve
+the original cache key through mutation rollback. Derive Pi reasoning choices
+from the pinned worker's config. Store selections per session and model with a
+bounded session map. Never borrow another model's effort list while loading.
+
+Enforced by `use-opencode-config.test.ts`, `session-reasoning.test.ts`,
+`session-reasoning-hook.test.ts`, and the worker's runtime/config HTTP tests.

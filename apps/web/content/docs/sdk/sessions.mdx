@@ -143,8 +143,10 @@ Pi sessions use their compiled agent and model. They do not inject the stored
 OpenCode defaults. Set a per-prompt reasoning effort with
 `await s.send('Review the change', { variant: 'high' })`. The Pi worker validates
 the effort for its selected model and preserves it during question recovery.
-Omit `variant` to use the compiled default. The React composer reasoning
-control remains gated during the Pi rollout.
+Omit `variant` to use the compiled default. The React model-selection hook reads
+reasoning choices from the pinned worker config. The composer offers those
+choices after runtime readiness. Selections persist per session and model;
+Auto clears the override. Older workers without this projection hide the control.
 
 `useSession().sendParts()` and `useSession().runCommand()` preserve reasoning
 options while omitting stale Pi model and agent selections. A slash command

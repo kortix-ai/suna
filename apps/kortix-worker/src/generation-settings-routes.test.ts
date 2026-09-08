@@ -178,6 +178,17 @@ async function exercise(
   const headers = { authorization: 'Bearer runtime-token', 'content-type': 'application/json' };
   const sessions = (await (await fetch(base + '/session', { headers })).json()) as { id: string }[];
   const defaultThinking = worker.agent.state.thinkingLevel;
+  if (modelLimits?.reasoningEfforts) {
+    for (const path of ['/config', '/global/config']) {
+      const configResponse = await fetch(base + path, { headers });
+      expect(configResponse.status).toBe(200);
+      const projected = await configResponse.json() as any;
+      const separator = projected.model.indexOf('/');
+      const levels = projected.provider[projected.model.slice(0, separator)]
+        .models[projected.model.slice(separator + 1)].variants;
+      expect(Object.keys(levels)).toEqual(modelLimits.reasoningEfforts);
+    }
+  }
   for (const variant of variants) {
     const response = await fetch(base + `/session/${sessions[0]!.id}/${command ? 'command' : 'message'}`, {
       method: 'POST',

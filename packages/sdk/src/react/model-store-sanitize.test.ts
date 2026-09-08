@@ -8,6 +8,17 @@
 import { describe, expect, test } from 'bun:test';
 import { sanitizeModelStore } from './use-model-store';
 
+test('bounds stored Pi session reasoning choices without removing model preferences', () => {
+  const entries = Object.fromEntries(Array.from({ length: 205 }, (_, i) => [
+    `kortix:session-reasoning/["session-${i}","kortix","model"]`, 'high',
+  ]));
+  const result = sanitizeModelStore({ variant: { 'openai/model': 'custom', ...entries } });
+  expect(Object.keys(result.variant)).toHaveLength(201);
+  expect(result.variant['openai/model']).toBe('custom');
+  expect(result.variant['kortix:session-reasoning/["session-0","kortix","model"]']).toBeUndefined();
+  expect(result.variant['kortix:session-reasoning/["session-204","kortix","model"]']).toBe('high');
+});
+
 const base = { user: [], recent: [], variant: {} };
 
 describe('sanitizeModelStore', () => {

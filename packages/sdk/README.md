@@ -231,7 +231,10 @@ OpenCode defaults. `await s.send("Review the change", { variant: "high" })`
 selects reasoning for that prompt only. Pi validates the effort against the
 selected model. The worker persists the choice across queued delivery and
 question recovery. Omit `variant` to use the compiled default.
-The React composer reasoning control remains gated during the Pi rollout.
+The React model-selection hook reads Pi reasoning choices from the selected
+worker's config. It does not use the project catalog for this choice. Selections
+persist per session and model; clearing the choice restores the compiled default.
+Older workers without a capability projection expose no reasoning choices.
 
 ### React runtime
 

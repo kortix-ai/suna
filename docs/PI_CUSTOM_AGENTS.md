@@ -104,8 +104,10 @@ The worker stores this choice before acknowledgment and restores the default
 after the prompt. Question recovery preserves the stored choice.
 Commands accept a supported request variant. Otherwise, they use the compiled
 command variant, then the agent default. SDK prompt and command paths preserve
-this choice. React composer reasoning controls remain gated until the worker
-projects its supported capabilities to the host.
+this choice. The React composer reads supported levels from the pinned worker's
+config. Its Thinking effort control persists a choice for this session and model.
+Auto clears that override, so commands and prompts use their compiled defaults.
+Workers without this capability projection keep the control hidden.
 
 ## Custom source
 

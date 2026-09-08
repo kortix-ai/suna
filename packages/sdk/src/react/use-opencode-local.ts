@@ -12,6 +12,7 @@
  */
 
 import { resolveSessionDisplayModel } from './session-display-model';
+import { sessionReasoningStorageKey, sessionReasoningVariants } from './session-reasoning';
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { featureFlags } from '../core/http/feature-flags';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
@@ -684,28 +685,27 @@ export function useOpenCodeLocal({
   );
 
   // ---- Variant management (matching SolidJS local.tsx:186-217) ----
+  const variantList = useMemo(
+    () => sessionReasoningVariants(runtime, config, currentModel?.variants),
+    [runtime, config, currentModel],
+  );
+  const variantStorageKey = useMemo(
+    () => sessionReasoningStorageKey(runtime, sessionId, currentModelKey),
+    [runtime, sessionId, currentModelKey],
+  );
   const variantCurrent = useMemo<string | undefined>(() => {
-    if (!currentModel) return undefined;
-    return modelStore.getVariant({
-      providerID: currentModel.providerID,
-      modelID: currentModel.modelID,
-    });
-  }, [currentModel, modelStore]);
-
-  const variantList = useMemo<string[]>(() => {
-    if (!currentModel?.variants) return [];
-    return Object.keys(currentModel.variants);
-  }, [currentModel]);
+    if (!variantStorageKey) return undefined;
+    const stored = modelStore.getVariant(variantStorageKey);
+    return runtime === 'pi-worker' && (!stored || !variantList.includes(stored)) ? undefined : stored;
+  }, [runtime, variantStorageKey, variantList, modelStore]);
 
   const setVariant = useCallback(
     (value: string | undefined) => {
-      if (!currentModel) return;
-      modelStore.setVariant(
-        { providerID: currentModel.providerID, modelID: currentModel.modelID },
-        value,
-      );
+      if (!variantStorageKey) return;
+      if (runtime === 'pi-worker' && value !== undefined && !variantList.includes(value)) return;
+      modelStore.setVariant(variantStorageKey, value);
     },
-    [currentModel, modelStore],
+    [runtime, variantStorageKey, variantList, modelStore],
   );
 
   const cycleVariant = useCallback(() => {

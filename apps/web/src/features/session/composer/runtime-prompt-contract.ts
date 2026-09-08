@@ -8,7 +8,7 @@ export const RUNTIME_ATTACHMENTS_UNAVAILABLE_MESSAGE =
 /**
  * A project session may change compiled prompt fields only after the control
  * plane proves that it runs OpenCode. Pi compiles one agent and model into the
- * worker and accepts no reasoning variant. Unknown stays locked because a
+ * worker. Reasoning uses a separate worker-capability gate. Unknown stays locked because a
  * prompt can be submitted before the project-session query resolves.
  */
 export function runtimePromptOverridesEnabled(input: {
@@ -36,9 +36,9 @@ export function runtimePromptFilesError(input: {
 /**
  * Resolve the runtime fields that may cross the prompt boundary.
  *
- * Pi accepts only its compiled agent and model and no `variant`. Omitting all
- * three selects that compiled contract without trusting stale localStorage or
- * a queued override captured before the runtime changed.
+ * Pi uses its compiled agent and model. A supported reasoning variant has a
+ * separate capability gate. Each disabled field is omitted regardless of stale
+ * localStorage or a queued override captured before the runtime changed.
  */
 export function resolveRuntimePromptOverrides(input: {
   agentEnabled: boolean;

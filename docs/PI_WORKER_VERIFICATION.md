@@ -656,3 +656,25 @@ The package lane fails the agent-tunnel malformed-credentials test at 5,001.75 m
 passes both tests with six assertions in 243 ms. The full gate remains red.
 Its total duration is 684.5 seconds; package quality takes 450.2 seconds.
 The prior artifact-test stall does not recur in this run.
+
+## Worker reasoning choices in the web composer — 2026-09-08
+
+The worker now projects its supported reasoning levels through `/config`,
+`/global/config`, and the state config. Only its pinned model appears in this map.
+The React SDK uses that map for Pi, even when the project catalog advertises
+different levels. It preserves OpenCode's existing catalog behavior.
+
+Pi selections persist per session and model. Auto clears the override. A stale
+unsupported selection is omitted. Session reasoning storage retains 200 entries;
+ordinary model preferences remain unchanged. The existing Thinking effort control
+is enabled only after the worker publishes choices. Model, agent, and attachment
+controls retain their separate gates.
+
+Runtime config reads now use a cache key containing the runtime URL. A delayed
+read retains its original URL. A failed config update rolls back its original
+cache entry even after navigation. Both regression tests fail before the fix.
+Worker quality passes 674 tests, typecheck, build, and seven bundle/lockdown tests.
+Frontend typecheck passes. Focused host lint reports zero errors and 36 warnings.
+The complete SDK suite passes 2,872 tests. SDK typecheck and packed-package
+installation pass. The focused composer and selection run passes 27 tests.
+The new composer control still needs verification on the deployed preview.

@@ -447,6 +447,37 @@ function callRaw(surface: RuntimeSurface, method: string, path: string, token?: 
 }
 
 describe('RuntimeSurface raw message reads', () => {
+  test('projects only the pinned model reasoning levels through raw and state config', () => {
+    const surface = new RuntimeSurface({
+      sessionId: 'reasoning-session', token: 'tok', agentName: 'reviewer',
+      resolvedModel: { providerID: 'kortix', modelID: 'openai/pinned-model' },
+      reasoningVariants: ['none', 'low', 'high'],
+      agents: { reviewer: { variant: 'low' } },
+    });
+    const expected = { kortix: { models: {
+      'openai/pinned-model': { variants: { none: {}, low: {}, high: {} } },
+    } } };
+    for (const path of ['/config', '/global/config']) {
+      const response = callRaw(surface, 'GET', path, 'tok');
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body).provider).toEqual(expected);
+      expect(JSON.parse(response.body).agent.reviewer.variant).toBe('low');
+    }
+    const response = callSurface(surface, 'GET', '/kortix/opencode/state', 'tok');
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body).config.value.provider).toEqual(expected);
+  });
+
+  test('does not invent reasoning choices when capabilities are absent', () => {
+    const surface = new RuntimeSurface({
+      sessionId: 'reasoning-session', token: 'tok',
+      resolvedModel: { providerID: 'kortix', modelID: 'plain-model' },
+      reasoningVariants: [],
+    });
+    const config = JSON.parse(callRaw(surface, 'GET', '/config', 'tok').body);
+    expect(config.provider.kortix.models['plain-model'].variants).toEqual({});
+  });
+
   test('publishes one gateway model identity in agent and config state', () => {
     const model = { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4.5' };
     const surface = new RuntimeSurface({
