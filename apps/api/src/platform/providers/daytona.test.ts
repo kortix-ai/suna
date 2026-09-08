@@ -225,6 +225,7 @@ test('runtime bootstrap passes one intact detached command to flock when the por
     expect((await readFile(record, 'utf8')).split('\n')).toEqual([
       '-n',
       '/tmp/kortix-pi-worker.lock',
+      '/bin/sh',
       '-c',
       'setsid /usr/local/bin/pi-worker-entrypoint >>/tmp/kortix-pi-worker.log 2>&1 &',
       '',

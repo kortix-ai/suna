@@ -362,7 +362,7 @@ export class DaytonaProvider implements SandboxProvider {
       'export PORT=${KORTIX_SERVICE_PORT:-8000}',
       `if node -e ${shellQuote(probe)} 2>/dev/null; then`,
       'echo already-listening; exit 0; fi',
-      `flock -n /tmp/kortix-pi-worker.lock -c ${shellQuote(launch)}`,
+      `flock -n /tmp/kortix-pi-worker.lock /bin/sh -c ${shellQuote(launch)}`,
       'launch_status=$?',
       'if [ "$launch_status" -eq 1 ]; then echo lock-held; exit 0; fi',
       'if [ "$launch_status" -ne 0 ]; then exit "$launch_status"; fi',
