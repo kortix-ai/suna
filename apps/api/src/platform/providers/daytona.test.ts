@@ -224,11 +224,43 @@ test('runtime bootstrap passes one intact detached command to flock when the por
     await new DaytonaProvider().ensureSessionRuntimeStarted('sbx_stopped');
     expect((await readFile(record, 'utf8')).split('\n')).toEqual([
       '-n',
-      '/run/kortix-pi-worker.lock',
+      '/tmp/kortix-pi-worker.lock',
       '-c',
-      'setsid /usr/local/bin/pi-worker-entrypoint >>/var/log/kortix-pi-worker.log 2>&1 &',
+      'setsid /usr/local/bin/pi-worker-entrypoint >>/tmp/kortix-pi-worker.log 2>&1 &',
       '',
     ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+test('runtime bootstrap reports a launch failure instead of treating it as lock contention', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'daytona-bootstrap-'));
+  await writeFile(join(root, 'node'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await writeFile(join(root, 'flock'), '#!/bin/sh\necho cannot-create-lock >&2\nexit 73\n', { mode: 0o755 });
+  getDaytonaSandbox = async () => ({
+    process: {
+      executeCommand: async (command: string) => {
+        const child = Bun.spawn(['/bin/sh', '-c', command], {
+          env: { ...process.env, PATH: root + ':' + process.env.PATH },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const [exitCode, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        return { exitCode, result: stdout + stderr };
+      },
+    },
+  });
+  try {
+    const { DaytonaProvider } = await import('./daytona');
+    await expect(new DaytonaProvider().ensureSessionRuntimeStarted('sbx_failed')).rejects.toThrow(
+      'exit 73: cannot-create-lock',
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

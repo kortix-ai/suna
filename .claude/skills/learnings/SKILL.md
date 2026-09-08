@@ -25,7 +25,7 @@ linked, not inlined.
 
 **When:** constructing a runtime restart command for a sandbox provider.
 **Incident:** Pi preview `0f6b0eac05` could not resume the original test session; `sh` rejected the bootstrap argument.
-**Rule:** quote each shell argument with the shared helper. Separate the command from its argument and export the configured probe port.
+**Rule:** quote each shell argument and export the configured probe port. Use runtime-user-writable lock/log paths and report launch errors.
 **Enforcer:** `daytona.test.ts` executes the actual command through `/bin/sh`, checks an existing listener, and captures the detached launch arguments.
 
 ### Verify the event route that the installed client actually opens (2026-09-07)

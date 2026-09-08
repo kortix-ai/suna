@@ -357,12 +357,15 @@ export class DaytonaProvider implements SandboxProvider {
     // uses node (guaranteed present — it is what the worker runs on) rather
     // than curl, which the pi-worker image does not ship.
     const probe = "require('node:net').connect({port:process.env.PORT,host:'127.0.0.1'}).on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))";
-    const launch = 'setsid /usr/local/bin/pi-worker-entrypoint >>/var/log/kortix-pi-worker.log 2>&1 &';
+    const launch = 'setsid /usr/local/bin/pi-worker-entrypoint >>/tmp/kortix-pi-worker.log 2>&1 &';
     const script = [
       'export PORT=${KORTIX_SERVICE_PORT:-8000}',
       `if node -e ${shellQuote(probe)} 2>/dev/null; then`,
       'echo already-listening; exit 0; fi',
-      `flock -n /run/kortix-pi-worker.lock -c ${shellQuote(launch)} || echo lock-held`,
+      `flock -n /tmp/kortix-pi-worker.lock -c ${shellQuote(launch)}`,
+      'launch_status=$?',
+      'if [ "$launch_status" -eq 1 ]; then echo lock-held; exit 0; fi',
+      'if [ "$launch_status" -ne 0 ]; then exit "$launch_status"; fi',
       'echo launched',
     ].join('\n');
     const command = `sh -c ${shellQuote(script)}`;
