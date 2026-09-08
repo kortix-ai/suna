@@ -360,6 +360,7 @@ export class DaytonaProvider implements SandboxProvider {
     const launch = 'setsid /usr/local/bin/pi-worker-entrypoint >>/tmp/kortix-pi-worker.log 2>&1 &';
     const script = [
       'export PORT=${KORTIX_SERVICE_PORT:-8000}',
+      'if [ -n "${KORTIX_PI_RUNTIME_SHA:-}" ]; then export KORTIX_PI_RUNTIME_REF=$KORTIX_PI_RUNTIME_SHA; fi',
       `if node -e ${shellQuote(probe)} 2>/dev/null; then`,
       'echo already-listening; exit 0; fi',
       `flock -n /tmp/kortix-pi-worker.lock /bin/sh -c ${shellQuote(launch)}`,

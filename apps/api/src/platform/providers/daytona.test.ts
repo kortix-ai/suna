@@ -200,13 +200,14 @@ test('runtime bootstrap probes the configured port through the actual shell comm
 test('runtime bootstrap passes one intact detached command to flock when the port is closed', async () => {
   const root = await mkdtemp(join(tmpdir(), 'daytona-bootstrap-'));
   const record = join(root, 'flock-args');
+  const refRecord = join(root, 'runtime-ref');
   await writeFile(join(root, 'node'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-  await writeFile(join(root, 'flock'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$BOOTSTRAP_RECORD"\n', { mode: 0o755 });
+  await writeFile(join(root, 'flock'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$BOOTSTRAP_RECORD"\nprintf "%s" "$KORTIX_PI_RUNTIME_REF" > "$BOOTSTRAP_REF_RECORD"\n', { mode: 0o755 });
   getDaytonaSandbox = async () => ({
     process: {
       executeCommand: async (command: string) => {
         const child = Bun.spawn(['/bin/sh', '-c', command], {
-          env: { ...process.env, PATH: root + ':' + process.env.PATH, BOOTSTRAP_RECORD: record },
+          env: { ...process.env, PATH: root + ':' + process.env.PATH, BOOTSTRAP_RECORD: record, BOOTSTRAP_REF_RECORD: refRecord, KORTIX_PI_RUNTIME_REF: 'main', KORTIX_PI_RUNTIME_SHA: 'a'.repeat(40) },
           stdout: 'pipe',
           stderr: 'pipe',
         });
@@ -222,6 +223,7 @@ test('runtime bootstrap passes one intact detached command to flock when the por
   try {
     const { DaytonaProvider } = await import('./daytona');
     await new DaytonaProvider().ensureSessionRuntimeStarted('sbx_stopped');
+    expect(await readFile(refRecord, 'utf8')).toBe('a'.repeat(40));
     expect((await readFile(record, 'utf8')).split('\n')).toEqual([
       '-n',
       '/tmp/kortix-pi-worker.lock',
