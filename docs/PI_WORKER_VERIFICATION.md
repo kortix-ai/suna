@@ -622,3 +622,37 @@ quality, which stalls in one API test worker after the artifact null-config
 case. A macOS process sample records the worker consuming a CPU core without
 advancing. The complete artifact test file passes 9/9 in isolation. The stalled
 full run is not passing evidence.
+
+## Live reasoning, repeated sends, and current gates — 2026-09-08
+
+Preview deployment [34251633535](https://github.com/kortix-ai/suna/actions/runs/34251633535)
+succeeds. Public API health reports `34e15f9166513a25a8a28913823e803333876583`.
+The isolated fixture uses source `997a1e3091550f55a285acda09957d7fc3f991b5`
+on `codex/pi-reasoning-verification`; the project's main branch is unchanged.
+
+The first repeated SDK send returns 200 without creating a message. The SDK now
+creates a submission key per send and preserves it through authentication retry.
+Its regression test fails before the fix and passes afterward. The complete
+SDK suite passes 2,863 tests. Typecheck and packed-package installation pass.
+
+The rebuilt local SDK then completes eight real calls against that preview.
+A custom `onPayload` hook observes `gpt-5.6-luna` reasoning efforts in order:
+prompt `low`, `high`, `none`, `low`; command `high`, `none`, `max`; prompt `low`.
+Each call creates exactly one user message and one completed inspection tool.
+Unsupported prompt and command variants return 400 and 409 without history changes.
+The real SSE stream contains 256 events, including 136 text deltas.
+The browser displays the matching JSON tool results and completed responses.
+
+Session `195b076a-dfc8-4a80-bb6e-7dcf327b6020` preserves all 33 messages and native
+conversation `ses_pi8bafa25ab6ae6bcb70b06a69` through stop/resume. Its environment
+route returns 404. Cleanup confirms the worker session is stopped. This proves
+the local SDK fix against the deployed worker; the SDK fix still needs deployment.
+
+The latest `pnpm test -- --full` run passes 396/396 REST/CLI flows, the SDK lane,
+672 worker tests, seven bundle/lockdown tests, and 17 browser journeys (two skipped).
+API package tests pass 9,144 with 82 skipped; CLI passes 1,257; daemon passes 1,185.
+The package lane fails the agent-tunnel malformed-credentials test at 5,001.75 ms.
+`pnpm exec bun test packages/agent-tunnel/src/agent/cli-device-auth.test.ts`
+passes both tests with six assertions in 243 ms. The full gate remains red.
+Its total duration is 684.5 seconds; package quality takes 450.2 seconds.
+The prior artifact-test stall does not recur in this run.

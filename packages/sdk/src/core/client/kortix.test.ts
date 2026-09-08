@@ -1098,6 +1098,41 @@ test('Pi sends use compiled defaults and forward explicit per-turn reasoning', a
   ]);
 });
 
+test('separate identical sends carry distinct submission keys and retain authentication', async () => {
+  const submissions: Array<{ key: string | null; authorization: string | null; body: unknown }> = [];
+  let rejectedToken = false;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    if (request.url.includes('/sessions/SESS-REPEAT/start')) {
+      return jsonResponse(sessionStartPayload('sb-repeat', 'ses_repeat'));
+    }
+    if (request.url.endsWith('/projects/PROJ/sessions/SESS-REPEAT')) {
+      return jsonResponse({ session_id: 'SESS-REPEAT', metadata: { sandbox_slug: 'pi-worker' } });
+    }
+    if (request.url.endsWith('/session/ses_repeat/message')) {
+      submissions.push({ key: request.headers.get('idempotency-key'),
+        authorization: request.headers.get('authorization'), body: await request.json() });
+      if (!rejectedToken) {
+        rejectedToken = true;
+        return jsonResponse({ error: 'expired token' }, 401);
+      }
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => rejectedToken ? 'fresh' : 'stale' })
+    .session('PROJ', 'SESS-REPEAT');
+  await handle.send('Run it again.');
+  await handle.send('Run it again.');
+  expect(submissions).toHaveLength(3);
+  expect(submissions[0]!.key).toMatch(/^[a-f0-9-]{36}$/);
+  expect(submissions[1]!.key).toBe(submissions[0]!.key);
+  expect(submissions[2]!.key).toMatch(/^[a-f0-9-]{36}$/);
+  expect(submissions[2]!.key).not.toBe(submissions[0]!.key);
+  expect(submissions.map(item => item.authorization)).toEqual(['Bearer stale', 'Bearer fresh', 'Bearer fresh']);
+  expect(submissions[1]!.body).toEqual(submissions[0]!.body);
+  expect(submissions[2]!.body).toEqual(submissions[0]!.body);
+});
+
 test('a failed persisted-default read is retried by the next send', async () => {
   let sessionReads = 0;
   globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {

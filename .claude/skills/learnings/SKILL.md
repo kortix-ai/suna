@@ -5494,3 +5494,18 @@ completed calls so restarting cannot bypass the repeated-tool approval.
 
 Enforced by `custom-agent-routes.test.ts`, `tool-replay.test.ts`, and the two
 doom-loop recovery journeys in `permission-recovery-routes.test.ts`.
+
+## 2026-09-08 — Distinguish a new SDK send from its transport retries
+
+A live SDK journey sent the same prompt twice intentionally. The proxy returned
+200 for the second send but created no user message. Both calls omitted a
+submission identity, so content-hash deduplication treated them as one request.
+
+Generate one submission key per `session.send()` call. Preserve that key through
+authentication and transport retries. A separate call receives a different key,
+even when its body is identical. Never vary the prompt text to bypass the defect.
+
+Enforced by `packages/sdk/src/core/client/kortix.test.ts`. Two identical sends
+produce distinct keys; an authentication retry preserves the first key and uses
+the refreshed token. The live reasoning journey repeats its original prompt and
+asserts one new user message per call.

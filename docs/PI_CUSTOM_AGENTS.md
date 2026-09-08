@@ -102,7 +102,10 @@ The Markdown default takes precedence over a source module's `thinkingLevel`.
 An explicit HTTP prompt or SDK `send` variant applies only to that prompt.
 The worker stores this choice before acknowledgment and restores the default
 after the prompt. Question recovery preserves the stored choice.
-Command overrides and React composer reasoning controls remain gated.
+Commands accept a supported request variant. Otherwise, they use the compiled
+command variant, then the agent default. SDK prompt and command paths preserve
+this choice. React composer reasoning controls remain gated until the worker
+projects its supported capabilities to the host.
 
 ## Custom source
 

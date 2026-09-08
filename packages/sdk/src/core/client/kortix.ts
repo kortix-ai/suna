@@ -1289,6 +1289,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * compiled defaults. A reasoning variant applies only to this prompt.
        */
       send: async (text: string, opts?: { model?: SessionModel; agent?: string; variant?: string }) => {
+        const submissionKey = crypto.randomUUID();
         const { opencodeSessionId, runtimeUrl } = await ensureReady();
         const selectedModel = opts?.model ?? _model;
         const selectedAgent = opts?.agent ?? _agent;
@@ -1301,7 +1302,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           ...(model ? { model } : {}),
           ...(agent ? { agent } : {}),
           ...(opts?.variant === undefined ? {} : { variant: opts.variant }),
-        });
+        }, { headers: { 'Idempotency-Key': submissionKey } });
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
