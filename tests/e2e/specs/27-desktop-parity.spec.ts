@@ -362,6 +362,45 @@ for (const runtime of runtimes) {
             page.getByRole("menuitem", { name: /^Settings/ }),
           ).toBeVisible();
           await page.keyboard.press("Escape");
+          // Full document navigation also stays in the explicitly configured
+          // frontend. SPA routing alone does not exercise Electron's gate.
+          await page.evaluate(
+            (url) => window.location.assign(url),
+            `${baseURL}/projects/${project.id}/customize/connectors`,
+          );
+          await expect(page).toHaveURL(/\/customize\/connectors/);
+          await expect(
+            page.getByRole("tab", { name: "Connected", exact: true }),
+          ).toBeVisible();
+          const denied = await desktopApp.evaluate(
+            async ({ BrowserWindow }, options) => {
+              const other = new BrowserWindow({
+                show: false,
+                webPreferences: {
+                  contextIsolation: true,
+                  preload: options.preload,
+                },
+              });
+              try {
+                await other.webContents.loadURL(options.url);
+                return await other.webContents.executeJavaScript(
+                  "window.__TAURI__.core.invoke('get_frontend_url').then(() => 'allowed', error => error.message)",
+                );
+              } finally {
+                other.destroy();
+              }
+            },
+            {
+              url: `${baseURL}/favicon.png`,
+              preload: fileURLToPath(
+                new URL(
+                  "../../../apps/desktop-electron/src/preload.js",
+                  import.meta.url,
+                ),
+              ),
+            },
+          );
+          expect(denied).toContain("Unauthorized IPC sender");
         }
       } finally {
         await project?.dispose();

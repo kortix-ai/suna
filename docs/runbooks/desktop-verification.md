@@ -24,6 +24,9 @@ change the user's signed-in profile.
 The journey covers the workspace selector, settings navigation, agent section
 navigation, and connector filters. It asserts rendered row geometry, titlebar
 clearance, selected state, route changes, and a successful connector request.
+Native mode checks zoom, full document navigation, and rejection of native
+commands from a second window. The configured frontend origin owns the native
+bridge; embedded content and other windows must not inherit that permission.
 Screenshots and failures appear under `tests/test-results/artifacts`.
 
 ## Verify the changed surface

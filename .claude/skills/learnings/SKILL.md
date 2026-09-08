@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Bind native commands to the configured frontend and its main frame (2026-09-08)
+
+**When:** changing desktop frontend selection, navigation, or native commands.
+Trust the configured frontend's exact HTTP(S) origin and the main window's
+main frame. Do not substitute a hostname suffix or inherit another frame's URL.
+*Incident:* the desktop preview rendered every pane, but its zoom stayed at 1
+because the native bridge rejected the selected preview origin.
+*Enforcers:* `native-sender.test.js` and native `27-desktop-parity.spec.ts` cover
+configured origins, stale origins, missing/child frames, and other windows.
+
 ### Scope desktop titlebar rules to native chrome (2026-09-08)
 
 **When:** editing shared navigation, tabs, sidebars, or fullscreen overlays.

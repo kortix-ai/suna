@@ -29,6 +29,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 const basicAuth = require('./basic-auth');
+const { isConfiguredAppUrl, isTrustedAppSender } = require('./native-sender');
 const {
   DESKTOP_CHROME_JS,
   configureNativeWindowControls,
@@ -246,7 +247,10 @@ function shouldLoadInApp(urlStr) {
   if (u.pathname.startsWith('/auth/v1/')) return false;
   const host = u.hostname;
   if (isPreviewHost(host)) return true;
-  if (isMainAppHost(host) && isAppPath(u.pathname)) return true;
+  if (
+    (isMainAppHost(host) || isConfiguredAppUrl(urlStr, resolveAppUrl())) &&
+    isAppPath(u.pathname)
+  ) return true;
   return false;
 }
 
@@ -841,14 +845,12 @@ function buildMenu() {
 // (agent- or attacker-rendered). Only the Kortix app shell may drive privileged
 // commands; otherwise a preview page could call e.g. set_frontend_url to
 // permanently repoint the whole desktop app at an attacker origin. Derive the
-// SENDER's current origin and require it be a main-app host.
+// sender's current origin from the configured frontend URL. Custom frontends
+// need the same bridge as kortix.com. Only the main frame of the main window
+// may call it; embedded previews and other windows do not inherit that trust.
 function isTrustedSender(event) {
   try {
-    const url =
-      event.senderFrame?.url ||
-      BrowserWindow.fromWebContents(event.sender)?.webContents?.getURL() ||
-      '';
-    return isMainAppHost(new URL(url).hostname);
+    return isTrustedAppSender(event, mainWindow?.webContents, resolveAppUrl());
   } catch {
     return false;
   }

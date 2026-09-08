@@ -1010,3 +1010,7 @@ At 720 × 480, the sidebar opener must remain reachable and open the workspace
 selector. The Settings capability tab must scroll into view and load its route.
 Native zoom-in and reset shortcuts must change and restore the zoom factor;
 the workspace selector must remain clickable afterward.
+Native commands trust only the configured frontend origin in the main window's
+main frame. A second window at that same origin must receive an unauthorized
+sender error. Full document navigation within the configured frontend stays in
+the app, including when the frontend uses a custom host.
