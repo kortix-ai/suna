@@ -972,6 +972,9 @@
     "PermissionV2Rule",
     "PermissionV2Ruleset",
     "PermissionV2Source",
+    "PiAgentContext",
+    "PiAgentDefinition",
+    "PiAgentFactory",
     "PipedreamApp",
     "PipedreamCatalogPage",
     "PipedreamCatalogQuery",
@@ -2440,6 +2443,7 @@
     "createTunnelEventStream",
     "declineAccountInvite",
     "declineInvite",
+    "definePiAgent",
     "deleteAccountImmediately",
     "deleteApp",
     "deleteAuditWebhook",
@@ -3800,6 +3804,7 @@
     "useSendOpenCodeMessage",
     "useSession",
     "useSessionModelSelection",
+    "useSessionPermissionMode",
     "useSessionPicks",
     "useSessionPrompts",
     "useSessionSend",
@@ -3896,6 +3901,12 @@
     "readAppViewer",
     "runWithKortix",
     "safeReturnTo"
+  ],
+  "./pi": [
+    "PiAgentContext",
+    "PiAgentDefinition",
+    "PiAgentFactory",
+    "definePiAgent"
   ],
   "./internal/sync-store": [
     "Binary",

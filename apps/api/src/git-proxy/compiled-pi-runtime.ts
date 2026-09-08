@@ -20,6 +20,7 @@
  * apps/kortix-worker/src/main.ts reads before starting).
  */
 import { createHash } from 'node:crypto';
+import type { PiAgentModule } from './pi-agent-module';
 import type { CompiledPiCommand } from '../projects/lib/compile-pi-commands';
 import type { CompiledPiSkill } from '../projects/lib/compile-pi-skills';
 
@@ -40,6 +41,7 @@ export interface CompiledPiRuntimeManifest {
   command_config_etag: string | null;
   skill_config: string | null;
   skill_config_etag: string | null;
+  agent_module?: { entry: string; sha256: string; dependency_lock_sha256?: string };
 }
 
 export interface CompiledPiRuntimeArtifact {
@@ -64,6 +66,7 @@ export interface CompilePiRuntimeInput {
   defaultAgent?: string | null;
   /** The generic worker runtime bundle (pi-worker-bundle.ts). */
   workerBundle: string;
+  agentModule?: PiAgentModule | null;
 }
 
 function validateInput(input: CompilePiRuntimeInput): void {
@@ -81,7 +84,7 @@ function etag(value: string | null): string | null {
   return createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
-function runtimeSource(manifest: CompiledPiRuntimeManifest, workerBundle: string): string {
+function runtimeSource(manifest: CompiledPiRuntimeManifest, workerBundle: string, agentModule?: PiAgentModule | null): string {
   const encodedManifest = Buffer.from(JSON.stringify(manifest)).toString('base64url');
   return `#!/usr/bin/env node
 // kortix-manifest-base64url:${encodedManifest}
@@ -119,6 +122,11 @@ globalThis.__KORTIX_COMPILED__ = {
   skills: manifest.skill_config ? JSON.parse(manifest.skill_config) : [],
 };
 
+${agentModule ? `import { createRequire as __kortixPiModuleRequire } from "node:module";
+(function(require, module, exports) {
+${agentModule.source}
+})(__kortixPiModuleRequire(import.meta.url), { exports: {} }, {});` : ''}
+
 ${workerBundle}
 `;
 }
@@ -141,8 +149,13 @@ export function compilePiRuntime(input: CompilePiRuntimeInput): CompiledPiRuntim
     command_config_etag: etag(commandConfig),
     skill_config: skillConfig,
     skill_config_etag: etag(skillConfig),
+    ...(input.agentModule ? { agent_module: {
+      entry: input.agentModule.entry,
+      sha256: input.agentModule.sha256,
+      ...(input.agentModule.dependencyLockSha256 ? { dependency_lock_sha256: input.agentModule.dependencyLockSha256 } : {}),
+    }} : {}),
   };
-  const source = runtimeSource(manifest, input.workerBundle);
+  const source = runtimeSource(manifest, input.workerBundle, input.agentModule);
   return {
     source,
     sha256: createHash('sha256').update(source).digest('hex'),

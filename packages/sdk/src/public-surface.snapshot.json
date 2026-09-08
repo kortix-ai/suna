@@ -170,6 +170,7 @@
     "createTunnelEventStream",
     "declineAccountInvite",
     "declineInvite",
+    "definePiAgent",
     "deleteAccountImmediately",
     "deleteApp",
     "deleteAuditWebhook",
@@ -1286,6 +1287,7 @@
     "useSendOpenCodeMessage",
     "useSession",
     "useSessionModelSelection",
+    "useSessionPermissionMode",
     "useSessionPicks",
     "useSessionPrompts",
     "useSessionSend",
@@ -1367,6 +1369,9 @@
     "readAppViewer",
     "runWithKortix",
     "safeReturnTo"
+  ],
+  "./pi": [
+    "definePiAgent"
   ],
   "./internal/sync-store": [
     "Binary",

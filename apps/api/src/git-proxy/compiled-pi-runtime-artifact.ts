@@ -1,5 +1,4 @@
-import { resolveCompiledPiCommandsForSession } from "../projects/lib/compile-pi-commands";
-import { resolveCompiledPiSkillsForSession, filterPiSkillsForPermission, type PiSkillPermissionConfig } from "../projects/lib/compile-pi-skills";
+import { resolvePiAgentModule } from "./resolve-pi-agent-module";
 /**
  * Build-and-cache for compiled pi runtime artifacts — the `engine: 'pi'`
  * sibling of ./compiled-runtime-artifact.ts, sharing its shape deliberately:
@@ -16,7 +15,17 @@ import { createHash } from "node:crypto";
 import { manifestCandidatePaths, parseManifestText } from "@kortix/manifest-schema";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveCompiledAgentConfigForSession } from "../projects/lib/compile-agent-config";
+import {
+  OpencodeAgentConfigSchema,
+  resolveCompiledAgentConfigForSession,
+  resolveSelectedAgentConfigForSession,
+} from "../projects/lib/compile-agent-config";
+import { resolveCompiledPiCommandsForSession } from "../projects/lib/compile-pi-commands";
+import {
+  filterPiSkillsForPermission,
+  type PiSkillPermissionConfig,
+  resolveCompiledPiSkillsForSession,
+} from "../projects/lib/compile-pi-skills";
 import { validateRef, validateSha } from "../projects/git-ref";
 import { refreshMirror, runGit, runGitCapture } from "../projects/git/mirror";
 import type { GitBackedProject } from "../projects/git/types";
@@ -55,6 +64,7 @@ interface CachedPiRuntimeMetadata {
 
 const builds = new Map<string, Promise<StoredCompiledPiRuntimeArtifact>>();
 const MANIFEST_MARKER = "// kortix-manifest-base64url:";
+const ARTIFACT_KEY_VERSION = "custom-pi-agent-v1";
 
 export class CompiledPiRuntimeSourceMovedError extends Error {
   constructor(expectedSha: string, actualSha: string) {
@@ -76,7 +86,7 @@ function artifactKey(
 ): string {
   return createHash("sha256")
     .update(
-      `${COMPILED_PI_RUNTIME_FORMAT}\0${projectId}\0${ref}\0${sourceSha}\0${workerBundleSha256}\0${agentName}`,
+      `${COMPILED_PI_RUNTIME_FORMAT}\0${ARTIFACT_KEY_VERSION}\0${projectId}\0${ref}\0${sourceSha}\0${workerBundleSha256}\0${agentName}`,
     )
     .digest("hex");
 }
@@ -95,6 +105,37 @@ function readEmbeddedManifest(source: Buffer): CompiledPiRuntimeManifest | null 
     ) as CompiledPiRuntimeManifest;
   } catch {
     return null;
+  }
+}
+
+function isValidCompiledPiAgent(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const { disable, ...config } = value as Record<string, unknown>;
+  if (disable !== undefined && typeof disable !== "boolean") return false;
+  return OpencodeAgentConfigSchema.safeParse(config).success;
+}
+
+function hasSelectedAgentConfig(
+  manifest: CompiledPiRuntimeManifest,
+  requestedAgentName: string,
+): boolean {
+  const selectedAgentName = requestedAgentName || manifest.default_agent || "";
+  if (
+    !selectedAgentName ||
+    manifest.default_agent !== selectedAgentName ||
+    !manifest.agent_config
+  ) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(manifest.agent_config) as {
+      agent?: Record<string, unknown>;
+    };
+    if (!parsed.agent || Object.keys(parsed.agent).length !== 1) return false;
+    const selectedAgent = parsed.agent[selectedAgentName];
+    return isValidCompiledPiAgent(selectedAgent);
+  } catch {
+    return false;
   }
 }
 
@@ -167,6 +208,7 @@ async function readCachedArtifact(
       metadata.size !== runtime.size ||
       metadata.sha256 !== sha256 ||
       JSON.stringify(embeddedManifest) !== JSON.stringify(metadata.manifest) ||
+      !hasSelectedAgentConfig(metadata.manifest, agentName) ||
       runtime.size <= 0
     ) {
       return null;
@@ -203,6 +245,14 @@ async function hydrateFromStore(
 ): Promise<StoredCompiledPiRuntimeArtifact | null> {
   const digest = createHash("sha256").update(record.content).digest("hex");
   if (digest !== record.sha256 || record.content.byteLength !== record.size) return null;
+  const manifest = record.manifest as unknown as CompiledPiRuntimeManifest;
+  const embeddedManifest = readEmbeddedManifest(record.content);
+  if (
+    JSON.stringify(embeddedManifest) !== JSON.stringify(manifest) ||
+    !hasSelectedAgentConfig(manifest, key.agentName)
+  ) {
+    return null;
+  }
   const staged = `${runtimePath}.${crypto.randomUUID()}.tmp`;
   try {
     await mkdir(cacheRoot(), { recursive: true });
@@ -217,7 +267,7 @@ async function hydrateFromStore(
       agentName: key.agentName,
       sha256: record.sha256,
       size: record.size,
-      manifest: record.manifest as unknown as CompiledPiRuntimeManifest,
+      manifest,
     };
     await writeFile(metadataPath, `${JSON.stringify(metadata)}\n`, { mode: 0o600 });
     return {
@@ -247,44 +297,44 @@ async function compileArtifact(
   artifactKey: string,
 ): Promise<StoredCompiledPiRuntimeArtifact> {
   const mirror = await assertExactSource(project, ref, sourceSha);
-  const resolved = await resolveCompiledAgentConfigForSession(project, sourceSha);
-  const projectDefaultAgent = await resolveDefaultAgentAtSha(mirror, project, sourceSha);
-  // ONE artifact, ONE agent. The bundle used to carry the whole agent map and
-  // pick at boot, so every worker parsed every agent's prompt to use one of
-  // them, and "which agent is this box running?" was answered by an env var
-  // rather than by the artifact. Narrow to the requested agent (falling back to
-  // the project default) and let the cache key carry it.
-  // `resolveCompiledAgentConfigForSession` hands back the SERIALIZED config, so
-  // narrowing means parse -> pick -> re-serialize. A config we cannot parse is
-  // passed through untouched: a bundle carrying too much still boots, one that
-  // fails to compile does not.
+  const projectDefaultAgent = await resolveDefaultAgentAtSha(
+    mirror,
+    project,
+    sourceSha,
+  );
   const baked = agentName || projectDefaultAgent || "";
-  let agentConfig = resolved;
-  if (baked && resolved) {
-    try {
-      const parsed = JSON.parse(resolved) as { agent?: Record<string, unknown> };
-      const one = parsed?.agent?.[baked];
-      if (one) agentConfig = JSON.stringify({ ...parsed, agent: { [baked]: one } });
-    } catch {
-      // keep the full config
-    }
+  if (!baked) {
+    throw new Error("Pi runtime artifact requires a selected agent.");
   }
-  const defaultAgent = baked || projectDefaultAgent;
-  const [commands, discoveredSkills] = await Promise.all([
+  const [agentConfig, commands, discoveredSkills] = await Promise.all([
+    resolveSelectedAgentConfigForSession(project, baked, sourceSha),
     resolveCompiledPiCommandsForSession(project, sourceSha),
     resolveCompiledPiSkillsForSession(project, sourceSha),
   ]);
-  const selectedConfig = agentConfig ? JSON.parse(agentConfig) as { agent?: Record<string, { permission?: PiSkillPermissionConfig }> } : {};
-  const skills = filterPiSkillsForPermission(discoveredSkills, selectedConfig.agent?.[defaultAgent ?? '']?.permission);
+  const parsedAgentConfig = JSON.parse(agentConfig) as {
+    agent?: Record<string, unknown>;
+  };
+  const selectedAgent = parsedAgentConfig.agent?.[baked];
+  if (!isValidCompiledPiAgent(selectedAgent)) {
+    throw new Error(
+      `Pi runtime artifact has no compiled config for selected agent "${baked}".`,
+    );
+  }
+  const skillPermission = (
+    selectedAgent as { permission?: PiSkillPermissionConfig }
+  ).permission;
+  const skills = filterPiSkillsForPermission(discoveredSkills, skillPermission);
+  const agentModule = await resolvePiAgentModule(project, sourceSha, baked);
   const artifact = compilePiRuntime({
     projectId: project.projectId,
     ref,
     sourceSha,
     agentConfig,
+    defaultAgent: baked,
     commands,
     skills,
-    defaultAgent,
     workerBundle: workerBundle.source,
+    agentModule,
   });
   const stagedPath = `${runtimePath}.${crypto.randomUUID()}.tmp`;
   try {

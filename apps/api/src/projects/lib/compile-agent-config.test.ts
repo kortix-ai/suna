@@ -14,6 +14,7 @@ let readRepoFileCalls: string[] = [];
 // DEFAULT branch even for a session on another ref, so a feature-branch session
 // ran main's agents; recording the ref is what makes that visible.
 let refsRead: string[] = [];
+let manifestReadError: Error | null = null;
 // Paths the mocked git should fail on with a NON-not-found error, so the
 // transient-failure branch is reachable through the same seam as the fixtures.
 let transientFailurePaths = new Set<string>();
@@ -32,6 +33,7 @@ let transientFailurePaths = new Set<string>();
 mock.module('../git', () => ({
   readManifestFromRepo: async (_project: unknown, _candidates: unknown, ref: string) => {
     refsRead.push(ref);
+    if (manifestReadError) throw manifestReadError;
     return manifestFile;
   },
   readRepoFile: async (_project: unknown, path: string, ref: string) => {
@@ -64,6 +66,7 @@ const {
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
   resolveManifestRuntime,
+  resolveManifestRuntimeForPiSession,
 } = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -646,6 +649,49 @@ describe('resolveManifestRuntime — the version decides when the manifest does 
   });
 });
 
+describe('resolveManifestRuntimeForPiSession', () => {
+  test('preserves missing manifests and v1 manifests as deliberate OpenCode compatibility', async () => {
+    manifestFile = null;
+    expect(await resolveManifestRuntimeForPiSession(PROJECT)).toBeNull();
+
+    manifestFile = { path: 'kortix.toml', content: V1_FIXTURE_TOML };
+    expect(await resolveManifestRuntimeForPiSession(PROJECT)).toBeNull();
+  });
+
+  test('throws on an invalid explicit runtime', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: 'kortix_version: 3\nruntime: [invalid]\nagents:\n  support: {}\n',
+    };
+
+    await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+      'Manifest runtime must be "pi" or "opencode".',
+    );
+  });
+
+  test('throws when an existing manifest has no valid schema version', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: 'runtime: pi\nagents:\n  support: {}\n',
+    };
+
+    await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+      'Manifest must declare a valid kortix_version.',
+    );
+  });
+
+  test('propagates manifest read failures', async () => {
+    manifestReadError = new Error('git backend unavailable');
+    try {
+      await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+        'git backend unavailable',
+      );
+    } finally {
+      manifestReadError = null;
+    }
+  });
+});
+
 describe('resolveCompiledAgentConfigForSession — the ref it compiles from', () => {
   test("compiles from the SESSION's ref, not the project default", async () => {
     // The bug this covers: a session started on a feature branch compiled main's
@@ -780,6 +826,18 @@ describe('resolveSelectedAgentConfigForSession', () => {
     await expect(
       resolveSelectedAgentConfigForSession(PROJECT, 'missing', 'main'),
     ).rejects.toThrow('not declared');
+  });
+
+  test('fails closed when the selected governance block is malformed', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content:
+        'kortix_version: 3\ndefault_agent: support\nagents:\n  support: not-an-object\n',
+    };
+
+    await expect(resolveSelectedAgentConfigForSession(PROJECT, 'support')).rejects.toThrow(
+      'agents.support: must be a table/object.',
+    );
   });
 });
 

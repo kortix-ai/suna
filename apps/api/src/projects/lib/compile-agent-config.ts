@@ -41,6 +41,7 @@ import {
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
+  validateManifest,
   validateAgentMdFrontmatter,
   type AgentBlockV2,
   type GrantSetV2,
@@ -478,32 +479,43 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
   return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
 }
 
+/** Resolve a session runtime while preserving only deliberate legacy absence. */
+export async function resolveManifestRuntimeForPiSession(
+  project: GitBackedProject,
+  baseRef?: string | null,
+): Promise<RuntimeV2 | null> {
+  const ref = baseRef?.trim() || project.defaultBranch;
+  const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
+  const found = await readManifestFromRepo(project, candidates, ref);
+  if (!found) return null;
+  const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
+  const version = manifestSchemaVersion(raw);
+  if (version === 1) return null;
+  if (!Number.isInteger(version) || version < 2) {
+    throw new CompileAgentConfigError('Manifest must declare a valid kortix_version.');
+  }
+  const runtime = (raw as Record<string, unknown>).runtime;
+  if (runtime === 'pi') return 'pi';
+  if (runtime === 'opencode') return 'opencode';
+  if (runtime !== undefined && runtime !== null) {
+    throw new CompileAgentConfigError('Manifest runtime must be "pi" or "opencode".');
+  }
+  return manifestDefaultRuntime(version);
+}
+
 /**
  * The manifest's declared session runtime at a ref: 'pi' | 'opencode' | null.
  *
- * Null means "could not tell" (no manifest, not v2, read/parse failure) and
- * always falls back to the OpenCode path — the same fail-open-to-legacy
- * posture as resolveCompiledAgentConfigForSession below. Only an explicit,
- * well-formed `runtime: pi` can move a session onto the worker.
+ * This compatibility resolver keeps the historical tolerant contract. Session
+ * creation for a Pi-enabled project uses `resolveManifestRuntimeForPiSession`
+ * so Git, parse, and invalid-runtime failures cannot silently select OpenCode.
  */
 export async function resolveManifestRuntime(
   project: GitBackedProject,
   baseRef?: string | null,
 ): Promise<RuntimeV2 | null> {
-  const ref = baseRef?.trim() || project.defaultBranch;
   try {
-    const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref);
-    if (!found) return null;
-    const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    if (!manifestUsesAgentMap(manifestSchemaVersion(raw))) return null;
-    // An explicit `runtime:` always wins; otherwise the VERSION decides, which
-    // is the whole point of v3 — a pi project should not have to restate `pi`
-    // in a file whose version already says so.
-    const runtime = (raw as Record<string, unknown>).runtime;
-    if (runtime === 'pi') return 'pi';
-    if (runtime === 'opencode') return 'opencode';
-    return manifestDefaultRuntime(manifestSchemaVersion(raw));
+    return await resolveManifestRuntimeForPiSession(project, baseRef);
   } catch {
     return null;
   }
@@ -600,6 +612,31 @@ export async function resolveSelectedAgentConfigForSession(
       `Project ${project.projectId} must use kortix_version 2 or later for selected-agent compilation.`,
       agentName,
     );
+  }
+
+  const manifest = raw as unknown as ManifestV2;
+  const rawAgents =
+    manifest.agents && typeof manifest.agents === 'object' && !Array.isArray(manifest.agents)
+      ? manifest.agents
+      : {};
+  if (Object.hasOwn(rawAgents, agentName)) {
+    const selectedValidation = validateManifest(
+      {
+        kortix_version: manifestSchemaVersion(raw),
+        default_agent: agentName,
+        agents: { [agentName]: rawAgents[agentName] ?? {} },
+      },
+      format,
+    );
+    const errors = selectedValidation.issues.filter((issue) => issue.severity === 'error');
+    if (errors.length > 0) {
+      throw new CompileAgentConfigError(
+        `Agent "${agentName}" has invalid governance: ${errors
+          .map((issue) => `${issue.path}: ${issue.message}`)
+          .join('; ')}`,
+        agentName,
+      );
+    }
   }
 
   const path = agentMarkdownPath(raw, agentName);

@@ -287,3 +287,14 @@ that proof as skipped.
 
 Provenance: graduated from `spikes/pi-worker` (PR #6924), where the Phase 0
 gates S0.1–S0.5 and the Daytona benchmarks live.
+
+
+## Project Pi source
+
+A selected agent can provide a `.ts`, `.js`, or `.mjs` factory beside its Markdown.
+The API compiles it and locked JavaScript dependencies into the worker artifact.
+`installCustomAgent` registers native Pi tools and hooks before platform permission
+and step guards. The worker remains the sole Pi process.
+
+See [Custom Pi agents](../../docs/PI_CUSTOM_AGENTS.md) for supported fields, authoring
+examples, callback deadlines, Stop, shutdown, and recovery semantics.

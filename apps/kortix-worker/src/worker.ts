@@ -1,3 +1,4 @@
+import { installCustomAgent } from './custom-agent.ts';
 import { applyGenerationSettings } from './generation-settings.ts';
 import { applyAgentSteps } from './agent-steps.ts';
 import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
@@ -1011,6 +1012,12 @@ export async function buildHarness(cfg: WorkerConfig) {
     } as any,
   });
 
+  const customAgent = await installCustomAgent(agent, env as unknown as ExecutionEnv, {
+    agentName: process.env.KORTIX_AGENT ?? ((globalThis as any).__KORTIX_COMPILED__?.manifest?.default_agent ?? 'build'),
+    sessionId: cfg.sessionId ?? 'session-local',
+    sourceSha: process.env.KORTIX_BASE_SHA ?? '',
+  }, (globalThis as any).__KORTIX_PI_AGENT__);
+
   let replayEventHandler: ((event: any) => void) | null = null;
   const setToolReplayEventHandler = (handler: typeof replayEventHandler) => {
     replayEventHandler = handler;
@@ -1130,6 +1137,7 @@ export async function buildHarness(cfg: WorkerConfig) {
   // exist at runtime — every turn answered `lazy is not defined`.
   return {
     agent,
+    customAgent,
     env,
     lazy,
     faux,
@@ -1170,6 +1178,7 @@ let LISTEN_MS: number | null = null;
 export async function startWorker(cfg = configFromEnv()) {
   const {
     agent,
+    customAgent,
     env,
     lazy,
     faux,
@@ -2794,12 +2803,16 @@ export async function startWorker(cfg = configFromEnv()) {
     env,
     faux,
     port,
-    close: () => {
+    close: async () => {
       closing = true;
       for (const timer of admissionRetries.values()) clearTimeout(timer);
       admissionRetries.clear();
       relayDrain.close();
-      return new Promise<void>((r) => server.close(() => r()));
+      try {
+        await customAgent.close();
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
     },
   };
 }

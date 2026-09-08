@@ -48,12 +48,15 @@ describe('one artifact, one agent', () => {
     expect(source).toContain('(metadata.agentName ?? "") !== agentName');
   });
 
-  test('the bake narrows the agent map to exactly one entry', async () => {
+  test('the bake resolves exactly one selected agent through the fatal resolver', async () => {
     const source = await artifactSource();
-    const fn = source.slice(source.indexOf('async function compileArtifact'));
-    expect(fn).toContain('agent: { [baked]: one }');
-    // A config that cannot be parsed must still produce a bootable bundle.
-    expect(fn).toContain('// keep the full config');
+    const fn = source.slice(
+      source.indexOf('async function compileArtifact'),
+      source.indexOf('export async function resolvePiDefaultAgentName'),
+    );
+    expect(fn).toContain('resolveSelectedAgentConfigForSession(project, baked, sourceSha)');
+    expect(fn).not.toContain('resolveCompiledAgentConfigForSession(project, sourceSha)');
+    expect(fn).toContain('Pi runtime artifact requires a selected agent.');
   });
 
   test('the prebuild bakes the default agent BY NAME, or it warms nothing', async () => {

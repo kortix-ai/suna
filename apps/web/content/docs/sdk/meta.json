@@ -6,6 +6,7 @@
     "auth",
     "sign-in",
     "sessions",
+    "pi",
     "filesystems",
     "apps",
     "react",

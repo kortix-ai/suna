@@ -113,6 +113,7 @@ Three others exist, each for a reason that fits in one sentence:
 | ------------------------ | --------------------------- |
 | `@kortix/sdk/react`      | React is a peer dependency  |
 | `@kortix/sdk/server`     | imports `node:async_hooks`  |
+| `@kortix/sdk/pi` | `definePiAgent` and native Pi custom-agent types for the Pi worker preview | Compiles project hooks and tools without importing the backend client |
 | `@kortix/sdk/internal/*` | unsupported, outside semver |
 
 Install the optional peers before you use the React entry:
@@ -529,15 +530,16 @@ provider, resolved model, HTTP status, code, and bounded message.
 
 ## Entry points
 
-**There are three, plus one internal.** Everything framework-free lives at the
-root; the other two exist because each carries a dependency the root cannot.
-That is the whole map — learn it once.
+The root exports framework-free capabilities. React and server adapters have
+separate entry points. The Pi authoring entry point keeps compiled agent imports
+small.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
+| `@kortix/sdk/pi` | `definePiAgent` and native Pi custom-agent types for the Pi worker preview | Compiles project hooks and tools without importing the backend client |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
 
 The root really is canonical, and that is a test rather than a promise:
@@ -690,3 +692,21 @@ per-release changes.
 compiled `config.model` for the displayed model and context window. Account and
 persisted model preferences do not override this immutable runtime identity.
 Omitting `runtime` retains OpenCode selection behavior.
+
+
+## Custom Pi agents (preview)
+
+`@kortix/sdk/pi` exports `definePiAgent`, `PiAgentFactory`, `PiAgentDefinition`,
+and `PiAgentContext`. The root exports these names too. This authoring API targets
+Pi-enabled worker sessions. It does not replace the session client or load Pi CLI
+TUI extensions.
+
+Store the default factory in `.kortix/pi/agents/<name>.ts` beside its Markdown
+prompt. Kortix compiles it at the session's Git SHA. Native Pi tools and hooks run
+in the worker. Use `context.env` for workspace files and commands in the remote
+execution environment.
+
+See [the configuration and lifecycle contract](../../docs/PI_CUSTOM_AGENTS.md),
+[reviewer example](examples/12-pi-reviewer.ts), and
+[operator example](examples/13-pi-operator.ts). The examples are typechecked by
+`pnpm --filter @kortix/sdk typecheck`.

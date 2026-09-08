@@ -32,12 +32,7 @@ interface CompiledPayload {
     model?: string;
     agent?: Record<
       string,
-      {
-        prompt?: string;
-        model?: string;
-        description?: string;
-        permission?: PermissionConfig;
-      }
+      { prompt?: string; model?: string; description?: string; permission?: PermissionConfig }
     >;
   } | null;
   commands?: PiCommand[];
@@ -46,8 +41,7 @@ interface CompiledPayload {
 
 function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
   const compiled = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
-    | CompiledPayload
-    | undefined;
+    CompiledPayload | undefined;
   if (!compiled) return cfg;
 
   const agents = compiled.agentConfig?.agent ?? {};
@@ -93,8 +87,7 @@ function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
 }
 
 const compiled = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
-  | CompiledPayload
-  | undefined;
+  CompiledPayload | undefined;
 console.log(
   JSON.stringify({
     msg: 'kortix-worker starting',
@@ -108,7 +101,30 @@ console.log(
   }),
 );
 
-startWorker(bakedOverlay(configFromEnv())).catch((err) => {
-  console.error(JSON.stringify({ msg: 'kortix-worker fatal', error: String(err?.message ?? err) }));
-  process.exit(1);
-});
+startWorker(bakedOverlay(configFromEnv()))
+  .then((worker) => {
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      const deadline = setTimeout(() => process.exit(1), 35000);
+      deadline.unref();
+      void worker.close().then(
+        () => process.exit(0),
+        (error) => {
+          console.error(
+            JSON.stringify({ msg: 'kortix-worker shutdown failed', error: String(error) }),
+          );
+          process.exit(1);
+        },
+      );
+    };
+    process.once('SIGTERM', stop);
+    process.once('SIGINT', stop);
+  })
+  .catch((err) => {
+    console.error(
+      JSON.stringify({ msg: 'kortix-worker fatal', error: String(err?.message ?? err) }),
+    );
+    process.exit(1);
+  });

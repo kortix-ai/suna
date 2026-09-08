@@ -212,6 +212,9 @@ importers:
       e2b:
         specifier: 2.37.0
         version: 2.37.0(patch_hash=yvfhnsbredtxqzv5fhmwxaetam)
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
       hono:
         specifier: 4.12.34
         version: 4.12.34
@@ -1571,6 +1574,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@earendil-works/pi-agent-core':
+        specifier: 0.84.3
+        version: 0.84.3(ws@8.21.3)(zod@3.25.76)
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../llm-catalog
@@ -6245,7 +6251,6 @@ packages:
     resolution: {integrity: sha512-VouYbL8O2ynLq0atr5fjzCv8YLtFi/zKLQ/uYkCvTJ4CmUdA01XwPn8om+u3TvxnGEfQsBfmThGU141vt3sg5w==}
     dependencies:
       cross-spawn: 7.0.6
-    dev: false
 
   /@opentelemetry/api-logs@0.214.0:
     resolution: {integrity: sha512-40lSJeqYO8Uz2Yj7u94/SJWE/wONa7rmMKjI1ZcIjgf3MHNHv1OZUCrCETGuaRF62d5pQD1wKIW+L4lmSMTzZA==}

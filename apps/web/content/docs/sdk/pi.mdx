@@ -1,0 +1,61 @@
+---
+title: Custom Pi agents
+description: Configure prompts, native Pi hooks, and custom tools for Pi worker sessions.
+---
+
+The Pi worker preview supports project-specific source. Each agent joins three
+files: its entry in `kortix.yaml`, its Markdown prompt, and an optional TypeScript
+factory. Commit the source and start a session from that Git commit.
+
+```yaml
+kortix_version: 3
+runtime: pi
+default_agent: reviewer
+agents:
+  reviewer:
+    connectors: none
+    secrets: none
+    skills: none
+```
+
+Create `.kortix/pi/agents/reviewer.md` with the agent prompt and optional `model`,
+`temperature`, `top_p`, `steps`, and `permission` frontmatter. Create
+`.kortix/pi/agents/reviewer.ts` for code:
+
+```ts
+import { definePiAgent } from '@kortix/sdk/pi';
+
+export default definePiAgent(() => ({
+  thinkingLevel: 'low',
+  transformContext: async (messages) => messages,
+  onEvent(event) {
+    if (event.type === 'turn_end') console.log('Review turn completed');
+  },
+}));
+```
+
+The factory receives `agentName`, `sessionId`, `sourceSha`, `env`, and `signal`.
+Use `env` for remote files and commands. Pure JavaScript runs in the worker.
+The execution environment does not run another Pi loop. Durable Objects are not
+required or used by this preview.
+
+Native Pi Agent Core hooks include `transformContext`, `beforeToolCall`,
+`afterToolCall`, `shouldStopAfterTurn`, `onPayload`, and `onResponse`. `onEvent`
+receives native events. Add native `AgentTool` definitions through `tools`.
+Kortix also provides `initialize`, `cancel`, and `shutdown` callbacks.
+
+`initialize` runs once per worker process. Replacement restores conversation
+history and runs initialization again. JavaScript state is not persistent.
+Recovery can replay hooks, so external side effects must be idempotent. SIGKILL
+and sandbox loss do not guarantee shutdown. Asynchronous hook deadlines default
+to 5000 ms; `hookTimeoutMs` accepts 1–30000 ms. These deadlines cannot preempt a
+synchronous loop.
+
+The compiler supplies `@kortix/sdk/pi`, Pi Agent Core, Pi AI, and TypeBox.
+Additional pure JavaScript packages require `package.json` and npm lockfile
+version 3 in `.kortix/pi`. Public npm archives are integrity-checked and bundled.
+Install scripts, native addons, private registries, and Pi CLI TUI extensions are
+unsupported. Unknown configuration fields fail instead of silently being ignored.
+
+This authoring API is available in the Pi preview branch. It has not been
+published as a production SDK release.

@@ -28,6 +28,7 @@ import {
   allowAllPermissionsForSession,
   resetSessionPermissions,
   useRuntimeConfig,
+  useSessionPermissionMode,
   useRuntimePendingStore,
   useUpdateRuntimeConfig,
 } from '@kortix/sdk/react';
@@ -126,7 +127,7 @@ export function SessionPermissionPrompt({
   const projectId = params?.sessionId ? params.id : undefined;
   const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE];
 
-  const autoApprove = useRuntimePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
+  const autoApprove = useSessionPermissionMode(sessionId);
   const setAutoApproveAll = useRuntimePendingStore((s) => s.setAutoApproveAll);
 
   const { data: config } = useRuntimeConfig();
@@ -230,7 +231,7 @@ export function SessionPermissionPrompt({
   // ask that still arrives (e.g. the runtime ignored the session ruleset).
   const autoRepliedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!autoApprove || busy === 'session-off') return;
+    if (!autoApprove || busy === 'session-off' || busy === 'session-all') return;
     for (const p of permissions) {
       if (autoRepliedRef.current.has(p.id)) continue;
       autoRepliedRef.current.add(p.id);

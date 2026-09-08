@@ -112,6 +112,7 @@ WORKDIR /repo/apps/kortix-worker
 COPY apps/kortix-worker/package.json apps/kortix-worker/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY apps/kortix-worker/ ./
+COPY packages/sdk/src/core/pi/agent.ts /repo/packages/sdk/src/core/pi/agent.ts
 RUN bun build src/main.ts --target=node --format=esm --minify --outfile dist/worker-runtime.mjs \
     && grep -q "kortix-worker starting" dist/worker-runtime.mjs
 
