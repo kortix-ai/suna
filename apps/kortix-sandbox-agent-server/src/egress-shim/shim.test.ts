@@ -993,27 +993,33 @@ describe('the streaming relay transport', () => {
     // every readiness poll hit a closed port and the session sat at "Starting
     // the agent". The probe now settles off the boot path.
     let probeStarted = false
+    let probeFinished = false
+    let releaseProbe!: () => void
+    const probe = new Promise<void>((resolve) => { releaseProbe = resolve })
     const brokerFetch = (async (_url: unknown, init: unknown) => {
       const request = init as RequestInit & { headers: Record<string, string> }
       if ('x-kortix-relay-probe' in request.headers) {
         probeStarted = true
-        await new Promise((r) => setTimeout(r, 600))
+        await probe
+        probeFinished = true
         return new Response(null, { status: 204, headers: { 'x-kortix-relay': '1' } })
       }
       return new Response(null, { status: 500 })
     }) as unknown as typeof fetch
-    const started = Date.now()
-    const server = await createEgressShim({
-      ca: CA,
-      rules: [{ hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' }],
-      apiUrl: 'https://api.kortix.test/v1',
-      projectId: 'proj-1',
-      token: 'kortix_pat_test',
-      brokerFetch,
-    })
-    open.push(server)
-    const elapsed = Date.now() - started
-    expect(probeStarted).toBe(true)
-    expect(elapsed).toBeLessThan(300)
+    try {
+      const server = await createEgressShim({
+        ca: CA,
+        rules: [{ hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' }],
+        apiUrl: 'https://api.kortix.test/v1',
+        projectId: 'proj-1',
+        token: 'kortix_pat_test',
+        brokerFetch,
+      })
+      open.push(server)
+      expect(probeStarted).toBe(true)
+      expect(probeFinished).toBe(false)
+    } finally {
+      releaseProbe()
+    }
   }, 10_000)
 })

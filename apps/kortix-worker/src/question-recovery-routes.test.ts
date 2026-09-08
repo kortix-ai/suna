@@ -435,8 +435,8 @@ test('a temporary store outage within the owner lease keeps a pending question a
   }
 }, 30000);
 
-test('an expired owner aborts the blocked question and settles the turn after storage returns', async () => {
-  const f = await fixture({ ownerLeaseMs: 200 });
+test.each([false, true])('an expired owner settles after storage returns, outage reads available=%s', async (outageReadsAvailable) => {
+  const f = await fixture({ ownerLeaseMs: 200, outageReadsAvailable });
   try {
     const worker = await f.start();
     expect(

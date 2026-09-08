@@ -21,6 +21,7 @@ import { FilesPanel } from '@/components/workbench/files-panel';
 import { PreviewPanel } from '@/components/workbench/preview-panel';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
+import { runtimeAllowsPromptOverrides } from '@/lib/session-runtime';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -87,11 +88,18 @@ export function WorkbenchTabs({
  */
 function Thread({ session: c }: { session: UseSessionResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const allowPromptOverrides = runtimeAllowsPromptOverrides(c.sandbox?.metadata);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [c.messages, c.isBusy, c.hasPending]);
+
+  useEffect(() => {
+    if (allowPromptOverrides) return;
+    c.picks.setModel(null);
+    c.picks.setAgent(null);
+  }, [allowPromptOverrides, c.picks.setAgent, c.picks.setModel]);
 
   // ── Runtime recovery ──────────────────────────────────────────────────────
   // Sandboxes idle-stop (and die) in the real world. Rather than silently
@@ -241,7 +249,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             commands={c.commands}
             onCommand={c.runCommand}
             footer={<ScopeBar projectId={c.projectId} sessionId={c.sessionId} />}
-            toolbar={
+            toolbar={allowPromptOverrides ? (
               <div className="flex items-center gap-0.5">
                 <ModelPicker models={c.models} value={c.picks.model} onChange={c.picks.setModel} />
                 <AgentPicker
@@ -251,7 +259,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
                   defaultName={c.defaultAgent}
                 />
               </div>
-            }
+            ) : undefined}
           />
         </div>
       </div>

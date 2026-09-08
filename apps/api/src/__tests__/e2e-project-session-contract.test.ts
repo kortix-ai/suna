@@ -45,6 +45,8 @@ const ORIGINAL_LLM_GATEWAY_ENABLED = config.LLM_GATEWAY_ENABLED;
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
+let workerBootstrapStates: string[] = [];
+let providerBootstrapEnabled = false;
 let providerStopCalls = 0;
 let providerStatus = 'stopped';
 let providerStatusSequence: string[] = [];
@@ -125,6 +127,8 @@ function resetState() {
   branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
+  workerBootstrapStates = [];
+  providerBootstrapEnabled = false;
   providerStopCalls = 0;
   providerStatus = 'stopped';
   providerStatusSequence = [];
@@ -498,6 +502,9 @@ mock.module('../platform/providers', () => ({
       if (providerStatusAfterStart) providerStatus = providerStatusAfterStart;
       if (providerStartGate) await providerStartGate;
     },
+    ...(providerBootstrapEnabled ? { ensureSessionRuntimeStarted: async () => {
+      workerBootstrapStates.push(sessionSandboxRows[0]?.status ?? 'missing');
+    } } : {}),
     stop: async () => {
       providerStopCalls += 1;
     },
@@ -1665,7 +1672,8 @@ describe('project session API contract', () => {
     expect(assertedIamActions).toContain('project.session.read');
   });
 
-  test('in-place resume keeps stopped state and billing closed until the provider proves running', async () => {
+  test.each([false, true])('in-place resume activates the lease before Pi bootstrap and billing; Pi=%s', async (piWorker) => {
+    providerBootstrapEnabled = true;
     const staleReadyWaitStartedAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     sessionRow = {
       ...sessionRow!,
@@ -1679,12 +1687,13 @@ describe('project session API contract', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'platinum',
+        provider: piWorker ? 'daytona' : 'platinum',
         externalId: 'original-provider-identity',
         baseUrl: null,
         status: 'stopped',
         config: {},
         metadata: {
+          pi_worker_boot: piWorker,
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
           opencodeReadyWaitStartedAt: staleReadyWaitStartedAt,
@@ -1707,7 +1716,7 @@ describe('project session API contract', () => {
       sandboxId: SESSION_ID,
       sessionId: SESSION_ID,
       accountId: ACCOUNT_ID,
-      provider: 'platinum',
+      provider: piWorker ? 'daytona' : 'platinum',
       externalId: 'original-provider-identity',
       metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
     });
@@ -1732,13 +1741,15 @@ describe('project session API contract', () => {
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
     expect(resumedMetadata.runtimeWakeId).toEqual(expect.any(String));
     expect(computeReopenCalls).toBe(0);
+    expect(workerBootstrapStates).toEqual([]);
 
     providerStatus = 'running';
     releaseProviderStart?.();
-    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    await flushUntil(() => computeReopenCalls === 1 && workerBootstrapStates.length === (piWorker ? 1 : 0));
     expect(sessionRow).toMatchObject({ status: 'running', error: null });
     expect(sessionSandboxRows[0]?.status).toBe('active');
     expect(computeReopenCalls).toBe(1);
+    expect(workerBootstrapStates).toEqual(piWorker ? ['active'] : []);
   });
 
   test('provider reconciliation observes a stopped row while an in-place resume is starting', async () => {

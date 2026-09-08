@@ -18,7 +18,7 @@ const DECLARATION = [
   '--model',
   'anthropic/claude-sonnet-4.5',
   '--worker-path',
-  'cold-create',
+  'new-session',
   '--workspace-path',
   'not-observed',
 ] as const;
@@ -26,12 +26,12 @@ const DECLARATION = [
 describe('benchmark metadata', () => {
   test('requires the dimensions needed for an honest comparison', () => {
     expect(parseBenchmarkDeclaration(DECLARATION)).toEqual({
-      label: 'pi-cold-create',
+      label: 'pi-new-session',
       runtime: 'pi',
       provider: 'daytona',
       region: 'eu-central',
       model: 'anthropic/claude-sonnet-4.5',
-      workerPath: 'cold-create',
+      workerPath: 'new-session',
       workspacePath: 'not-observed',
       tool: false,
     });

@@ -17,6 +17,7 @@ import { auth, json } from '../../openapi';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { db } from '../../shared/db';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
@@ -294,6 +295,7 @@ export async function resumeStoppedSandbox(
         return true;
       });
       if (!finalized) return false;
+      invalidateSandbox(externalId);
       // The provider had this box STOPPED: whatever turn was still open on it
       // is over. Normally applyStoppedState settled those rows already and
       // this finds nothing; it is the guard for a row that reached `stopped`
@@ -316,6 +318,11 @@ export async function resumeStoppedSandbox(
       await markComputeSessionAlive(row.sandboxId, confirmedAt).catch((err) =>
         console.warn(`[projects] compute liveness stamp failed for ${row.sandboxId}:`, err),
       );
+      if (sessionMetadataClaimsPiWorker(row.metadata) && provider.ensureSessionRuntimeStarted) {
+        await provider.ensureSessionRuntimeStarted(externalId).catch((err) => {
+          console.warn(`[projects] Pi process bootstrap after wake failed for ${row.sandboxId}:`, err);
+        });
+      }
       // A resume wakes the SAME powered-down VM, so the daemon's boot-time
       // reconcile never re-runs and the box keeps the `kortix` binary its image
       // was built with. Poke the daemon to re-converge on this deploy's runtime

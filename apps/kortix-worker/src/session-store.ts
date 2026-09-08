@@ -135,6 +135,9 @@ export class SessionLogConflictError extends Error {
 /** Append-only log over HTTP. Stands in for the Kortix control plane. */
 export class RemoteSessionLog implements SessionLog {
   private failure: SessionLogUnavailableError | null = null;
+  private readonly pendingAppends = new Map<string, SessionLogItem>();
+  private recoveryBlocked = false;
+  private recovery: Promise<boolean> | null = null;
 
   constructor(
     private readonly baseUrl: string,
@@ -145,6 +148,36 @@ export class RemoteSessionLog implements SessionLog {
 
   get error(): SessionLogUnavailableError | null {
     return this.failure;
+  }
+
+  get canRecoverPendingAppends(): boolean {
+    return !this.recoveryBlocked && this.pendingAppends.size > 0;
+  }
+
+  recoverPendingAppends(): Promise<boolean> {
+    if (this.recovery) return this.recovery;
+    if (!this.failure) return Promise.resolve(true);
+    if (!this.canRecoverPendingAppends) return Promise.resolve(false);
+    const run = (async () => {
+      for (const [idempotencyKey, item] of this.pendingAppends) {
+        const replay = new RemoteSessionLog(this.baseUrl, this.sessionId, this.headers, this.options);
+        try {
+          await replay.append(item, { idempotencyKey });
+          this.pendingAppends.delete(idempotencyKey);
+        } catch (error) {
+          if (!replay.canRecoverPendingAppends) {
+            this.poison('session log recovery rejected the original pending append', error);
+          }
+          return false;
+        }
+      }
+      if (this.recoveryBlocked) return false;
+      this.failure = null;
+      return true;
+    })();
+    this.recovery = run;
+    void run.finally(() => { if (this.recovery === run) this.recovery = null; });
+    return run;
   }
 
   assertWritable(): void {
@@ -159,7 +192,13 @@ export class RemoteSessionLog implements SessionLog {
     }
   }
 
-  private poison(message: string, cause: unknown): SessionLogUnavailableError {
+  private poison(
+    message: string,
+    cause: unknown,
+    pending?: { id: string; item: SessionLogItem },
+  ): SessionLogUnavailableError {
+    if (pending) this.pendingAppends.set(pending.id, pending.item);
+    else this.recoveryBlocked = true;
     if (!this.failure) this.failure = new SessionLogUnavailableError(message, { cause });
     return this.failure;
   }
@@ -226,6 +265,9 @@ export class RemoteSessionLog implements SessionLog {
       throw this.poison(
         `${terminal.message}; reconciliation could not prove the append committed`,
         new AggregateError([terminal, reconcileError], 'session log append outcome is unresolved'),
+        reconcileError instanceof SessionLogReadUnavailableError
+          ? { id: appendId, item: persistedItem }
+          : undefined,
       );
     }
     if (!Array.isArray(remote)) {
@@ -251,6 +293,7 @@ export class RemoteSessionLog implements SessionLog {
     throw this.poison(
       `${terminal.message}; reconciliation could not prove the append committed`,
       new AggregateError([terminal, reconcileError], 'session log append outcome is unresolved'),
+      { id: appendId, item: persistedItem },
     );
   }
 

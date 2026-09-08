@@ -382,6 +382,21 @@ describe('TurnAdmissionJournal', () => {
     ).toHaveLength(1);
   });
 
+  test('outage recovery only interrupts the lease that this worker still owns', async () => {
+    const log = new FencedMemoryLog();
+    const owner = await TurnAdmissionJournal.open(log);
+    const admission = turn('msg_outage_owner', 'owned input');
+    await owner.accept(admission);
+    await owner.start(admission.messageId);
+    const replacement = await TurnAdmissionJournal.open(log);
+    expect(await replacement.requestAbort(admission.messageId, { ownLeaseOnly: true })).toBe(false);
+    expect(await owner.requestAbort(admission.messageId, { ownLeaseOnly: true })).toBe(true);
+    await replacement.refresh();
+    const lease = requireValue(replacement.startedLease(admission.messageId), 'current lease');
+    expect(await replacement.reclaim(admission.messageId, lease)).toBe(true);
+    expect(await owner.requestAbort(admission.messageId, { ownLeaseOnly: true })).toBe(false);
+  });
+
   test('heartbeat and reclaim contend on one lease CAS in either append order', async () => {
     for (const winner of ['heartbeat', 'reclaimed'] as const) {
       let releaseHeartbeat!: () => void;

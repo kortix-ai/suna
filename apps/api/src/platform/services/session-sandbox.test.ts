@@ -34,7 +34,7 @@
 // can leak mocks/cached module instances across files. See the same caveat
 // documented in ../../projects/sandbox-reaper.test.ts.
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes, type AgentGrant } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 import * as realAgents from '../../projects/agents';
@@ -105,6 +105,8 @@ let activeRouting: {
   activeSnapshotName: string | null;
 } | null = null;
 let agentGrantError: Error | null = null;
+let resolvedAgentGrant: AgentGrant | null = null;
+let agentGrantNames: string[] = [];
 let gatewayEntitled = false;
 let projectGatewayEnabled = false;
 const testConfig = {
@@ -384,9 +386,10 @@ mock.module('../../projects/lib/network-secret-boundary', () => ({
 
 mock.module('../../projects/agents', () => ({
   ...realAgents,
-  resolveAgentGrant: async (_agentName: string, _gitProject: unknown) => {
+  resolveAgentGrant: async (agentName: string, _gitProject: unknown) => {
+    agentGrantNames.push(agentName);
     if (agentGrantError) throw agentGrantError;
-    return null;
+    return resolvedAgentGrant;
   },
 }));
 
@@ -443,6 +446,8 @@ beforeEach(() => {
   providerSyncCalls = [];
   activeRouting = null;
   agentGrantError = null;
+  resolvedAgentGrant = null;
+  agentGrantNames = [];
   gatewayEntitled = false;
   projectGatewayEnabled = false;
   testConfig.KORTIX_FAST_COLD_BOOT_ENABLED = false;
@@ -528,29 +533,32 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     });
   });
 
-  test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
-    await provisionSessionSandbox({
-      ...baseOpts(),
-      agentName: 'meta',
-      sandboxSlug: 'meta',
-    });
+  test.each([
+    { agent: 'meta', kortixCli: 'all', connectors: [], env: [] },
+    { agent: 'meta', kortixCli: [], connectors: [], env: [] },
+  ] satisfies AgentGrant[])(
+    'meta sessions preserve the resolved grant %j without a standing service-account ceiling',
+    async (grant) => {
+      resolvedAgentGrant = grant;
+      await provisionSessionSandbox({
+        ...baseOpts(),
+        agentName: 'meta',
+        sandboxSlug: 'meta',
+      });
 
-    expect(accountTokenCreateCalls).toHaveLength(1);
-    expect(accountTokenCreateCalls[0]).toMatchObject({
-      accountId: ACCOUNT_ID,
-      userId: USER_ID,
-      projectId: PROJECT_ID,
-      sessionId: SANDBOX_ID,
-      agentGrant: {
-        agent: 'meta',
-        kortixCli: 'all',
-        connectors: [],
-        env: [],
-      },
-      serviceAccountId: null,
-    });
-    expect(serviceAccountCreateCalls).toHaveLength(0);
-  });
+      expect(accountTokenCreateCalls).toHaveLength(1);
+      expect(agentGrantNames).toEqual(['meta']);
+      expect(accountTokenCreateCalls[0]).toMatchObject({
+        accountId: ACCOUNT_ID,
+        userId: USER_ID,
+        projectId: PROJECT_ID,
+        sessionId: SANDBOX_ID,
+        agentGrant: grant,
+        serviceAccountId: null,
+      });
+      expect(serviceAccountCreateCalls).toHaveLength(0);
+    },
+  );
 
   test('session starts request the OpenCode runtime image', async () => {
     const opened = waitFor((resolve) => {

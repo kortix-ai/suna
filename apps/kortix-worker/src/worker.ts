@@ -1704,7 +1704,7 @@ export async function startWorker(cfg = configFromEnv()) {
       }
       // Any unresolved transcript append means local Pi state may differ from
       // the control plane. No later turn may cross the model boundary until a
-      // fresh process restores the durable log.
+      // the exact pending writes reconcile and the durable log is restored.
       sessionLog?.assertWritable();
       let resumingInteraction = false;
       while (true) {
@@ -2073,22 +2073,47 @@ export async function startWorker(cfg = configFromEnv()) {
         if (
           closing ||
           !sessionLog ||
-          sessionLog.error ||
+          (sessionLog.error && !sessionLog.canRecoverPendingAppends) ||
           !(error instanceof SessionLogReadUnavailableError ||
-            error instanceof TurnOwnerLeaseLostError) ||
+            error instanceof TurnOwnerLeaseLostError ||
+            sessionLog.canRecoverPendingAppends) ||
           !['pending', 'started'].includes(turnJournal.state(turn.messageId))
         ) return;
-        const timer = setTimeout(
-          () => {
+        const delay = Math.max(1, Math.min(1000, cfg.turnOwnerHeartbeatMs ?? DEFAULT_TURN_OWNER_HEARTBEAT_MS));
+        let interruptRecoveredTurn = sessionLog.canRecoverPendingAppends;
+        const schedule = () => {
+          const timer = setTimeout(async () => {
             admissionRetries.delete(turn.messageId);
             if (closing) return;
+            if (sessionLog.error) {
+              const recovered = await sessionLog.recoverPendingAppends();
+              console.error(JSON.stringify({
+                msg: 'turn storage recovery', messageId: turn.messageId,
+                recovered, retryable: sessionLog.canRecoverPendingAppends,
+              }));
+              if (!recovered) {
+                if (!closing && sessionLog.canRecoverPendingAppends) schedule();
+                return;
+              }
+            }
+            if (closing) return;
+            if (interruptRecoveredTurn) {
+              try {
+                await turnJournal.requestAbort(turn.messageId, { ownLeaseOnly: true });
+                interruptRecoveredTurn = false;
+              } catch (error) {
+                console.error(JSON.stringify({ msg: 'recovered turn interruption failed', messageId: turn.messageId, error: String(error) }));
+                if (!closing && (!sessionLog.error || sessionLog.canRecoverPendingAppends)) schedule();
+                return;
+              }
+            }
             const current = turnJournal.admission(turn.messageId);
             if (current) queueAdmission(current);
-          },
-          Math.max(1, Math.min(1000, cfg.turnOwnerHeartbeatMs ?? DEFAULT_TURN_OWNER_HEARTBEAT_MS)),
-        );
-        timer.unref();
-        admissionRetries.set(turn.messageId, timer);
+          }, delay);
+          timer.unref();
+          admissionRetries.set(turn.messageId, timer);
+        };
+        schedule();
       },
     );
     return queued.done;

@@ -1197,6 +1197,15 @@ function selfHostStatus(flags: GlobalFlags): number {
   }
   const env = loadEnvWithDefaults(flags)!;
   const report = readUpdaterReport(flags.instance);
+  const writePreviewStatus = (): void => {
+    if (reachabilityMode(env) !== 'domain') return;
+    const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
+    process.stdout.write(
+      previewDomain
+        ? `  ${status.ok('preview origins')}${C.dim} — *.${previewDomain}${C.reset}\n`
+        : `  ${status.err('preview origins NOT configured')}${C.dim} — browsers get /v1/p/ path previews, which break root-absolute links. Run \`kortix self-host doctor\`${C.reset}\n`,
+    );
+  };
 
   if (flags.json) {
     process.stdout.write(`${JSON.stringify({
@@ -1219,6 +1228,7 @@ function selfHostStatus(flags: GlobalFlags): number {
 
   if (!report) {
     process.stdout.write(`  ${status.err('update status unavailable')}${C.dim} (kortix-updater not reachable — is the stack running?)${C.reset}\n\n`);
+    writePreviewStatus();
     return 0;
   }
 
@@ -1252,14 +1262,7 @@ function selfHostStatus(flags: GlobalFlags): number {
   // unset preview domain never makes anything fail — the path proxy answers 200
   // — so the only way an operator learns about it is if a status screen they
   // already read says so. `doctor` is the non-zero gate; this is the glance.
-  if (reachabilityMode(env) === 'domain') {
-    const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
-    process.stdout.write(
-      previewDomain
-        ? `  ${status.ok('preview origins')}${C.dim} — *.${previewDomain}${C.reset}\n`
-        : `  ${status.err('preview origins NOT configured')}${C.dim} — browsers get /v1/p/ path previews, which break root-absolute links. Run \`kortix self-host doctor\`${C.reset}\n`,
-    );
-  }
+  writePreviewStatus();
   process.stdout.write('\n');
   return 0;
 }

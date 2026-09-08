@@ -41,6 +41,8 @@ export interface SessionScopeRowsInput {
   secretsAllowlist: string[] | null | undefined;
   /** Active connector bindings, alias -> connection label or identifier. */
   boundConnections: Record<string, string>;
+  /** The worker owns model and agent selection from its immutable bundle. */
+  compiledRuntime?: boolean;
 }
 
 const ALL_SECRETS = 'Everything the agent is granted';
@@ -101,25 +103,29 @@ export function sessionScopeRows(
   const agent = input.agentName ?? null;
   const agentLabel = agent ?? 'The project default agent';
   const bound = Object.entries(input.boundConnections);
+  const compiledRuntime = input.compiledRuntime === true;
 
   return [
     {
       key: 'model',
       label: 'Model',
-      badge: 'Changeable now',
-      value: null,
-      detail:
-        'Switching restarts the runtime, which ends the in-flight turn. If it cannot be applied live the change is saved and takes effect the next time this session starts — the switcher says which happened.',
-      control: 'model',
+      badge: compiledRuntime ? 'Fixed at start' : 'Changeable now',
+      value: compiledRuntime ? 'Compiled bundle' : null,
+      detail: compiledRuntime
+        ? 'This session runs the model from its compiled bundle. Change the project configuration, then start a new session to use another model.'
+        : 'Switching restarts the runtime, which ends the in-flight turn. If it cannot be applied live the change is saved and takes effect the next time this session starts — the switcher says which happened.',
+      control: compiledRuntime ? null : 'model',
     },
     {
       key: 'agent',
       label: 'Agent',
-      badge: 'Per message',
+      badge: compiledRuntime ? 'Fixed at start' : 'Per message',
       value: agentLabel,
-      detail: agent
-        ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.`
-        : "Messages run as the project's default agent unless another is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.",
+      detail: compiledRuntime
+        ? `${agentLabel} is fixed in this session's compiled bundle. Change the project configuration, then start a new session to use another agent.`
+        : agent
+          ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.`
+          : "Messages run as the project's default agent unless another is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.",
       control: null,
     },
     {
@@ -154,7 +160,9 @@ export function sessionScopeRows(
  *  badges from drifting away from the contract they describe. */
 export function isFixedAtStart(
   key: keyof typeof MID_SESSION_CAPABILITIES,
+  compiledRuntime = false,
 ): boolean {
+  if (compiledRuntime && (key === 'model' || key === 'agent')) return true;
   // Derived from the capability table, with no hardcoded exception. `connections`
   // used to be forced true here even though the table had no entry for it — so
   // the badge and the behaviour could disagree, and did the moment the /scope

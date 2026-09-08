@@ -27,6 +27,7 @@ export async function fixture(
     repeatPermissionPerPrompt?: boolean;
     rejectPermissionUpdates?: boolean;
     ownerLeaseMs?: number;
+    outageReadsAvailable?: boolean;
     permission?: 'primary' | 'external' | 'doom';
   } = {},
 ) {
@@ -143,7 +144,7 @@ export async function fixture(
           { headers: { 'content-type': 'text/event-stream' } },
         );
       }
-      if (Date.now() < storeUnavailableUntil) {
+      if (Date.now() < storeUnavailableUntil && !(options.outageReadsAvailable && request.method === 'GET')) {
         failedStoreRequests++;
         return new Response('Store temporarily unavailable', { status: 503 });
       }
@@ -195,7 +196,7 @@ export async function fixture(
     sessionId,
     kortixToken: 'fixture',
     storeUrl: server.url + 'store',
-    turnOwnerLeaseMs: options.ownerLeaseMs ?? 100,
+    turnOwnerLeaseMs: options.ownerLeaseMs ?? 1000,
     turnOwnerHeartbeatMs: 20,
     turnAbortPollMs: 10,
   };

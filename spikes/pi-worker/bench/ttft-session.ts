@@ -1,358 +1,761 @@
 /**
- * P2.1 — the number the whole project is justified by.
+ * End-to-end session TTFT benchmark through the same protocol used by Kortix.
  *
- * "Splitting the Harness" is explicit that the existing instrument cannot see
- * the thing being fixed: `bootMark()` stamps every mark as
- * `Date.now() - bootTime`, where bootTime is PROCESS START INSIDE THE GUEST.
- * VM allocation and rootfs restore both finish before that clock starts, so the
- * boot timeline is blind to the single largest cost the small image removes.
+ * Both Pi and OpenCode use exactly these runtime routes:
  *
- * This clock starts OUTSIDE, before the API is even called, which makes it a
- * strict superset of the API-side clock the doc asks for: it spans provider
- * scheduling, rootfs restore, boot, and the model's own time to first token.
+ *   GET  /global/event
+ *   GET  /session
+ *   POST /session/:id/message
  *
- * It measures four phases, so a result can be attributed rather than just
- * reported:
+ * Local-only `/turn`, `/prompt`, `/say`, and `/event` routes are deliberately
+ * absent. Deployed Pi workers disable the first three, and `/event` is not the
+ * product subscription used by the SDK.
  *
- *   create   POST /sessions accepted
- *   ready    a sandbox_url exists and its health answers
- *   prompt   the prompt is accepted
- *   token    the FIRST assistant text arrives  <- what a user actually waits for
- *
- * It also reads back the API's own `session_start_timeline` where present, so
- * the host-side breakdown sits beside the wall clock instead of contradicting
- * it silently.
- *
- * Usage:
- *   bun ttft-bench.ts --base https://pi.kortix.com/v1 --project <uuid> \
- *      --jwt "$(cat /tmp/jwt.txt)" --runs 10 --label "pi worker (cold)"
+ * The clock starts before session creation or the explicit resume request. It includes
+ * control-plane work, provider scheduling, image restore, runtime boot, and
+ * model time to the first assistant text event.
  */
+import { readFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import {
+  type BenchmarkDeclaration,
+  JsonSseDecoder,
+  type TurnEventObservation,
+  TurnEventProbe,
+  mintBenchmarkMessageId,
+  parseBenchmarkDeclaration,
+  selectRuntimeSessionId,
+} from './ttft-session-protocol.ts';
+
+const TOOL_SENTINEL = 'KORTIX-TOOL-PROBE';
+const DEFAULT_PROMPT = 'Reply with exactly the word READY and nothing else.';
+const DEFAULT_TOOL_PROMPT = `Use the bash tool to run exactly this command: echo ${TOOL_SENTINEL} . Then reply with only its output.`;
+const READY_TIMEOUT_MS = 300_000;
+const TURN_TIMEOUT_MS = 300_000;
+
+interface CliConfig {
+  base: string;
+  project: string;
+  jwt: string;
+  session?: string;
+  agent: string;
+  baseRef: string;
+  runs: number;
+  keep: boolean;
+  dryRun: boolean;
+  output: string;
+  prompt: string;
+  expectedText: string | null;
+  declaration: BenchmarkDeclaration;
+}
+
+interface ApiSessionRow {
+  session_id?: string;
+  agent_name?: string | null;
+  base_ref?: string | null;
+  sandbox_url?: string | null;
+  sandbox_provider?: string | null;
+  opencode_session_id?: string | null;
+  status?: string;
+  metadata?: Record<string, unknown>;
+  session_start_timeline?: { totalMs?: unknown };
+}
+
+interface RuntimeHealth {
+  runtimeReady?: boolean;
+  engine?: string;
+  opencode?: string;
+  commit_sha?: string | null;
+  branch?: string | null;
+  agent_config_etag?: string | null;
+  model_mode?: string;
+  opencode_session_id?: string | null;
+}
 
 interface RunResult {
   run: number;
   ok: boolean;
+  startedAt: string;
   sessionId?: string;
+  runtimeSessionId?: string;
   createMs?: number;
+  startMs?: number;
+  statusBeforeStart?: string;
   readyMs?: number;
-  promptMs?: number;
-  tokenMs?: number;
-  /** --tool mode: the first tool RESULT arrives — environment reachable AND the command ran. */
-  toolMs?: number;
+  sessionReadMs?: number;
+  sessionDiscoveryMs?: number;
+  eventRequestMs?: number;
+  eventResponseMs?: number;
+  messageRequestMs?: number;
+  firstTokenMs?: number;
+  firstToolResultMs?: number;
+  messageResponseMs?: number;
   totalMs?: number;
   serverTimelineMs?: number | null;
   provider?: string | null;
+  runtimeHealth?: RuntimeHealth;
+  observedModels?: string[];
+  assistantMessageIds?: string[];
+  eventCount?: number;
+  responseText?: string;
+  warmMarkerAtRead?: boolean | null;
+  cleanup?: { kept: boolean; status?: number; durationMs?: number; alreadyStopped?: boolean; error?: string };
   error?: string;
 }
 
-function arg(name: string, fallback?: string): string {
-  const i = process.argv.indexOf(`--${name}`);
-  if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1]!;
-  if (fallback !== undefined) return fallback;
-  throw new Error(`missing --${name}`);
+function option(argv: readonly string[], name: string): string | undefined {
+  const split = argv.find((value) => value.startsWith(`--${name}=`));
+  if (split) return split.slice(name.length + 3);
+  const index = argv.indexOf(`--${name}`);
+  return index >= 0 ? argv[index + 1] : undefined;
 }
 
-const BASE = arg('base');
-const PROJECT = arg('project');
-const JWT = arg('jwt');
-const RUNS = Number(arg('runs', '10'));
-const LABEL = arg('label', 'unlabelled');
-/**
- * --tool: clock the first TOOL RESULT as well as the first token.
- *
- * P2.2's leg. The split moved the environment's cold start out of session
- * setup and into the middle of the first answer (measured 37.5s to the first
- * `bash` on a cold session before the prompt-time prewarm). This mode forces
- * one `bash` call and stamps the moment its result comes back — provisioning,
- * daemon readiness, repo materialisation and the command itself, end to end.
- */
-const TOOL = process.argv.includes('--tool');
-/**
- * --keep: leave the benchmark sessions running. By default each run STOPS its
- * session once measured — ten runs a day against one project otherwise walk
- * straight into the 100-active-sessions cap (`create 429`), which is exactly
- * how the fourth run of a ten-run clock failed on 2026-09-03.
- */
-const KEEP = process.argv.includes('--keep');
-const PROMPT = arg(
-  'prompt',
-  TOOL
-    ? 'Use the bash tool to run exactly this command: echo KORTIX-TOOL-PROBE . Then reply with only its output.'
-    : 'Reply with exactly the word READY and nothing else.',
-);
-/** 'pi' streams its own turn; 'opencode' needs a concurrent listener on /event. */
-const RUNTIME = arg('runtime', 'pi') as 'pi' | 'opencode';
-const H = { authorization: `Bearer ${JWT}`, 'content-type': 'application/json' };
+function required(argv: readonly string[], name: string): string {
+  const value = option(argv, name)?.trim();
+  if (!value || value.startsWith('--')) throw new Error(`missing --${name}`);
+  return value;
+}
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+function usage(): string {
+  return `Usage:
+  bun bench/ttft-session.ts \\
+    --base https://pi.kortix.com/v1 \\
+    --project <uuid> \\
+    --agent <name> \\
+    --base-ref <commit-or-ref> \\
+    --runtime pi \\
+    --provider daytona \\
+    --region eu \\
+    --model anthropic/claude-sonnet-4.5 \\
+    --worker-path new-session \\
+    --workspace-path not-observed \\
+    --runs 10
 
-/** Percentile over a sorted copy; p50 of an even count takes the lower middle. */
-function pct(values: number[], p: number): number {
+Authentication (choose one):
+  KORTIX_BENCH_JWT=<jwt>
+  --jwt-file /absolute/path/to/jwt.txt
+  --jwt <jwt>                         legacy; visible in the process list
+
+Lifecycle values:
+  --worker-path     new-session | resume
+  --workspace-path  not-observed | same-runtime | cold-create |
+                    already-running | resume
+
+Required configuration:
+  --agent <name>        agent selected at creation, or verified before resume
+  --base-ref <ref>      configuration ref selected at creation, or verified before resume
+  --session <uuid>      stopped benchmark session; required only for resume
+
+Options:
+  --tool               require a completed bash result containing ${TOOL_SENTINEL}
+  --prompt <text>       override the deterministic prompt
+  --expect <text>       require this text in the completed assistant response
+  --keep                do not stop benchmark sessions
+  --output <path>       JSON output path (default: /tmp/ttft-<label>.json)
+  --dry-run             validate and print metadata without network calls
+
+Provider, runtime, model, and the create/resume operation are verified. Region
+and environment allocation cache outcomes are operator declarations. A new
+session can use a warm pool; this benchmark does not label it a cold VM start.`;
+}
+
+function parseCli(argv: readonly string[]): CliConfig {
+  const declaration = parseBenchmarkDeclaration(argv);
+  const runs = Number(option(argv, 'runs') ?? '10');
+  if (!Number.isInteger(runs) || runs < 1 || runs > 100) {
+    throw new Error('--runs must be an integer from 1 through 100');
+  }
+  const base = required(argv, 'base').replace(/\/+$/, '');
+  const project = required(argv, 'project');
+  const session = option(argv, 'session');
+  if (declaration.workerPath === 'resume' && !session) throw new Error('resume requires --session with a stopped benchmark session');
+  if (declaration.workerPath !== 'resume' && session) throw new Error('--session is only valid for resume');
+  if (declaration.workerPath === 'resume' && runs > 1 && argv.includes('--keep')) throw new Error('multiple resume runs require cleanup between runs');
+  const customPrompt = option(argv, 'prompt');
+  const prompt = customPrompt ?? (declaration.tool ? DEFAULT_TOOL_PROMPT : DEFAULT_PROMPT);
+  const expectedText =
+    option(argv, 'expect') ?? (customPrompt ? null : declaration.tool ? TOOL_SENTINEL : 'READY');
+  const fileToken = option(argv, 'jwt-file');
+  const jwt =
+    process.env.KORTIX_BENCH_JWT?.trim() ||
+    (fileToken ? readFileSync(fileToken, 'utf8').trim() : '') ||
+    option(argv, 'jwt')?.trim() ||
+    '';
+  const safeLabel = declaration.label
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+  return {
+    base,
+    project,
+    jwt,
+    session,
+    agent: required(argv, 'agent'),
+    baseRef: required(argv, 'base-ref'),
+    runs,
+    keep: argv.includes('--keep'),
+    dryRun: argv.includes('--dry-run'),
+    output: option(argv, 'output') ?? `/tmp/ttft-${safeLabel || 'benchmark'}.json`,
+    prompt,
+    expectedText,
+    declaration,
+  };
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function percentile(values: number[], p: number): number {
   if (values.length === 0) return Number.NaN;
-  const s = [...values].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))]!;
-}
-
-/**
- * OpenCode does not stream the prompt response, so the listener has to be open
- * BEFORE the message is posted — otherwise the first token can land while the
- * subscription is still connecting and the measurement silently reports the
- * second one.
- */
-async function opencodeFirstToken(
-  sandboxUrl: string,
-  t0: number,
-): Promise<{ promptMs?: number; tokenMs?: number; error?: string }> {
-  const auth = { authorization: H.authorization };
-  const list = await fetch(`${sandboxUrl}/session`, { headers: auth, signal: AbortSignal.timeout(60_000) });
-  if (!list.ok) return { error: `session list ${list.status}` };
-  const sessions = (await list.json()) as Array<{ id?: string }>;
-  const osid = sessions?.[0]?.id;
-  if (!osid) return { error: 'no opencode session' };
-
-  const ac = new AbortController();
-  let tokenMs: number | undefined;
-  const watcher = (async () => {
-    const ev = await fetch(`${sandboxUrl}/event`, { headers: auth, signal: ac.signal });
-    if (!ev.ok || !ev.body) return;
-    const reader = ev.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      for (const line of buf.split('\n')) {
-        if (!line.startsWith('data: ')) continue;
-        let e: any;
-        try {
-          e = JSON.parse(line.slice(6));
-        } catch {
-          continue;
-        }
-        const part = e?.properties?.part;
-        if (part?.type === 'text' && typeof part.text === 'string' && part.text.length > 0) {
-          tokenMs = performance.now() - t0;
-          return;
-        }
-      }
-      const nl = buf.lastIndexOf('\n');
-      if (nl > 0) buf = buf.slice(nl);
-    }
-  })().catch(() => undefined);
-
-  // Give the subscription a moment to be established before prompting.
-  await sleep(300);
-  const promptRes = await fetch(`${sandboxUrl}/session/${osid}/message`, {
-    method: 'POST',
-    headers: { ...auth, 'content-type': 'application/json' },
-    body: JSON.stringify({ parts: [{ type: 'text', text: PROMPT }] }),
-    signal: AbortSignal.timeout(300_000),
-  });
-  const promptMs = performance.now() - t0;
-  if (!promptRes.ok) {
-    ac.abort();
-    return { promptMs, error: `prompt ${promptRes.status}: ${(await promptRes.text()).slice(0, 140)}` };
-  }
-  // The POST resolves with the finished message; if the watcher already saw a
-  // delta we keep its earlier mark, otherwise fall back to completion.
-  const deadline = performance.now() + 20_000;
-  while (tokenMs === undefined && performance.now() < deadline) await sleep(25);
-  ac.abort();
-  await watcher;
-  return { promptMs, tokenMs: tokenMs ?? performance.now() - t0 };
-}
-
-async function oneRun(run: number): Promise<RunResult> {
-  const t0 = performance.now();
-  try {
-    // ---- create -----------------------------------------------------------
-    const createRes = await fetch(`${BASE}/projects/${PROJECT}/sessions`, {
-      method: 'POST',
-      headers: H,
-      body: '{}',
-      signal: AbortSignal.timeout(300_000),
-    });
-    if (!createRes.ok) {
-      return { run, ok: false, error: `create ${createRes.status}: ${(await createRes.text()).slice(0, 160)}` };
-    }
-    const created = (await createRes.json()) as { session_id?: string; sandbox_provider?: string };
-    const sessionId = created.session_id;
-    if (!sessionId) return { run, ok: false, error: 'no session_id' };
-    const createMs = performance.now() - t0;
-
-    // ---- ready ------------------------------------------------------------
-    let sandboxUrl = '';
-    const readyDeadline = performance.now() + 300_000;
-    while (performance.now() < readyDeadline) {
-      const r = await fetch(`${BASE}/projects/${PROJECT}/sessions/${sessionId}`, {
-        headers: H,
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (r.ok) {
-        const row = (await r.json()) as { sandbox_url?: string };
-        if (row.sandbox_url) {
-          sandboxUrl = row.sandbox_url;
-          break;
-        }
-      }
-      await sleep(250);
-    }
-    if (!sandboxUrl) return { run, ok: false, sessionId, error: 'never became reachable' };
-
-    // The runtime must actually answer before a prompt means anything.
-    while (performance.now() < readyDeadline) {
-      try {
-        const h = await fetch(`${sandboxUrl}/kortix/health`, {
-          headers: { authorization: H.authorization },
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (h.ok) {
-          const body = (await h.json()) as { runtimeReady?: boolean };
-          if (body.runtimeReady !== false) break;
-        }
-      } catch {
-        // still coming up
-      }
-      await sleep(250);
-    }
-    const readyMs = performance.now() - t0;
-
-    // ---- prompt + first token --------------------------------------------
-    if (RUNTIME === 'opencode') {
-      const r = await opencodeFirstToken(sandboxUrl, t0);
-      const totalMsOc = performance.now() - t0;
-      return {
-        run,
-        ok: r.tokenMs !== undefined,
-        sessionId,
-        createMs,
-        readyMs,
-        promptMs: r.promptMs,
-        tokenMs: r.tokenMs,
-        totalMs: totalMsOc,
-        serverTimelineMs: null,
-        provider: created.sandbox_provider ?? null,
-        error: r.error,
-      };
-    }
-    const turn = await fetch(`${sandboxUrl}/turn`, {
-      method: 'POST',
-      headers: { authorization: H.authorization, 'content-type': 'application/json' },
-      body: JSON.stringify({ text: PROMPT }),
-      signal: AbortSignal.timeout(300_000),
-    });
-    const promptMs = performance.now() - t0;
-    if (!turn.ok || !turn.body) {
-      return { run, ok: false, sessionId, createMs, readyMs, error: `turn ${turn.status}` };
-    }
-
-    // Read the SSE until the first assistant TEXT — not the first frame. A
-    // `message_start` with empty content is not something a user can read.
-    let tokenMs: number | undefined;
-    let toolMs: number | undefined;
-    const reader = turn.body.getReader();
-    const decoder = new TextDecoder();
-    let buffered = '';
-    outer: while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffered += decoder.decode(value, { stream: true });
-      for (const line of buffered.split('\n')) {
-        if (!line.startsWith('data: ')) continue;
-        let evt: any;
-        try {
-          evt = JSON.parse(line.slice(6));
-        } catch {
-          continue;
-        }
-        if (TOOL && evt?.type === 'tool_execution_end' && toolMs === undefined) {
-          toolMs = performance.now() - t0;
-        }
-        const parts = evt?.message?.content;
-        if (evt?.message?.role === 'assistant' && Array.isArray(parts)) {
-          const text = parts.map((p: any) => (p?.type === 'text' ? p.text ?? '' : '')).join('');
-          if (text.length > 0 && tokenMs === undefined) tokenMs = performance.now() - t0;
-        }
-        // Token mode stops at the first text; tool mode needs the tool result too.
-        if (tokenMs !== undefined && (!TOOL || toolMs !== undefined)) break outer;
-      }
-      // Keep only the tail so a split frame is not lost between reads.
-      const lastNewline = buffered.lastIndexOf('\n');
-      if (lastNewline > 0) buffered = buffered.slice(lastNewline);
-    }
-    try {
-      await reader.cancel();
-    } catch {
-      // stream already closed
-    }
-    const totalMs = performance.now() - t0;
-
-    // ---- the API's own view, for attribution ------------------------------
-    let serverTimelineMs: number | null = null;
-    let provider: string | null = created.sandbox_provider ?? null;
-    try {
-      const r = await fetch(`${BASE}/projects/${PROJECT}/sessions/${sessionId}`, {
-        headers: H,
-        signal: AbortSignal.timeout(20_000),
-      });
-      if (r.ok) {
-        const row = (await r.json()) as any;
-        provider = row?.sandbox_provider ?? provider;
-        const t =
-          row?.metadata?.session_start_timeline?.totalMs ??
-          row?.session_start_timeline?.totalMs ??
-          null;
-        serverTimelineMs = typeof t === 'number' ? t : null;
-      }
-    } catch {
-      // attribution is a bonus, never the measurement
-    }
-
-    if (!KEEP) {
-      // Fire-and-forget: the measurement is over; a slow stop must not skew the
-      // next run's create clock, and a failed stop is the cap's problem later.
-      void fetch(`${BASE}/projects/${PROJECT}/sessions/${sessionId}/stop`, {
-        method: 'POST',
-        headers: H,
-        signal: AbortSignal.timeout(120_000),
-      }).catch(() => {});
-    }
-    return { run, ok: tokenMs !== undefined && (!TOOL || toolMs !== undefined), sessionId, createMs, readyMs, promptMs, tokenMs, toolMs, totalMs, serverTimelineMs, provider };
-  } catch (err) {
-    return { run, ok: false, error: String((err as Error)?.message ?? err).slice(0, 200) };
-  }
-}
-
-const results: RunResult[] = [];
-console.log(`\n=== ${LABEL} — ${RUNS} runs against ${BASE} ===`);
-console.log(`run  create    ready    prompt    TOKEN   ${TOOL ? ' TOOL     ' : ''}server-tl  status`);
-for (let i = 1; i <= RUNS; i++) {
-  const r = await oneRun(i);
-  results.push(r);
-  const f = (v?: number) => (v === undefined ? '     —' : `${(v / 1000).toFixed(2)}s`.padStart(7));
-  console.log(
-    `${String(i).padStart(3)}  ${f(r.createMs)}  ${f(r.readyMs)}  ${f(r.promptMs)}  ${f(r.tokenMs)}  ${TOOL ? `${f(r.toolMs)}  ` : ''}` +
-      `${r.serverTimelineMs === null || r.serverTimelineMs === undefined ? '     —' : `${(r.serverTimelineMs / 1000).toFixed(2)}s`.padStart(7)}  ` +
-      `${r.ok ? 'ok' : `FAIL ${r.error ?? ''}`}`,
+  const sorted = [...values].sort((a, b) => a - b);
+  return (
+    sorted.at(Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))) ?? Number.NaN
   );
 }
 
-const ok = results.filter((r) => r.ok && r.tokenMs !== undefined);
-const tokens = ok.map((r) => r.tokenMs!);
-const readies = ok.map((r) => r.readyMs!);
-console.log(`\n--- ${LABEL} ---`);
-console.log(`runs            ${results.length} (${ok.length} usable, ${results.length - ok.length} failed)`);
-if (ok.length > 0) {
-  console.log(`TIME TO FIRST TOKEN  p50 ${(pct(tokens, 50) / 1000).toFixed(2)}s   p95 ${(pct(tokens, 95) / 1000).toFixed(2)}s   min ${(Math.min(...tokens) / 1000).toFixed(2)}s   max ${(Math.max(...tokens) / 1000).toFixed(2)}s`);
-  console.log(`  of which, to ready p50 ${(pct(readies, 50) / 1000).toFixed(2)}s`);
-  if (TOOL) {
-    const tools = ok.map((r) => r.toolMs!);
-    console.log(`TIME TO FIRST TOOL RESULT  p50 ${(pct(tools, 50) / 1000).toFixed(2)}s   p95 ${(pct(tools, 95) / 1000).toFixed(2)}s   min ${(Math.min(...tools) / 1000).toFixed(2)}s   max ${(Math.max(...tools) / 1000).toFixed(2)}s`);
-  }
-  console.log(`  provider ${ok[0]!.provider ?? 'unknown'}`);
+function elapsed(t0: number): number {
+  return performance.now() - t0;
 }
-await Bun.write(
-  `/tmp/ttft-${LABEL.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.json`,
-  JSON.stringify({ label: LABEL, base: BASE, project: PROJECT, results }, null, 2),
-);
-console.log(`raw: /tmp/ttft-${LABEL.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.json`);
+
+function errorText(error: unknown): string {
+  return String((error as Error)?.message ?? error).slice(0, 800);
+}
+
+function responseText(value: unknown): string {
+  if (!value || typeof value !== 'object') return '';
+  const parts = (value as { parts?: unknown }).parts;
+  if (!Array.isArray(parts)) return '';
+  return parts
+    .map((part) =>
+      part && typeof part === 'object' && (part as { type?: unknown }).type === 'text'
+        ? String((part as { text?: unknown }).text ?? '')
+        : '',
+    )
+    .join('');
+}
+
+function responseModel(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const info = (value as { info?: unknown }).info;
+  if (!info || typeof info !== 'object') return null;
+  const provider = (info as { providerID?: unknown }).providerID;
+  const model = (info as { modelID?: unknown }).modelID;
+  return typeof provider === 'string' && typeof model === 'string' ? `${provider}/${model}` : null;
+}
+
+function responseError(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const info = (value as { info?: unknown }).info;
+  if (!info || typeof info !== 'object') return null;
+  const error = (info as { error?: unknown }).error;
+  return error ? JSON.stringify(error).slice(0, 500) : null;
+}
+
+function declaredModelMatchesObserved(declared: string, observed: string): boolean {
+  return observed === declared || observed.endsWith(`/${declared}`);
+}
+
+async function jsonOrError<T>(response: Response, label: string): Promise<T> {
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`${label} ${response.status}: ${raw.slice(0, 240)}`);
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error(`${label} returned invalid JSON: ${raw.slice(0, 240)}`);
+  }
+}
+
+async function pumpGlobalEvents(
+  response: Response,
+  probe: TurnEventProbe,
+  t0: number,
+): Promise<TurnEventObservation> {
+  if (!response.ok || !response.body) {
+    throw new Error(
+      `global event subscription ${response.status}: ${(await response.text()).slice(0, 240)}`,
+    );
+  }
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('text/event-stream')) {
+    throw new Error(`global event subscription returned ${contentType || 'no content-type'}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new JsonSseDecoder();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      for (const event of decoder.push(value)) {
+        probe.accept(event, elapsed(t0));
+        if (probe.complete) {
+          await reader.cancel().catch(() => {});
+          return probe.snapshot();
+        }
+      }
+    }
+    for (const event of decoder.finish()) probe.accept(event, elapsed(t0));
+    if (probe.complete) return probe.snapshot();
+    throw new Error('global event stream ended before the benchmark observation completed');
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function fetchApiSession(config: CliConfig, sessionId: string): Promise<ApiSessionRow> {
+  const response = await fetch(
+    `${config.base}/projects/${encodeURIComponent(config.project)}/sessions/${encodeURIComponent(sessionId)}`,
+    { headers: { authorization: `Bearer ${config.jwt}` }, signal: AbortSignal.timeout(30_000) },
+  );
+  return jsonOrError<ApiSessionRow>(response, 'session read');
+}
+
+async function runtimeHealth(sandboxUrl: string, jwt: string): Promise<RuntimeHealth> {
+  const response = await fetch(`${sandboxUrl.replace(/\/+$/, '')}/kortix/health`, {
+    headers: { authorization: `Bearer ${jwt}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  return jsonOrError<RuntimeHealth>(response, 'runtime health');
+}
+
+async function stopSession(config: CliConfig, sessionId: string): Promise<RunResult['cleanup']> {
+  if (config.keep) return { kept: true };
+  const t0 = performance.now();
+  try {
+    const response = await fetch(
+      `${config.base}/projects/${encodeURIComponent(config.project)}/sessions/${encodeURIComponent(sessionId)}/stop`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.jwt}`,
+          'content-type': 'application/json',
+        },
+        body: '{}',
+        signal: AbortSignal.timeout(120_000),
+      },
+    );
+    const durationMs = performance.now() - t0;
+    if (!response.ok) {
+      if (response.status === 409 && (await fetchApiSession(config, sessionId)).status === 'stopped') {
+        await response.body?.cancel();
+        return { kept: false, status: response.status, durationMs: elapsed(t0), alreadyStopped: true };
+      }
+      return {
+        kept: false,
+        status: response.status,
+        durationMs,
+        error: (await response.text()).slice(0, 300),
+      };
+    }
+    await response.body?.cancel().catch(() => {});
+    const deadline = performance.now() + 60000;
+    while (performance.now() < deadline) {
+      const row = await fetchApiSession(config, sessionId);
+      if (row.status === 'stopped') return { kept: false, status: response.status, durationMs: elapsed(t0) };
+      await sleep(250);
+    }
+    return { kept: false, status: response.status, durationMs: elapsed(t0), error: 'session did not reach stopped after cleanup' };
+  } catch (error) {
+    return { kept: false, durationMs: performance.now() - t0, error: errorText(error) };
+  }
+}
+
+async function oneRun(config: CliConfig, run: number): Promise<RunResult> {
+  let t0 = performance.now();
+  const result: RunResult = { run, ok: false, startedAt: new Date().toISOString() };
+  let sessionId: string | undefined;
+  let streamController: AbortController | undefined;
+  let streamTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    let created: ApiSessionRow;
+    let priorNativeId: string | undefined;
+    if (config.declaration.workerPath === 'resume') {
+      const prior = await fetchApiSession(config, config.session!);
+      if (prior.status !== 'stopped') throw new Error(`resume requires stopped; observed ${prior.status}`);
+      if (prior.agent_name !== config.agent || prior.base_ref !== config.baseRef) {
+        throw new Error('resume configuration does not match --agent and --base-ref');
+      }
+      if (!prior.opencode_session_id) throw new Error('resume requires a persisted native conversation identity');
+      sessionId = config.session!;
+      result.statusBeforeStart = prior.status;
+      t0 = performance.now();
+      result.startedAt = new Date().toISOString();
+      priorNativeId = prior.opencode_session_id;
+      created = prior;
+    } else {
+      const createResponse = await fetch(`${config.base}/projects/${encodeURIComponent(config.project)}/sessions`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${config.jwt}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ agent_name: config.agent, base_ref: config.baseRef, opencode_model: config.declaration.model, provider: config.declaration.provider }),
+        signal: AbortSignal.timeout(READY_TIMEOUT_MS),
+      });
+      created = await jsonOrError<ApiSessionRow>(createResponse, 'session create');
+      sessionId = created.session_id;
+      if (!sessionId) throw new Error('session create returned no session_id');
+      result.createMs = elapsed(t0);
+    }
+    result.sessionId = sessionId;
+    const startDeadline = performance.now() + READY_TIMEOUT_MS;
+    let nativeId: string | undefined;
+    while (performance.now() < startDeadline) {
+      const remaining = startDeadline - performance.now();
+      const response = await fetch(`${config.base}/projects/${encodeURIComponent(config.project)}/sessions/${encodeURIComponent(sessionId)}/start?wait_ms=${Math.min(30000, Math.ceil(remaining))}`, {
+        method: 'POST', headers: { authorization: `Bearer ${config.jwt}`, 'content-type': 'application/json' },
+        body: '{}', signal: AbortSignal.timeout(Math.max(1, Math.ceil(remaining))),
+      });
+      const started = await jsonOrError<{ stage?: string; retriable?: boolean; opencode_session_id?: string; reason?: string; failure?: { message?: string } }>(response, 'session start');
+      if (started.stage === 'ready' && started.opencode_session_id) {
+        nativeId = started.opencode_session_id;
+        break;
+      }
+      if (!started.retriable || !['starting', 'provisioning'].includes(started.stage ?? '')) {
+        throw new Error(`session start is not ready: ${started.stage ?? 'unknown'} (${started.reason ?? 'no reason'}; ${started.failure?.message ?? 'no detail'})`);
+      }
+      await sleep(Math.min(1000, Math.max(0, startDeadline - performance.now())));
+    }
+    if (!nativeId) throw new Error('session start did not resolve a native conversation identity');
+    if (priorNativeId && nativeId !== priorNativeId) throw new Error('resume changed the native conversation identity');
+    result.startMs = elapsed(t0);
+    created = await fetchApiSession(config, sessionId);
+    if (created.opencode_session_id !== nativeId) throw new Error('session start did not persist the native conversation identity');
+    let row: ApiSessionRow = created;
+    const urlDeadline = performance.now() + READY_TIMEOUT_MS;
+    while (!row.sandbox_url && performance.now() < urlDeadline) {
+      await sleep(250);
+      row = await fetchApiSession(config, sessionId);
+      if (row.status === 'failed') throw new Error(`session entered failed: ${row.status}`);
+    }
+    if (!row.sandbox_url) throw new Error('session did not publish sandbox_url before timeout');
+    const sandboxUrl = row.sandbox_url.replace(/\/+$/, '');
+
+    let health: RuntimeHealth | null = null;
+    let lastHealthError = '';
+    const healthDeadline = performance.now() + READY_TIMEOUT_MS;
+    while (performance.now() < healthDeadline) {
+      try {
+        const candidate = await runtimeHealth(sandboxUrl, config.jwt);
+        if (candidate.runtimeReady === true) {
+          health = candidate;
+          break;
+        }
+        lastHealthError = 'runtimeReady=false';
+      } catch (error) {
+        lastHealthError = errorText(error);
+      }
+      await sleep(250);
+    }
+    if (!health) throw new Error(`runtime did not become ready: ${lastHealthError || 'timeout'}`);
+    result.readyMs = elapsed(t0);
+    result.runtimeHealth = health;
+
+    row = await fetchApiSession(config, sessionId);
+    result.sessionReadMs = elapsed(t0);
+    result.provider = row.sandbox_provider ?? created.sandbox_provider ?? null;
+    result.warmMarkerAtRead = typeof row.metadata?.warm === 'boolean' ? row.metadata.warm : null;
+    if (!result.provider) throw new Error('session read returned no sandbox_provider');
+    if (result.provider.toLowerCase() !== config.declaration.provider) {
+      throw new Error(
+        `provider mismatch: declared ${config.declaration.provider}, observed ${result.provider}`,
+      );
+    }
+    const observedRuntime = health.engine ?? (health.opencode === 'ok' ? 'opencode' : null);
+    if (observedRuntime !== config.declaration.runtime) {
+      throw new Error(
+        `runtime mismatch: declared ${config.declaration.runtime}, observed ${observedRuntime ?? 'unknown'}`,
+      );
+    }
+
+    const listResponse = await fetch(`${sandboxUrl}/session`, {
+      headers: { authorization: `Bearer ${config.jwt}` },
+      signal: AbortSignal.timeout(60_000),
+    });
+    const sessions = await jsonOrError<Array<{ id?: unknown }>>(
+      listResponse,
+      'runtime session list',
+    );
+    const pinnedId = row.opencode_session_id ?? health.opencode_session_id ?? null;
+    const runtimeSessionId = selectRuntimeSessionId(sessions, pinnedId);
+    result.runtimeSessionId = runtimeSessionId;
+    result.sessionDiscoveryMs = elapsed(t0);
+
+    streamController = new AbortController();
+    streamTimer = setTimeout(
+      () =>
+        streamController.abort(
+          new Error(`global event observation exceeded ${TURN_TIMEOUT_MS} ms`),
+        ),
+      TURN_TIMEOUT_MS,
+    );
+    result.eventRequestMs = elapsed(t0);
+    const eventResponse = await fetch(`${sandboxUrl}/global/event`, {
+      headers: { authorization: `Bearer ${config.jwt}` },
+      signal: streamController.signal,
+    });
+    result.eventResponseMs = elapsed(t0);
+    const messageId = mintBenchmarkMessageId();
+    const probe = new TurnEventProbe(
+      runtimeSessionId,
+      messageId,
+      config.declaration.tool,
+      TOOL_SENTINEL,
+    );
+    let eventError: unknown = null;
+    const observationPromise = pumpGlobalEvents(eventResponse, probe, t0).catch((error) => {
+      eventError = error;
+      return probe.snapshot();
+    });
+
+    result.messageRequestMs = elapsed(t0);
+    const messageResponse = await fetch(
+      `${sandboxUrl}/session/${encodeURIComponent(runtimeSessionId)}/message`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.jwt}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageID: messageId,
+          parts: [{ type: 'text', text: config.prompt }],
+        }),
+        signal: AbortSignal.timeout(TURN_TIMEOUT_MS),
+      },
+    );
+    result.messageResponseMs = elapsed(t0);
+    const assistant = await jsonOrError<unknown>(messageResponse, 'session message');
+    result.responseText = responseText(assistant);
+    const assistantError = responseError(assistant);
+    if (assistantError) throw new Error(assistantError);
+
+    const observation = await observationPromise;
+    clearTimeout(streamTimer);
+    streamTimer = undefined;
+    streamController.abort();
+    streamController = undefined;
+    if (eventError) throw eventError;
+    result.firstTokenMs = observation.firstTokenMs;
+    result.firstToolResultMs = observation.firstToolResultMs;
+    result.assistantMessageIds = observation.assistantMessageIds;
+    result.eventCount = observation.eventCount;
+    const responseModelId = responseModel(assistant);
+    result.observedModels = [
+      ...new Set([...observation.observedModels, ...(responseModelId ? [responseModelId] : [])]),
+    ];
+    if (observation.terminalError) throw new Error(observation.terminalError);
+    if (result.firstTokenMs === undefined) {
+      throw new Error('global event stream produced no assistant text event');
+    }
+    if (config.declaration.tool && result.firstToolResultMs === undefined) {
+      throw new Error(`global event stream produced no completed ${TOOL_SENTINEL} tool result`);
+    }
+    if (config.expectedText && !result.responseText.includes(config.expectedText)) {
+      throw new Error(
+        `assistant response did not contain expected text ${JSON.stringify(config.expectedText)}`,
+      );
+    }
+    if (result.observedModels.length === 0) {
+      throw new Error('assistant response and events exposed no providerID/modelID');
+    }
+    if (
+      !result.observedModels.every((model) =>
+        declaredModelMatchesObserved(config.declaration.model, model),
+      )
+    ) {
+      throw new Error(
+        `model mismatch: declared ${config.declaration.model}, observed ${result.observedModels.join(', ')}`,
+      );
+    }
+
+    const timeline =
+      (row.metadata?.session_start_timeline as { totalMs?: unknown } | undefined)?.totalMs ??
+      row.session_start_timeline?.totalMs ??
+      null;
+    result.serverTimelineMs = typeof timeline === 'number' ? timeline : null;
+    result.totalMs = elapsed(t0);
+    result.ok = true;
+  } catch (error) {
+    result.error = errorText(error);
+    result.totalMs = elapsed(t0);
+  } finally {
+    if (streamTimer) clearTimeout(streamTimer);
+    streamController?.abort();
+    if (sessionId) result.cleanup = await stopSession(config, sessionId);
+  }
+  return result;
+}
+
+function formatSeconds(value?: number): string {
+  return value === undefined ? '      -' : `${(value / 1000).toFixed(2)}s`.padStart(7);
+}
+
+async function apiHealth(config: CliConfig): Promise<Record<string, unknown>> {
+  const response = await fetch(`${config.base}/health`, { signal: AbortSignal.timeout(30_000) });
+  const health = await jsonOrError<Record<string, unknown>>(response, 'API health');
+  return {
+    environment: health.environment ?? null,
+    version: health.version ?? null,
+    commit: health.commit ?? null,
+    started_at: health.started_at ?? null,
+    instance: health.instance ?? null,
+  };
+}
+
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    console.log(usage());
+    return;
+  }
+  const config = parseCli(argv);
+  const metadata = {
+    schemaVersion: 2,
+    benchmark: 'kortix-session-ttft',
+    declaration: config.declaration,
+    protocol: {
+      lifecycle: config.declaration.workerPath === 'resume'
+        ? 'POST /projects/:projectId/sessions/:sessionId/start'
+        : 'POST /projects/:projectId/sessions',
+      readiness: 'POST /projects/:projectId/sessions/:sessionId/start until ready with a persisted native identity, then GET /kortix/health',
+      sessionDiscovery: 'GET /session',
+      events: 'GET /global/event',
+      message: 'POST /session/:sessionId/message',
+      clock: `external monotonic wall clock starting before ${config.declaration.workerPath === 'resume' ? 'session start' : 'session creation'}`,
+      firstToken: 'first non-empty assistant text part/delta on /global/event',
+      firstToolResult: `completed tool part containing ${TOOL_SENTINEL}`,
+    },
+    evidence: {
+      provider: 'verified against project session sandbox_provider for every usable run',
+      runtime: 'verified against /kortix/health engine or a ready OpenCode daemon; unknown runtime fails',
+      model: 'verified against assistant providerID/modelID for every usable run',
+      configuration: 'agent and base ref selected on creation; verified against the stopped session before resume',
+      region: 'operator-declared; the session API does not expose provider region',
+      workerPath: 'new-session creates a session; resume verifies stopped then calls start with the same native conversation identity; allocation cache outcome is unknown',
+      workspacePath: 'operator-declared; the session API does not expose allocation cache outcome',
+    },
+    comparability: {
+      fixedDimensions: ['provider', 'region', 'model'],
+      pathDimensions: ['runtime', 'workerPath', 'workspacePath', 'tool'],
+      rule: 'Compare two outputs only when all fixed dimensions match. Always report every path dimension.',
+    },
+    target: { base: config.base, project: config.project, agent: config.agent, baseRef: config.baseRef, session: config.session ?? null },
+  };
+
+  if (config.dryRun) {
+    console.log(JSON.stringify({ ...metadata, dryRun: true }, null, 2));
+    return;
+  }
+  if (!config.jwt) throw new Error('missing KORTIX_BENCH_JWT, --jwt-file, or --jwt');
+
+  const targetHealth = await apiHealth(config);
+  const results: RunResult[] = [];
+  console.log(`\n=== ${config.declaration.label} — ${config.runs} runs against ${config.base} ===`);
+  console.log(
+    `declared provider=${config.declaration.provider} region=${config.declaration.region} ` +
+      `model=${config.declaration.model}`,
+  );
+  console.log(
+    `path runtime=${config.declaration.runtime} worker=${config.declaration.workerPath} ` +
+      `workspace=${config.declaration.workspacePath}`,
+  );
+  console.log('region and environment allocation cache outcomes are operator declarations; new-session does not mean a cold VM.');
+  console.log(
+    `run  ${config.declaration.workerPath === 'resume' ? 'start ' : 'create'}    ready     send    TOKEN   ${config.declaration.tool ? ' TOOL    ' : ''}done     status`,
+  );
+
+  for (let run = 1; run <= config.runs; run++) {
+    const result = await oneRun(config, run);
+    results.push(result);
+    console.log(
+      `${String(run).padStart(3)}  ${formatSeconds(result.createMs ?? result.startMs)}  ` +
+        `${formatSeconds(result.readyMs)}  ${formatSeconds(result.messageRequestMs)}  ` +
+        `${formatSeconds(result.firstTokenMs)}  ` +
+        `${config.declaration.tool ? `${formatSeconds(result.firstToolResultMs)}  ` : ''}` +
+        `${formatSeconds(result.messageResponseMs)}  ` +
+        `${result.ok ? 'ok' : `FAIL ${result.error ?? 'unknown error'}`}`,
+    );
+  }
+
+  const usable = results.filter(
+    (result): result is RunResult & { firstTokenMs: number; readyMs: number } =>
+      result.ok && result.firstTokenMs !== undefined && result.readyMs !== undefined,
+  );
+  const tokenTimes = usable.map((result) => result.firstTokenMs);
+  const readyTimes = usable.map((result) => result.readyMs);
+  const toolTimes = usable
+    .map((result) => result.firstToolResultMs)
+    .filter((value): value is number => value !== undefined);
+  const observedProviders = [...new Set(results.map((result) => result.provider).filter(Boolean))];
+  const observedModels = [...new Set(results.flatMap((result) => result.observedModels ?? []))];
+  const cleanupFailures = results.filter((result) => result.cleanup?.error).length;
+  const summary = {
+    runs: results.length,
+    usable: usable.length,
+    failed: results.length - usable.length,
+    cleanupFailures,
+    observedProviders,
+    observedModels,
+    readyMs:
+      usable.length > 0
+        ? {
+            p50: percentile(readyTimes, 50),
+            p95: percentile(readyTimes, 95),
+            min: Math.min(...readyTimes),
+            max: Math.max(...readyTimes),
+          }
+        : null,
+    firstTokenMs:
+      usable.length > 0
+        ? {
+            p50: percentile(tokenTimes, 50),
+            p95: percentile(tokenTimes, 95),
+            min: Math.min(...tokenTimes),
+            max: Math.max(...tokenTimes),
+          }
+        : null,
+    firstToolResultMs:
+      toolTimes.length > 0
+        ? {
+            p50: percentile(toolTimes, 50),
+            p95: percentile(toolTimes, 95),
+            min: Math.min(...toolTimes),
+            max: Math.max(...toolTimes),
+          }
+        : null,
+  };
+
+  console.log(`\n--- ${config.declaration.label} ---`);
+  console.log(
+    `runs ${summary.runs}; usable ${summary.usable}; failed ${summary.failed}; cleanup failures ${summary.cleanupFailures}`,
+  );
+  if (summary.firstTokenMs && summary.readyMs) {
+    console.log(
+      `TTFT p50 ${(summary.firstTokenMs.p50 / 1000).toFixed(2)}s; ` +
+        `p95 ${(summary.firstTokenMs.p95 / 1000).toFixed(2)}s; ` +
+        `ready p50 ${(summary.readyMs.p50 / 1000).toFixed(2)}s`,
+    );
+  }
+  if (summary.firstToolResultMs) {
+    console.log(
+      `first tool result p50 ${(summary.firstToolResultMs.p50 / 1000).toFixed(2)}s; ` +
+        `p95 ${(summary.firstToolResultMs.p95 / 1000).toFixed(2)}s`,
+    );
+  }
+
+  const output = {
+    ...metadata,
+    recordedAt: new Date().toISOString(),
+    apiHealth: targetHealth,
+    summary,
+    results,
+  };
+  await writeFile(config.output, `${JSON.stringify(output, null, 2)}\n`, { mode: 0o600 });
+  console.log(`raw: ${config.output}`);
+
+  if (summary.failed > 0 || summary.cleanupFailures > 0) process.exitCode = 1;
+}
+
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(`\nTTFT BENCH FAILED: ${errorText(error)}`);
+    console.error(`\n${usage()}`);
+    process.exitCode = 1;
+  });
+}

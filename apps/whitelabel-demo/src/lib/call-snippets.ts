@@ -86,6 +86,8 @@ export interface SnippetContext {
   agent?: string | null;
   /** The model a mid-session change would move to. */
   model?: string | null;
+  /** True when the session runs an immutable compiled worker bundle. */
+  compiledRuntime?: boolean;
   executionId?: string;
   /** The project name a provision would send, when the field is filled in. */
   projectName?: string;
@@ -254,6 +256,27 @@ function sessionCreate(ctx: SnippetContext): CallSnippet {
 
 function sessionPrompt(ctx: SnippetContext): CallSnippet {
   const agent = ctx.agent ?? null;
+  if (ctx.compiledRuntime) {
+    return {
+      id: 'session.prompt',
+      title: 'Send a prompt',
+      summary: 'The compiled bundle owns the model and agent for every message.',
+      sdk: [
+        'await kortix',
+        '  .session(projectId, sessionId)',
+        "  .send('Refund order 4182');",
+      ].join('\n'),
+      http: {
+        kind: 'runtime',
+        summary:
+          'The SDK resolves this session’s runtime and sends the text. The compiled bundle supplies its model and agent; the prompt carries no mutable override.',
+      },
+      serverInjected: [],
+      notes: [
+        'Do not send model, agent, or variant options to a compiled session. Change the project configuration and start a new session instead.',
+      ],
+    };
+  }
   return {
     id: 'session.prompt',
     title: 'Send a prompt (and switch agent per message)',
@@ -322,6 +345,23 @@ function sessionModel(ctx: SnippetContext): CallSnippet {
   const model = ctx.model ?? PLACEHOLDER.model;
   const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
+
+  if (ctx.compiledRuntime) {
+    return {
+      id: 'session.model',
+      title: 'Model fixed at session start',
+      summary: 'A compiled session does not support a live model change.',
+      sdk: '// No live model mutation is available.\n// Start a new session after changing the project configuration.',
+      http: {
+        kind: 'runtime',
+        summary: 'No request is sent for a compiled session.',
+      },
+      serverInjected: [],
+      notes: [
+        'The model belongs to the immutable compiled bundle. The current session keeps it for its full lifetime.',
+      ],
+    };
+  }
 
   return {
     id: 'session.model',

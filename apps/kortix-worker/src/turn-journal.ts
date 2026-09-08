@@ -979,13 +979,14 @@ export class TurnAdmissionJournal {
     });
   }
 
-  requestAbort(messageId: string): Promise<boolean> {
+  requestAbort(messageId: string, options: { ownLeaseOnly?: boolean } = {}): Promise<boolean> {
     return this.serialize(async () => {
       const id = messageId.trim();
       while (true) {
         await this.reload();
         const turn = this.reduced.turns.get(id);
         if (!turn || turn.state !== 'started') return false;
+        if (options.ownLeaseOnly && turn.ownerId !== this.ownerId) return false;
         if (turn.abortRequested) return true;
         const event: TurnJournalEvent = {
           type: 'abort_requested',

@@ -75,6 +75,7 @@ export interface MockUpstream {
    *  never provisioned, to prove per-user filtering actually filters. */
   seedProject(overrides?: Partial<MockProject>): MockProject;
   seedSessionCosts(projectId: string, rows: MockSessionCostRow[]): void;
+  seedSession(projectId: string, sessionId: string, metadata: Record<string, unknown>): void;
   /** Seed the connections `/connections` returns for a project. */
   seedConnections(
     projectId: string,
@@ -96,6 +97,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
   const projects = new Map<string, MockProject>();
   const secrets = new Map<string, Array<{ name: string; value?: string }>>();
   const sessionCosts = new Map<string, MockSessionCostRow[]>();
+  const sessions = new Map<string, Record<string, unknown>>();
   const connections = new Map<string, MockConnection[]>();
   const failingSessionCostProjects = new Set<string>();
   const malformedCliTokenProjects = new Set<string>();
@@ -296,6 +298,28 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         return Response.json([]);
       }
 
+      const sessionMatch = p.match(/^projects\/([^/]+)\/sessions\/([^/]+)$/);
+      if (sessionMatch && method === 'GET') {
+        const row = sessions.get(`${sessionMatch[1]}/${sessionMatch[2]}`);
+        return row
+          ? Response.json(row)
+          : Response.json({ error: 'Not found' }, { status: 404 });
+      }
+
+      const sessionModelMatch = p.match(
+        /^projects\/([^/]+)\/sessions\/([^/]+)\/model$/,
+      );
+      if (sessionModelMatch && method === 'PUT') {
+        const requested =
+          body && typeof body === 'object'
+            ? (body as Record<string, unknown>).opencode_model
+            : null;
+        return Response.json({
+          opencode_model: requested,
+          applied_live: true,
+        });
+      }
+
       // Any other `projects/:id/...` sub-path (sessions, files, connectors, …) —
       // generic forwarded-OK, recorded for assertion.
       if (/^projects\/[^/]+(\/.*)?$/.test(p)) {
@@ -406,6 +430,30 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
     },
     seedSessionCosts(projectId, rows) {
       sessionCosts.set(projectId, rows);
+    },
+    seedSession(projectId, sessionId, metadata) {
+      const now = new Date().toISOString();
+      sessions.set(`${projectId}/${sessionId}`, {
+        session_id: sessionId,
+        account_id: 'acct_test',
+        project_id: projectId,
+        branch_name: sessionId,
+        base_ref: 'main',
+        sandbox_provider: 'daytona',
+        sandbox_id: sessionId,
+        sandbox_url: `/p/session-${sessionId}/8000`,
+        opencode_session_id: `runtime-${sessionId}`,
+        name: 'Runtime policy test',
+        custom_name: null,
+        agent_name: 'support',
+        status: 'running',
+        error: null,
+        metadata,
+        opencode_sessions: [],
+        can_access: true,
+        created_at: now,
+        updated_at: now,
+      });
     },
     seedConnections(projectId, connectionRows) {
       connections.set(projectId, connectionRows);

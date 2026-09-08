@@ -1,5 +1,5 @@
 export type BenchmarkRuntime = 'pi' | 'opencode';
-export type WorkerPath = 'cold-create' | 'warm-pool-hit' | 'resume';
+export type WorkerPath = 'new-session' | 'resume';
 export type WorkspacePath =
   | 'not-observed'
   | 'same-runtime'
@@ -30,7 +30,7 @@ interface GlobalEventEnvelope {
 }
 
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-const WORKER_PATHS = new Set<WorkerPath>(['cold-create', 'warm-pool-hit', 'resume']);
+const WORKER_PATHS = new Set<WorkerPath>(['new-session', 'resume']);
 const WORKSPACE_PATHS = new Set<WorkspacePath>([
   'not-observed',
   'same-runtime',
@@ -76,7 +76,7 @@ export function parseBenchmarkDeclaration(argv: readonly string[]): BenchmarkDec
 
   const workerPath = required(argv, 'worker-path') as WorkerPath;
   if (!WORKER_PATHS.has(workerPath)) {
-    throw new Error('--worker-path must be cold-create, warm-pool-hit, or resume');
+    throw new Error('--worker-path must be new-session or resume; allocation cache outcomes are not exposed');
   }
 
   const workspacePath = required(argv, 'workspace-path') as WorkspacePath;

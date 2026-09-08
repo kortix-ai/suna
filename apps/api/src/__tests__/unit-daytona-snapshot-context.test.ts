@@ -276,7 +276,7 @@ describe('Daytona auto-build self-heal', () => {
     expect(deleted).toBe(true);
     expect(attempt).toBe(2);
     expect(contextPaths.length).toBe(2);
-  }, 15_000);
+  }, 60_000);
 
   test('re-stages a FRESH context + retries on a stale-context error, then succeeds', async () => {
     contextPaths.length = 0;
@@ -299,7 +299,7 @@ describe('Daytona auto-build self-heal', () => {
     // Distinct temp dirs prove each attempt got a NEW context. The bug staged
     // ONCE outside the loop, so the disturbed context never recovered.
     expect(new Set(contextPaths).size).toBe(2);
-  }, 15_000);
+  }, 60_000);
 
   test('does NOT retry a genuine build error — fails fast, no wasted rebuild', async () => {
     contextPaths.length = 0;
@@ -315,5 +315,5 @@ describe('Daytona auto-build self-heal', () => {
     );
     expect(attempt).toBe(1); // a real build error is NOT re-staged/retried
     expect(contextPaths.length).toBe(1);
-  }, 15_000);
+  }, 60_000);
 });

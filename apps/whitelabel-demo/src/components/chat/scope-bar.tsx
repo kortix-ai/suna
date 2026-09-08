@@ -44,6 +44,10 @@ import { getSessionToken } from '@/lib/session';
 import { sessionCreateFailure } from '@/lib/session-create-failure';
 import { buildSessionCreateInput } from '@/lib/session-overrides';
 import {
+  isCompiledSessionRuntime,
+  runtimeAllowsLiveModelChange,
+} from '@/lib/session-runtime';
+import {
   buildCompleteSessionScopeReplacement,
   readScopeBindingIds,
   sessionScopeIsReadable,
@@ -102,6 +106,11 @@ export function ScopeBar({
     retry: false,
   });
   const connectors = useConnectorBindingChoices(projectId);
+  const compiledRuntime = isCompiledSessionRuntime(session.data?.metadata);
+  const canChangeModel =
+    session.isSuccess &&
+    session.data?.can_access !== false &&
+    runtimeAllowsLiveModelChange(session.data?.metadata);
   // Same query key the switcher inside the popover uses, so this label is the
   // switcher's own answer rather than a second opinion — and costs no second
   // request. The upstream field is named after the runtime, which is why this
@@ -119,6 +128,7 @@ export function ScopeBar({
     },
     staleTime: 30_000,
     retry: false,
+    enabled: canChangeModel,
   });
 
   // A redacted session arrives as a perfectly good HTTP 200 with
@@ -279,8 +289,8 @@ export function ScopeBar({
         label="Agent"
         value={data.agent_name ?? 'Project default'}
         title="Agent"
-        badge={scopeControl('agent').badge}
-        note={scopeControl('agent').note}
+        badge={scopeControl('agent', compiledRuntime).badge}
+        note={scopeControl('agent', compiledRuntime).note}
       />
 
       <ScopeChip
@@ -596,14 +606,16 @@ export function ScopeBar({
       <ScopeChip
         icon={<Cpu className="size-3" />}
         label="Model"
-        value={model.data?.model ?? 'Project default'}
+        value={compiledRuntime ? 'Fixed at start' : model.data?.model ?? 'Project default'}
         title="Model"
-        badge={scopeControl('model').badge}
-        note={scopeControl('model').note}
+        badge={scopeControl('model', compiledRuntime).badge}
+        note={scopeControl('model', compiledRuntime).note}
       >
-        <div className="-ml-2 mt-2">
-          <ModelSwitcher projectId={projectId} sessionId={sessionId} />
-        </div>
+        {canChangeModel ? (
+          <div className="-ml-2 mt-2">
+            <ModelSwitcher projectId={projectId} sessionId={sessionId} />
+          </div>
+        ) : null}
       </ScopeChip>
     </div>
   );

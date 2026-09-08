@@ -413,7 +413,7 @@ its model call. Automatic summaries make no environment call.
 Sixteen focused tests pass with 138 assertions. These include four threshold
 tests and twelve HTTP compaction tests. Automatic compaction inside a running
 tool loop and provider context-overflow recovery remain unimplemented.
-The real automatic-compaction preview journey remains pending deployment.
+The real automatic-compaction preview journey is blocked by the Platinum ingress upload failure described below.
 
 The command palette now gates Pi model and agent changes in suggestions, search,
 pages, and selection handlers. Manual and automatic summary cards use the neutral
@@ -436,4 +436,97 @@ another model's context window. Health reports the effective limits.
 
 Fifty-five focused tests pass with 195 assertions. Real subprocess tests check
 the compiled default, an explicit override, and an unknown alias. API and worker
-typechecks pass. Live limit verification remains pending deployment.
+typechecks pass. Preview `dbcdf5762cca89909d90854382b16192710fccb2` reports
+`model_context_window: 1050000` and `model_max_output: 128000` after a real
+worker restart. Its native conversation ID remains unchanged.
+
+
+## White-label runtime controls and streaming — 2026-09-08
+
+The white-label reference app uses the SDK runtime identity to gate live model
+and agent changes. The popovers state that these choices are fixed at session
+creation. The scope dialog and SDK call examples follow the same rule. The
+wrapper model route returns `409 SESSION_MODEL_FIXED_AT_START` before forwarding
+a mutation. The API model route applies the same rejection before metadata writes.
+This is explicit unsupported behavior; live switching remains outstanding.
+
+The reference app ran with the real `pi.kortix.com` API behind a temporary,
+authenticated HTTPS tunnel. Browser checks opened the existing custom `reviewer`
+session, inspected both fixed-configuration popovers, and sent a 30-sentence
+prompt. The DOM showed the partial answer ending at sentence 27 with Stop visible.
+It then showed all 30 sentences and `WHITELABEL_PI_STREAM_B38A`, followed by Stop
+clearing. Authenticated read-back found exactly the user and assistant messages,
+no assistant error, empty turn/prompt queues, and `404` for the absent environment.
+A direct wrapper `PUT /api/session-model` returned the expected 409. The temporary
+app and tunnel stopped after verification. The preview API was at `dbcdf5762`.
+
+## Full-preview upload failure — 2026-09-08
+
+The exact `216bd67b174d88504008f0ebe04d96027f745087` target-full run
+[34232894475](https://github.com/kortix-ai/suna/actions/runs/34232894475) reports
+454/461 API/CLI flows passed, four failed, and three skipped (two quarantined).
+All 19 browser journeys passed. `SHIP-1`, `SHIP-4`, `SHIP-6`, and `SHIP-9` fail
+when Git uploads receive synthetic 502 responses from the sandbox ingress.
+
+Authenticated probes isolate the boundary. A deliberately malformed 340,000-byte
+Git request returns the API's expected 400 in 2 ms directly and 4 ms through the
+internal Caddy proxy. The same request through the public origin returns 502 after
+35.7 seconds. A 128-byte request returns 400 through both paths. Temporary scoped
+PATs were revoked after the probes. These bodies cannot update repository refs.
+
+The automatic-compaction fixture has the correct 1,050,000-token model limit.
+Its first 120 KB context-only input also fails at ingress. No context batch was
+confirmed accepted. Automatic threshold behavior therefore has local HTTP and
+subprocess coverage, but no successful large-context preview journey yet.
+The provider ingress failure remains unresolved. It must be fixed before large
+prompts, large tool records, Git shipping, and the full preview gate are accepted.
+
+
+## Storage-outage recovery and API model guard — 2026-09-08
+
+An exhausted transient append now retains its exact JSON item and idempotency
+key. The worker blocks unrelated writes while it retries that same item.
+Recovery interrupts only its own abandoned lease, then restores durable state.
+Permanent rejection and a conflicting fence remain closed. A replacement
+worker's lease cannot be interrupted by this recovery path.
+
+Focused tests cover committed and uncommitted responses, repeated outages,
+concurrent recovery, permanent rejection, and a competing owner. Two real worker
+process journeys cover 6.5-second read/write and write-only store outages. Both
+settle the interrupted question, preserve one prior tool execution, and complete
+the next prompt. The daemon startup test now holds its capability response until
+after construction returns; it no longer uses a 300 ms wall-clock cutoff.
+
+`pnpm test -- --id SESS-28` passes against the local HTTP API: 1/1 flows,
+0 failed, 0 skipped. Anonymous/nonmember mutations return 401/403. Pi returns
+`409 SESSION_MODEL_FIXED_AT_START` and preserves all metadata. A queued OpenCode
+session accepts and stores a native model with `applied_live: false`.
+
+## Resume ingress and product benchmark protocol — 2026-09-08
+
+The benchmark now uses the SDK's readiness contract: create, poll `/start` until
+ready with a persisted native conversation ID, then subscribe to `/global/event`
+and send the message. Resume requires a stopped session with the specified agent,
+base ref, and persisted conversation. Provider, runtime, and all observed models
+must match the declaration. Region and allocation-cache outcomes remain declared.
+
+The first live smoke missed `/start`; its timings are invalid product evidence.
+After the correction, one new-session smoke reached runtime readiness at 3,909 ms,
+connected to SSE in 287 ms, observed first text at 13,628 ms, and confirmed stop.
+This is protocol verification, not a latency percentile or a runtime comparison.
+The API artifact was `dbcdf5762cca89909d90854382b16192710fccb2`.
+
+A resume exposed two defects. Daytona rotated its preview token after stop. The
+old token returned 401; a fresh endpoint returned 502 while no worker listened.
+The API now invalidates ingress after wake and retries a rejected session-list
+credential once with fresh credentials. Pi process bootstrap runs after the
+worker lease becomes active and its compute window reopens. OpenCode skips this
+Pi bootstrap. The 100 related tests pass, including permanent auth rejection.
+Live verification of this fix is recorded after deployment.
+
+The latest local full run passes REST/CLI flows (396/396), SDK, worker, browser
+(17 passed, 2 skipped), runner, route coverage, and worktree lanes. Its package
+lane fails two snapshot tests after one times out. Those snapshot cases pass
+11/11 in isolation after their filesystem-staging timeout is corrected.
+A package rerun exposes separate snapshot cleanup, strict timing, and CLI status
+failures. The full local gate is not green; focused passes do not replace it.

@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { ModelSwitcher } from '@/components/workbench/model-switcher';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
+import { runtimeAllowsLiveModelChange } from '@/lib/session-runtime';
 import { cn } from '@/lib/utils';
 import { isRuntimeReady } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -41,6 +42,10 @@ export function SessionHeader({ projectId, sessionId }: { projectId: string; ses
   const title =
     session.data?.name || session.data?.custom_name || session.data?.branch_name || 'Session';
   const status = session.data?.status;
+  const canChangeModel =
+    session.isSuccess &&
+    session.data?.can_access !== false &&
+    runtimeAllowsLiveModelChange(session.data?.metadata);
 
   // Runtime liveness probe (GET /kortix/health) for the header dot.
   const health = useQuery({
@@ -66,7 +71,9 @@ export function SessionHeader({ projectId, sessionId }: { projectId: string; ses
       {/* Mid-session model change. Placed by the status badge because switching
           restarts the runtime and ends the in-flight turn — it belongs with the
           session's live state, not buried in settings. */}
-      <ModelSwitcher projectId={projectId} sessionId={sessionId} />
+      {canChangeModel ? (
+        <ModelSwitcher projectId={projectId} sessionId={sessionId} />
+      ) : null}
       {status && (
         <Badge variant="secondary" className="capitalize">
           {status}

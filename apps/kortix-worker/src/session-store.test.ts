@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   DurableSessionStorage,
+  type SessionLogItem,
   MAX_SESSION_LOG_ITEM_BYTES,
   RemoteSessionLog,
   SessionLogConflictError,
@@ -396,4 +397,105 @@ test('exhausted transient reads remain recoverable and distinct from permanent r
   const error = await permanent.read().catch(error => error);
   expect(error).not.toBeInstanceOf(SessionLogReadUnavailableError);
   expect(error.message).toBe('session log read failed: HTTP 401');
+});
+
+test.each([false, true])('recovers an uncertain append with the original fence, committed=%s', async (committedBeforeOutage) => {
+  let available = false;
+  const persisted = new Map<string, SessionLogItem>();
+  const attempts: Array<{ key: string; body: string }> = [];
+  const log = new RemoteSessionLog('https://api.example.test/projects/p', 'session-1', {}, {
+    maxAttempts: 1,
+    createAppendId: () => APPEND_ID,
+    fetch: async (_url, init) => {
+      if (init?.method !== 'POST') return available ? Response.json([...persisted.values()]) : response(503);
+      const key = new Headers(init?.headers).get('idempotency-key')!;
+      const body = String(init?.body);
+      attempts.push({ key, body });
+      if (available || committedBeforeOutage) persisted.set(key, JSON.parse(body));
+      return response(available ? 204 : 503);
+    },
+  });
+  await expect(log.append({ kind: 'name', name: 'recover me' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  expect(log.canRecoverPendingAppends).toBe(true);
+  await expect(log.append({ kind: 'name', name: 'later' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  expect(attempts).toHaveLength(1);
+  available = true;
+  expect(await log.recoverPendingAppends()).toBe(true);
+  expect(log.error).toBeNull();
+  expect(attempts).toEqual([attempts[0]!, attempts[0]!]);
+  expect(persisted.size).toBe(1);
+  await log.append({ kind: 'name', name: 'later' }, { idempotencyKey: 'later' });
+  expect(persisted.size).toBe(2);
+});
+
+test('permanent append failures never enable automatic recovery', async () => {
+  let calls = 0;
+  const log = new RemoteSessionLog('https://api.example.test/projects/p', 'session-1', {}, {
+    maxAttempts: 1,
+    fetch: async () => { calls++; return response(403); },
+  });
+  await expect(log.append({ kind: 'name', name: 'denied' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  expect(log.canRecoverPendingAppends).toBe(false);
+  expect(await log.recoverPendingAppends()).toBe(false);
+  expect(calls).toBe(1);
+});
+
+test('a second outage retains the pending fence and blocks unrelated appends until recovery', async () => {
+  let available = false;
+  const attempts: string[] = [];
+  const log = new RemoteSessionLog('https://api.example.test/projects/p', 'session-1', {}, {
+    maxAttempts: 1,
+    fetch: async (_url, init) => {
+      if (init?.method !== 'POST') return Response.json([]);
+      attempts.push(String(init?.body));
+      return response(available ? 204 : 503);
+    },
+  });
+  await expect(log.append({ kind: 'name', name: 'pending' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  expect(await log.recoverPendingAppends()).toBe(false);
+  expect(log.canRecoverPendingAppends).toBe(true);
+  await expect(log.append({ kind: 'name', name: 'unrelated' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  available = true;
+  expect(await log.recoverPendingAppends()).toBe(true);
+  expect(attempts).toEqual([attempts[0]!, attempts[0]!, attempts[0]!]);
+});
+
+test('a pending fence conflict keeps the worker closed to new writes', async () => {
+  let recovering = false;
+  const log = new RemoteSessionLog('https://api.example.test/projects/p', 'session-1', {}, {
+    maxAttempts: 1,
+    fetch: async (_url, init) => init?.method !== 'POST' ? Response.json([]) : response(recovering ? 409 : 503),
+  });
+  await expect(log.append({ kind: 'name', name: 'pending' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  recovering = true;
+  expect(await log.recoverPendingAppends()).toBe(false);
+  expect(log.canRecoverPendingAppends).toBe(false);
+  await expect(log.append({ kind: 'name', name: 'new' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+});
+
+test('concurrent recovery callers share one exact append attempt', async () => {
+  let release!: () => void;
+  const barrier = new Promise<void>((resolve) => { release = resolve; });
+  let recovering = false;
+  let writes = 0;
+  const log = new RemoteSessionLog('https://api.example.test/projects/p', 'session-1', {}, {
+    maxAttempts: 1,
+    fetch: async (_url, init) => {
+      if (init?.method !== 'POST') return Response.json([]);
+      writes++;
+      if (!recovering) return response(503);
+      await barrier;
+      return response(204);
+    },
+  });
+  await expect(log.append({ kind: 'name', name: 'pending' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  recovering = true;
+  const first = log.recoverPendingAppends();
+  const second = log.recoverPendingAppends();
+  expect(second).toBe(first);
+  await expect(log.append({ kind: 'name', name: 'new' })).rejects.toBeInstanceOf(SessionLogUnavailableError);
+  release();
+  expect(await first).toBe(true);
+  expect(await second).toBe(true);
+  expect(writes).toBe(2);
 });

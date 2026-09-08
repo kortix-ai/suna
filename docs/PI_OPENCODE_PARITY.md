@@ -68,7 +68,7 @@ extensions. The native Pi lifecycle surface is documented in
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
 | MCP configuration | No native Pi MCP loader | Governed compiled config, remote/stdio execution placement, authorization, cancellation, and discovery |
-| Live model and agent switching | Config is fixed for the current compiled session | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
+| Live model and agent switching | Config is fixed; API and host controls reject unsupported changes | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
 | Structured output and reasoning variants | Unsupported prompt fields fail validation | Provider mapping, validation, durable options, and host controls |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |
@@ -77,8 +77,13 @@ extensions. The native Pi lifecycle surface is documented in
 
 First-party host checks remain separate. SDK transport is shared, but web,
 white-label, CLI, and mobile require their own user-input/output verification.
-White-label changes that gate unsupported live model/agent options are safe
-presentation changes. They do not implement those capabilities.
+White-label fixed agent/model controls and real incremental streaming passed
+against the preview API. The saved reply, empty turn queue, and absent environment
+match the browser. These controls do not implement live reconfiguration.
+
+The full preview suite currently fails four Git shipping flows at Platinum
+ingress. All 19 browser journeys pass. Large-context automatic compaction is
+also blocked by that upload failure. See the verification log for exact probes.
 
 ## Benchmarks
 

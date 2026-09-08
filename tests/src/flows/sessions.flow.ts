@@ -6,6 +6,7 @@
  */
 import { isDeepStrictEqual } from 'node:util';
 import { flow } from '../core/flow';
+import { createDatabaseSession } from '../fixtures/database-project';
 
 flow(
   'SESS-1',
@@ -1249,6 +1250,72 @@ flow(
         throw new Error('exclude_session_id was ignored — the excluded warm session came back');
       }
       ctx.track('session', freshId, { projectId: p.id });
+    });
+  },
+);
+
+
+flow(
+  'SESS-28',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'PUT /v1/projects/:projectId/sessions/:sessionId/model',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ metadata: { experimental: { llm_gateway: false } } });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const metadata = {
+      sandbox_slug: 'pi-worker',
+      pi_worker_boot: true,
+      pi_worker_ref: 'main',
+      pi_worker_sha: 'a'.repeat(40),
+      opencode_model: 'kortix/gpt-5.6-luna',
+    };
+    const piId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: ctx.P.OWNER.accountId!,
+      userId: ctx.P.OWNER.userId!,
+      metadata,
+    });
+    const params = { projectId: project.id, sessionId: piId };
+    await ctx.step('Anonymous and nonmember callers cannot change a Pi session model', async () => {
+      for (const [principal, status] of [[ctx.P.ANON, 401], [ctx.P.NONMEMBER, 403]] as const) {
+        const response = await ctx.client.as(principal).put(
+          '/v1/projects/:projectId/sessions/:sessionId/model',
+          { opencode_model: 'openai/gpt-4.1' },
+          { params },
+        );
+        response.status(status);
+      }
+    });
+    await ctx.step('A Pi model change returns 409 and preserves the complete stored metadata', async () => {
+      const before = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+      before.status(200);
+      const changed = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model',
+        { opencode_model: 'openai/gpt-4.1' }, { params });
+      changed.status(409).body().has('$.code', 'SESSION_MODEL_FIXED_AT_START');
+      const after = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+      after.status(200);
+      if (!isDeepStrictEqual(before.json<any>().metadata, after.json<any>().metadata)) {
+        throw new Error('Rejected Pi model change modified session metadata');
+      }
+    });
+    await ctx.step('A queued OpenCode session stores its next model and reports that it is not applied live', async () => {
+      const sessionId = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: ctx.P.OWNER.accountId!,
+        userId: ctx.P.OWNER.userId!,
+      });
+      const params = { projectId: project.id, sessionId };
+      const changed = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model',
+        { opencode_model: 'openai/gpt-4.1' }, { params });
+      changed.status(200).body().has('$.opencode_model', 'openai/gpt-4.1').has('$.applied_live', false);
+      const saved = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+      saved.status(200).body().has('$.metadata.opencode_model', 'openai/gpt-4.1');
     });
   },
 );

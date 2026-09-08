@@ -14,6 +14,7 @@
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { isOwner, isValidProjectId } from '@/server/users';
+import { runtimeAllowsLiveModelChange } from '@/lib/session-runtime';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
@@ -87,6 +88,19 @@ export async function PUT(req: NextRequest) {
   if (!model) return Response.json({ error: 'model is required' }, { status: 400 });
 
   try {
+    const session = await ctx.kortix
+      .session(ctx.projectId, ctx.sessionId)
+      .get({ showErrors: false });
+    if (!runtimeAllowsLiveModelChange(session.metadata)) {
+      return Response.json(
+        {
+          error:
+            'The model is fixed for this session. Start a new session to use another model.',
+          code: 'SESSION_MODEL_FIXED_AT_START',
+        },
+        { status: 409 },
+      );
+    }
     const result = await ctx.kortix.session(ctx.projectId, ctx.sessionId).changeModel(model);
     // `pushFailed` rides through: the write succeeded (hence 200), but a
     // REQUIRED live push may not have. Dropping it here is what made the UI

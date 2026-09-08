@@ -5417,3 +5417,39 @@ automatic threshold; it never borrows a different model's capacity.
 **Enforcer:** `pi-model-limits.test.ts`, `model-limits.test.ts`, and
 `compiled-model-entry.test.ts` check alias normalization, defaults, overrides,
 unknown aliases, and real process health metadata.
+
+
+## Recover uncertain worker writes with the original fence before resuming — 2026-09-08
+
+A full Pi test run exposed a heartbeat append racing a 6.5-second storage outage.
+The worker permanently poisoned its log after retry exhaustion. Storage returned,
+but the question stayed busy and a new prompt could not progress.
+
+Retain every uncertain append's exact serialized item and idempotency key.
+Keep unrelated writes blocked until those items commit through the original
+fences. Do not reset the error and generate a new write identity. Reconcile
+before reopening the turn queue. Interrupt only a lease still owned by this
+worker; a replacement owner must not receive a stale worker's abort. Permanent
+rejections and conflicting fences remain closed to writes.
+
+Enforcers: `session-store.test.ts`, `turn-journal.test.ts`, and
+`question-recovery-routes.test.ts`. The HTTP process tests cover read/write and
+write-only outages, one execution of completed tools, terminal settlement, and
+the next prompt. Deferred-response tests prove recovery callers share one retry.
+
+## 2026-09-08 — refresh provider ingress and bootstrap Pi on resume
+
+A real Pi stop/resume benchmark failed after the VM reached running. Daytona
+rotated its preview token, but the API cached the old token for five minutes.
+The cached endpoint returned 401. A fresh endpoint returned 502 because no
+worker process had started. Waiting for the generic runtime timeout delayed
+bootstrap and exhausted the readiness budget.
+
+Clear cached ingress after a confirmed wake. A rejected session-list credential
+gets one fresh endpoint lookup and one authenticated retry. A second rejection
+remains closed. Start the Pi process after its runtime lease is active and its
+compute window reopens. The worker must not call the API using a stopped lease.
+
+Enforced by `projects/opencode-mapping-transport.test.ts` and the Pi/OpenCode
+resume cases in `__tests__/e2e-project-session-contract.test.ts`. The live resume
+benchmark records the native conversation ID and cleanup state independently.
