@@ -28,6 +28,8 @@ Native mode checks zoom, full document navigation, and rejection of native
 commands from a second window. The configured frontend origin owns the native
 bridge; embedded content and other windows must not inherit that permission.
 Screenshots and failures appear under `tests/test-results/artifacts`.
+Electron unit tests run in the existing packages lane through
+`pnpm --filter @kortix/desktop-electron test`.
 
 ## Verify the changed surface
 
