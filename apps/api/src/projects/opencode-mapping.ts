@@ -22,10 +22,11 @@
  * the daemon authorizes the proxied call into OpenCode.
  */
 
+import { cellRuntimeFromSandboxMetadata } from './cell-runtime-detect';
 import { rootPinWithoutDiscovery } from './opencode-root-pin';
 import { and, eq } from 'drizzle-orm';
 
-import { projectSessions } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import {
@@ -163,13 +164,10 @@ async function sandboxRuntimeFor(externalId: string): Promise<string | null> {
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.externalId, externalId))
       .limit(1);
-    const meta = (row?.metadata ?? {}) as Record<string, unknown>;
-    const runtime =
-      typeof meta['kortix.runtime'] === 'string'
-        ? (meta['kortix.runtime'] as string)
-        : meta.pi_worker_boot === true
-          ? 'cell'
-          : null;
+    // Every signal that survives, including the pooled-claim rewrite that
+    // strips `pi_worker_boot` from exactly the sessions that share a box.
+    // See cell-runtime-detect.ts.
+    const runtime = cellRuntimeFromSandboxMetadata(row?.metadata);
     if (runtime) runtimeCache.set(externalId, runtime);
     return runtime;
   } catch {
