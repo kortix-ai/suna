@@ -2,6 +2,8 @@
 
 import { useParams } from 'next/navigation';
 
+import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { useCapabilityTabFlag } from '@/features/workspace/capabilities/shared/use-capability-tab-flag';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
 
 /**
@@ -14,11 +16,15 @@ import { ReviewView } from '@/features/workspace/customize/sections/view/review-
  * retired the same day; every other section of it moved into the Settings
  * overlay's Workspace group, and this one — an inbox, not configuration —
  * moved up onto the bar instead. Flag-gated on `review_center` exactly as the
- * section was: the tab bar hides the tab (`visibleCapabilityTabs`) and the
+ * section was: the tab bar hides the tab (`visibleCapabilityTabs`),
+ * `useCapabilityTabFlag` 404s this route for anyone who types the URL, and the
  * view itself gates acting on `project.review.act`.
  */
 export default function ProjectReviewPage() {
   const { id: projectId } = useParams<{ id: string }>();
+  const enabled = useCapabilityTabFlag(projectId, 'review');
+
+  if (!enabled) return <CapabilitiesSkeleton />;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

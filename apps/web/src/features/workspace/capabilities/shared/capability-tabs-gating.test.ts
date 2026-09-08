@@ -15,6 +15,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
 import { CAPABILITY_TABS } from './capability-tab-routes';
 import { CAPABILITY_TAB_GATE_ACTIONS, visibleCapabilityTabs } from './capability-tabs';
+import { capabilityFlagRouteDecision, capabilityTabFlag } from './use-capability-tab-flag';
 
 const source = readFileSync(
   fileURLToPath(new URL('./capability-tabs.tsx', import.meta.url)),
@@ -225,4 +226,62 @@ describe('CapabilityTabs gate wiring', () => {
     expect(body).not.toContain('aria-disabled');
     expect(body).not.toContain('pointer-events-none');
   });
+});
+
+// The ROUTE half of the same gate. Hiding the tab is not hiding the surface:
+// before `useCapabilityTabFlag`, typing
+// `/projects/<id>/customize/templates` on a project with `templates: false`
+// rendered the whole store — six installable-looking cards — because the
+// catalog read is public and only the Install click 403s.
+describe('capability route flag gate', () => {
+  const gateSource = readFileSync(
+    fileURLToPath(new URL('./use-capability-tab-flag.ts', import.meta.url)),
+    'utf8',
+  );
+
+  test('an off flag 404s the route', () => {
+    expect(capabilityFlagRouteDecision('templates', false, false)).toBe('not-found');
+  });
+
+  test('an on flag renders it', () => {
+    expect(capabilityFlagRouteDecision('templates', true, false)).toBe('render');
+  });
+
+  // Fail-OPEN while loading, unlike the tab bar. A tab that flashes and
+  // vanishes is cosmetic; a page that 404s mid-navigation and then has to
+  // un-404 is not something Next can undo.
+  test('an in-flight probe waits, never 404s', () => {
+    expect(capabilityFlagRouteDecision('templates', false, true)).toBe('wait');
+  });
+
+  test('an ungated tab always renders', () => {
+    expect(capabilityFlagRouteDecision(undefined, false, false)).toBe('render');
+    expect(capabilityTabFlag('agent')).toBeUndefined();
+  });
+
+  // The bar and the route must read ONE field. A route that named its own flag
+  // key is exactly where the two gates would drift apart.
+  test('the route gate reads the tab’s own flag, never a literal', () => {
+    expect(gateSource).toContain("CAPABILITY_TABS.find((tab) => tab.key === tabKey)?.flag");
+    for (const tab of CAPABILITY_TABS.filter((t) => t.flag)) {
+      expect(capabilityTabFlag(tab.key)).toBe(tab.flag!);
+    }
+  });
+
+  // Every flagged tab's page calls the gate. This is the assertion that fails
+  // when a third flagged tab is added and its route is left open.
+  for (const tab of CAPABILITY_TABS.filter((t) => t.flag)) {
+    test(`the ${tab.key} page calls useCapabilityTabFlag`, () => {
+      const page = readFileSync(
+        fileURLToPath(
+          new URL(
+            `../../../../app/(app)/projects/[id]/(capabilities)/customize/${tab.key}/page.tsx`,
+            import.meta.url,
+          ),
+        ),
+        'utf8',
+      );
+      expect(page).toContain(`useCapabilityTabFlag(projectId, '${tab.key}')`);
+    });
+  }
 });
