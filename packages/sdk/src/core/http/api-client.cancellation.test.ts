@@ -91,3 +91,30 @@ test('caller abort interrupts response parsing after headers arrive', async () =
   abort.abort();
   expect((await pending).error?.code).toBe('ABORTED');
 });
+
+test('stalled retryable read response body times out before another attempt', async () => {
+  let requests = 0;
+  const abort = new AbortController();
+  configureKortix({
+    backendUrl: 'https://api.test',
+    getToken: async () => 'token',
+    fetch: async () => {
+      requests++;
+      const response = Response.json({}, { status: 503 });
+      response.arrayBuffer = () => new Promise(() => {});
+      return response;
+    },
+  });
+  const pending = backendApi.get('/read', { signal: abort.signal, timeout: 10 });
+  try {
+    const observed = await Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(() => resolve({ error: { code: 'STILL_PENDING' } }), 60)),
+    ]);
+    expect(observed).toMatchObject({ success: false, error: { code: 'TIMEOUT' } });
+    expect(requests).toBe(1);
+  } finally {
+    abort.abort();
+    // Cleanup must not make a response-body timeout regression hang the test runner.
+  }
+});

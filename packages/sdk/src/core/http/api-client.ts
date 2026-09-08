@@ -279,20 +279,26 @@ async function makeRequest<T = any>(
         continue;
       }
 
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-
       const retryableResponse =
         retryableRead && isTransientGatewayStatus(response.status) && attempt < maxAttempts - 1;
       if (!retryableResponse) {
+        // Headers do not complete a request. Keep this attempt's deadline
+        // active through final response parsing; the outer finally clears it.
         break;
       }
 
       try {
-        await response.arrayBuffer();
-      } catch {}
+        await abortable(response.arrayBuffer(), attemptController.signal);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+      } finally {
+        // A retry gets a fresh attempt deadline after its backoff. The body
+        // being discarded remains bounded by the current attempt until now.
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      }
     }
 
     if (!response.ok) {

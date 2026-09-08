@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, expect, spyOn, test } from 'bun:test';
 import { createElement, StrictMode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { configureKortix } from '../core/http/config';
@@ -23,6 +23,23 @@ function Composer({ projectId }: { projectId: string }) {
   return null;
 }
 
+function createRenderer(element: Parameters<typeof create>[0]): ReactTestRenderer {
+  const expectedWarning =
+    'react-test-renderer is deprecated. See https://react.dev/warnings/react-test-renderer';
+  const warnings: unknown[][] = [];
+  const originalError = console.error;
+  const capture = spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+    if (args.length === 1 && args[0] === expectedWarning) warnings.push(args);
+    else originalError(...args);
+  });
+  try {
+    return create(element);
+  } finally {
+    capture.mockRestore();
+    expect(warnings).toEqual([[expectedWarning]]);
+  }
+}
+
 test('hook survives StrictMode, blocks immediate Send, and forget avoids upload on submit', async () => {
   let chunks = 0,
     deletes = 0;
@@ -42,7 +59,9 @@ test('hook survives StrictMode, blocks immediate Send, and forget avoids upload 
     },
   });
   await act(async () => {
-    renderer = create(createElement(StrictMode, {}, createElement(Composer, { projectId: 'p' })));
+    renderer = createRenderer(
+      createElement(StrictMode, {}, createElement(Composer, { projectId: 'p' })),
+    );
   });
   await act(async () => {
     current.add(new File(['abc'], 'a.txt'));
@@ -69,7 +88,7 @@ test('project switch aborts old pending work and cannot publish stale success', 
     },
   });
   await act(async () => {
-    renderer = create(createElement(Composer, { projectId: 'old' }));
+    renderer = createRenderer(createElement(Composer, { projectId: 'old' }));
   });
   await act(async () => {
     current.add(new File(['abc'], 'a.txt'));
@@ -93,7 +112,7 @@ test('unmount preserves completed storage objects', async () => {
     },
   });
   await act(async () => {
-    renderer = create(createElement(Composer, { projectId: 'p' }));
+    renderer = createRenderer(createElement(Composer, { projectId: 'p' }));
   });
   await act(async () => {
     current.restore(metadata);

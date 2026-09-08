@@ -278,3 +278,49 @@ test('completion stops retrying after its separate five-minute budget', async ()
     now.mockRestore();
   }
 });
+
+for (const status of [200, 503]) {
+  test(`stalled completion response body (${status}) times out without another request`, async () => {
+    let requests = 0;
+    let bodyReads = 0;
+    const abort = new AbortController();
+    const realSetTimeout = globalThis.setTimeout;
+    const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((
+      callback: (...args: unknown[]) => void,
+      delay?: number,
+      ...args: unknown[]
+    ) => realSetTimeout(callback, delay === 30_000 ? 10 : delay, ...args)) as typeof setTimeout);
+    configureKortix({
+      backendUrl: 'https://api.test',
+      getToken: async () => 'token',
+      fetch: async () => {
+        requests++;
+        const response = Response.json({}, { status });
+        response.json = () => {
+          bodyReads++;
+          return new Promise(() => {});
+        };
+        return response;
+      },
+    });
+    const pending = uploadPromptAttachment('p', new File(['abc'], 'a.bin'), {
+      signal: abort.signal,
+      resume: { ...metadata, size: 3, received_bytes: 3, chunk_size: 65536 },
+    }).then(
+      () => ({ code: 'UNEXPECTED_SUCCESS' }),
+      (error: unknown) => error,
+    );
+    try {
+      const observed = await Promise.race([
+        pending,
+        new Promise((resolve) => realSetTimeout(() => resolve({ code: 'STILL_PENDING' }), 60)),
+      ]);
+      expect(observed).toMatchObject({ code: 'TIMEOUT' });
+      expect({ requests, bodyReads }).toEqual({ requests: 1, bodyReads: 1 });
+    } finally {
+      abort.abort();
+      await pending;
+      timer.mockRestore();
+    }
+  });
+}
