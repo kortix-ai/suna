@@ -22,6 +22,7 @@
  * the daemon authorizes the proxied call into OpenCode.
  */
 
+import { rootPinWithoutDiscovery } from './opencode-root-pin';
 import { and, eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
@@ -149,6 +150,33 @@ export interface EnsureResult {
  * current pin unchanged so a transient sandbox blip never clobbers a good
  * mapping.
  */
+/** The provider-side runtime of a box ('cell' | 'microvm' | ...), cached: it is
+ *  immutable for the life of a sandbox. Null when it cannot be read, which
+ *  means "discover", the answer given before this existed. */
+const runtimeCache = new Map<string, string>();
+async function sandboxRuntimeFor(externalId: string): Promise<string | null> {
+  const hit = runtimeCache.get(externalId);
+  if (hit) return hit;
+  try {
+    const [row] = await db
+      .select({ metadata: sessionSandboxes.metadata, provider: sessionSandboxes.provider })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.externalId, externalId))
+      .limit(1);
+    const meta = (row?.metadata ?? {}) as Record<string, unknown>;
+    const runtime =
+      typeof meta['kortix.runtime'] === 'string'
+        ? (meta['kortix.runtime'] as string)
+        : meta.pi_worker_boot === true
+          ? 'cell'
+          : null;
+    if (runtime) runtimeCache.set(externalId, runtime);
+    return runtime;
+  } catch {
+    return null;
+  }
+}
+
 export async function ensureOpencodeSessionPin(input: {
   projectId: string;
   sessionId: string;
@@ -158,6 +186,22 @@ export async function ensureOpencodeSessionPin(input: {
   currentPin: string | null;
 }): Promise<EnsureResult> {
   const { projectId, sessionId, accountId, externalId, userId, currentPin } = input;
+
+  // A CELL NEEDS NO DISCOVERY, AND MUST NOT HAVE IT. The box is addressed BY the
+  // session, so the root is this session's id by construction. `GET /session`
+  // carries no session anywhere in the request, so on a shared cell host it
+  // reaches the worker's default cell and every session pins the SAME root —
+  // measured on dev 2026-09-08, three sessions with one prompt each all showing
+  // the same ten user/assistant pairs. See opencode-root-pin.ts.
+  const cellPin = rootPinWithoutDiscovery(await sandboxRuntimeFor(externalId), sessionId);
+  if (cellPin) {
+    if (cellPin === currentPin) return { pin: cellPin, changed: false, reason: 'unchanged' };
+    await db
+      .update(projectSessions)
+      .set({ opencodeSessionId: cellPin, updatedAt: new Date() })
+      .where(eq(projectSessions.sessionId, sessionId));
+    return { pin: cellPin, changed: true, reason: 'healed' };
+  }
 
   const listed = await listSandboxOpencodeSessions(externalId, userId);
   if (!listed.ok) {

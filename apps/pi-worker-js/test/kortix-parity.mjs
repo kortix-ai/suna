@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=64
+// EXPECTED_PASSES=65
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -199,6 +199,40 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   // prompt answered in 9.0 s, second `waiting / turn_active` for 240 s while
   // the cell sat idle. Mutants this catches: dropping the relay, dropping the
   // wire id, relaying under the wrong path or without the bearer.
+  // A SHARED CELL HOST MUST NOT MAKE EVERY SESSION REPORT THE SAME ONE.
+  //
+  // KORTIX_SESSION_ID is the NODE's env — one value for every cell on the box —
+  // so preferring it made each cell relay turn_end under the session that
+  // created the host. Measured on dev 2026-09-08: three sessions, one prompt
+  // each, all relaying b673ad47-4365-4ab4-951d-0b592f9b9423, which the control
+  // plane pinned as all three roots; all three then read ONE transcript, and a
+  // brand-new session appeared to answer instantly because it was reading
+  // somebody else's reply. The turn carries the session its prompt was
+  // addressed to, and that is what the relay names.
+  {
+    const seen = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => { seen.push({ url: String(url), init }); return new Response("{}", { status: 200 }); };
+    try {
+      const shared = makeCell(AgentCell, {
+        ...ENV, SCRIPT: JSON.stringify([{ text: "done" }]),
+        KORTIX_API_URL: "https://api.example/v1", KORTIX_PROJECT_ID: "proj-1", KORTIX_TOKEN: "tok",
+        // The node's env, naming the session that created the host.
+        KORTIX_SESSION_ID: "host-creator",
+      });
+      await shared.fetch("/session/tenant-b/prompt_async?c=tenant-b", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "hi" }] }),
+      });
+      await shared.drain();
+      const relay = seen.find((x) => x.url.endsWith("/turn-stream"));
+      const body = relay?.init?.body ? JSON.parse(relay.init.body) : {};
+      check("turn_end names the session the PROMPT was for, not the node's KORTIX_SESSION_ID",
+        body.session_id === "tenant-b" && body.opencode_session_id === "tenant-b",
+        JSON.stringify({ got: body.session_id, node: "host-creator" }));
+    } finally { globalThis.fetch = realFetch; }
+  }
+
   {
     const seen = [];
     const realFetch = globalThis.fetch;
@@ -219,12 +253,14 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
         relay?.url === "https://api.example/v1/projects/proj-1/turn-stream" && relay?.init?.method === "POST",
         JSON.stringify(seen.map((x) => x.url)));
       const body = relay?.init?.body ? JSON.parse(relay.init.body) : {};
-      // The SESSION THE LEDGER KNOWS, not the isolate's own name: an alarm has
-      // no `?c=` to read, so a relay built from the durable object's name tells
-      // the API about a session it has no record of and the queue stays shut.
-      check("with the control plane's session id, the kind, an idle status and the wire id the prompt carried",
-        body.session_id === "sess-9" && body.kind === "turn_end" && body.status === "idle"
-          && body.opencode_session_id === "sess-9" && body.turn_message_id === "msg_wire1",
+      // THE SESSION THE PROMPT WAS ADDRESSED TO. This claim used to expect
+      // `KORTIX_SESSION_ID` here, which was right for one cell per box and
+      // wrong the moment a box carried several: that variable is the NODE's, so
+      // every cell reported the session that created the host. The prompt's own
+      // path is the only thing that distinguishes them.
+      check("with the prompt's session, the kind, an idle status and the wire id it carried",
+        body.session_id === "s" && body.kind === "turn_end" && body.status === "idle"
+          && body.opencode_session_id === "s" && body.turn_message_id === "msg_wire1",
         JSON.stringify(body));
       check("under the session's own bearer, as the daemon sends it",
         relay?.init?.headers?.authorization === "Bearer tok", JSON.stringify(relay?.init?.headers));

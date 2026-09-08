@@ -406,6 +406,15 @@ export class AgentCell {
     // The wire id the control plane placed on the prompt, handed back when the
     // turn ends so the ledger closes the record it opened (relayTurnEnd).
     try { this.sql.exec("ALTER TABLE turns ADD COLUMN message_id TEXT"); } catch { /* already there */ }
+    // WHICH SESSION THIS TURN IS FOR, taken from the prompt's own path.
+    //
+    // `KORTIX_SESSION_ID` cannot answer this on a SHARED cell host: it is the
+    // NODE's env, set when the first session created the box, so every cell on
+    // that node reads the same value. Measured on dev 2026-09-08 — three
+    // sessions, one prompt each, all relaying turn_end under
+    // b673ad47-4365-4ab4-951d-0b592f9b9423, which the control plane then pinned
+    // as all three roots, and all three read one transcript.
+    try { this.sql.exec("ALTER TABLE turns ADD COLUMN session_id TEXT"); } catch { /* already there */ }
     // THE SESSION'S OWN CONFIGURATION, WHICH MUST OUTLIVE THE ISOLATE.
     //
     // Per-session config does not arrive in the cell's process env — that is
@@ -469,8 +478,11 @@ export class AgentCell {
     // there is the durable object's own name. KORTIX_SESSION_ID is the id the
     // ledger opened its record under, and `effectiveEnv` prefers the per-session
     // value pushed over POST /kortix/env to the node-wide one.
-    const sid = env.KORTIX_SESSION_ID || sessionId;
-    const row = this.sql.exec("SELECT status, message_id FROM turns WHERE i=?", turnI).toArray()[0];
+    const row = this.sql.exec("SELECT status, message_id, session_id FROM turns WHERE i=?", turnI).toArray()[0];
+    // THE TURN'S OWN SESSION FIRST. `KORTIX_SESSION_ID` is the node's env and is
+    // shared by every cell on a shared host, so preferring it made all of them
+    // report the host-creating session (see the session_id column above).
+    const sid = row?.session_id || env.KORTIX_SESSION_ID || sessionId;
     const body = JSON.stringify({
       session_id: sid, kind: "turn_end", status: row?.status === "done" ? "idle" : "error",
       opencode_session_id: sid,
@@ -1389,8 +1401,8 @@ export class AgentCell {
           .trim() || String(body?.text ?? "").trim();
         if (!text) return Response.json({ error: "no text in prompt" }, { status: 400 });
         this.sql.exec(
-          "INSERT INTO turns(text, script, window, status, created_at, message_id) VALUES (?, NULL, 0, 'pending', ?, ?)",
-          text, Date.now(), typeof body?.messageID === "string" ? body.messageID : null,
+          "INSERT INTO turns(text, script, window, status, created_at, message_id, session_id) VALUES (?, NULL, 0, 'pending', ?, ?, ?)",
+          text, Date.now(), typeof body?.messageID === "string" ? body.messageID : null, rootId,
         );
         await this.state.storage.setAlarm(Date.now() + 1);
         // 204, because that is what OpenCode answers and what the delivery loop
