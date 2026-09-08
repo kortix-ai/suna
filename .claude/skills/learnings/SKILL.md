@@ -21,6 +21,33 @@ linked, not inlined.
 
 ## Register
 
+### Attachment cleanup must retain concurrency evidence (2026-09-08)
+
+**When:** deleting private staged uploads. Recheck command references in a fresh
+statement after acquiring the attachment lock. Keep a bounded tombstone after
+deletion so cleanup can remove late object-storage writes.
+*Near-miss:* PR #7148 review reproduced a stale cleanup snapshot after prompt
+binding and an upload that wrote storage after its metadata disappeared.
+*Enforcer:* `integration-prompt-attachments.test.ts` covers both races.
+
+### File imports must handle short writes and cancel rejected downloads (2026-09-08)
+
+**When:** streaming a staged file into a sandbox. Loop until each buffer is fully
+written; verify bytes and digest before atomic rename. Abort the download and
+cancel its reader on rejection, write failure, or timeout.
+*Near-miss:* PR #7148 review produced a 9-byte file while import reported 19 bytes.
+Header and write failures also left the download stream active.
+*Enforcer:* `file-import-route.test.ts` covers short writes and cancellation.
+
+### Request deadlines include response-body parsing (2026-09-08)
+
+**When:** reading authenticated HTTP responses. Keep the attempt timer active
+through body parsing, including bodies discarded before retry. Return typed
+`TIMEOUT`; attachment uploads must not automatically retry client timeouts.
+*Near-miss:* PR #7148 review received headers, stalled JSON, and left upload
+completion pending beyond its request deadline.
+*Enforcers:* SDK `api-client.cancellation.test.ts` and `prompt-attachments.test.ts`.
+
 ### Token publication must not look like sign-out to waiting requests (2026-09-08)
 
 **When:** fencing in-flight auth reads against cache writes. Distinguish a token
