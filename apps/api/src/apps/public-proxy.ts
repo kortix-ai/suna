@@ -109,7 +109,8 @@ type PublicAppStatus =
   | 'starting'
   | 'budget'
   | 'unfunded'
-  | 'capacity';
+  | 'capacity'
+  | 'provider_disabled';
 
 const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
   title: string;
@@ -179,6 +180,21 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
     code: 'app_account_unfunded',
     progress: false,
     httpStatus: 402,
+  },
+  provider_disabled: {
+    // TERMINAL, and it must never carry `progress: true`.
+    //
+    // A deployment pins its hosting provider at deploy time. If that provider
+    // is later switched off, every wake attempt fails the same way forever, and
+    // no amount of waiting fixes it — only a redeploy onto an allowed provider
+    // does. Rendering that as "starting" tells the viewer to keep waiting for
+    // something that cannot happen.
+    title: 'App needs a redeploy',
+    message:
+      'This App was deployed on a hosting provider that is no longer enabled. The owner can fix it with kortix apps deploy .',
+    code: 'app_provider_disabled',
+    progress: false,
+    httpStatus: 503,
   },
   capacity: {
     title: 'App paused',
@@ -843,6 +859,41 @@ export function appRuntimeNeedsWake(
   return Boolean(runtime.idleDeadlineAt && runtime.idleDeadlineAt.getTime() <= now.getTime());
 }
 
+/**
+ * The App's deployment names a hosting provider that is no longer enabled.
+ *
+ * Terminal by nature: a deployment pins its provider at deploy time, so no
+ * amount of retrying moves it onto a live one. Only `kortix apps deploy .`
+ * does.
+ */
+export class AppProviderDisabledError extends Error {
+  readonly code = 'app_provider_disabled';
+  constructor(readonly provider: string) {
+    super(`Hosting provider ${provider} is disabled — redeploy this App`);
+    this.name = 'AppProviderDisabledError';
+  }
+}
+
+/**
+ * Refuse to wake a runtime whose provider has been switched off.
+ *
+ * `deployment-worker` already refuses to DEPLOY onto a disabled provider. The
+ * wake path had no equivalent, so an App deployed while a provider was live
+ * kept trying to resume on it forever after it was disabled — and because
+ * `appPublicUnavailableResponse` renders the `starting` page, the viewer saw
+ * "This page will continue automatically" refreshing every 3 s and never
+ * continuing.
+ *
+ * The allow-list is passed in rather than read from `config` so the rule is
+ * testable without reaching for the process environment.
+ */
+export function assertAppProviderEnabled(
+  provider: string,
+  allowed: readonly string[] = config.ALLOWED_SANDBOX_PROVIDERS,
+): void {
+  if (!allowed.includes(provider)) throw new AppProviderDisabledError(provider);
+}
+
 export async function ensureAppRuntimeRunning(
   loaded: NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>,
   hosting: AppHostingProvider,
@@ -867,6 +918,9 @@ export async function ensureAppRuntimeRunning(
   // it already holds its own live row, and counting it would stop an account at
   // exactly the cap from waking the very App it owns.
   await assertAppComputeAllowed(app, { excludeRuntimeId: loaded.runtime.runtimeId });
+
+  // Before the lease, so a dead provider can never park the row in `starting`.
+  assertAppProviderEnabled(loaded.runtime.provider);
 
   const owner = `${config.INTERNAL_KORTIX_ENV}:${process.pid}:${randomUUID()}`;
   const now = new Date();
@@ -1079,6 +1133,12 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
     }
     if (error instanceof AppLimitError && error.code === 'app_concurrency_limit') {
       return appPublicStatusResponse(request, state.app, { status: 'capacity' });
+    }
+    // Not a cold start: this App can never wake until it is redeployed. Falling
+    // through to `appPublicUnavailableResponse` would render the `starting`
+    // page and promise a continuation that cannot arrive.
+    if (error instanceof AppProviderDisabledError) {
+      return appPublicStatusResponse(request, state.app, { status: 'provider_disabled' });
     }
     return appPublicUnavailableResponse(request, state.app);
   }
