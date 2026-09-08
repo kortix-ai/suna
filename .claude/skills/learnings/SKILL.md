@@ -21,6 +21,55 @@ linked, not inlined.
 
 ## Register
 
+### A `waitForResponse` predicate on a cross-site API must exclude the CORS preflight (2026-09-08)
+
+**When:** writing a Playwright journey that waits for an API response on a
+deployed target where the app and the API are different hosts
+(`staging.kortix.com` → `staging-api.kortix.com`, same for prod). The
+`Authorization` header makes every GET non-simple, so the browser sends an
+`OPTIONS` preflight on the SAME url and query first; it answers 204 with no
+body, and Playwright hands it to `page.on('response')` / `waitForResponse`
+like any other response. A predicate that matches on url alone resolves on
+the preflight and the test reads "expected 200, received 204". Same-origin
+runs (local, self-host preview) never see it, so it only fails in the release
+gate. **Rule:** every `waitForResponse` predicate checks
+`request().method()`; the release gate's spec 23 lost 4 gate runs to this.
+*Incident:* v0.13.12 gate, 2026-09-07/08, browser shard 3 red three times.
+*Enforcer:* the method checks in `23-composio-connector.spec.ts`; candidate: a
+lint rule for `waitForResponse((…) =>` bodies without `.method()`.
+
+### The Vercel deploy is the only gate on Edge Function size, and it runs after the release candidate is cut (2026-09-08)
+
+**When:** adding an import to any route with `export const runtime = 'edge'`
+under `apps/web/src/app`, or importing `translations/*.json` / the
+`@kortix/sdk` barrel from server code. `api/og/template` went from below to
+5.51 MB against Vercel's 4.02 MB Edge Function limit when #7160 routed its
+strings through `getHardcodedUiServerText` (638 KB `en.json`); nothing
+local, nothing in the PR lanes, nothing in the self-host preview (no Vercel)
+caught it. It failed `deploy-staging`'s Vercel step on the v0.13.12
+candidate, after main→staging had merged. **Rules.** (1) A social-preview
+image route runs on Node; Edge is for latency-bound routes only. (2) Never
+import a translations bundle or the SDK barrel from an Edge route.
+(3) Treat the staging Vercel step as part of the candidate's gate: it is
+red → the candidate is not ready, regardless of the API roll.
+*Incident:* v0.13.12, deploy-staging 34165900416. *Enforcer:* none yet —
+candidate: a `next build` size assertion on `.next/server/**/route.js` for
+edge routes in the frontend-build lane.
+
+### A git-bound route has a 55 s deadline; run its flow alone before reading a gate 503 as a regression (2026-09-08)
+
+**When:** a deployed-gate flow fails with `503` at ~55 s on a route that
+rewrites the project manifest or syncs connectors (`DELETE
+/channels/*/installation`, install/update routes). Those routes clone,
+commit and push the managed repo; dev shows ~10–13 s normally and 3 × 503
+at exactly 55,002 ms in a week; under nine parallel gate shards the same
+call crosses the deadline. CHN-3/CHN-15 failed three gate runs in a row and
+passed alone (`api_ids` dispatch on `diag/release-gate-spec26`). **Rule:**
+before treating it as a regression, rerun the failed shard alone; the
+long-term fix is fewer git round-trips in `reconcileChannelConnectors`, not
+a longer deadline. *Incident:* v0.13.12 gate, 2026-09-08 00:40–02:00 UTC.
+*Enforcer:* none — candidate: a step-level budget assertion in the CHN flows.
+
 ### Verify a rotated credential with the WRITE it exists for, and every edge worker deploys from the same pipeline as its origin (2026-09-07)
 
 **When:** rotating any token/key (PAT, App permission, API key) or editing an
