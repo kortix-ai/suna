@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, spyOn, test } from 'bun:test';
 import {
   promptAttachments,
   promptAttachmentReferences,
@@ -12,6 +12,7 @@ import {
   bindPromptAttachments,
   cleanupExpiredPromptAttachments,
   completePromptAttachment,
+  deletePromptAttachment,
   resolvePromptAttachment,
   uploadPromptAttachmentChunk,
 } from '../projects/prompt-attachments';
@@ -33,6 +34,8 @@ const objects = new Map<string, Uint8Array>();
 const originalFetch = globalThis.fetch;
 let failWrite = false;
 let failRemove = false;
+let deferWrite = false;
+let settleWrite: (() => void) | undefined;
 beforeAll(async () => {
   await db.execute(
     sql`INSERT INTO kortix.accounts(account_id,name) VALUES(${scope.accountId}::uuid,'attachment-it')`,
@@ -60,7 +63,15 @@ beforeAll(async () => {
       if (request.url.includes('/object/sign/'))
         return Response.json({ signedURL: `/object/sign/staged-files/${path}?token=fake` });
       if (request.method === 'POST') {
-        objects.set(path, new Uint8Array(await request.arrayBuffer()));
+        const bytes = new Uint8Array(await request.arrayBuffer());
+        if (deferWrite) {
+          deferWrite = false;
+          settleWrite = () => {
+            objects.set(path, bytes);
+          };
+          return Response.json({ message: 'upstream write is still pending' }, { status: 503 });
+        }
+        objects.set(path, bytes);
         if (failWrite) {
           failWrite = false;
           return Response.json({ message: 'lost write response' }, { status: 503 });
@@ -303,4 +314,145 @@ test('removing an expired queued command gives Undo a fresh owner-scoped attachm
   expect(restored.row.payload.parts).toEqual([
     { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'text/plain' },
   ]);
+});
+
+test('cleanup rechecks references committed after its candidate snapshot but before tuple locking', async () => {
+  const id = await ready();
+  const [initial] = await db
+    .select()
+    .from(promptAttachments)
+    .where(eq(promptAttachments.attachmentId, id));
+  const cleanupAt = new Date(initial.expiresAt.getTime() + 1);
+  const transaction = db.transaction.bind(db);
+  // Replay the READ COMMITTED interleaving deterministically: candidate SELECT
+  // sees no reference, binding commits without changing the attachment tuple,
+  // then cleanup acquires the tuple lock and receives its stale candidate.
+  const intercepted = spyOn(db, 'transaction').mockImplementationOnce((work) =>
+    transaction(async (tx) => {
+      const proxy = new Proxy(tx, {
+        get(target, property) {
+          if (property !== 'select') return Reflect.get(target, property, target);
+          return (...args: Parameters<typeof tx.select>) => {
+            const selection = tx.select(...args);
+            const from = selection.from.bind(selection);
+            selection.from = ((...fromArgs: Parameters<typeof from>) => {
+              const query = from(...fromArgs);
+              query.for = () => {
+                const result = (async () => {
+                  const candidates = await query;
+                  await enqueue(id);
+                  await tx
+                    .select()
+                    .from(promptAttachments)
+                    .where(eq(promptAttachments.attachmentId, id))
+                    .for('update');
+                  return candidates;
+                })();
+                return new Proxy(query, {
+                  get(target, property, receiver) {
+                    if (property === 'then') return result.then.bind(result);
+                    return Reflect.get(target, property, receiver);
+                  },
+                });
+              };
+              return query;
+            }) as typeof selection.from;
+            return selection;
+          };
+        },
+      });
+      return work(proxy);
+    }),
+  );
+  try {
+    await cleanupExpiredPromptAttachments(cleanupAt);
+  } finally {
+    intercepted.mockRestore();
+  }
+  const [retained] = await db
+    .select()
+    .from(promptAttachments)
+    .where(eq(promptAttachments.attachmentId, id));
+  expect(retained.status).toBe('ready');
+  expect(objects.has(`${initial.objectPath}/file`)).toBe(true);
+});
+
+test('DELETE retains a non-extending tombstone until an ambiguous late write can be swept again', async () => {
+  const handle = await beginPromptAttachment(scope, {
+    filename: 'late.txt',
+    mime: 'text/plain',
+    size: 3,
+  });
+  deferWrite = true;
+  await expect(
+    uploadPromptAttachmentChunk(scope, handle.attachment_id, 0, new Uint8Array([1, 2, 3])),
+  ).rejects.toThrow('upload failed');
+  await deletePromptAttachment(scope, handle.attachment_id);
+  const [tombstone] = await db
+    .select()
+    .from(promptAttachments)
+    .where(eq(promptAttachments.attachmentId, handle.attachment_id));
+  expect(tombstone?.status).toBe('deleting');
+  await deletePromptAttachment(scope, handle.attachment_id);
+  const [retry] = await db
+    .select()
+    .from(promptAttachments)
+    .where(eq(promptAttachments.attachmentId, handle.attachment_id));
+  expect(retry.expiresAt.getTime()).toBe(tombstone.expiresAt.getTime());
+  settleWrite!();
+  expect(objects.has(`${tombstone.objectPath}/chunks/0`)).toBe(true);
+  await cleanupExpiredPromptAttachments();
+  expect(
+    await db
+      .select()
+      .from(promptAttachments)
+      .where(eq(promptAttachments.attachmentId, handle.attachment_id)),
+  ).toHaveLength(1);
+  await expect(completePromptAttachment(scope, handle.attachment_id)).rejects.toMatchObject({
+    status: 404,
+  });
+  await cleanupExpiredPromptAttachments(new Date(tombstone.expiresAt.getTime() + 1));
+  expect(objects.has(`${tombstone.objectPath}/chunks/0`)).toBe(false);
+  expect(
+    await db
+      .select()
+      .from(promptAttachments)
+      .where(eq(promptAttachments.attachmentId, handle.attachment_id)),
+  ).toHaveLength(0);
+});
+
+test('mixed handles and uppercase DATA count exactly 100 MiB plus one byte', async () => {
+  const ids = [await ready(), await ready()];
+  for (const id of ids)
+    await db
+      .update(promptAttachments)
+      .set({ sizeBytes: 50 * 1024 * 1024 })
+      .where(eq(promptAttachments.attachmentId, id));
+  const parts = ids.map((id) => ({ type: 'file' as const, attachment_id: id }));
+  const submit = (
+    fileParts: Array<{
+      type: 'file';
+      attachment_id?: string;
+      filename?: string;
+      mime?: string;
+      url?: string;
+    }>,
+  ) =>
+    enqueueContinueSessionCommand({
+      source: 'ui',
+      ...scope,
+      actorUserId: scope.userId,
+      sessionId,
+      text: 'boundary',
+      clientMessageId: crypto.randomUUID(),
+      idempotencyKey: crypto.randomUUID(),
+      parts: fileParts,
+    });
+  expect((await submit(parts)).row.commandId).toBeTruthy();
+  await expect(
+    submit([
+      ...parts,
+      { type: 'file', filename: 'one.txt', mime: 'text/plain', url: 'DATA:text/plain;base64,QQ==' },
+    ]),
+  ).rejects.toMatchObject({ status: 413, code: 'attachment_message_limit' });
 });

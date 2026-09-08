@@ -112,6 +112,12 @@ function assertOwner(
   }
 }
 function assertUnexpired(row: BindingRow, now: Date) {
+  if (row.status === 'deleting')
+    throw new PromptAttachmentError(
+      'attachment_not_found',
+      'Attachment not found. Attach the file again.',
+      404,
+    );
   if (row.expiresAt <= now)
     throw new PromptAttachmentError(
       'attachment_expired',
@@ -228,7 +234,11 @@ export async function bindPromptAttachments(
   const byId = new Map(ordered.map((row) => [row.attachmentId, row]));
   let total = ordered.reduce((sum, row) => sum + row.sizeBytes, 0);
   for (const part of parts) {
-    if (part.type === 'file' && !part.attachment_id && part.url?.startsWith('data:')) {
+    if (
+      part.type === 'file' &&
+      !part.attachment_id &&
+      part.url?.toLowerCase().startsWith('data:')
+    ) {
       const { parseStagedPromptDataUrl } =
         await import('./session-lifecycle/prompt-attachment-materializer');
       total += parseStagedPromptDataUrl({
@@ -620,7 +630,7 @@ function noReferences() {
       .where(eq(promptAttachmentReferences.attachmentId, promptAttachments.attachmentId)),
   );
 }
-async function removeObjects(row: Row) {
+async function removeObjects(row: Row, now = new Date()) {
   const paths = [
     filePath(row),
     ...Array.from({ length: Math.ceil(row.sizeBytes / PROMPT_ATTACHMENT_CHUNK_BYTES) }, (_, i) =>
@@ -643,6 +653,7 @@ async function removeObjects(row: Row) {
       and(
         eq(promptAttachments.attachmentId, row.attachmentId),
         eq(promptAttachments.status, 'deleting'),
+        lt(promptAttachments.expiresAt, now),
         noReferences(),
       ),
     );
@@ -674,10 +685,19 @@ export async function deletePromptAttachment(scope: PromptAttachmentScope, attac
         'Attachment is being processed. Retry removal shortly.',
         409,
       );
-    await tx
-      .update(promptAttachments)
-      .set({ status: 'deleting' })
-      .where(eq(promptAttachments.attachmentId, attachmentId));
+    if (row.status !== 'deleting') {
+      // A timed-out upstream write can finish after this first removal. Keep
+      // its object names durable for a settlement TTL and remove them again
+      // before dropping metadata. Repeated DELETE must not extend the TTL.
+      await tx
+        .update(promptAttachments)
+        .set({
+          status: 'deleting',
+          expiresAt: new Date(Date.now() + PROMPT_ATTACHMENT_TTL_MS),
+          updatedAt: new Date(),
+        })
+        .where(eq(promptAttachments.attachmentId, attachmentId));
+    }
     return row;
   });
   if (row) await removeObjects(row);
@@ -703,23 +723,28 @@ export async function cleanupExpiredPromptAttachments(
       .orderBy(asc(promptAttachments.attachmentId))
       .limit(CLEANUP_BATCH_SIZE)
       .for('update', { skipLocked: true });
-    if (rows.length)
-      await tx
-        .update(promptAttachments)
-        .set({ status: 'deleting' })
-        .where(
+    if (!rows.length) return [];
+    // READ COMMITTED gives this statement a fresh reference snapshot. The
+    // candidate SELECT can predate a binder's commit even after tuple locking.
+    return tx
+      .update(promptAttachments)
+      .set({ status: 'deleting' })
+      .where(
+        and(
           inArray(
             promptAttachments.attachmentId,
             rows.map((row) => row.attachmentId),
           ),
-        );
-    return rows;
+          noReferences(),
+        ),
+      )
+      .returning();
   });
   let deleted = 0,
     errors = 0;
   for (const row of rows) {
     try {
-      await removeObjects(row);
+      await removeObjects(row, now);
       deleted++;
     } catch {
       errors++;
