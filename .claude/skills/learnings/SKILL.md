@@ -5523,3 +5523,17 @@ bounded session map. Never borrow another model's effort list while loading.
 
 Enforced by `use-opencode-config.test.ts`, `session-reasoning.test.ts`,
 `session-reasoning-hook.test.ts`, and the worker's runtime/config HTTP tests.
+
+## 2026-09-08 — Keep subprocess-based tests responsive to their deadlines
+
+Two full local runs stall in isolated Bun workers waiting on synchronous child
+processes. One stops in Pi artifact Git setup; another omits all eight navigation
+contract tests. The latter has an unreaped child, consumes a CPU core for six
+minutes, and never reaches its test timeout. The same files pass separately.
+
+Use awaited subprocess execution with a bounded process timeout in these tests.
+Preserve their commands, inputs, and assertions. Capture the stalled process
+before terminating only the owned worker. A focused pass does not make the
+interrupted full gate green; rerun the complete gate after the change.
+
+Applied in `compiled-pi-runtime-artifact.test.ts` and `nav-contract.test.ts`.

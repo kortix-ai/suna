@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * The nav contract: clicking an in-app menu item must never reload the page.
@@ -36,8 +39,8 @@ const NAV_RULES = [
 ];
 
 /** Files that could possibly trip either rule. */
-function candidateFiles(): string[] {
-  const out = execFileSync(
+async function candidateFiles(): Promise<string[]> {
+  const { stdout: out } = await execFileAsync(
     'grep',
     [
       '-rlE',
@@ -46,7 +49,7 @@ function candidateFiles(): string[] {
       '--include=*.ts',
       '--include=*.tsx',
     ],
-    { cwd: WEB_ROOT, encoding: 'utf8' },
+    { cwd: WEB_ROOT, encoding: 'utf8', timeout: 10_000 },
   );
   return out
     .split('\n')
@@ -58,14 +61,14 @@ function candidateFiles(): string[] {
 type LintMessage = { ruleId: string | null; line: number; message: string };
 type LintResult = { filePath: string; messages: LintMessage[] };
 
-function lintNavRules(files: string[]): string[] {
+async function lintNavRules(files: string[]): Promise<string[]> {
   if (files.length === 0) return [];
-  const raw = execFileSync('npx', ['eslint', '--format', 'json', ...files], {
+  const { stdout: raw } = await execFileAsync('npx', ['eslint', '--format', 'json', ...files], {
     cwd: WEB_ROOT,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     // eslint exits non-zero when it reports anything; we read the JSON either way.
-    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 100_000,
   });
   const results = JSON.parse(raw) as LintResult[];
   return results.flatMap((r) =>
@@ -78,12 +81,12 @@ function lintNavRules(files: string[]): string[] {
 describe('nav contract — no full page reload on an in-app navigation', () => {
   test(
     'no nav control reaches a static internal href through router.push or window.location',
-    () => {
+    async () => {
       let violations: string[];
       try {
-        violations = lintNavRules(candidateFiles());
+        violations = await lintNavRules(await candidateFiles());
       } catch (error) {
-        // eslint exits 1 when it reports problems. execFileSync throws, but the
+        // eslint exits 1 when it reports problems. execFileAsync rejects, but the
         // JSON is still on stdout.
         const stdout = (error as { stdout?: string }).stdout;
         if (!stdout) throw error;
@@ -176,12 +179,13 @@ describe('nav contract — every URL written to history is a real route', () => 
     'src/components/sidebar/sidebar-right.tsx',
   ];
 
-  test('no live code writes a /sessions/<id> or /terminal/<id> tab href', () => {
-    const hits = execFileSync(
+  test('no live code writes a /sessions/<id> or /terminal/<id> tab href', async () => {
+    const { stdout } = await execFileAsync(
       'grep',
       ['-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '--include=*.ts', '--include=*.tsx'],
-      { cwd: WEB_ROOT, encoding: 'utf8' },
-    )
+      { cwd: WEB_ROOT, encoding: 'utf8', timeout: 10_000 },
+    );
+    const hits = stdout
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean)

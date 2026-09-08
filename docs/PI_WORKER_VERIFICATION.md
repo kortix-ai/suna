@@ -678,3 +678,55 @@ Frontend typecheck passes. Focused host lint reports zero errors and 36 warnings
 The complete SDK suite passes 2,872 tests. SDK typecheck and packed-package
 installation pass. The focused composer and selection run passes 27 tests.
 The new composer control still needs verification on the deployed preview.
+
+## Deployed reasoning picker and bounded test processes — 2026-09-08
+
+Deployment [34255961347](https://github.com/kortix-ai/suna/actions/runs/34255961347)
+succeeds at `95381603803b8269a4fd09a75927610d4e72c251`. Public API health and
+the API, frontend, and gateway container tags all report that SHA.
+
+The browser uses reviewer session `2abb0614-6641-4d24-bdf5-acb760d027a7` in
+project `80b8142e-02b8-456d-8684-bff4d3e5718e`. Its source is the isolated
+`997a1e3091550f55a285acda09957d7fc3f991b5` fixture. Its worker publishes
+`none`, `low`, `medium`, `high`, `xhigh`, and `max` through the config response.
+The browser menu displays exactly those choices plus Auto.
+
+Three real composer submissions prove High → `high`, None → `none`, and
+Auto → an omitted override with provider-observed `low`. Captured POST bodies
+contain no model or agent override. Each turn executes one inspection tool.
+High survives page reload. Auto also survives reload after clearing the choice.
+The browser displays three completed responses and an idle Send control.
+The final audit verifies three users, three tools, and six completed assistant
+messages without errors. Stop/resume preserves all nine messages byte-for-byte
+and retains native conversation `ses_pifb7963069397c158acb07293`.
+The environment route returns 404. Temporary browser tabs close before cleanup;
+both this session and the prior SDK reasoning session are confirmed stopped.
+
+The local full gate passes REST/CLI 396/396, SDK, worker, browser, runner,
+route coverage, and worktree lanes. The package lane stalls in the navigation
+test worker. A native process sample and an unreaped child are recorded after
+six minutes at approximately 99% CPU. Only that owned worker is terminated.
+The full run fails at 905.4 seconds; it is not passing evidence.
+
+The complete web package passes 9,466 tests across 739 files in 32.33 seconds
+when run separately. Comparing test names isolates the full-run gap to all eight
+navigation-contract tests. Their synchronous grep/ESLint subprocesses now use
+awaited execution with timeouts. The previously stalled Pi artifact fixture's
+Git setup uses the same mechanism. Assertions and input coverage are unchanged.
+Focused checks pass eight navigation tests and nine artifact tests.
+`pnpm test -- --full` then passes all eight lanes in 395.4 seconds.
+The package lane finishes in 225.5 seconds, including all 9,466 web tests.
+API and web `tsc --noEmit` both exit 0. The exact-SHA preview suite is running.
+
+### Test the deployed picker
+
+1. Open [the reviewer fixture](https://pi.kortix.com/projects/80b8142e-02b8-456d-8684-bff4d3e5718e/sessions/2abb0614-6641-4d24-bdf5-acb760d027a7).
+2. Set Thinking effort to High. Reload; the control must still show High.
+3. Send: `Call inspect_effort exactly once and report its JSON result.`
+4. Confirm the result contains `"effort":"high"`. Repeat with None; expect `none`.
+5. Select Auto and repeat; expect the reviewer's compiled `low` default.
+6. Send the identical text again. A new user message and response must appear.
+7. Ask the question tool for two multiple-choice questions. Answer the rendered cards.
+
+This reviewer intentionally has no workspace permissions. Use the operator
+fixture for file and shell tests. Opening Terminal or Files requests an environment.

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { GitBackedProject } from "../projects/git/types";
 import { __resetPiWorkerBundleForTests } from "./pi-worker-bundle";
 import { compilePiRuntime } from "./compiled-pi-runtime";
@@ -29,8 +30,10 @@ const originalCacheRoot = process.env.KORTIX_COMPILED_BOOT_CACHE_DIR;
 const originalMirrorRoot = process.env.KORTIX_GIT_CACHE_DIR;
 const originalBundlePath = process.env.KORTIX_PI_WORKER_BUNDLE_PATH;
 
-function git(args: string[], cwd: string): string {
-  return execFileSync("git", args, {
+const execFileAsync = promisify(execFile);
+
+async function git(args: string[], cwd: string): Promise<string> {
+  const { stdout } = await execFileAsync("git", args, {
     cwd,
     env: {
       ...process.env,
@@ -40,26 +43,28 @@ function git(args: string[], cwd: string): string {
       GIT_COMMITTER_EMAIL: "test@kortix.local",
     },
     encoding: "utf8",
-  }).trim();
+    timeout: 10_000,
+  });
+  return stdout.trim();
 }
 
-function makeProject(input: {
+async function makeProject(input: {
   manifest: string;
   agentFiles?: Record<string, string>;
-}): { project: GitBackedProject; sha: string } {
+}): Promise<{ project: GitBackedProject; sha: string }> {
   const root = mkdtempSync(join(tmpdir(), "kortix-pi-runtime-source-"));
   roots.push(root);
   const source = join(root, "source");
   mkdirSync(source, { recursive: true });
-  git(["init", "-b", "main"], source);
+  await git(["init", "-b", "main"], source);
   writeFileSync(join(source, "kortix.yaml"), input.manifest);
   for (const [path, content] of Object.entries(input.agentFiles ?? {})) {
     const absolute = join(source, path);
     mkdirSync(join(absolute, ".."), { recursive: true });
     writeFileSync(absolute, content);
   }
-  git(["add", "-A"], source);
-  git(["commit", "-m", "runtime source"], source);
+  await git(["add", "-A"], source);
+  await git(["commit", "-m", "runtime source"], source);
   return {
     project: {
       projectId: crypto.randomUUID(),
@@ -68,7 +73,7 @@ function makeProject(input: {
       manifestPath: "kortix.yaml",
       gitAuthToken: "test-token",
     },
-    sha: git(["rev-parse", "HEAD"], source),
+    sha: await git(["rev-parse", "HEAD"], source),
   };
 }
 
@@ -104,7 +109,7 @@ afterEach(() => {
 
 describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
   test('bakes the selected gateway model limits into the immutable artifact', async () => {
-    const { project, sha } = makeProject({
+    const { project, sha } = await makeProject({
       manifest: 'kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n',
       agentFiles: { '.kortix/pi/agents/build.md': '---\nmodel: kortix/gpt-5.6-luna\n---\nBuild safely.\n' },
     });
@@ -113,7 +118,7 @@ describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
   });
 
   test("rejects malformed selected-agent frontmatter instead of baking a null config", async () => {
-    const { project, sha } = makeProject({
+    const { project, sha } = await makeProject({
       manifest:
         "kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n",
       agentFiles: {
@@ -128,7 +133,7 @@ describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
   });
 
   test("rejects an undeclared selected agent instead of baking another agent config", async () => {
-    const { project, sha } = makeProject({
+    const { project, sha } = await makeProject({
       manifest:
         "kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n",
       agentFiles: {
@@ -142,7 +147,7 @@ describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
   });
 
   test("rejects a Pi artifact with no selected or default agent", async () => {
-    const { project, sha } = makeProject({
+    const { project, sha } = await makeProject({
       manifest: "kortix_version: 3\nagents:\n  build: {}\n",
       agentFiles: {
         ".kortix/pi/agents/build.md": "Build safely.\n",
@@ -155,7 +160,7 @@ describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
   });
 
   test("compiles only the selected agent when another agent is malformed", async () => {
-    const { project, sha } = makeProject({
+    const { project, sha } = await makeProject({
       manifest:
         "kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n  broken: {}\n",
       agentFiles: {
@@ -179,7 +184,7 @@ describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
   });
 
   test("rejects a stored artifact whose selected-agent config is null", async () => {
-    const { project, sha } = makeProject({
+    const { project, sha } = await makeProject({
       manifest:
         "kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n",
       agentFiles: {
@@ -213,7 +218,7 @@ describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
   });
 
   test("rejects a stored artifact whose selected-agent config has an invalid shape", async () => {
-    const { project, sha } = makeProject({
+    const { project, sha } = await makeProject({
       manifest:
         "kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n",
       agentFiles: {
@@ -250,7 +255,7 @@ describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
 });
 
 test('project source and relative imports are pinned into the selected artifact', async () => {
-  const {project, sha} = makeProject({
+  const {project, sha} = await makeProject({
     manifest: 'kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n',
     agentFiles: {
       '.kortix/pi/agents/build.md': 'Build safely.\n',
@@ -273,7 +278,7 @@ test('actual Git compilation rejects ignored behavior, ambiguous source, and inc
     { '.kortix/pi/agents/build.ts': 'export default ()=>({});', '.kortix/pi/agents/build.js': 'export default ()=>({});' },
     { '.kortix/pi/agents/build.ts': 'export default ()=>({});', '.kortix/pi/package.json': '{}' },
   ] as Record<string, string>[]) {
-    const {project,sha}=makeProject({manifest:'kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n',agentFiles:{'.kortix/pi/agents/build.md':'Build safely.\n',...files}});
+    const {project,sha}=await makeProject({manifest:'kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n',agentFiles:{'.kortix/pi/agents/build.md':'Build safely.\n',...files}});
     await expect(buildCompiledPiRuntimeArtifact(project,'main',sha,'build')).rejects.toThrow(/not supported|multiple source|both package/);
   }
 });

@@ -53,7 +53,7 @@ of each feature or the remaining parity matrix passed.
 | Worker/environment lifecycle | Distinct runtime principals, restore/stop/replacement, lease fencing | Race, credential, immutable identity, and live restart tests |
 | Context compaction | Native Pi manual compaction and automatic checks before new prompts; complete display history and reduced model context | Twelve HTTP tests cover thresholds, Stop, retry, queue, replacement, oversize, and crash boundaries; preview UI summary, recall, and exact 29-message restart preservation |
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
-| Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls, question recovery, provider HTTP, and React remount tests; new composer UI verification pending deployment |
+| Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls; preview UI High/None/Auto payloads and provider results; reload, nine-message stop/resume, and question recovery |
 
 Custom Pi modules are supported. OpenCode plugins are not automatically Pi
 extensions. The native Pi lifecycle surface is documented in
