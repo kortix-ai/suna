@@ -12,6 +12,7 @@ import { mkdir, mkdtemp, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
+import { planForcedRefresh } from './forced-refresh-window';
 import { planMirrorRefresh } from './mirror-refresh-policy';
 import type { GitBackedProject } from './types';
 
@@ -333,6 +334,16 @@ export { spawn };
 /** Operator switch for serving a stale mirror while refreshing behind it.
  *  Off by default: it widens the staleness window by about one read, and that
  *  is a deployment's call rather than this file's. */
+/** When the last FORCED refresh for a project completed. Separate from
+ *  `lastRefreshAt`, which any refresh bumps: only a force may satisfy a force. */
+const lastForcedRefreshAt = new Map<string, number>();
+
+/** Window in which a second forced refresh reuses the first. 0 = off. */
+function forcedRefreshCoalesceMs(): number {
+  const raw = Number(process.env.KORTIX_GIT_FORCE_COALESCE_MS ?? 0);
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
 function backgroundMirrorRefreshEnabled(): boolean {
   return String(process.env.KORTIX_GIT_BACKGROUND_REFRESH ?? '').toLowerCase() === 'true';
 }
@@ -402,6 +413,21 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   // deliberately served a possibly-outdated copy — so blocking to close the last
   // moments of that window buys a guarantee the window itself does not make.
   // See mirror-refresh-policy.ts for what still blocks and why.
+  // A FORCED REFRESH THAT JUST FINISHED IS STILL FRESH. `force` means "not the
+  // 60 s TTL copy", never "one round trip per caller", and session create plus
+  // the first prompt's grant remint both force within seconds of each other —
+  // ~500 ms each, measured. See forced-refresh-window.ts.
+  if (
+    force &&
+    !needsClone &&
+    planForcedRefresh({
+      sinceLastForcedMs: Date.now() - (lastForcedRefreshAt.get(project.projectId) ?? Number.NaN),
+      windowMs: forcedRefreshCoalesceMs(),
+    }) === 'reuse_recent_force'
+  ) {
+    return repoPath;
+  }
+
   const plan = planMirrorRefresh({
     present: !needsClone,
     ageMs: Date.now() - lastRefresh,
@@ -459,6 +485,7 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     }
     if (lastErr) throw lastErr;
     lastRefreshAt.set(project.projectId, Date.now());
+    if (force) lastForcedRefreshAt.set(project.projectId, Date.now());
     return repoPath;
   }
 
@@ -467,6 +494,7 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
   await runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers);
   lastRefreshAt.set(project.projectId, Date.now());
+  if (force) lastForcedRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }
 
