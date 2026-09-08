@@ -215,3 +215,21 @@ test('prompt tool controls and explicit session rules apply in started order and
     await f.cleanup();
   }
 }, 15000);
+
+test('completed permission tool timestamps survive worker replacement exactly', async () => {
+  const f = await fixture({ permission: 'primary' });
+  try {
+    const worker = await f.start();
+    const path = `/session/${f.sessionID}`;
+    await worker.call(path + '/prompt_async', { parts: [{ type: 'text', text: 'Run the operation.' }] });
+    const [pending] = await f.until(() => worker.read('/permission'), value => value.length === 1);
+    await Bun.sleep(30);
+    expect((await worker.call(`/permission/${pending.id}/reply`, { reply: 'once' })).status).toBe(200);
+    await f.until(() => worker.read('/session/status'), value => Object.keys(value).length === 0);
+    const before = await worker.read(path + '/message');
+    worker.child.kill('SIGKILL');
+    await worker.child.exited;
+    const replacement = await f.start();
+    expect(await replacement.read(path + '/message')).toEqual(before);
+  } finally { await f.cleanup(); }
+}, 15000);

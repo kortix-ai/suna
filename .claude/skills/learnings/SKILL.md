@@ -5217,3 +5217,17 @@ An already-running second worker also missed grants saved by the first worker.
 Automation: session-permission-routes.test.ts exercises real worker HTTP routes
 for persistence, reset, validation, failed writes, concurrent workers, queued
 grants, and prompt controls. Permission-store tests race reset with approval.
+
+
+## 2026-09-08 — A failed permission update must not approve the pending tool
+
+Wait for the runtime acknowledgment before changing the local permission mode.
+Keep failed enable and reset actions retryable. Persist wire timestamps alongside
+native messages; reconstructing them from nearby events changes saved history.
+
+Incident: an injected 503 still enabled the old local approver and ran a command.
+Replacing the worker also changed tool timestamps in otherwise identical history.
+Automation: permission-mode-submission.test.ts covers failure, duplicate clicks,
+and retry. Live browser assertions check PATCH responses, approval requests, and
+file effects. Worker HTTP tests compare full pending and completed transcripts
+across process replacement.

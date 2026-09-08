@@ -523,7 +523,10 @@ interface RestoredTranscriptMessage {
   kortixWireMessageId?: string;
   kortixParentMessageId?: string;
   kortixWireCreatedAt?: number;
+  kortixWireCompletedAt?: number;
   kortixWirePartIds?: string[];
+  kortixWireToolStarts?: Record<string, number>;
+  kortixWireToolTime?: { start: number; end: number };
 }
 
 interface RestoredWireMessage {
@@ -663,7 +666,7 @@ export class RuntimeSurface {
             ? { status: 'error', error: output }
             : { status: 'completed', output, title: pending.tool, metadata: toolResultMetadata(message.details) }),
           input: pending.input,
-          time: { start: pending.startedAt, end: created },
+          time: message.kortixWireToolTime ?? { start: pending.startedAt, end: created },
         });
         continue;
       }
@@ -757,7 +760,7 @@ export class RuntimeSurface {
               role,
               sessionID: this.rootId,
               parentID: message.kortixParentMessageId ?? lastUserId!,
-              time: { created, completed: created },
+              time: { created, completed: message.kortixWireCompletedAt ?? created },
               modelID: resolvedModel.modelID,
               providerID: resolvedModel.providerID,
               ...assistantContractFields(message.usage, {
@@ -805,14 +808,14 @@ export class RuntimeSurface {
           partId,
           tool: String(part.call.name),
           input: part.call.arguments,
-          startedAt: created,
+          startedAt: message.kortixWireToolStarts?.[part.call.id] ?? created,
         };
         // Left 'running' on purpose when no result follows: that is exactly
         // what an interrupted turn was, and claiming it completed would be a lie.
         this.applyToolPart(entry, {
           status: 'running',
           input: entry.input,
-          time: { start: created },
+          time: { start: entry.startedAt },
         });
         if (typeof part.call.id === 'string') toolParts.set(part.call.id, entry);
       });

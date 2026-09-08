@@ -245,4 +245,24 @@ restore compiled policy. Six HTTP scenarios cover replacement, rejected input,
 failed writes, cross-worker updates, queued always grants, and prompt controls.
 Store tests also cover concurrent reset, approval retries, and corrupt records.
 The root command passes in 59.8 seconds, including 395/395 REST/CLI flows.
-Live session-wide permission verification follows deployment of this change.
+Deployment [34167196128](https://github.com/kortix-ai/suna/actions/runs/34167196128)
+serves `e8329204042ff314446502964a4a7711bbe134fd`. Its full preview browser suite
+passes 19/19 without retries in 173.4 seconds.
+
+The browser failure test rejects the session update with 503. The deployed UI
+incorrectly approves the pending tool anyway. The local fix waits for the server
+acknowledgment. Browser verification against the real preview API asserts failed
+enable, successful retry, failed reset, and successful reset. The first failed
+update sends zero approval replies and produces no file. Retry sends one reply
+and writes exactly one marker. Failed reset keeps the current mode; retry stores
+an empty ruleset. Reload preserves the transcript.
+
+Worker replacement also exposed regenerated tool timestamps. Native messages now
+persist tool start/end and assistant completion times. Real child-process tests
+compare the complete pending and completed transcripts across replacement. Both
+regressions fail before the fix and pass afterward.
+
+Local gates for these follow-ups: `pnpm test` passes in 60.8 seconds, including
+395/395 REST/CLI flows and 565 worker tests with 3,034 assertions. The web suite
+passes 9,465 tests with 35,550 assertions. Web typecheck and focused ESLint exit 0.
+Deployment verification of these follow-ups is recorded after release to preview.

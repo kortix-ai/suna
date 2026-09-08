@@ -127,6 +127,11 @@ Completed tool results retain their wire identities and never repeat their effec
 Restored tool history preserves the repeated-tool guard. Stop cancels a restored
 permission, and another worker's queued prompt waits for its resolution.
 
+The session permission switch waits for the runtime update and pending replies.
+A rejected update leaves its controls available for retry. A failed reset retains
+the current mode. Saved native messages carry wire completion and tool timestamps,
+so replacement preserves the full transcript, including pending tool timing.
+
 The web composer respects each question's `custom` flag. Choice-only questions
 use the option buttons; multiple selections advance with Next. Custom answers
 remain available when allowed. Confirm submits the collected answers without

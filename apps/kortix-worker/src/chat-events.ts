@@ -172,13 +172,14 @@ export class ChatEventAdapter {
   private textIndex = new Map<string, number>();
   private toolIndex = new Map<
     string,
-    { partId: string; name: string; input: unknown; startedAt: number }
+    { partId: string; name: string; input: unknown; startedAt: number; endedAt?: number }
   >();
   private accum = new Map<string, string>();
   private partCount = 0;
   private partStartedAt = new Map<string, number>();
   private replayedMessage = false;
   private replayedToolParts = new Map<string, { id: string; startedAt: number }>();
+  private currentAssistant: any = null;
 
   constructor(opts: AdapterOptions) {
     this.sessionID = opts.sessionID;
@@ -220,6 +221,8 @@ export class ChatEventAdapter {
         // messages are already carried as tool PARTS on the assistant message
         // (dev session 7f218b0a rendered a stray toolResult row).
         if ((event.message?.role ?? 'assistant') !== 'assistant') return [];
+        this.currentAssistant = event.message;
+        this.toolIndex.clear();
         this.replayedMessage = typeof event.message?.kortixWireMessageId === 'string';
         this.currentMessageId =
           event.message?.kortixWireMessageId ??
@@ -241,7 +244,7 @@ export class ChatEventAdapter {
               const index = this.partCount++;
               this.replayedToolParts.set(block.id, {
                 id: event.message.kortixWirePartIds?.[index] ?? partId(this.currentMessageId, index),
-                startedAt: this.currentMessageCreatedAt,
+                startedAt: event.message.kortixWireToolStarts?.[block.id] ?? this.currentMessageCreatedAt,
               });
             } else if (
               (block.type === 'text' && block.text) ||
@@ -336,6 +339,10 @@ export class ChatEventAdapter {
         const restored = this.replayedToolParts.get(event.toolCallId);
         const id = restored?.id ?? this.nextPart();
         const startedAt = restored?.startedAt ?? this.now();
+        if (this.currentAssistant) {
+          this.currentAssistant.kortixWireToolStarts ??= {};
+          this.currentAssistant.kortixWireToolStarts[event.toolCallId] = startedAt;
+        }
         this.toolIndex.set(event.toolCallId, {
           partId: id,
           name: event.toolName,
@@ -372,6 +379,7 @@ export class ChatEventAdapter {
         // a blob where stdout belongs.
         const output = toolOutputText(event.result);
         const endedAt = this.now();
+        t.endedAt = endedAt;
         return [
           this.toolPart(
             t.partId,
@@ -396,7 +404,14 @@ export class ChatEventAdapter {
       }
 
       case 'message_end': {
+        if (event.message?.role === 'toolResult') {
+          const tool = this.toolIndex.get(event.message.toolCallId);
+          if (tool?.endedAt !== undefined && !event.message.kortixWireToolTime)
+            event.message.kortixWireToolTime = { start: tool.startedAt, end: tool.endedAt };
+          return [];
+        }
         if ((event.message?.role ?? 'assistant') !== 'assistant') return [];
+        this.currentAssistant = event.message;
         // These two JSON fields travel with Pi's durable message. They let a
         // restarted worker rebuild the exact wire transcript instead of
         // minting new ids and breaking parent relationships on every boot.
@@ -409,6 +424,7 @@ export class ChatEventAdapter {
         const stop = event.message?.stopReason;
         const terminalError = assistantMessageError(event.message ?? {});
         const completedAt = this.now();
+        event.message.kortixWireCompletedAt = completedAt;
         const out: Wire[] = [
           {
             type: 'message.updated',

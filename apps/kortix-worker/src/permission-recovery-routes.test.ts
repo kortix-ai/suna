@@ -110,9 +110,7 @@ test('a killed worker restores permission without repeating earlier tools or mod
         (value) => value.length === 1,
       ),
     ).toEqual(pending);
-    expect(
-      (await replacement.read(`/session/${f.sessionID}/message`)).map((m: any) => m.info.id),
-    ).toEqual(before.map((m: any) => m.info.id));
+    expect(await replacement.read(`/session/${f.sessionID}/message`)).toEqual(before);
     expect(f.effects).toEqual(['BEFORE_PERMISSION']);
     expect(f.providerRequests).toHaveLength(1);
     expect(
