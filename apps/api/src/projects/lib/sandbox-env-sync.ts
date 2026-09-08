@@ -1,3 +1,4 @@
+import { envPushUrl } from './env-push-url';
 import { createHash } from 'node:crypto';
 import { projectSessions, projects, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
@@ -484,6 +485,10 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
 
 async function postEnvToDaemon(args: {
   previewUrl: string;
+  /** The session this env is for. A cell holds one isolate per session and
+   *  picks between them with `?c=`; without it every session's env lands in
+   *  one isolate. See env-push-url.ts. */
+  sessionId?: string | null;
   providerHeaders: Record<string, string>;
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
@@ -522,7 +527,7 @@ async function postEnvToDaemon(args: {
     ...args.providerHeaders,
   };
 
-  const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
+  const res = await fetch(envPushUrl(args.previewUrl, args.sessionId), {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -746,6 +751,7 @@ export async function syncSandboxEnvForPrompt(args: {
   }
   const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
+    sessionId: args.sessionId,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
     snapshot,
@@ -841,6 +847,7 @@ export async function syncSessionRuntimesEnvForPrompt(
   });
   await postEnvToDaemon({
     previewUrl: ingress.url,
+    sessionId: args.sessionId,
     providerHeaders: ingress.headers,
     serviceKey,
     snapshot,
@@ -1007,6 +1014,7 @@ async function runProjectSecretPropagation(
         });
         const proof = await postEnvToDaemon({
           previewUrl: url,
+          sessionId,
           providerHeaders: headers,
           serviceKey,
           snapshot,
@@ -1111,6 +1119,7 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
         });
         await postEnvToDaemon({
           previewUrl: url,
+          sessionId,
           providerHeaders: headers,
           serviceKey,
           snapshot,
