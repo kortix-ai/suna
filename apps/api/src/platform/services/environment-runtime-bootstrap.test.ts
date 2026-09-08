@@ -30,6 +30,7 @@ http.server.HTTPServer(('127.0.0.1',int(os.environ['KORTIX_SERVICE_PORT'])),Hand
   const api = Bun.serve({
     port: 0,
     fetch(request) {
+      if (request.headers.get('User-Agent') !== 'kortix-environment-bootstrap/1') return new Response('runtime user agent required', { status: 403 });
       if (request.headers.get('Authorization') !== 'Bearer test-environment-token') return new Response('unauthorized', { status: 401 });
       const path = new URL(request.url).pathname;
       if (path.endsWith('/manifest')) return Response.json({ components: Object.fromEntries(Object.entries(assets).map(([name, body]) => [name, { path: `/v1/runtime-assets/${name}`, sha256: corrupt && name === 'entrypoint' ? '0'.repeat(64) : createHash('sha256').update(body).digest('hex') }])) });

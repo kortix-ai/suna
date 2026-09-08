@@ -46,7 +46,7 @@ def bootstrap(root=Path('/'), reuse_workspace=False):
     token = env.get('KORTIX_TOKEN')
     if not api or not token:
         raise RuntimeError('Environment API identity is missing')
-    headers = {'Authorization': 'Bearer ' + token}
+    headers = {'Authorization': 'Bearer ' + token, 'User-Agent': 'kortix-environment-bootstrap/1'}
     request = urllib.request.Request(api + '/v1/runtime-assets/manifest', headers=headers)
     with urllib.request.urlopen(request, timeout=30) as response:
         manifest = json.load(response)

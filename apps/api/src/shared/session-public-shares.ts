@@ -349,7 +349,7 @@ export async function touchPublicShare(shareId: string) {
     .where(eq(projectSessionPublicShares.shareId, shareId));
 }
 
-export async function resolvePublicShare(token: string) {
+export async function resolvePublicShare(token: string, options: { requireRuntime?: boolean } = {}) {
   // LEFT JOIN, not INNER: a session that was created but never started (or
   // whose sandbox hasn't been provisioned yet) has no `session_sandboxes` row
   // at all. An INNER JOIN made that case fall straight into `!row` → 404
@@ -429,7 +429,7 @@ export async function resolvePublicShare(token: string) {
       error: 'Sessions using a personal connection cannot be shared publicly',
     };
   }
-  if (!resolvedRow.externalId) {
+  if (options.requireRuntime !== false && !resolvedRow.externalId) {
     return { ok: false as const, status: 503, error: 'Sandbox is not ready' };
   }
   if (row.resourceType === 'preview' && (!row.port || PUBLIC_SHARE_BLOCKED_PORTS.has(row.port))) {

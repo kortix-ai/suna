@@ -5379,3 +5379,11 @@ the provider bootstrap and checks digest rejection, file preservation, and retry
 **Rule:** Recover legacy runtime identity from the installed, server-provisioned bundle before enforcing a new identity contract. Never resolve the current branch HEAD for an existing conversation. Reject mismatched projects and malformed explicit identities. Keep transcript and workspace state intact.
 
 **Enforcement:** `pi-worker-identity-recovery.test.ts` checks artifact parsing without code execution, immutable commit recovery, project isolation, and malformed-identity rejection. Environment ensure, cold allocation, and replacement restart share `ensurePiWorkerIdentity`.
+
+
+### Identify environment bootstrap downloads as a Kortix runtime client (2026-09-08)
+
+**When:** downloading daemon and entrypoint assets through a deployed API origin.
+**Incident:** Pi preview `092f25309c` returned Cloudflare `403 / error code: 1010` for Python's default user agent before the API authenticated the environment.
+**Rule:** send the explicit `kortix-environment-bootstrap/1` user agent with the environment credential. Keep digest verification and existing authorization gates.
+**Enforcer:** `environment-runtime-bootstrap.test.ts` rejects download requests without that user agent and checks upgrade, idempotency, and corrupt-artifact preservation.

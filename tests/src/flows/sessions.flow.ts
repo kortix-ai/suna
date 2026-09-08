@@ -880,35 +880,9 @@ flow(
 );
 
 /**
- * SESS-16 — anonymous session-share VIEWING: `GET /v1/public/session-shares/:shareId`
- * and `.../messages`, mounted at `apps/api/src/public-session-shares/index.ts`
- * (public/session-shares/index.ts, no auth middleware). Closes the backend
- * gap `(public)/share/[shareId]` (apps/web `ShareViewer.tsx`) had flagged
- * in-code since #4124: that page has no public-share token in its route and
- * the sandbox-proxy's own public-share family deliberately blocks port 8000
- * (`PUBLIC_SHARE_BLOCKED_PORTS` in shared/session-public-shares.ts), so it
- * could never serve a session's title/transcript to a logged-out visitor.
- *
- * `:shareId` here is the SESS-13 share's raw `share_id` (the uuid — the SAME
- * value the CRUD responses call `share.share_id`), NOT the `kps_...` public
- * token `/v1/p/public-share/:token` uses. The route derives the token
- * server-side (`publicShareToken(shareId)`) and resolves through the exact
- * same `resolvePublicShare()` SESS-13 covers, so it inherits identical
- * 404 (unknown) / 410 (revoked or expired) / 503 (sandbox not provisioned
- * yet) semantics — and ANY existing share for the session (created as a
- * `preview` or a `file`, the only kinds the CRUD supports today) unlocks the
- * transcript view too: a share token already proves the owner handed this
- * link to someone outside the account, and the read-only conversation is not
- * more sensitive than the live preview or workspace file that SAME token
- * already exposes.
- *
- * The metadata route (`GET /:shareId`) is DB-only (title/status/timestamps),
- * so it does not itself 503 on an inactive sandbox — only `resolvePublicShare`'s
- * own missing-`externalId` check can. The messages route additionally 503s
- * when the sandbox row exists but isn't `active`, and otherwise degrades to a
- * 200 `{available:false, reason}` digest (mirroring the authenticated
- * `/transcript` debug endpoint's behavior) for transient OpenCode-not-ready
- * states — a polling frontend should retry those, not treat them as fatal.
+ * SESS-16 verifies anonymous conversation metadata, transcript sanitization,
+ * and share revocation. Metadata does not require a running sandbox.
+ * Transcripts use the worker or a durable mirror when one exists.
  */
 flow(
   'SESS-16',
@@ -961,21 +935,16 @@ flow(
       r.status(400);
     });
 
-    await ctx.step(
-      'anon: view metadata for the real share → 200 (sandbox ready) or 503 (not yet) — never an auth error',
-      async () => {
-        const r = await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } });
-        r.status([200, 503]);
-        if (r.statusCode === 200) {
-          r.body()
-            .has('$.share.share_id', shareId)
-            .has('$.share.session_id', session.id)
-            .has('$.session.session_id', session.id)
-            .exists('$.session.status')
-            .exists('$.session.created_at');
-        }
-      },
-    );
+    await ctx.step('anon: view metadata for the real share → 200 without a running sandbox', async () => {
+      const r = await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } });
+      r.status(200);
+      r.body()
+        .has('$.share.share_id', shareId)
+        .has('$.share.session_id', session.id)
+        .has('$.session.session_id', session.id)
+        .exists('$.session.status')
+        .exists('$.session.created_at');
+    });
 
     await ctx.step(
       'anon: read the sanitized transcript for the real share → 200 (digest) or 503 (sandbox not up)',
