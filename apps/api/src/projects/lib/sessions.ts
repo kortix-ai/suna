@@ -988,6 +988,25 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+  // `forceRefresh: true` COSTS ~500 ms ON EVERY SESSION CREATE, and it is the
+  // single largest thing in creating one. Measured on dev 2026-09-09 by timing
+  // the three steps inside readManifestFromRepo:
+  //
+  //   {"mirror":  3, "lsTree":0, "show":3}   warm reads elsewhere in the request
+  //   {"mirror":502, "lsTree":0, "show":16}  THIS read
+  //
+  // `ls-tree` and `show` are free and a warm mirror is single-digit ms; the
+  // whole cost is the forced `git fetch`. It made loadProjectAgents 625 ms of a
+  // 675 ms POST /v1/projects/:id/sessions — 92% of the request — spent asking a
+  // git remote whether the manifest changed. The 60 s mirror TTL cannot absorb
+  // it, and neither can the background-refresh policy added in
+  // git/mirror-refresh-policy.ts, because `force` deliberately opts out of both.
+  //
+  // IT IS LEFT AS IT IS, because what it buys is not latency's to trade away:
+  // this read resolves the agent's secret grant (`rethrowReadErrors: true`
+  // right below, fail-closed), so dropping the force would let a session start
+  // under a grant up to a minute out of date — including one a push had just
+  // narrowed. Whoever changes it is choosing that, and should say so here.
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: true,
     rethrowReadErrors: true,

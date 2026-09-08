@@ -12,6 +12,7 @@ import { mkdir, mkdtemp, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
+import { planMirrorRefresh } from './mirror-refresh-policy';
 import type { GitBackedProject } from './types';
 
 export const execFileAsync = promisify(execFile);
@@ -329,6 +330,13 @@ export async function runGitCapture(
 /** Re-export so callers that spawn directly (archive streaming) share one import surface. */
 export { spawn };
 
+/** Operator switch for serving a stale mirror while refreshing behind it.
+ *  Off by default: it widens the staleness window by about one read, and that
+ *  is a deployment's call rather than this file's. */
+function backgroundMirrorRefreshEnabled(): boolean {
+  return String(process.env.KORTIX_GIT_BACKGROUND_REFRESH ?? '').toLowerCase() === 'true';
+}
+
 function refreshIntervalMs() {
   const value = Number(process.env.KORTIX_GIT_REFRESH_INTERVAL_MS || 60_000);
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
@@ -383,9 +391,34 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     needsClone = true;
   }
   const lastRefresh = lastRefreshAt.get(project.projectId) || 0;
-  const needsFetch = !needsClone && (force || Date.now() - lastRefresh >= refreshIntervalMs());
-  // Nothing to do over the network — serve the warm cache without touching git.
-  if (!needsClone && !needsFetch) return repoPath;
+  // WAIT FOR THE FETCH, OR SERVE WHAT WE HAVE AND FETCH BEHIND IT?
+  //
+  // Measured on dev 2026-09-09 inside readManifestFromRepo on the session-create
+  // path: a warm mirror is 3-12 ms and ls-tree/show are free, but a mirror past
+  // its TTL costs 462 ms because the caller waits. That wait was 92% of
+  // POST /v1/projects/:id/sessions (loadProjectAgents 625 ms of 675 ms), and
+  // sessions arrive minutes apart, so nearly every one paid it. The TTL is
+  // already a staleness contract — for a minute after a fetch every reader is
+  // deliberately served a possibly-outdated copy — so blocking to close the last
+  // moments of that window buys a guarantee the window itself does not make.
+  // See mirror-refresh-policy.ts for what still blocks and why.
+  const plan = planMirrorRefresh({
+    present: !needsClone,
+    ageMs: Date.now() - lastRefresh,
+    ttlMs: refreshIntervalMs(),
+    force,
+    backgroundEnabled: backgroundMirrorRefreshEnabled(),
+  });
+  if (plan === 'serve_warm') return repoPath;
+  if (plan === 'serve_warm_refresh_behind') {
+    // Fire and forget, and never let it reject into a caller already served.
+    // `refreshMirror`'s lock keeps a second reader from starting a duplicate.
+    void doRefreshMirror(project, true).catch((err) => {
+      console.warn(`[git-mirror] background refresh failed for ${project.projectId}:`, err);
+    });
+    return repoPath;
+  }
+  const needsFetch = !needsClone;
 
   // Resolve a token before EITHER network op. Whichever caller wins the
   // refresh lock, the shared clone/fetch is authenticated whenever the project
