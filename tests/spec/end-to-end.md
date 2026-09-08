@@ -288,6 +288,9 @@ The session payload reports both verdicts, and a client must not read one for th
 
 `SESS-27` Durable pi transcript log. `POST /projects/:id/sessions/:sid/log` appends one bare mutation and accepts an optional UUID-v4 `Idempotency-Key` during the mixed-version rollout. Replaying identical content under the same key → `204` without a second row. Reusing that key for different content → `409`. `GET /projects/:id/sessions/:sid/log` returns the bare mutations once each in database append order without contacting or starting a runtime.
 
+`SESS-29` Immutable session attachments. `PUT /projects/:id/sessions/:sid/attachments/:sha256` stores 1 byte through 8 MiB of raw bytes under their SHA-256, with a parameter-free MIME `Content-Type`; matching retries return `204`. A digest mismatch or malformed digest/type returns `400`; changing the MIME type for existing bytes returns `409`. `GET` returns exact bytes, MIME, ETag, and private immutable cache headers without starting a sandbox. Unknown attachments and sessions return `404`; project nonmembers and sibling-session credentials cannot read or write them. Empty uploads return `400`; uploads above 8 MiB return `413`, including chunked bodies. Deleting the session makes its attachments inaccessible.
+
+
 ---
 
 ## 8. Sandbox lifecycle + snapshots

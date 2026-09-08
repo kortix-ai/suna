@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 /**
  * Sessions — create/list/get/delete + unified runtime start. Maps to spec §16 (SESS-*).
  * Session creation provisions a REAL Daytona sandbox (fire-and-forget), so these
@@ -1319,3 +1320,73 @@ flow(
     });
   },
 );
+
+flow('SESS-29', {
+  domain: 'sessions',
+  routes: [
+    'PUT /v1/projects/:projectId/sessions/:sessionId/attachments/:sha256',
+    'GET /v1/projects/:projectId/sessions/:sessionId/attachments/:sha256',
+  ],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project();
+  const session = await ctx.fixtures.session(project);
+  const sibling = await ctx.fixtures.session(project);
+  const otherProject = await ctx.fixtures.project();
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const content = `immutable attachment \u0000 \u00ff ${crypto.randomUUID()}`;
+  const sha256 = createHash('sha256').update(content).digest('hex');
+  const route = '/v1/projects/:projectId/sessions/:sessionId/attachments/:sha256';
+  const params = { projectId: project.id, sessionId: session.id, sha256 };
+  const options = { params, raw: true, headers: { 'content-type': 'text/plain' } };
+  const before = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+  before.status(200);
+  const originalStatus = before.json<any>().status;
+
+  await ctx.step('upload and repeat identical content → 204 twice', async () => {
+    (await owner.put(route, content, options)).status(204);
+    (await owner.put(route, content, options)).status(204);
+  });
+  await ctx.step('read returns exact bytes, MIME and private immutable metadata', async () => {
+    const response = await owner.get(route, { params });
+    response.status(200);
+    if (response.text() !== content) throw new Error('attachment bytes changed');
+    if (response.header('content-type') !== 'text/plain') throw new Error('attachment MIME changed');
+    if (response.header('etag') !== `"${sha256}"`) throw new Error('attachment digest changed');
+    if (!response.header('cache-control')?.includes('private')) throw new Error('attachment is publicly cacheable');
+    if (response.header('x-content-type-options') !== 'nosniff') throw new Error('attachment can be MIME-sniffed');
+  });
+  await ctx.step('different bytes under the digest → 400; MIME replacement → 409; original remains readable', async () => {
+    (await owner.put(route, `${content}changed`, options)).status(400);
+    (await owner.put(route, content, { ...options, headers: { 'content-type': 'image/png' } })).status(409);
+    const response = await owner.get(route, { params });
+    response.status(200);
+    if (response.text() !== content || response.header('content-type') !== 'text/plain') throw new Error('conflict overwrote attachment');
+  });
+  await ctx.step('unknown digest, sibling session and mismatched project → 404', async () => {
+    for (const change of [{ sha256: '0'.repeat(64) }, { sessionId: sibling.id }, { projectId: otherProject.id }]) {
+      (await owner.get(route, { params: { ...params, ...change } })).status(404);
+    }
+    (await owner.put(route, content, { ...options, params: { ...params, projectId: otherProject.id } })).status(404);
+  });
+  await ctx.step('anonymous and nonmember callers cannot read or write attachment bytes', async () => {
+    for (const [principal, expected] of [[ctx.P.ANON, [401]], [ctx.P.NONMEMBER, [403, 404]]] as const) {
+      (await ctx.client.as(principal).get(route, { params })).status([...expected]);
+      (await ctx.client.as(principal).put(route, content, options)).status([...expected]);
+    }
+  });
+  await ctx.step('empty bytes and malformed digest or MIME → 400', async () => {
+    (await owner.put(route, '', options)).status(400);
+    (await owner.put(route, content, { ...options, params: { ...params, sha256: 'invalid' } })).status(400);
+    (await owner.get(route, { params: { ...params, sha256: 'invalid' } })).status(400);
+    (await owner.put(route, content, { ...options, headers: { 'content-type': 'text/plain; charset=utf-8' } })).status(400);
+  });
+  await ctx.step('attachment reads and writes preserve the session lifecycle status', async () => {
+    const after = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+    after.status(200).body().has('$.status', originalStatus);
+  });
+  await ctx.step('delete the session → attachment read and write both become 404', async () => {
+    (await owner.request('DELETE', '/v1/projects/:projectId/sessions/:sessionId', { params })).status(200);
+    (await owner.get(route, { params })).status(404);
+    (await owner.put(route, content, options)).status(404);
+  });
+});

@@ -914,7 +914,7 @@ export const sessionWorkerLog = kortixSchema.table(
     uniqueIndex('idx_session_worker_log_append_id').on(table.sessionId, table.appendId),
     check('session_worker_log_item_object_check', sql`jsonb_typeof(${table.item}) = 'object'`),
   ],
-);
+).enableRLS();
 
 /** Raw bytes. drizzle-orm has no first-class bytea column. */
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -922,6 +922,23 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
     return 'bytea';
   },
 });
+
+export const sessionAttachments = kortixSchema.table(
+  'session_attachments',
+  {
+    sessionId: text('session_id').notNull().references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    sha256: text('sha256').notNull(),
+    contentType: text('content_type').notNull(),
+    content: bytea('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.sha256] }),
+    check('session_attachments_sha256_check', sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
+    check('session_attachments_size_check', sql`octet_length(${table.content}) BETWEEN 1 AND 8388608`),
+    check('session_attachments_content_type_check', sql`length(${table.contentType}) BETWEEN 3 AND 129`),
+  ],
+).enableRLS();
 
 /**
  * Compiled pi worker runtimes — one row per (project, ref, sha, AGENT).
@@ -967,7 +984,7 @@ export const piRuntimeArtifacts = kortixSchema.table(
       table.createdAt,
     ),
   ],
-);
+).enableRLS();
 
 /**
  * Shared filesystems — "a Google Drive between the agents".
@@ -998,7 +1015,7 @@ export const filesystems = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [unique('filesystems_project_name_key').on(table.projectId, table.name)],
-);
+).enableRLS();
 
 /**
  * One path in one filesystem. Metadata only — the bytes are in `sha256`.
@@ -1029,7 +1046,7 @@ export const filesystemFiles = kortixSchema.table(
     // Listing is always "this filesystem, under this prefix, newest first".
     index('idx_filesystem_files_listing').on(table.filesystemId, table.path),
   ],
-);
+).enableRLS();
 
 /**
  * Content-addressed bytes for the `pg` backend.
@@ -1050,7 +1067,7 @@ export const filesystemBlobs = kortixSchema.table('filesystem_blobs', {
   size: integer('size').notNull(),
   content: bytea('content').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}).enableRLS();
 
 export const projectSessionRuntimeContexts = kortixSchema.table(
   'project_session_runtime_contexts',

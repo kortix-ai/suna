@@ -51,3 +51,5 @@ export type {
   ProjectGitConnection,
   ProjectFileEntry,
 } from './shared';
+
+export * from './session-attachments';

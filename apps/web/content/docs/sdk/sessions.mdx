@@ -609,3 +609,21 @@ if (s.sendError?.kind === 'billing') {
 ```
 
 See [React hooks](/docs/sdk/react) for the rest of `useSession`.
+
+## Immutable attachments
+
+Upload immutable conversation assets without starting either sandbox:
+
+```ts
+const attachment = await session.attachments.put(bytes, { contentType: 'image/png' })
+const stored = await session.attachments.get(attachment.sha256)
+```
+
+Uploads accept 1 byte through 8 MiB. The SDK verifies downloaded bytes against
+their SHA-256. Retries preserve the original bytes and MIME type. The API rejects
+a MIME change with `409`. Access uses the session's project permissions; worker
+credentials can access only their own session. Deleting the session removes
+access to its attachments.
+
+This API stores assets. It does not submit them to Pi. Pi composer attachments
+and image replay remain gated while that runtime integration is implemented.

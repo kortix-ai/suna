@@ -746,3 +746,16 @@ See [the configuration and lifecycle contract](../../docs/PI_CUSTOM_AGENTS.md),
 [reviewer example](examples/12-pi-reviewer.ts), and
 [operator example](examples/13-pi-operator.ts). The examples are typechecked by
 `pnpm --filter @kortix/sdk typecheck`.
+
+### Immutable session attachments
+
+`session.attachments.put(bytes, { contentType?, signal? })` stores a non-empty
+attachment of up to 8 MiB in PostgreSQL. It returns `{ sha256, contentType, size }`.
+`session.attachments.get(sha256, { signal? })` returns those fields plus `bytes`
+and verifies the content hash. Both methods work without starting a runtime.
+The API stores one immutable value per session and digest. Repeating an upload
+is idempotent. Changing its MIME type returns `409`. Working files remain in
+the environment filesystem.
+
+This storage API does not submit a prompt. Pi composer attachment submission
+and image replay remain unavailable until the worker integration is complete.

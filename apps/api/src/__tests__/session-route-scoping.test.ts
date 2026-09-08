@@ -9,8 +9,8 @@
  * project could pass any other project's session id and read/append its
  * transcript or boot its environment box.
  *
- * Both are pre-`loadProjectSessionRow` hand-rolled selects, so nothing typed
- * catches it — hence a source-level guard.
+ * Storage routes now share `session-storage-access.ts`. This guard follows
+ * that helper; HTTP tests also verify cross-project and cross-session denial.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -18,7 +18,7 @@ import { join } from 'node:path';
 
 const ROUTES = join(import.meta.dir, '..', 'projects', 'routes');
 
-const FILES = ['session-log.ts', 'session-environment.ts'] as const;
+const FILES = ['../lib/session-storage-access.ts', 'session-environment.ts'] as const;
 
 describe('pi session routes scope their session lookup', () => {
   for (const file of FILES) {

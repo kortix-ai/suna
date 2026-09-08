@@ -9,8 +9,8 @@ async function routeSource(): Promise<string> {
 // assertion because the local profile cannot mint a runtime credential.
 describe('session worker log routes', () => {
   test('a session-scoped caller may only reach its OWN log, before any capability check', async () => {
-    const source = await routeSource();
-    const gate = source.indexOf('async function authorizeLogCall');
+    const source = await Bun.file(new URL('../lib/session-storage-access.ts', import.meta.url)).text();
+    const gate = source.indexOf('async function authorizeSessionStorageCall');
     const load = source.indexOf('loadProjectForUser(c, projectId', gate);
     const selfScope = source.indexOf('callerSession !== sessionId', gate);
     const capability = source.indexOf('assertProjectCapability(', gate);
@@ -22,7 +22,7 @@ describe('session worker log routes', () => {
     // and a human must not be able to skip it.
     expect(source.slice(gate, capability)).toContain('if (!callerSession)');
     // Both routes run the same gate.
-    expect(source.split('authorizeLogCall(c,').length - 1).toBe(2);
+    expect((await routeSource()).split('authorizeLogCall(c,').length - 1).toBe(2);
   });
 
   test('the wire shape is the WORKER\'s: bare item in, bare array out', async () => {

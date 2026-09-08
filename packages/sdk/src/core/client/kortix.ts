@@ -1187,6 +1187,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        *  sandbox is stopped or still waking. */
       transcriptSync: (options?: Parameters<typeof P.getSessionTranscriptSync>[2]) =>
         P.getSessionTranscriptSync(projectId, sessionId, options),
+      attachments: {
+        put: (...args: DropFirst2<Parameters<typeof P.putSessionAttachment>>) =>
+          P.putSessionAttachment(projectId, sessionId, ...args),
+        get: (...args: DropFirst2<Parameters<typeof P.getSessionAttachment>>) =>
+          P.getSessionAttachment(projectId, sessionId, ...args),
+      },
       /** Which turns are running right now, and how did the last one end?
        *  Server truth from the control plane's lifecycle authority, independent
        *  of the live stream. */

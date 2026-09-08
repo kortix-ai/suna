@@ -68,6 +68,7 @@ export {
   projectSessions,
   projectSessionRuntimeContexts,
   sessionWorkerLog,
+  sessionAttachments,
   piRuntimeArtifacts,
   filesystems,
   filesystemFiles,

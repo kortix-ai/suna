@@ -857,3 +857,95 @@ pass 17 tests and skip two. SDK, package, route-coverage, runner, and worktree
 lanes pass. The package lane includes 9,466 passing web tests. The benchmark
 record is `tests/test-results/local/benchmark-1788895269919.json`; it records
 the pre-commit base `9d911adc2c` with this change applied in the worktree.
+
+## 2026-09-08 — Platinum production upload revision identified
+
+`GET https://api.platinum.dev/` reports `sourceVersion: git:fa2c5f91468e`.
+The last successful production control-plane deployment is
+[34142124853](https://github.com/kortix-ai/platinum/actions/runs/34142124853),
+for full SHA `fa2c5f91468e539624cc90ff9e6b0ddef0048de1`.
+
+Both raw TCP upload paths in that revision call `socket.write()` once for
+headers and once for the body. They ignore partial writes. The existing fix,
+[Platinum #923](https://github.com/kortix-ai/platinum/pull/923), is commit
+`cd70810ee58834c7e45b11ea801d6bffc3d5d575`. Current Platinum main contains its
+`createBackpressuredWriter`; production does not. Its documented failure
+matches the preview probes: small bodies pass, larger bodies stall until an
+upstream 502, while the same bytes reach the internal API immediately.
+
+This identifies an unfixed production transport path and the existing release
+candidate. The host-edge process revision remains unverified. No Platinum
+production service, branch, or environment changes during this investigation.
+Release the fix through Platinum's required main → staging → prod process,
+then rerun the four Git shipping flows and large-context/upload checks.
+
+## 2026-09-08 — Deployed structured output and attachment storage
+
+Structured output checkpoint: `b5ba0a4828b9c679e0572340ce5fe919d7b0d802`.
+Deploy `34268543172` succeeds. Public API health, remote Git, and all three
+container image tags report that exact SHA. The real SDK validates `{answer:42}`
+and a Draft 2020-12 local-reference schema producing `{code:"cobalt"}`. A later
+plain prompt recalls both values without inheriting the output format. Invalid
+schemas return `400` without changing history. SSE emits two structured message
+updates. Six full message envelopes survive stop, PostgreSQL mirror reads, and
+worker resume byte-for-byte. Environment reads return `404`. The fixture is
+stopped after verification.
+
+The real browser expands both `StructuredOutput` tool controls and asserts the
+visible JSON values. Its runtime message request returns `200`. The composer
+returns to idle. Evidence: `/tmp/pi-structured-preview.json` and
+`/tmp/pi-structured-tool-ui.json`; screenshot `/tmp/pi-structured-tool-ui.png`.
+
+Manual full preview run `34270243441`: API `455/462` pass, four fail, three skip
+(two existing quarantines), `598.3s`. Browser lane passes in `231.4s`; total
+`602.9s`. The same `SHIP-1`, `SHIP-4`, `SHIP-6`, and `SHIP-9` fail on synthetic
+Platinum ingress 5xx responses after `41.0–46.2s`. These failures remain release
+blockers. No retries or quarantines were added. The exact existing Platinum
+socket writer fix independently passes `10 tests / 26 assertions` for partial
+writes across both proxy paths. Production still does not contain that fix.
+
+Attachment storage is the next additive checkpoint. The new PostgreSQL table
+stores immutable bytes separately from the 512 KiB worker journal. PUT and GET
+routes use the same tenant and own-session credential gate as transcript logs.
+Uploads accept 1 byte through 8 MiB, verify SHA-256, and reject MIME replacement.
+The SDK exposes `session.attachments.put/get` without starting a runtime and
+verifies downloaded hashes. Pi prompt/composer integration remains gated.
+
+The generated migration creates only `kortix.session_attachments`, its primary
+key, size/hash/type checks, and a cascading session foreign key. It changes no
+existing columns or data. The local test stack applies it successfully. The
+black-box `SESS-29` flow fails with `404` before the routes exist, then passes
+upload retries, exact read-back, conflicts, tenant isolation, invalid inputs,
+unchanged lifecycle state, and access revocation after session deletion.
+
+The storage review also finds unsafe default database grants. Preview metadata
+reports `anonSelect:true`, `authenticatedWrite:true`, and `rls:false` for the
+five existing Pi log/bundle/shared-filesystem tables. No row contents are read.
+The additive `20260908200910776_pi_private_storage_access.sql` migration revokes
+browser-role privileges and enables RLS on those five tables and attachments.
+A disposable PostgreSQL test fails all 12 checks before this migration and
+passes all 12 afterward (60 assertions), including a future blanket-grant
+regression and API-owner/service-role access.
+
+Both new migrations are applied through the standard migration runner to the
+Pi preview before the API rollout. Their SHA-256 values are
+`37205c418db6051baddb369cef84b21795395b13816e3f0a5ee0c3cc15dd2700` and
+`5f93e30acd7144ff87c1adb7a1a6f5070613e690fdc5b4bfba35749f44a5af68`.
+Read-back reports RLS enabled and browser privileges absent on all six tables.
+The preview's public PostgREST endpoint independently hides the `kortix` schema:
+all 12 anonymous/authenticated probes return `406 PGRST106`. This does not prove
+that public row access existed before the fix. The database-level grant gap is
+confirmed; the public schema boundary already blocks it on this preview.
+Authorized API log reads remain `200`, the worker resumes with the same native
+session ID, and all six messages remain present. The fixture is stopped again.
+Evidence: `/tmp/pi-private-storage-public-proof.json` and the before/after
+metadata logs. No production database is changed.
+
+Local final full run: seven lanes pass, including `397/397` REST/CLI flows,
+SDK, worker quality, browser, route coverage, runner, and worktree checks. The
+package lane catches two missing generated audit-registry entries. Regenerating
+the registry adds exactly the GET and PUT attachment routes. Its focused suite
+passes `44 tests / 2,113 assertions`; ESLint reports no errors. The package lane
+is rerun after this correction. SDK typecheck, the full SDK suite, and packed
+Node installation smoke all pass. No SDK public names are removed; the reviewed
+surface snapshots add only the two attachment methods and their metadata type.

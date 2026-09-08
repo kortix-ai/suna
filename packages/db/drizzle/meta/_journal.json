@@ -519,6 +519,20 @@
       "when": 1788505167134,
       "tag": "20260904065927_session_worker_log_append_id_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1788897422327,
+      "tag": "20260908195702_session_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1788898150766,
+      "tag": "20260908200910_pi_private_storage_access",
+      "breakpoints": true
     }
   ]
 }

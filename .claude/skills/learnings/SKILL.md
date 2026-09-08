@@ -5575,3 +5575,10 @@ and replacement immediately after the summary commit.
 
 Enforced by `context-compaction.test.ts`, `tool-replay.test.ts`, and
 `turn-routes.test.ts` in the worker quality gate.
+
+### Revoke browser-role grants on API-owned Pi storage (2026-09-08)
+
+**When:** creating or changing a private table in the `kortix` schema.
+**Incident:** the Pi preview's log, runtime bundles, and three shared-filesystem tables inherited baseline grants. `anon` had SELECT; `authenticated` had INSERT/UPDATE. Their migrations enabled no RLS. The attachment review found this through `pg_class` and `has_table_privilege`, without reading user data.
+**Rule:** revoke all privileges from `anon` and `authenticated`. Enable RLS with no policies for API-only tables. Do not force RLS on the API owner. API authorization alone does not protect a schema exposed through PostgREST.
+**Enforcer:** `packages/db/scripts/pi-private-storage-access.integration.test.ts` tests all six Pi storage tables against real PostgreSQL roles. It proves browser-role denial, owner/service access, and denial after an accidental blanket grant. The additive `pi_private_storage_access` migration preserves existing rows.
