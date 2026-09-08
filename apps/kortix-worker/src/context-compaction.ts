@@ -4,6 +4,7 @@ import {
   estimateContextTokens,
   estimateTokens,
   prepareCompaction,
+  prepareBranchEntries,
   type AgentMessage,
   type Entry,
 } from "@earendil-works/pi-agent-core";
@@ -40,7 +41,17 @@ export function compactedModelContext(
   )
     throw new Error("Compaction context does not match the durable transcript");
   return [
-    ...buildSessionContext([ordered[index]!]).messages,
+    // Retained messages keep their original usage in the display transcript only.
+    ...buildSessionContext([ordered[index]!]).messages.map((message) => {
+      if (message.role !== 'assistant') return message;
+      return {
+        ...message,
+        usage: {
+          input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      };
+    }),
     ...messages.slice(prefix.length),
   ];
 }
@@ -107,9 +118,33 @@ export async function summarizeContext(
   if (!prepared.ok) throw prepared.error;
   if (!prepared.value)
     throw new Error("No new conversation context to compact");
+  let preparation = prepared.value;
+  const retainedTokens = preparation.retainedTail.reduce(
+    (total, message) => total + estimateTokens(message),
+    0,
+  );
+  // Pi keeps whole tool batches, which can exceed its requested retention budget.
+  if (retainedTokens > preparation.settings.keepRecentTokens) {
+    const fileOps = prepareBranchEntries(entries).fileOps;
+    for (const kind of ['read', 'written', 'edited'] as const) {
+      for (const path of preparation.fileOps[kind]) fileOps[kind].add(path);
+    }
+    preparation = {
+      ...preparation,
+      messagesToSummarize: [
+        ...preparation.messagesToSummarize,
+        ...preparation.turnPrefixMessages,
+        ...preparation.retainedTail,
+      ],
+      turnPrefixMessages: [],
+      retainedTail: [],
+      isSplitTurn: false,
+      fileOps,
+    };
+  }
   signal.throwIfAborted();
   const result = await compact(
-    prepared.value,
+    preparation,
     models,
     model,
     undefined,

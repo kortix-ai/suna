@@ -5537,3 +5537,20 @@ before terminating only the owned worker. A focused pass does not make the
 interrupted full gate green; rerun the complete gate after the change.
 
 Applied in `compiled-pi-runtime-artifact.test.ts` and `nav-contract.test.ts`.
+
+
+## 2026-09-08 — Verify that tool-round compaction reduces context and preserves recovery
+
+Regression tests expose three failures: no compaction between tool rounds,
+a retained tool batch larger than the requested budget, and recovery discarding
+a summary plus completed tool results. Retained assistant usage can also trigger
+another full-context estimate after a successful summary.
+
+Check context before each next provider round. Summarize oversized retained
+batches with their file metadata. Count prior usage only in the display history.
+Recover completed tool batches in place. Rewind only incomplete batches before
+another provider request. Verify Stop, failed summaries, duplicate submissions,
+and replacement immediately after the summary commit.
+
+Enforced by `context-compaction.test.ts`, `tool-replay.test.ts`, and
+`turn-routes.test.ts` in the worker quality gate.

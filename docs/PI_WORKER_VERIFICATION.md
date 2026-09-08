@@ -716,7 +716,11 @@ Git setup uses the same mechanism. Assertions and input coverage are unchanged.
 Focused checks pass eight navigation tests and nine artifact tests.
 `pnpm test -- --full` then passes all eight lanes in 395.4 seconds.
 The package lane finishes in 225.5 seconds, including all 9,466 web tests.
-API and web `tsc --noEmit` both exit 0. The exact-SHA preview suite is running.
+API and web `tsc --noEmit` both exit 0. Exact-SHA preview run
+[34256972886](https://github.com/kortix-ai/suna/actions/runs/34256972886)
+finishes with 455/462 API flows passing, four failures, and three skips.
+SHIP-1, SHIP-4, SHIP-6, and SHIP-9 fail at the Platinum ingress.
+All 19 browser journeys pass. Target-full fails in 681.5 seconds.
 
 ### Test the deployed picker
 
@@ -730,3 +734,35 @@ API and web `tsc --noEmit` both exit 0. The exact-SHA preview suite is running.
 
 This reviewer intentionally has no workspace permissions. Use the operator
 fixture for file and shell tests. Opening Terminal or Files requests an environment.
+
+
+## 2026-09-08 — Compaction between tool rounds
+
+The worker checks the model context after completed tools and before the next
+provider request. Its native loop retains the complete display transcript.
+Pi's retained tool batches can exceed the requested retention budget. Those
+batches now enter the summary instead of remaining in the next model context.
+Their file-operation metadata remains present. Retained assistant usage from
+before compaction no longer counts toward the reduced context estimate.
+
+A worker replacement preserves a committed summary and completed tool results.
+It appends an interruption to the original prompt without replaying those tools.
+Incomplete tool batches still require a branch change before a later model call.
+Stop and summary failures preserve completed tools and prevent another model round.
+
+`pnpm exec bun tests/bin/worker-quality.ts` passes 684 worker tests, the worker
+typecheck, the bundle build, and seven real Node artifact checks. New regression
+tests fail before the changes for missing tool-round compaction, lost recovery
+history, and stale retained usage.
+
+A separate local worker calls the real preview gateway with `gpt-5.6-luna`.
+The fixture explicitly uses an 8,192-token context window to exercise compaction
+with a 30 KB tool result. It executes one tool, commits one summary, and sends
+an 863-byte continuation context without the raw archive. Its five wire messages
+survive worker restart exactly. The next real model call recalls `cobalt`.
+The temporary gateway key is revoked. The worker and its local file-backed
+session-log server are closed. No environment calls execute.
+
+This proof uses real HTTP and provider responses with a reduced test window.
+It does not prove full-size context behavior through the Platinum ingress.
+Evidence: `/tmp/pi-tool-round-live.json` and `/tmp/pi-tool-round-live.log`.

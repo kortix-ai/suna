@@ -47,7 +47,7 @@ import { parsePromptInput, type CompiledPromptRuntime } from './prompt-input.ts'
 import { PermissionBroker } from './permission-broker.ts';
 import { PermissionApprovalStore } from './permission-store.ts';
 import { PermissionCheckpointStore, type PermissionCheckpoint } from './permission-checkpoint.ts';
-import { completedToolCalls, installToolReplay, planToolReplay } from './tool-replay.ts';
+import { completedToolCalls, hasIncompleteToolHistory, installToolReplay, planToolReplay } from './tool-replay.ts';
 import type { PermissionConfig } from './permission-policy.ts';
 import { protectToolsWithPermissions } from './permission-tools.ts';
 import { QuestionBroker } from './question-broker.ts';
@@ -887,7 +887,7 @@ export async function buildHarness(cfg: WorkerConfig) {
             entry.message?.role === 'user' &&
             entry.message?.kortixWireMessageId === admission.messageId,
         );
-        if (abandonedUserEntry) {
+        if (abandonedUserEntry && hasIncompleteToolHistory(restoredMessages.slice(restoredMessages.indexOf(user)))) {
           await session.moveLane('main', abandonedUserEntry.parentId ?? null);
           await reloadDurableSession();
           user = {
@@ -1034,9 +1034,24 @@ export async function buildHarness(cfg: WorkerConfig) {
   }, (globalThis as any).__KORTIX_PI_AGENT__);
 
   const customTransform = agent.transformContext;
+  let toolRoundCompaction: ((signal?: AbortSignal) => Promise<void>) | null = null;
+  const setToolRoundCompaction = (handler: NonNullable<typeof toolRoundCompaction>) => {
+    toolRoundCompaction = handler;
+  };
   agent.convertToLlm = convertToLlm;
   agent.transformContext = async (messages, signal) => {
-    const context = compactedModelContext(messages, restoredBranchEntries);
+    let context = compactedModelContext(messages, restoredBranchEntries);
+    const latest = context.at(-1);
+    if (session && toolRoundCompaction && latest?.role === 'toolResult' &&
+      contextNeedsCompaction(context.slice(0, -1), latest, model, agent.state.systemPrompt, agent.state.tools)) {
+      signal?.throwIfAborted();
+      await persistCurrentMessages();
+      await toolRoundCompaction(signal);
+      signal?.throwIfAborted();
+      // The native loop owns a separate transcript array from Agent.state.
+      messages.splice(0, messages.length, ...agent.state.messages);
+      context = compactedModelContext(messages, restoredBranchEntries);
+    }
     return customTransform ? customTransform(context, signal) : context;
   };
   let compactionAbort: AbortController | null = null;
@@ -1258,6 +1273,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     hasResumableTurn,
     persistCurrentMessages,
     compactContext,
+    setToolRoundCompaction,
     needsContextCompaction: (incoming: any) => !!session && contextNeedsCompaction(
       compactedModelContext(agent.state.messages, restoredBranchEntries), incoming,
       model, agent.state.systemPrompt, agent.state.tools,
@@ -1303,6 +1319,7 @@ export async function startWorker(cfg = configFromEnv()) {
     hasResumableTurn,
     persistCurrentMessages,
     compactContext,
+    setToolRoundCompaction,
     needsContextCompaction,
     setToolReplayEventHandler,
     turnJournal,
@@ -1660,6 +1677,50 @@ export async function startWorker(cfg = configFromEnv()) {
       });
     return { messages, status };
   };
+  const runAutomaticContextCompaction = async () => {
+    const compactUser = {
+      role: "user",
+      content: [
+        { type: "text", text: "Compact conversation context." },
+      ],
+      timestamp: Date.now(),
+      kortixWireMessageId: surface.mintMessageId(),
+      kortixCompactionAuto: true,
+    };
+    const compactInfo = {
+      id: compactUser.kortixWireMessageId,
+      role: "user",
+      sessionID: surface.rootId,
+      time: { created: compactUser.timestamp },
+      agent: runtimeAgent,
+      model: effectiveRuntime.model ?? resolvedModel,
+    };
+    surface.publishWire({
+      type: "message.updated",
+      properties: { info: compactInfo },
+    });
+    surface.publishWire({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: `${compactInfo.id}-p0`,
+          messageID: compactInfo.id,
+          sessionID: surface.rootId,
+          type: "compaction",
+          auto: true,
+        },
+      },
+    });
+    return runContextCompaction(compactUser);
+  };
+  setToolRoundCompaction(async (signal) => {
+    signal?.throwIfAborted();
+    const result = await runAutomaticContextCompaction();
+    signal?.throwIfAborted();
+    if (result.status === 'error') {
+      throw new Error(result.messages.at(-1)?.errorMessage ?? 'Context compaction failed');
+    }
+  });
   agent.subscribe((event: any) => {
     try {
       for (const wire of wireAdapter.translate(event)) {
@@ -1925,40 +1986,7 @@ export async function startWorker(cfg = configFromEnv()) {
         } else {
           let compactionFailure: any = null;
           if (needsContextCompaction(userMessage)) {
-            const compactUser = {
-              role: "user",
-              content: [
-                { type: "text", text: "Compact conversation context." },
-              ],
-              timestamp: Date.now(),
-              kortixWireMessageId: surface.mintMessageId(),
-              kortixCompactionAuto: true,
-            };
-            const compactInfo = {
-              id: compactUser.kortixWireMessageId,
-              role: "user",
-              sessionID: surface.rootId,
-              time: { created: compactUser.timestamp },
-              agent: runtimeAgent,
-              model: effectiveRuntime.model ?? resolvedModel,
-            };
-            surface.publishWire({
-              type: "message.updated",
-              properties: { info: compactInfo },
-            });
-            surface.publishWire({
-              type: "message.part.updated",
-              properties: {
-                part: {
-                  id: `${compactInfo.id}-p0`,
-                  messageID: compactInfo.id,
-                  sessionID: surface.rootId,
-                  type: "compaction",
-                  auto: true,
-                },
-              },
-            });
-            const compacted = await runContextCompaction(compactUser);
+            const compacted = await runAutomaticContextCompaction();
             await turnJournal.refresh();
             if (
               compacted.status === "error" ||

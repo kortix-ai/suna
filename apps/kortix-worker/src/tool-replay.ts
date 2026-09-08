@@ -84,6 +84,25 @@ export function planToolReplay(
   return { assistantIndex, assistant: structuredClone(assistant), results, completedSteps };
 }
 
+export function hasIncompleteToolHistory(messages: readonly AgentMessage[]): boolean {
+  const pending = new Map<string, string>();
+  for (const message of messages) {
+    if (message.role === 'toolResult') {
+      if (pending.get(message.toolCallId) !== message.toolName) return true;
+      pending.delete(message.toolCallId);
+      continue;
+    }
+    if (pending.size) return true;
+    if (message.role !== 'assistant') continue;
+    for (const part of message.content) {
+      if (part.type !== 'toolCall') continue;
+      if (pending.has(part.id)) return true;
+      pending.set(part.id, part.name);
+    }
+  }
+  return pending.size > 0;
+}
+
 export function completedToolCalls(
   messages: readonly AgentMessage[],
 ): Array<{ name: string; input: unknown }> {

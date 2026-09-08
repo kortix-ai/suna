@@ -4,9 +4,9 @@ This contract applies to the `pi-worker` preview. It is not a production release
 Pi runs in the worker sandbox. The environment sandbox runs the execution daemon,
 files, and processes. This design uses no Durable Objects.
 
-The current environment image also starts an inherited OpenCode server. Pi custom
-tools call the execution RPC. Removing that legacy service belongs to the next
-environment infrastructure phase. The environment runs no second Pi worker.
+For a Pi session, the environment disables OpenCode startup and runs no Pi
+worker. Custom tools call the execution RPC. YAML v3 selects Pi; YAML v2 selects
+OpenCode. Existing Pi environments receive the same execution-only daemon upgrade.
 
 ## Configuration ownership
 

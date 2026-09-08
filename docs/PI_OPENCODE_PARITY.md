@@ -51,7 +51,7 @@ of each feature or the remaining parity matrix passed.
 | History while stopped | Durable transcript mirror and worker restoration | Full historical message identity preservation |
 | Public conversation while stopped | Sanitized worker transcript or PostgreSQL mirror | Preview: 24 messages preserved byte-for-byte as sanitized envelopes; anonymous HTTP 200, revoked HTTP 410 |
 | Worker/environment lifecycle | Distinct runtime principals, restore/stop/replacement, lease fencing | Race, credential, immutable identity, and live restart tests |
-| Context compaction | Native Pi manual compaction and automatic checks before new prompts; complete display history and reduced model context | Twelve HTTP tests cover thresholds, Stop, retry, queue, replacement, oversize, and crash boundaries; preview UI summary, recall, and exact 29-message restart preservation |
+| Context compaction | Manual and automatic checks before new prompts and between tool rounds; bounded retention and complete display history | HTTP threshold, Stop, retry, queue, replacement, oversize, and crash tests; real Luna with an 8,192-token fixture window, one tool execution, saved summary, exact restart, and recall; preview manual-compaction UI |
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
 | Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls; preview UI High/None/Auto payloads and provider results; reload, nine-message stop/resume, and question recovery |
 
@@ -64,7 +64,7 @@ extensions. The native Pi lifecycle surface is documented in
 | Capability | Current behavior | Required work |
 |---|---|---|
 | File/image attachments | Pi rejects non-text prompt parts; hosts gate upload controls | Durable bounded attachment storage, model conversion, replay, and UI journeys |
-| Compaction within an active tool loop | Automatic compaction runs before a new prompt; manual compaction is available | Threshold checks between tool rounds and provider context-overflow recovery |
+| Provider context-overflow recovery | Threshold compaction runs before new prompts and between tool rounds | Recovery when one input or tool result already exceeds the provider window; full-size preview proof remains blocked by ingress |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |

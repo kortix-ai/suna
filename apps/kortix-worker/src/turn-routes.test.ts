@@ -2953,7 +2953,7 @@ describe('raw OpenCode turn routes', () => {
     expect(
       second.agent.state.messages.filter((message) => agentMessageHasText(message, 'execute once')),
     ).toHaveLength(1);
-    expect(items.some((item) => item.kind === 'lane_move')).toBe(true);
+    expect(items.some((item) => item.kind === 'lane_move')).toBe(false);
 
     const messages = (await (
       await request(second, `/session/${sessionID}/message?limit=20`)
@@ -3864,6 +3864,146 @@ describe('durable context compaction', () => {
     }
     return { items, config, worker, sessionID, post, compactBody, history };
   }
+
+  async function toolRoundFixture() {
+    const result = await fixture(false, 1000);
+    result.worker.agent.state.model!.contextWindow = 4096;
+    let calls = 0;
+    result.worker.agent.state.tools.push({
+      name: 'large_result',
+      label: 'Large result',
+      description: 'Read a large result.',
+      parameters: { type: 'object', properties: {} } as any,
+      execute: async () => {
+        calls++;
+        return { content: [{ type: 'text', text: `ROUND_OUTPUT_${calls}: ${'data '.repeat(3000)}` }], details: {} };
+      },
+    });
+    const toolCall = () => fauxAssistantMessage([fauxToolCall('large_result', {})], { stopReason: 'toolUse' });
+    return { ...result, toolCall, calls: () => calls };
+  }
+
+  test('compacts between tool rounds without duplicating tools or removing the visible transcript', async () => {
+    const { worker, config, items, post, history, toolCall, calls } = await toolRoundFixture();
+    const before = await history();
+    const contexts: string[] = [];
+    worker.faux!.setResponses([
+      toolCall(),
+      ctx => {
+        expect(JSON.stringify(ctx.messages).includes('ROUND_OUTPUT_1')).toBe(true);
+        return fauxAssistantMessage('ROUND_SUMMARY_ONE: keep cobalt and the tool result.');
+      },
+      ctx => { contexts.push(JSON.stringify(ctx.messages)); return toolCall(); },
+      ctx => {
+        const text = JSON.stringify(ctx.messages);
+        expect(text.includes('ROUND_OUTPUT_2')).toBe(true);
+        expect(text.includes('ROUND_SUMMARY_ONE')).toBe(true);
+        return fauxAssistantMessage('ROUND_SUMMARY_TWO: both tool calls completed.');
+      },
+      ctx => { contexts.push(JSON.stringify(ctx.messages)); return fauxAssistantMessage('both reads completed'); },
+    ]);
+    const input = { messageID: mintWireMessageId({ nowMs: Date.now() }).id, parts: [{ type: 'text', text: 'Read twice and report.' }] };
+    expect((await post(worker, 'message', input)).status).toBe(200);
+    expect(calls()).toBe(2);
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0]).toContain('ROUND_SUMMARY_ONE');
+    expect(contexts[1]).toContain('ROUND_SUMMARY_TWO');
+    expect(contexts.every(context => !context.includes('ROUND_OUTPUT_'))).toBe(true);
+    expect(items.filter((i: any) => i.kind === 'entry' && i.entry.type === 'compaction')).toHaveLength(2);
+    const after = await history();
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after.filter(m => m.parts.some((p: any) => p.type === 'compaction' && p.auto))).toHaveLength(2);
+    expect(after.flatMap(m => m.parts).filter((p: any) => p.type === 'tool' && p.tool === 'large_result')).toHaveLength(2);
+    expect(after.at(-1).info.parentID).toBe(input.messageID);
+    expect(after.at(-1).info.error).toBeUndefined();
+    const count = worker.faux!.state.callCount;
+    await post(worker, 'message', input);
+    expect(worker.faux!.state.callCount).toBe(count);
+    await worker.close();
+    const replacement = await startWorker(config);
+    workers.push(replacement);
+    expect(await history(replacement)).toEqual(after);
+    replacement.faux!.setResponses([ctx => {
+      expect(JSON.stringify(ctx.messages)).toContain('ROUND_SUMMARY_TWO');
+      expect(JSON.stringify(ctx.messages)).not.toContain('ROUND_OUTPUT_');
+      return fauxAssistantMessage('both reads remain completed');
+    }]);
+    expect((await post(replacement, 'message', { parts: [{ type: 'text', text: 'Recall the reads.' }] })).status).toBe(200);
+  });
+
+  test('replacement preserves a summary committed between tool rounds and never replays completed tools', async () => {
+    const { worker, config, post, history, items, toolCall, calls } = await toolRoundFixture();
+    let atCrash: SessionLogItem[] = [];
+    worker.faux!.setResponses([
+      toolCall(),
+      fauxAssistantMessage('ROUND_CRASH_SUMMARY: the read completed, remember cobalt.'),
+      () => { atCrash = structuredClone(items); return fauxAssistantMessage('finished before replacement'); },
+    ]);
+    const input = { messageID: mintWireMessageId({ nowMs: Date.now() }).id, parts: [{ type: 'text', text: 'Read and report after summarizing.' }] };
+    expect((await post(worker, 'message', input)).status).toBe(200);
+    expect(calls()).toBe(1);
+    const beforeCrash = (await history()).slice(0, -1);
+    expect(atCrash.filter((i: any) => i.kind === 'entry' && i.entry.type === 'compaction')).toHaveLength(1);
+    await worker.close();
+    const replacement = await startWorker({ ...config, storeUrl: await sharedStore(atCrash) });
+    workers.push(replacement);
+    const restored = await history(replacement);
+    expect(restored.slice(0, beforeCrash.length)).toEqual(beforeCrash);
+    expect(restored.at(-1).info.parentID).toBe(input.messageID);
+    expect(restored.at(-1).info.error).toBeDefined();
+    await post(replacement, 'message', input);
+    expect(replacement.faux!.state.callCount).toBe(0);
+    replacement.faux!.setResponses([ctx => {
+      const text = JSON.stringify(ctx.messages);
+      expect(text.includes('ROUND_CRASH_SUMMARY')).toBe(true);
+      expect(text.includes('ROUND_OUTPUT_')).toBe(false);
+      return fauxAssistantMessage('the read remains completed');
+    }]);
+    await post(replacement, 'message', { parts: [{ type: 'text', text: 'Recall the completed read.' }] });
+    expect((await history(replacement)).at(-1).info.error).toBeUndefined();
+  });
+
+  test('Stop during tool-round compaction preserves the completed tool and prevents another model round', async () => {
+    const { worker, items, post, sessionID, history, toolCall, calls } = await toolRoundFixture();
+    const entered = deferred();
+    worker.faux!.setResponses([toolCall(), async (_ctx, options) => {
+      entered.resolve();
+      await new Promise<void>(resolve => {
+        if (options?.signal?.aborted) resolve();
+        else options?.signal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+      return fauxAssistantMessage([], { stopReason: 'aborted', errorMessage: 'summary stopped' });
+    }]);
+    const input = { messageID: mintWireMessageId({ nowMs: Date.now() }).id, parts: [{ type: 'text', text: 'Read then wait.' }] };
+    const pending = post(worker, 'message', input);
+    await entered.promise;
+    expect((await history()).some(m => m.info.summary === true && !m.info.time.completed)).toBe(true);
+    expect((await request(worker, `/session/${sessionID}/abort`, { method: 'POST' })).status).toBe(200);
+    await pending;
+    expect(calls()).toBe(1);
+    expect(worker.faux!.state.callCount).toBe(3);
+    expect(items.filter((i: any) => i.kind === 'entry' && i.entry.type === 'compaction')).toHaveLength(0);
+    const after = await history();
+    expect(after.at(-1).info.parentID).toBe(input.messageID);
+    expect(after.at(-1).info.error).toBeDefined();
+    expect(after.flatMap(m => m.parts).find((p: any) => p.tool === 'large_result').state.output).toContain('ROUND_OUTPUT_1');
+  });
+
+  test('a failed tool-round summary retains the completed tool without executing another model round', async () => {
+    const { worker, post, history, toolCall, calls } = await toolRoundFixture();
+    worker.faux!.setResponses([
+      toolCall(),
+      fauxAssistantMessage([], { stopReason: 'error', errorMessage: 'summary service unavailable' }),
+    ]);
+    const input = { messageID: mintWireMessageId({ nowMs: Date.now() }).id, parts: [{ type: 'text', text: 'Read and summarize.' }] };
+    await post(worker, 'message', input);
+    expect(calls()).toBe(1);
+    expect(worker.faux!.state.callCount).toBe(3);
+    const after = await history();
+    expect(after.at(-1).info.parentID).toBe(input.messageID);
+    expect(after.at(-1).info.error).toBeDefined();
+    expect(after.flatMap(m => m.parts).find((p: any) => p.tool === 'large_result').state.output).toContain('ROUND_OUTPUT_1');
+  });
 
   test("automatically compacts a full context before the accepted prompt and preserves replay after replacement", async () => {
     const { items, config, worker, post, history } = await fixture(true);
