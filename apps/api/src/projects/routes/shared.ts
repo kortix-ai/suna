@@ -651,6 +651,29 @@ function readinessObservationMatches(row: typeof sessionSandboxes.$inferSelect):
   )!;
 }
 
+export async function claimSessionRuntimeBootstrap(
+  row: typeof sessionSandboxes.$inferSelect,
+  now = new Date(),
+): Promise<typeof sessionSandboxes.$inferSelect | null> {
+  if (!row.externalId || row.status !== 'active') return null;
+  const metadata = sandboxMetadata(row);
+  if (metadata.sessionRuntimeBootstrapFor === row.externalId) return null;
+  const boot = {
+    ...metadata,
+    sessionRuntimeBootstrapFor: row.externalId,
+    sessionRuntimeBootstrapAt: now.toISOString(),
+  };
+  const [claimed] = await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: opencodeReadyWaitPatch(boot, 'unreachable', undefined, now) ?? boot,
+      updatedAt: now,
+    })
+    .where(and(readinessObservationMatches(row), eq(sessionSandboxes.externalId, row.externalId)))
+    .returning();
+  return claimed ?? null;
+}
+
 export async function markRuntimeWakeStarted(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
@@ -1529,6 +1552,19 @@ async function runOpenSession(args: {
           ),
         })
       ) {
+        const claimedBootstrap = await claimSessionRuntimeBootstrap(row);
+        if (!claimedBootstrap) {
+          return {
+            stage: 'starting',
+            agent_name: visible.row.agentName ?? 'default',
+            retriable: true,
+            sandbox: serializeSandboxRow(row),
+            opencode_session_id: ensured.pin,
+            runtime_url: sessionRuntimeUrlPath(runningExternalId),
+            reason: 'runtime_waking',
+          };
+        }
+        row = claimedBootstrap;
         const provider = getProvider(row.provider as SandboxProviderName);
         let bootstrapped = false;
         try {
@@ -1540,20 +1576,7 @@ async function runOpenSession(args: {
             err instanceof Error ? err.message : err,
           );
         }
-        // Stamped even on failure: one attempt per box-run either way, so a
-        // broken box cannot spin the toolbox on every poll.
-        await db
-          .update(sessionSandboxes)
-          .set({
-            metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ sessionRuntimeBootstrapFor: runningExternalId, sessionRuntimeBootstrapAt: new Date().toISOString() })}::jsonb`,
-          })
-          .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
-          .catch(() => {});
         if (bootstrapped) {
-          // Give the process its own budget rather than judging it on the clock
-          // that just expired for a box with nothing running in it.
-          await clearRuntimeReadinessClocks(row);
-          await markOpencodeReadyWaitStarted(row, 'unreachable', ensured.bootPhase);
           log.did('reconciled');
           return {
             stage: 'starting',

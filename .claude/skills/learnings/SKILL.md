@@ -5245,3 +5245,21 @@ Automation: permission-mode-submission.test.ts covers failure, duplicate clicks,
 and retry. Live browser assertions check PATCH responses, approval requests, and
 file effects. Worker HTTP tests compare full pending and completed transcripts
 across process replacement.
+
+
+## 2026-09-08 — Claim runtime bootstrap before launching the process
+
+Claim one bootstrap attempt with a database compare-and-swap before the provider call.
+Write its fresh readiness clock and updatedAt in the same transaction. Stale probes
+cannot overwrite this state or park the new process against an expired clock.
+Clear the attempt marker on each wake and explicit restart. Fetch pinned source
+by its immutable SHA. Run bootstrap under an explicit shell with writable paths.
+
+Incident: the original Pi session used an older Daytona image without automatic
+process startup on resume. Launch quoting, restricted paths, a nologin shell, and
+a moved source ref first prevented startup. After those fixes, a stale readiness
+clock stopped the sandbox 685 milliseconds after bootstrap began.
+Automation: Daytona command tests cover shell, paths, source pinning, and errors.
+Bootstrap tests cover per-attempt markers and bounded readiness windows. Real
+PostgreSQL integration tests prove a single concurrent claim and reject stale
+readiness writes, stopped rows, and concurrent turn updates.

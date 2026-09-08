@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
 import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import {
+  claimSessionRuntimeBootstrap,
   clearRuntimeReadinessClocks,
   markOpencodeReadyWaitStarted,
   markRuntimeWakeStarted,
@@ -136,4 +137,39 @@ test('current wake and boot observations apply despite PostgreSQL timestamp micr
   for (const key of RUNTIME_READINESS_CLOCK_KEYS) expect(ready.metadata).not.toHaveProperty(key);
   expect(ready.metadata?.initStatus).toBe('ready');
   expect(ready.metadata?.activeTurns).toEqual(originalMetadata.activeTurns);
+});
+
+test('one bootstrap claim starts a fresh clock before stale readiness observations can overwrite it', async () => {
+  const observed = await readSandbox();
+  const now = new Date('2026-09-08T09:04:20.000Z');
+  const claims = await Promise.all([
+    claimSessionRuntimeBootstrap(observed, now),
+    claimSessionRuntimeBootstrap(observed, now),
+  ]);
+  expect(claims.filter(Boolean)).toHaveLength(1);
+  const claimed = await readSandbox();
+  expect(claimed.updatedAt.toISOString()).toBe(now.toISOString());
+  expect(claimed.metadata?.sessionRuntimeBootstrapFor).toBe(observed.externalId);
+  expect(claimed.metadata?.sessionRuntimeBootstrapAt).toBe(now.toISOString());
+  expect(claimed.metadata?.opencodeBootWaitFirstSeenAt).toBe(now.toISOString());
+  expect(claimed.metadata?.opencodeUnreachableWaitStartedAt).toBe(now.toISOString());
+  expect(claimed.metadata?.activeTurns).toEqual(originalMetadata.activeTurns);
+  for (const [, observe] of observations) {
+    await observe(observed);
+    expect(await readSandbox()).toEqual(claimed);
+  }
+  expect(await claimSessionRuntimeBootstrap(claimed, new Date(now.getTime() + 1000))).toBeNull();
+  expect(await readSandbox()).toEqual(claimed);
+});
+
+test('a bootstrap claim cannot outlive a stop or a concurrent turn update', async () => {
+  const observed = await readSandbox();
+  await db.update(sessionSandboxes).set({ status: 'stopped' }).where(eq(sessionSandboxes.sandboxId, sandboxId));
+  const stopped = await readSandbox();
+  expect(await claimSessionRuntimeBootstrap(observed)).toBeNull();
+  expect(await readSandbox()).toEqual(stopped);
+  await db.update(sessionSandboxes).set({ status: 'active', metadata: { ...originalMetadata, activeTurns: { newer: { state: 'active' } } } }).where(eq(sessionSandboxes.sandboxId, sandboxId));
+  const concurrent = await readSandbox();
+  expect(await claimSessionRuntimeBootstrap(observed)).toBeNull();
+  expect(await readSandbox()).toEqual(concurrent);
 });

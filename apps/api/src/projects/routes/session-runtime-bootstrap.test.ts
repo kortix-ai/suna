@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS, shouldBootstrapSessionRuntime } from './shared';
-import { prepareInPlaceRestartMetadata } from '../session-lifecycle/readiness-clocks';
+import { opencodeReadyWaitPatch, prepareInPlaceRestartMetadata, staleOpencodeReadyReason } from '../session-lifecycle/readiness-clocks';
 
 /**
  * Measured on pi.kortix.com 2026-08-29, with a stop/resume on live sessions:
@@ -56,7 +56,6 @@ describe('shouldBootstrapSessionRuntime', () => {
   });
 });
 
-
 test('a new wake of the same box can bootstrap again without resetting its failure budget', () => {
   const metadata: Record<string, unknown> = {
     sessionRuntimeBootstrapFor: 'box-1',
@@ -77,7 +76,6 @@ test('a new wake of the same box can bootstrap again without resetting its failu
   expect(nextWake.runtimeStartFailureCount).toBe(1);
 });
 
-
 test('an explicit restart earns another bootstrap attempt and resets the failure episode', () => {
   const restarted = prepareInPlaceRestartMetadata({
     sessionRuntimeBootstrapFor: 'box-1',
@@ -92,4 +90,22 @@ test('an explicit restart earns another bootstrap attempt and resets the failure
   })).toBe(true);
   expect(restarted.sessionRuntimeBootstrapAt).toBeUndefined();
   expect(restarted.runtimeStartFailureCount).toBeUndefined();
+});
+
+test('a newly launched process gets its own bounded readiness window', () => {
+  const now = new Date('2026-09-08T09:04:20.000Z');
+  const metadata = {
+    runtimeStartFailureCount: 1,
+    runtimeWakeStartedAt: '2026-09-08T09:03:46.000Z',
+    opencodeBootWaitFirstSeenAt: '2026-09-08T09:03:49.000Z',
+    opencodeReadyWaitStartedAt: '2026-09-08T09:03:49.000Z',
+    opencodeUnreachableWaitStartedAt: '2026-09-08T09:03:49.000Z',
+    sessionRuntimeBootstrapAt: now.toISOString(),
+  };
+  expect(staleOpencodeReadyReason(metadata, 'unreachable', now.getTime() + 1000, 30000)).toBeNull();
+  const next = opencodeReadyWaitPatch(metadata, 'unreachable', undefined, now);
+  expect(next?.opencodeUnreachableWaitStartedAt).toBe(now.toISOString());
+  expect(next?.opencodeBootWaitFirstSeenAt).toBe(now.toISOString());
+  expect(next?.runtimeStartFailureCount).toBe(1);
+  expect(staleOpencodeReadyReason(next!, 'unreachable', now.getTime() + 30001, 30000)).toBe('runtime_unreachable_timeout');
 });
