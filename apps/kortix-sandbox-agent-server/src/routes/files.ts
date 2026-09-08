@@ -526,13 +526,17 @@ export function createFilesRouter(cfg: Config): Hono {
     }
 
     let temporaryPath: string | undefined
+    let downloadBody: NonNullable<Response['body']> | undefined
+    let downloadReader: ReturnType<NonNullable<Response['body']>['getReader']> | undefined
+    let importComplete = false
+    const operation = new AbortController()
+    const signal = AbortSignal.any([operation.signal, AbortSignal.timeout(IMPORT_TIMEOUT_MS)])
     try {
       const api = configuredApiUrl(cfg.apiUrl)
       const descriptorUrl = new URL(api)
       descriptorUrl.pathname = `${api.pathname}/projects/${encodeURIComponent(cfg.projectId)}/runtime/prompt-attachments/${encodeURIComponent(request.attachment_id)}`
       descriptorUrl.searchParams.set('command_id', request.command_id)
       descriptorUrl.searchParams.set('part_index', String(request.part_index))
-      const signal = AbortSignal.timeout(IMPORT_TIMEOUT_MS)
       const descriptorResponse = await fetch(descriptorUrl, {
         headers: { Authorization: `Bearer ${cfg.sandboxToken}` },
         redirect: 'error',
@@ -548,6 +552,7 @@ export function createFilesRouter(cfg: Config): Hono {
       if (!descriptor) throw new Error('descriptor validation failed')
 
       if ((await verifiedFileDigest(descriptor.target_path, descriptor.size_bytes)) === descriptor.sha256) {
+        importComplete = true
         return c.json({
           path: descriptor.target_path,
           size: descriptor.size_bytes,
@@ -560,6 +565,7 @@ export function createFilesRouter(cfg: Config): Hono {
         signal,
       })
       if (!downloadResponse.ok || !downloadResponse.body) throw new Error('download failed')
+      downloadBody = downloadResponse.body
       const declaredLength = downloadResponse.headers.get('content-length')
       if (
         declaredLength !== null &&
@@ -581,7 +587,8 @@ export function createFilesRouter(cfg: Config): Hono {
       const handle = await fs.open(temporaryPath, 'wx', 0o600)
       let received = 0
       const hash = crypto.createHash('sha256')
-      const reader = downloadResponse.body.getReader()
+      const reader = downloadBody.getReader()
+      downloadReader = reader
       try {
         for (;;) {
           const chunk = await reader.read()
@@ -592,7 +599,16 @@ export function createFilesRouter(cfg: Config): Hono {
             throw new Error('download exceeds expected size')
           }
           hash.update(chunk.value)
-          await handle.write(chunk.value)
+          let written = 0
+          while (written < chunk.value.byteLength) {
+            const result = await handle.write(
+              chunk.value,
+              written,
+              chunk.value.byteLength - written,
+            )
+            if (result.bytesWritten <= 0) throw new Error('attachment write made no progress')
+            written += result.bytesWritten
+          }
         }
         if (received !== descriptor.size_bytes || hash.digest('hex') !== descriptor.sha256) {
           throw new Error('download integrity check failed')
@@ -600,11 +616,13 @@ export function createFilesRouter(cfg: Config): Hono {
         await handle.sync()
       } finally {
         reader.releaseLock()
+        downloadReader = undefined
         await handle.close()
       }
 
       await fs.rename(temporaryPath, descriptor.target_path)
       temporaryPath = undefined
+      importComplete = true
       return c.json({
         path: descriptor.target_path,
         size: descriptor.size_bytes,
@@ -618,6 +636,14 @@ export function createFilesRouter(cfg: Config): Hono {
         reason: error instanceof DOMException && error.name === 'TimeoutError' ? 'timeout' : 'failed',
       })
       return c.json({ error: 'Attachment import failed' }, 502)
+    } finally {
+      operation.abort()
+      if (!importComplete && downloadReader) {
+        await downloadReader.cancel().catch(() => {})
+        downloadReader.releaseLock()
+      } else if (!importComplete && downloadBody && !downloadBody.locked) {
+        await downloadBody.cancel().catch(() => {})
+      }
     }
   })
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { createHash, createHmac } from 'node:crypto'
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -109,6 +109,36 @@ function request(app: ReturnType<typeof buildOpencodeApp>, body: Record<string, 
   })
 }
 
+function interceptTemporaryWrites(
+  write: (input: {
+    call: number
+    bytes: Uint8Array
+    writeOriginal: (bytes: Uint8Array) => Promise<{ bytesWritten: number; buffer: Uint8Array }>
+  }) => Promise<{ bytesWritten: number; buffer: Uint8Array }>,
+) {
+  const originalOpen = fs.open.bind(fs)
+  let call = 0
+  return spyOn(fs, 'open').mockImplementation((async (...args: Parameters<typeof fs.open>) => {
+    const handle = await originalOpen(...args)
+    if (!String(args[0]).includes('.kortix-import-')) return handle
+    const originalWrite = handle.write.bind(handle)
+    handle.write = (async (
+      buffer: Uint8Array,
+      offset = 0,
+      length = buffer.byteLength - offset,
+    ) => {
+      const bytes = buffer.subarray(offset, offset + length)
+      call += 1
+      return write({
+        call,
+        bytes,
+        writeOriginal: (next) => originalWrite(next),
+      })
+    }) as typeof handle.write
+    return handle
+  }) as typeof fs.open)
+}
+
 describe('POST /file/import', () => {
   beforeEach(async () => {
     workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-import-test-'))
@@ -157,6 +187,98 @@ describe('POST /file/import', () => {
       },
     ])
     expect((await fs.readdir(path.dirname(targetPath()))).sort()).toEqual(['0-proof.txt'])
+  })
+
+  it('writes every downloaded byte when the filesystem completes writes partially', async () => {
+    const writeSpy = interceptTemporaryWrites(async ({ bytes, writeOriginal }) =>
+      writeOriginal(bytes.subarray(0, Math.max(1, Math.floor(bytes.byteLength / 2)))),
+    )
+    try {
+      globalThis.fetch = Object.assign(
+        async (input: Parameters<typeof fetch>[0]) =>
+          String(input).startsWith('http://api.test/')
+            ? Response.json(descriptor())
+            : new Response(bytes),
+        { preconnect: originalFetch.preconnect },
+      )
+      const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+        command_id: COMMAND_ID,
+        attachment_id: ATTACHMENT_ID,
+        part_index: 0,
+      })
+
+      expect(response.status).toBe(200)
+      expect(await fs.readFile(targetPath())).toEqual(Buffer.from(bytes))
+    } finally {
+      writeSpy.mockRestore()
+    }
+  })
+
+  it('cancels the download when its declared length exceeds the descriptor', async () => {
+    let canceled = false
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes)
+      },
+      cancel() {
+        canceled = true
+      },
+    })
+    globalThis.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0]) =>
+        String(input).startsWith('http://api.test/')
+          ? Response.json(descriptor())
+          : new Response(body, {
+              headers: { 'Content-Length': String(bytes.byteLength + 1) },
+            }),
+      { preconnect: originalFetch.preconnect },
+    )
+
+    const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+      command_id: COMMAND_ID,
+      attachment_id: ATTACHMENT_ID,
+      part_index: 0,
+    })
+
+    expect(response.status).toBe(502)
+    expect(canceled).toBe(true)
+  })
+
+  it('cancels the download and removes partial bytes after a filesystem write failure', async () => {
+    let canceled = false
+    const writeSpy = interceptTemporaryWrites(async ({ call, bytes, writeOriginal }) => {
+      if (call === 1) return writeOriginal(bytes.subarray(0, 5))
+      throw Object.assign(new Error('injected write failure'), { code: 'EIO' })
+    })
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes)
+        },
+        cancel() {
+          canceled = true
+        },
+      })
+      globalThis.fetch = Object.assign(
+        async (input: Parameters<typeof fetch>[0]) =>
+          String(input).startsWith('http://api.test/')
+            ? Response.json(descriptor())
+            : new Response(body),
+        { preconnect: originalFetch.preconnect },
+      )
+
+      const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+        command_id: COMMAND_ID,
+        attachment_id: ATTACHMENT_ID,
+        part_index: 0,
+      })
+
+      expect(response.status).toBe(502)
+      expect(canceled).toBe(true)
+      expect(await fs.readdir(path.dirname(targetPath())).catch(() => [])).toEqual([])
+    } finally {
+      writeSpy.mockRestore()
+    }
   })
 
   it('rejects every caller-controlled network, path, and metadata field', async () => {
