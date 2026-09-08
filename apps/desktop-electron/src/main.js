@@ -187,16 +187,6 @@ function isPreviewHost(host) {
   );
 }
 
-// App-shell hosts that serve BOTH product and marketing.
-function isMainAppHost(host) {
-  return (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === 'kortix.com' ||
-    host.endsWith('.kortix.com')
-  );
-}
-
 // Product + auth route prefixes allowed to render in the desktop window. MUST
 // stay in sync with DESKTOP_ALLOWED_ROUTES in apps/web/src/middleware.ts.
 const APP_PATH_PREFIXES = [
@@ -243,14 +233,12 @@ function shouldLoadInApp(urlStr) {
   // It MUST open in the user's real browser — Google/GitHub reject embedded
   // webviews, and the post-OAuth `kortix://auth/callback` bounce only works from
   // a real browser tab. Our own pages (/auth/callback, /auth/login) live on the
-  // app host and still load in-app via isAppPath below.
+  // configured app origin and still load in-app via isAppPath below.
   if (u.pathname.startsWith('/auth/v1/')) return false;
   const host = u.hostname;
   if (isPreviewHost(host)) return true;
-  if (
-    (isMainAppHost(host) || isConfiguredAppUrl(urlStr, resolveAppUrl())) &&
-    isAppPath(u.pathname)
-  ) return true;
+  // Navigation and native commands share the configured frontend origin.
+  if (isConfiguredAppUrl(urlStr, resolveAppUrl()) && isAppPath(u.pathname)) return true;
   return false;
 }
 
