@@ -39,6 +39,36 @@ import {
   type generateSessionTitleFromFirstPrompt,
 } from '../projects/session-title-generate';
 
+/**
+ * WHY A DELIVERED PROMPT SYNCS ITS ENV TWICE, AND WHY THAT IS NOT (YET) A BUG
+ * TO DELETE.
+ *
+ * Measured on dev 2026-09-08, one delivered prompt, from the API's own
+ * provision-timeline:
+ *
+ *   deliver total=4253ms  ...  env-sync=+569ms  delivered=+1242ms
+ *   proxy   total=1241ms  ...  env-sync=+555ms  upstream=+606ms
+ *
+ * ~1.1 s per queued prompt on two calls that look identical. They are not, and
+ * the obvious dedup — a header from the delivery loop saying "already synced",
+ * the trick WIRE_ID_PLACED_HEADER already uses for the wire id — is unsafe in
+ * BOTH directions:
+ *
+ *  - The proxy's sync passes `requestedAgent`, so it applies (or refuses) THAT
+ *    agent's secret grant, and `remintGrant` below re-points the token at it.
+ *    The comment there is the reason: a manifest that narrowed the grant in the
+ *    previous turn must be enforced from the first call of this one. Skipping
+ *    it because the delivery loop synced would forward against an env nobody
+ *    checked for this agent.
+ *  - The delivery loop's sync (engine.ts) passes `opencodeEnv`, the per-command
+ *    env, which this one does not. Dropping that one loses it.
+ *
+ * So the saving is real but it is not a deletion: it needs `requestedAgent` and
+ * `opencodeEnv` threaded into ONE sync, which moves the agent resolution
+ * currently inside `postPrompt` to before the sync. Left undone deliberately
+ * rather than traded for a grant that stops being enforced.
+ */
+
 /** One JSON error body with the proxy's CORS pair applied. Lives here rather
  *  than in the route because every refusal below builds one, and the route must
  *  not have to be evaluated to construct a response. */
