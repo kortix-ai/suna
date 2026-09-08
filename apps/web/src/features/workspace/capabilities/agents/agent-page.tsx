@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * /projects/[id]/agent/[name] — one agent, as a full-page editor. The core
  * screen of Customize.
@@ -71,7 +72,6 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { configEntitySourcePath } from '@/features/workspace/customize/sections/component/config-entity-source-path';
 import {
-  AGENT_CONFIG_SECTION_GROUPS,
   AGENT_CONFIG_SECTIONS,
   type AgentConfigSectionKey,
   AgentConfigSections,
@@ -79,6 +79,7 @@ import {
   isAgentConfigSectionKey,
   useAgentDraft,
   useAgentEditorOptions,
+  useLocalizedAgentConfigCatalog,
 } from '@/features/workspace/customize/sections/view/agent-editor';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import {
@@ -160,6 +161,7 @@ const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
 };
 
 export function AgentPage({ projectId, agentName }: { projectId: string; agentName: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -185,10 +187,10 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
       <CenteredState>
         <ErrorState
           size="sm"
-          title="Couldn't load this project's agents"
+          title={tI18nComplete.raw('textd70d09b7d701')}
           action={
             <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -202,11 +204,13 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
         <EmptyState
           icon={RobotIcon}
           size="sm"
-          title={`No agent named ${agentName}`}
-          description="It may have been renamed or removed from the project's configuration."
+          title={tI18nComplete('text8136e0c475c7', { value0: agentName })}
+          description={tI18nComplete.raw('text2ad30464c3ed')}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={capabilityTabHref(projectId, 'agent')}>All agents</Link>
+              <Link href={capabilityTabHref(projectId, 'agent')}>
+                {tI18nComplete.raw('text54c32d3e2cfa')}
+              </Link>
             </Button>
           }
         />
@@ -257,15 +261,19 @@ function AgentPageFrame({
   pane: ReactNode;
   footer?: ReactNode;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
-  const items = AGENT_CONFIG_SECTIONS.filter((s) => sections.includes(s.key));
+  const localizedConfig = useLocalizedAgentConfigCatalog();
+  const items = localizedConfig.sections.filter((s) => sections.includes(s.key));
   // The Preferences rail's rule: a heading over a lone group labels nothing.
-  const groups = AGENT_CONFIG_SECTION_GROUPS.map((group) => ({
-    group,
-    items: items.filter((s) => s.group === group),
-  })).filter((g) => g.items.length > 0);
+  const groups = localizedConfig.groups
+    .map((group) => ({
+      group,
+      items: items.filter((s) => s.group === group),
+    }))
+    .filter((g) => g.items.length > 0);
   const showGroupLabels = groups.length > 1;
-  const trigger = (item: (typeof AGENT_CONFIG_SECTIONS)[number], horizontal: boolean) => {
+  const trigger = (item: (typeof localizedConfig.sections)[number], horizontal: boolean) => {
     const SectionIcon = SECTION_ICON[item.key];
     return (
       <TabsTrigger
@@ -305,7 +313,7 @@ function AgentPageFrame({
       >
         {isMobile ? (
           <nav
-            aria-label="Agent sections"
+            aria-label={tI18nComplete.raw('text7be318295927')}
             className="border-border/60 flex h-auto shrink-0 items-center border-b"
           >
             <FadedScrollArea
@@ -323,7 +331,7 @@ function AgentPageFrame({
         ) : (
           <aside className="flex min-h-0 flex-col border-r bg-inherit">
             <nav
-              aria-label="Agent sections"
+              aria-label={tI18nComplete.raw('text7be318295927')}
               className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pt-3 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
               <Tabs value={section} orientation="vertical" className="space-y-3">
@@ -428,6 +436,7 @@ function AgentActions({
   config: ProjectConfigSummary;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const startSession = useNewProjectSession(projectId);
   const configure = useConfigureThread(projectId);
@@ -444,10 +453,12 @@ function AgentActions({
   const makeDefault = useMutation({
     mutationFn: () => updateProjectDefaultAgent(projectId, agent.name),
     onSuccess: async (result) => {
-      successToast(`${capitalizeWords(result.default_agent)} is now the project default`);
+      successToast(
+        tI18nComplete('text0bb557895b32', { value0: capitalizeWords(result.default_agent) }),
+      );
       await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
   });
 
   const pathname = usePathname();
@@ -464,20 +475,24 @@ function AgentActions({
           <span className="inline-flex">
             <Button size="sm" disabled>
               <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-              Start session
+              {tI18nComplete.raw('textb1c52ee3677d')}
             </Button>
           </span>
         </Hint>
       ) : (
         <Button size="sm" onClick={() => startSession({ create: { agent_name: agent.name } })}>
           <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-          Start session
+          {tI18nComplete.raw('textb1c52ee3677d')}
         </Button>
       )}
       {canWrite ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon-sm" aria-label="More actions">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label={tI18nComplete.raw('textf8d46c2570e7')}
+            >
               <DotsThreeIcon className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -487,14 +502,16 @@ function AgentActions({
               onSelect={() => makeDefault.mutate()}
             >
               <StarIcon className="size-4" />
-              {isDefault ? 'Project default' : 'Make project default'}
+              {isDefault
+                ? tI18nComplete.raw('texte8cb80e5c5cb')
+                : tI18nComplete.raw('texte8f43f910a4e')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled={configure.pending}
               onSelect={() => setConfirmEditSource(true)}
             >
-              Edit source in a chat
+              {tI18nComplete.raw('text4930821dd07b')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -505,10 +522,10 @@ function AgentActions({
       <ConfirmDialog
         open={confirmEditSource}
         onOpenChange={setConfirmEditSource}
-        title="Edit this agent's source in a chat?"
-        description={`This starts a new session that edits ${agent.name}'s source file for you.`}
-        confirmLabel="Start chat"
-        cancelLabel="Cancel"
+        title={tI18nComplete.raw('text24ba36a8ec86')}
+        description={tI18nComplete('text13324ae62b23', { value0: agent.name })}
+        confirmLabel={tI18nComplete.raw('text0bce1a892dec')}
+        cancelLabel={tI18nComplete.raw('text19766ed6ccb2')}
         onConfirm={() => {
           setConfirmEditSource(false);
           configure.start(editConfigPrompt('agent', agent.name, agent.path));
@@ -528,6 +545,7 @@ function AgentChips({
   config: ProjectConfigSummary;
   size: 'sm' | 'xs';
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const mode = agent.mode?.toLowerCase();
   const isDefault = config.open_code_default_agent === agent.name;
   return (
@@ -540,12 +558,12 @@ function AgentChips({
       {isDefault ? (
         <Badge variant="outline" size={size} className="text-muted-foreground gap-1 font-medium">
           <StarIcon weight="fill" className="text-kortix-orange size-3 shrink-0" />
-          Default
+          {tI18nComplete.raw('text21b111cbfe6e')}
         </Badge>
       ) : null}
       {agent.enabled === false ? (
         <Badge variant="muted" size={size}>
-          Disabled
+          {tI18nComplete.raw('text75081b593d15')}
         </Badge>
       ) : null}
     </span>
@@ -570,19 +588,23 @@ function AgentHeader({
   canWrite: boolean;
   children?: ReactNode;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <header className="space-y-2">
       {/* One row (Marko, 2026-09-03): the breadcrumb's last crumb IS the
           title — an h1 — with the status chips beside it, and every action on
           the right. A second row for the name alone said nothing new. */}
       <div className="flex items-center justify-between gap-3">
-        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+        <nav
+          aria-label={tI18nComplete.raw('text2bd873d6c734')}
+          className="flex min-w-0 items-center gap-1.5 text-sm"
+        >
           <Link
             href={capabilityTabHref(projectId, 'agent')}
             prefetch
             className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
           >
-            Agents
+            {tI18nComplete.raw('text279b44d2ab4b')}
           </Link>
           <CaretRightIcon aria-hidden className="text-muted-foreground/50 size-3.5 shrink-0" />
           <h1 className="text-foreground truncate text-sm font-semibold">
@@ -619,6 +641,7 @@ function EditableAgentPage({
   config: ProjectConfigSummary;
   initial: AgentConfigBlock;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const editor = useAgentDraft(initial);
   const options = useAgentEditorOptions(projectId);
   const update = useUpdateAgentConfig(projectId, agent.name);
@@ -636,11 +659,11 @@ function EditableAgentPage({
     try {
       const response = await update.mutateAsync(editor.draft);
       editor.commit(response.block ?? editor.draft);
-      successToast(`${capitalizeWords(agent.name)} saved`);
+      successToast(tI18nComplete('text6b0bbffdbd6e', { value0: capitalizeWords(agent.name) }));
     } catch (e) {
-      errorToast((e as Error)?.message ?? 'Failed to save configuration');
+      errorToast((e as Error)?.message ?? tI18nComplete.raw('text166442c65e8e'));
     }
-  }, [editor, update, agent.name]);
+  }, [editor, update, agent.name, tI18nComplete]);
 
   // Rail links change only `?section=` on this same path; the guard lets those
   // through so switching topics never asks about unsaved edits — the draft is
@@ -698,10 +721,10 @@ function EditableAgentPage({
           <ConfirmDialog
             open={confirmDiscard}
             onOpenChange={setConfirmDiscard}
-            title="Discard your changes?"
-            description={`${capitalizeWords(agent.name)} keeps its saved configuration. Anything you changed here is lost.`}
-            confirmLabel="Discard"
-            cancelLabel="Keep editing"
+            title={tI18nComplete.raw('text3b13192b9d88')}
+            description={tI18nComplete('text8a36cce34f68', { value0: capitalizeWords(agent.name) })}
+            confirmLabel={tI18nComplete.raw('texteb1a70e39274')}
+            cancelLabel={tI18nComplete.raw('texte76fd2add010')}
             confirmVariant="destructive"
             onConfirm={() => {
               setConfirmDiscard(false);
@@ -717,10 +740,10 @@ function EditableAgentPage({
             onOpenChange={(open) => {
               if (!open) leaveGuard.stay();
             }}
-            title="Leave without saving?"
-            description={`Your changes to ${capitalizeWords(agent.name)} are not saved. Leave now and they are lost.`}
-            confirmLabel="Leave"
-            cancelLabel="Keep editing"
+            title={tI18nComplete.raw('text2190d03af90a')}
+            description={tI18nComplete('textbbc5a3f2ca48', { value0: capitalizeWords(agent.name) })}
+            confirmLabel={tI18nComplete.raw('textfc6e4a408d56')}
+            cancelLabel={tI18nComplete.raw('texte76fd2add010')}
             confirmVariant="destructive"
             onConfirm={leaveGuard.leave}
           />
@@ -747,20 +770,23 @@ function OverviewPane({
   prompt: string;
   onPromptChange: (next: string) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-4">
       <section className="bg-popover rounded-md border">
         <div className="border-border/60 border-b px-4 pt-4 pb-3">
-          <h3 className="text-foreground text-sm font-medium">Description</h3>
+          <h3 className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('text526e0087cc3f')}
+          </h3>
           <p className="text-muted-foreground mt-1 text-xs leading-relaxed text-pretty">
             {descriptionHelp}
           </p>
         </div>
         <div className="px-4 py-4">
           <Textarea
-            aria-label="Description"
+            aria-label={tI18nComplete.raw('text526e0087cc3f')}
             value={description}
-            placeholder="What this agent is for"
+            placeholder={tI18nComplete.raw('text446f4eabf99f')}
             minHeight={44}
             className="text-sm"
             onChange={(e) => onDescriptionChange(e.target.value)}
@@ -787,30 +813,32 @@ function InstructionsPanel({
   value: string;
   onChange: (next: string) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [view, setView] = useState<'edit' | 'preview'>(value.trim() ? 'preview' : 'edit');
   return (
     <section className="bg-popover rounded-md border">
       <div className="border-border/60 flex items-end justify-between gap-3 border-b px-4 pt-4 pb-3">
         <div className="space-y-1">
-          <h3 className="text-foreground text-sm font-medium">Instructions</h3>
+          <h3 className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('text934652dce41d')}
+          </h3>
           <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-            Told to this agent at the start of every session. Markdown. Leave empty to use the
-            default instructions.
+            {tI18nComplete.raw('text5fe8921b712c')}
           </p>
         </div>
         <Tabs value={view} onValueChange={(next) => setView(next as 'edit' | 'preview')}>
-          <TabsList aria-label="Instructions view">
-            <TabsTrigger value="edit">Edit</TabsTrigger>
-            <TabsTrigger value="preview">Preview</TabsTrigger>
+          <TabsList aria-label={tI18nComplete.raw('texte75bb2d0d554')}>
+            <TabsTrigger value="edit">{tI18nComplete.raw('text464c4ffd019e')}</TabsTrigger>
+            <TabsTrigger value="preview">{tI18nComplete.raw('text324b134f57c7')}</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
       {view === 'edit' ? (
         <div className="p-2">
           <Textarea
-            aria-label="Instructions"
+            aria-label={tI18nComplete.raw('text934652dce41d')}
             value={value}
-            placeholder={'You are…\n\nGoal: …\n\nSteps:\n1. …'}
+            placeholder={tI18nComplete.raw('text1436469ad07f')}
             minHeight={420}
             autoFocus={value.trim().length > 0}
             className="border-0 font-mono text-xs leading-relaxed focus-visible:ring-0"
@@ -843,6 +871,7 @@ function SaveBar({
   onDiscard: () => void;
   onSave: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <AnimatePresence initial={false}>
       {dirty ? (
@@ -856,17 +885,19 @@ function SaveBar({
         >
           <div className="flex w-full items-center justify-between gap-3 px-6 py-3 lg:px-10">
             <p className="text-muted-foreground min-w-0 truncate text-xs">
-              <span className="text-foreground font-medium">Unsaved changes.</span> Saving commits
-              to your project repo.
+              <span className="text-foreground font-medium">
+                {tI18nComplete.raw('textefa5855ff509')}
+              </span>{' '}
+              {tI18nComplete.raw('textc8134fda3694')}
             </p>
             <div className="flex shrink-0 items-center gap-2">
               <Button variant="outline-ghost" size="sm" onClick={onDiscard} disabled={pending}>
-                Discard
+                {tI18nComplete.raw('texteb1a70e39274')}
               </Button>
               <Button size="sm" onClick={onSave} disabled={pending}>
                 {pending ? <Loading className="size-3.5 shrink-0" /> : null}
-                Save
-                <Kbd className="ml-1">⌘S</Kbd>
+                {tI18nComplete.raw('text1509f561f241')}
+                <Kbd className="ml-1">{tI18nComplete.raw('text8cd003e6301b')}</Kbd>
               </Button>
             </div>
           </div>
@@ -969,6 +1000,7 @@ function ReadOnlyAgentPage({
   canWrite: boolean;
   showUpgradeHint: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // The real repo path, with any manifest anchor stripped. Agents declared in
   // the manifest rather than as their own file carry one
   // (`kortix.yaml#agents.<name>`), and reading that verbatim is a 404.
@@ -984,7 +1016,9 @@ function ReadOnlyAgentPage({
   const source = (
     <section className="bg-popover rounded-md border">
       <div className="border-border/60 border-b px-4 pt-4 pb-3">
-        <h3 className="text-foreground text-sm font-medium">Instructions</h3>
+        <h3 className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('text934652dce41d')}
+        </h3>
         <p className="text-muted-foreground mt-1 text-xs">
           <span className="font-mono">{sourcePath}</span>
         </p>
@@ -1000,15 +1034,15 @@ function ReadOnlyAgentPage({
         <div className="p-4">
           <ErrorState
             size="sm"
-            title="Couldn't load the source"
+            title={tI18nComplete.raw('text2f2f540650bf')}
             description={
               fileQuery.error instanceof Error
                 ? fileQuery.error.message
-                : 'You may not have permission to read this file.'
+                : tI18nComplete.raw('text553d1ec7c9e6')
             }
             action={
               <Button variant="outline" size="sm" onClick={() => fileQuery.refetch()}>
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
           />
@@ -1053,10 +1087,10 @@ function ReadOnlyAgentPage({
         <EditorSectionStyleProvider value="panel">
           <div className="space-y-4">
             {showUpgradeHint ? (
-              <InfoBanner tone="info" title="Upgrade for the full agent editor">
-                This project uses a v1 manifest. Migrate to{' '}
-                <span className="font-mono">kortix.yaml</span> (kortix_version 2) to edit this
-                agent's instructions, model, tool permissions and access here.
+              <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>
+                {tI18nComplete.raw('textf74efe18842d')}{' '}
+                <span className="font-mono">{tI18nComplete.raw('text1965f383021e')}</span>{' '}
+                {tI18nComplete.raw('text479d92cbfaa1')}
               </InfoBanner>
             ) : null}
             {section === 'overview' ? (
@@ -1076,8 +1110,7 @@ function ReadOnlyAgentPage({
               <div className="space-y-4">
                 <AgentModel projectId={projectId} agentName={agent.name} />
                 <p className="text-muted-foreground text-xs text-pretty">
-                  The model this agent runs on is set in its source file. With the model gateway on,
-                  a per-agent pin can override it above.
+                  {tI18nComplete.raw('text9dee2a1acfd9')}
                 </p>
               </div>
             )}

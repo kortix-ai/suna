@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -34,10 +35,10 @@ import {
   createProjectSession,
   getProjectSessionScope,
   markSessionFresh,
+  setProjectSessionScope,
   type PendingSessionPrompt,
   type ProjectSession,
   type SessionConnectorBindingsInput,
-  setProjectSessionScope,
 } from '@kortix/sdk';
 import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 
@@ -102,6 +103,8 @@ export type NewProjectSessionOpts = {
 };
 
 export function useNewProjectSession(projectId: string | undefined) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('threads');
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -240,7 +243,9 @@ export function useNewProjectSession(projectId: string | undefined) {
       };
 
       const createSession = () =>
-        loadingToast('Starting session…', takeOrCreateSession(), { success: 'Session started' });
+        loadingToast(tI18nComplete('textc18101edc3ea'), takeOrCreateSession(), {
+          success: tI18nComplete('text492f00cce740'),
+        });
 
       createScopedSession({
         create: createSession,
@@ -302,10 +307,12 @@ export function useNewProjectSession(projectId: string | undefined) {
               retry: () => startRef.current(opts),
             });
           } else {
-            errorToast(err instanceof Error ? err.message : 'Failed to start session');
+            errorToast(
+              err instanceof Error ? err.message : tI18nComplete('text4eaca6d61bca'),
+            );
           }
         } else if (action === 'toast') {
-          errorToast(err instanceof Error ? err.message : 'Failed to start session');
+          errorToast(err instanceof Error ? err.message : tI18nComplete('text4eaca6d61bca'));
         }
         // 'silent': the global 429 handler already surfaced the session cap.
         // No navigation happened, so release the claim now — the user stays
@@ -316,14 +323,16 @@ export function useNewProjectSession(projectId: string | undefined) {
     },
     [
       projectId,
-      router,
-      queryClient,
       billingLoading,
       canRun,
-      accountId,
-      openUpgradeDialog,
-      openConnectorGate,
       release,
+      router,
+      openUpgradeDialog,
+      accountId,
+      t,
+      tI18nComplete,
+      queryClient,
+      openConnectorGate,
     ],
   );
   useEffect(() => {

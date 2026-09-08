@@ -1,5 +1,6 @@
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { credentials } from './content';
+import { getLocalizedSecurityContent } from './content';
 
 /**
  * The path a credential takes, end to end, as five numbered stops on one rail.
@@ -13,6 +14,8 @@ import { credentials } from './content';
  * a vertical rail through wrapped body copy reads as noise, not as a flow.
  */
 export function CredentialFlow(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { credentials } = getLocalizedSecurityContent(tI18nComplete);
   return (
     <div className="border-border bg-card rounded-sm border p-5 sm:p-8">
       <div className="relative">
@@ -31,9 +34,7 @@ export function CredentialFlow(): ReactNode {
               <p className="text-muted-foreground/45 mt-4 font-mono text-[10px] tracking-widest tabular-nums">
                 {step.n}
               </p>
-              <h3 className="text-foreground mt-1.5 text-sm leading-tight font-medium">
-                {step.k}
-              </h3>
+              <h3 className="text-foreground mt-1.5 text-sm leading-tight font-medium">{step.k}</h3>
               <p className="text-muted-foreground mt-2 text-[13px] leading-relaxed">{step.v}</p>
             </li>
           ))}

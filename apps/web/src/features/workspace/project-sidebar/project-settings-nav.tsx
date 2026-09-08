@@ -1,6 +1,7 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
@@ -153,6 +154,7 @@ function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] |
  * Settings row, and one shortcut advertised on two rows is a lie on one of them.
  */
 export function ProjectCustomizeNavItem() {
+  const t = useTranslations('sidebar');
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
@@ -185,7 +187,7 @@ export function ProjectCustomizeNavItem() {
       <SidebarMenuButton
         asChild
         isActive={isActive}
-        tooltip="Customize"
+        tooltip={t('customize')}
         className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink href={capabilityTabHref(projectId, tab)} prefetch onClick={handleClick}>
@@ -207,7 +209,7 @@ export function ProjectCustomizeNavItem() {
               <path d="M14 14H10V22H14C15.4 22 16.1 22 16.64 21.73C17.11 21.49 17.49 21.11 17.73 20.64C18 20.1 18 19.4 18 18C18 16.6 18 15.9 17.73 15.37C17.49 14.89 17.11 14.51 16.64 14.27C16.1 14 15.4 14 14 14Z" />
             </svg>
           </span>
-          Customize
+          {t('customize')}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

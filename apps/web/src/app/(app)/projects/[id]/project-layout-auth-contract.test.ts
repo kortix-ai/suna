@@ -50,7 +50,10 @@ describe('project layout auth contract', () => {
     expect(staticPublicRoutesStart).toBeGreaterThan(-1);
     expect(markdownNegotiationRoutesStart).toBeGreaterThan(-1);
 
-    const staticPublicRoutes = source.slice(staticPublicRoutesStart, markdownNegotiationRoutesStart);
+    const staticPublicRoutes = source.slice(
+      staticPublicRoutesStart,
+      markdownNegotiationRoutesStart,
+    );
 
     expect(staticPublicRoutes.length).toBeGreaterThan(0);
     expect(staticPublicRoutes).not.toMatch(/'\/projects'/);

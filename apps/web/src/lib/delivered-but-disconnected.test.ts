@@ -6,9 +6,9 @@ describe('isDeliveredButDisconnected — the turn is running, the wait expired',
   test('the sandbox daemon severing its header wait', () => {
     // `kortix-sandbox-agent-server/src/proxy.ts` — the exact body users saw as
     // a chat banner while the turn ran to completion behind it.
-    expect(
-      isDeliveredButDisconnected('upstream unreachable: The operation was aborted.'),
-    ).toBe(true);
+    expect(isDeliveredButDisconnected('upstream unreachable: The operation was aborted.')).toBe(
+      true,
+    );
   });
 
   test("apps/api's long-turn timeout", () => {
@@ -35,9 +35,7 @@ describe('isDeliveredButDisconnected — nothing was delivered, keep failing', (
   test('a refusal that also mentions unreachable still counts as refused', () => {
     // Order matters: the refusal list wins, or a 503 that happens to carry both
     // phrases would be silently swallowed and the message genuinely lost.
-    expect(
-      isDeliveredButDisconnected('opencode not ready — upstream unreachable'),
-    ).toBe(false);
+    expect(isDeliveredButDisconnected('opencode not ready — upstream unreachable')).toBe(false);
   });
 
   test('auth, billing and dedupe are not delivery timeouts', () => {

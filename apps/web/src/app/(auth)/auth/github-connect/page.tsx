@@ -1,13 +1,13 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { useEffect, useState } from 'react';
 
+import { setupLinkApiBase } from '@/components/setup-links/util';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { ErrorStrip } from '@/features/auth/auth-primitives';
-import { setupLinkApiBase } from '@/components/setup-links/util';
 
 type ConnectMessage =
   | { type: 'github-connect-success'; provider_token: string }
@@ -88,11 +88,17 @@ export default function GitHubConnectPopup() {
 
         <div className="mt-6">
           {status === 'error' ? (
-            <ErrorStrip message={errorMessage || 'Authentication failed'} />
+            <ErrorStrip
+              message={errorMessage || tHardcodedUi.raw('i18nComplete.text93821eb7ce8c')}
+            />
           ) : (
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <Loading className="text-muted-foreground size-4 shrink-0" />
-              <span>{status === 'processing' ? 'Finishing up…' : 'Redirecting to GitHub…'}</span>
+              <span>
+                {status === 'processing'
+                  ? tHardcodedUi.raw('i18nComplete.text4bc99680df20')
+                  : tHardcodedUi.raw('i18nComplete.text502698660877')}
+              </span>
             </div>
           )}
         </div>

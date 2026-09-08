@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { PlusIcon as Plus, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 
@@ -111,6 +112,7 @@ export function MarketplaceExplore({
   /** Ancestor scroll element to virtualize the grids against (in-project). */
   scrollContainerRef?: RefObject<HTMLElement | null>;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Source filter lives in the left rail — one surface, filtered in place. On
   // the public page ('all') stays fully SSR'd and a deep-linked `?source=` is
   // picked up after hydration; embedded (Customize) keeps it purely local.
@@ -182,12 +184,12 @@ export function MarketplaceExplore({
         const items = byType.get(type)!;
         return {
           type,
-          label: pluralize(typeMeta(type).label),
+          label: pluralize(typeMeta(type, tI18nComplete).label),
           items,
           total: resolveMarketplaceTypeSectionTotal(type, typeCounts, items.length),
         };
       });
-  }, [componentItems, typeCounts]);
+  }, [componentItems, typeCounts, tI18nComplete]);
 
   // Embedded: the fixed top bar already says "Marketplace", so the lone
   // "Marketplace" crumb on the all-sources view is redundant — drop it. A
@@ -195,11 +197,14 @@ export function MarketplaceExplore({
   const crumbs: MarketplaceCrumb[] = isAll
     ? embedded
       ? []
-      : [{ label: 'Marketplace' }]
+      : [{ label: tI18nComplete.raw('textc608981d8d68') }]
     : [
         embedded
-          ? { label: 'Marketplace', onClick: () => selectSource(ALL_SOURCES) }
-          : { label: 'Marketplace', href: '/marketplace' },
+          ? {
+              label: tI18nComplete.raw('textc608981d8d68'),
+              onClick: () => selectSource(ALL_SOURCES),
+            }
+          : { label: tI18nComplete.raw('textc608981d8d68'), href: '/marketplace' },
         { label: sourceLabel ?? source },
       ];
 
@@ -212,11 +217,10 @@ export function MarketplaceExplore({
         <>
           <div className="space-y-2">
             <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
-              Install a project, or add a skill
+              {tI18nComplete.raw('texta9ab23617be7')}
             </h1>
             <p className="text-muted-foreground text-sm leading-relaxed text-pretty">
-              Install a full, working Kortix project in one click — or add skills from every source
-              into a project you already have.
+              {tI18nComplete.raw('texte09bc645d309')}
             </p>
           </div>
 
@@ -225,7 +229,7 @@ export function MarketplaceExplore({
               <Search />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
-              placeholder="Search the marketplace"
+              placeholder={tI18nComplete.raw('text0a6ea1b07058')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               variant="popover"
@@ -236,7 +240,7 @@ export function MarketplaceExplore({
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-2 px-2.5 pb-1">
               <div className="text-muted-foreground/70 text-xs font-medium tracking-wide uppercase">
-                Sources
+                {tI18nComplete.raw('textcaf85b0888d7')}
               </div>
               {canManageSources ? (
                 <button
@@ -245,12 +249,12 @@ export function MarketplaceExplore({
                   className="text-muted-foreground/70 hover:text-foreground -mr-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium transition-colors"
                 >
                   <Plus className="size-3.5 shrink-0" />
-                  Add
+                  {tI18nComplete.raw('text9fd728c66c9a')}
                 </button>
               ) : null}
             </div>
             <SourceRow
-              label="All sources"
+              label={tI18nComplete.raw('text08e774c5bacc')}
               active={isAll}
               onClick={() => selectSource(ALL_SOURCES)}
             />
@@ -284,8 +288,8 @@ export function MarketplaceExplore({
         {showProjects ? (
           <section className="scroll-mt-28">
             <SectionHeading
-              title="Install a project"
-              subtitle="A full, working Kortix project — spun up as its own project and set up for you in one session."
+              title={tI18nComplete.raw('text4b11e510f62b')}
+              subtitle={tI18nComplete.raw('textc068cf296b8d')}
             />
             <MarketplaceProjectsGrid items={projectItems} query={debounced} size="featured" />
           </section>
@@ -296,7 +300,7 @@ export function MarketplaceExplore({
           <div className="space-y-12">
             <SectionHeading
               title={sourceLabel ?? 'Skills'}
-              subtitle="Add these into a project you already have."
+              subtitle={tI18nComplete.raw('text705edc563dcc')}
             />
 
             {searching ? (
@@ -308,17 +312,19 @@ export function MarketplaceExplore({
                 columns={MARKETPLACE_GRID_COLUMNS}
                 gridClassName="sm:grid-cols-3"
                 showSource={isAll}
-                emptyTitle="No matches"
-                emptyDescription={`No items match "${debounced}".`}
+                emptyTitle={tI18nComplete.raw('text2df01a03ff43')}
+                emptyDescription={tI18nComplete('text05f82c79bce3', { value0: debounced })}
                 emptyAction={
                   <Button variant="outline" size="sm" onClick={() => setQuery('')}>
-                    Clear search
+                    {tI18nComplete.raw('text3b7ea51793e9')}
                   </Button>
                 }
                 header={({ total }) => (
                   <div className="text-muted-foreground text-sm">
                     <span className="tabular-nums">{total}</span>{' '}
-                    {total === 1 ? 'result' : 'results'} for &ldquo;{debounced}&rdquo;
+                    {total === 1 ? 'result' : 'results'} {tI18nComplete.raw('text0981ce2e694b')}
+                    {debounced}
+                    {tI18nComplete.raw('textd1fc8381e22d')}
                   </div>
                 )}
               />
@@ -355,11 +361,11 @@ export function MarketplaceExplore({
                 columns={MARKETPLACE_GRID_COLUMNS}
                 gridClassName="sm:grid-cols-3"
                 showSource={false}
-                emptyTitle="Nothing here yet"
-                emptyDescription="This source has no browseable items right now."
+                emptyTitle={tI18nComplete.raw('text49abaf804ab3')}
+                emptyDescription={tI18nComplete.raw('text99f521dcb3fa')}
                 emptyAction={
                   <Button variant="outline" size="sm" onClick={() => selectSource(ALL_SOURCES)}>
-                    Browse all sources
+                    {tI18nComplete.raw('text09d2aacd2ac9')}
                   </Button>
                 }
               />

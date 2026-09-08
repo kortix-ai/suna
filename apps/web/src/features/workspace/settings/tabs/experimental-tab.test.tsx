@@ -2,7 +2,7 @@ import type { FeatureFlagView } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ExperimentalTabView, filterFeatures } from './experimental-tab';
+import { DEFAULT_EXPERIMENTAL_COPY, ExperimentalTabView, filterFeatures } from './experimental-tab';
 
 const betaFeature: FeatureFlagView = {
   key: 'review_center',
@@ -33,6 +33,29 @@ const experimentalFeature: FeatureFlagView = {
  * as every other tab's real container (see `api-keys-tab.test.tsx`).
  */
 describe('ExperimentalTabView', () => {
+  test('renders injected Serbian state copy and localized feature content', () => {
+    const copy = {
+      ...DEFAULT_EXPERIMENTAL_COPY,
+      stability: { experimental: 'Експериментално', beta: 'Бета', stable: 'Стабилно' },
+      overridden: 'Промењено за овај пројекат',
+    };
+    const out = renderToStaticMarkup(
+      <ExperimentalTabView
+        features={[
+          {
+            ...betaFeature,
+            name: 'Центар за преглед',
+            description: 'Прегледајте резултате агента.',
+          },
+        ]}
+        copy={copy}
+      />,
+    );
+    expect(out).toContain('Центар за преглед');
+    expect(out).not.toContain('Бета');
+    expect(out).toContain('Промењено за овај пројекат');
+    expect(out).not.toContain('Review Center');
+  });
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView />);
     // "Feature flags", not "Experimental": the pane moved to

@@ -2,20 +2,13 @@ import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
 import { ChangeRequest } from '@/features/marketing/company-as-code/change-request';
 import { CodePanel } from '@/features/marketing/company-as-code/code-panel';
-import {
-  change,
-  definition,
-  grep,
-  hero,
-  portable,
-  repo,
-  selfImprove,
-} from '@/features/marketing/company-as-code/content';
+import { getLocalizedCompanyAsCodeContent } from '@/features/marketing/company-as-code/content';
 import { CompanyAsCodeHeroVisual } from '@/features/marketing/company-as-code/hero-visual';
 import { RepoTree } from '@/features/marketing/company-as-code/repo-tree';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
+import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 
 function SectionDivider(): ReactNode {
@@ -38,7 +31,10 @@ function SectionDivider(): ReactNode {
  * key in that schema, and nothing merges itself — work reaches `main` through a
  * change request a person approves.
  */
-export default function CompanyAsCodePage(): ReactNode {
+export default async function CompanyAsCodePage(): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { change, definition, grep, hero, portable, repo, selfImprove } =
+    getLocalizedCompanyAsCodeContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero

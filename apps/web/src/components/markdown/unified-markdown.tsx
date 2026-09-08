@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';

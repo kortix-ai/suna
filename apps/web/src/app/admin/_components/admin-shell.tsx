@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ShieldCheckIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -24,6 +25,7 @@ import {
 } from '@/components/ui/sidebar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 import { AdminSidebar, isAdminNavActive } from './admin-sidebar';
@@ -39,8 +41,8 @@ const NAV_LABELS: { href: string; label: string }[] = [
 const ADMIN_SIDEBAR_COOKIE = 'admin_sidebar_state';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 
-function activeAdminLabel(pathname: string | null): string | null {
-  const match = NAV_LABELS.find((item) => isAdminNavActive(pathname, item.href));
+function activeAdminLabel(pathname: string | null, labels: typeof NAV_LABELS): string | null {
+  const match = labels.find((item) => isAdminNavActive(pathname, item.href));
   return match?.label ?? null;
 }
 
@@ -66,6 +68,7 @@ export function AdminShell({
   children: React.ReactNode;
   initialOpen: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const { data: adminRole, isLoading } = useAdminRole();
 
   const [open, setOpen] = useState(initialOpen);
@@ -90,11 +93,11 @@ export function AdminShell({
       <div className="bg-background flex min-h-svh w-full items-center justify-center p-4">
         <EmptyState
           icon={ShieldCheckIcon}
-          title="Admin access required"
-          description="This account does not hold admin permissions. Contact a workspace admin if that looks wrong."
+          title={tI18nComplete.raw('text812fc8371083')}
+          description={tI18nComplete.raw('text997173af651f')}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={PROJECT_LANDING_PATH}>Back to app</Link>
+              <Link href={PROJECT_LANDING_PATH}>{tI18nComplete.raw('texta6989680b352')}</Link>
             </Button>
           }
         />
@@ -139,9 +142,11 @@ function AdminContent({ children }: { children: React.ReactNode }) {
  * page content below it (`AdminPageShell`) is the scroll container.
  */
 function AdminHeader() {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const pathname = usePathname();
   const { state, isMobile } = useSidebar();
-  const activeLabel = activeAdminLabel(pathname);
+  const navLabels = useLocalizedUiCatalog(NAV_LABELS);
+  const activeLabel = activeAdminLabel(pathname, navLabels);
 
   // Show a toggle here only where the in-panel one is unreachable: on mobile
   // (the panel is a closed sheet) and while the desktop panel is collapsed. A
@@ -155,14 +160,16 @@ function AdminHeader() {
         <BreadcrumbList className="text-foreground flex-nowrap gap-1 text-sm font-medium sm:gap-1">
           <BreadcrumbItem className="min-w-0">
             {pathname === '/admin' ? (
-              <span className="flex h-7 items-center px-2">Admin</span>
+              <span className="flex h-7 items-center px-2">
+                {tI18nComplete.raw('textc1c224b03cd9')}
+              </span>
             ) : (
               <BreadcrumbLink asChild>
                 <Link
                   href="/admin"
                   className="text-muted-foreground hover:text-foreground flex h-7 items-center px-2"
                 >
-                  Admin
+                  {tI18nComplete.raw('textc1c224b03cd9')}
                 </Link>
               </BreadcrumbLink>
             )}

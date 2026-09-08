@@ -21,27 +21,130 @@ linked, not inlined.
 
 ## Register
 
-### A test that only runs against a deployed target is a contract nobody runs before merge (2026-09-06)
+### Verify a rotated credential with the WRITE it exists for, and every edge worker deploys from the same pipeline as its origin (2026-09-07)
 
-**When:** changing behaviour that a `tests/e2e` spec or `tests/src/flows` flow
-asserts, or writing such a test. Specs that `test.skip` without a provider
-(23-composio) or fixtures that differ by target (`createManifestProject`,
-`fixtures.project({ managedGit })`) run ONLY in `tests-release.yml` against
-staging. The v0.13.11 release gate went red on four of them while every PR
-lane had been green for a week: connector slugs became `<app>-<random>`
-(7f6b8087f3) and spec 23 still asserted `composio-search`; managed repos now
-seed the starter by default (4da295e50b), so `triggers[0]` is the starter's
-`harness-reflector` (model null) and TRG-2/TRG-3 read the wrong row; the seed
-and the trigger commit land through the mirror seconds later, so TRG-14's
-`kortix.yaml` history moved under it. **Rules.** (1) When a PR changes a
-deployed-only contract, grep `tests/e2e/specs` and `tests/src/flows` for the
-old value in the same PR. (2) A flow asserts on the row it wrote (find by
-slug), never on `[0]`. (3) A read that follows a managed-git write settles
-(two equal reads) before it is compared. (4) Before promoting, dispatch
-`tests-release.yml --ref staging -f expected_sha=<staging tip>` as a dry run;
-the gate is the first time these tests see the change. *Incident:* release
-gate red twice on 2026-09-05/06, ~2 h of release delay, no user impact.
-*Enforcer:* none yet — the dry run is manual.
+**When:** rotating any token/key (PAT, App permission, API key) or editing an
+`apps/api/.env.<env>` credential; and when changing what fronts an origin
+(`infra/cloudflare/workers/api-router`). PR #7063 (2026-08-30) swapped the
+managed-kortix classic PAT for a fine-grained one and "verified" it with
+`GET /orgs/managed-kortix/repos` = 200 — a read. Repo creation needs
+`Administration: write`, which it lacked, and the App fallback (install
+140097279) only had `contents:write`. **Every prod project creation failed
+for 8 days** (~500/day, 63 users/day), and nobody saw the reason: the prod
+`api-kortix-router` worker was a 2026-08-21 build (only `deploy-staging.yml`
+and the cutover workflow ever ran `wrangler deploy`), so it rewrote the 502
+body into "Kortix is temporarily unavailable" and Better Stack showed a
+maintenance page nobody had switched on. **Rules.** (1) A credential swap is
+verified by the operation it authorises — for a repo-creating token, a
+create+delete probe repo — never by a read. (2) An edge worker is part of the
+origin's release: `deploy-prod.yml` now deploys it (`deploy-api-router`) and
+asserts the script's `modified_on` moved. (3) A route that returns an error
+body without a log line is invisible once an edge or a proxy eats the body;
+`provision-core.ts` now logs `create_repo` failures. *Incident:* prod,
+2026-08-30 23:15 → 2026-09-07 20:28 UTC (worker) / credential fix pending.
+See memory [[prod-provision-dead-fine-grained-pat-2026-08-30]].
+*Enforcer:* `deploy-api-router` job in `deploy-prod.yml`; unit
+`unit-connector-invalid-source-address.test.ts` for the sibling 500s.
+
+### Verify the listening process before sharing a worktree URL (2026-09-07)
+
+**When:** sharing or verifying a local fix, check the web and API listener PIDs
+with `lsof`, then check each PID's `cwd` against the canonical worktree.
+A healthy port does not identify its code. Connector search verification used
+ports 13500/13508; another worktree later occupied them and the shared URL
+reproduced the old 500. Reassign the local slot when a different worktree owns
+its ports. **Enforcement TODO:** make `worktree start` reject foreign listeners
+before `freeSlotPorts` and make `worktree list` report process ownership.
+
+### One attachment tile, translated to tokens — never a mockup's pixels (2026-09-06)
+
+**When:** a reference screenshot arrives for a surface that two places render
+(the composer's attachment preview and the sent message). Build ONE component
+(`features/session/attachment-tile.tsx` → `AttachmentTile`) and make both
+surfaces consume it; two hand-kept copies drifted into an 80px image square
+beside a 120px file rectangle, and every message got a ragged right edge.
+Translate, don't trace: the reference's ~108px tile became `size-24` (the
+0.23rem scale), its ~12px corner became `rounded-md`, its lifted fill became
+`bg-popover`, its uppercase `MD` badge became the design system's `Badge`
+`size="xs"` lowercased (all-caps eyebrows are a rejected default), and its
+"faint text peek" — the one value that had no token (`text-[7px]`) — was
+dropped rather than kept. A long name is an ellipsized head plus its verbatim
+ten-character tail on line two, because the tail carries the extension.
+Verify in BOTH themes with the real bundle pointed at the branch API — a
+`NEXT_PUBLIC_*` value is inlined at compile, and `dev-local.sh` used to
+hardcode the primary api port into it. *Enforcer:* `attachment-tile.test.tsx`,
+`composer/attachment-tiles.test.tsx` ("image and file tiles are ONE square"),
+`optimistic-turn.test.tsx` (shell and chat ship the same surface), and
+`audit.sh` clean on the tile.
+
+### A placeholder's release is a LATCH, and the real thing must draw through the swap (2026-09-06)
+
+**When:** an optimistic stand-in hands over to the transcript's own copy of a
+message. The transcript's first message briefly has NO parts while the store
+swaps the optimistic copy for the runtime's echo (~176 ms as the file parts
+land, on video). A live boolean ("show the stand-in unless the transcript has
+text") flipped back: the stand-in re-mounted at full opacity over the dimmed
+real turn, then dropped again — "the same message twice for a millisecond,
+then it vanishes". **The rule:** once a placeholder steps aside it never
+returns (latch the release), and the real turn is handed everything the
+placeholder knew — text and file names — so it keeps drawing through frames
+where its own parts are still streaming. Measure handovers with a per-mutation
+DOM observer plus a video recording, and count only VISIBLE copies (walk
+ancestors for opacity/display): DOM counts alone flagged the aligned 300 ms
+crossfade as a duplicate the eye never sees. *Enforcer:*
+`first-prompt-handover.test.ts` ("a release is a latch"), `user-message.test.tsx`
+("keeps the bubble and the promised tiles through a frame with no parts").
+
+### Verify a browser fix through the app's OWN API, not a proxy to another stack (2026-09-05)
+
+**When:** browser-verifying a worktree's web change. `NEXT_PUBLIC_BACKEND_URL`
+is inlined into the client bundle at compile, so a hand-booted `pnpm dev` that
+does not set the worktree's full env bakes `localhost:8008` — the browser then
+calls the PRIMARY api cross-origin and every request dies on CORS
+("This project didn't load / Failed to fetch"), testing nothing. `pnpm worktree
+start <name>` sets `NEXT_PUBLIC_BACKEND_URL`, `KORTIX_API_PROXY_TARGET`,
+`FRONTEND_URL`, `CORS_ALLOWED_ORIGINS` and `KORTIX_INSTANCE_ID` together
+(`scripts/worktree/lib/launch-env.ts`). **The rule:** boot a worktree for
+browser verification with `pnpm worktree start`, and PROVE the bundle hit the
+branch api — assert the `/v1/` request host is the worktree api port before
+trusting the result. A green DOM over the wrong backend is a false pass.
+
+### The queue row must carry every field a bubble draws, INCLUDING per-file upload state (2026-09-05)
+
+**When:** a durable row stands in for an optimistic bubble across a reload or a
+warm-box handover. The prompt row exposed `text` + `attachments` names but not a
+usable upload STATE, and three client sites derived "failed" from `last_error`
+alone. The API writes `last_error` on rows it keeps `queued` and RETRIES and
+never clears it on success, so a transient `runtime_unreachable` retry rendered
+as "upload failed". **The rule:** derive failure from `state === 'failed'`,
+never from the presence of `last_error`; a queued row with an error is
+retrying, not failed. Also: a refused landing proof must re-send under a FRESH
+attempt (fresh `Idempotency-Key` + wire id via `withNextDeliveryAttempt`),
+never `return false` into `deliverWithRetry` — the proxy's 10-minute dedupe
+claim answers the same-key retry `duplicate`, which closes the row as delivered
+(the exact silent loss the proof exists to stop). *Enforcer:*
+`queue-projection.test.ts` (stale-error row still uploading), the two
+"never wrote" cases in `queued-continue-inbox-delivery.test.ts` (fresh-key
+requeue + dead-letter), `user-message.test.tsx` (pending tiles without doubling).
+These seven defects were found by an adversarial multi-agent review of the first
+fix set — review your own fixes before shipping.
+
+### Edge middleware imports locale constants from a leaf module (2026-09-05)
+
+**When:** adding locale routing or other i18n behavior to Next.js middleware.
+Import locale constants from `i18n/catalog.mjs`. Do not import `i18n/config.ts`,
+because its dynamic message loader makes every translation catalog reachable
+from the Edge bundle. *Near-miss:* PR #7109 built locally, but Vercel rejected
+the 4.76 MB middleware above its 4.02 MB plan limit. *Enforcer:*
+`middleware-public-routes.test.ts`; verify the production middleware manifest.
+
+### Preview bootstrap secrets must derive from the runtime allowlist (2026-09-05)
+
+**When:** adding a preview runtime secret. Build the forwarded secret object from
+`PREVIEW_RUNTIME_SECRET_ALLOWLIST`; do not duplicate its keys in the default-branch
+controller. *Incident:* PR #7109 received `PREVIEW_MANAGED_GIT_GITHUB_TOKEN` in Actions,
+but the preview API kept using an under-permissioned App because the controller omitted
+the PAT. *Enforcer:* `preview-stack.test.ts` checks every allowlisted key.
 
 ### Every streamed transcript mutation refreshes runtime activity (2026-09-05)
 
@@ -52,6 +155,108 @@ Ignore replayed event IDs because history is not current activity. *Incident:*
 reasoning text kept growing while the composer changed from Stop to Send and the
 turn busy indicator disappeared. *Enforcer:* `sync-store.test.ts`.
 
+### Do not co-schedule process-heavy Bun package suites (2026-09-05)
+
+**When:** scheduling package tests in the root gate. Run the CLI and sandbox-agent
+suites as separate bounded steps. Their concurrent isolated Bun workers can spin at
+100% CPU and stall the gate. *Near-miss:* two full runs exceeded 9 minutes in the CLI
+worker; the same CLI suite passed alone in 40.80 seconds. *Enforcer:*
+`test-runner-contract.test.ts` and the serialized `package-quality.ts` wave.
+
+### A streamed message is "there" when its LAST promised part lands, not its first (2026-09-04)
+
+**When:** swapping an optimistic/placeholder render for the runtime's own copy
+of a message. The runtime streams a message's parts, TEXT FIRST — measured in a
+real browser: file parts followed ~6 s later. The boot preview was released
+"the frame the transcript shows the text", so for those seconds the bubble
+went from three tiles + "Uploading 3 files…" to nothing under it, then the
+tiles trickled back one by one. That frame is the user's bug report. **The
+rule:** release the placeholder when the real copy carries at least what the
+placeholder promised (text AND attachment count, counting materialized
+`<file>` refs as attachments), or when the turn is answered (nothing more is
+streaming). Measure such handovers with a per-second DOM probe, not a
+screenshot at the end. *Enforcer:* `first-prompt-handover.test.ts`; the browser
+probe in this incident's session showed `tiles=0` for two consecutive seconds
+before the fix and none after.
+
+### Retried append writes carry the expected offset (2026-09-04)
+
+**When:** splitting one upload into several mutating requests. A timeout can
+happen after the daemon writes a chunk but before the client receives its 200.
+Blindly retrying that append duplicates the bytes and corrupts the file. **The
+rule:** each append carries its expected file offset. The daemon accepts the
+next offset, treats an exact already-written chunk as a replay, and rejects any
+other offset with 409. *Enforcer:* `files-routes.test.ts` replays one chunk;
+`client.test.ts` and `runtime-prompt-file.test.ts` assert every sent offset.
+
+### Resolve competing UI sources per FIELD, never first-non-null (2026-09-04)
+
+**When:** a surface can learn the same thing from several places (local state,
+an in-memory producer handoff, a durable row, a stash). The session boot shell
+picked its bubble with `submission ?? preview ?? durableRow ?? stash`. The
+durable row is the cross-navigation truth for TEXT but never carries the user's
+`File`s, so on the commonest navigation — home composer → new session — the row
+landed first, won, and dropped three attachments the stash was still holding.
+The prompt appeared instantly and its files only reappeared when the runtime
+echoed the message, minutes later behind a chunked upload. First-non-null let
+the POOREST source win. **The rule:** pick each field from whichever source
+actually has it. Also: the bytes reach the box BEFORE the runtime creates the
+message, so the optimistic bubble owns the whole upload window and must narrate
+it — a tile spinner says "this file", nothing said how many remained or that one
+had failed. *Enforcer:* `optimistic-turn.test.tsx` (staged tiles + "Uploading N
+files…" + named failure), `uploaded-file-refs.test.ts` (batch weighed from
+`File.size` before a byte is read; reads run in parallel).
+
+### Optimistic UI is not durable — the queue row must carry what the UI redraws (2026-09-04)
+
+**When:** a client paints a send before the server confirms it. A reload throws
+that state away, so anything the bubble needs must live on the durable row. The
+prompt row carried `text` and nothing else, so a refreshed tab rendered a send
+of seven attachments as a bare sentence with no tiles — indistinguishable from
+a prompt that never had files, while the upload was in fact still in flight.
+**The rule:** every field the optimistic bubble draws has a durable counterpart
+on the queue row, and the reload path reads it. Names and MIME types only —
+that view is POLLED, so shipping the `data:` bytes would re-send megabytes per
+tick. *Enforcer:* `session-prompt-view.test.ts` ("names every attachment
+without carrying its bytes"), `optimistic-turn.test.tsx` ("draws a pending tile
+per staged attachment after a reload").
+
+### A 2xx from a proxy is not proof the origin got the body (2026-09-04)
+
+**When:** forwarding anything to a sandbox, and any time an inbox row is closed
+on a status code. The provider's edge DISCARDS a request body over its size
+ceiling; the first attempt returns `502` and the RETRY returns `200` for a
+request the runtime never saw. `prompt_async` answers for acceptance, never for
+the turn, so the drain closed the row `forwarded` on that 200 and the user's
+prompt ceased to exist — no message, no turn, no error, row reporting success.
+Measured on a live box: **≤104 KB of body lands, ≥115 KB is dropped**; a 6.1 MB
+prompt (two inline JPEGs) left no `prompt_async` line in the OpenCode log at
+all. **The rule:** prove delivery by READING THE ARTIFACT BACK, and keep every
+request to a box under the chunk budget. A read that FAILS is not proof of
+absence — lean toward "landed" there, or a retry runs the user's turn twice.
+*Enforcer:* `prompt-landing-proof.test.ts`, `runtime-prompt-file.test.ts`
+(chunked appends), `queued-continue-inbox-delivery.test.ts` ("a prompt the
+runtime never wrote is not reported as forwarded"). *Open:* the ceiling itself
+lives in the external provider edge and can move without notice.
+
+### An inline attachment allowlist is what the model DECODES, never a MIME prefix (2026-09-04)
+
+**When:** deciding whether a file part rides inline (base64) or is written to
+the box. `image/*` is not a decodability test. OpenCode decodes every `image/`
+part before it persists the message, so one undecodable type throws
+`ImageDecodeError` inside `prompt_async` and NO message is written — the prompt
+text and every sibling attachment are deleted with it. `prompt_async` answers
+204 for *accepted*, so the inbox row still records `delivered` and nothing
+retries or surfaces. *Incident:* two SVG logos + a PDF from the session
+composer; the whole turn vanished, transcript showed only a spinner, DB said
+`succeeded`. `image/svg+xml`, `bmp`, `x-icon`, `heic`, `heif` are all in the
+composer's own upload allowlist. *Enforcer:* `prompt-attachments.test.ts`
+(allowlist + parameter stripping), `prompt-attachment-materializer.test.ts`
+("materializes image types the model cannot decode"), `user-message.test.tsx`
+("renders the undecodable-image batch that used to delete the message").
+*Open:* delivery still has no read-back proof — a runtime-side throw is still
+recorded as `delivered`.
+
 ### Protocol adapters emit the target vocabulary; consumers fail active-safe (2026-09-04)
 
 **When:** adapting runtime lifecycle events into the OpenCode session protocol.
@@ -60,6 +265,26 @@ reading an untrusted status discriminator. *Incident:* the pi worker emitted
 `running`; the SDK converted it to `idle`, so the composer and sidebar hid their
 busy indicators while parts continued to stream. *Enforcer:*
 `session-status.test.ts` and `use-session-working.test.ts`.
+
+### Preview fixtures must use installed libraries and forwarded secrets (2026-09-04)
+
+**When:** adding preview browser setup or a runtime secret allowlist. Use the shared `pg`
+client with parameterized SQL. Do not spawn a host CLI that the test image does not install.
+Build the runtime-secret object from the allowlist so an allowlisted workflow secret cannot be
+silently omitted. *Incident:* PR #7109 target-full stopped at `spawnSync psql ENOENT`; managed
+Git calls also returned `403` because `MANAGED_GIT_GITHUB_TOKEN` never entered the runtime
+object. *Enforcers:* `preview-stack.test.ts` and the preview target-full browser census.
+
+### A green synchronize preview does not prove that target-full ran (2026-09-04)
+
+**When:** using a persistent branch preview as deployed-test evidence. Push-triggered
+preview runs set `PREVIEW_RUN_TESTS=0`; inspect the log for the executed test command,
+not the green job name or sticky comment. Trigger `deploy-preview.yml` with
+`workflow_dispatch` for the final SHA, then require an actual `[test] PASS target-full`
+line. *Near-miss:* PR #7109 published “target-full passed” while its bootstrap printed
+“suite skipped”; caught before merge. *Enforcer TODO:* make the workflow result and
+sticky comment distinguish a skipped suite from a passed suite.
+
 
 ### A durable FIFO has one order key and advances at one boundary (2026-09-03)
 
@@ -97,6 +322,16 @@ to `/maintenance` on one failed poll. Enforcement:
 `maintenance-store.test.ts` edge-gate cases, `maintenance-client.test.ts`
 "stays out of maintenance after a status request failure".
 
+### A compatibility repair must recognize the current writer's exact output (2026-09-02)
+
+**When:** adding a repair that runs before later prompt delivery. Derive both the
+current and legacy transcript forms without file I/O. Treat an exact current form
+as already repaired. Materialize only parts that still use the legacy file shape.
+*Incident:* a new multi-file first prompt used `<commandId>` paths; the next prompt
+expected `legacy-<commandId>` and stayed queued. Early fixes exposed crash-window
+and overwrite defects. *Enforcer:* `legacy-inline-attachment-repair.test.ts` and
+`queued-continue-inbox-delivery.test.ts` cover canonical, legacy, retry, and mixed batches.
+
 ### A runtime that only updates by pulling never updates a box that predates the puller (2026-09-01)
 
 **When:** designing or relying on any "the box converges on the API" mechanism
@@ -120,7 +355,6 @@ install log said success; `readlink /proc/<pid>/exe` said otherwise.
 relaunches once more after an `updated` boot pass and its health wait requires a
 FRESH daemon (`uptime_s` small), never the one just killed.
 
-||||||| 2108aa3c8a
 ### Pin every bundled Go binary to the scanner's fixed dependency floor (2026-09-01)
 
 **When:** you add or update a Go binary copied into `apps/api/Dockerfile`, or a
@@ -4216,3 +4450,77 @@ preview-parity ports. *Enforcer:* `tests/unit/preview-guard.test.ts`
 (`sh -n` on the guard, never `-v`, deploy-in-flight gate, hash-keyed install)
 and `tests/unit/sandbox-preview.test.ts` (prune before pull, fallback install,
 rollback after the health check, guard before configure).
+
+## A failed content-addressed template must change the next create idempotency key (2026-09-05)
+
+PR #7109 could not deploy its branch preview. Platinum returned two failed
+records for `kortix-ci-v11-03a0eb30070ddb14-base`. The controller correctly
+rejected both records as reusable, but retried `POST /v1/templates/from-spec`
+with the original idempotency key. Platinum returned the same failed create
+result. The branch environment could not fall back to Daytona because that
+would change its stable origin.
+
+**The rule.** A content-addressed resource can reuse its normal idempotency key
+until the provider records a terminal failure. The next create key must include
+a deterministic fingerprint of the known failed resource IDs. Concurrent
+retries for the same failure set still deduplicate. A newly failed retry changes
+the failure set and therefore changes the next create key.
+
+*Fix:* `platinumTemplateCreateIdempotencyKey()` fingerprints failed template
+IDs for base and warm template creation. *Enforcer:*
+`tests/unit/platinum-ci.test.ts` verifies stable concurrent retry keys and a new
+key after another terminal failure.
+
+## An explicit fallback preview must not inherit the persistent provider identity (2026-09-05)
+
+PR #7109 needed Daytona after Platinum failed twice while building its base
+template. The manual dispatch selected `daytona`, but the workflow still set
+`PREVIEW_BRANCH_ENV` to the pull request branch. The provider guard rejected
+Daytona before sandbox creation because that value reserves the stable branch
+origin for Platinum.
+
+**The rule.** A manual Daytona fallback verifies the exact pull request SHA on
+an ephemeral provider origin. It must leave `PREVIEW_BRANCH_ENV` empty. Normal
+automatic and Platinum runs must keep the persistent branch identity.
+
+*Fix:* `deploy-preview.yml` emits an empty `persistent_branch` only for an
+explicit workflow-dispatch Daytona run. *Enforcer:*
+`tests/unit/web-ecs-workflow.test.ts` asserts both the selection condition and
+the deploy environment output.
+
+## A dependency engine floor must invalidate the preview base image (2026-09-05)
+
+PR #7109 failed to build both Platinum and Daytona base caches. The preview
+base image pinned Node `22.22.0`. The resolved `write-file-atomic@8.0.0`
+package requires Node `^22.22.2 || ^24.15.0 || >=26.0.0`. The exact provider
+command exited at `pnpm install --frozen-lockfile` with
+`ERR_PNPM_UNSUPPORTED_ENGINE`.
+
+**The rule.** The preview base image Node version must satisfy every resolved
+package engine. A Node image change must also increment the Platinum and
+Daytona base-cache versions. Failed caches must never retain the old runtime.
+
+*Fix:* the shared preview image now pins the multi-platform digest for Node
+`22.22.2-bookworm`. Platinum base cache `v12` and Daytona base cache `v4`
+force fresh builds. *Enforcer:* `tests/unit/platinum-ci.test.ts` and
+`tests/unit/daytona-ci.test.ts` assert both new cache names and the exact image
+digest.
+
+## A persistent sandbox does not inherit a replacement template runtime (2026-09-05)
+
+PR #7109 selected the ready Node `22.22.2` Platinum template. The workflow then
+reused the branch sandbox created with Node `22.22.0`. The sandbox rootfs did
+not change. Every checkout after the dependency floor change failed at
+`pnpm install --frozen-lockfile` with `ERR_PNPM_UNSUPPORTED_ENGINE`. The worker
+then reported stale test output from an earlier commit.
+
+**The rule.** A bootstrap that reuses a persistent sandbox must enforce its
+runtime floor inside that sandbox before it runs the package manager. A new
+template only affects newly created sandboxes. Runtime repair must use a pinned
+version and a verified checksum.
+
+*Fix:* `buildPreviewBootstrapScript()` installs the official Node `22.22.2`
+Linux x64 archive when the sandbox reports another version. It verifies the
+official SHA-256 before extraction. *Enforcer:*
+`tests/unit/sandbox-preview.test.ts` requires the repair before the first pnpm
+install and asserts the exact version and checksum.

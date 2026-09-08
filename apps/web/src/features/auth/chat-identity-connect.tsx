@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Shared connect-account surface for chat identity binding (Slack, Teams).
  * The bot DMs the user a short-lived signed link; after a normal Kortix
@@ -49,6 +50,7 @@ export function ChatIdentityConnect({
   /** Small note under the actions ("disconnect anytime with …"). */
   disconnectNote: React.ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
@@ -69,7 +71,10 @@ export function ChatIdentityConnect({
 
   if (!token) {
     return (
-      <AuthStatusScreen title={`Open this page from ${service}`} description={missingLinkMessage} />
+      <AuthStatusScreen
+        title={tI18nComplete('text15b2fcddefb6', { value0: service })}
+        description={missingLinkMessage}
+      />
     );
   }
 
@@ -92,10 +97,10 @@ export function ChatIdentityConnect({
         title={`${service} connected`}
         description={
           !result?.hasAccess
-            ? `Your Kortix account is connected${workspace}. Head back to ${service} and request project access to continue.`
+            ? tI18nComplete('textf76a7d5990d1', { value0: workspace, value1: service })
             : result?.resumed
-              ? `Your Kortix account is connected${workspace}. Kortix is picking up your ${service} message now.`
-              : `Your Kortix account is connected${workspace}. Head back to ${service} and mention Kortix with a task.`
+              ? tI18nComplete('text92a089d9e543', { value0: workspace, value1: service })
+              : tI18nComplete('texta66d28de63ae', { value0: workspace, value1: service })
         }
       />
     );
@@ -107,8 +112,8 @@ export function ChatIdentityConnect({
     <AuthFrame>
       <Rise>
         <StepHeader
-          title={`Connect ${service} to Kortix`}
-          description={`The Kortix bot in ${service} will run as you, with your own credentials, secrets, and connected apps instead of the installer's.`}
+          title={tI18nComplete('text1867c0243aad', { value0: service })}
+          description={tI18nComplete('text7e68dda8f4ed', { value0: service })}
         />
       </Rise>
 
@@ -116,12 +121,12 @@ export function ChatIdentityConnect({
         {phase === 'error' && error ? <ErrorStrip message={error} /> : null}
 
         <DetailPanel>
-          <DetailRow label="Account" value={user.email ?? 'You'} />
+          <DetailRow label={tI18nComplete.raw('text7e1b0d5641f2')} value={user.email ?? 'You'} />
         </DetailPanel>
 
         <Button size="lg" className="mt-5 w-full" onClick={connect} disabled={busy}>
           {busy ? <Loading className="size-4 shrink-0" /> : null}
-          Connect account
+          {tI18nComplete.raw('textf7d845186faa')}
         </Button>
 
         <div className="text-muted-foreground mt-8 space-y-2 text-sm">
@@ -131,7 +136,7 @@ export function ChatIdentityConnect({
               href="/"
               className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Link>
           </p>
         </div>

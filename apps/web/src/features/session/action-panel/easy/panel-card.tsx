@@ -207,7 +207,9 @@ export function PanelCard({
           <Empty className="flex-none gap-3 rounded-none border-none p-0 text-center">
             {emptyArt && <EmptyMedia className="mb-0">{emptyArt}</EmptyMedia>}
             {emptyText && <EmptyDescription className="text-pretty">{emptyText}</EmptyDescription>}
-            {emptyActions && <EmptyContent className="w-full max-w-none">{emptyActions}</EmptyContent>}
+            {emptyActions && (
+              <EmptyContent className="w-full max-w-none">{emptyActions}</EmptyContent>
+            )}
           </Empty>
         ) : (
           children

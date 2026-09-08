@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const dir = import.meta.dir;
@@ -19,9 +19,7 @@ const dir = import.meta.dir;
  * The `[^:\w]` guard on line comments keeps `https://` URLs intact.
  */
 function code(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:\w])\/\/.*$/gm, '$1');
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\w])\/\/.*$/gm, '$1');
 }
 
 const read = (relativePath: string) => code(readFileSync(join(dir, relativePath), 'utf8'));
@@ -78,7 +76,8 @@ describe('Channels view — a disconnected Slack is a hero, not a table row', ()
     // Not its own list above a "More channels" heading — the label is
     // suppressed precisely when Slack has joined the rows.
     expect(channelsSource).toContain('const showMoreLabel = !slackRow && hasRows;');
-    expect(channelsSource).toMatch(/showMoreLabel \? <Label>More channels<\/Label> : null/);
+    expect(channelsSource).toContain('showMoreLabel ? <Label>');
+    expect(channelsSource).toContain("raw('text28647129955c')");
     expect(channelsSource).toMatch(
       /<ul className="space-y-2">[\s\S]*?<SlackChannelRow[\s\S]*?<EmailChannelRow[\s\S]*?<TeamsChannelRow[\s\S]*?<\/ul>/,
     );
@@ -89,17 +88,15 @@ describe('Channels view — a disconnected Slack is a hero, not a table row', ()
     expect(channelsSource).not.toContain('<TableHead>Workspace</TableHead>');
     expect(channelsSource).not.toContain('<TableHead>Status</TableHead>');
     // The Slack row survives by name but is now an entity row, not a TableRow.
-    expect(channelsSource).toMatch(
-      /function SlackChannelRow[\s\S]*?return \(\s*<ChannelRow/,
-    );
+    expect(channelsSource).toMatch(/function SlackChannelRow[\s\S]*?return \(\s*<ChannelRow/);
     expect(channelsSource).not.toMatch(/function SlackChannelRow[\s\S]{0,600}<TableCell/);
   });
 
   test('the bindings table survives — that one has real data to compare', () => {
     expect(channelsSource).toContain('function ChannelBindingsSection');
     expect(channelsSource).toContain('<Table>');
-    expect(channelsSource).toContain('<TableHead>Channel</TableHead>');
-    expect(channelsSource).toContain('<TableHead>Join policy</TableHead>');
+    expect(channelsSource).toContain("raw('textce4683e7013a')");
+    expect(channelsSource).toContain("raw('text11b39c93777e')");
   });
 
   test('the duplicate header CTA is gone — the hero owns the only "Add to Slack"', () => {
@@ -292,8 +289,8 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
   });
 
   test('credential help names the Slack screen, and internal table names are gone', () => {
-    expect(wizardSource).toContain('OAuth &amp; Permissions');
-    expect(wizardSource).toContain('Basic Information');
+    expect(wizardSource).toContain("raw('textd4caa96c198f')");
+    expect(wizardSource).toContain("raw('textd094b334d809')");
     expect(wizardSource).not.toContain('project_secrets');
     expect(channelsSource).not.toContain('project_secrets');
   });
@@ -410,7 +407,7 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
   test('model override reuses the shared ModelSelector and labels the unset state', () => {
     expect(channelsSource).toContain("from '@/features/session/model-selector'");
     expect(channelsSource).toContain('<ModelSelector');
-    expect(channelsSource).toContain('unsetLabel="Project default"');
+    expect(channelsSource).toContain("raw('texte8cb80e5c5cb')");
   });
 
   test('join-policy picker covers all three conversation policies', () => {

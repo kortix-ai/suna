@@ -20,7 +20,9 @@ describe('project page ?q= prefill wiring', () => {
   const source = readFileSync(PAGE, 'utf8');
 
   test('imports the pure promptFromSearchParams helper', () => {
-    expect(source).toContain("import { promptFromSearchParams } from './prompt-from-search-params'");
+    expect(source).toContain(
+      "import { promptFromSearchParams } from './prompt-from-search-params'",
+    );
   });
 
   test('seeds the composer prefill store rather than duplicating consumption', () => {

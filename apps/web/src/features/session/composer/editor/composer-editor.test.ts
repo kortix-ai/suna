@@ -3,7 +3,8 @@ import { PLUGIN_KEY as PLACEHOLDER_PLUGIN_KEY } from '@tiptap/extensions';
 import type { EditorView } from '@tiptap/pm/view';
 import { describe, expect, test } from 'bun:test';
 
-import { baseExtensions } from './extensions';
+import { mergeFailedSubmissionText } from '../../composer-draft-recovery';
+import { planPrefillMerge, textToDocument } from '../composer-logic';
 import {
   createSubmitOnEnterHandler,
   createUpdateHandler,
@@ -12,8 +13,7 @@ import {
   setEditorDocument,
   trackEmptyBoundary,
 } from './composer-editor';
-import { mergeFailedSubmissionText } from '../../composer-draft-recovery';
-import { planPrefillMerge, textToDocument } from '../composer-logic';
+import { baseExtensions } from './extensions';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
 
@@ -210,7 +210,11 @@ describe('trackEmptyBoundary — fires ONLY on the empty<->non-empty boundary', 
 describe('createSubmitOnEnterHandler', () => {
   function fakeEvent(key: string, shiftKey = false) {
     let prevented = false;
-    const event = { key, shiftKey, preventDefault: () => (prevented = true) } as unknown as KeyboardEvent;
+    const event = {
+      key,
+      shiftKey,
+      preventDefault: () => (prevented = true),
+    } as unknown as KeyboardEvent;
     return { event, wasPrevented: () => prevented };
   }
 
@@ -305,7 +309,9 @@ describe('createSubmitOnEnterHandler', () => {
  */
 describe('baseExtensions — Placeholder reads a live getter, not a value frozen at construction', () => {
   function currentPlaceholderText(editor: Editor): string | undefined {
-    const plugin = editor.extensionManager.plugins.find((p) => p.spec.key === PLACEHOLDER_PLUGIN_KEY);
+    const plugin = editor.extensionManager.plugins.find(
+      (p) => p.spec.key === PLACEHOLDER_PLUGIN_KEY,
+    );
     if (!plugin?.props.decorations) return undefined;
     // .call(plugin, ...), not plugin.props.decorations(...): the declared
     // signature types `decorations` with `this: Plugin<any>` (ProseMirror
@@ -314,7 +320,8 @@ describe('baseExtensions — Placeholder reads a live getter, not a value frozen
     // which tsc correctly rejects (TS2684).
     const decorations = plugin.props.decorations.call(plugin, editor.state as never);
     const decoration = (decorations as { find?: () => unknown[] } | null)?.find?.()[0];
-    const attrs = (decoration as { type?: { attrs?: Record<string, string> } } | undefined)?.type?.attrs;
+    const attrs = (decoration as { type?: { attrs?: Record<string, string> } } | undefined)?.type
+      ?.attrs;
     return attrs?.['data-placeholder'];
   }
 
@@ -659,7 +666,6 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
       { kind: 'file', label: 'draft.ts' },
     ]);
   });
-
 });
 
 describe('createUpdateHandler — per-change doc snapshots alongside the empty boundary', () => {

@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useTranslations } from '@/i18n/use-translations';
 import type { OAuth2ApplicationForm } from './connector-oauth2';
 
 export function OAuth2ApplicationFields({
@@ -21,6 +22,7 @@ export function OAuth2ApplicationFields({
   onChange: (value: OAuth2ApplicationForm) => void;
   idPrefix: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const set = <K extends keyof OAuth2ApplicationForm>(key: K, next: OAuth2ApplicationForm[K]) =>
     onChange({ ...value, [key]: next });
   const id = (name: string) => `${idPrefix}-${name}`;
@@ -28,7 +30,9 @@ export function OAuth2ApplicationFields({
   return (
     <FieldGroup className="grid gap-3 sm:grid-cols-2">
       <Field className="sm:col-span-2">
-        <FieldLabel htmlFor={id('discovery-url')}>Discovery URL</FieldLabel>
+        <FieldLabel htmlFor={id('discovery-url')}>
+          {tI18nComplete.raw('texte62bef86ebd4')}
+        </FieldLabel>
         <Input
           id={id('discovery-url')}
           type="url"
@@ -37,13 +41,13 @@ export function OAuth2ApplicationFields({
           placeholder="https://identity.example.com/.well-known/openid-configuration"
           variant="popover"
         />
-        <FieldDescription>
-          RFC 8414 or OpenID metadata can supply the endpoint URLs below.
-        </FieldDescription>
+        <FieldDescription>{tI18nComplete.raw('text2fe1b45a5654')}</FieldDescription>
       </Field>
       {value.grant === 'authorization_code' && (
         <Field className="sm:col-span-2">
-          <FieldLabel htmlFor={id('authorization-url')}>Authorization URL</FieldLabel>
+          <FieldLabel htmlFor={id('authorization-url')}>
+            {tI18nComplete.raw('textc70b5f2b670e')}
+          </FieldLabel>
           <Input
             id={id('authorization-url')}
             type="url"
@@ -55,7 +59,7 @@ export function OAuth2ApplicationFields({
         </Field>
       )}
       <Field className="sm:col-span-2">
-        <FieldLabel htmlFor={id('token-url')}>Token URL</FieldLabel>
+        <FieldLabel htmlFor={id('token-url')}>{tI18nComplete.raw('text431e0036cba3')}</FieldLabel>
         <Input
           id={id('token-url')}
           type="url"
@@ -67,7 +71,9 @@ export function OAuth2ApplicationFields({
       </Field>
       {value.grant === 'device_authorization' && (
         <Field className="sm:col-span-2">
-          <FieldLabel htmlFor={id('device-url')}>Device Authorization URL</FieldLabel>
+          <FieldLabel htmlFor={id('device-url')}>
+            {tI18nComplete.raw('text1ffa9ae5b248')}
+          </FieldLabel>
           <Input
             id={id('device-url')}
             type="url"
@@ -79,7 +85,9 @@ export function OAuth2ApplicationFields({
         </Field>
       )}
       <Field className="sm:col-span-2">
-        <FieldLabel htmlFor={id('revocation-url')}>Revocation URL</FieldLabel>
+        <FieldLabel htmlFor={id('revocation-url')}>
+          {tI18nComplete.raw('texta6cc6ed3f841')}
+        </FieldLabel>
         <Input
           id={id('revocation-url')}
           type="url"
@@ -88,12 +96,10 @@ export function OAuth2ApplicationFields({
           placeholder="https://identity.example.com/oauth2/revoke"
           variant="popover"
         />
-        <FieldDescription>
-          Optional. Kortix also deletes the local token on disconnect.
-        </FieldDescription>
+        <FieldDescription>{tI18nComplete.raw('text1458e20a1642')}</FieldDescription>
       </Field>
       <Field>
-        <FieldLabel htmlFor={id('client-id')}>Client ID</FieldLabel>
+        <FieldLabel htmlFor={id('client-id')}>{tI18nComplete.raw('text8726db013948')}</FieldLabel>
         <Input
           id={id('client-id')}
           value={value.clientId}
@@ -103,7 +109,7 @@ export function OAuth2ApplicationFields({
         />
       </Field>
       <Field>
-        <FieldLabel htmlFor={id('auth-method')}>Token authentication</FieldLabel>
+        <FieldLabel htmlFor={id('auth-method')}>{tI18nComplete.raw('textb5037fbea489')}</FieldLabel>
         <Select
           value={value.authMethod}
           onValueChange={(next) => set('authMethod', next as OAuth2ApplicationForm['authMethod'])}
@@ -112,17 +118,25 @@ export function OAuth2ApplicationFields({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="none">Public client</SelectItem>
-            <SelectItem value="client_secret_basic">Client secret with Basic</SelectItem>
-            <SelectItem value="client_secret_post">Client secret in body</SelectItem>
-            <SelectItem value="client_secret_jwt">Client secret JWT</SelectItem>
-            <SelectItem value="private_key_jwt">Private key JWT</SelectItem>
+            <SelectItem value="none">{tI18nComplete.raw('text3a9be266e664')}</SelectItem>
+            <SelectItem value="client_secret_basic">
+              {tI18nComplete.raw('textedb912f176d8')}
+            </SelectItem>
+            <SelectItem value="client_secret_post">
+              {tI18nComplete.raw('textfd4daecd5ecf')}
+            </SelectItem>
+            <SelectItem value="client_secret_jwt">
+              {tI18nComplete.raw('text7d06167236bd')}
+            </SelectItem>
+            <SelectItem value="private_key_jwt">{tI18nComplete.raw('text6ac8fd822515')}</SelectItem>
           </SelectContent>
         </Select>
       </Field>
       {value.authMethod === 'private_key_jwt' ? (
         <Field className="sm:col-span-2">
-          <FieldLabel htmlFor={id('private-key')}>Private key PEM</FieldLabel>
+          <FieldLabel htmlFor={id('private-key')}>
+            {tI18nComplete.raw('text7251cfc3ceab')}
+          </FieldLabel>
           <Textarea
             id={id('private-key')}
             value={value.privateKey}
@@ -133,7 +147,9 @@ export function OAuth2ApplicationFields({
         </Field>
       ) : value.authMethod === 'none' ? null : (
         <Field className="sm:col-span-2">
-          <FieldLabel htmlFor={id('client-secret')}>Client secret</FieldLabel>
+          <FieldLabel htmlFor={id('client-secret')}>
+            {tI18nComplete.raw('text4aded5faf156')}
+          </FieldLabel>
           <Input
             id={id('client-secret')}
             type="password"
@@ -145,33 +161,33 @@ export function OAuth2ApplicationFields({
         </Field>
       )}
       <Field className="sm:col-span-2">
-        <FieldLabel htmlFor={id('scopes')}>Scopes</FieldLabel>
+        <FieldLabel htmlFor={id('scopes')}>{tI18nComplete.raw('text0d5644ff52ce')}</FieldLabel>
         <Input
           id={id('scopes')}
           value={value.scopes}
           onChange={(event) => set('scopes', event.target.value)}
-          placeholder="openid profile api.read"
+          placeholder={tI18nComplete.raw('text0b9de98b65ef')}
           variant="popover"
         />
-        <FieldDescription>Separate multiple scopes with spaces.</FieldDescription>
+        <FieldDescription>{tI18nComplete.raw('textda4365b5d2bf')}</FieldDescription>
       </Field>
       <Field>
-        <FieldLabel htmlFor={id('resource')}>Resource</FieldLabel>
+        <FieldLabel htmlFor={id('resource')}>{tI18nComplete.raw('texteb7a842ff958')}</FieldLabel>
         <Input
           id={id('resource')}
           value={value.resource}
           onChange={(event) => set('resource', event.target.value)}
-          placeholder="Optional"
+          placeholder={tI18nComplete.raw('text59be71333c96')}
           variant="popover"
         />
       </Field>
       <Field>
-        <FieldLabel htmlFor={id('audience')}>Audience</FieldLabel>
+        <FieldLabel htmlFor={id('audience')}>{tI18nComplete.raw('text545c02357695')}</FieldLabel>
         <Input
           id={id('audience')}
           value={value.audience}
           onChange={(event) => set('audience', event.target.value)}
-          placeholder="Optional"
+          placeholder={tI18nComplete.raw('text59be71333c96')}
           variant="popover"
         />
       </Field>

@@ -838,6 +838,13 @@ export interface SessionPrompt {
   client_sent_at_ms?: number | null;
   attempts: number;
   last_error: string | null;
+  /** This prompt's files, by NAME and TYPE only — never their bytes.
+   *
+   *  A reload discards the composer's optimistic bubble, so without this a
+   *  refreshed tab renders a queued prompt as a bare sentence and the user
+   *  cannot tell a stuck upload from a prompt that never had attachments.
+   *  Absent from servers older than this field. */
+  attachments?: Array<{ filename: string; mime: string }>;
   created_at: string;
   available_at: string;
 }

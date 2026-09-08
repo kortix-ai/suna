@@ -1,10 +1,12 @@
 'use client';
 
 import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
 import { CheckIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 /**
  * Layer 04 — what the harness adds, shown as the difference it makes.
@@ -51,7 +53,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
  *  because the thing being dramatised is that text is the entire output. */
 const ANSWER =
   'Add exponential backoff, cap it at five attempts, and skip the retry entirely for 4xx responses — those will never succeed. Worth logging the attempt count too.';
-const ANSWER_WORDS = ANSWER.split(' ');
 
 type Outcome = 'done' | 'denied';
 
@@ -148,6 +149,12 @@ function StepGlyph({ outcome, resolved }: { outcome: Outcome; resolved: boolean 
 }
 
 export function StepHarness(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const answerWords = useMemo(
+    () => (tI18nComplete.raw('text673a8d7538da') as string).split(' '),
+    [tI18nComplete],
+  );
+  const localizedSteps: typeof STEPS = useLocalizedUiCatalog(STEPS);
   const reduced = useReducedMotion();
   const { ref, drawn } = usePanelReveal();
   const [typed, setTyped] = useState(0);
@@ -156,14 +163,14 @@ export function StepHarness(): ReactNode {
   useEffect(() => {
     if (!drawn || reduced) return;
     const ids: ReturnType<typeof setTimeout>[] = [];
-    ANSWER_WORDS.forEach((_, i) => {
+    answerWords.forEach((_, i) => {
       ids.push(setTimeout(() => setTyped(i + 1), WORD_START + i * WORD_MS));
     });
-    STEPS.forEach((_, i) => {
+    localizedSteps.forEach((_, i) => {
       ids.push(setTimeout(() => setRan(i + 1), STEP_START + i * STEP_MS));
     });
     return () => ids.forEach(clearTimeout);
-  }, [drawn, reduced]);
+  }, [answerWords, drawn, localizedSteps, reduced]);
 
   /**
    * Reduced motion is DERIVED, never set. An effect that calls `setState` in
@@ -171,8 +178,8 @@ export function StepHarness(): ReactNode {
    * anyway: with motion off, both halves are simply already finished, which is
    * a function of `reduced`, not a fact worth keeping in state.
    */
-  const words = reduced ? ANSWER_WORDS.length : typed;
-  const steps = reduced ? STEPS.length : ran;
+  const words = reduced ? answerWords.length : typed;
+  const steps = reduced ? localizedSteps.length : ran;
   const denied = steps >= 4;
 
   const band = (order: number) => ({
@@ -198,16 +205,19 @@ export function StepHarness(): ReactNode {
       <div className="hidden h-full grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] lg:grid">
         {/* Left: what a model gives you. */}
         <m.div {...band(0)} className="flex min-w-0 flex-col gap-3 px-7 py-7">
-          {eyebrow('A model on its own', 'answers')}
+          {eyebrow(
+            tI18nComplete.raw('text7259d430ed27'),
+            tI18nComplete.raw('text677fe21b65f4'),
+          )}
 
           <p className="text-foreground/80 text-[13.5px] leading-[1.65] text-pretty">
             {/* Word by word rather than character by character. A per-character
                 reveal is a typewriter, and a typewriter is a person typing —
                 this is a model generating, and models arrive in tokens. */}
-            {ANSWER_WORDS.slice(0, words).join(' ')}
+            {answerWords.slice(0, words).join(' ')}
             {/* The caret only exists while there is more coming, so its absence
                 is what says the answer is finished. */}
-            {words > 0 && words < ANSWER_WORDS.length && (
+            {words > 0 && words < answerWords.length && (
               <span
                 aria-hidden
                 className="bg-foreground/50 ml-0.5 inline-block h-[0.95em] w-[0.45em] translate-y-[0.1em] animate-pulse"
@@ -218,7 +228,7 @@ export function StepHarness(): ReactNode {
           {/* Pinned to the floor, so the empty space above it is the point
               rather than an accident of a short paragraph. */}
           <p className="text-muted-foreground/70 mt-auto text-[12.5px] italic">
-            …and then you go and do it.
+            {tI18nComplete.raw('text30f60f116dba')}
           </p>
         </m.div>
 
@@ -228,15 +238,15 @@ export function StepHarness(): ReactNode {
           className="border-border bg-background/40 flex min-w-0 flex-col gap-3 border-l px-7 py-7"
         >
           {eyebrow(
-            'With the harness',
+            tI18nComplete.raw('text1e208e20a0eb'),
             <span className="inline-flex items-center gap-1.5 align-middle">
               <OpenCode className="size-3" />
-              powered by OpenCode
+              {tI18nComplete.raw('text474d4126bce4')}
             </span>,
           )}
 
           <ul className="flex flex-col gap-2.5">
-            {STEPS.map((step, index) => {
+            {localizedSteps.map((step, index) => {
               const resolved = steps > index;
               const isDenied = resolved && step.outcome === 'denied';
               return (
@@ -275,11 +285,12 @@ export function StepHarness(): ReactNode {
             className="border-border mt-auto flex items-center gap-2 border-t pt-3"
           >
             <span className="text-muted-foreground/50 shrink-0 font-mono text-[10.5px]">
-              agents/kortix.md
+              {tI18nComplete.raw('textf300b6a90b8c')}
             </span>
             <span className="text-muted-foreground/30">·</span>
             <span className="text-foreground/80 truncate font-mono text-[10.5px]">
-              permission.bash → <span className="text-kortix-red">git push: deny</span>
+              {tI18nComplete.raw('text4fdf72aeaa23')}{' '}
+              <span className="text-kortix-red">{tI18nComplete.raw('textcebdd34e5eba')}</span>
             </span>
           </m.div>
         </m.div>
@@ -289,14 +300,14 @@ export function StepHarness(): ReactNode {
           harness half only, which is the half that carries the claim. ──── */}
       <div className="flex h-full flex-col justify-center gap-2.5 overflow-y-auto p-4 lg:hidden">
         {eyebrow(
-          'With the harness',
+          tI18nComplete.raw('text1e208e20a0eb'),
           <span className="inline-flex items-center gap-1.5 align-middle">
             <OpenCode className="size-3" />
-            powered by OpenCode
+            {tI18nComplete.raw('text474d4126bce4')}
           </span>,
         )}
         <ul className="flex flex-col gap-2">
-          {STEPS.map((step) => (
+          {localizedSteps.map((step) => (
             <li key={step.id} className="flex items-center gap-2.5">
               <StepGlyph outcome={step.outcome} resolved />
               <span
@@ -319,8 +330,8 @@ export function StepHarness(): ReactNode {
           ))}
         </ul>
         <p className="text-muted-foreground/70 border-border border-t pt-2.5 font-mono text-[10.5px]">
-          agents/kortix.md · permission.bash →{' '}
-          <span className="text-kortix-red">git push: deny</span>
+          {tI18nComplete.raw('text82ddfcce3d98')}{' '}
+          <span className="text-kortix-red">{tI18nComplete.raw('textcebdd34e5eba')}</span>
         </p>
       </div>
     </div>

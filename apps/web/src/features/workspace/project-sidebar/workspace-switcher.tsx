@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The project sidebar's one control: which workspace you are in, and everything
  * you can do from here.
@@ -81,6 +82,7 @@ import * as React from 'react';
 import { useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
+  const t = useI18nTranslations('sidebar');
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -138,7 +140,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
-                aria-label="Switch workspace"
+                aria-label={t('workspace.switch')}
                 className={cn(
                   'group/workspace hover:bg-card relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
@@ -183,7 +185,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <ArrowsLeftRightIcon weight="fill" />
-                  Switch Workspace
+                  {t('workspace.switchMenu')}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
                   <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
@@ -201,7 +203,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
                       <Link href="/new" prefetch>
                         <PlusIcon />
-                        Create a workspace…
+                        {t('workspace.create')}
                       </Link>
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
@@ -222,7 +224,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   header `UserMenu` has no such renderer and must navigate. */}
               <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
                 <CogOne />
-                Preferences
+                {t('workspace.settings')}
                 {/* The keycap sits on this row because this row is what the
                     keystroke does — `useSettingsKeyboardShortcut` calls the
                     same `openSettings()`. It is the only row in the app that
@@ -245,7 +247,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
                 <Link href="/download" prefetch>
                   <DownloadSimple />
-                  Download App
+                  {t('workspace.downloadApp')}
                 </Link>
               </DropdownMenuItem>
 
@@ -260,7 +262,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
               <DropdownMenuItem onClick={openLogoutConfirm} size="sm">
                 <LogOut />
-                Log out
+                {t('workspace.logOut')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

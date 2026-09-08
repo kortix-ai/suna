@@ -5,10 +5,12 @@ import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/
 import { useIsMobile } from '@/hooks/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { AppWindowIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
 export function ProjectAppsNavItem() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
@@ -30,7 +32,7 @@ export function ProjectAppsNavItem() {
       <SidebarMenuButton
         asChild
         isActive={pathname?.startsWith(`/projects/${projectId}/apps`) === true}
-        tooltip="Apps"
+        tooltip={tI18nComplete.raw('text89dd748442c1')}
         /* Must match the row contract of THIS group — New session and Customize
            (project-settings-nav `ProjectCustomizeNavItem`). The bottom group
            (Files, Settings) uses a different one with no px-3 and no muted
@@ -46,7 +48,7 @@ export function ProjectAppsNavItem() {
           <span className="shrink-0">
             <AppWindowIcon />
           </span>
-          Apps
+          {tI18nComplete.raw('text89dd748442c1')}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

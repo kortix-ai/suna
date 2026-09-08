@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
@@ -9,20 +10,25 @@ import { useCallback, useMemo } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import {
   capabilityTabHref,
   channelsHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
-import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
-import { ExperimentalTab } from '@/features/workspace/settings/tabs/experimental-tab';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
+import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
+import {
+  ACCOUNT_GRADUATED,
+  isAccountGraduatedSection,
+  parseSettingsTab,
+} from '@/features/workspace/settings/settings-tabs';
+import { ExperimentalTab } from '@/features/workspace/settings/tabs/experimental-tab';
 import { GeneralTab } from '@/features/workspace/settings/tabs/general-tab';
 import { SandboxTab } from '@/features/workspace/settings/tabs/sandbox-tab';
 import { SnapshotsTab } from '@/features/workspace/settings/tabs/snapshots-tab';
@@ -38,11 +44,6 @@ import {
 } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import {
-  ACCOUNT_GRADUATED,
-  isAccountGraduatedSection,
-  parseSettingsTab,
-} from '@/features/workspace/settings/settings-tabs';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 
 import {
@@ -105,6 +106,7 @@ import {
  * for every inactive tab for the same reason.
  */
 export function ProjectSettingsPage({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -135,10 +137,10 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
   const reviewEnabled = project?.experimental?.review_center ?? false;
 
   const sections = useMemo(() => {
-    const all = projectSettingsSections({ reviewEnabled });
+    const all = projectSettingsSections({ reviewEnabled }, tI18nComplete);
     if (!capsResolved) return all;
     return all.filter((s) => isCustomizeSectionVisible(s.gate, projectCan));
-  }, [reviewEnabled, capsResolved, projectCan]);
+  }, [reviewEnabled, capsResolved, projectCan, tI18nComplete]);
 
   const requested = parseProjectSettingsSection(searchParams.get('section'));
   // A section named in the URL but hidden (flag off, or an explicit permission
@@ -194,7 +196,7 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
       >
         {isMobile ? (
           <nav
-            aria-label="Project settings"
+            aria-label={tI18nComplete.raw('textfccd73a69e8b')}
             className="border-border/60 bg-background flex h-auto shrink-0 items-center border-b"
           >
             <FadedScrollArea
@@ -234,8 +236,8 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
              their rails. */
           <aside className="flex min-h-0 flex-col border-r bg-inherit">
             <nav
-              aria-label="Project settings"
-              className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-3 pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              aria-label={tI18nComplete.raw('textfccd73a69e8b')}
+              className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pt-3 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
               <div>
                 {/* ONE unlabeled nav group — the account rail's own
@@ -358,6 +360,7 @@ function ProjectSettingsSectionPane({
   sectionKey: ProjectSettingsSectionKey;
   projectId: string;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   switch (sectionKey) {
     case 'general':
       return <GeneralTab projectId={projectId} />;
@@ -365,8 +368,8 @@ function ProjectSettingsSectionPane({
       return (
         <div className="mx-auto w-full max-w-2xl space-y-8">
           <SettingsSectionHeader
-            title="Git repo"
-            description="The repository this workspace runs from, and who can reach it."
+            title={tI18nComplete.raw('text95ddc9c4dfd3')}
+            description={tI18nComplete.raw('texte0d7209f4c07')}
             className="pb-1"
           />
           <GitView projectId={projectId} />

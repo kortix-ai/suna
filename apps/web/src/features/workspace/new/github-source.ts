@@ -16,8 +16,8 @@
  * and the `default_branch` note on `buildLinkRepositoryPayload`).
  */
 
-import type { NewWorkspaceFormState, RepositorySource } from './new-workspace-form';
 import type { CreateProjectRepoInput, LinkRepositoryInput } from '@kortix/sdk';
+import type { NewWorkspaceFormState, RepositorySource } from './new-workspace-form';
 
 /** True for the two sources that act through a GitHub App installation. */
 export function isGitHubSource(source: RepositorySource): boolean {
@@ -58,8 +58,7 @@ export function withRepositorySource(
     source,
     installationId: null,
     repoFullName: null,
-    defaultBranch:
-      state.source === 'github-import' ? MANAGED_DEFAULT_BRANCH : state.defaultBranch,
+    defaultBranch: state.source === 'github-import' ? MANAGED_DEFAULT_BRANCH : state.defaultBranch,
   };
 }
 

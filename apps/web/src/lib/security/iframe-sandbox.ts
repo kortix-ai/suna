@@ -21,10 +21,7 @@ const TERMINAL_IFRAME_SANDBOX_TOKENS = [
   'allow-popups',
 ] as const;
 
-const PRESENTATION_IFRAME_SANDBOX_TOKENS = [
-  'allow-same-origin',
-  'allow-scripts',
-] as const;
+const PRESENTATION_IFRAME_SANDBOX_TOKENS = ['allow-same-origin', 'allow-scripts'] as const;
 
 const PRESENTATION_WITH_MODALS_IFRAME_SANDBOX_TOKENS = [
   'allow-same-origin',
@@ -44,13 +41,9 @@ export const ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX = joinSandboxTokens(
   ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX_TOKENS,
 );
 
-export const TERMINAL_IFRAME_SANDBOX = joinSandboxTokens(
-  TERMINAL_IFRAME_SANDBOX_TOKENS,
-);
+export const TERMINAL_IFRAME_SANDBOX = joinSandboxTokens(TERMINAL_IFRAME_SANDBOX_TOKENS);
 
-export const PRESENTATION_IFRAME_SANDBOX = joinSandboxTokens(
-  PRESENTATION_IFRAME_SANDBOX_TOKENS,
-);
+export const PRESENTATION_IFRAME_SANDBOX = joinSandboxTokens(PRESENTATION_IFRAME_SANDBOX_TOKENS);
 
 export const PRESENTATION_WITH_MODALS_IFRAME_SANDBOX = joinSandboxTokens(
   PRESENTATION_WITH_MODALS_IFRAME_SANDBOX_TOKENS,

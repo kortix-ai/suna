@@ -1,16 +1,17 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ClockIcon } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import {
   useMaintenanceAdmin,
   useUpdateMaintenanceConfig,
 } from '@/hooks/admin/use-maintenance-admin';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { Skeleton } from '@/components/ui/skeleton';
 
 import { AdminPageShell } from '../_components/admin-page-shell';
 import { AdminPanel, AdminSection } from '../_components/admin-panel';
@@ -32,6 +33,7 @@ const updatedAtFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 export default function AdminUtilsPage() {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const { data: config, isLoading } = useMaintenanceAdmin();
   const updateConfig = useUpdateMaintenanceConfig();
 
@@ -83,7 +85,7 @@ export default function AdminUtilsPage() {
           statusUrl: null,
           affectedServices: [],
         });
-        successToast('Maintenance notifications cleared');
+        successToast(tI18nComplete.raw('text6af04bb05dd8'));
       } else {
         await updateConfig.mutateAsync({
           level: selectedLevel,
@@ -95,11 +97,15 @@ export default function AdminUtilsPage() {
           affectedServices: services.length > 0 ? services : undefined,
         });
         const levelDef = MAINTENANCE_LEVELS.find((l) => l.value === selectedLevel);
-        successToast(`${levelDef?.label ?? 'Maintenance'} activated`);
+        successToast(
+          tI18nComplete('text50b7777e2015', {
+            value0: levelDef?.label ?? tI18nComplete.raw('text17ccfa5b681e'),
+          }),
+        );
       }
       setDialogOpen(false);
     } catch (err) {
-      errorToast(err instanceof Error ? err.message : 'Failed to update maintenance config');
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text54266bfe04ff'));
     }
   };
 
@@ -117,12 +123,12 @@ export default function AdminUtilsPage() {
 
   return (
     <AdminPageShell
-      title="Maintenance"
-      description="System-wide notifications and the full-lockdown switch. A level takes effect the moment it is activated."
+      title={tI18nComplete.raw('text17ccfa5b681e')}
+      description={tI18nComplete.raw('textec3e7d0c8967')}
       action={
         isActive && currentLevelDef ? (
           <Badge variant="outline" size="sm">
-            {currentLevelDef.label} active
+            {currentLevelDef.label} {tI18nComplete.raw('text96879611650f')}
           </Badge>
         ) : undefined
       }
@@ -137,8 +143,8 @@ export default function AdminUtilsPage() {
         <>
           {isActive && config && currentLevelDef && (
             <AdminSection
-              title="Currently active"
-              description="What every user is seeing right now."
+              title={tI18nComplete.raw('text01e3fecd5bfb')}
+              description={tI18nComplete.raw('text8070bf46e184')}
             >
               <AdminPanel className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -165,7 +171,8 @@ export default function AdminUtilsPage() {
                 {config.updatedAt && (
                   <p className="text-muted-foreground flex items-center gap-1 pt-1 text-xs">
                     <ClockIcon className="size-3 shrink-0" />
-                    Updated {updatedAtFormatter.format(new Date(config.updatedAt))}
+                    {tI18nComplete.raw('text3a5ecca188c0')}
+                    {updatedAtFormatter.format(new Date(config.updatedAt))}
                   </p>
                 )}
               </AdminPanel>
@@ -173,8 +180,8 @@ export default function AdminUtilsPage() {
           )}
 
           <AdminSection
-            title="Notification level"
-            description="Pick a level to configure and activate it. Higher levels are louder and, at the top, block access entirely."
+            title={tI18nComplete.raw('textfe9d9df993af')}
+            description={tI18nComplete.raw('texta21a3edd0a56')}
           >
             <div className="space-y-2">
               {MAINTENANCE_LEVELS.map((level) => (

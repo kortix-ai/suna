@@ -3937,7 +3937,7 @@ describe('project session API contract', () => {
     expect(drainClaim.params).toContain(`prompt:${SESSION_ID}:pending-first`);
   });
 
-  test('a pending prompt with data-URL file parts rides the row; an empty one makes no row', async () => {
+  test('a pending prompt with a staged ZIP rides the durable row; an empty one makes no row', async () => {
     const app = createApp();
     const withParts = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -3945,14 +3945,14 @@ describe('project session API contract', () => {
       body: JSON.stringify({
         provider: 'daytona',
         pending_prompt: {
-          text: 'Look at this screenshot.',
+          text: 'Inspect the bundle.',
           parts: [
-            { type: 'text', text: 'Look at this screenshot.' },
+            { type: 'text', text: 'Inspect the bundle.' },
             {
               type: 'file',
-              mime: 'image/png',
-              url: 'data:image/png;base64,AAAA',
-              filename: 'shot.png',
+              mime: 'application/zip',
+              url: 'data:application/zip;base64,UEsDBA==',
+              filename: 'bundle.zip',
             },
           ],
         },
@@ -3961,8 +3961,13 @@ describe('project session API contract', () => {
     expect(withParts.status).toBe(201);
     expect(lifecycleCommandInserts.length).toBe(1);
     expect((lifecycleCommandInserts[0] as any).payload.parts).toEqual([
-      { type: 'text', text: 'Look at this screenshot.' },
-      { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AAAA', filename: 'shot.png' },
+      { type: 'text', text: 'Inspect the bundle.' },
+      {
+        type: 'file',
+        mime: 'application/zip',
+        filename: 'bundle.zip',
+        url: 'data:application/zip;base64,UEsDBA==',
+      },
     ]);
 
     lifecycleCommandInserts.length = 0;
@@ -3979,6 +3984,34 @@ describe('project session API contract', () => {
     });
     expect(blank.status).toBe(201);
     expect(lifecycleCommandInserts.length).toBe(0);
+  });
+
+  test('session create rejects a remote ZIP pending prompt', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: {
+          text: 'Inspect the bundle.',
+          parts: [
+            { type: 'text', text: 'Inspect the bundle.' },
+            {
+              type: 'file',
+              mime: 'application/zip',
+              filename: 'bundle.zip',
+              url: 'https://files.example.test/bundle.zip',
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'pending_prompt: file "bundle.zip" must be uploaded before it can be sent',
+    });
   });
 
   test('allows only user-owned PATCH fields', async () => {

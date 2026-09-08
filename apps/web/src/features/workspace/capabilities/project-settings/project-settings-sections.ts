@@ -9,6 +9,9 @@ import {
 } from '@phosphor-icons/react';
 
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import type { CustomizeSection } from '@/lib/project-actions';
 
 /**
@@ -145,6 +148,13 @@ export interface ProjectSettingsSectionFlags {
   reviewEnabled: boolean;
 }
 
+const PROJECT_SETTINGS_SOURCE = {
+  staticSections: STATIC_SECTIONS,
+  featureFlagsSection: FEATURE_FLAGS_SECTION,
+  upgradesSection: UPGRADES_SECTION,
+  reviewSection: REVIEW_SECTION,
+};
+
 /**
  * The sub-nav, composed from the static sections plus every flag-gated one.
  * Marketplace is gone for good — not a flag, removed from the product. Review
@@ -155,15 +165,19 @@ export interface ProjectSettingsSectionFlags {
  */
 export function projectSettingsSections(
   flags: ProjectSettingsSectionFlags,
+  tI18nComplete?: UiTranslator,
 ): readonly ProjectSettingsSection[] {
-  const sections = [...STATIC_SECTIONS];
+  const source = tI18nComplete
+    ? localizeUiCatalog(PROJECT_SETTINGS_SOURCE, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS)
+    : PROJECT_SETTINGS_SOURCE;
+  const sections = [...source.staticSections];
   // Review is NOT a section here any more: it is a capability tab of its own
   // (`capability-tab-routes.ts`, 2026-09-02). Listing it twice — as a tab and
   // as a Settings section — was the leftover of restoring this page. The flag
   // still gates the tab; `REVIEW_SECTION` stays exported for the legacy
   // `?section=review` redirect target and the pane switch.
   void flags.reviewEnabled;
-  sections.push(FEATURE_FLAGS_SECTION, UPGRADES_SECTION);
+  sections.push(source.featureFlagsSection, source.upgradesSection);
   return sections;
 }
 

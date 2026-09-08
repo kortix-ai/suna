@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Separator } from '@/components/ui/separator';
 import { DOC_BODY, DOC_GRID, DocRail, docRailItem } from '@/features/marketing/doc-rail';
@@ -141,9 +141,9 @@ function Imprint() {
         </dl>
       </Section>
 
-      <Section id="imprint-contact" title="Contact">
+      <Section id="imprint-contact" title={t.raw('i18nComplete.text2b5c3d26721a')}>
         <P>
-          Email{' '}
+          {t.raw('i18nComplete.text969ccbd3cf63')}{' '}
           <a href="mailto:info@kortix.com" className={LINK}>
             {t.raw('appLegalPage.line130JsxTextInfoKortixCom')}
           </a>
@@ -158,7 +158,7 @@ function Imprint() {
         <P>{t.raw('appLegalPage.line139JsxTextKortixAiCorpIsResponsibleForTheContent')}</P>
       </Section>
 
-      <Section id="disclaimer" title="Disclaimer">
+      <Section id="disclaimer" title={t.raw('i18nComplete.text129c678fce59')}>
         <P>{t.raw('appLegalPage.line147JsxTextTheInformationProvidedOnThisWebsiteIsFor')}</P>
       </Section>
     </div>
@@ -170,7 +170,7 @@ function PrivacyPolicy() {
 
   return (
     <div className="space-y-12">
-      <Section id="privacy" title="Privacy">
+      <Section id="privacy" title={t.raw('i18nComplete.text54a57c3147c4')}>
         <P>{t.raw('appLegalPage.line1541JsxTextOurCommitmentToPrivacyAndDataProtectionIs')}</P>
         <P>{t.raw('appLegalPage.line1551JsxTextReferencesToOurServicesAtKortixInThis')}</P>
         <P>
@@ -324,7 +324,7 @@ function LegalContent() {
   };
 
   const tabs: { id: LegalTab; label: string }[] = [
-    { id: 'imprint', label: 'Imprint' },
+    { id: 'imprint', label: t.raw('i18nComplete.textd198ed30d09b') },
     { id: 'privacy', label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy') },
   ];
 
@@ -340,7 +340,7 @@ function LegalContent() {
           <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed text-pretty">
             {t.raw('appLegalPage.line93JsxTextInformationAccordingToLegalRequirements')}
             {' — '}
-            company details, how we handle your data, and the terms that govern Kortix.
+            {t.raw('i18nComplete.text5f7ba416b298')}
           </p>
         </header>
 
@@ -350,7 +350,7 @@ function LegalContent() {
           {/* Same rail component /support uses — horizontal scroller below
               `lg`, sticky vertical list above it. Here the entries switch
               documents; on /support they are in-page anchors. */}
-          <DocRail label="Legal documents">
+          <DocRail label={t.raw('i18nComplete.text02881bb0fe83')}>
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -366,7 +366,7 @@ function LegalContent() {
 
             {/* /legal/terms 308s to the Drive-hosted PDF from middleware. */}
             <Link href="/legal/terms" className={docRailItem()}>
-              Terms of Service
+              {t.raw('i18nComplete.text4afa55bf7aec')}
               <ArrowUpRightIcon className="size-3.5 shrink-0 opacity-60" />
             </Link>
           </DocRail>
@@ -406,6 +406,7 @@ function LegalContent() {
  * `useSearchParams()` resolves.
  */
 export default function LegalPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Suspense
       fallback={
@@ -413,7 +414,7 @@ export default function LegalPage() {
           <div className="mx-auto max-w-6xl px-6">
             <header className="pt-28 pb-12 sm:pt-36 sm:pb-16">
               <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-                Legal Information
+                {tI18nComplete.raw('textcad20810fc2d')}
               </h1>
             </header>
           </div>

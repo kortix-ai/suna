@@ -1,4 +1,5 @@
 'use client';
+
 import { Badge } from '@/components/ui/badge';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { StatusDot } from '@/components/ui/status';
@@ -14,9 +15,11 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -45,7 +48,7 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
     <BasicTool
       icon={<Terminal className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Started terminal',
+        title: tI18nComplete.raw('textea51081eb280'),
         subtitle: title || command,
         // Only when the subtitle IS the command. The card below prints the
         // command under a `$`, so open, the row would say it twice — and the
@@ -77,9 +80,7 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
             {(processStatus || ptyId || pid || workdir) && (
               <InlineMeta>
                 {processStatus && (
-                  <Badge
-                    variant={processStatus === 'running' ? 'success' : 'muted'}
-                  >
+                  <Badge variant={processStatus === 'running' ? 'success' : 'muted'}>
                     {processStatus === 'running' && <StatusDot tone="success" pulse />}
                     {processStatus}
                   </Badge>

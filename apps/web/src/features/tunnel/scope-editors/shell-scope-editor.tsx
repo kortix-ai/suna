@@ -1,6 +1,7 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ interface ShellScopeEditorProps {
 
 export function ShellScopeEditor({ scope, onChange }: ShellScopeEditorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const timeoutOptions = useLocalizedUiCatalog(TIMEOUT_OPTIONS);
   const [commandInput, setCommandInput] = useState('');
 
   const addCommand = (cmd?: string) => {
@@ -147,7 +149,7 @@ export function ShellScopeEditor({ scope, onChange }: ShellScopeEditorProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {TIMEOUT_OPTIONS.map((opt) => (
+            {timeoutOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>

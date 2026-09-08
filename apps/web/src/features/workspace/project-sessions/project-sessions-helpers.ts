@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 import type { ProjectSession } from '@kortix/sdk';
 
 import {
@@ -20,23 +21,27 @@ export function sessionOwnerLabel(session: ProjectSession): string {
   return 'Unknown owner';
 }
 
-export function sessionAccessMeta(session: ProjectSession): {
+export function sessionAccessMeta(
+  session: ProjectSession,
+  tI18nComplete: UiTranslator,
+): {
   label: 'Can open' | 'Metadata only' | 'Runtime unavailable' | 'Deleted';
   canOpen: boolean;
 } {
-  if (session.deleted_at) return { label: 'Deleted', canOpen: false };
-  if (session.can_access === false) return { label: 'Metadata only', canOpen: false };
+  if (session.deleted_at) return { label: tI18nComplete.raw('textb48ff39c2e0f'), canOpen: false };
+  if (session.can_access === false)
+    return { label: tI18nComplete.raw('textdf0453d185c4'), canOpen: false };
   if (session.status === 'stopped' && !session.runtime_status) {
-    return { label: 'Runtime unavailable', canOpen: false };
+    return { label: tI18nComplete.raw('text9ded5a3c7a7d'), canOpen: false };
   }
   if (session.runtime_status === 'archived' || session.runtime_status === 'error') {
-    return { label: 'Runtime unavailable', canOpen: false };
+    return { label: tI18nComplete.raw('text9ded5a3c7a7d'), canOpen: false };
   }
-  return { label: 'Can open', canOpen: true };
+  return { label: tI18nComplete.raw('textda56a3718077'), canOpen: true };
 }
 
-export function sessionSearchText(session: ProjectSession): string {
-  const source = sessionSource(session);
+export function sessionSearchText(session: ProjectSession, tI18nComplete: UiTranslator): string {
+  const source = sessionSource(session, tI18nComplete);
   return [
     getSessionDisplayTitle(session),
     session.session_id,
@@ -71,9 +76,14 @@ export type SessionSearchIndex = ReadonlyMap<string, string>;
  * the single most expensive thing this page does while you type. The caller
  * memoises this against the session list, so typing only re-runs `includes`.
  */
-export function buildSessionSearchIndex(sessions: ProjectSession[]): SessionSearchIndex {
+export function buildSessionSearchIndex(
+  sessions: ProjectSession[],
+  tI18nComplete: UiTranslator,
+): SessionSearchIndex {
   const index = new Map<string, string>();
-  for (const session of sessions) index.set(session.session_id, sessionSearchText(session));
+  for (const session of sessions) {
+    index.set(session.session_id, sessionSearchText(session, tI18nComplete));
+  }
   return index;
 }
 
@@ -92,6 +102,7 @@ export function filterProjectSessions(
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
   query: string,
+  tI18nComplete: UiTranslator,
   /** Omit and the haystack is computed inline, which is fine for one-off calls
    *  and for tests; the view always passes its memoised index. */
   searchIndex?: SessionSearchIndex,
@@ -99,9 +110,10 @@ export function filterProjectSessions(
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const matches = sessions.filter((session) => {
     if (!matchesStatusFilters(session, statusFilters)) return false;
-    if (!matchesSourceFilters(session, sourceFilters)) return false;
+    if (!matchesSourceFilters(session, sourceFilters, tI18nComplete)) return false;
     if (!normalizedQuery) return true;
-    const haystack = searchIndex?.get(session.session_id) ?? sessionSearchText(session);
+    const haystack =
+      searchIndex?.get(session.session_id) ?? sessionSearchText(session, tI18nComplete);
     return haystack.includes(normalizedQuery);
   });
   return sortSessionsByLastActivity(matches);
@@ -130,9 +142,10 @@ const OWNER_TYPE_LABELS: Record<string, string> = {
 export function sessionDetailFields(
   session: ProjectSession,
   formatted: { created: string; updated: string },
+  tI18nComplete: UiTranslator,
 ): SessionDetailField[] {
-  const source = sessionSource(session);
-  const access = sessionAccessMeta(session);
+  const source = sessionSource(session, tI18nComplete);
+  const access = sessionAccessMeta(session, tI18nComplete);
   const fields: SessionDetailField[] = [];
 
   const push = (label: string, value: string | null | undefined, mono?: boolean) => {
@@ -161,7 +174,7 @@ export function sessionDetailFields(
   if (conversationCount > 0) {
     const archived = (session.opencode_sessions ?? []).filter((item) => item.archived_at).length;
     fields.push({
-      label: 'Conversations',
+      label: tI18nComplete.raw('text1d432f58690c'),
       value: `${conversationCount}${archived > 0 ? ` · ${archived} archived` : ''}`,
     });
   }
@@ -222,6 +235,7 @@ export interface BulkDeleteSummary {
  */
 export function summarizeBulkDelete(
   results: Array<{ sessionId: string; ok: boolean }>,
+  tI18nComplete: UiTranslator,
 ): BulkDeleteSummary {
   const succeeded: string[] = [];
   const failed: string[] = [];
@@ -234,20 +248,29 @@ export function summarizeBulkDelete(
     return {
       succeeded,
       failed,
-      message: `Deleted ${total} ${total === 1 ? 'session' : 'sessions'}`,
+      message: tI18nComplete('texte4cfda0cefb3', {
+        value0: total,
+        value1: total === 1 ? 'session' : 'sessions',
+      }),
     };
   }
   if (succeeded.length === 0) {
     return {
       succeeded,
       failed,
-      message: `Could not delete ${failed.length === 1 ? 'the session' : `${failed.length} sessions`}`,
+      message: tI18nComplete('text2fcbf32eccad', {
+        value0: failed.length === 1 ? 'the session' : `${failed.length} sessions`,
+      }),
     };
   }
   return {
     succeeded,
     failed,
-    message: `Deleted ${succeeded.length} of ${total}. ${failed.length} failed.`,
+    message: tI18nComplete('text170c6185473e', {
+      value0: succeeded.length,
+      value1: total,
+      value2: failed.length,
+    }),
   };
 }
 

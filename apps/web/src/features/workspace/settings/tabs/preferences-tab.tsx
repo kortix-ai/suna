@@ -13,9 +13,10 @@
  * selection for the whole app"), and the one a new person is most likely to
  * open Preferences for.
  *
- * `PreferencesTabView` is the pure, props-only half — every prop is optional
- * with a safe default, so it renders under `renderToStaticMarkup` with no
- * Zustand store or auth context (see `preferences-tab.test.tsx`).
+ * `PreferencesTabView` is the pure, props-only half. Its localized copy is a
+ * required prop, so the view cannot render user-facing fallback text from the
+ * source file. It renders under `renderToStaticMarkup` with no Zustand store
+ * or auth context (see `preferences-tab.test.tsx`).
  * `PreferencesTab` is the container: every hook only runs once this component
  * actually mounts, which `SettingsTabPane` guarantees happens only while this
  * tab is the active one.
@@ -31,57 +32,79 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { useLanguage } from '@/hooks/use-language';
-import { locales, type Locale } from '@/i18n/config';
+import { localeNames, locales, type Locale } from '@/i18n/config';
 import { useUserPreferencesStore, type TabSwitchModifier } from '@/stores/user-preferences-store';
+import { useTranslations } from '@/i18n/use-translations';
 import { SETTINGS_SHORTCUT_KEY } from '../settings-shortcut';
-import { SettingsTabHeader } from '../settings-tab-header';
 
-const LANGUAGE_NAMES: Record<Locale, string> = {
-  en: 'English',
-  de: 'Deutsch',
-  it: 'Italiano',
-  zh: '中文',
-  ja: '日本語',
-  pt: 'Português',
-  fr: 'Français',
-  es: 'Español',
-};
+export interface PreferencesCopy {
+  title: string;
+  description: string;
+  languageTitle: string;
+  languageDescription: string;
+  keyboardTitle: string;
+  keyboardDescription: string;
+  modifierKey: string;
+  shortcuts: {
+    newTab: string;
+    closeActiveTab: string;
+    reopenClosedTab: string;
+    nextTab: string;
+    previousTab: string;
+    nextTabAlt: string;
+    previousTabAlt: string;
+    switchToTabRange: string;
+    switchToLastTab: string;
+    newSession: string;
+    commandPalette: string;
+    switchWorkspace: string;
+    settings: string;
+    toggleLeftSidebar: string;
+    toggleRightSidebar: string;
+    toggleSessionActionPanel: string;
+  };
+}
 
 const MODIFIER_OPTIONS: { value: TabSwitchModifier; label: string }[] = [
   { value: 'meta', label: 'Cmd' },
   { value: 'ctrl', label: 'Ctrl' },
 ];
 
-function shortcutList(modLabel: string): { label: string; keys: string }[] {
+function shortcutList(
+  modLabel: string,
+  labels: PreferencesCopy['shortcuts'],
+): { label: string; keys: string }[] {
   return [
-    { label: 'New tab', keys: `${modLabel}+T` },
-    { label: 'Close active tab', keys: 'Ctrl+W' },
-    { label: 'Reopen closed tab', keys: `${modLabel}+Shift+T` },
-    { label: 'Next tab', keys: `${modLabel}+Shift+]` },
-    { label: 'Previous tab', keys: `${modLabel}+Shift+[` },
-    { label: 'Next tab (alt)', keys: `${modLabel}+Alt+→` },
-    { label: 'Previous tab (alt)', keys: `${modLabel}+Alt+←` },
-    { label: 'Switch to tab 1-8', keys: `${modLabel}+1 ... ${modLabel}+8` },
-    { label: 'Switch to last tab', keys: `${modLabel}+9` },
-    { label: 'New session', keys: 'Ctrl+J' },
-    { label: 'Command palette', keys: 'Ctrl+K' },
-    { label: 'Switch workspace', keys: 'Ctrl+O' },
+    { label: labels.newTab, keys: `${modLabel}+T` },
+    { label: labels.closeActiveTab, keys: 'Ctrl+W' },
+    { label: labels.reopenClosedTab, keys: `${modLabel}+Shift+T` },
+    { label: labels.nextTab, keys: `${modLabel}+Shift+]` },
+    { label: labels.previousTab, keys: `${modLabel}+Shift+[` },
+    { label: labels.nextTabAlt, keys: `${modLabel}+Alt+→` },
+    { label: labels.previousTabAlt, keys: `${modLabel}+Alt+←` },
+    { label: labels.switchToTabRange, keys: `${modLabel}+1 ... ${modLabel}+8` },
+    { label: labels.switchToLastTab, keys: `${modLabel}+9` },
+    { label: labels.newSession, keys: 'Ctrl+J' },
+    { label: labels.commandPalette, keys: 'Ctrl+K' },
+    { label: labels.switchWorkspace, keys: 'Ctrl+O' },
     // The one shortcut that opens THIS panel, so a person reading the list is
     // holding proof it works. `SETTINGS_SHORTCUT_KEY` rather than a literal
     // comma: the handler and the row that prints it read the same constant
     // (`settings/settings-shortcut.ts`), so the advertised key cannot drift
     // from the handled one. Either modifier works — the label shows the one
     // the reader picked above.
-    { label: 'Settings', keys: `${modLabel}+${SETTINGS_SHORTCUT_KEY}` },
-    { label: 'Toggle left sidebar', keys: 'Ctrl+B' },
-    { label: 'Toggle right sidebar', keys: 'Ctrl+Shift+B' },
-    { label: 'Toggle session action panel', keys: `${modLabel}+I` },
+    { label: labels.settings, keys: `${modLabel}+${SETTINGS_SHORTCUT_KEY}` },
+    { label: labels.toggleLeftSidebar, keys: 'Ctrl+B' },
+    { label: labels.toggleRightSidebar, keys: 'Ctrl+Shift+B' },
+    { label: labels.toggleSessionActionPanel, keys: `${modLabel}+I` },
   ];
 }
 
 export interface PreferencesTabViewProps {
+  copy: PreferencesCopy;
   // Language
   locale?: Locale;
   availableLocales?: readonly Locale[];
@@ -95,6 +118,7 @@ export interface PreferencesTabViewProps {
 
 /** Presentational only — no hooks, no store read. */
 export function PreferencesTabView({
+  copy,
   locale = 'en',
   availableLocales = locales,
   onLocaleChange = () => {},
@@ -102,26 +126,26 @@ export function PreferencesTabView({
   onKeyboardModifierChange = () => {},
   modifierLabel = 'Ctrl',
 }: PreferencesTabViewProps) {
-  const shortcuts = shortcutList(modifierLabel);
+  const shortcuts = shortcutList(modifierLabel, copy.shortcuts);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
-      <SettingsTabHeader tab="preferences" />
+      <SettingsSectionHeader title={copy.title} description={copy.description} className="pb-1" />
 
       {/* Language */}
       <section className="flex flex-col items-start justify-between gap-4 md:flex-row md:gap-10">
         <SettingsSubsectionHeader
-          title="Language"
-          description="The language Kortix displays, everywhere in the app."
+          title={copy.languageTitle}
+          description={copy.languageDescription}
         />
         <Select value={locale} onValueChange={(value) => onLocaleChange(value as Locale)}>
-          <SelectTrigger id="preferences-language" aria-label="Language" className="w-48">
-            <SelectValue>{LANGUAGE_NAMES[locale] ?? locale}</SelectValue>
+          <SelectTrigger id="preferences-language" aria-label={copy.languageTitle} className="w-48">
+            <SelectValue>{localeNames[locale] ?? locale}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {availableLocales.map((l) => (
               <SelectItem key={l} value={l}>
-                {LANGUAGE_NAMES[l]}
+                {localeNames[l]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -133,11 +157,11 @@ export function PreferencesTabView({
       {/* Keyboard shortcuts */}
       <section className="space-y-3">
         <SettingsSubsectionHeader
-          title="Keyboard shortcuts"
-          description="The modifier key used for tab switching, and every shortcut in the app."
+          title={copy.keyboardTitle}
+          description={copy.keyboardDescription}
         />
         <div className="space-y-2">
-          <Label className="text-xs">Modifier key</Label>
+          <Label className="text-xs">{copy.modifierKey}</Label>
           <RadioGroup
             value={keyboardModifier}
             onValueChange={(value) => onKeyboardModifierChange(value as TabSwitchModifier)}
@@ -173,6 +197,7 @@ export function PreferencesTabView({
  *  renders `PreferencesTabView` with real data + handlers. Only ever mounted
  *  while this tab is active. */
 export function PreferencesTab() {
+  const t = useTranslations('settings.preferences');
   const keyboardModifier = useUserPreferencesStore((s) => s.preferences.keyboard.tabSwitchModifier);
   const setKeyboardPreferences = useUserPreferencesStore((s) => s.setKeyboardPreferences);
   const modifierLabel = useUserPreferencesStore((s) => s.getModifierLabel());
@@ -182,8 +207,37 @@ export function PreferencesTab() {
   // while this tab is active.
   const { locale, setLanguage, availableLanguages } = useLanguage();
 
+  const copy: PreferencesCopy = {
+    title: t('title'),
+    description: t('description'),
+    languageTitle: t('languageTitle'),
+    languageDescription: t('languageDescription'),
+    keyboardTitle: t('keyboardTitle'),
+    keyboardDescription: t('keyboardDescription'),
+    modifierKey: t('modifierKey'),
+    shortcuts: {
+      newTab: t('shortcuts.newTab'),
+      closeActiveTab: t('shortcuts.closeActiveTab'),
+      reopenClosedTab: t('shortcuts.reopenClosedTab'),
+      nextTab: t('shortcuts.nextTab'),
+      previousTab: t('shortcuts.previousTab'),
+      nextTabAlt: t('shortcuts.nextTabAlt'),
+      previousTabAlt: t('shortcuts.previousTabAlt'),
+      switchToTabRange: t('shortcuts.switchToTabRange'),
+      switchToLastTab: t('shortcuts.switchToLastTab'),
+      newSession: t('shortcuts.newSession'),
+      commandPalette: t('shortcuts.commandPalette'),
+      switchWorkspace: t('shortcuts.switchWorkspace'),
+      settings: t('shortcuts.settings'),
+      toggleLeftSidebar: t('shortcuts.toggleLeftSidebar'),
+      toggleRightSidebar: t('shortcuts.toggleRightSidebar'),
+      toggleSessionActionPanel: t('shortcuts.toggleSessionActionPanel'),
+    },
+  };
+
   return (
     <PreferencesTabView
+      copy={copy}
       locale={locale}
       availableLocales={availableLanguages}
       onLocaleChange={(next) => void setLanguage(next)}

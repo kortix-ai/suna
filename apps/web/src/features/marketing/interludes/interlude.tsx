@@ -45,12 +45,7 @@ export function Interlude({
     <section id={id} className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
       <div className="grid items-center gap-x-16 gap-y-10 lg:grid-cols-12">
         {/* prose */}
-        <div
-          className={cn(
-            'min-w-0 lg:col-span-5',
-            flip ? 'lg:order-2' : 'lg:order-1',
-          )}
-        >
+        <div className={cn('min-w-0 lg:col-span-5', flip ? 'lg:order-2' : 'lg:order-1')}>
           <SectionHeader eyebrow={eyebrow} title={title} />
           <Reveal>
             <div className="mt-5 space-y-4">
@@ -67,12 +62,7 @@ export function Interlude({
         </div>
 
         {/* graphic */}
-        <Reveal
-          className={cn(
-            'min-w-0 lg:col-span-7',
-            flip ? 'lg:order-1' : 'lg:order-2',
-          )}
-        >
+        <Reveal className={cn('min-w-0 lg:col-span-7', flip ? 'lg:order-1' : 'lg:order-2')}>
           {panel}
         </Reveal>
       </div>

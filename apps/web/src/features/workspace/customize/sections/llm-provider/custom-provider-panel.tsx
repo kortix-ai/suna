@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `CustomProviderPanel` — the Custom tab's whole body.
  *
@@ -70,6 +71,7 @@ export function customProviderIdsFromSecrets(names: string[]): string[] {
 
 /** One added custom provider — same row grid as the provider list. */
 function CustomProviderRow({ id }: { id: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] sm:items-center sm:gap-4">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -79,14 +81,15 @@ function CustomProviderRow({ id }: { id: string }) {
       <div className="flex min-w-0 items-center gap-2">
         <span
           role="status"
-          title="Key saved"
-          aria-label="Key saved"
+          title={tI18nComplete.raw('texta45a97cbb780')}
+          aria-label={tI18nComplete.raw('texta45a97cbb780')}
           className="flex shrink-0 items-center"
         >
           <Check className="text-kortix-green size-3.5 shrink-0" weight="fill" />
         </span>
         <span className="text-muted-foreground truncate text-xs">
-          Key saved · declared in <span className="font-mono">.opencode/opencode.jsonc</span>
+          {tI18nComplete.raw('textcef709637aa5')}{' '}
+          <span className="font-mono">{tI18nComplete.raw('text235f858bb706')}</span>
         </span>
       </div>
     </div>
@@ -131,12 +134,13 @@ export function CustomProviderPanel({
    *  list, where the new provider now has a row. */
   onDone?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!canWrite) {
     return (
       <div className="flex min-h-[200px] flex-col items-center justify-center gap-1 px-6 text-center">
-        <p className="text-foreground text-sm">Read-only access</p>
+        <p className="text-foreground text-sm">{tI18nComplete.raw('textb4214ac48923')}</p>
         <p className="text-muted-foreground max-w-xs text-xs text-pretty">
-          Ask an owner of this project to connect a custom provider.
+          {tI18nComplete.raw('text09f1d00ed790')}
         </p>
       </div>
     );
@@ -147,8 +151,7 @@ export function CustomProviderPanel({
       {/* The one sentence on the screen, in the same slot the API keys tab puts
           its own — this tab is for the endpoint the catalog does not carry. */}
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
-        Point this project at any OpenAI-compatible endpoint — self-hosted, on-prem, or a provider
-        that isn't in the catalog. Everything the catalog does carry belongs on the Providers tab.
+        {tI18nComplete.raw('text57c1ac648f02')}
       </p>
 
       <AddedCustomProviders projectId={projectId} />

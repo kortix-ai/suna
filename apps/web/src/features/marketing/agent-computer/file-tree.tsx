@@ -1,8 +1,9 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { files } from './content';
+import { files as filesSource, getLocalizedAgentComputerContent } from './content';
 
-type Entry = (typeof files.tree)[number];
+type Entry = (typeof filesSource.tree)[number];
 
 /**
  * `blank`  — an ancestor that has no siblings left below it: no rail.
@@ -19,7 +20,10 @@ function Rail({ kind }: { kind: RailKind }): ReactNode {
   return (
     <span aria-hidden className="relative w-6 shrink-0">
       <span
-        className={cn('bg-border absolute top-0 left-0 w-px', kind === 'elbow' ? 'h-1/2' : 'bottom-0')}
+        className={cn(
+          'bg-border absolute top-0 left-0 w-px',
+          kind === 'elbow' ? 'h-1/2' : 'bottom-0',
+        )}
       />
       {kind === 'tee' || kind === 'elbow' ? (
         <span className="bg-border absolute top-1/2 left-0 h-px w-3" />
@@ -62,6 +66,8 @@ function railsFor(entries: readonly Entry[], i: number): RailKind[] {
  * be something you could have produced with `tree`.
  */
 export function FileTree(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { files } = getLocalizedAgentComputerContent(tI18nComplete);
   return (
     <div className="border-border bg-card h-full overflow-x-auto rounded-sm border p-5 sm:p-7">
       {/* One grid for every row, so the note column lines up across depths. */}

@@ -1,9 +1,9 @@
 'use client';
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 /**
  * Per-project open-session tabs.

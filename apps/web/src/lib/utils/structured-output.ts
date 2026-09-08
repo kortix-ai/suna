@@ -49,8 +49,7 @@ export function normalizeToolOutput(raw: string): string {
  */
 export function hasStructuredContent(output: string): boolean {
   return (
-    /warning:/i.test(output) && /Traceback|Installed|Using|Creating|Error:/i.test(output)
-  ) || (
+    (/warning:/i.test(output) && /Traceback|Installed|Using|Creating|Error:/i.test(output)) ||
     /Traceback \(most recent call last\):/i.test(output)
   );
 }
@@ -86,8 +85,8 @@ export function parseStructuredOutput(raw: string): OutputSection[] {
         // Continuation: indented or wrapped sentence that doesn't start a new section
         if (
           nextTrimmed &&
-          !(/^warning:/i.test(nextTrimmed)) &&
-          !(/^(Traceback|Installed|Using|Creating|Error:|File ")/i.test(nextTrimmed)) &&
+          !/^warning:/i.test(nextTrimmed) &&
+          !/^(Traceback|Installed|Using|Creating|Error:|File ")/i.test(nextTrimmed) &&
           (next.startsWith('  ') || next.startsWith('\t') || /^[a-z]/.test(nextTrimmed))
         ) {
           warningText += ' ' + nextTrimmed;
@@ -118,7 +117,11 @@ export function parseStructuredOutput(raw: string): OutputSection[] {
           tlTrimmed !== 'Traceback (most recent call last):'
         ) {
           // This is the final error line — also check for multi-line error messages
-          while (i < lines.length && lines[i] && (lines[i].startsWith(' ') || lines[i].startsWith('\t'))) {
+          while (
+            i < lines.length &&
+            lines[i] &&
+            (lines[i].startsWith(' ') || lines[i].startsWith('\t'))
+          ) {
             traceLines.push(lines[i]);
             i++;
           }

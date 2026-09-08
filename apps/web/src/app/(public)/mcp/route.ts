@@ -1,4 +1,5 @@
 import { handlePublicContentMcp } from '@/lib/mcp/public-content-server';
+import { getTranslations } from '@/i18n/get-translations';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,12 +13,17 @@ const CORS_HEADERS = {
 } as const;
 
 export async function POST(request: Request) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   let payload: unknown;
   try {
     payload = await request.json();
   } catch {
     return Response.json(
-      { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } },
+      {
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32700, message: tI18nComplete.raw('text65837ce7a4be') },
+      },
       { status: 400, headers: CORS_HEADERS },
     );
   }
@@ -27,7 +33,7 @@ export async function POST(request: Request) {
       {
         jsonrpc: '2.0',
         id: null,
-        error: { code: -32600, message: 'JSON-RPC batches are not supported' },
+        error: { code: -32600, message: tI18nComplete.raw('textb2c0cab20dc3') },
       },
       { status: 400, headers: CORS_HEADERS },
     );

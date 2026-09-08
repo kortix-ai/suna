@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   ALL_AGENTS,
   accessDialogCopy,
@@ -183,21 +184,31 @@ describe('accessDialogCopy', () => {
   const grant: AccessDialogMode = { kind: 'grant' };
 
   test('every grant scope shares the title and only swaps the sentence', () => {
-    expect(accessDialogCopy(ACCOUNT, grant).title).toBe('Grant access');
-    expect(accessDialogCopy(PROJECT, grant).title).toBe('Grant access');
-    expect(accessDialogCopy(GROUP, grant).title).toBe('Grant access');
-    expect(accessDialogCopy(ACCOUNT, grant).description).toContain('on this account.');
-    expect(accessDialogCopy(PROJECT, grant).description).toContain('on this project.');
-    expect(accessDialogCopy(GROUP, grant).description).toBe(
+    expect(accessDialogCopy(ACCOUNT, grant, undefined, testUiTranslator).title).toBe(
+      'Grant access',
+    );
+    expect(accessDialogCopy(PROJECT, grant, undefined, testUiTranslator).title).toBe(
+      'Grant access',
+    );
+    expect(accessDialogCopy(GROUP, grant, undefined, testUiTranslator).title).toBe('Grant access');
+    expect(accessDialogCopy(ACCOUNT, grant, undefined, testUiTranslator).description).toContain(
+      'on this account.',
+    );
+    expect(accessDialogCopy(PROJECT, grant, undefined, testUiTranslator).description).toContain(
+      'on this project.',
+    );
+    expect(accessDialogCopy(GROUP, grant, undefined, testUiTranslator).description).toBe(
       'Pick account members to add to this group.',
     );
   });
 
   test('the grant submit label carries the selected count', () => {
-    expect(accessDialogCopy(PROJECT, grant, { selectedCount: 0 }).submitLabel).toBe('Grant access');
-    expect(accessDialogCopy(PROJECT, grant, { selectedCount: 3 }).submitLabel).toBe(
-      'Grant access (3)',
-    );
+    expect(
+      accessDialogCopy(PROJECT, grant, { selectedCount: 0 }, testUiTranslator).submitLabel,
+    ).toBe('Grant access');
+    expect(
+      accessDialogCopy(PROJECT, grant, { selectedCount: 3 }, testUiTranslator).submitLabel,
+    ).toBe('Grant access (3)');
   });
 
   test('edit names the principal and the scope', () => {
@@ -206,7 +217,7 @@ describe('accessDialogCopy', () => {
       principal: { type: 'member', id: 'u_1', label: 'alice@corp.com' },
       current: { role: builtinRole('member') },
     };
-    expect(accessDialogCopy(PROJECT, mode)).toEqual({
+    expect(accessDialogCopy(PROJECT, mode, undefined, testUiTranslator)).toEqual({
       title: 'Edit access',
       description: 'Change what alice@corp.com can do in Atlas.',
       submitLabel: 'Save',
@@ -219,10 +230,12 @@ describe('accessDialogCopy', () => {
       principal: { type: 'member', id: 'u_1', label: 'alice@corp.com' },
       current: { role: builtinRole('member') },
     };
-    expect(accessDialogCopy(ACCOUNT, mode).description).toContain('in this account.');
-    expect(accessDialogCopy(ACCOUNT, mode, { accountName: 'Kortix' }).description).toContain(
-      'in Kortix.',
+    expect(accessDialogCopy(ACCOUNT, mode, undefined, testUiTranslator).description).toContain(
+      'in this account.',
     );
+    expect(
+      accessDialogCopy(ACCOUNT, mode, { accountName: 'Kortix' }, testUiTranslator).description,
+    ).toContain('in Kortix.');
   });
 
   test('attach reads as a grant and submits as Attach', () => {
@@ -230,7 +243,7 @@ describe('accessDialogCopy', () => {
       kind: 'attach',
       principal: { type: 'group', id: 'g_1', label: 'Engineering' },
     };
-    expect(accessDialogCopy(GROUP, mode)).toEqual({
+    expect(accessDialogCopy(GROUP, mode, undefined, testUiTranslator)).toEqual({
       title: 'Grant access',
       description: 'Attach Engineering to a project — every member inherits the role.',
       submitLabel: 'Attach',
@@ -249,13 +262,13 @@ describe('accessDialogCopy', () => {
         { type: 'member', id: 'u_2', label: 'b' },
       ],
     };
-    expect(accessDialogCopy(ACCOUNT, one, { accountName: 'Kortix' }).description).toBe(
-      'Change what 1 person can do in Kortix.',
-    );
-    expect(accessDialogCopy(ACCOUNT, many, { accountName: 'Kortix' }).description).toBe(
-      'Change what 2 people can do in Kortix.',
-    );
-    expect(accessDialogCopy(ACCOUNT, many).submitLabel).toBe('Save');
+    expect(
+      accessDialogCopy(ACCOUNT, one, { accountName: 'Kortix' }, testUiTranslator).description,
+    ).toBe('Change what 1 person can do in Kortix.');
+    expect(
+      accessDialogCopy(ACCOUNT, many, { accountName: 'Kortix' }, testUiTranslator).description,
+    ).toBe('Change what 2 people can do in Kortix.');
+    expect(accessDialogCopy(ACCOUNT, many, undefined, testUiTranslator).submitLabel).toBe('Save');
   });
 
   test('bulk-group is its own title and submit label', () => {
@@ -270,13 +283,15 @@ describe('accessDialogCopy', () => {
         { type: 'member', id: 'u_2', label: 'b' },
       ],
     };
-    expect(accessDialogCopy(ACCOUNT, many)).toEqual({
+    expect(accessDialogCopy(ACCOUNT, many, undefined, testUiTranslator)).toEqual({
       title: 'Add to group',
       description: 'Pick the group these 2 people join.',
       submitLabel: 'Add to group',
     });
     // One person still reads as English.
-    expect(accessDialogCopy(ACCOUNT, one).description).toBe('Pick the group this person joins.');
+    expect(accessDialogCopy(ACCOUNT, one, undefined, testUiTranslator).description).toBe(
+      'Pick the group this person joins.',
+    );
   });
 });
 

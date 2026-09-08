@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/marketing/button';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
-import { useEffect, useState } from 'react';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useEffect, useState } from 'react';
 
 /** The standard marketing CTA pair, reused inside blog posts. */
 export function BlogCta() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user } = useAuth();
   const openDemo = useRequestDemo();
 
@@ -35,12 +37,12 @@ export function BlogCta() {
     <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
       <Button size="lg" asChild>
         <HoverPrefetchLink href={startHref} prefetch onClick={trackCtaSignup}>
-          Get started
+          {tI18nComplete.raw('text61e8d44ad423')}
           <HiArrowRight className="size-4" />
         </HoverPrefetchLink>
       </Button>
       <Button size="lg" variant="secondary" onClick={() => openDemo()}>
-        Request demo
+        {tI18nComplete.raw('text915b64b69378')}
       </Button>
     </div>
   );

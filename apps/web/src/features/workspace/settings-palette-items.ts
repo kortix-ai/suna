@@ -33,7 +33,7 @@
 
 import { GearSixIcon } from '@phosphor-icons/react';
 
-import { railGroups } from '@/features/workspace/settings/rail';
+import { railGroups, type SettingsRailTranslator } from '@/features/workspace/settings/rail';
 import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import type { RailItem } from '@/features/workspace/settings/type';
 
@@ -233,9 +233,12 @@ function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem 
  * retired — so it is a derived row from `railGroups()` like every other tab
  * in this file, with no hand-written registry entry anywhere.
  */
-export function settingsPaletteGroups(params: SettingsPaletteParams): SettingsPaletteGroup[] {
+export function settingsPaletteGroups(
+  params: SettingsPaletteParams,
+  ...args: [] | [SettingsRailTranslator]
+): SettingsPaletteGroup[] {
   const groups: SettingsPaletteGroup[] = [];
-  for (const group of railGroups()) {
+  for (const group of railGroups(...args)) {
     const items: SettingsPaletteItem[] = [];
     for (const item of group.items) {
       if (isSettingsTabOfferable(item.tab, params)) items.push(toPaletteItem(item, group.label));

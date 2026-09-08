@@ -76,7 +76,10 @@ describe('compactionTurnInfo', () => {
     expect(
       compactionTurnInfo(
         turn([
-          { info: { summary: true, time: { completed: 1 } }, parts: [{ type: 'text', text: '  \n' }] },
+          {
+            info: { summary: true, time: { completed: 1 } },
+            parts: [{ type: 'text', text: '  \n' }],
+          },
         ]),
       ),
     ).toEqual({ isCompaction: true, hasContent: false, inFlight: false, error: null });

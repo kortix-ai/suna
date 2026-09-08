@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * SqliteRenderer — Full-featured SQLite database viewer & editor.
@@ -145,7 +145,7 @@ function getTypeIcon(sqlType: string) {
     t.includes('NUMERIC') ||
     t.includes('DECIMAL')
   )
-    return <Hash className="h-3 w-3 text-cyan-500/70" />;
+    return <Hash className="text-kortix-blue h-3 w-3" />;
   if (
     t.includes('TEXT') ||
     t.includes('CHAR') ||
@@ -153,12 +153,12 @@ function getTypeIcon(sqlType: string) {
     t.includes('VARCHAR') ||
     t.includes('STRING')
   )
-    return <Type className="h-3 w-3 text-emerald-500/70" />;
-  if (t.includes('BOOL')) return <ToggleLeft className="h-3 w-3 text-yellow-500/70" />;
+    return <Type className="text-kortix-green h-3 w-3" />;
+  if (t.includes('BOOL')) return <ToggleLeft className="text-kortix-yellow h-3 w-3" />;
   if (t.includes('DATE') || t.includes('TIME') || t.includes('TIMESTAMP'))
-    return <Calendar className="h-3 w-3 text-purple-500/70" />;
+    return <Calendar className="text-kortix-purple h-3 w-3" />;
   if (t.includes('BLOB') || t.includes('BINARY'))
-    return <Database className="h-3 w-3 text-orange-500/70" />;
+    return <Database className="text-kortix-orange h-3 w-3" />;
   return <FileQuestion className="text-muted-foreground/50 h-3 w-3" />;
 }
 
@@ -481,12 +481,16 @@ export function SqliteRenderer({
         setHasUnsavedChanges(true);
         refreshTableMeta();
       } catch (e: unknown) {
-        errorToast(`Update failed: ${(e as Error)?.message || 'Unknown error'}`);
+        errorToast(
+          tHardcodedUi('i18nComplete.text7e9c22af3df2', {
+            value0: (e as Error)?.message || tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+          }),
+        );
         // Revert the cell
         event.node.setDataValue(colName, oldValue);
       }
     },
-    [selectedTable, selectedTableInfo, refreshTableMeta, readOnly],
+    [readOnly, selectedTable, selectedTableInfo, refreshTableMeta, tHardcodedUi],
   );
 
   // ── Cell double-click → expand long values ────────────────────────────
@@ -542,9 +546,13 @@ export function SqliteRenderer({
       setDataVersion((v) => v + 1);
       refreshTableMeta();
       setExpandedCell(null);
-      successToast('Cell updated');
+      successToast(tHardcodedUi.raw('i18nComplete.text8955719a3a89'));
     } catch (e: unknown) {
-      errorToast(`Update failed: ${(e as Error)?.message || 'Unknown error'}`);
+      errorToast(
+        tHardcodedUi('i18nComplete.text7e9c22af3df2', {
+          value0: (e as Error)?.message || tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+        }),
+      );
     }
   }, [
     selectedTable,
@@ -553,6 +561,7 @@ export function SqliteRenderer({
     expandedEditValue,
     refreshTableMeta,
     readOnly,
+    tHardcodedUi,
   ]);
 
   // ── Row selection config ──────────────────────────────────────────────
@@ -599,11 +608,15 @@ export function SqliteRenderer({
       setHasUnsavedChanges(true);
       setDataVersion((v) => v + 1);
       refreshTableMeta();
-      successToast('Row added');
+      successToast(tHardcodedUi.raw('i18nComplete.text1d21d2b18753'));
     } catch (e: unknown) {
-      errorToast(`Insert failed: ${(e as Error)?.message || 'Unknown error'}`);
+      errorToast(
+        tHardcodedUi('i18nComplete.text62e404cb7e2b', {
+          value0: (e as Error)?.message || tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+        }),
+      );
     }
-  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
+  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly, tHardcodedUi]);
 
   // ── Delete selected rows ──────────────────────────────────────────────
   const handleDeleteSelected = useCallback(() => {
@@ -613,7 +626,7 @@ export function SqliteRenderer({
 
     const selectedRows = api.getSelectedRows();
     if (selectedRows.length === 0) {
-      errorToast('No rows selected — click a row first');
+      errorToast(tHardcodedUi.raw('i18nComplete.text1e7d701f8277'));
       return;
     }
 
@@ -638,9 +651,9 @@ export function SqliteRenderer({
       setHasUnsavedChanges(true);
       setDataVersion((v) => v + 1);
       refreshTableMeta();
-      successToast(`${deleted} row${deleted !== 1 ? 's' : ''} deleted`);
+      successToast(tHardcodedUi('i18nComplete.text00e99be56ba9', { count: deleted }));
     }
-  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
+  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly, tHardcodedUi]);
 
   // ── Save database back to file ────────────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -656,13 +669,17 @@ export function SqliteRenderer({
       const { uploadFile } = await import('@/features/files/api/runtime-files');
       await uploadFile(file, parentPath || undefined);
       setHasUnsavedChanges(false);
-      successToast('Database saved');
+      successToast(tHardcodedUi.raw('i18nComplete.text68b444f414fa'));
     } catch (e: unknown) {
-      errorToast(`Save failed: ${(e as Error)?.message || 'Unknown error'}`);
+      errorToast(
+        tHardcodedUi('i18nComplete.text021b7b95cad3', {
+          value0: (e as Error)?.message || tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+        }),
+      );
     } finally {
       setIsSaving(false);
     }
-  }, [filePath, fileName, readOnly]);
+  }, [filePath, fileName, readOnly, tHardcodedUi]);
 
   // ── Discard changes (reload from disk) ────────────────────────────────
   const handleDiscard = useCallback(() => {
@@ -705,13 +722,13 @@ export function SqliteRenderer({
         if (firstTable) setSelectedTable(firstTable);
         setDataVersion((v) => v + 1);
         setIsLoading(false);
-        successToast('Changes discarded');
+        successToast(tHardcodedUi.raw('i18nComplete.text4daace56d920'));
       } catch (e: unknown) {
         setError((e as Error)?.message || 'Reload failed');
         setIsLoading(false);
       }
     })();
-  }, [filePath, refreshTableMeta, tables]);
+  }, [filePath, refreshTableMeta, tables, tHardcodedUi]);
 
   // ── Filtered tables ───────────────────────────────────────────────────
   const filteredTables = useMemo(() => {
@@ -852,10 +869,10 @@ export function SqliteRenderer({
           </div>
           <button
             onClick={() => setReloadKey((key) => key + 1)}
-            className="hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-2xl border px-3 text-xs transition-colors"
+            className="hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-3 text-xs transition-colors"
           >
             <RefreshCw className="h-3 w-3" />
-            Retry
+            {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
           </button>
         </div>
       </div>
@@ -894,21 +911,27 @@ export function SqliteRenderer({
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3 py-1.5">
         {/* Left: summary (no filename — parent header already shows it) */}
         <span className="text-muted-foreground/60 text-xs tabular-nums">
-          {tables.filter((t) => t.type === 'table').length} table
+          {tables.filter((t) => t.type === 'table').length}{' '}
+          {tHardcodedUi.raw('i18nComplete.text0d4fc4a78d37')}
           {tables.filter((t) => t.type === 'table').length !== 1 ? 's' : ''}
           {tables.some((t) => t.type === 'view') && (
             <>
               {' '}
-              · {tables.filter((t) => t.type === 'view').length} view
+              · {tables.filter((t) => t.type === 'view').length}{' '}
+              {tHardcodedUi.raw('i18nComplete.text2bcb43cbc8f6')}
               {tables.filter((t) => t.type === 'view').length !== 1 ? 's' : ''}
             </>
           )}
-          <> · {tables.reduce((sum, t) => sum + t.rowCount, 0).toLocaleString()} rows</>
+          <>
+            {' '}
+            · {tables.reduce((sum, t) => sum + t.rowCount, 0).toLocaleString()}{' '}
+            {tHardcodedUi.raw('i18nComplete.textbc51e9e65d79')}
+          </>
         </span>
 
         {hasUnsavedChanges && (
           <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full bg-yellow-500"
+            className="bg-kortix-yellow h-1.5 w-1.5 shrink-0 rounded-full"
             title={tHardcodedUi.raw(
               'componentsFileRenderersSqliteRenderer.line795JsxAttrTitleUnsavedChanges',
             )}
@@ -928,7 +951,7 @@ export function SqliteRenderer({
                 )}
               >
                 <Undo2 className="h-3 w-3" />
-                Discard
+                {tHardcodedUi.raw('i18nComplete.texteb1a70e39274')}
               </Button>
               <Button
                 variant="default"
@@ -940,7 +963,7 @@ export function SqliteRenderer({
                 )}
               >
                 {isSaving ? <Loading className="h-3 w-3" /> : <Save className="h-3 w-3" />}
-                Save
+                {tHardcodedUi.raw('i18nComplete.text1509f561f241')}
               </Button>
             </>
           )}
@@ -1017,9 +1040,9 @@ export function SqliteRenderer({
                 )}
               >
                 {table.type === 'view' ? (
-                  <Eye className="h-3.5 w-3.5 shrink-0 text-purple-500/70" />
+                  <Eye className="text-kortix-purple h-3.5 w-3.5 shrink-0" />
                 ) : (
-                  <Table2 className="h-3.5 w-3.5 shrink-0 text-blue-500/70" />
+                  <Table2 className="text-kortix-blue h-3.5 w-3.5 shrink-0" />
                 )}
                 <span className="flex-1 truncate text-xs font-medium">{table.name}</span>
                 <span className="text-muted-foreground/50 shrink-0 text-xs tabular-nums">
@@ -1031,7 +1054,8 @@ export function SqliteRenderer({
 
           {/* Sidebar footer */}
           <div className="text-muted-foreground/30 border-t px-3 py-1.5 text-xs tabular-nums">
-            {filteredTables.length}/{tables.length} shown
+            {filteredTables.length}/{tables.length}{' '}
+            {tHardcodedUi.raw('i18nComplete.textbaaf53622a51')}
           </div>
         </div>
 
@@ -1045,9 +1069,9 @@ export function SqliteRenderer({
                 {/* Table name + stats */}
                 <div className="flex min-w-0 items-center gap-1.5">
                   {selectedTableInfo.type === 'view' ? (
-                    <Eye className="h-3.5 w-3.5 shrink-0 text-purple-500/70" />
+                    <Eye className="text-kortix-purple h-3.5 w-3.5 shrink-0" />
                   ) : (
-                    <Table2 className="h-3.5 w-3.5 shrink-0 text-blue-500/70" />
+                    <Table2 className="text-kortix-blue h-3.5 w-3.5 shrink-0" />
                   )}
                   <span className="text-foreground truncate text-xs font-medium">
                     {selectedTableInfo.name}
@@ -1072,7 +1096,7 @@ export function SqliteRenderer({
                         <Plus className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        className="text-muted-foreground/50 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-red-500/10 hover:text-red-500"
+                        className="text-muted-foreground/50 hover:bg-destructive/10 hover:text-destructive inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition-colors"
                         onClick={handleDeleteSelected}
                         title={tHardcodedUi.raw(
                           'componentsFileRenderersSqliteRenderer.line948JsxAttrTitleDeleteSelectedRows',
@@ -1195,32 +1219,32 @@ export function SqliteRenderer({
               {/* CREATE statement */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                  <h3 className="text-muted-foreground text-xs font-medium">
                     {tHardcodedUi.raw(
                       'componentsFileRenderersSqliteRenderer.line1054JsxTextCreateStatement',
                     )}
                   </h3>
                   <Button variant="muted" size="xs" onClick={handleCopySchema}>
                     {copied ? (
-                      <Check className="h-3 w-3 text-emerald-500" />
+                      <Check className="text-kortix-green h-3 w-3" />
                     ) : (
                       <Copy className="h-3 w-3" />
                     )}
                     {copied ? 'Copied' : 'Copy'}
                   </Button>
                 </div>
-                <pre className="bg-muted/50 text-foreground/80 overflow-x-auto rounded-2xl border p-4 font-mono text-xs whitespace-pre-wrap select-text">
-                  {selectedTableInfo.sql || '-- No SQL available (system table or virtual table)'}
+                <pre className="bg-muted/50 text-muted-foreground overflow-x-auto rounded-md border p-4 font-mono text-xs whitespace-pre-wrap select-text">
+                  {selectedTableInfo.sql || tHardcodedUi.raw('i18nComplete.text86dcb7f9e791')}
                 </pre>
               </div>
 
               {/* Column details */}
               <div className="space-y-2">
-                <h3 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                <h3 className="text-muted-foreground text-xs font-medium">
                   {tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1077JsxTextColumns')}
                   {selectedTableInfo.columns.length})
                 </h3>
-                <div className="overflow-hidden rounded-2xl border">
+                <div className="overflow-hidden rounded-md border">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-muted/50 border-b">
@@ -1228,10 +1252,10 @@ export function SqliteRenderer({
                           #
                         </th>
                         <th className="text-muted-foreground px-3 py-2 text-left font-medium">
-                          Name
+                          {tHardcodedUi.raw('i18nComplete.textdcd1d5223f73')}
                         </th>
                         <th className="text-muted-foreground px-3 py-2 text-left font-medium">
-                          Type
+                          {tHardcodedUi.raw('i18nComplete.textbaaddf70fb5d')}
                         </th>
                         <th className="text-muted-foreground w-16 px-3 py-2 text-center font-medium">
                           PK
@@ -1242,7 +1266,7 @@ export function SqliteRenderer({
                           )}
                         </th>
                         <th className="text-muted-foreground px-3 py-2 text-left font-medium">
-                          Default
+                          {tHardcodedUi.raw('i18nComplete.text21b111cbfe6e')}
                         </th>
                       </tr>
                     </thead>
@@ -1257,7 +1281,7 @@ export function SqliteRenderer({
                           </td>
                           <td className="text-foreground px-3 py-2 font-medium">
                             <span className="inline-flex items-center gap-1.5">
-                              {col.pk && <Key className="h-3 w-3 text-amber-500/70" />}
+                              {col.pk && <Key className="text-kortix-orange h-3 w-3" />}
                               {col.name}
                             </span>
                           </td>
@@ -1271,14 +1295,14 @@ export function SqliteRenderer({
                           </td>
                           <td className="px-3 py-2 text-center">
                             {col.pk && (
-                              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/10 text-xs font-semibold text-amber-500">
+                              <span className="bg-kortix-orange/10 text-kortix-orange inline-flex h-4 w-4 items-center justify-center rounded-full text-xs font-semibold">
                                 ✓
                               </span>
                             )}
                           </td>
                           <td className="px-3 py-2 text-center">
                             {col.notnull && (
-                              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-500/10 text-xs font-semibold text-red-500">
+                              <span className="bg-destructive/10 text-destructive inline-flex h-4 w-4 items-center justify-center rounded-full text-xs font-semibold">
                                 ✓
                               </span>
                             )}
@@ -1296,13 +1320,17 @@ export function SqliteRenderer({
               {/* Stats — compact inline */}
               <div className="flex items-center gap-4 text-xs">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground/50">Rows</span>
+                  <span className="text-muted-foreground/50">
+                    {tHardcodedUi.raw('i18nComplete.text101f2ff3de22')}
+                  </span>
                   <span className="font-medium tabular-nums">
                     {selectedTableInfo.rowCount.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground/50">Columns</span>
+                  <span className="text-muted-foreground/50">
+                    {tHardcodedUi.raw('i18nComplete.text53aade77cd69')}
+                  </span>
                   <span className="font-medium tabular-nums">
                     {selectedTableInfo.columns.length}
                   </span>
@@ -1366,7 +1394,7 @@ export function SqliteRenderer({
                       ) : (
                         <Play className="h-3 w-3" />
                       )}
-                      Run
+                      {tHardcodedUi.raw('i18nComplete.text00d60e31a4e6')}
                     </button>
                   </div>
                 </div>
@@ -1376,7 +1404,7 @@ export function SqliteRenderer({
                   onKeyDown={handleQueryKeyDown}
                   placeholder={`SELECT * FROM "${selectedTable || 'table_name'}" LIMIT 100`}
                   className={cn(
-                    'bg-muted/30 h-24 w-full cursor-text rounded-2xl border px-3 py-2 font-mono text-xs',
+                    'bg-muted/30 h-24 w-full cursor-text rounded-md border px-3 py-2 font-mono text-xs',
                     'focus:ring-ring resize-none focus:ring-1 focus:outline-none',
                     'placeholder:text-muted-foreground/30',
                   )}
@@ -1387,19 +1415,23 @@ export function SqliteRenderer({
               {/* Query results */}
               <div className="flex flex-1 flex-col overflow-hidden">
                 {queryResult?.error && (
-                  <div className="shrink-0 border-b border-red-500/20 bg-red-500/5 px-4 py-2 font-mono text-xs text-red-500 select-text">
-                    Error: {queryResult.error}
+                  <div className="border-destructive/20 bg-destructive/5 text-destructive shrink-0 border-b px-4 py-2 font-mono text-xs select-text">
+                    {tHardcodedUi.raw('i18nComplete.text617062906764')} {queryResult.error}
                   </div>
                 )}
 
                 {queryResult && !queryResult.error && (
                   <div className="text-muted-foreground flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
                     <span>
-                      {queryResult.rowCount.toLocaleString()} row
+                      {queryResult.rowCount.toLocaleString()}{' '}
+                      {tHardcodedUi.raw('i18nComplete.text634768dae147')}
                       {queryResult.rowCount !== 1 ? 's' : ''}
                     </span>
                     <span className="text-muted-foreground/30">·</span>
-                    <span>{queryResult.time.toFixed(1)}ms</span>
+                    <span>
+                      {queryResult.time.toFixed(1)}
+                      {tHardcodedUi.raw('i18nComplete.textf785c3ce1d58')}
+                    </span>
                   </div>
                 )}
 
@@ -1434,7 +1466,8 @@ export function SqliteRenderer({
                       {tHardcodedUi.raw(
                         'componentsFileRenderersSqliteRenderer.line1246JsxTextQueryReturnedNoRows',
                       )}
-                      {queryResult.time.toFixed(1)}ms)
+                      {queryResult.time.toFixed(1)}
+                      {tHardcodedUi.raw('i18nComplete.text9e7d85a50dc3')}
                     </p>
                   </div>
                 )}
@@ -1451,24 +1484,24 @@ export function SqliteRenderer({
           onClick={() => setExpandedCell(null)}
         >
           <div
-            className="bg-background border-border/60 flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border shadow-xl"
+            className="bg-background border-border/60 flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-md border shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b px-4 py-2.5">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="text-foreground/70 truncate font-mono text-xs">
+                <span className="text-muted-foreground truncate font-mono text-xs">
                   {expandedCell.column}
                 </span>
                 <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
-                  row {expandedCell.rowIndex + 1}
+                  {tHardcodedUi.raw('i18nComplete.text634768dae147')} {expandedCell.rowIndex + 1}
                 </span>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {isEditable && expandedEditValue !== expandedCell.value && (
                   <Button variant="default" size="toolbar" onClick={handleExpandedSave}>
                     <Check className="h-3 w-3" />
-                    Apply
+                    {tHardcodedUi.raw('i18nComplete.text31e392d1c037')}
                   </Button>
                 )}
                 <Button onClick={() => setExpandedCell(null)} variant="ghost" size="icon-sm">
@@ -1494,7 +1527,7 @@ export function SqliteRenderer({
                   autoFocus
                 />
               ) : (
-                <pre className="text-foreground/80 min-h-[180px] p-4 font-mono text-sm break-all whitespace-pre-wrap select-text">
+                <pre className="text-muted-foreground min-h-[180px] p-4 font-mono text-sm break-all whitespace-pre-wrap select-text">
                   {expandedCell.value || (
                     <span className="text-muted-foreground/30 italic">NULL</span>
                   )}
@@ -1504,7 +1537,8 @@ export function SqliteRenderer({
 
             {/* Footer */}
             <div className="text-muted-foreground/30 border-t px-4 py-1.5 text-xs tabular-nums">
-              {expandedEditValue.length.toLocaleString()} chars
+              {expandedEditValue.length.toLocaleString()}{' '}
+              {tHardcodedUi.raw('i18nComplete.text1ce93dacbcf4')}
             </div>
           </div>
         </div>

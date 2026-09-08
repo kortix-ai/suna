@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Review Center — the per-item review page. It replaces the inbox in place
  * (no modal): a status + title header, the branch/diff facts for a change,
@@ -41,6 +42,9 @@ import {
   RISK_META,
   STATUS_META,
   VERIFICATION_BADGE,
+  reviewKindLabel,
+  reviewRiskLabel,
+  reviewStatusLabel,
 } from './review-meta';
 import { type ApprovalAction, type ReviewItem, type ReviewStatus, isSafeRisk } from './types';
 
@@ -86,6 +90,7 @@ function ChangeBody({
   onClose: () => void;
   conflicts: string[];
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const d = item.detail;
   const whatChanged = d.whatChanged ?? [];
   const verification = d.verification ?? [];
@@ -96,7 +101,7 @@ function ChangeBody({
       {requested.length > 0 && (
         <Item variant="outline" size="sm">
           <ItemContent>
-            <ItemTitle>You asked for changes</ItemTitle>
+            <ItemTitle>{tI18nComplete.raw('textb0eabce39690')}</ItemTitle>
             <ul className="text-foreground list-disc space-y-1 pl-5 text-sm">
               {requested.map((r) => (
                 <li key={r.at ?? r.text} className="text-pretty">
@@ -104,9 +109,7 @@ function ChangeBody({
                 </li>
               ))}
             </ul>
-            <ItemDescription>
-              Sent to the agent — it&apos;ll revise and update this change.
-            </ItemDescription>
+            <ItemDescription>{tI18nComplete.raw('texte648ea58ae80')}</ItemDescription>
           </ItemContent>
           {item.sessionId && actions.openSession ? (
             <ItemActions>
@@ -118,7 +121,7 @@ function ChangeBody({
                   onClose();
                 }}
               >
-                See progress
+                {tI18nComplete.raw('textd1636c646e66')}
               </Button>
             </ItemActions>
           ) : null}
@@ -143,7 +146,7 @@ function ChangeBody({
       {(verification.length > 0 || d.previewUrl) && (
         <Item variant="outline" size="sm">
           <ItemContent>
-            <ItemTitle>Verification</ItemTitle>
+            <ItemTitle>{tI18nComplete.raw('text7140f4f19dec')}</ItemTitle>
             {verification.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {verification.map((v) => (
@@ -158,7 +161,7 @@ function ChangeBody({
             <ItemActions>
               <Button variant="outline" size="sm" asChild>
                 <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
-                  Open preview
+                  {tI18nComplete.raw('textf7afe3dde18c')}
                 </a>
               </Button>
             </ItemActions>
@@ -170,12 +173,10 @@ function ChangeBody({
         <Item variant="warning" size="sm">
           <ItemContent>
             <ItemTitle>
-              Merge conflicts in {conflicts.length} {conflicts.length === 1 ? 'file' : 'files'}
+              {tI18nComplete.raw('text62e2514edc8d')} {conflicts.length}{' '}
+              {conflicts.length === 1 ? 'file' : 'files'}
             </ItemTitle>
-            <ItemDescription>
-              Start an agent session from this change. The agent merges the latest base branch,
-              resolves the conflicts, runs checks, and opens a replacement change.
-            </ItemDescription>
+            <ItemDescription>{tI18nComplete.raw('text0ffc4db692f7')}</ItemDescription>
           </ItemContent>
           <ItemActions>
             <Button
@@ -185,13 +186,13 @@ function ChangeBody({
                 if (actions.recoverChange) {
                   actions.recoverChange(item, conflicts);
                 } else {
-                  actions.resolve(item.id, 'waiting', 'Solving the merge conflicts with an agent…');
+                  actions.resolve(item.id, 'waiting', tI18nComplete.raw('text92bb0a437a39'));
                   onClose();
                 }
               }}
             >
               {recovering ? <Loading className="size-3.5 shrink-0" /> : null}
-              Solve with agent
+              {tI18nComplete.raw('text30afafe4c16e')}
             </Button>
           </ItemActions>
         </Item>
@@ -221,6 +222,7 @@ function ApprovalActionRow({
   onDeny: () => void;
   onOpenSession?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const Icon = APPROVAL_ACTION_ICON[action.icon];
   const safe = isSafeRisk(action.risk);
   const args = action.argsPreview ?? [];
@@ -240,7 +242,7 @@ function ApprovalActionRow({
           <div className="flex items-center gap-2">
             <span className="text-foreground text-sm font-medium">{action.title}</span>
             <Badge variant={RISK_META[action.risk].badge} size="sm">
-              {RISK_META[action.risk].label}
+              {reviewRiskLabel(action.risk, tI18nComplete)}
             </Badge>
           </div>
           <div className="text-muted-foreground mt-0.5 text-sm text-pretty">
@@ -264,7 +266,9 @@ function ApprovalActionRow({
             <span className="font-mono">
               {action.connector} · {action.action}
             </span>
-            <span className="text-muted-foreground/40">&bull;</span>
+            <span className="text-muted-foreground/40">
+              {tI18nComplete.raw('text3b9453dad42b')}
+            </span>
             <span>{action.policySource}</span>
           </div>
         </div>
@@ -278,7 +282,7 @@ function ApprovalActionRow({
               <div className="flex items-center gap-1.5">
                 <Button variant="ghost" size="sm" disabled={busy} onClick={onDeny}>
                   {pending === 'deny' ? <Loading className="size-3.5 shrink-0" /> : null}
-                  Deny
+                  {tI18nComplete.raw('text05a2d7332eb9')}
                 </Button>
                 <Button size="sm" disabled={busy} onClick={onApprove}>
                   {pending === 'approve' ? (
@@ -286,7 +290,7 @@ function ApprovalActionRow({
                   ) : (
                     <Check className="size-3.5" />
                   )}
-                  Approve
+                  {tI18nComplete.raw('text6007acbe30b2')}
                 </Button>
               </div>
               {connected && onOpenSession ? (
@@ -295,7 +299,7 @@ function ApprovalActionRow({
                   onClick={onOpenSession}
                   className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs underline-offset-2 hover:underline"
                 >
-                  See it in the session
+                  {tI18nComplete.raw('textf42e280577fb')}
                   <ArrowUpRight className="size-3" />
                 </button>
               ) : null}
@@ -314,6 +318,7 @@ function ApprovalBody({
   item: Extract<ReviewItem, { kind: 'approval' }>;
   actions: ReviewActions;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const list = item.detail.actions ?? [];
   const adaptedExecutionId = connectorCallId(item.id);
   const adaptedAction = adaptedExecutionId ? list[0] : null;
@@ -344,7 +349,7 @@ function ApprovalBody({
           actions.resolve(
             item.id,
             decision === 'approve' ? 'approved' : 'rejected',
-            decision === 'approve' ? 'Approved — the agent will continue' : 'Denied',
+            decision === 'approve' ? tI18nComplete.raw('text24234d557d8d') : 'Denied',
           )
         }
         busyDecision={busyDecision}
@@ -381,7 +386,7 @@ function ApprovalBody({
                       return;
                     }
                     actions.decideAction(item.id, a.id, 'approved');
-                    successToast(`Approved · ${a.title}`);
+                    successToast(tI18nComplete('text6ef671b81187', { value0: a.title }));
                   }}
                   onDeny={() => {
                     if (actions.connected) {
@@ -389,7 +394,7 @@ function ApprovalBody({
                       return;
                     }
                     actions.decideAction(item.id, a.id, 'denied');
-                    infoToast(`Denied · ${a.title}`);
+                    infoToast(tI18nComplete('text6ef671b81187', { value0: a.title }));
                   }}
                 />
               ))}
@@ -397,7 +402,8 @@ function ApprovalBody({
             {wholeItem && (
               <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
                 <p className="text-muted-foreground min-w-0 text-sm text-pretty">
-                  These {list.length} actions resolve together — one decision covers all of them.
+                  {tI18nComplete.raw('text91273d498d36')} {list.length}{' '}
+                  {tI18nComplete.raw('text9a24d7803caa')}
                 </p>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <Button
@@ -411,7 +417,7 @@ function ApprovalBody({
                     {busy && actions.pendingDecision === 'deny' ? (
                       <Loading className="size-3.5 shrink-0" />
                     ) : null}
-                    Deny all
+                    {tI18nComplete.raw('text5a41803b2dd1')}
                   </Button>
                   <Button
                     size="sm"
@@ -425,7 +431,7 @@ function ApprovalBody({
                     ) : (
                       <Check className="size-3.5" />
                     )}
-                    Approve all
+                    {tI18nComplete.raw('textae067b687107')}
                   </Button>
                 </div>
               </div>
@@ -439,6 +445,7 @@ function ApprovalBody({
 
 // ── output ────────────────────────────────────────────────────────────────
 function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const d = item.detail;
   return (
     <>
@@ -459,7 +466,7 @@ function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> })
           {d.previewUrl && (
             <Button variant="outline" size="sm" className="shrink-0 gap-1.5" asChild>
               <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
-                Open preview
+                {tI18nComplete.raw('textf7afe3dde18c')}
                 <ArrowUpRight className="size-3.5" />
               </a>
             </Button>
@@ -490,6 +497,7 @@ function DecisionBody({
   actions: ReviewActions;
   onClose: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const d = item.detail;
   const answered = item.status !== 'needs_you';
   return (
@@ -523,7 +531,7 @@ function DecisionBody({
                 <span className="text-foreground text-sm font-medium">{opt.label}</span>
                 {opt.recommended && (
                   <Badge variant="kortix" size="xs">
-                    Recommended
+                    {tI18nComplete.raw('textd70604e84304')}
                   </Badge>
                 )}
               </div>
@@ -541,6 +549,7 @@ function DecisionBody({
 
 // ── batch ─────────────────────────────────────────────────────────────────
 function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const d = item.detail;
   const children = d.children ?? [];
   const needsReview = children.filter((c) => c.status === 'needs_review').length;
@@ -551,7 +560,8 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
       </Panel>
       <div>
         <SectionLabel>
-          {children.length} tasks · {needsReview} need a look
+          {children.length} {tI18nComplete.raw('texte97caf2c8a6f')} {needsReview}{' '}
+          {tI18nComplete.raw('text967458798444')}
         </SectionLabel>
         <ul className="bg-popover divide-border max-h-72 divide-y overflow-y-auto rounded-md border">
           {children.map((c) => (
@@ -564,7 +574,7 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
               <span className="text-foreground min-w-0 flex-1 truncate text-sm">{c.title}</span>
               {c.status === 'needs_review' && (
                 <Badge variant="warning" size="xs">
-                  Look
+                  {tI18nComplete.raw('texta0de5719f595')}
                 </Badge>
               )}
             </li>
@@ -584,6 +594,7 @@ function FeedbackComposer({
   onCancel: () => void;
   onSend: (text: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -602,20 +613,20 @@ function FeedbackComposer({
           }
         }}
         rows={3}
-        aria-label="What should the agent change?"
-        placeholder="What should the agent change?"
+        aria-label={tI18nComplete.raw('text2534e74d5120')}
+        placeholder={tI18nComplete.raw('text2534e74d5120')}
         className="placeholder:text-muted-foreground w-full resize-none bg-transparent text-sm outline-none"
       />
       <div className="flex items-center justify-end gap-2">
         <span className="text-muted-foreground mr-auto text-xs">
           <Kbd>⌘</Kbd>
-          <Kbd>↵</Kbd> to send
+          <Kbd>↵</Kbd> {tI18nComplete.raw('text1044b2d7aa48')}
         </span>
         <Button variant="outline-ghost" size="sm" onClick={onCancel}>
-          Cancel
+          {tI18nComplete.raw('text19766ed6ccb2')}
         </Button>
         <Button size="sm" onClick={() => onSend(text.trim())}>
-          Send to agent
+          {tI18nComplete.raw('text77a860cbc585')}
         </Button>
       </div>
     </div>
@@ -640,10 +651,11 @@ function ActionBar({
   composing: boolean;
   setComposing: (v: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (item.status !== 'needs_you') {
     return (
       <span className="text-muted-foreground text-xs">
-        {STATUS_META[item.status].label} · {formatItemAgeLong(item.createdAt)}
+        {reviewStatusLabel(item.status, tI18nComplete)} · {formatItemAgeLong(item.createdAt)}
       </span>
     );
   }
@@ -669,7 +681,7 @@ function ActionBar({
             if (actions.recoverChange) {
               actions.recoverChange(item, conflicts);
             } else {
-              actions.resolve(item.id, 'waiting', 'Solving the merge conflicts with an agent…');
+              actions.resolve(item.id, 'waiting', tI18nComplete.raw('text92bb0a437a39'));
               onBack();
             }
           }}
@@ -679,7 +691,7 @@ function ActionBar({
           ) : (
             <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
           )}
-          Solve with agent
+          {tI18nComplete.raw('text30afafe4c16e')}
         </Button>
       ) : (
         <Button
@@ -693,7 +705,7 @@ function ActionBar({
           }}
         >
           {checkingConflicts ? <Loading className="size-3.5 shrink-0" /> : null}
-          {checkingConflicts ? 'Checking…' : item.primaryAction}
+          {checkingConflicts ? tI18nComplete.raw('textec963ffc911b') : item.primaryAction}
         </Button>
       )}
     </div>
@@ -702,6 +714,7 @@ function ActionBar({
 
 /** `main ← feat/branch · 1 file · +38 −2` — the facts a reviewer scans first. */
 function ChangeFacts({ item }: { item: Extract<ReviewItem, { kind: 'change' }> }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const adv = item.detail.advanced;
   const crId = item.detail.crId ?? null;
   // The live diff query is shared with `ChangeFiles` below (same key), so this
@@ -720,7 +733,10 @@ function ChangeFacts({ item }: { item: Extract<ReviewItem, { kind: 'change' }> }
           <Badge variant="secondary" className="border-0 align-middle font-mono ring-0" size="sm">
             {adv.baseRef || '—'}
           </Badge>
-          <ArrowLeft className="text-muted-foreground size-3.5 shrink-0" aria-label="from" />
+          <ArrowLeft
+            className="text-muted-foreground size-3.5 shrink-0"
+            aria-label={tI18nComplete.raw('text75857a458999')}
+          />
           <Badge
             variant="secondary"
             size="sm"
@@ -749,6 +765,7 @@ export function ReviewDetail({
   actions: ReviewActions;
   onBack: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const crId = item.kind === 'change' ? (item.detail.crId ?? null) : null;
   const mergePreview = useChangeRequestMergePreview(crId, Boolean(crId));
   const [composing, setComposing] = useState(false);
@@ -769,7 +786,9 @@ export function ReviewDetail({
   // A change waiting on you is "Open", the way a pull request is; every other
   // state keeps the inbox's own label.
   const open = item.status === 'needs_you' && item.kind === 'change';
-  const statusLabel = open ? 'Open' : STATUS_META[item.status].label;
+  const statusLabel = open
+    ? tI18nComplete.raw('texted077f3d8125')
+    : reviewStatusLabel(item.status, tI18nComplete);
   const statusBadge = open ? 'success' : STATUS_META[item.status].badge;
   const secondaryLabel = item.secondaryAction;
 
@@ -783,16 +802,16 @@ export function ReviewDetail({
             </Badge>
             {item.kind !== 'change' && (
               <Badge variant="outline" size="sm">
-                {kind.label}
+                {reviewKindLabel(item.kind, tI18nComplete)}
               </Badge>
             )}
             {item.risk === 'medium' || item.risk === 'high' ? (
               <Badge variant={RISK_META[item.risk].badge} size="sm">
-                {RISK_META[item.risk].label}
+                {reviewRiskLabel(item.risk, tI18nComplete)}
               </Badge>
             ) : null}
           </div>
-          <div className="space-y-2 mt-10">
+          <div className="mt-10 space-y-2">
             <p className="text-muted-foreground text-xs">
               {item.project}
               {number != null && <span className="tabular-nums"> #{number}</span>}
@@ -837,7 +856,9 @@ export function ReviewDetail({
         )}
 
         <section className="space-y-3">
-          <h2 className="text-foreground text-sm font-medium">Description</h2>
+          <h2 className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('text526e0087cc3f')}
+          </h2>
           <div className="space-y-4">
             {item.kind === 'change' && (
               <ChangeBody item={item} actions={actions} onClose={onBack} conflicts={conflicts} />

@@ -1,3 +1,4 @@
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The MFA state machine shared by every surface that lets a member manage
  * their own second factor (authenticator app / TOTP): the factor list, the
@@ -40,6 +41,7 @@ export interface EnrollingFactor {
 }
 
 export function useMfa() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const supabase = createClient();
   const queryClient = useQueryClient();
 
@@ -73,18 +75,18 @@ export function useMfa() {
       setEnrolling(data);
       setEnrollCode('');
     },
-    onError: (error: Error) => errorToast(error.message || 'Could not start enrollment'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text733fee9d77dd')),
   });
 
   const removeFactorMutation = useMutation({
     mutationFn: (factorId: string) => supabaseMFAService.unenrollFactor(factorId),
     onSuccess: () => {
-      successToast('Factor removed');
+      successToast(tI18nComplete.raw('text4d6aef31f31e'));
       setRemoveFactorTarget(null);
       queryClient.invalidateQueries({ queryKey: MFA_FACTORS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: MFA_AAL_QUERY_KEY });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to remove factor'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text787a50e3458b')),
   });
 
   const verifyEnrollMutation = useMutation({
@@ -100,7 +102,7 @@ export function useMfa() {
       // 30s token cache so the next gated request uses the new token instead
       // of replaying the stale aal1 one.
       invalidateTokenCache();
-      successToast('Authenticator enrolled — this session is now MFA-verified');
+      successToast(tI18nComplete.raw('text37635d11f518'));
       setEnrolling(null);
       setEnrollCode('');
       // Refetch every active query so data that 403'd while aal1 (projects,
@@ -108,7 +110,7 @@ export function useMfa() {
       // and the MFA error banners on those screens clear.
       queryClient.invalidateQueries();
     },
-    onError: (error: Error) => errorToast(error.message || 'Code did not verify'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('texte7307911656c')),
   });
 
   const cancelEnroll = () => {

@@ -66,7 +66,9 @@ describe('a row that does have a build', () => {
       image={null}
       title="Desktop app"
       description="…"
-      rows={[{ id: 'macos', label: 'macOS', meta: 'Universal · 195 MB', href: '/download/macos', Mark }]}
+      rows={[
+        { id: 'macos', label: 'macOS', meta: 'Universal · 195 MB', href: '/download/macos', Mark },
+      ]}
       filled="macos"
     />,
   );

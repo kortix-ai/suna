@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { DiffView } from '@/components/diff/diff-view';
 import { Button } from '@/components/ui/button';
@@ -236,7 +236,8 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
         <span className="flex-1 truncate text-sm font-medium">{fileName}</span>
         {totalCheckpoints > 0 && (
           <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-            {totalCheckpoints} version{totalCheckpoints !== 1 ? 's' : ''}
+            {totalCheckpoints} {tHardcodedUi.raw('i18nComplete.text5ca4f3850ccc')}
+            {totalCheckpoints !== 1 ? 's' : ''}
           </span>
         )}
         <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onClose}>
@@ -258,8 +259,9 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
           <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
             <AlertCircle className="text-muted-foreground/30 h-6 w-6" />
             <p className="text-muted-foreground text-xs">
-              {error instanceof Error && error.message.includes('not a git repository')
-                ? 'Not a git repository'
+              {error instanceof Error &&
+              error.message.includes(tHardcodedUi.raw('i18nComplete.texte7d93eed5869'))
+                ? tHardcodedUi.raw('i18nComplete.textf903b3885c5e')
                 : tHardcodedUi.raw(
                     'featuresProjectFilesComponentsFileHistoryPopover.line216JsxTextFailedToLoadHistory',
                   )}
@@ -289,7 +291,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
                   {tHardcodedUi.raw(
                     'featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent',
                   )}{' '}
-                  {totalCheckpoints} versions
+                  {totalCheckpoints} {tHardcodedUi.raw('i18nComplete.text4612828a45f1')}
                 </span>
               </div>
             )}

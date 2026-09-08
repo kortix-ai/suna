@@ -128,6 +128,23 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toContain('-v /workspace/kortix-preview:/workspace/kortix-preview');
   });
 
+  it('repairs the Node floor inside a reused branch sandbox before pnpm runs', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'i18n-complete-serbian',
+      sha: 'a'.repeat(40),
+      prNumber: 7109,
+      origin: 'https://preview.example.test',
+    });
+    const repair = script.indexOf('node-v22.22.2-linux-x64.tar.xz');
+    const install = script.indexOf('pnpm install --offline --frozen-lockfile');
+
+    expect(repair).toBeGreaterThan(-1);
+    expect(repair).toBeLessThan(install);
+    expect(script).toContain('88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a');
+    expect(script).toContain('test "$(node --version)" = "v22.22.2"');
+  });
+
   it('health-checks the stack locally, never through the public name', () => {
     // The public name is served by a proxy that is only re-pointed at this
     // sandbox AFTER the deploy returns. Checking through it would deadlock the

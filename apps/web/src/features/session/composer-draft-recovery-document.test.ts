@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { JSONContent } from '@tiptap/core';
+import { describe, expect, test } from 'bun:test';
 
 import { mergeFailedSubmissionDocument } from './composer-draft-recovery';
 
@@ -104,9 +104,7 @@ describe('mergeFailedSubmissionDocument', () => {
 
     const merged = mergeFailedSubmissionDocument(current, false, submitted, false);
 
-    const mentionNodes = merged.content?.filter(
-      (node) => node.content?.[0]?.type === 'mention',
-    );
+    const mentionNodes = merged.content?.filter((node) => node.content?.[0]?.type === 'mention');
     expect(mentionNodes).toHaveLength(2);
   });
 });

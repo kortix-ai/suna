@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { AccountPane } from '@/features/accounts/hub/account-pane';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -13,7 +12,9 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { isAccountCreationRestricted } from '@/lib/config';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { type KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
@@ -23,12 +24,13 @@ import {
   UsersIcon as Users,
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 export default function AccountsPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
@@ -60,8 +62,8 @@ export default function AccountsPage() {
   return (
     <>
       <AccountPane
-        title="Accounts"
-        description="Teams you belong to."
+        title={tI18nComplete.raw('text8a7c8b67fe8b')}
+        description={tI18nComplete.raw('textced79983aab8')}
         action={
           canCreateAccount ? (
             <Button
@@ -71,12 +73,11 @@ export default function AccountsPage() {
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="size-4" />
-              New account
+              {tI18nComplete.raw('textb8773d75259e')}
             </Button>
           ) : undefined
         }
       >
-
         {accountsQuery.isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -86,11 +87,11 @@ export default function AccountsPage() {
         ) : accountsQuery.isError ? (
           <ErrorState
             size="sm"
-            title="Failed to load accounts"
+            title={tI18nComplete.raw('text3867abe1d888')}
             description={(accountsQuery.error as Error).message}
             action={
               <Button variant="outline" size="sm" onClick={() => accountsQuery.refetch()}>
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
           />
@@ -98,8 +99,8 @@ export default function AccountsPage() {
           <EmptyState
             icon={Users}
             size="sm"
-            title="No accounts yet"
-            description="Create an account to start working with a team."
+            title={tI18nComplete.raw('text84a7e27178d9')}
+            description={tI18nComplete.raw('textc3f9db93886b')}
             action={
               canCreateAccount ? (
                 <Button
@@ -109,7 +110,7 @@ export default function AccountsPage() {
                   onClick={() => setCreateOpen(true)}
                 >
                   <Plus className="size-3.5" />
-                  New account
+                  {tI18nComplete.raw('textb8773d75259e')}
                 </Button>
               ) : undefined
             }
@@ -162,6 +163,7 @@ export default function AccountsPage() {
 }
 
 function AccountRow({ account, active }: { account: KortixAccount; active: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const label = account.name || 'Account';
   return (
     <li>
@@ -177,7 +179,7 @@ function AccountRow({ account, active }: { account: KortixAccount; active: boole
             <span className="text-foreground truncate text-sm font-medium">{label}</span>
             {active && (
               <Badge variant="outline" size="sm" className="border-foreground/30 text-foreground">
-                Active
+                {tI18nComplete.raw('text92340695899b')}
               </Badge>
             )}
           </span>

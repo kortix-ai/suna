@@ -2,6 +2,7 @@
 
 import { getManagedModel } from '@kortix/llm-catalog';
 import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ export function tint(accent: string, pct: number): string {
 }
 
 export function CopyButton({ text, className }: { text: string; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -37,7 +39,7 @@ export function CopyButton({ text, className }: { text: string; className?: stri
         setCopied(true);
         setTimeout(() => setCopied(false), 1200);
       }}
-      aria-label="Copy"
+      aria-label={tI18nComplete.raw('texte21f935f11d7')}
       className={cn(
         'text-muted-foreground hover:bg-muted hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-150',
         className,

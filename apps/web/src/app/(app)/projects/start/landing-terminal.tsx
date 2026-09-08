@@ -1,3 +1,5 @@
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
@@ -65,7 +67,8 @@ const COPY: Record<TerminalReason, { heading: string; body: string }> = {
  * only 403s is worse than none.
  */
 export function ProjectStartEmpty({ reason }: { reason: TerminalReason }) {
-  const { heading, body } = COPY[reason];
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { heading, body } = useLocalizedUiCatalog(COPY)[reason];
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
@@ -75,7 +78,7 @@ export function ProjectStartEmpty({ reason }: { reason: TerminalReason }) {
       </div>
       {reason !== 'no-permission' ? (
         <Button asChild>
-          <Link href="/new">Create a workspace</Link>
+          <Link href="/new">{tI18nComplete.raw('text954bd1fe66b4')}</Link>
         </Button>
       ) : null}
     </div>

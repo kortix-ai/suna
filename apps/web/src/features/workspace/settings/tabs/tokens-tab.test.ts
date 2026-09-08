@@ -35,6 +35,19 @@ const row = (overrides: Partial<ApiKeyRow> = {}): ApiKeyRow => ({
 });
 
 describe('apiKeyMetaParts', () => {
+  test('supports locale copy and a locale-aware relative-time formatter', () => {
+    expect(
+      apiKeyMetaParts(row(), NOW, {
+        neverUsed: 'Никада није коришћен',
+        neverExpires: 'Никада не истиче',
+        lastUsed: (time) => `Последњи пут коришћен ${time}`,
+        expired: (time) => `Истекао ${time}`,
+        expires: (time) => `Истиче ${time}`,
+        relativeTime: () => 'пре 2 дана',
+      }),
+    ).toEqual(['pk_abcdef0123456789', 'Никада није коришћен', 'Никада не истиче']);
+  });
+
   test('a plain key says what it looks like, that it is unused, and that it never expires', () => {
     expect(apiKeyMetaParts(row(), NOW)).toEqual([
       'pk_abcdef0123456789',
@@ -49,10 +62,7 @@ describe('apiKeyMetaParts', () => {
   });
 
   test('an expiry in the future reads "Expires", one in the past reads "Expired"', () => {
-    const future = apiKeyMetaParts(
-      row({ expiresAt: new Date(NOW + 7 * DAY).toISOString() }),
-      NOW,
-    );
+    const future = apiKeyMetaParts(row({ expiresAt: new Date(NOW + 7 * DAY).toISOString() }), NOW);
     expect(future.at(-1)).toStartWith('Expires ');
 
     const past = apiKeyMetaParts(
@@ -69,10 +79,7 @@ describe('apiKeyMetaParts', () => {
   });
 
   test('a used key reports when, relatively', () => {
-    const parts = apiKeyMetaParts(
-      row({ lastUsedAt: new Date(NOW - 2 * DAY).toISOString() }),
-      NOW,
-    );
+    const parts = apiKeyMetaParts(row({ lastUsedAt: new Date(NOW - 2 * DAY).toISOString() }), NOW);
     expect(parts[1]).toStartWith('Last used ');
   });
 });

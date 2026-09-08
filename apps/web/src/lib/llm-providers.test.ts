@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { isProviderAuthSatisfied } from '@kortix/llm-catalog';
+import { describe, expect, test } from 'bun:test';
 
 import {
   LLM_PROVIDERS,

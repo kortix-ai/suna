@@ -39,6 +39,13 @@
 
 import { useState } from 'react';
 
+import {
+  NEVER_EXPIRES,
+  defaultExpiryOption,
+  expiresAtIso,
+  expiryOptions,
+} from '@/components/iam/api-key-expiry';
+import { type ApiKeyRow, type ApiKeyStatus, buildApiKeyRows } from '@/components/iam/api-key-rows';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -67,22 +74,10 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import {
-  NEVER_EXPIRES,
-  defaultExpiryOption,
-  expiresAtIso,
-  expiryOptions,
-} from '@/components/iam/api-key-expiry';
-import {
-  type ApiKeyRow,
-  type ApiKeyStatus,
-  buildApiKeyRows,
-} from '@/components/iam/api-key-rows';
 import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { CopyRow, type KebabItem } from '@/features/workspace/shared/access';
-import { AccessList, AccessRow } from '@/features/workspace/shared/access';
+import { AccessList, AccessRow, CopyRow, type KebabItem } from '@/features/workspace/shared/access';
 import { getPatPolicy } from '@/lib/iam-client';
 import { relativeTime } from '@/lib/relative-time';
 import { usePermission } from '@/lib/use-permission';
@@ -95,6 +90,7 @@ import {
 import { contract, qk } from '@kortix/sdk/react';
 import { KeyIcon, PlusIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import { SettingsTabHeader } from '../settings-tab-header';
@@ -116,12 +112,11 @@ const MY_TOKENS_KEY = (accountId: string) => ['account-tokens', accountId, 'mine
  * it; only `expired` — the state nobody chose, and the one that silently stops
  * a script — takes a warning colour.
  */
-const STATUS_BADGE: Record<ApiKeyStatus, { label: string; variant: 'success' | 'update' | 'muted' }> =
-  {
-    active: { label: 'Active', variant: 'success' },
-    expired: { label: 'Expired', variant: 'update' },
-    revoked: { label: 'Revoked', variant: 'muted' },
-  };
+const STATUS_BADGE: Record<ApiKeyStatus, { variant: 'success' | 'update' | 'muted' }> = {
+  active: { variant: 'success' },
+  expired: { variant: 'update' },
+  revoked: { variant: 'muted' },
+};
 
 /** The account can demand a second factor before any key is readable. */
 function isMfaRequired(error: unknown): boolean {
@@ -132,22 +127,63 @@ function isMfaRequired(error: unknown): boolean {
  * The meta line under a key's name: what it looks like, when it was last used,
  * and when it stops working. Pure so the wording is testable without a DOM.
  */
-export function apiKeyMetaParts(row: ApiKeyRow, now: number = Date.now()): string[] {
+export interface ApiKeyMetaCopy {
+  neverUsed: string;
+  neverExpires: string;
+  lastUsed: (time: string) => string;
+  expired: (time: string) => string;
+  expires: (time: string) => string;
+  relativeTime: (input: string | number) => string;
+}
+
+const DEFAULT_API_KEY_META_COPY: ApiKeyMetaCopy = {
+  neverUsed: 'Never used',
+  neverExpires: 'Never expires',
+  lastUsed: (time) => `Last used ${time}`,
+  expired: (time) => `Expired ${time}`,
+  expires: (time) => `Expires ${time}`,
+  relativeTime,
+};
+
+export function apiKeyMetaParts(
+  row: ApiKeyRow,
+  now: number = Date.now(),
+  copy: ApiKeyMetaCopy = DEFAULT_API_KEY_META_COPY,
+): string[] {
   const parts = [row.hint];
   if (row.scopeLabel) parts.push(row.scopeLabel);
-  parts.push(row.lastUsedAt ? `Last used ${relativeTime(row.lastUsedAt)}` : 'Never used');
+  parts.push(row.lastUsedAt ? copy.lastUsed(copy.relativeTime(row.lastUsedAt)) : copy.neverUsed);
   if (row.expiresAt) {
     const ms = new Date(row.expiresAt).getTime();
     if (Number.isFinite(ms)) {
-      parts.push(ms <= now ? `Expired ${relativeTime(row.expiresAt)}` : `Expires ${relativeTime(row.expiresAt)}`);
+      const time = copy.relativeTime(row.expiresAt);
+      parts.push(ms <= now ? copy.expired(time) : copy.expires(time));
     }
   } else {
-    parts.push('Never expires');
+    parts.push(copy.neverExpires);
   }
   return parts;
 }
 
+function localizedRelativeTime(input: string | number, locale: string, now = Date.now()): string {
+  const then = typeof input === 'string' ? new Date(input).getTime() : input;
+  if (!Number.isFinite(then)) return '';
+  const elapsedMinutes = Math.max(0, Math.floor((now - then) / 60_000));
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' });
+  if (elapsedMinutes < 1) return formatter.format(0, 'minute');
+  if (elapsedMinutes < 60) return formatter.format(-elapsedMinutes, 'minute');
+  const hours = Math.floor(elapsedMinutes / 60);
+  if (hours < 24) return formatter.format(-hours, 'hour');
+  const days = Math.floor(hours / 24);
+  if (days < 30) return formatter.format(-days, 'day');
+  return new Date(then).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+}
+
 export function TokensTab({ accountId }: { accountId: string | undefined }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.tokens');
+  const locale = useLocale();
+  const [renderedAt] = useState(() => Date.now());
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
   const queryClient = useQueryClient();
@@ -180,11 +216,11 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   const revokeMutation = useMutation({
     mutationFn: (row: ApiKeyRow) => revokeAccountToken(row.id, accountId),
     onSuccess: () => {
-      successToast('Key revoked');
+      successToast(tI18nComplete('text096e0be6bb57'));
       queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId ?? '') });
       setRevokeTarget(null);
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not revoke that key'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete('text4840dd3bd303')),
   });
 
   const rows = buildApiKeyRows({
@@ -208,7 +244,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
               onClick={() => setCreateOpen(true)}
             >
               <PlusIcon className="size-4 shrink-0" />
-              New key
+              {t('newKey')}
             </Button>
           ) : undefined
         }
@@ -228,30 +264,27 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
         isMfaRequired(tokensQuery.error) ? (
           <InfoBanner
             tone="warning"
-            title="Confirm it's you"
+            title={t('confirmIdentity')}
             action={
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => window.dispatchEvent(new CustomEvent(MFA_REQUIRED_EVENT))}
               >
-                Verify
+                {t('verify')}
               </Button>
             }
           >
-            This workspace asks for a second factor before showing its keys. The list refreshes on
-            its own once you have verified.
+            {t('mfaDescription')}
           </InfoBanner>
         ) : (
           <ErrorState
             size="sm"
-            title="Couldn't load your keys"
-            description={
-              tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined
-            }
+            title={t('loadFailed')}
+            description={tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined}
             action={
               <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
-                Retry
+                {t('retry')}
               </Button>
             }
           />
@@ -260,12 +293,8 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
         <EmptyState
           icon={KeyIcon}
           size="sm"
-          title="No API keys yet"
-          description={
-            canCreate
-              ? 'An API key signs the Kortix CLI, a script, or a CI job in as you — no browser, no password.'
-              : 'An API key signs the Kortix CLI in as you. An admin of this workspace has to grant you permission to create one.'
-          }
+          title={t('emptyTitle')}
+          description={canCreate ? t('emptyCanCreate') : t('emptyNoPermission')}
           action={
             canCreate ? (
               <Button
@@ -275,7 +304,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
                 onClick={() => setCreateOpen(true)}
               >
                 <PlusIcon className="size-3.5 shrink-0" />
-                New key
+                {t('newKey')}
               </Button>
             ) : undefined
           }
@@ -289,7 +318,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
               canRevoke && row.status === 'active'
                 ? [
                     {
-                      label: 'Revoke key',
+                      label: t('revokeKey'),
                       icon: <ProhibitIcon className="size-3.5 shrink-0" />,
                       variant: 'destructive',
                       onSelect: () => setRevokeTarget(row),
@@ -303,12 +332,19 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
                 title={row.name}
                 badges={
                   <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
-                    {STATUS_BADGE[row.status].label}
+                    {t(`status.${row.status}`)}
                   </Badge>
                 }
-                metaParts={apiKeyMetaParts(row)}
+                metaParts={apiKeyMetaParts(row, renderedAt, {
+                  neverUsed: t('neverUsed'),
+                  neverExpires: t('neverExpires'),
+                  lastUsed: (time) => t('lastUsed', { time }),
+                  expired: (time) => t('expiredAt', { time }),
+                  expires: (time) => t('expiresAt', { time }),
+                  relativeTime: (input) => localizedRelativeTime(input, locale, renderedAt),
+                })}
                 kebab={kebab}
-                kebabLabel={`Actions for ${row.name}`}
+                kebabLabel={t('actionsFor', { name: row.name })}
                 pending={revokeMutation.isPending && revokeTarget?.id === row.id}
               />
             );
@@ -320,21 +356,19 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
           came here for a CI credential has to be able to find it without
           reading the account hub's whole rail. */}
       <p className="text-muted-foreground text-xs">
-        Keys for an automation that outlives you are service account tokens, in your{' '}
-        {accountId ? (
-          // A plain link, not `Button asChild`: a button is `inline-flex` with
-          // its own height and padding, which breaks the sentence onto three
-          // lines and strands the full stop on its own.
-          <Link
-            href={`/accounts/${accountId}?tab=tokens`}
-            className="text-foreground underline underline-offset-2"
-          >
-            account settings
-          </Link>
-        ) : (
-          'account settings'
-        )}
-        .
+        {t.rich('serviceAccountTokens', {
+          link: (chunks) =>
+            accountId ? (
+              <Link
+                href={`/accounts/${accountId}?tab=tokens`}
+                className="text-foreground underline underline-offset-2"
+              >
+                {chunks}
+              </Link>
+            ) : (
+              <>{chunks}</>
+            ),
+        })}
       </p>
 
       {accountId ? (
@@ -342,9 +376,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
           accountId={accountId}
           open={createOpen}
           onOpenChange={setCreateOpen}
-          onCreated={() =>
-            queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId) })
-          }
+          onCreated={() => queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId) })}
         />
       ) : null}
 
@@ -353,13 +385,9 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
         onOpenChange={(open) => {
           if (!open) setRevokeTarget(null);
         }}
-        title="Revoke this key?"
-        description={
-          revokeTarget
-            ? `"${revokeTarget.name}" stops working right away. Anything still using it — the CLI, a script, a CI job — starts getting turned away. This can't be undone.`
-            : ''
-        }
-        confirmLabel="Revoke"
+        title={t('revokeTitle')}
+        description={revokeTarget ? t('revokeDescription', { name: revokeTarget.name }) : ''}
+        confirmLabel={t('revoke')}
         confirmVariant="destructive"
         isPending={revokeMutation.isPending}
         onConfirm={() => {
@@ -388,6 +416,9 @@ function CreateApiKeyDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.tokens');
+  const common = useTranslations('common');
   const [name, setName] = useState('');
   const [scope, setScope] = useState<string>(WHOLE_WORKSPACE);
   const [expiry, setExpiry] = useState<string>(NEVER_EXPIRES);
@@ -413,13 +444,21 @@ function CreateApiKeyDialog({
     retry: false,
   });
   const policy = policyQuery.data ?? null;
-  const expiryChoices = expiryOptions(policy);
+  const expiryChoices = expiryOptions(policy, tI18nComplete).map((choice) => ({
+    ...choice,
+    label:
+      choice.value === NEVER_EXPIRES
+        ? t('expiryNever')
+        : Number(choice.value) === 365
+          ? t('expiryOneYear')
+          : t('expiryDays', { count: Number(choice.value) }),
+  }));
   // The policy lands after first paint and can remove the option currently
   // selected ("Never", once expiry is required). Re-point at a legal value
   // rather than submitting one the backend will reject.
   const selectedExpiry = expiryChoices.some((o) => o.value === expiry)
     ? expiry
-    : defaultExpiryOption(policy);
+    : defaultExpiryOption(policy, tI18nComplete);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -436,7 +475,7 @@ function CreateApiKeyDialog({
       onCreated();
       setCreated(result);
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not create that key'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete('textc8e60f01cd4e')),
   });
 
   function close() {
@@ -460,33 +499,32 @@ function CreateApiKeyDialog({
         else onOpenChange(true);
       }}
     >
-      <ModalContent className="lg:max-w-lg">
+      <ModalContent className="lg:max-w-lg" closeLabel={common('close')}>
         {created ? (
           <>
             <ModalHeader>
-              <ModalTitle>Copy your key now</ModalTitle>
+              <ModalTitle>{t('copyNow')}</ModalTitle>
               <ModalDescription>
-                This is the only time <strong>{created.name}</strong> is shown. Save it somewhere
-                safe — we can&apos;t show it again, and a lost key has to be replaced.
+                {t.rich('copyDescription', {
+                  name: created.name,
+                  strong: (chunks) => <strong>{chunks}</strong>,
+                })}
               </ModalDescription>
             </ModalHeader>
             <ModalBody>
-              <CopyRow value={created.secret} successMessage="Key copied" />
+              <CopyRow value={created.secret} successMessage={t('keyCopied')} />
             </ModalBody>
             <ModalFooter>
               <Button type="button" size="sm" onClick={close}>
-                Done
+                {t('done')}
               </Button>
             </ModalFooter>
           </>
         ) : (
           <>
             <ModalHeader>
-              <ModalTitle>Create an API key</ModalTitle>
-              <ModalDescription>
-                A key signs the Kortix CLI, a script, or a CI job in as you — it can do what you
-                can do, and it stops working when you leave this workspace.
-              </ModalDescription>
+              <ModalTitle>{t('createTitle')}</ModalTitle>
+              <ModalDescription>{t('createDescription')}</ModalDescription>
             </ModalHeader>
             <form
               onSubmit={(event) => {
@@ -497,31 +535,31 @@ function CreateApiKeyDialog({
             >
               <ModalBody className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="personal-api-key-name">Name</Label>
+                  <Label htmlFor="personal-api-key-name">{t('name')}</Label>
                   <Input
                     id="personal-api-key-name"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="My laptop"
+                    placeholder={t('namePlaceholder')}
                     disabled={mutation.isPending}
                     maxLength={128}
                     autoFocus
                     variant="popover"
                   />
-                  <p className="text-muted-foreground text-xs">So you can recognise it later.</p>
+                  <p className="text-muted-foreground text-xs">{t('nameHint')}</p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="personal-api-key-scope">What it can reach</Label>
+                  <Label htmlFor="personal-api-key-scope">{t('scope')}</Label>
                   <Select value={scope} onValueChange={setScope} disabled={mutation.isPending}>
                     <SelectTrigger id="personal-api-key-scope" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={WHOLE_WORKSPACE}>Everything in this workspace</SelectItem>
+                      <SelectItem value={WHOLE_WORKSPACE}>{t('wholeWorkspace')}</SelectItem>
                       {projects.length > 0 ? (
                         <SelectGroup>
-                          <SelectLabel>One project only</SelectLabel>
+                          <SelectLabel>{t('oneProject')}</SelectLabel>
                           {projects.map((project) => (
                             <SelectItem key={project.project_id} value={project.project_id}>
                               {project.name}
@@ -531,13 +569,11 @@ function CreateApiKeyDialog({
                       ) : null}
                     </SelectContent>
                   </Select>
-                  <p className="text-muted-foreground text-xs">
-                    Picking one project is safer: the key is turned away everywhere else.
-                  </p>
+                  <p className="text-muted-foreground text-xs">{t('scopeHint')}</p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="personal-api-key-expiry">Expires</Label>
+                  <Label htmlFor="personal-api-key-expiry">{t('expires')}</Label>
                   <Select
                     value={selectedExpiry}
                     onValueChange={setExpiry}
@@ -555,9 +591,7 @@ function CreateApiKeyDialog({
                     </SelectContent>
                   </Select>
                   {policy?.require_expiry ? (
-                    <p className="text-muted-foreground text-xs">
-                      This workspace asks every key to have an end date.
-                    </p>
+                    <p className="text-muted-foreground text-xs">{t('expiryRequired')}</p>
                   ) : null}
                 </div>
               </ModalBody>
@@ -569,7 +603,7 @@ function CreateApiKeyDialog({
                   onClick={close}
                   disabled={mutation.isPending}
                 >
-                  Cancel
+                  {t('cancel')}
                 </Button>
                 <Button
                   type="submit"
@@ -578,7 +612,7 @@ function CreateApiKeyDialog({
                   className="gap-1.5"
                 >
                   {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                  Create key
+                  {t('createKey')}
                 </Button>
               </ModalFooter>
             </form>

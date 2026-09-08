@@ -29,3 +29,14 @@ export const TRIGGER_SESSION_ACCESS_COPY = {
     desc: 'Every project member.',
   },
 } as const;
+
+export function triggerSessionAccessCopy(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    TRIGGER_SESSION_ACCESS_COPY,
+    tI18nComplete,
+    REMAINING_UI_TRANSLATION_KEYS,
+  );
+}
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';

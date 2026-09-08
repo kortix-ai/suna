@@ -7,8 +7,8 @@
  * how a user-stop arrives. This file is the panel's single reader of that.
  */
 
-import { isAbortError } from '@kortix/sdk';
 import type { MessageWithParts } from '@/ui';
+import { isAbortError } from '@kortix/sdk';
 import type { Step } from './group-steps';
 
 export type RunOutcome = 'succeeded' | 'failed' | 'stopped';

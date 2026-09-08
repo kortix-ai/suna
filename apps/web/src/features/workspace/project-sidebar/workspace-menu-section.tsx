@@ -25,6 +25,7 @@
 
 import { GearSixIcon as CogOne, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useQueries } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { useMemo, useState, type MouseEvent } from 'react';
@@ -60,6 +61,8 @@ import { contract, qk } from '@kortix/sdk/react';
 import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
 export function WorkspaceMenuSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
@@ -181,7 +184,7 @@ export function WorkspaceMenuSection() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find workspace…"
+            placeholder={t('workspace.find')}
             // A Radix menu owns keyboard input: it runs typeahead on printable
             // keys to jump between items, moving focus off whatever you are
             // typing into. Stopping propagation keeps the keystrokes in the
@@ -216,7 +219,7 @@ export function WorkspaceMenuSection() {
             <DropdownMenuItem asChild className="cursor-pointer px-1.5">
               <Link href={`/accounts/${switcherAccountId}`} prefetch>
                 <CogOne />
-                <span className="min-w-0 flex-1 truncate">Account settings</span>
+                <span className="min-w-0 flex-1 truncate">{t('workspace.accountSettings')}</span>
               </Link>
             </DropdownMenuItem>
           </div>
@@ -237,14 +240,14 @@ export function WorkspaceMenuSection() {
           </div>
         ) : isEmpty ? (
           <div className="text-muted-foreground/60 px-2 py-3 text-xs">
-            {query.trim() ? 'No workspaces match' : 'No workspaces yet'}
+            {query.trim() ? t('workspace.noMatches') : t('workspace.empty')}
           </div>
         ) : (
           <>
             {visibleGroups.map((group) => (
               <DropdownMenuGroup key={group.accountId} className="p-0.5">
                 <DropdownMenuLabel className="px-1.5 text-sm">
-                  {group.accountName.replaceAll("'s Account", '')}
+                  {group.accountName.replaceAll(tI18nComplete.raw('text78add5e83e0b'), '')}
                 </DropdownMenuLabel>
                 {group.workspaces.map((workspace) => {
                   const active = workspace.project_id === activeProjectId;
@@ -305,11 +308,11 @@ export function WorkspaceMenuSection() {
                           <span className="relative size-4 shrink-0">
                             <CheckCircleSolid
                               weight="fill"
-                              className="text-kortix-green absolute top-0 left-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-0"
+                              className="text-kortix-green duration-normal absolute top-0 left-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-0"
                             />
                             <CogOne
                               aria-hidden
-                              className="text-muted-foreground absolute top-0 left-0 opacity-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-100"
+                              className="text-muted-foreground duration-normal absolute top-0 left-0 opacity-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-100"
                             />
                           </span>
                         ) : null}
@@ -324,9 +327,11 @@ export function WorkspaceMenuSection() {
                 hiding this on a search would tell the user something false. */}
             {failedAccounts.map(({ account, result }) => (
               <DropdownMenuGroup key={account.account_id}>
-                <DropdownMenuLabel>{account.name?.trim() || 'Account'}</DropdownMenuLabel>
+                <DropdownMenuLabel>
+                  {account.name?.trim() || t('workspace.account')}
+                </DropdownMenuLabel>
                 <div className="text-muted-foreground flex w-full items-center gap-2 px-2.5 text-sm">
-                  <span className="min-w-0 flex-1 truncate">Couldn&apos;t load</span>
+                  <span className="min-w-0 flex-1 truncate">{t('workspace.loadError')}</span>
                   <Button
                     type="button"
                     variant="ghost"
@@ -335,7 +340,7 @@ export function WorkspaceMenuSection() {
                     onClick={() => result.refetch()}
                     className="shrink-0"
                   >
-                    {result.isFetching ? <Loading className="size-3.5 shrink-0" /> : 'Retry'}
+                    {result.isFetching ? <Loading className="size-3.5 shrink-0" /> : t('retry')}
                   </Button>
                 </div>
               </DropdownMenuGroup>

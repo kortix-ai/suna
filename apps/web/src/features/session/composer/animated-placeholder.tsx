@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
 
 import { COMPOSER_TEXT_METRICS } from './composer-text-metrics';
@@ -52,20 +53,50 @@ const FADE_SWAP = {
  * decision in it), and every shortcut variant appears only after the first
  * client-side interval tick.
  */
-export function buildPlaceholderVariants(base: string, mac: boolean): string[] {
+export interface ComposerPlaceholderCopy {
+  skills: string;
+  mentions: string;
+  workspaceFile: string;
+  commandPalette: (modifier: string) => string;
+  switchAgents: string;
+  attachFiles: string;
+  changed: string;
+  newLine: string;
+  settings: (modifier: string) => string;
+  compact: string;
+}
+
+const ENGLISH_PLACEHOLDER_COPY: ComposerPlaceholderCopy = {
+  skills: 'Type / for skills, commands, and files',
+  mentions: 'Type @ to mention files and agents',
+  workspaceFile: 'Ask about any file in your workspace',
+  commandPalette: (modifier) => `Press ${modifier}K to open the command palette`,
+  switchAgents: 'Press Tab to switch agents',
+  attachFiles: 'Drag and drop files to attach them',
+  changed: "Ask what's changed in your project",
+  newLine: 'Press Shift+Enter for a new line',
+  settings: (modifier) => `Press ${modifier}, to open settings`,
+  compact: 'Ask to compact the session when it gets long',
+};
+
+export function buildPlaceholderVariants(
+  base: string,
+  mac: boolean,
+  copy: ComposerPlaceholderCopy = ENGLISH_PLACEHOLDER_COPY,
+): string[] {
   const mod = mac ? '⌘' : 'Ctrl+';
   return [
     base,
-    'Type / for skills, commands, and files',
-    'Type @ to mention files and agents',
-    'Ask about any file in your workspace',
-    `Press ${mod}K to open the command palette`,
-    'Press Tab to switch agents',
-    'Drag and drop files to attach them',
-    "Ask what's changed in your project",
-    'Press Shift+Enter for a new line',
-    `Press ${mod}, to open settings`,
-    'Ask to compact the session when it gets long',
+    copy.skills,
+    copy.mentions,
+    copy.workspaceFile,
+    copy.commandPalette(mod),
+    copy.switchAgents,
+    copy.attachFiles,
+    copy.changed,
+    copy.newLine,
+    copy.settings(mod),
+    copy.compact,
   ];
 }
 
@@ -99,8 +130,24 @@ export function AnimatedComposerPlaceholder({
   placeholder,
   active,
 }: AnimatedComposerPlaceholderProps) {
+  const t = useTranslations('threads');
   const reduceMotion = useReducedMotion();
-  const variants = useMemo(() => buildPlaceholderVariants(placeholder, isMac), [placeholder]);
+  const variants = useMemo(
+    () =>
+      buildPlaceholderVariants(placeholder, isMac, {
+        skills: t('hintSkills'),
+        mentions: t('hintMentions'),
+        workspaceFile: t('hintWorkspaceFile'),
+        commandPalette: (modifier) => t('hintCommandPalette', { modifier }),
+        switchAgents: t('hintSwitchAgents'),
+        attachFiles: t('hintAttachFiles'),
+        changed: t('hintChanged'),
+        newLine: t('hintNewLine'),
+        settings: (modifier) => t('hintSettings', { modifier }),
+        compact: t('hintCompact'),
+      }),
+    [placeholder, t],
+  );
   const [index, setIndex] = useState(0);
 
   // The index survives deactivation on purpose: type, delete, and the

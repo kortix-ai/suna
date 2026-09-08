@@ -8,6 +8,7 @@ import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { auditDb, isAuditContentionError } from '../../shared/audit-db';
+import { logger as appLogger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
@@ -47,6 +48,19 @@ const AUDIT_INGEST_CHUNK = (() => {
 
 /** Advertised backoff when the session's sequence lock is contended. */
 const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
+
+/** The PostgreSQL SQLSTATE behind a contention error, following `cause`. */
+function auditErrorSqlState(error: unknown): string | null {
+  let current: unknown = error;
+  for (let depth = 0; current && typeof current === 'object' && depth < 5; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+    const cause = (current as { cause?: unknown }).cause;
+    if (cause === current) break;
+    current = cause;
+  }
+  return null;
+}
 
 // GET /v1/projects/:projectId/audit
 // Canonical project slice. It returns the same event contract and cursor as
@@ -335,6 +349,21 @@ projectsApp.openapi(
         // The session lock is queued. Pushing the remaining chunks into it
         // would only lengthen the queue that just rejected this one. Stop and
         // tell the relay to come back — the batch is still in its spool.
+        //
+        // Say WHICH SQLSTATE and how far the batch got. A 503 that logs only
+        // `-> 503 [HTTPException]` hid a 7-day convoy (prod, from 2026-08-31
+        // 19:52 UTC: ~32 sessions × one retry per ~8 s, >74,000 503s per
+        // session) behind an opaque status code.
+        appLogger.warn('[audit] ingest contended', {
+          projectId,
+          sessionId,
+          sqlstate: auditErrorSqlState(error),
+          accepted: parsed.accepted,
+          attempted,
+          inserted: insertedCount,
+          remaining: toInsert.length - offset,
+          chunk: chunk.length,
+        });
         contended = true;
         break;
       }

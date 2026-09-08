@@ -20,6 +20,7 @@ import {
   type Icon,
   type IconWeight,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { DEFAULT_ICON_WEIGHT, ICON_WEIGHTS } from '@/lib/icons/icon-config';
@@ -50,14 +51,13 @@ const SAMPLE_ICONS: Icon[] = [
  * renders content only.
  */
 export function IconsSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [weight, setWeight] = useState<IconWeight>(DEFAULT_ICON_WEIGHT);
 
   return (
     <div>
       <p className="text-muted-foreground mb-6 text-base leading-relaxed">
-        @phosphor-icons/react only. The app-wide weight is one line in src/lib/icons/icon-config.ts,
-        applied by IconProvider; status/solid icons opt out with an explicit
-        weight=&quot;fill&quot;. This preview toggle is page-local.
+        {tI18nComplete.raw('text76bb44782d37')}
       </p>
       <div className="space-y-4">
         <div className="flex w-fit items-center gap-0.5 rounded-md border p-1">

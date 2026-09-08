@@ -3,6 +3,7 @@
 import { CheckCircleIcon, CircleIcon, XIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useSyncExternalStore, type ReactNode } from 'react';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
@@ -144,6 +145,7 @@ export function ProjectSetupChecklist({
   fallback?: ReactNode;
   className?: string;
 }) {
+  const t = useTranslations('projectHome');
   const reduceMotion = useReducedMotion();
 
   // `null` until the client has read storage. See the gate note above.
@@ -273,7 +275,7 @@ export function ProjectSetupChecklist({
           className={cn('w-full overflow-hidden', className)}
         >
           <m.section
-            aria-label="Get started"
+            aria-label={t('setup.title')}
             initial={reduceMotion ? false : { y: 8 }}
             animate={reduceMotion ? undefined : { y: 0, transition: BAND_ENTER }}
             // Flat on the page, the way the reference lays it out — no border,
@@ -282,30 +284,30 @@ export function ProjectSetupChecklist({
             className={BAND_PANEL_CLASS}
           >
             <div className={BAND_HEADER_CLASS}>
-              <h2 className={BAND_TITLE_CLASS}>Get started</h2>
+              <h2 className={BAND_TITLE_CLASS}>{t('setup.title')}</h2>
 
               {/* No presence gate: the band only exists once `settled` is
                   true, so the count is a fact from the first frame it is
                   visible. It never reads "0 of 6" on its way to the truth. */}
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground text-xs tabular-nums">
-                  {completed} of {steps.length}
+                  {t('setup.progress', { completed, total: steps.length })}
                 </span>
                 <Progress
                   value={(completed / steps.length) * 100}
-                  aria-label={`${completed} of ${steps.length} setup steps complete`}
+                  aria-label={t('setup.progressLabel', { completed, total: steps.length })}
                   className="bg-muted h-1.5 w-16 shrink-0"
                   indicatorClassName="bg-kortix-green"
                 />
               </div>
 
-              <Hint label="Hide this" side="top">
+              <Hint label={t('setup.hide')} side="top">
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon-xs"
                   onClick={dismiss}
-                  aria-label="Hide the get started checklist"
+                  aria-label={t('setup.hideLabel')}
                   className="text-muted-foreground shrink-0"
                 >
                   <XIcon className="size-3.5" />
@@ -429,7 +431,9 @@ function SetupChecklistRow({ step, done }: { step: ProjectSetupStep; done: boole
   // `layout` is what turns a re-rank into a slide. Reduced motion opts out
   // entirely — a row travelling across the list is the movement being
   // declined, and the row still arrives, just without the journey.
-  return reduceMotion ? row : (
+  return reduceMotion ? (
+    row
+  ) : (
     <m.div layout transition={REORDER}>
       {row}
     </m.div>

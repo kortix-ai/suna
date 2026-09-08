@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 import {
@@ -161,7 +161,7 @@ describe('AgentScopeCard wiring', () => {
   test('the Secrets editor asks for the server-matching case rule', () => {
     // Without this prop the Secrets checklist falls back to `match='exact'`,
     // which is the connector rule, not `agentMayUseEnv`.
-    expect(source).toMatch(/label="Secrets"[\s\S]{0,320}?match="case-insensitive"/);
+    expect(source).toMatch(/raw\('textd8707d411d99'\)[\s\S]{0,320}?match="case-insensitive"/);
   });
 
   test('the Connectors editor stays on the exact default', () => {

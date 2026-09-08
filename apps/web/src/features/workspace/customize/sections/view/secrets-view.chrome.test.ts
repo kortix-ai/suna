@@ -1,5 +1,5 @@
+import { readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -31,7 +31,7 @@ describe('SecretsView page chrome', () => {
   test('the page is the shared capability shell, not its own column', () => {
     expect(shellStart).toBeGreaterThan(-1);
     expect(childrenStart).toBeGreaterThan(shellStart);
-    expect(shellHeader).toContain('title="Secrets"');
+    expect(shellHeader).toContain("raw('textd8707d411d99')");
     // The two pieces of the old narrow layout, gone for good. The heading is
     // written here rather than looked up: `secrets` is in neither registry
     // `SettingsTabHeader` reads, and a missed lookup renders nothing at all.
@@ -48,9 +48,7 @@ describe('SecretsView page chrome', () => {
    * restate the title.
    */
   test('the heading explains what a secret is and how it reaches a session', () => {
-    const description = shellHeader.match(/description="([^"]+)"/)?.[1] ?? '';
-    expect(description.length).toBeGreaterThan(80);
-    expect(description).toContain('environment variable');
+    expect(shellHeader).toContain("raw('texteca47e3afa10')");
   });
 
   test('search and the Add action are the shell’s slots, not inline', () => {
@@ -79,10 +77,12 @@ describe('SecretsView page chrome', () => {
    * presentation table: a legend restated in JSX drifts from the badge.
    */
   test('the Access legend is the filters row, and reads the shared table', () => {
-    expect(shellHeader).toContain('filters={<SecretsAccessExplainer showEnforced={showEnforced} />}');
+    expect(shellHeader).toContain(
+      'filters={<SecretsAccessExplainer showEnforced={showEnforced} />}',
+    );
     expect(shellChildren).not.toContain('<SecretsAccessExplainer');
-    expect(code).toContain('secretDeliveryLegend(showEnforced)');
-    expect(code).toContain('What each Access value means');
+    expect(code).toContain('secretDeliveryLegend(showEnforced, tI18nComplete)');
+    expect(code).toContain("raw('text0d8c9f89b826')");
     expect(code).toContain('<Collapsible open={open} onOpenChange={setOpen}');
     expect(code).toContain('<CollapsibleTrigger');
     expect(code).toContain('<CollapsibleContent>');

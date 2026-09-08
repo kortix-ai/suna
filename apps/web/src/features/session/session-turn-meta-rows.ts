@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Pure derivation of a turn's "when did this finish, how long did it take,
  * what did it cost" meta — no React, no clock read of its own. `now` is
@@ -5,8 +6,8 @@
  * the whole set from one clock read rather than each row racing its own.
  */
 
-import { formatCost, formatDuration, formatTokens } from '@/ui';
 import type { Turn, TurnCostInfo } from '@/ui';
+import { formatCost, formatDuration, formatTokens } from '@/ui';
 import { formatDistanceStrict } from 'date-fns';
 
 // The narrow accessor for the `Message` union's `time` field lives in
@@ -57,22 +58,25 @@ export interface SessionTurnMetaRow {
  * underlying value is absent or zero — the guards below exist so a turn that
  * did nothing billable simply carries fewer rows, not zeroed-out ones.
  */
-export function sessionTurnMetaRows({
-  endedAt,
-  now,
-  durationMs,
-  cost,
-}: {
-  endedAt: number | null;
-  now: number;
-  durationMs: number | null;
-  cost: TurnCostInfo | null | undefined;
-}): SessionTurnMetaRow[] {
+export function sessionTurnMetaRows(
+  {
+    endedAt,
+    now,
+    durationMs,
+    cost,
+  }: {
+    endedAt: number | null;
+    now: number;
+    durationMs: number | null;
+    cost: TurnCostInfo | null | undefined;
+  },
+  tI18nComplete: UiTranslator,
+): SessionTurnMetaRow[] {
   const rows: SessionTurnMetaRow[] = [];
 
   if (endedAt != null) {
     rows.push({
-      label: 'Finished',
+      label: tI18nComplete.raw('text7804f7a79a9e'),
       // `Strict` never rounds up to a vague "about 1 minute" — the whole
       // point of this row is a precise *when*, not an approximation.
       value: formatDistanceStrict(endedAt, now, { addSuffix: true }),
@@ -83,13 +87,13 @@ export function sessionTurnMetaRows({
     const value = formatDuration(durationMs);
     // formatDuration returns '' for sub-second durations — that's the
     // formatter's own "nothing worth showing" signal, so honor it here too.
-    if (value) rows.push({ label: 'Duration', value });
+    if (value) rows.push({ label: tI18nComplete.raw('text4fc52a3c4c55'), value });
   }
 
   // `formatCost(0)` renders as "$0.00" — a real-looking number for a turn
   // that spent nothing — so the row is gated on the raw value, not the string.
   if (cost && cost.cost > 0) {
-    rows.push({ label: 'Cost', value: formatCost(cost.cost) });
+    rows.push({ label: tI18nComplete.raw('text204a5eb2cd28'), value: formatCost(cost.cost) });
   }
 
   // Deliberately `input + output` only, NOT every token field: `reasoning` /
@@ -99,7 +103,7 @@ export function sessionTurnMetaRows({
   // carry no Tokens row.
   const tokenTotal = cost ? cost.tokens.input + cost.tokens.output : 0;
   if (cost && tokenTotal > 0) {
-    rows.push({ label: 'Tokens', value: formatTokens(tokenTotal) });
+    rows.push({ label: tI18nComplete.raw('texta039dfb9628b'), value: formatTokens(tokenTotal) });
   }
 
   return rows;

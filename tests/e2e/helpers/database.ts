@@ -18,19 +18,18 @@ interface SeedProjectOptions {
 export async function runDatabaseSql(
   sql: string,
   values: unknown[] = [],
+  databaseUrl?: string,
 ): Promise<void> {
-  await queryDatabaseRows(sql, values);
+  await queryDatabaseRows(sql, values, databaseUrl);
 }
 
 export async function queryDatabaseRows<
   T extends QueryResultRow = QueryResultRow,
->(sql: string, values: unknown[] = []): Promise<T[]> {
-  const databaseUrl = requireEnvValue(
-    "DATABASE_URL",
-    "apps/api/.env.local",
-    "apps/api/.env",
-  );
-  const client = new Client({ connectionString: databaseUrl });
+>(sql: string, values: unknown[] = [], databaseUrl?: string): Promise<T[]> {
+  const connectionString =
+    databaseUrl ??
+    requireEnvValue("DATABASE_URL", "apps/api/.env.local", "apps/api/.env");
+  const client = new Client({ connectionString });
   await client.connect();
   try {
     const result = await client.query<T>(sql, values);
@@ -52,10 +51,15 @@ export async function queryDatabaseRows<
  * Returns the last (possibly empty) result when the budget runs out, so the
  * caller's own `expect` still reports what it actually wanted.
  */
-export async function pollDatabaseRows<T extends QueryResultRow = QueryResultRow>(
+export async function pollDatabaseRows<
+  T extends QueryResultRow = QueryResultRow,
+>(
   sql: string,
   values: unknown[] = [],
-  { timeoutMs = 20_000, intervalMs = 500 }: { timeoutMs?: number; intervalMs?: number } = {},
+  {
+    timeoutMs = 20_000,
+    intervalMs = 500,
+  }: { timeoutMs?: number; intervalMs?: number } = {},
 ): Promise<T[]> {
   const deadline = Date.now() + timeoutMs;
   let rows: T[] = [];

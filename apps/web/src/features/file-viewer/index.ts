@@ -5,22 +5,18 @@
  * `features/files`, a project's git-ref view in `features/project-files`)
  * provides data access through a <FileSourceProvider>. See ./file-source.
  */
-export {
-  FileContentRenderer,
-  getFileCategory,
-  getLanguageFromExt,
-} from './file-content-renderer';
-export type { FileContentRendererProps, FileCategory } from './file-content-renderer';
-export { HtmlPreview } from './html-preview';
+export { FileContentRenderer, getFileCategory, getLanguageFromExt } from './file-content-renderer';
+export type { FileCategory, FileContentRendererProps } from './file-content-renderer';
 export { FilePreviewModal } from './file-preview-modal';
 export type { FilePreviewModalProps, FilePreviewState } from './file-preview-modal';
 export { FileSourceProvider, useFileSource } from './file-source';
 export type {
-  FileSource,
+  BinaryBlobResult,
   FileContent,
+  FileContentResult,
   FilePatch,
   FilePatchHunk,
-  FileContentResult,
-  BinaryBlobResult,
+  FileSource,
 } from './file-source';
+export { HtmlPreview } from './html-preview';
 export { PreviewFitProvider, isUsableIntrinsicSize } from './preview-fit';

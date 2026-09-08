@@ -59,10 +59,7 @@ export function clearLastProjectId(): void {
  * verdict about one project can never forget a healthy one, and owner-scoped
  * like every other read here.
  */
-export function forgetLastProjectId(
-  userId: string | null | undefined,
-  projectId: string,
-): void {
+export function forgetLastProjectId(userId: string | null | undefined, projectId: string): void {
   if (readLastProjectId(userId) !== projectId) return;
   clearLastProjectId();
 }

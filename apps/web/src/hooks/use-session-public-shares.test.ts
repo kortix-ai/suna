@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { SessionPublicShare } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import { isShareLive, publicSharesQueryKey, shareListState } from './use-session-public-shares';
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');

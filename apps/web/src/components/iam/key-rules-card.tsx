@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The workspace's key rules — what `pat-policy-card.tsx` used to call "CLI
  * token lifecycle".
@@ -87,6 +88,7 @@ export interface KeyRulesCardProps {
 }
 
 export function KeyRulesCard({ accountId, canManage }: KeyRulesCardProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const query = useQuery({
     queryKey: ['iam-pat-policy', accountId],
     queryFn: () => getPatPolicy(accountId),
@@ -96,8 +98,8 @@ export function KeyRulesCard({ accountId, canManage }: KeyRulesCardProps) {
   return (
     <section className="space-y-4">
       <SettingsSubsectionHeader
-        title="Key rules"
-        description="Applies to keys people create here. Keys Kortix creates for a running session end with that session."
+        title={tI18nComplete.raw('texte281baa165a7')}
+        description={tI18nComplete.raw('text24d906bf39fc')}
       />
 
       {query.isLoading ? (
@@ -105,11 +107,11 @@ export function KeyRulesCard({ accountId, canManage }: KeyRulesCardProps) {
       ) : query.isError || !query.data ? (
         <ErrorState
           size="sm"
-          title="Couldn't load the key rules"
+          title={tI18nComplete.raw('texta9ca0174bcc8')}
           description={query.error instanceof Error ? query.error.message : undefined}
           action={
             <Button variant="outline" size="sm" onClick={() => query.refetch()}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -134,6 +136,7 @@ function KeyRulesForm({
   canManage: boolean;
   policy: PatPolicy;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [requireExpiry, setRequireExpiry] = useState(policy.require_expiry);
   const [maxLifetime, setMaxLifetime] = useState(() => toField(policy.max_lifetime_days));
@@ -143,11 +146,11 @@ function KeyRulesForm({
   const mutation = useMutation({
     mutationFn: (patch: Partial<PatPolicy>) => updatePatPolicy(accountId, patch),
     onSuccess: () => {
-      successToast('Key rules saved');
+      successToast(tI18nComplete.raw('textab71f5ef2ed7'));
       queryClient.invalidateQueries({ queryKey: ['iam-pat-policy', accountId] });
       setError(null);
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not save the key rules'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text40d2a24cdc95')),
   });
 
   const dirty =
@@ -182,47 +185,51 @@ function KeyRulesForm({
     <>
       <SettingsRowGroup>
         <SettingsRow
-          label="Require an end date"
-          description="New keys can't be created without one."
+          label={tI18nComplete.raw('textcbb581776dc1')}
+          description={tI18nComplete.raw('textc93b334b170e')}
         >
           <Switch
             checked={requireExpiry}
             onCheckedChange={setRequireExpiry}
             disabled={disabled}
-            aria-label="Require an end date"
+            aria-label={tI18nComplete.raw('textcbb581776dc1')}
           />
         </SettingsRow>
         <SettingsRow
-          label="Longest a key can last"
-          description="The furthest ahead an end date can be set."
+          label={tI18nComplete.raw('textbcb9069a33fc')}
+          description={tI18nComplete.raw('textc7f5f12b1dc5')}
         >
           <Input
             value={maxLifetime}
             onChange={(event) => setMaxLifetime(event.target.value)}
-            placeholder="No limit"
+            placeholder={tI18nComplete.raw('textf7fcff0d8fea')}
             inputMode="numeric"
             disabled={disabled}
             variant="popover"
             className="h-8 w-28 tabular-nums"
-            aria-label="Longest a key can last, in days"
+            aria-label={tI18nComplete.raw('text127da196f663')}
           />
-          <span className="text-muted-foreground text-xs">days</span>
+          <span className="text-muted-foreground text-xs">
+            {tI18nComplete.raw('textab51004e9d71')}
+          </span>
         </SettingsRow>
         <SettingsRow
-          label="Turn off unused keys"
-          description="A key nobody has used for this long stops working."
+          label={tI18nComplete.raw('text02707e927e25')}
+          description={tI18nComplete.raw('text329d41e4b529')}
         >
           <Input
             value={idleRevoke}
             onChange={(event) => setIdleRevoke(event.target.value)}
-            placeholder="Never"
+            placeholder={tI18nComplete.raw('text6300ef800bb8')}
             inputMode="numeric"
             disabled={disabled}
             variant="popover"
             className="h-8 w-28 tabular-nums"
-            aria-label="Turn off unused keys after this many days"
+            aria-label={tI18nComplete.raw('text3b05fd3cdf59')}
           />
-          <span className="text-muted-foreground text-xs">days</span>
+          <span className="text-muted-foreground text-xs">
+            {tI18nComplete.raw('textab51004e9d71')}
+          </span>
         </SettingsRow>
       </SettingsRowGroup>
 
@@ -240,7 +247,7 @@ function KeyRulesForm({
             className="gap-1.5"
           >
             {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-            Save
+            {tI18nComplete.raw('text1509f561f241')}
           </Button>
         </div>
       ) : null}

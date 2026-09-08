@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Header nudge for PER-SESSION pending approvals.
  *
@@ -25,6 +26,7 @@ import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
 export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Route params: `id` = projectId, `sessionId` = the Kortix (route) session id
   // the audit endpoint keys on — distinct from the OpenCode `sessionId` prop we
   // use to drive the panel's tab store.
@@ -51,7 +53,10 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
         <Button
           variant="ghost"
           size="icon"
-          aria-label={`${pending.length} action${pending.length === 1 ? '' : 's'} awaiting your approval`}
+          aria-label={tI18nComplete('text33dd5a127fb6', {
+            value0: pending.length,
+            value1: pending.length === 1 ? '' : 's',
+          })}
           className="relative"
         >
           <ShieldWarningIcon className="text-kortix-orange size-4" />
@@ -64,11 +69,11 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
       <PopoverContent align="end" sideOffset={8} className="w-[340px] overflow-hidden p-0">
         <div className="border-border border-b px-4 pt-4 pb-3">
           <h3 className="text-foreground text-sm font-semibold tracking-tight">
-            {pending.length} action{pending.length === 1 ? '' : 's'} awaiting approval
+            {pending.length} {tI18nComplete.raw('textbd938c688f49')}
+            {pending.length === 1 ? '' : 's'} {tI18nComplete.raw('text84e3eb92c7a8')}
           </h3>
           <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-            The agent hit an action a policy gated for a human. Approve to let it proceed on the
-            next attempt, or deny to refuse.
+            {tI18nComplete.raw('text48edc0b5c137')}
           </p>
         </div>
 
@@ -99,13 +104,13 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
                           tab this is a document load that tears down the live
                           session — SSE stream, transcript and sandbox panel. */}
                       <a href={a.approval_url} target="_blank" rel="noopener noreferrer">
-                        Review parameters
+                        {tI18nComplete.raw('textecdcf83028e7')}
                         <ArrowSquareOutIcon className="size-3 shrink-0" />
                       </a>
                     </Button>
                   ) : (
                     <Button size="sm" onClick={openAudit}>
-                      Review in Audit
+                      {tI18nComplete.raw('textf517096df65f')}
                     </Button>
                   )}
                 </div>
@@ -116,7 +121,7 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
 
         <div className="border-border flex items-center justify-end border-t px-3 py-2.5">
           <Button variant="ghost" size="sm" onClick={openAudit}>
-            Open in Audit
+            {tI18nComplete.raw('text8b2e3db6128a')}
           </Button>
         </div>
       </PopoverContent>

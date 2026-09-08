@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
@@ -12,10 +12,10 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
-  type SandboxTemplate,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
+  type SandboxTemplate,
 } from '@kortix/sdk';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
@@ -26,8 +26,8 @@ import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-bod
 
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
-export { ProjectHomeWelcomeBody } from './home/welcome-body';
 export { PROJECT_SETUP_TILE_ACTIONS } from './home/setup-tiles';
+export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;

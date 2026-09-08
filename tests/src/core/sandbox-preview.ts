@@ -114,6 +114,18 @@ actual_sha="$(git -C "$ROOT" rev-parse HEAD)"
 test "$actual_sha" = "${input.sha}"
 
 cd "$ROOT"
+# A persistent branch environment keeps the rootfs it was created with. A new
+# template therefore does not update Node in an existing sandbox. Repair that
+# floor in place before pnpm reads dependency engine constraints. The archive
+# checksum comes from Node's v22.22.2 SHASUMS256.txt.
+if [ "$(node --version)" != "v22.22.2" ]; then
+  node_archive=/tmp/node-v22.22.2-linux-x64.tar.xz
+  curl -fsSL https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz -o "$node_archive"
+  printf '%s  %s\n' '88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a' "$node_archive" | sha256sum -c -
+  tar -xJf "$node_archive" -C /usr/local --strip-components=1
+  rm -f "$node_archive"
+fi
+test "$(node --version)" = "v22.22.2"
 corepack enable
 # A reused branch sandbox keeps the rootfs of the template it was created
 # from, so its pnpm store can predate a dependency the branch has since added.

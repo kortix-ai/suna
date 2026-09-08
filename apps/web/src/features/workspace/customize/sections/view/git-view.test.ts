@@ -133,7 +133,7 @@ test('does not name internal mechanisms in user-facing copy', () => {
   expect(code).not.toContain('proxy origin');
   expect(code).not.toContain('Proxy URL');
   expect(code).not.toContain('Connection health');
-  expect(code).toContain('Use your own Git client');
+  expect(code).toContain("raw('textd29222de0472')");
 });
 
 test('every technical setting carries a docs link', () => {
@@ -309,7 +309,7 @@ test('a non-managed repository explains itself instead of hiding the section', (
     code.indexOf('function RepoAccessSection'),
     code.indexOf('function ExternallyManagedRepoAccess'),
   );
-  expect(section).toContain('title="People with access"');
+  expect(section).toContain("title={tI18nComplete.raw('text6ecf05a928e8')}");
   expect(section).toContain('managed ? (');
 });
 

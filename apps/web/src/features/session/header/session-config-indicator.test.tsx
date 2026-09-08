@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(
@@ -31,6 +31,6 @@ describe('SessionConfigIndicator live reload status', () => {
   test('announces the server-confirmed phase and renders the ordered progress list', () => {
     expect(source).toContain('aria-live="polite"');
     expect(source).toContain('<SessionReloadProgressView phase={phase} />');
-    expect(source).toContain('reloadProgressText(phase)');
+    expect(source).toContain('reloadProgressText(phase, tI18nComplete)');
   });
 });

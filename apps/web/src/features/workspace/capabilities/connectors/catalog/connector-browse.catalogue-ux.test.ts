@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 import { CURATED_SECTIONS } from './connector-categories';
@@ -224,7 +224,7 @@ describe('the catalogue browses in place', () => {
     // swaps every section for one grid and gives no account of itself. One
     // heading row with a Back control is that account.
     expect(browse).toContain('function CategoryViewHeader');
-    expect(browse).toContain('aria-label="Back to all connectors"');
+    expect(browse).toContain("raw('text74fc2cf3bb54')");
     expect(browse).toContain('onBack={() => openCategory(ALL_CATEGORIES)}');
   });
 
@@ -250,7 +250,7 @@ describe('the catalogue browses in place', () => {
 
     // The heading that DOES exist is scoped to an open category. If it ever
     // renders while browsing everything, it has become the strip this forbids.
-    expect(browse).toContain("activeCategory !== ALL_CATEGORIES ? (\n        <CategoryViewHeader");
+    expect(browse).toContain('activeCategory !== ALL_CATEGORIES ? (\n        <CategoryViewHeader');
   });
 
   test('the page still says how much of the catalogue is on screen', () => {
@@ -266,8 +266,8 @@ describe('the catalogue browses in place', () => {
     // facet, Discover through `sectionTitle` over the curated keys — so the
     // grid has exactly one label to draw and cannot pick a second vocabulary.
     expect(browse).toContain('{section.label}');
-    expect(catalog).toContain('label: sectionTitle(section.category)');
-    expect(catalog).toContain('label: section.label');
+    expect(catalog).toContain('label: localizedSectionTitle(section.category, tI18nComplete)');
+    expect(catalog).toContain('label: localizedSectionTitle(section.label, tI18nComplete)');
     // Bucketing does not happen in the grid any more.
     expect(browse).not.toContain('groupIntoSections');
     expect(browse).not.toContain('groupByCategory');

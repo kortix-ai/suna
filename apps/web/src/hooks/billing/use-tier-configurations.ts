@@ -1,6 +1,6 @@
+import { getBillingTierConfigurations } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { accountStateKeys } from './use-account-state';
-import { getBillingTierConfigurations } from '@kortix/sdk';
 
 export interface TierConfiguration {
   tier_key: string;
@@ -9,7 +9,7 @@ export interface TierConfiguration {
   monthly_credits: number;
   can_purchase_credits: boolean;
   project_limit: number;
-  price_ids: string[];  // Backend-only: kept for API response compatibility, frontend should use tier_key
+  price_ids: string[]; // Backend-only: kept for API response compatibility, frontend should use tier_key
 }
 
 export interface TierConfigurationsResponse {
@@ -43,7 +43,7 @@ export function useTierConfigurations() {
  */
 export function getTierByKey(
   tiers: TierConfiguration[] | undefined,
-  tierKey: string
+  tierKey: string,
 ): TierConfiguration | undefined {
   return tiers?.find((tier) => tier.tier_key === tierKey);
 }

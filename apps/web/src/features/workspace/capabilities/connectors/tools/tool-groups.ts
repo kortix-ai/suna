@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 import type { ConnectorAction } from '@kortix/sdk';
 
 export interface ToolGroup {
@@ -16,12 +17,17 @@ export interface ToolGroup {
  * Input order is kept inside each bucket: that is the order the connector
  * reports its tools in, which is the order its own docs use.
  */
-export function groupToolsByRisk(actions: readonly ConnectorAction[]): ToolGroup[] {
+export function groupToolsByRisk(
+  actions: readonly ConnectorAction[],
+  tI18nComplete: UiTranslator,
+): ToolGroup[] {
   const read = actions.filter((a) => a.risk === 'read');
   const write = actions.filter((a) => a.risk !== 'read');
   const groups: ToolGroup[] = [];
-  if (read.length) groups.push({ key: 'read', label: 'Read-only tools', actions: read });
-  if (write.length) groups.push({ key: 'write', label: 'Write tools', actions: write });
+  if (read.length)
+    groups.push({ key: 'read', label: tI18nComplete.raw('textdd28b5cb26fd'), actions: read });
+  if (write.length)
+    groups.push({ key: 'write', label: tI18nComplete.raw('texted26c1af81cf'), actions: write });
   return groups;
 }
 

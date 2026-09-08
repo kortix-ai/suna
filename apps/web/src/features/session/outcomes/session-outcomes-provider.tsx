@@ -39,6 +39,7 @@
  * parameter. Task 5 mounts it.
  */
 
+import { useTranslations } from '@/i18n/use-translations';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 // NOT `@kortix/sdk/react`'s hook of the same name. See the note below — this is
@@ -69,6 +70,7 @@ export function SessionOutcomesProvider({
   onOpen: (outcome: Outcome) => void;
   children: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // No `projectId` argument: this hook reads it from `ProjectFilesProvider`,
   // which is what keeps it on the same cache entry the dialog invalidates.
   // `'all'` because a merged or closed change request is still an outcome of
@@ -80,8 +82,8 @@ export function SessionOutcomesProvider({
     // pipeline (files, schedules, background tasks, connector links) was built
     // and removed — see `OutcomeKind` for why each one could not be tied to the
     // turn that showed it.
-    () => changeRequestOutcomes(data?.change_requests ?? [], projectSessionId),
-    [data?.change_requests, projectSessionId],
+    () => changeRequestOutcomes(data?.change_requests ?? [], projectSessionId, tI18nComplete),
+    [data?.change_requests, projectSessionId, tI18nComplete],
   );
 
   const byTurn = useMemo(() => anchorOutcomes(all, turnSpans), [all, turnSpans]);

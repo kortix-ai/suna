@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { CaretDownIcon, ChatCircleIcon, GearSixIcon, PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
@@ -39,6 +40,7 @@ export function NewEntityMenu({
     { onSelect: () => void; href?: never } | { href: string; onSelect?: never }
   );
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   if (!manual) {
     return (
       <Button
@@ -78,9 +80,9 @@ export function NewEntityMenu({
         <DropdownMenuItem className="items-start gap-2" onSelect={onChat}>
           <ChatCircleIcon className="text-muted-foreground size-4 shrink-0" />
           <span className="min-w-0 flex-1">
-            <span className="block">Create in chat</span>
+            <span className="block">{tI18nComplete.raw('textb1895f6ddd9d')}</span>
             <span className="text-muted-foreground block text-xs">
-              An agent scaffolds it and opens a change request.
+              {tI18nComplete.raw('text31e3ed0f6798')}
             </span>
           </span>
         </DropdownMenuItem>

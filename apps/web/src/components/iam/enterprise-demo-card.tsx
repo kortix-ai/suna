@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // "Enterprise demo" state card. Enterprise features (SSO, SCIM, …) are normally
 // sales-assigned via the enterprise tier; the demo flag turns on an interactive
 // PREVIEW of the whole surface — no billing change — so prospects can evaluate
@@ -41,6 +42,7 @@ interface EnterpriseDemoCardProps {
 }
 
 export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const openDemo = useRequestDemo();
   const adminRoleQuery = useAdminRole();
@@ -55,7 +57,9 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
   const toggleMutation = useMutation({
     mutationFn: (enabled: boolean) => setEnterpriseDemo(accountId, enabled),
     onSuccess: (enabled) => {
-      successToast(enabled ? 'Enterprise demo enabled' : 'Enterprise demo disabled');
+      successToast(
+        enabled ? tI18nComplete.raw('texta2225f18a62a') : tI18nComplete.raw('texta4007c748290'),
+      );
       // Entitlements changed — refetch account state so the gate (`sso`/`scim`
       // entitlements) flips and the SSO/SCIM cards appear/disappear immediately,
       // plus the enterprise cards that read their own state.
@@ -64,7 +68,7 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
       queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
       queryClient.invalidateQueries({ queryKey: ['iam-scim', accountId] });
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to update the demo'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textc22e35419e83')),
   });
 
   const enabled = stateQuery.data ?? false;
@@ -77,16 +81,16 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
       <SettingsRow
         label={
           <>
-            Turn on the preview
+            {tI18nComplete.raw('textc1b54655a83a')}
             <Badge variant="beta" size="sm">
-              Demo
+              {tI18nComplete.raw('text8a2cc0673b1c')}
             </Badge>
           </>
         }
         description={
           !isLoading && !isPlatformAdmin
-            ? 'Evaluation only, not a production plan. Contact Kortix to switch it on.'
-            : 'Evaluation only, not a production plan.'
+            ? tI18nComplete.raw('text0aa30be6e0c5')
+            : tI18nComplete.raw('textc9cad488b8a0')
         }
       >
         {isLoading ? (
@@ -96,7 +100,7 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
             checked={enabled}
             disabled={!canManage || toggleMutation.isPending}
             onCheckedChange={(next) => toggleMutation.mutate(next)}
-            aria-label="Toggle enterprise features demo"
+            aria-label={tI18nComplete.raw('text8f6fa53e2d6b')}
             className="shrink-0"
           />
         ) : (
@@ -110,8 +114,8 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
           entitled state, where the upsell is hidden. */}
       {enabled ? (
         <SettingsRow
-          label="Production access"
-          description="An SLA, a DPA, and support come with the Enterprise plan."
+          label={tI18nComplete.raw('text81aa53ace950')}
+          description={tI18nComplete.raw('text6eaf9486edc9')}
         >
           <Button
             variant="outline"
@@ -119,7 +123,7 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
             className="shrink-0"
             onClick={() => openDemo({ source: 'accounts-enterprise-access' })}
           >
-            Request access
+            {tI18nComplete.raw('textb06f1662da4a')}
           </Button>
         </SettingsRow>
       ) : null}

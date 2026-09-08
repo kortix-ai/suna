@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test';
 import type { ToolPart } from '@/ui';
+import { describe, expect, it } from 'bun:test';
 import { collapseSnapshots } from './detail-view';
 
 function part(tool: string, id: string): ToolPart {

@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { PostCard } from '@/components/blog/post-card';
 import { Reveal } from '@/components/home/reveal';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { BLOG_TRANSLATION_KEYS } from '@/i18n/blog-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { getAllPosts } from '@/lib/blog';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
@@ -39,7 +41,8 @@ export const metadata: Metadata = {
 
 export default function BlogIndexPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const posts = getAllPosts();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const posts = localizeUiCatalog(getAllPosts(), tI18nComplete, BLOG_TRANSLATION_KEYS);
   const [featured, ...rest] = posts;
 
   // Blog + ItemList structured data so search engines understand the listing.

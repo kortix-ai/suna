@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
@@ -93,7 +93,9 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
 
           {/* Content */}
           <div className="min-w-0 flex-1">
-            <h3 className="text-foreground text-sm leading-tight font-semibold">Kortix</h3>
+            <h3 className="text-foreground text-sm leading-tight font-semibold">
+              {tHardcodedUi.raw('i18nComplete.textab54cf5e1d9d')}
+            </h3>
             <p className="text-muted-foreground text-xs leading-tight">
               {tHardcodedUi.raw(
                 'appShareShareidComponentsMobileappbanner.line94JsxTextOpenThisContentInApp',
@@ -103,14 +105,14 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
 
           {/* Open button */}
           <Button onClick={handleOpenInApp} size="sm" className="px-4 text-xs">
-            Open
+            {tHardcodedUi.raw('i18nComplete.texted077f3d8125')}
           </Button>
 
           {/* Close button */}
           <button
             onClick={handleDismiss}
             className="hover:bg-muted/80 -mr-1 shrink-0 rounded-full p-1.5 transition-colors"
-            aria-label="Dismiss"
+            aria-label={tHardcodedUi.raw('i18nComplete.text48845bff334a')}
           >
             <X className="text-muted-foreground h-4 w-4" />
           </button>

@@ -2,15 +2,14 @@
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import { getExplicitLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
-import { NextIntlClientProvider } from 'next-intl';
+import { getUserLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
+import { NextIntlClientProvider, type AbstractIntlMessages } from 'next-intl';
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-// Preload default translations synchronously for immediate render
-// This prevents the loading spinner from blocking FCP
+// Keep English available for callers that do not supply a server-resolved catalog.
 import defaultTranslations from '../../translations/en.json';
 
-async function getTranslations(locale: Locale) {
+async function getTranslations(locale: Locale): Promise<Record<string, unknown>> {
   try {
     // Return cached default translations immediately for English
     if (locale === 'en') {
@@ -24,11 +23,18 @@ async function getTranslations(locale: Locale) {
   }
 }
 
-export function I18nProvider({ children }: { children: ReactNode }) {
+export function I18nProvider({
+  children,
+  initialLocale = defaultLocale,
+  initialMessages = defaultTranslations,
+}: {
+  children: ReactNode;
+  initialLocale?: Locale;
+  initialMessages?: Record<string, unknown>;
+}) {
   const { user } = useAuth();
-  const [locale, setLocale] = useState<Locale>(defaultLocale);
-  // Initialize with preloaded English translations to prevent blocking FCP
-  const [messages, setMessages] = useState<any>(defaultTranslations);
+  const [locale, setLocale] = useState<Locale>(initialLocale);
+  const [messages, setMessages] = useState<Record<string, unknown>>(initialMessages);
   const localeRef = useRef(locale);
 
   // Update ref and <html lang> when locale changes.
@@ -84,7 +90,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     function initializeLocale() {
-      const currentLocale = getExplicitLocale(user);
+      const currentLocale = getUserLocale(user) ?? initialLocale;
 
       if (mounted) {
         setLocale(currentLocale);
@@ -97,7 +103,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [loadTranslations, user]);
+  }, [initialLocale, loadTranslations, user]);
 
   // Listen for locale change events from useLanguage hook
   useEffect(() => {
@@ -119,10 +125,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // Memoize messages to prevent unnecessary re-renders
   const safeMessages = useMemo(() => messages || defaultTranslations, [messages]);
 
-  // Always render children immediately with available translations
-  // This prevents blocking FCP - we start with English and swap if needed
+  // Render immediately with the server-resolved catalog. English remains the fallback.
   return (
-    <NextIntlClientProvider locale={locale} messages={safeMessages} timeZone="UTC">
+    <NextIntlClientProvider
+      locale={locale}
+      messages={safeMessages as AbstractIntlMessages}
+      timeZone="UTC"
+    >
       {children}
     </NextIntlClientProvider>
   );

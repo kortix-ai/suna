@@ -8,6 +8,7 @@ import {
   SparkleIcon as Sparkles,
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -23,7 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import Loading from '@/components/ui/loading';
 import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
@@ -48,6 +49,7 @@ export function TemplateSessionInstallDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
@@ -60,10 +62,7 @@ export function TemplateSessionInstallDialog({
   const [opening, setOpening] = useState(false);
 
   const { projects, projectsQuery } = useProjectPicker({ open, enabled: !!user });
-  const activeProjects = useMemo(
-    () => projects.filter((p) => p.status === 'active'),
-    [projects],
-  );
+  const activeProjects = useMemo(() => projects.filter((p) => p.status === 'active'), [projects]);
 
   useEffect(() => {
     if (!open) return;
@@ -120,15 +119,14 @@ export function TemplateSessionInstallDialog({
   }
 
   const confirmDisabled =
-    opening ||
-    !target ||
-    (target === NEW_PROJECT && newProjectName.trim().length === 0);
+    opening || !target || (target === NEW_PROJECT && newProjectName.trim().length === 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogTitle className="sr-only">
-          Set up {title ?? 'this automation'} with the agent
+          {tI18nComplete.raw('text4da10f1fbb17')} {title ?? tI18nComplete.raw('text0941cb0251e7')}{' '}
+          {tI18nComplete.raw('text202141442ce8')}
         </DialogTitle>
 
         <div className="flex flex-col p-6">
@@ -137,15 +135,17 @@ export function TemplateSessionInstallDialog({
               <Sparkles className="text-background size-4.5" />
             </span>
             <div>
-              <h3 className="text-foreground text-sm font-medium">Set it up with the agent</h3>
-              <p className="text-muted-foreground text-xs">Guided install, right in your project</p>
+              <h3 className="text-foreground text-sm font-medium">
+                {tI18nComplete.raw('textde752c4fb179')}
+              </h3>
+              <p className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('textccaeaa3b2e87')}
+              </p>
             </div>
           </div>
 
           <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
-            We&apos;ll open a chat in your project and an agent will walk you through it — ask for
-            the details it needs, connect your accounts, and turn it on when you&apos;re ready.
-            Nothing runs until you say go.
+            {tI18nComplete.raw('text5206481e4a98')}
           </p>
 
           <div className="mt-5">
@@ -153,7 +153,7 @@ export function TemplateSessionInstallDialog({
 
             {authLoading ? (
               <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                <Loading className="size-4" /> Checking your account…
+                <Loading className="size-4" /> {tI18nComplete.raw('textcaea68eeb986')}
               </div>
             ) : !user ? (
               <div className="border-border/60 bg-muted/30 flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-8 text-center">
@@ -162,25 +162,24 @@ export function TemplateSessionInstallDialog({
                 </span>
                 <div>
                   <p className="text-foreground text-sm font-medium">
-                    Sign in to install this automation
+                    {tI18nComplete.raw('text6e4987bfe9c3')}
                   </p>
                   <p className="text-muted-foreground mx-auto mt-1 max-w-xs text-xs leading-relaxed">
-                    Sign in to pick a project and open the install chat — we&apos;ll bring you right
-                    back here.
+                    {tI18nComplete.raw('text6f4639c90fa3')}
                   </p>
                 </div>
               </div>
             ) : projectsQuery.isPending ? (
               <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                <Loading className="size-4" /> Loading your projects…
+                <Loading className="size-4" /> {tI18nComplete.raw('text1803aa5595d8')}
               </div>
             ) : projectsQuery.isError ? (
               <div className="border-border/60 bg-muted/30 rounded-xl border px-4 py-4">
                 <p className="text-foreground text-sm font-medium">
-                  Couldn&apos;t load your projects
+                  {tI18nComplete.raw('text5c8b5191bd68')}
                 </p>
                 <p className="text-muted-foreground mt-0.5 text-xs">
-                  {(projectsQuery.error as Error)?.message || 'The request failed.'}
+                  {(projectsQuery.error as Error)?.message || tI18nComplete.raw('textdb4fb44737e7')}
                 </p>
                 <Button
                   size="sm"
@@ -188,16 +187,16 @@ export function TemplateSessionInstallDialog({
                   className="mt-3"
                   onClick={() => projectsQuery.refetch()}
                 >
-                  Try again
+                  {tI18nComplete.raw('textd8b8392e2c54')}
                 </Button>
               </div>
             ) : (
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label className="text-sm">Open the install chat in</Label>
+                  <Label className="text-sm">{tI18nComplete.raw('text159265decfad')}</Label>
                   <Select value={target} onValueChange={setTarget}>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Choose a project" />
+                      <SelectValue placeholder={tI18nComplete.raw('text8ba607b13cd0')} />
                     </SelectTrigger>
                     <SelectContent>
                       {activeProjects.map((p) => (
@@ -205,20 +204,22 @@ export function TemplateSessionInstallDialog({
                           {p.name}
                         </SelectItem>
                       ))}
-                      <SelectItem value={NEW_PROJECT}>＋ New project</SelectItem>
+                      <SelectItem value={NEW_PROJECT}>
+                        {tI18nComplete.raw('text6a5058ba5252')}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 {target === NEW_PROJECT && (
                   <div className="space-y-1.5">
                     <Label className="text-sm" htmlFor="use-case-new-project-name">
-                      Project name
+                      {tI18nComplete.raw('text25498193b898')}
                     </Label>
                     <Input
                       id="use-case-new-project-name"
                       value={newProjectName}
                       onChange={(e) => setNewProjectName(e.target.value)}
-                      placeholder="My project"
+                      placeholder={tI18nComplete.raw('textcc42295b252b')}
                       autoFocus
                     />
                   </div>
@@ -234,12 +235,12 @@ export function TemplateSessionInstallDialog({
               disabled={opening}
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             {!authLoading && !user ? (
               <Button asChild size="sm">
                 <Link href={signInHref}>
-                  <LogIn className="size-4" /> Sign in to continue
+                  <LogIn className="size-4" /> {tI18nComplete.raw('text607a80121c65')}
                 </Link>
               </Button>
             ) : (
@@ -247,12 +248,16 @@ export function TemplateSessionInstallDialog({
                 {opening ? (
                   <>
                     <Loading className="size-4" />{' '}
-                    {target === NEW_PROJECT ? 'Creating project…' : 'Opening chat…'}
+                    {target === NEW_PROJECT
+                      ? tI18nComplete.raw('textac454bda92f9')
+                      : tI18nComplete.raw('texta7aede436a16')}
                   </>
                 ) : (
                   <>
                     <MessagesSquare className="size-4" />{' '}
-                    {target === NEW_PROJECT ? 'Create project & install' : 'Open install session'}
+                    {target === NEW_PROJECT
+                      ? tI18nComplete.raw('text765544af41fd')
+                      : tI18nComplete.raw('text5cf9fe0d7430')}
                   </>
                 )}
               </Button>

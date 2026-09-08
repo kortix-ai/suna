@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -22,17 +22,17 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useRuntimeSession } from '@kortix/sdk/react';
-import {
-  loadSessionTranscriptMessages,
-  useSessionSync,
-} from '@kortix/sdk/react';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
   getTranscriptFilename,
   type TranscriptOptions,
 } from '@kortix/sdk';
+import {
+  loadSessionTranscriptMessages,
+  useRuntimeSession,
+  useSessionSync,
+} from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CopyIcon as Copy,
@@ -81,7 +81,7 @@ export function ExportTranscriptModal({
       .catch(() => {
         if (!cancelled) {
           setMessages(visibleMessagesRef.current);
-          errorToast('Failed to load complete transcript');
+          errorToast(tHardcodedUi.raw('i18nComplete.texta867cd732dd7'));
         }
       })
       .finally(() => {
@@ -90,7 +90,7 @@ export function ExportTranscriptModal({
     return () => {
       cancelled = true;
     };
-  }, [open, sessionId]);
+  }, [open, sessionId, tHardcodedUi]);
 
   const transcript = useMemo(() => {
     if (!session || messages.length === 0) return '';
@@ -115,12 +115,12 @@ export function ExportTranscriptModal({
     try {
       await navigator.clipboard.writeText(transcript);
       setCopied(true);
-      successToast('Transcript copied to clipboard');
+      successToast(tHardcodedUi.raw('i18nComplete.text738211823996'));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      errorToast('Failed to copy to clipboard');
+      errorToast(tHardcodedUi.raw('i18nComplete.textb5b83b18d54b'));
     }
-  }, [transcript]);
+  }, [tHardcodedUi, transcript]);
 
   const handleDownload = useCallback(() => {
     if (!transcript) return;
@@ -133,9 +133,9 @@ export function ExportTranscriptModal({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    successToast(`Downloaded ${filename}`);
+    successToast(tHardcodedUi('i18nComplete.text7eca5e05f915', { value0: filename }));
     onOpenChange(false);
-  }, [transcript, filename, onOpenChange]);
+  }, [transcript, filename, tHardcodedUi, onOpenChange]);
 
   const toggleOption = useCallback((key: keyof TranscriptOptions) => {
     setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -235,7 +235,7 @@ export function ExportTranscriptModal({
 
           <Field>
             <FieldContent className="flex flex-col items-start justify-start gap-2">
-              <FieldTitle>Summary</FieldTitle>
+              <FieldTitle>{tHardcodedUi.raw('i18nComplete.text8e76a94ac832')}</FieldTitle>
               {isLoadingMessages ? (
                 <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
                   <Loading />
@@ -246,9 +246,13 @@ export function ExportTranscriptModal({
               ) : (
                 <ul className="text-muted-foreground list-inside list-disc text-xs">
                   <li>
-                    {messageCount} message{messageCount !== 1 ? 's' : ''}
+                    {messageCount} {tHardcodedUi.raw('i18nComplete.textab530a13e459')}
+                    {messageCount !== 1 ? 's' : ''}
                   </li>
-                  <li>~{wordCount.toLocaleString()} words</li>
+                  <li>
+                    ~{wordCount.toLocaleString()}{' '}
+                    {tHardcodedUi.raw('i18nComplete.textdba36bffa5ca')}
+                  </li>
                 </ul>
               )}
             </FieldContent>
@@ -266,12 +270,12 @@ export function ExportTranscriptModal({
             {copied ? (
               <>
                 <Check />
-                Copied
+                {tHardcodedUi.raw('i18nComplete.text8d525e5f158b')}
               </>
             ) : (
               <>
                 <Copy />
-                Copy
+                {tHardcodedUi.raw('i18nComplete.texte21f935f11d7')}
               </>
             )}
           </Button>
@@ -284,7 +288,7 @@ export function ExportTranscriptModal({
             {isLoadingMessages ? (
               <>
                 <Loading />
-                Loading...
+                {tHardcodedUi.raw('i18nComplete.text47d2a515ef2f')}
               </>
             ) : (
               <>

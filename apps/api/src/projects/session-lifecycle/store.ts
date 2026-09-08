@@ -278,6 +278,51 @@ export async function enqueueContinueSessionCommand(
   return { row: existing, deduped: true };
 }
 
+/** Load the durable first prompt and every exact runtime message id it used. */
+export async function loadLegacyPendingFirstPrompt(sessionId: string): Promise<{
+  commandId: string;
+  deliveredMessageIds: string[];
+  parts: PromptPartWire[];
+} | null> {
+  const [row] = await db
+    .select({
+      commandId: sessionLifecycleCommands.commandId,
+      payload: sessionLifecycleCommands.payload,
+      result: sessionLifecycleCommands.result,
+    })
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, `prompt:${sessionId}:pending-first`))
+    .limit(1);
+  if (!row) return null;
+
+  const payload = row.payload as unknown as QueuedContinueSessionPayload;
+  const result = row.result as { forwarded_message_id?: unknown };
+  const deliveredMessageIds = [
+    result.forwarded_message_id,
+    payload.redeliveredMessageId,
+    ...(payload.redeliveredMessageIds ?? []).slice().reverse(),
+    payload.wireMessageId,
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+  return {
+    commandId: row.commandId,
+    deliveredMessageIds: [...new Set(deliveredMessageIds)],
+    parts: Array.isArray(payload.parts) ? payload.parts : [],
+  };
+}
+
+/** Record completion without replacing unrelated session metadata. */
+export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Promise<void> {
+  await db
+    .update(projectSessions)
+    .set({
+      metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        legacy_inline_attachments_repaired_at: new Date().toISOString(),
+      })}::jsonb`,
+    })
+    .where(eq(projectSessions.sessionId, sessionId));
+}
+
 /**
  * Put a claimed row back WITHOUT counting the claim as an attempt.
  *
@@ -303,6 +348,53 @@ export async function enqueueContinueSessionCommand(
  * sent stale; the payload merge (`||`) is the durable half.
  */
 export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+
+/** How many times a prompt the runtime accepted-but-never-wrote is re-sent
+ *  under a fresh key before it is dead-lettered for the user to retry. */
+export const MAX_LANDING_RETRIES = 2;
+
+/**
+ * Put a prompt whose landing proof FAILED back on the queue — with a fresh
+ * attempt number, which is what gives the next POST a fresh
+ * `Idempotency-Key` (`${commandId}:r${attempt}`) and, via `remintOnDelivery`,
+ * a fresh wire id. Re-POSTing under the SAME key is answered
+ * `200 {"deduplicated": true}` by the proxy's 10-minute claim, which
+ * `postPrompt` reads as delivered: the exact silent loss the proof exists to
+ * stop, arriving 3.6 s later than before (review finding, 2026-09-05).
+ *
+ * Returns false when the retry budget is spent; the caller dead-letters.
+ */
+export async function requeueUnlandedPrompt(
+  commandId: string,
+  reason: string,
+  availableAt: Date,
+): Promise<{ requeued: boolean; refusals: number }> {
+  const rows = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      availableAt,
+      lockedBy: null,
+      lockedUntil: null,
+      lastError: reason,
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
+        || jsonb_build_object('landing_refusals',
+             COALESCE((${sessionLifecycleCommands.result}->>'landing_refusals')::int, 0) + 1)`,
+      payload: withNextDeliveryAttempt(
+        sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
+      ),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, commandId),
+        sql`COALESCE((${sessionLifecycleCommands.result}->>'landing_refusals')::int, 0) < ${MAX_LANDING_RETRIES}`,
+      ),
+    )
+    .returning({ result: sessionLifecycleCommands.result });
+  const refusals = Number(((rows[0]?.result ?? {}) as { landing_refusals?: unknown }).landing_refusals ?? 0);
+  return { requeued: rows.length > 0, refusals };
+}
 
 export async function requeueForAdmission(
   commandId: string,
