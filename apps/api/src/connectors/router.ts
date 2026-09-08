@@ -29,6 +29,8 @@ import type { FeatureFlagKey } from '../feature-flags/registry';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { isAllowedSourceValidationError } from '../marketplace/catalog';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { INVALID_SOURCE_ADDRESS_CODE } from '../marketplace/catalog';
+import { UnsafeEgressError } from '../shared/ssrf-guard';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import {
   type ConnectorAttachmentStore,
@@ -605,15 +607,32 @@ async function readAttachmentBytes(c: Context): Promise<Uint8Array> {
  * falls through to the generic handler for a genuine server failure.
  */
 function allowedSourceValidationResponse(c: Context, err: unknown): Response | null {
-  if (!isAllowedSourceValidationError(err)) return null;
-  return c.json(
-    {
-      error: err.code,
-      code: err.code,
-      message: err.message,
-    },
-    400,
-  );
+  if (isAllowedSourceValidationError(err)) {
+    return c.json(
+      {
+        error: err.code,
+        code: err.code,
+        message: err.message,
+      },
+      400,
+    );
+  }
+  // Defense in depth: the DNS-resolving egress guard (`safeEgressFetch`) is
+  // the last check before a connector endpoint is fetched. Whatever it
+  // rejects — a non-https scheme the source guard admitted as shorthand, a
+  // public hostname that resolves to a private address — is still a property
+  // of the URL the user typed, never a server defect. Same 400 envelope.
+  if (err instanceof UnsafeEgressError) {
+    return c.json(
+      {
+        error: INVALID_SOURCE_ADDRESS_CODE,
+        code: INVALID_SOURCE_ADDRESS_CODE,
+        message: `Connector endpoint rejected: ${err.message}`,
+      },
+      400,
+    );
+  }
+  return null;
 }
 
 export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {

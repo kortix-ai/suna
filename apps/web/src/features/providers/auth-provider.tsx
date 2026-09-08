@@ -47,6 +47,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (mustReset) {
+        // Cross-tab SIGNED_IN can replace the user without SIGNED_OUT.
+        // Fence pending requests before cleanup yields or the new token lands.
+        setBootstrapAuthToken(null);
+        setCachedAuthToken(null);
         try {
           await resetClientState();
         } catch (error) {
@@ -122,11 +126,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
 
-      // Functional update: the previous `if (isLoading)` read a stale
-      // `isLoading` captured at mount (the effect only depends on `supabase`),
-      // so the guard never short-circuited. This is behavior-equivalent but
-      // doesn't rely on a stale closure value.
-      setIsLoading((prev) => (prev ? false : prev));
+      // Only getInitialSession clears initial loading, after validation and
+      // identity cleanup. INITIAL_SESSION can arrive before either finishes.
       switch (event) {
         case 'SIGNED_IN': {
           if (newSession?.access_token) {

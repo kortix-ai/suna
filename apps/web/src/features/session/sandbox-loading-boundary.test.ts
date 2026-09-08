@@ -34,16 +34,14 @@ describe('session navigation loading boundaries', () => {
     expect(projectLayoutSource).toContain('<ProjectShell projectId={projectId}>');
   });
 
-  test('first project access and foreground retries keep the intentional full-page loader', () => {
+  test('auth hydration, first project access, and foreground retries keep the intentional full-page loader', () => {
     // The first pending read owns the viewport. A foreground retry keeps the
     // same loader only before an access request enters its waiting state.
-    expect(projectAccessSource).toMatch(
-      /if \(query\.isPending \|\| \(!waiting && query\.isFetching\)\)\s*return <AuthPendingScreen footer=\{false\} \/>;/,
-    );
+    expect(projectAccessSource).toContain('if (!authReady || query.isPending)');
+    expect(projectAccessSource).toContain('if (!waiting && query.isFetching)');
+    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
     expect(projectAccessSource).not.toMatch(/query\.isPending\s*\|\|\s*query\.isFetching/);
-    expect(projectAccessSource).not.toMatch(
-      /query\.isPending \|\| \(!waiting && query\.isFetching\)\)\s*return null/,
-    );
+    expect(projectAccessSource).not.toMatch(/query\.isPending\)\s*return null/);
   });
 
   test('the first-fetch loader carries no legal footer', () => {
@@ -64,7 +62,7 @@ describe('session navigation loading boundaries', () => {
     // key is a constant now because three call sites share it, so assert the
     // constant's value and its use rather than one inlined literal.
     expect(projectAccessSource).toContain("const QUERY_KEY = 'project-access-boundary'");
-    expect(projectAccessSource).toContain('queryKey: [QUERY_KEY, projectId]');
+    expect(projectAccessSource).toContain('queryKey: [QUERY_KEY, projectId, user?.id]');
     expect(projectAccessSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('listProjectAccess(projectId');

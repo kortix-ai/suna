@@ -2346,7 +2346,10 @@ function legacyRuntimeAccess(input: LegacyRuntimePartTarget) {
     kind: 'principal' as const,
     userId: input.userId,
     callerSessionId: input.sessionId,
-    boundCredentialSessionId: input.sessionId,
+    // Same server-to-server delivery rationale as `postPrompt`: this authenticates
+    // as the account principal, not a session-bound agent token, so the caller
+    // binding is null and the trigger-session manager override is preserved.
+    boundCredentialSessionId: null,
     sandboxAuthored: false,
   };
 }
@@ -2484,9 +2487,15 @@ async function postPrompt(
         kind: 'principal',
         userId,
         callerSessionId,
-        // A real Kortix session id (the session this prompt is FOR), so it is
-        // also the correct agent binding.
-        boundCredentialSessionId: callerSessionId,
+        // Server-to-server delivery acts as the account principal (userId), NOT
+        // as a session-bound agent token. `boundCredentialSessionId` names the
+        // CALLER's own agent/sandbox binding — null here, so the trigger-session
+        // manager override in canAccessSandboxSession is NOT stripped from a
+        // trigger-created session that a reuse-mode fire is re-prompting under
+        // the account owner. Setting it to the target session id made every
+        // trigger delivery 403 ("Not authorized to access this session") and
+        // dead-letter as `delivery outcome: pending`.
+        boundCredentialSessionId: null,
         sandboxAuthored: false,
       },
       'POST',

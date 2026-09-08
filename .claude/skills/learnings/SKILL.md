@@ -21,6 +21,30 @@ linked, not inlined.
 
 ## Register
 
+### Token publication must not look like sign-out to waiting requests (2026-09-08)
+
+**When:** fencing in-flight auth reads against cache writes. Distinguish a token
+publication from a clear. Return the fresh published token after hydration;
+return null when a clear occurred after the read began, including clear-then-sign-in.
+*Incident:* #7065 made a valid session return null when AuthProvider published
+during a token read. The project gate displayed "This project didn't load."
+*Enforcer:* `apps/web/src/lib/auth-token.test.ts` covers concurrent hydration,
+bootstrap, sign-out followed by sign-in, and expired publications.
+
+**Identity-change near-miss:** Cross-tab `SIGNED_IN` can replace a user without
+`SIGNED_OUT`. Clear bootstrap and cached tokens synchronously when `adoptUser`
+requires a reset, before its first await. Otherwise pending requests can inherit
+the incoming user's token. `auth-provider-identity.test.ts` pins this ordering.
+
+**Cold-load ordering:** The project-access query must wait for AuthProvider's
+resolved user. Otherwise first-load identity cleanup cancels its token read and
+leaves the non-retrying gate on an error. Key access results by user and show
+pending while auth is unresolved. CI's fresh-browser localization journey
+reproduced the failure; `project-access-boundary.test.ts` pins the wiring.
+AuthProvider declares initial readiness only after bootstrap validation and
+cleanup finish, not from an earlier `INITIAL_SESSION` event. Keep the signed-out
+redirect above the pending gate and use the user-scoped key for admin bypass.
+
 ### Authenticated reads wait for identity hydration (2026-09-07)
 
 **Rule:** A browser read that requires authentication starts only after the auth provider publishes the user; a missing token during cold hydration is not a resource failure.
@@ -45,6 +69,41 @@ linked, not inlined.
 **Rule:** A new daemon route ships behind a capability check or a fallback; the API and the daemon never assume the same build.
 **Incident:** `/file/append` reached a stale daemon, fell through to OpenCode's SPA as `200 text/html`, and five retries dead-lettered the first prompt.
 **Enforcers:** typed non-JSON response guard; `file.append` capability negotiation; 96 KiB legacy fallback; runtime-ladder parking/attempt refund; terminal file-router JSON 404; explicit swap refresh; deferred swap timer/turn-end tests.
+
+### Verify a rotated credential with the WRITE it exists for, and every edge worker deploys from the same pipeline as its origin (2026-09-07)
+
+**When:** rotating any token/key (PAT, App permission, API key) or editing an
+`apps/api/.env.<env>` credential; and when changing what fronts an origin
+(`infra/cloudflare/workers/api-router`). PR #7063 (2026-08-30) swapped the
+managed-kortix classic PAT for a fine-grained one and "verified" it with
+`GET /orgs/managed-kortix/repos` = 200 — a read. Repo creation needs
+`Administration: write`, which it lacked, and the App fallback (install
+140097279) only had `contents:write`. **Every prod project creation failed
+for 8 days** (~500/day, 63 users/day), and nobody saw the reason: the prod
+`api-kortix-router` worker was a 2026-08-21 build (only `deploy-staging.yml`
+and the cutover workflow ever ran `wrangler deploy`), so it rewrote the 502
+body into "Kortix is temporarily unavailable" and Better Stack showed a
+maintenance page nobody had switched on. **Rules.** (1) A credential swap is
+verified by the operation it authorises — for a repo-creating token, a
+create+delete probe repo — never by a read. (2) An edge worker is part of the
+origin's release: `deploy-prod.yml` now deploys it (`deploy-api-router`) and
+asserts the script's `modified_on` moved. (3) A route that returns an error
+body without a log line is invisible once an edge or a proxy eats the body;
+`provision-core.ts` now logs `create_repo` failures. *Incident:* prod,
+2026-08-30 23:15 → 2026-09-07 20:28 UTC (worker) / credential fix pending.
+See memory [[prod-provision-dead-fine-grained-pat-2026-08-30]].
+*Enforcer:* `deploy-api-router` job in `deploy-prod.yml`; unit
+`unit-connector-invalid-source-address.test.ts` for the sibling 500s.
+
+### Verify the listening process before sharing a worktree URL (2026-09-07)
+
+**When:** sharing or verifying a local fix, check the web and API listener PIDs
+with `lsof`, then check each PID's `cwd` against the canonical worktree.
+A healthy port does not identify its code. Connector search verification used
+ports 13500/13508; another worktree later occupied them and the shared URL
+reproduced the old 500. Reassign the local slot when a different worktree owns
+its ports. **Enforcement TODO:** make `worktree start` reject foreign listeners
+before `freeSlotPorts` and make `worktree list` report process ownership.
 
 ### One attachment tile, translated to tokens — never a mockup's pixels (2026-09-06)
 

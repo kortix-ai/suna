@@ -793,3 +793,73 @@ test('composioCatalogPage enriches the paged catalogue with the metadata that pa
     categories: [],
   });
 });
+
+test('composioCatalogPage searches one and two letters across every provider page', async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const created = session();
+  created.toolkits = async (options) => {
+    if (options?.search && options.search.length < 3) {
+      throw new Error('Search query must be at least 3 characters long');
+    }
+    return { items: [], totalPages: 1 };
+  };
+  const catalogClient = {
+    toolkits: {
+      async list(query: { cursor?: string }) {
+        requests.push(query);
+        return query.cursor
+          ? {
+              items: [
+                {
+                  slug: 'gmail',
+                  name: 'Gmail',
+                  meta: { description: 'Email', categories: [{ id: 'email', name: 'Email' }] },
+                },
+              ],
+              next_cursor: null,
+            }
+          : {
+              items: [
+                { slug: 'alpha', name: 'Alpha', meta: {} },
+                { slug: 'zoom', name: 'Zoom', meta: {} },
+              ],
+              next_cursor: 'page-2',
+            };
+      },
+    },
+  };
+  const input = {
+    projectId: 'project-1',
+    runtime: fakeRuntime({ created }),
+    catalogClient,
+    limit: 1,
+  };
+  const first = await composioCatalogPage({ ...input, q: ' A ' });
+  expect(first).toMatchObject({
+    provider: 'composio',
+    total: 2,
+    hasMore: true,
+    toolkits: [{ slug: 'alpha' }],
+  });
+  if (!('nextCursor' in first)) throw new Error('expected a next cursor');
+  const second = await composioCatalogPage({ ...input, q: 'a', cursor: first.nextCursor });
+  expect(second).toMatchObject({
+    total: 2,
+    hasMore: false,
+    toolkits: [{ slug: 'gmail', description: 'Email', categories: ['email'], connected: false }],
+  });
+  expect(await composioCatalogPage({ ...input, q: 'gm' })).toMatchObject({
+    total: 1,
+    hasMore: false,
+    toolkits: [{ slug: 'gmail' }],
+  });
+  expect(await composioCatalogPage({ ...input, q: 'zz' })).toMatchObject({
+    total: 0,
+    hasMore: false,
+    toolkits: [],
+  });
+  expect(requests).toEqual([
+    { limit: 1000, sort_by: 'usage' },
+    { limit: 1000, sort_by: 'usage', cursor: 'page-2' },
+  ]);
+});

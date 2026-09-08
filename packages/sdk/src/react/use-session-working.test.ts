@@ -436,6 +436,31 @@ describe('readSessionTurnObservation', () => {
     expect(observation.atMs).toBe(Date.parse(BUNDLE_AT));
   });
 
+  test('a repeat read asks /turn even while a bundle is claimable', async () => {
+    // Same window as the inbox reader's: a bundle stays claimable for seconds,
+    // and a read issued BECAUSE something changed — the drain-floor
+    // invalidation, a status frame — must not be answered by the snapshot
+    // taken before the change. Only the open burst (no read held yet) shares.
+    resetSessionOpenBundles();
+    const urls = mockFetch((url) =>
+      url.includes('/snapshot')
+        ? {
+            observed_at: BUNDLE_AT,
+            turn: { known: true, turns: [] },
+            queue: { known: true, prompts: [], held: false },
+            transcript: { known: true, requested: false },
+            config: { known: true },
+            models: { known: false, reason: 'x' },
+            session: { session_id: 'S1' },
+          }
+        : { turns: [{ turn_token: 'tt-3', state: 'active' }] },
+    );
+    openSessionBundle('P1', 'S1');
+    const observation = await readSessionTurnObservation('P1', 'S1', { bundle: false });
+    expect(urls.some((u) => u.endsWith('/turn'))).toBe(true);
+    expect(observation.turns[0]?.turn_token).toBe('tt-3');
+  });
+
   test('reads /turn when no bundle is in flight — the steady-state poll', async () => {
     resetSessionOpenBundles();
     const urls = mockFetch(() => ({ turns: [], last_ended: { turn_token: 'tt-0', end_reason: 'completed', ended_at: null } }));
