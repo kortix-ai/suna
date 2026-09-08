@@ -32,9 +32,23 @@
  *   3 (adopts)         662 ms       2404 ms
  *   4 (adopts)         682 ms       2185 ms
  *
- * 4.3x to ready and 3.0x to an answer, and the remaining ~2.2 s is mostly the
- * model. The earlier per-component figures above predicted this and are now
- * confirmed at the level a user actually feels.
+ * 4.3x to ready and 3.0x to an answer. The earlier per-component figures above
+ * predicted this and are now confirmed at the level a user actually feels.
+ *
+ * THOSE FIGURES WERE MEASURED WITH A POLLING HARNESS AND READ SLIGHTLY HIGH.
+ * Re-measured 2026-09-09 with a single long-poll (`/start?wait_ms=8000`), which
+ * returns `ready` on the FIRST call rather than the three the loop made at
+ * ~190 ms round trip each:
+ *
+ *   create 1317 / 1174 / 1027 ms
+ *   ready   883 /  520 /  452 ms   one /start call, stage=ready
+ *   text    493 /  653 /  484 ms
+ *   TOTAL  2693 / 2347 / 1963 ms
+ *
+ * Also worth correcting: "the rest is the model" was wrong. The turn runs
+ * DURING the ready wait, so first text costs ~500 ms after ready, not ~1.9 s.
+ * What is left is roughly 500 ms of forced `git fetch` in session create (see
+ * projects/lib/sessions.ts, loadProjectAgents) and the client's own round trips.
  *
  * STILL GATED. `KORTIX_CELL_SHARED_HOST_ENABLED` remains off by default and is
  * set only on the dev stack. The reason it was off — "the reaper stops a box
