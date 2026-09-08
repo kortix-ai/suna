@@ -65,7 +65,7 @@ async function git(args: string[]): Promise<void> {
 
 /**
  * Commit one file onto `main` of a local bare repository through a throwaway
- * clone — the flow-side way to put a `kortix-<slug>.yaml` (or any file) in a
+ * clone — the flow-side way to put a manifest (or any file) in a
  * project when no API route writes it.
  */
 export async function commitFileToLocalRepository(

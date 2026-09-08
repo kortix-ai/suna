@@ -42,7 +42,7 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source: 'opencode' | 'kortix.yaml';
     enabled?: boolean;
-    /** The space whose `kortix-<slug>.yaml` declares this agent, or null
+    /** The space whose `spaces.<slug>` block declares this agent, or null
      *  for a global one. An owned agent runs only in its space and in the
      *  ones that reference it. */
     space?: string | null;
@@ -59,7 +59,7 @@ export interface ProjectConfigSummary {
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
-  /** The project's `kortix-<slug>.yaml` files, access-filtered for the reader
+  /** The project's `spaces:` blocks, access-filtered for the reader
    *  by `filterConfigResourcesForUser`. */
   spaces: Array<{
     slug: string;

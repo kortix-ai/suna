@@ -47,7 +47,7 @@ export interface CreatedProject {
   slug?: string;
   /** The local bare repository a `managedGit`/`seed` project was created
    *  over (local profile only) — lets a flow commit files the API has no
-   *  write route for, e.g. a `kortix-<slug>.yaml` declaring agents. */
+   *  write route for, e.g. a `kortix.yaml` declaring agents. */
   repoUrl?: string | null;
 }
 

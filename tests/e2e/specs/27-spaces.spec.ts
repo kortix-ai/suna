@@ -146,13 +146,15 @@ test.describe('27 — Spaces', () => {
         page.locator(`a[href="/projects/${projectId}/spaces/marketing"]`).first(),
       ).toBeVisible();
 
-      // The create landed as its own file, `kortix-marketing.yaml`, beside the
-      // root manifest (spec 2026-09-06) — read it back through the files API.
+      // The create landed as a `spaces.marketing` block of the root manifest
+      // (user, 2026-09-08) — read it back through the files API.
       const file = await api<{ content: string }>(
         session.access_token,
         'GET',
-        `/projects/${projectId}/files/content?path=kortix-marketing.yaml`,
+        `/projects/${projectId}/files/content?path=kortix.yaml`,
       );
+      expect(file.content).toContain('spaces:');
+      expect(file.content).toContain('marketing:');
       expect(file.content).toContain('name: Marketing');
 
       // ── 3. Editing the instructions PATCHes ───────────────────────────

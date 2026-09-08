@@ -1,13 +1,12 @@
 /**
  * Spaces — named containers inside a project. Maps to spec §12b
- * (SPACE-1..6). Each space is its own file beside the root manifest,
- * `kortix-<slug>.yaml` (spec 2026-09-06) — the source of truth for
- * identity/agent/sessions-mode and for the agents it owns; the database holds
- * only the session join
+ * (SPACE-1..6). Each space is a `spaces.<slug>` block of the root manifest
+ * (user, 2026-09-08) — the source of truth for identity/agent/sessions-mode
+ * and for the agents it owns; the database holds only the session join
  * (`project_sessions.space`) and the IAM grants (generic
  * `resource-grants`, `resource_type: 'space'`).
  *
- * Every CRUD write commits that file, exactly like triggers next door
+ * Every CRUD write commits that one file, exactly like triggers next door
  * (triggers.flow.ts) — projects here use `managedGit: true` so the commit is
  * real and readable back through `GET /projects/:id/commits`.
  *
@@ -58,14 +57,14 @@ flow(
         .has('$.session_count', 0)
         .has('$.trigger_count', 0)
         .has('$.can_manage', true)
-        .has('$.path', 'kortix-marketing.yaml');
+        .has('$.path', 'kortix.yaml');
       const body = r.json<any>();
       if (!Array.isArray(body.agents) || body.agents.length !== 0) {
         throw new Error(`expected agents: [] on create, got ${JSON.stringify(body.agents)}`);
       }
     });
 
-    await ctx.step('the create committed kortix-marketing.yaml (readable via GET /commits)', async () => {
+    await ctx.step('the create committed kortix.yaml (readable via GET /commits)', async () => {
       const r = await owner.get('/v1/projects/:projectId/commits', { params: { projectId: p.id } });
       r.status(200);
       const body = r.json<any>();
@@ -716,19 +715,35 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
 
     await ctx.step(
-      'kortix-marketing.yaml declares agent "writer"; kortix-sales.yaml references it with { from: marketing }',
+      'spaces.marketing declares agent "writer"; spaces.sales references it with { from: marketing }',
       async () => {
+        // ONE commit to ONE file now — both spaces live in the root manifest,
+        // so a state that used to need two ordered commits is a single write.
         await commitFileToLocalRepository(
           repoUrl,
-          'kortix-marketing.yaml',
-          'name: Marketing\nagent: writer\nagents:\n  writer:\n    connectors: []\n',
-          'feat: marketing owns writer',
-        );
-        await commitFileToLocalRepository(
-          repoUrl,
-          'kortix-sales.yaml',
-          'name: Sales\nagents:\n  writer:\n    from: marketing\n',
-          'feat: sales references writer',
+          'kortix.yaml',
+          [
+            'kortix_version: 2',
+            'project:',
+            `  name: ${p.name}`,
+            'default_agent: kortix',
+            'agents:',
+            '  kortix: {}',
+            'spaces:',
+            '  marketing:',
+            '    name: Marketing',
+            '    agent: writer',
+            '    agents:',
+            '      writer:',
+            '        connectors: []',
+            '  sales:',
+            '    name: Sales',
+            '    agents:',
+            '      writer:',
+            '        from: marketing',
+            '',
+          ].join('\n'),
+          'feat: marketing owns writer, sales borrows it',
         );
         // The API write that refreshes the mirror.
         const r = await owner.post(
@@ -751,7 +766,7 @@ flow(
           return r.json<any>();
         };
         const marketing = await read('marketing');
-        if (marketing.path !== 'kortix-marketing.yaml' || marketing.agent !== 'writer') {
+        if (marketing.path !== 'kortix.yaml' || marketing.agent !== 'writer') {
           throw new Error(`unexpected marketing: ${JSON.stringify(marketing)}`);
         }
         const usable = {

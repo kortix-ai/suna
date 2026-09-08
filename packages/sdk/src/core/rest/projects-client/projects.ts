@@ -153,7 +153,7 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
-    /** The space whose `kortix-<slug>.yaml` declares this agent, or null
+    /** The space whose `spaces.<slug>` block declares this agent, or null
      *  for a global one. An owned agent runs only in its space and in the
      *  ones that reference it (`agentsUsableIn`). Absent on older servers. */
     space?: string | null;

@@ -1,5 +1,5 @@
 /**
- * Space CRUD — one `kortix-<slug>.yaml` per space.
+ * Space CRUD — every space is a `spaces.<slug>` block of the root manifest.
  *
  * The manifest is the source of truth, so every write here is one git commit,
  * exactly like the trigger routes next door (`routes/r4.ts`): read the manifest
@@ -30,18 +30,13 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { normalizeString, readBody, type ProjectRow } from '../lib/serializers';
 import { loadProjectSessionInventory } from '../lib/session-list';
 import { accessibleSpaceSlugs, spaceViewerAccess } from '../lib/space-access';
-import { serializeManifestObject } from '@kortix/manifest-schema';
-import { commitRepoChanges, commitRepoFile, slugify } from '../lib/triggers';
+import { slugify } from '../lib/triggers';
 import { loadProjectAgents } from '../agents';
 import type { GitBackedProject } from '../git';
-// From the module, not the `../git` barrel: tests that mock the barrel with a
-// fixed export list must keep loading this route.
-import { readRepoFileRevision } from '../git/files';
 import {
   loadProjectSpaces,
   stripSpaceFromTriggers,
-  spacePathFor,
-  spaceSpecToFileEntry,
+  spaceSpecToManifestEntry,
   usableAgentNames,
   type SpaceSessionsMode,
   type SpaceSpec,
@@ -175,7 +170,7 @@ function mergeSpaceBody(
     ? { ...existing }
     : {
         slug,
-        path: spacePathFor(manifestPath, slug),
+        path: manifestPath,
         name: slug,
         description: null,
         agent: null,
@@ -186,7 +181,7 @@ function mergeSpaceBody(
         agentsRaw: null,
       };
   spec.slug = slug;
-  spec.path = spacePathFor(manifestPath, slug);
+  spec.path = manifestPath;
 
   if (has('name')) {
     const name = normalizeString(body.name);
@@ -199,7 +194,7 @@ function mergeSpaceBody(
     const agent = normalizeString(body.agent);
     if (agent && !declaredAgents.includes(agent)) {
       return {
-        error: `agent "${agent}" is not usable in this space — declare it in the root manifest, in kortix-${slug}.yaml, or reference it there with { from: <slug> }`,
+        error: `agent "${agent}" is not usable in this space — declare it in the root manifest's agents:, in spaces.${slug}.agents, or reference it there with { from: <slug> }`,
       };
     }
     spec.agent = agent;
@@ -223,7 +218,7 @@ async function usableAgentsFor(
   return usableAgentNames(await loadProjectAgents(gitProject), existing);
 }
 
-/** Where the root manifest lives — the directory space files go in. A
+/** Where the root manifest lives — the file every space is declared in. A
  *  project with no manifest yet uses its configured path, like every other
  *  synthesized-manifest reader. */
 async function rootManifestPath(gitProject: GitBackedProject): Promise<string> {
@@ -232,20 +227,33 @@ async function rootManifestPath(gitProject: GitBackedProject): Promise<string> {
   return manifest?.path ?? gitProject.manifestPath ?? 'kortix.yaml';
 }
 
-function serializeSpaceFile(spec: SpaceSpec): string {
-  return serializeManifestObject(spaceSpecToFileEntry(spec), 'yaml');
-}
-
-/** Rewrite one space's file with compare-and-swap on its blob: a lost
- *  race is a 409, never a silent overwrite of someone else's edit. */
-async function writeSpaceFile(
+/**
+ * Write one space into the root manifest's `spaces:` map, as ONE commit with
+ * the compare-and-swap retry every other manifest edit uses. A lost race is
+ * a 409, never a silent overwrite.
+ *
+ * This replaced a per-space `commitRepoFile` against `kortix-<slug>.yaml`
+ * (user, 2026-09-08). The win beyond one fewer file: a space write is now
+ * the SAME transaction as a trigger or connector write, so it can never land
+ * half-applied against a manifest that moved underneath it.
+ */
+async function writeSpace(
   row: ProjectRow,
-  gitProject: GitBackedProject,
+  slug: string,
   spec: SpaceSpec,
   message: string,
-): Promise<{ ok: true } | { error: string; status: number }> {
-  const revision = await readRepoFileRevision(gitProject, spec.path);
-  return commitRepoFile(row, spec.path, serializeSpaceFile(spec), message, revision);
+  operation: string,
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  return mutateManifestWithRetry(row, operation, (manifest) => {
+    const spaces = isTable(manifest.raw.spaces) ? { ...manifest.raw.spaces } : {};
+    spaces[slug] = spaceSpecToManifestEntry(spec);
+    manifest.raw = { ...manifest.raw, spaces };
+    return { ok: true as const, commitMessage: message };
+  });
+}
+
+function isTable(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 // ─── GET /v1/projects/:projectId/spaces ────────────────────────────────
@@ -329,12 +337,9 @@ projectsApp.openapi(
       loadProjectSpaces(gitProject),
       rootManifestPath(gitProject),
     ]);
-    const filePath = spacePathFor(rootPath, slug);
-    // A file that exists but failed to parse is still that slug's file.
-    if (
-      declared.specs.some((s) => s.slug === slug) ||
-      (await readRepoFileRevision(gitProject, filePath)) !== null
-    ) {
+    // A block that exists but failed to parse is still that slug's block, so
+    // check the raw map too, not just the specs that parsed.
+    if (declared.specs.some((s) => s.slug === slug) || declared.errors.some((e) => e.slug === slug)) {
       return c.json(
         {
           error: `A space with slug "${slug}" already exists. Pick a different name.`,
@@ -346,13 +351,14 @@ projectsApp.openapi(
     const usable = await usableAgentsFor(gitProject, null);
     const merged = mergeSpaceBody({ ...body, name }, null, slug, rootPath, usable);
     if ('error' in merged) return c.json({ error: merged.error }, 400);
-    const committed = await commitRepoFile(
+    const committed = await writeSpace(
       loaded.row,
-      filePath,
-      serializeSpaceFile(merged),
+      slug,
+      merged,
       `feat(spaces): add ${slug}`,
+      `space ${slug} was being created`,
     );
-    if ('error' in committed) {
+    if (!committed.ok) {
       return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
     }
     const created: SpaceSpec = merged;
@@ -450,13 +456,14 @@ projectsApp.openapi(
       const usable = await usableAgentsFor(gitProject, current);
       const merged = mergeSpaceBody(body, current, slug, rootPath, usable);
       if ('error' in merged) return c.json({ error: merged.error }, 400);
-      const written = await writeSpaceFile(
+      const written = await writeSpace(
         loaded.row,
-        gitProject,
+        slug,
         merged,
         `chore(spaces): update ${slug}`,
+        `space ${slug} was being updated`,
       );
-      if ('error' in written) {
+      if (!written.ok) {
         return c.json({ error: written.error }, written.status as 400 | 409 | 502);
       }
     }
@@ -496,33 +503,23 @@ projectsApp.openapi(
     const declared = await loadProjectSpaces(gitProject);
     const current = declared.specs.find((s) => s.slug === slug);
     if (!current) return c.json({ error: 'Not found' }, 404);
-    // Two always-valid commits (spec 2026-09-06 §4): first detach every
-    // trigger naming this space — a trigger pointing at a missing one
-    // fails the set validator — then remove the file.
-    const detached = await mutateManifestWithRetry(
+    // ONE commit. It used to take two (spec 2026-09-06 §4): detach every
+    // trigger naming this space, THEN delete its file — two writes to two
+    // files, ordered so neither intermediate state failed validation. With
+    // the space and the triggers in the same file, both edits are one
+    // atomic commit and the ordering problem is gone (user, 2026-09-08).
+    const removed = await mutateManifestWithRetry(
       loaded.row,
       `space ${slug} was being deleted`,
       (manifest: ParsedManifest) => {
-        const before = JSON.stringify(manifest.raw.triggers ?? null);
-        const next = stripSpaceFromTriggers(manifest, slug);
-        if (JSON.stringify(next.raw.triggers ?? null) === before) {
-          return { ok: true as const, commitMessage: null };
-        }
-        manifest.raw = next.raw;
-        return {
-          ok: true as const,
-          commitMessage: `chore(spaces): detach ${slug} from its triggers`,
-        };
+        const detached = stripSpaceFromTriggers(manifest, slug);
+        const spaces = isTable(detached.raw.spaces) ? { ...detached.raw.spaces } : {};
+        delete spaces[slug];
+        manifest.raw = { ...detached.raw, spaces };
+        return { ok: true as const, commitMessage: `chore(spaces): delete ${slug}` };
       },
     );
-    if (!detached.ok) {
-      return c.json({ error: detached.error }, detached.status as 400 | 409 | 502);
-    }
-    const removed = await commitRepoChanges(loaded.row, {
-      deletes: [current.path],
-      message: `chore(spaces): delete ${slug}`,
-    });
-    if ('error' in removed) {
+    if (!removed.ok) {
       return c.json({ error: removed.error }, removed.status as 400 | 409 | 502);
     }
     return c.json({ ok: true });

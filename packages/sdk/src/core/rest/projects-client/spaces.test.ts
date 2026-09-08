@@ -26,7 +26,7 @@ beforeEach(() => {
         description: null,
         agent: null,
         sessions: 'private',
-        path: 'kortix-marketing.yaml',
+        path: 'kortix.yaml',
         agents: ['writer'],
         session_count: 0,
         trigger_count: 0,
@@ -101,5 +101,5 @@ test('a space carries the agents usable in it beyond the globals', async () => {
   // build the roster as globals + these without a second request.
   const agents: string[] = space.agents ?? [];
   expect(Array.isArray(agents)).toBe(true);
-  expect(space.path).toBe('kortix-marketing.yaml');
+  expect(space.path).toBe('kortix.yaml');
 });

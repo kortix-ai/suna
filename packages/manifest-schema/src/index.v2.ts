@@ -175,7 +175,7 @@ export interface AgentReferenceV2 {
  * by default, like agents) and lives server-side — nothing here is a
  * permission.
  */
-export interface SpaceFileV2 {
+export interface SpaceV2 {
   /** Display name. Defaults to the slug. */
   name?: string;
   description?: string;
@@ -207,27 +207,11 @@ export function isAgentReferenceV2(entry: unknown): entry is AgentReferenceV2 {
   );
 }
 
-/** The one place that knows the space filename convention: a BASENAME
- *  `kortix-<slug>.yaml`, capture group 1 = the slug. `.yaml` only — a v1
- *  (`kortix.toml`) project has no spaces, and `kortix.yaml` itself is
- *  the root manifest, never a space. */
-export const SPACE_FILE_RE = new RegExp(
-  `^kortix-(${SLUG_RE.source.replace(/^\^/, '').replace(/\$$/, '')})\\.yaml$`,
-);
-
-/** The path of `<slug>`'s file inside `dir` (the directory holding the
- *  resolved root manifest; `''` for the repo root). */
-export function spaceFilePath(dir: string, slug: string): string {
-  const base = `kortix-${slug}.yaml`;
-  const prefix = dir.replace(/\/+$/, '');
-  return prefix ? `${prefix}/${base}` : base;
-}
-
-/** The slug `path` declares, or `null` when its basename is not a space
- *  file (`kortix.yaml`, `kortix-x.yml`, `kortix-Bad.yaml`, …). */
-export function spaceSlugFromPath(path: string): string | null {
-  const base = path.split('/').pop() ?? '';
-  return base.match(SPACE_FILE_RE)?.[1] ?? null;
+/** The manifest path of one space's block — every space lives under the
+ *  root manifest's `spaces:` map, keyed by slug (user, 2026-09-08: "keep
+ *  everything in one file"). Used to prefix this space's issue paths. */
+export function spacePath(slug: string): string {
+  return `spaces.${slug}`;
 }
 
 export const SPACE_SESSIONS_MODES_V2 = ['private', 'shared'] as const;
@@ -752,41 +736,40 @@ export function rejectChannelsV2(node: unknown, path: string, issues: ManifestIs
   });
 }
 
-/** The keys a `kortix-<slug>.yaml` may carry. Anything else is an error, so a
- *  typo (`agnet:`) cannot silently become "no agent". */
-const SPACE_FILE_KEYS_V2 = new Set(['name', 'description', 'agent', 'sessions', 'agents']);
+/** The keys one `spaces.<slug>` block may carry. Anything else is an error,
+ *  so a typo (`agnet:`) cannot silently become "no agent". */
+const SPACE_KEYS_V2 = new Set(['name', 'description', 'agent', 'sessions', 'agents']);
 
 /** Keys this version dropped (2026-09-07). Ignored with a warning rather than
- *  rejected: a file written when they were valid must not become unparseable,
- *  which would take its sessions and its owned agents down with it. */
-const REMOVED_SPACE_FILE_KEYS_V2 = new Set(['instructions', 'context']);
+ *  rejected: a block written when they were valid must not take the whole
+ *  manifest down with it, and with it every space's sessions and agents. */
+const REMOVED_SPACE_KEYS_V2 = new Set(['instructions', 'context']);
 
-/** The agents one space file declares: the ones it OWNS (a block) and the
- *  ones it BORROWS (`{ from }`). Cross-file checks run on these — see
- *  `validateManifestSetV2`. */
-export interface SpaceFileAgentsV2 {
+/** The agents one space declares: the ones it OWNS (a block) and the
+ *  ones it BORROWS (`{ from }`). Cross-space checks run on these — see
+ *  `validateSpacesV2`. */
+export interface SpaceAgentsV2 {
   owned: string[];
   referenced: Array<{ name: string; from: string }>;
 }
 
 /**
- * One `kortix-<slug>.yaml` — SHAPE ONLY (spec 2026-09-06 §3). Everything that
- * needs to see another file (`from` targets, duplicate agent names, whether
- * `agent:` is usable here) is `validateManifestSetV2`'s job.
+ * One `spaces.<slug>` block — SHAPE ONLY (spec 2026-09-06 §3). Everything
+ * that needs to see another space (`from` targets, duplicate agent names,
+ * whether `agent:` is usable here) is `validateSpacesV2`'s job.
  *
- * `opts.path` prefixes every issue path with the file it came from
- * (`kortix-marketing.yaml:agents.writer`), so a set-wide report says which
- * file each issue belongs to; without it the field path stands alone.
+ * Every issue path is rooted at this space's block
+ * (`spaces.marketing.agents.writer`), so a whole-manifest report says which
+ * space each issue belongs to.
  */
-export function validateSpaceFileV2(
+export function validateSpaceEntryV2(
   raw: unknown,
   slug: string,
   issues: ManifestIssue[],
-  opts?: { path?: string },
-): SpaceFileAgentsV2 {
-  const file = opts?.path?.trim() ?? '';
-  const at = (field: string) => (field ? (file ? `${file}:${field}` : field) : file || slug);
-  const result: SpaceFileAgentsV2 = { owned: [], referenced: [] };
+): SpaceAgentsV2 {
+  const base = spacePath(slug);
+  const at = (field: string) => (field ? `${base}.${field}` : base);
+  const result: SpaceAgentsV2 = { owned: [], referenced: [] };
 
   if (!SLUG_RE.test(slug)) {
     issues.push({
@@ -796,10 +779,15 @@ export function validateSpaceFileV2(
     });
   }
 
+  // `marketing:` with nothing under it parses as null. That is the natural
+  // YAML for a space with no settings yet — and the exact equivalent of the
+  // empty `kortix-marketing.yaml` this model replaced, which was valid — so
+  // it reads as an empty block rather than an error.
+  if (raw === null || raw === undefined) return result;
   if (!isTable(raw)) {
     issues.push({
       path: at(''),
-      message: 'a space file must be a table of space fields (use `{}` for an empty one).',
+      message: 'a space must be a table of space fields (use `{}` for an empty one).',
       severity: 'error',
     });
     return result;
@@ -809,13 +797,13 @@ export function validateSpaceFileV2(
     issues.push({
       path: at('kortix_version'),
       message:
-        "a space file carries no `kortix_version` — the root manifest's version applies (and must be 2).",
+        "a space carries no `kortix_version` — the root manifest's version applies (and must be 2).",
       severity: 'error',
     });
   }
   for (const key of Object.keys(raw)) {
-    if (key === 'kortix_version' || SPACE_FILE_KEYS_V2.has(key)) continue;
-    if (REMOVED_SPACE_FILE_KEYS_V2.has(key)) {
+    if (key === 'kortix_version' || SPACE_KEYS_V2.has(key)) continue;
+    if (REMOVED_SPACE_KEYS_V2.has(key)) {
       issues.push({
         path: at(key),
         message: `"${key}" is no longer a space field and is ignored — delete it.`,
@@ -825,7 +813,7 @@ export function validateSpaceFileV2(
     }
     issues.push({
       path: at(key),
-      message: `"${key}" is not a space field (allowed: ${[...SPACE_FILE_KEYS_V2].join(', ')}).`,
+      message: `"${key}" is not a space field (allowed: ${[...SPACE_KEYS_V2].join(', ')}).`,
       severity: 'error',
     });
   }
@@ -869,7 +857,7 @@ function validateSpaceAgentsV2(
   node: unknown,
   path: string,
   at: (field: string) => string,
-  result: SpaceFileAgentsV2,
+  result: SpaceAgentsV2,
   issues: ManifestIssue[],
 ): void {
   if (Array.isArray(node) || !isTable(node)) {
@@ -919,90 +907,95 @@ function validateSpaceAgentsV2(
   }
 }
 
-/** The root manifest plus every `kortix-<slug>.yaml` beside it. */
-export interface ManifestSetV2 {
-  root: Record<string, unknown>;
-  spaces: Array<{ slug: string; path: string; raw: Record<string, unknown> }>;
-}
-
 /**
- * The rules no single file can check (spec 2026-09-06 §3): duplicate agent
- * names, `from` targets, and every default that names an agent — `agent:`,
- * `default_agent`, `triggers[].agent` — against the usability rule ("global,
- * owned by the space, or referenced by it"). Shape errors are NOT
- * repeated here; run `validateManifest` on the root and
- * `validateSpaceFileV2` on each file for those.
+ * Every space the manifest declares, cross-checked (spec 2026-09-06 §3,
+ * retargeted 2026-09-08 when spaces moved from one file each into the root
+ * manifest's `spaces:` map).
+ *
+ * Two passes in one: the SHAPE of each `spaces.<slug>` block, and the rules
+ * no single block can check on its own — duplicate agent names, `from`
+ * targets, and every default that names an agent (`agent:`, `default_agent`,
+ * `triggers[].agent`) against the usability rule ("global, owned by the
+ * space, or referenced by it").
  */
-export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[]): void {
-  const rootAgents = set.root?.agents;
+export function validateSpacesV2(root: Record<string, unknown>, issues: ManifestIssue[]): void {
+  const node = root?.spaces;
+  if (node !== undefined && node !== null && !isTable(node)) {
+    issues.push({
+      path: 'spaces',
+      message: '`spaces` must be a map of slug → space block (use `{}` for none).',
+      severity: 'error',
+    });
+  }
+  // Deliberately NOT an early return when `spaces` is absent or malformed:
+  // rule 5 below still has to reject `triggers[].space: ghost` in a manifest
+  // that declares no space at all. Bailing here let that through silently.
+  const declared = isTable(node) ? node : {};
+
+  const rootAgents = root?.agents;
   const globals = isTable(rootAgents)
     ? Object.keys(rootAgents).filter((name) => SLUG_RE.test(name))
     : [];
 
-  const scratch: ManifestIssue[] = [];
-  const byPath = new Map<string, string>(); // slug → the file that declared it
-  const files: Array<{
+  const declaredSlugs = new Set<string>();
+  const spaces: Array<{
     slug: string;
     path: string;
     raw: Record<string, unknown>;
-    agents: SpaceFileAgentsV2;
+    agents: SpaceAgentsV2;
   }> = [];
-  for (const entry of set.spaces) {
-    const declared = byPath.get(entry.slug);
-    if (declared !== undefined) {
-      issues.push({
-        path: entry.path,
-        message: `space "${entry.slug}" is already declared in ${declared} — one file per space.`,
-        severity: 'error',
-      });
-      continue;
-    }
-    byPath.set(entry.slug, entry.path);
-    files.push({
-      ...entry,
-      agents: validateSpaceFileV2(entry.raw, entry.slug, scratch, { path: entry.path }),
+  for (const [slug, raw] of Object.entries(declared)) {
+    // A YAML map cannot repeat a key, so there is no duplicate-slug case to
+    // report any more — the parser already collapsed it. That is one whole
+    // class of error the single-file move deletes.
+    declaredSlugs.add(slug);
+    spaces.push({
+      slug,
+      path: spacePath(slug),
+      raw: isTable(raw) ? raw : {},
+      agents: validateSpaceEntryV2(raw, slug, issues),
     });
   }
 
-  // 1. Agent names are project-unique across the root and every file.
-  const declaredIn = new Map<string, string>(globals.map((name) => [name, MANIFEST_FILENAME_YAML]));
-  for (const f of files) {
-    for (const name of f.agents.owned) {
+  // 1. Agent names are project-unique across the root and every space.
+  const declaredIn = new Map<string, string>(globals.map((name) => [name, 'agents']));
+  for (const s of spaces) {
+    for (const name of s.agents.owned) {
       const declared = declaredIn.get(name);
       if (declared !== undefined) {
         issues.push({
-          path: `${f.path}:agents.${name}`,
-          message: `agent "${name}" is already declared in ${declared} — agent names are unique across the root manifest and every space file.`,
+          path: `${s.path}.agents.${name}`,
+          message: `agent "${name}" is already declared in ${declared} — agent names are unique across the root manifest and every space.`,
           severity: 'error',
         });
         continue;
       }
-      declaredIn.set(name, f.path);
+      declaredIn.set(name, `${s.path}.agents`);
     }
   }
 
-  const ownedBy = new Map(files.map((f) => [f.slug, f.agents.owned]));
+  const ownedBy = new Map(spaces.map((s) => [s.slug, s.agents.owned]));
   /** The usability rule: global, owned here, or referenced here. */
   const usableIn = (slug: string): string[] => {
-    const f = files.find((entry) => entry.slug === slug);
-    if (!f) return globals;
-    return [...globals, ...f.agents.owned, ...f.agents.referenced.map((ref) => ref.name)];
+    const s = spaces.find((entry) => entry.slug === slug);
+    if (!s) return globals;
+    return [...globals, ...s.agents.owned, ...s.agents.referenced.map((ref) => ref.name)];
   };
 
   // 2. Every `from` names another space that OWNS that agent.
-  for (const f of files) {
-    for (const ref of f.agents.referenced) {
-      const where = `${f.path}:agents.${ref.name}.from`;
-      if (ref.from === f.slug) {
+  for (const s of spaces) {
+    for (const ref of s.agents.referenced) {
+      const where = `${s.path}.agents.${ref.name}.from`;
+      if (ref.from === s.slug) {
         issues.push({
           path: where,
           message: `a space cannot reference itself — declare "${ref.name}" here, or borrow it from another space.`,
           severity: 'error',
         });
-      } else if (!byPath.has(ref.from)) {
+      } else if (!declaredSlugs.has(ref.from)) {
         issues.push({
           path: where,
-          message: `from "${ref.from}" does not match any space — expected ${spaceFilePath('', ref.from)}.`,
+          message: `from "${ref.from}" does not match any space — expected a \`${spacePath(ref.from)}\` block.`,
           severity: 'error',
         });
       } else if (!ownedBy.get(ref.from)?.includes(ref.name)) {
@@ -1016,13 +1009,13 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
   }
 
   // 3. `agent:` must be usable in its own space.
-  for (const f of files) {
-    const agent = typeof f.raw.agent === 'string' ? f.raw.agent.trim() : '';
+  for (const s of spaces) {
+    const agent = typeof s.raw.agent === 'string' ? s.raw.agent.trim() : '';
     if (!agent) continue;
-    if (!usableIn(f.slug).includes(agent)) {
+    if (!usableIn(s.slug).includes(agent)) {
       issues.push({
-        path: `${f.path}:agent`,
-        message: `agent "${agent}" is not usable in space "${f.slug}" — it must be a global agent, declared in ${f.path}, or borrowed there with \`{ from: <space> }\`.`,
+        path: `${s.path}.agent`,
+        message: `agent "${agent}" is not usable in space "${s.slug}" — it must be a global agent, declared in ${s.path}.agents, or borrowed there with \`{ from: <space> }\`.`,
         severity: 'error',
       });
     }
@@ -1031,10 +1024,9 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
   // 4. `default_agent` must be global. An UNDECLARED name is the root
   //    validator's error (`validateDefaultAgentV2`); this adds the pointed
   //    one it cannot produce — the name IS declared, just not globally.
-  const defaultAgent =
-    typeof set.root?.default_agent === 'string' ? set.root.default_agent.trim() : '';
+  const defaultAgent = typeof root?.default_agent === 'string' ? root.default_agent.trim() : '';
   if (defaultAgent && !globals.includes(defaultAgent)) {
-    const owner = files.find((f) => f.agents.owned.includes(defaultAgent));
+    const owner = spaces.find((s) => s.agents.owned.includes(defaultAgent));
     if (owner) {
       issues.push({
         path: 'default_agent',
@@ -1045,8 +1037,8 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
   }
 
   // 5. Triggers: the space must exist, and the agent must be usable in it.
-  const triggers = set.root?.triggers;
-  validateTriggerSpaceRefsV2(triggers, 'triggers', [...byPath.keys()], issues);
+  const triggers = root?.triggers;
+  validateTriggerSpaceRefsV2(triggers, 'triggers', [...declaredSlugs], issues);
   if (Array.isArray(triggers)) {
     triggers.forEach((entry, i) => {
       if (!isTable(entry)) return;
@@ -1056,7 +1048,7 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
       if (!slug) {
         // A project-level trigger may use global agents only. As with
         // `default_agent`, an undeclared name is the root validator's error.
-        const owner = files.find((f) => f.agents.owned.includes(agent));
+        const owner = spaces.find((s) => s.agents.owned.includes(agent));
         if (owner && !globals.includes(agent)) {
           issues.push({
             path: `triggers[${i}].agent`,
@@ -1067,29 +1059,16 @@ export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[
         return;
       }
       // An undeclared space is already reported above.
-      if (!byPath.has(slug)) return;
+      if (!declaredSlugs.has(slug)) return;
       if (!usableIn(slug).includes(agent)) {
         issues.push({
           path: `triggers[${i}].agent`,
-          message: `agent "${agent}" is not usable in space "${slug}" — it must be a global agent, declared in ${byPath.get(slug)}, or borrowed there with \`{ from: <space> }\`.`,
+          message: `agent "${agent}" is not usable in space "${slug}" — it must be a global agent, declared in ${spacePath(slug)}.agents, or borrowed there with \`{ from: <space> }\`.`,
           severity: 'error',
         });
       }
     });
   }
-}
-
-/** v2 moves every space into its own file — an inline `spaces:` map
- *  is an error that names the convention (spec 2026-09-06 §2). Nothing
- *  shipped with the map, so there is no migration. */
-export function rejectSpacesV2(node: unknown, path: string, issues: ManifestIssue[]): void {
-  if (node === undefined) return;
-  issues.push({
-    path,
-    message:
-      '`spaces` is not a manifest key — each space lives in its own `kortix-<slug>.yaml` file beside kortix.yaml, one file per space.',
-    severity: 'error',
-  });
 }
 
 /**
@@ -1138,7 +1117,7 @@ export function validateTriggerSpaceRefsV2(
  *
  * A trigger that carries a `space` is SKIPPED here: its agent may be one
  * the space owns or borrows, which lives in a file this validator never
- * sees. `validateManifestSetV2` checks those against the usability rule.
+ * sees. `validateSpacesV2` checks those against the usability rule.
  */
 export function validateTriggerAgentRefsV2(
   node: unknown,

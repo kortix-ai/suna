@@ -3,7 +3,7 @@
 /**
  * Declare a space — name, one line of description, a default agent.
  *
- * That is the whole file (`kortix-<slug>.yaml`). Who may use it is granted on
+ * That is the whole block (`spaces.<slug>` in `kortix.yaml`). Who may use it is granted on
  * its page; its scheduled work is filed from the project's triggers. Anything
  * richer belongs in the file itself, written by a person or an agent.
  *

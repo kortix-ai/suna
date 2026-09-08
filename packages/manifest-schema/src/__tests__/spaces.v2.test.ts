@@ -1,30 +1,29 @@
 /**
- * Spaces live in their own file — `kortix-<slug>.yaml`, a sibling of the
- * root manifest (spec 2026-09-06 §2). The root `spaces:` map is gone.
+ * Every space lives in the root manifest under `spaces:`, keyed by slug
+ * (user, 2026-09-08: "keep everything in one file"). The per-space
+ * `kortix-<slug>.yaml` sibling file is gone, and with it the whole
+ * multi-file set model.
  *
- * Three validators cover the model:
- *   - the root v2 validator REJECTS `spaces:`,
- *   - `validateSpaceFileV2` checks ONE file's shape (keys, types, its
- *     `agents:` map of blocks and `{ from }` references),
- *   - `validateManifestSetV2` checks everything only the whole set can know:
- *     duplicate agent names, `from` targets, `agent:`/`default_agent`
- *     defaults, and `triggers[].space`/`triggers[].agent`.
+ * Two validators cover the model:
+ *   - `validateSpaceEntryV2` checks ONE `spaces.<slug>` block's shape (keys,
+ *     types, its `agents:` map of blocks and `{ from }` references),
+ *   - `validateSpacesV2` runs that over every block and then adds what only
+ *     the whole map can know: duplicate agent names, `from` targets,
+ *     `agent:`/`default_agent` defaults, and `triggers[].space`/`[].agent`.
+ *     The root v2 validator calls it, so `validateManifest` sees all of it.
  */
 import { describe, expect, test } from 'bun:test';
 import Ajv2020 from 'ajv/dist/2020';
 import {
   isAgentReferenceV2,
   type ManifestIssue,
-  type ManifestSetV2,
-  SPACE_FILE_RE,
-  spaceFilePath,
-  spaceSlugFromPath,
+  spacePath,
   validateManifest,
-  validateManifestSetV2,
-  validateSpaceFileV2,
+  validateSpaceEntryV2,
+  validateSpacesV2,
   validateTriggerSpaceRefsV2,
 } from '../index.ts';
-import { buildManifestV2Schema, buildSpaceFileV2Schema } from '../json-schema.ts';
+import { buildManifestV2Schema, buildSpaceV2Schema } from '../json-schema.ts';
 
 const BASE = `
 kortix_version: 2
@@ -38,57 +37,34 @@ function errorsOf(yaml: string) {
   return validateManifest(yaml, 'yaml').issues.filter((i) => i.severity === 'error');
 }
 
-/** Run the file validator and return `[issues, result]`. */
-function checkFile(raw: unknown, slug = 'marketing', path?: string) {
+/** Run the single-space validator and return `[issues, result]`. Every issue
+ *  path is rooted at `spaces.<slug>`, so no path argument is needed. */
+function checkFile(raw: unknown, slug = 'marketing') {
   const issues: ManifestIssue[] = [];
-  const result = validateSpaceFileV2(raw, slug, issues, path ? { path } : undefined);
+  const result = validateSpaceEntryV2(raw, slug, issues);
   return { issues, errors: issues.filter((i) => i.severity === 'error'), result };
 }
 
-function checkSet(set: ManifestSetV2) {
+/** Fold the old set shape onto one root manifest and validate it. The `path`
+ *  each entry used to carry is now derived (`spaces.<slug>`), so it is
+ *  accepted and ignored — a slug is the whole identity now. */
+function checkSet(set: {
+  root: Record<string, unknown>;
+  spaces: Array<{ slug: string; path?: string; raw: unknown }>;
+}) {
   const issues: ManifestIssue[] = [];
-  validateManifestSetV2(set, issues);
+  const spaces: Record<string, unknown> = {};
+  for (const entry of set.spaces) spaces[entry.slug] = entry.raw;
+  validateSpacesV2({ ...set.root, spaces }, issues);
   return issues.filter((i) => i.severity === 'error');
 }
 
 // ─── A. helpers ───────────────────────────────────────────────────────────
 
-describe('space file naming helpers', () => {
-  test('SPACE_FILE_RE captures the slug from a basename', () => {
-    expect('kortix-marketing.yaml'.match(SPACE_FILE_RE)?.[1]).toBe('marketing');
-    expect('kortix-go-to-market_2.yaml'.match(SPACE_FILE_RE)?.[1]).toBe('go-to-market_2');
-  });
-
-  test('SPACE_FILE_RE rejects the root manifest, .yml, and a bad slug', () => {
-    for (const name of [
-      'kortix.yaml',
-      'kortix-marketing.yml',
-      'kortix-Marketing.yaml',
-      'kortix-.yaml',
-      'kortix-marketing.backup.yaml',
-      'kortix-marketing.yaml.bak',
-      'notkortix-marketing.yaml',
-    ]) {
-      expect(SPACE_FILE_RE.test(name)).toBe(false);
-    }
-  });
-
-  test('spaceFilePath joins without a double slash', () => {
-    expect(spaceFilePath('', 'marketing')).toBe('kortix-marketing.yaml');
-    expect(spaceFilePath('apps/thing', 'marketing')).toBe('apps/thing/kortix-marketing.yaml');
-    expect(spaceFilePath('apps/thing/', 'marketing')).toBe('apps/thing/kortix-marketing.yaml');
-  });
-
-  test('spaceSlugFromPath reads the basename, or null', () => {
-    expect(spaceSlugFromPath('kortix-marketing.yaml')).toBe('marketing');
-    expect(spaceSlugFromPath('apps/thing/kortix-marketing.yaml')).toBe('marketing');
-    expect(spaceSlugFromPath('kortix.yaml')).toBeNull();
-    expect(spaceSlugFromPath('deep/kortix-marketing.yml')).toBeNull();
-    expect(spaceSlugFromPath('')).toBeNull();
-  });
-
-  test('spaceFilePath and spaceSlugFromPath round-trip', () => {
-    expect(spaceSlugFromPath(spaceFilePath('a/b', 'sales'))).toBe('sales');
+describe('space helpers', () => {
+  test('spacePath points at the block inside the root manifest', () => {
+    expect(spacePath('marketing')).toBe('spaces.marketing');
+    expect(spacePath('go-to-market_2')).toBe('spaces.go-to-market_2');
   });
 
   test('isAgentReferenceV2 is true only for a lone non-empty `from`', () => {
@@ -131,7 +107,7 @@ describe('a trigger still written with `subproject:`', () => {
 
 // ─── B. one file ──────────────────────────────────────────────────────────
 
-describe('validateSpaceFileV2 — one kortix-<slug>.yaml', () => {
+describe('validateSpaceEntryV2 — one spaces.<slug> block', () => {
   test('a file with every field passes and reports its agents', () => {
     const { errors, result } = checkFile(
       {
@@ -145,7 +121,6 @@ describe('validateSpaceFileV2 — one kortix-<slug>.yaml', () => {
         },
       },
       'marketing',
-      'kortix-marketing.yaml',
     );
     expect(errors).toEqual([]);
     expect(result.owned).toEqual(['writer']);
@@ -158,11 +133,18 @@ describe('validateSpaceFileV2 — one kortix-<slug>.yaml', () => {
     expect(result).toEqual({ owned: [], referenced: [] });
   });
 
-  test('a non-table body is an error at the file path', () => {
-    const { errors } = checkFile('nope', 'marketing', 'kortix-marketing.yaml');
-    expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml']);
-    const { errors: unpathed } = checkFile(null);
-    expect(unpathed.map((e) => e.path)).toEqual(['marketing']);
+  test('a non-table body is an error at the space block', () => {
+    expect(checkFile('nope', 'marketing').errors.map((e) => e.path)).toEqual(['spaces.marketing']);
+    expect(checkFile(['a']).errors.map((e) => e.path)).toEqual(['spaces.marketing']);
+  });
+
+  // `marketing:` with no body — the natural YAML for a space with no settings,
+  // and what the empty `kortix-marketing.yaml` file used to be.
+  test('an empty block written as a bare key is valid', () => {
+    const { errors, result } = checkFile(null);
+    expect(errors).toEqual([]);
+    expect(result).toEqual({ owned: [], referenced: [] });
+    expect(errorsOf(`${BASE}\nspaces:\n  marketing:\n`)).toEqual([]);
   });
 
   test('a slug that is not a valid slug is an error', () => {
@@ -172,14 +154,14 @@ describe('validateSpaceFileV2 — one kortix-<slug>.yaml', () => {
   });
 
   test('an unknown key is an error naming the allowed keys', () => {
-    const { errors } = checkFile({ prompt: 'nope' }, 'marketing', 'kortix-marketing.yaml');
-    expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:prompt']);
+    const { errors } = checkFile({ prompt: 'nope' }, 'marketing');
+    expect(errors.map((e) => e.path)).toEqual(['spaces.marketing.prompt']);
     expect(errors[0]?.message).toContain('is not a space field');
   });
 
-  test('kortix_version in a space file is an error', () => {
+  test('kortix_version in a space block is an error', () => {
     const { errors } = checkFile({ kortix_version: 2 });
-    expect(errors.map((e) => e.path)).toEqual(['kortix_version']);
+    expect(errors.map((e) => e.path)).toEqual(['spaces.marketing.kortix_version']);
     expect(errors[0]?.message).toContain("root manifest's version");
   });
 
@@ -190,7 +172,12 @@ describe('validateSpaceFileV2 — one kortix-<slug>.yaml', () => {
       sessions: 'everyone',
       agent: '',
     });
-    expect(errors.map((e) => e.path).sort()).toEqual(['agent', 'description', 'name', 'sessions']);
+    expect(errors.map((e) => e.path).sort()).toEqual([
+      'spaces.marketing.agent',
+      'spaces.marketing.description',
+      'spaces.marketing.name',
+      'spaces.marketing.sessions',
+    ]);
   });
 
   // The two fields the 2026-09-07 simplification dropped. A file written when
@@ -200,25 +187,23 @@ describe('validateSpaceFileV2 — one kortix-<slug>.yaml', () => {
     const { issues, errors, result } = checkFile(
       { instructions: 'British English.', context: ['docs/brand.md'], agents: { writer: {} } },
       'marketing',
-      'kortix-marketing.yaml',
     );
     expect(errors).toEqual([]);
     expect(issues.map((i) => [i.path, i.severity])).toEqual([
-      ['kortix-marketing.yaml:instructions', 'warning'],
-      ['kortix-marketing.yaml:context', 'warning'],
+      ['spaces.marketing.instructions', 'warning'],
+      ['spaces.marketing.context', 'warning'],
     ]);
     expect(issues[0]?.message).toContain('no longer a space field');
     // The rest of the file is still read.
     expect(result.owned).toEqual(['writer']);
   });
 
-  test('issue paths carry the file prefix when one is given', () => {
+  test('issue paths are rooted at the space block', () => {
     const { errors } = checkFile(
       { agents: { writer: { model: 'x' } } },
       'marketing',
-      'kortix-marketing.yaml',
     );
-    expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:agents.writer.model']);
+    expect(errors.map((e) => e.path)).toEqual(['spaces.marketing.agents.writer.model']);
   });
 
   test('an agents entry is validated as a full agent block', () => {
@@ -231,40 +216,40 @@ describe('validateSpaceFileV2 — one kortix-<slug>.yaml', () => {
       },
     });
     expect(errors.map((e) => e.path).sort()).toEqual([
-      'agents.Bad Name',
-      'agents.ghost',
-      'agents.legacy.env',
-      'agents.writer.workspace',
+      'spaces.marketing.agents.Bad Name',
+      'spaces.marketing.agents.ghost',
+      'spaces.marketing.agents.legacy.env',
+      'spaces.marketing.agents.writer.workspace',
     ]);
     // `ghost` is not a table and `Bad Name` is not a valid name — neither is owned.
     expect(result.owned).toEqual(['writer', 'legacy']);
   });
 
   test('a non-map agents is an error', () => {
-    expect(checkFile({ agents: ['writer'] }).errors.map((e) => e.path)).toEqual(['agents']);
-    expect(checkFile({ agents: 'writer' }).errors.map((e) => e.path)).toEqual(['agents']);
+    expect(checkFile({ agents: ['writer'] }).errors.map((e) => e.path)).toEqual(['spaces.marketing.agents']);
+    expect(checkFile({ agents: 'writer' }).errors.map((e) => e.path)).toEqual(['spaces.marketing.agents']);
   });
 
   test('a reference may carry no other key', () => {
     const { errors, result } = checkFile({
       agents: { researcher: { from: 'research', connectors: ['slack'] } },
     });
-    expect(errors.map((e) => e.path)).toEqual(['agents.researcher']);
+    expect(errors.map((e) => e.path)).toEqual(['spaces.marketing.agents.researcher']);
     expect(errors[0]?.message).toContain('no other key');
     expect(result.referenced).toEqual([]);
   });
 
   test('an empty or non-string from is an error', () => {
     expect(checkFile({ agents: { a: { from: '' } } }).errors.map((e) => e.path)).toEqual([
-      'agents.a.from',
+      'spaces.marketing.agents.a.from',
     ]);
     expect(checkFile({ agents: { a: { from: 7 } } }).errors.map((e) => e.path)).toEqual([
-      'agents.a.from',
+      'spaces.marketing.agents.a.from',
     ]);
   });
 });
 
-// ─── C. the set ───────────────────────────────────────────────────────────
+// ─── C. the whole map ─────────────────────────────────────────────────────
 
 const ROOT = {
   kortix_version: 2,
@@ -273,10 +258,10 @@ const ROOT = {
 };
 
 function file(slug: string, raw: Record<string, unknown>) {
-  return { slug, path: spaceFilePath('', slug), raw };
+  return { slug, path: spacePath(slug), raw };
 }
 
-describe('validateManifestSetV2 — cross-file rules', () => {
+describe('validateSpacesV2 — cross-space rules', () => {
   test('a valid set passes', () => {
     expect(
       checkSet({
@@ -303,8 +288,8 @@ describe('validateManifestSetV2 — cross-file rules', () => {
       root: ROOT,
       spaces: [file('marketing', { agents: { kortix: {} } })],
     });
-    expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:agents.kortix']);
-    expect(errors[0]?.message).toContain('kortix.yaml');
+    expect(errors.map((e) => e.path)).toEqual(['spaces.marketing.agents.kortix']);
+    expect(errors[0]?.message).toContain('already declared in agents');
   });
 
   test('an agent declared in two files is a duplicate naming both', () => {
@@ -312,17 +297,19 @@ describe('validateManifestSetV2 — cross-file rules', () => {
       root: ROOT,
       spaces: [file('marketing', { agents: { writer: {} } }), file('sales', { agents: { writer: {} } })],
     });
-    expect(errors.map((e) => e.path)).toEqual(['kortix-sales.yaml:agents.writer']);
-    expect(errors[0]?.message).toContain('kortix-marketing.yaml');
+    expect(errors.map((e) => e.path)).toEqual(['spaces.sales.agents.writer']);
+    expect(errors[0]?.message).toContain('spaces.marketing.agents');
   });
 
-  test('a duplicate slug in the set is an error', () => {
-    const errors = checkSet({
-      root: ROOT,
-      spaces: [file('marketing', {}), { slug: 'marketing', path: 'sub/kortix-marketing.yaml', raw: {} }],
-    });
-    expect(errors.map((e) => e.path)).toEqual(['sub/kortix-marketing.yaml']);
-    expect(errors[0]?.message).toContain('already declared in kortix-marketing.yaml');
+  // Two files could both claim `marketing`; two keys of one YAML map cannot.
+  // The parser collapses the repeat before a validator ever sees it, so the
+  // whole duplicate-slug error class went away with the per-space file.
+  test('a slug cannot be declared twice — YAML itself rejects the repeat', () => {
+    const errors = errorsOf(
+      `${BASE}\nspaces:\n  marketing:\n    name: First\n  marketing:\n    name: Second\n`,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain('Map keys must be unique');
   });
 
   test('from must name an existing space', () => {
@@ -330,8 +317,8 @@ describe('validateManifestSetV2 — cross-file rules', () => {
       root: ROOT,
       spaces: [file('marketing', { agents: { researcher: { from: 'ghost' } } })],
     });
-    expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:agents.researcher.from']);
-    expect(errors[0]?.message).toContain('kortix-ghost.yaml');
+    expect(errors.map((e) => e.path)).toEqual(['spaces.marketing.agents.researcher.from']);
+    expect(errors[0]?.message).toContain('spaces.ghost');
   });
 
   test('from must name an agent OWNED there — not a reference, a global, or itself', () => {
@@ -345,9 +332,9 @@ describe('validateManifestSetV2 — cross-file rules', () => {
       ],
     });
     expect(errors.map((e) => e.path).sort()).toEqual([
-      'kortix-marketing.yaml:agents.kortix.from',
-      'kortix-marketing.yaml:agents.writer.from',
-      'kortix-research.yaml:agents.self.from',
+      'spaces.marketing.agents.kortix.from',
+      'spaces.marketing.agents.writer.from',
+      'spaces.research.agents.self.from',
     ]);
     expect(errors.find((e) => e.path.includes('self'))?.message).toContain('itself');
   });
@@ -362,7 +349,7 @@ describe('validateManifestSetV2 — cross-file rules', () => {
         file('ads', { agent: 'designer', agents: { designer: { from: 'design' } } }),
       ],
     });
-    expect(errors.map((e) => e.path)).toEqual(['kortix-marketing.yaml:agent']);
+    expect(errors.map((e) => e.path)).toEqual(['spaces.marketing.agent']);
     expect(errors[0]?.message).toContain('not usable in space "marketing"');
   });
 
@@ -414,15 +401,21 @@ describe('validateManifestSetV2 — cross-file rules', () => {
     expect(errors[0]?.message).toContain('marketing');
   });
 
-  test('the set validator reports no shape issues — that is the file validator’s job', () => {
+  // The two passes used to be separate functions over separate files, so the
+  // set validator deliberately stayed silent on shape. One map in one file
+  // means one pass: shape AND cross-space rules come back together.
+  test('shape issues come back from the same pass', () => {
     const errors = checkSet({
       root: ROOT,
       spaces: [file('marketing', { prompt: 'nope', agents: { writer: { model: 'x' } } })],
     });
-    expect(errors).toEqual([]);
+    expect(errors.map((e) => e.path).sort()).toEqual([
+      'spaces.marketing.agents.writer.model',
+      'spaces.marketing.prompt',
+    ]);
   });
 
-  test('an empty set is valid', () => {
+  test('an empty map is valid', () => {
     expect(checkSet({ root: ROOT, spaces: [] })).toEqual([]);
   });
 });
@@ -430,24 +423,37 @@ describe('validateManifestSetV2 — cross-file rules', () => {
 // ─── D. the root manifest ─────────────────────────────────────────────────
 
 describe('the root v2 manifest', () => {
-  test('rejects a spaces: key and names the file convention', () => {
-    const errors = errorsOf(`${BASE}
+  test('accepts a spaces: map and validates each block through it', () => {
+    expect(
+      errorsOf(`${BASE}
 spaces:
   marketing:
     name: Marketing
-`);
-    expect(errors.map((e) => e.path)).toEqual(['spaces']);
-    expect(errors[0]?.message).toContain('kortix-<slug>.yaml');
+    agents:
+      writer: {}
+`),
+    ).toEqual([]);
+    // …and the same pass reports a bad block, rooted at its slug.
+    const bad = errorsOf(`${BASE}\nspaces:\n  marketing:\n    prompt: nope\n`);
+    expect(bad.map((e) => e.path)).toEqual(['spaces.marketing.prompt']);
   });
 
-  test('rejects an empty spaces: key too', () => {
-    expect(errorsOf(`${BASE}\nspaces: {}\n`).map((e) => e.path)).toEqual(['spaces']);
+  test('an empty spaces: key is valid', () => {
+    expect(errorsOf(`${BASE}\nspaces: {}\n`)).toEqual([]);
   });
 
-  test('a trigger with a space no longer fails root validation on its scoped agent', () => {
-    // `writer` is owned by kortix-marketing.yaml; the root cannot know that, so
-    // the root validator leaves scoped triggers to `validateManifestSetV2`.
+  test('a non-map spaces: is an error', () => {
+    expect(errorsOf(`${BASE}\nspaces: [marketing]\n`).map((e) => e.path)).toEqual(['spaces']);
+  });
+
+  test('a trigger scoped to a space may use that space’s own agent', () => {
+    // `writer` is owned by `spaces.marketing`, so the ONE root pass now sees
+    // both the trigger and the agent that makes it legal.
     const errors = errorsOf(`${BASE}
+spaces:
+  marketing:
+    agents:
+      writer: {}
 triggers:
   - slug: weekly
     type: cron
@@ -457,6 +463,18 @@ triggers:
     agent: writer
 `);
     expect(errors).toEqual([]);
+  });
+
+  test('a trigger naming an undeclared space is now caught by the root pass', () => {
+    const errors = errorsOf(`${BASE}
+triggers:
+  - slug: weekly
+    type: cron
+    cron: "0 0 9 * * 1"
+    prompt: x
+    space: ghost
+`);
+    expect(errors.map((e) => e.path)).toEqual(['triggers[0].space']);
   });
 
   test('a project-level trigger still needs a declared agent', () => {
@@ -474,10 +492,16 @@ triggers:
 
 // ─── E. JSON schema ───────────────────────────────────────────────────────
 
-describe('the space-file JSON schema', () => {
-  test('the v2 manifest schema no longer declares spaces', () => {
+describe('the space JSON schema', () => {
+  test('the v2 manifest schema declares spaces as a slug-keyed map', () => {
     const schema = buildManifestV2Schema() as any;
-    expect(schema.properties.spaces).toBeUndefined();
+    expect(schema.properties.spaces.type).toBe('object');
+    // The per-entry shape is the standalone space schema, minus its envelope.
+    expect(schema.properties.spaces.additionalProperties.additionalProperties).toBe(false);
+    expect(schema.properties.spaces.additionalProperties.properties.sessions).toEqual({
+      type: 'string',
+      enum: ['private', 'shared'],
+    });
     expect(schema.properties.triggers.items.properties.space).toEqual({
       type: 'string',
       minLength: 1,
@@ -485,7 +509,7 @@ describe('the space-file JSON schema', () => {
   });
 
   test('the file schema declares the block keys, forbids extras, and forbids kortix_version', () => {
-    const schema = buildSpaceFileV2Schema() as any;
+    const schema = buildSpaceV2Schema() as any;
     expect(schema.$id).toBe('https://kortix.com/schema/kortix-space.v2.schema.json');
     expect(schema.additionalProperties).toBe(false);
     expect(schema.properties.instructions).toEqual({ type: 'string', deprecated: true });
@@ -494,7 +518,7 @@ describe('the space-file JSON schema', () => {
   });
 
   test('an agents entry is a block OR a { from } reference', () => {
-    const schema = buildSpaceFileV2Schema() as any;
+    const schema = buildSpaceV2Schema() as any;
     const entry = schema.properties.agents.additionalProperties;
     expect(entry.oneOf).toHaveLength(2);
     expect(entry.oneOf[1]).toEqual({
@@ -507,7 +531,7 @@ describe('the space-file JSON schema', () => {
 
   test('the file schema compiles and validates a real file', () => {
     const validate = new Ajv2020({ strict: false }).compile(
-      buildSpaceFileV2Schema() as Record<string, unknown>,
+      buildSpaceV2Schema() as Record<string, unknown>,
     );
     expect(
       validate({

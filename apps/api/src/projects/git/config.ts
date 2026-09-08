@@ -10,12 +10,7 @@ import {
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
 import { mergeSpaceAgents } from '../agents';
-import {
-  extractSpacesFromFiles,
-  manifestDir,
-  spaceFileEntries,
-  type SpaceFile,
-} from '../spaces';
+import { extractSpaces } from '../spaces';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
@@ -251,17 +246,13 @@ export async function loadProjectConfig(
           ],
         }
       : { specs: [], errors: [] };
-  // Spaces are one `kortix-<slug>.yaml` each, beside the root manifest,
-  // and v2-only. An unparseable or v1 manifest yields none, the same
-  // degradation the agent list already takes.
-  const spaceFiles: SpaceFile[] = [];
-  if (parsedManifest && manifestSchemaVersionFor(parsedManifest) >= 2) {
-    for (const entry of spaceFileEntries(repoFiles, manifestDir(manifestFilePath))) {
-      const content = await optionalFile(project, entry.path);
-      if (content !== null) spaceFiles.push({ ...entry, content });
-    }
-  }
-  const loadedSpaces = extractSpacesFromFiles(spaceFiles);
+  // Spaces are the root manifest's own `spaces:` map, and v2-only. An
+  // unparseable or v1 manifest yields none, the same degradation the agent
+  // list already takes. No extra repo reads: the manifest is already in hand.
+  const loadedSpaces =
+    parsedManifest && manifestSchemaVersionFor(parsedManifest) >= 2
+      ? extractSpaces(manifestFilePath, parsedManifest.spaces)
+      : { specs: [], errors: [] };
   const spaces = loadedSpaces.specs.map((spec) => ({
     slug: spec.slug,
     name: spec.name,

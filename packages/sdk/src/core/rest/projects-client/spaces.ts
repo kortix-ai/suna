@@ -1,5 +1,5 @@
 // Project spaces — named containers inside a project. The repo manifest
-// (one `kortix-<slug>.yaml` per space) is the source of truth; the
+// (each space a `spaces.<slug>` block of `kortix.yaml`) is the source of truth; the
 // database holds only the session join (`project_sessions.space`) and the
 // IAM grants. Every route below reads/writes the manifest through the API.
 
@@ -76,7 +76,7 @@ export async function getProjectSpace(projectId: string, slug: string) {
   return unwrap(await backendApi.get<Space>(one(projectId, slug)));
 }
 
-/** Declare a space — commits `kortix-<slug>.yaml`. `409` on a taken slug. */
+/** Declare a space — commits its `spaces.<slug>` block. `409` on a taken slug. */
 export async function createProjectSpace(projectId: string, input: CreateSpaceInput) {
   return unwrap(await backendApi.post<Space>(base(projectId), input));
 }

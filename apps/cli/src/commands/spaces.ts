@@ -11,8 +11,8 @@ import { C, help, pad, status } from '../style.ts';
 
 // A space is a named container inside a project: it groups sessions and
 // owns scheduled work — see docs/specs/2026-09-03-spaces.md §2, §6 and the
-// 2026-09-07 simplification. Its file (`kortix-<slug>.yaml`) is the source of
-// truth; every write here commits to it.
+// 2026-09-07 simplification. Its `spaces.<slug>` block in `kortix.yaml` is
+// the source of truth; every write here commits to that file.
 
 /** Wire shape — SpaceSchema in @kortix/api-contract. */
 export interface Space {
@@ -54,8 +54,8 @@ const SESSIONS_MODES = ['private', 'shared'] as const;
 const HELP = help`Usage: kortix spaces <subcommand> [options]
 
 A space groups sessions under a named effort inside the project, with its
-own default agent and scheduled work. Its file (\`kortix-<slug>.yaml\`) is the
-source of truth — every write below commits to it.
+own default agent and scheduled work. Its \`spaces.<slug>\` block in
+\`kortix.yaml\` is the source of truth — every write below commits to it.
 
 Subcommands:
   ls [--json]                     List spaces you can see.

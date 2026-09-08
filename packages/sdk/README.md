@@ -235,10 +235,10 @@ invocation.
 A **space** is a named container inside a project. It groups sessions,
 gives the agent standing instructions and reference files, owns the scheduled
 work that names it, may declare agents of its own, and is granted to members or
-groups exactly like an agent. Each one is a file in the repo beside the root
-manifest, `kortix-<slug>.yaml`, and that file is the source of truth, so every
-write below commits to it. A `Space` carries `path` (the file) and
-`agents` (the agents usable inside it beyond the globals: the ones its file
+groups exactly like an agent. Each one is a `spaces.<slug>` block of the root
+manifest, and that block is the source of truth, so every write below commits
+to `kortix.yaml`. A `Space` carries `path` (the manifest it is declared in) and
+`agents` (the agents usable inside it beyond the globals: the ones its block
 owns or references); `agentsUsableIn(roster, space)` narrows any roster
 whose entries carry `space` to what a session there may run.
 

@@ -51,10 +51,10 @@ import {
 // `@kortix/manifest-schema` backward compatibility.
 import {
   rejectChannelsV2,
-  rejectSpacesV2,
   validateAgentsV2,
   validateDefaultAgentV2,
   validateRuntimeV2,
+  validateSpacesV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
 
@@ -148,18 +148,15 @@ export {
   type AppResourcesV2,
   type ManifestV2,
   type AgentReferenceV2,
-  type SpaceFileV2,
-  type SpaceFileAgentsV2,
+  type SpaceV2,
+  type SpaceAgentsV2,
   type SpaceSessionsModeV2,
-  type ManifestSetV2,
   SPACE_SESSIONS_MODES_V2,
-  SPACE_FILE_RE,
   isAgentReferenceV2,
-  spaceFilePath,
-  spaceSlugFromPath,
+  spacePath,
   resolveGrantSet,
-  validateSpaceFileV2,
-  validateManifestSetV2,
+  validateSpaceEntryV2,
+  validateSpacesV2,
   validateTriggerSpaceRefsV2,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -319,10 +316,10 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
-  // Spaces live in their own `kortix-<slug>.yaml` files, so the root
-  // validator can neither hold them nor cross-check `triggers[].space` —
-  // that is `validateManifestSetV2`'s job (spec 2026-09-06 §3).
-  rejectSpacesV2(parsed.spaces, 'spaces', issues);
+  // Every space lives in this same file under `spaces:` (user, 2026-09-08),
+  // so the root validator holds the whole picture: each block's shape, the
+  // cross-space agent rules, and `triggers[].space`.
+  validateSpacesV2(parsed, issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */
@@ -1710,6 +1707,6 @@ export {
   buildManifestV1Schema,
   buildManifestV2Schema,
   buildManifestSchema,
-  buildSpaceFileV2Schema,
+  buildSpaceV2Schema,
   manifestJsonSchema,
 } from './json-schema';

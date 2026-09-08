@@ -89,10 +89,10 @@ export type GrantSet = string[] | 'all';
 export interface AgentSpec {
   /** Agent name — unique per project. Matches projectSessions.agentName + the `.md` filename. */
   name: string;
-  /** e.g. `kortix.yaml#agents.<name>` (or `kortix-<slug>.yaml#agents.<name>` for an
+  /** e.g. `kortix.yaml#agents.<name>` — the same file for a global agent and for an
    *  agent a space owns) for UI / error reporting. */
   path: string;
-  /** The space that DECLARES this agent (`kortix-<slug>.yaml`), or null for
+  /** The space that DECLARES this agent (`spaces.<slug>.agents`), or null for
    *  a global agent from the root manifest. An owned agent is usable only in
    *  its space and in the ones that reference it (spec 2026-09-06 §2). */
   space: string | null;

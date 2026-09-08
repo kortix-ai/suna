@@ -1273,7 +1273,7 @@ export const SpaceSessionsModeSchema = z.enum(SPACE_SESSIONS_MODES);
 export type SpaceSessionsMode = z.infer<typeof SpaceSessionsModeSchema>;
 
 /**
- * One `kortix-<slug>.yaml` as the API serves it: a named container inside a
+ * One `spaces.<slug>` block as the API serves it: a named container inside a
  * project that groups sessions, may pin a default agent, and owns the
  * triggers naming it. Who may use one is an IAM object grant
  * (`object_type = 'space'`), never a field here.
@@ -1286,7 +1286,7 @@ export const SpaceSchema = z.object({
   /** Default agent for sessions started here — a default, not a binding. */
   agent: z.string().nullable(),
   sessions: SpaceSessionsModeSchema,
-  /** The file it lives in, repo-relative: `kortix-<slug>.yaml`. */
+  /** The manifest it is declared in, repo-relative: `kortix.yaml`. */
   path: z.string(),
   /** Agents usable here beyond the globals — the ones this space owns
    *  (declares in its file) or references, in file order. */

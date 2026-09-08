@@ -1322,7 +1322,7 @@ projectsApp.openapi(
       loaded.row,
       `trigger ${draft.slug} was being created`,
       async (manifest) => {
-        // Spaces are their own files (`kortix-<slug>.yaml`); the declared
+        // Spaces are `spaces.<slug>` blocks of the manifest; the declared
         // set and the roster the usability rule needs come from the manifest
         // revision being edited — no second read, no drift.
         const { declaredSpaces, loadedAgents } = await manifestRoster(gitProject, manifest);

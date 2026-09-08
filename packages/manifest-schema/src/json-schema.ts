@@ -664,7 +664,7 @@ function appsV2Schema(): JsonSchemaFragment {
 
 /** `agents.<name>: { from: <space> }` — an agent borrowed from the
  *  space that owns it. No other key in this version. Whether the target
- *  exists and owns that agent is cross-file, left to `validateManifestSetV2`. */
+ *  exists and owns that agent is cross-file, left to `validateSpacesV2`. */
 function agentReferenceV2Schema(): JsonSchemaFragment {
   return {
     type: 'object',
@@ -674,22 +674,30 @@ function agentReferenceV2Schema(): JsonSchemaFragment {
   };
 }
 
-/** `kortix-<slug>.yaml` — one space: a default agent, its session
- *  visibility, and the agents it owns or borrows. Identity is the
- *  FILENAME, so there is no `slug` key and no `kortix_version` (the root
- *  manifest's version applies). `agent` is cross-file (must be usable here)
- *  and left to the imperative validator. */
-export function buildSpaceFileV2Schema(): JsonSchemaFragment {
+/** One `spaces.<slug>` block of `kortix.yaml` — a default agent, its session
+ *  visibility, and the agents it owns or borrows. Identity is the MAP KEY,
+ *  so there is no `slug` key and no `kortix_version` (the root manifest's
+ *  version applies). `agent` is cross-space (must be usable here) and left
+ *  to the imperative validator. */
+export function buildSpaceV2Schema(): JsonSchemaFragment {
   return {
     $schema: DRAFT,
     $id: `${KORTIX_SCHEMA_BASE_URL}/kortix-space.v2.schema.json`,
-    title: 'Kortix space (kortix-<slug>.yaml)',
+    title: 'Kortix space (kortix.yaml `spaces.<slug>`)',
     description:
-      'One space of a kortix_version 2 project — a file named `kortix-<slug>.yaml` beside ' +
-      '`kortix.yaml`, where `<slug>` is its identity. `agents` declares the agents it OWNS ' +
-      '(the same governance-only block the root manifest uses; they are usable only inside this ' +
-      'space and in the ones that reference them) or BORROWS from another space with ' +
+      'One space of a kortix_version 2 project — an entry of the root manifest’s `spaces:` ' +
+      'map, where the key is its slug and its whole identity. `agents` declares the agents it ' +
+      'OWNS (the same governance-only block the root manifest uses; they are usable only inside ' +
+      'this space and in the ones that reference them) or BORROWS from another space with ' +
       '`{ from: <slug> }`. See docs/specs/2026-09-06-space-files-and-scoped-agents.md.',
+    ...spaceV2EntrySchema(),
+  };
+}
+
+/** The space block itself, with no `$schema`/`$id` envelope — what the root
+ *  manifest's `spaces:` map holds under each slug. */
+function spaceV2EntrySchema(): JsonSchemaFragment {
+  return {
     type: 'object',
     properties: {
       name: { type: 'string' },
@@ -786,8 +794,14 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
         propertyNames: { pattern: SLUG_RE.source },
         additionalProperties: agentBlockV2Schema(),
       },
-      // No `spaces` key: each space is its own `kortix-<slug>.yaml`
-      // (`kortix-space.v2.schema.json`), spec 2026-09-06 §2.
+      // Every space lives here, keyed by slug (user, 2026-09-08: "keep
+      // everything in one file"). The per-entry shape is the same fragment
+      // published standalone as `kortix-space.v2.schema.json`.
+      spaces: {
+        type: 'object',
+        propertyNames: { pattern: SLUG_RE.source },
+        additionalProperties: spaceV2EntrySchema(),
+      },
       ...sharedSectionProperties(2),
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,
@@ -842,7 +856,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
 export const KORTIX_V1_JSON_SCHEMA: JsonSchemaFragment = buildManifestV1Schema();
 export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema();
 export const KORTIX_JSON_SCHEMA: JsonSchemaFragment = buildManifestSchema();
-export const KORTIX_SPACE_V2_JSON_SCHEMA: JsonSchemaFragment = buildSpaceFileV2Schema();
+export const KORTIX_SPACE_V2_JSON_SCHEMA: JsonSchemaFragment = buildSpaceV2Schema();
 
 /** The one accessor every caller should use — "always return the correct,
  *  fully-valid schema for a given kortix_version." Pass no argument (or

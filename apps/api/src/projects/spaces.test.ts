@@ -1,19 +1,18 @@
 /**
- * Spaces as files — `kortix-<slug>.yaml` beside the root manifest (spec
- * 2026-09-06). Pure parsing, the usability rule, and the file round-trip; the
- * git-backed loader is exercised by the SUBP flows against a real repo.
+ * Spaces as `spaces.<slug>` blocks of the root manifest (user, 2026-09-08:
+ * "keep everything in one file"). Pure parsing, the usability rule, and the
+ * manifest round-trip; the git-backed loader is exercised by the SUBP flows
+ * against a real repo.
  */
 import { describe, expect, test } from 'bun:test';
 import {
   agentBlocksUsableIn,
   agentUsableIn,
-  extractSpacesFromFiles,
+  extractSpaces,
   manifestDir,
-  parseSpaceFile,
+  parseSpaceEntry,
   stripSpaceFromTriggers,
-  spaceFileEntries,
-  spacePathFor,
-  spaceSpecToFileEntry,
+  spaceSpecToManifestEntry,
   usableAgentNames,
   type SpaceSpec,
 } from './spaces';
@@ -32,18 +31,17 @@ import {
   triggerSpecToTomlEntry,
 } from './triggers';
 
-const MARKETING = `
-name: Marketing
-description: Campaign work.
-agent: writer
-sessions: shared
-agents:
-  writer:
-    connectors: [slack]
-    secrets: [BRAND_API_KEY]
-  researcher:
-    from: research
-`;
+/** One `spaces.marketing` block, as the YAML parser hands it over. */
+const MARKETING = {
+  name: 'Marketing',
+  description: 'Campaign work.',
+  agent: 'writer',
+  sessions: 'shared',
+  agents: {
+    writer: { connectors: ['slack'], secrets: ['BRAND_API_KEY'] },
+    researcher: { from: 'research' },
+  },
+};
 
 function globalAgent(name: string): AgentSpec {
   return {
@@ -65,48 +63,22 @@ function manifest(raw: Record<string, unknown>): ParsedManifest {
   return { schemaVersion: 2, raw, format: 'yaml', path: 'kortix.yaml' };
 }
 
-describe('file discovery', () => {
-  test('manifestDir is the root manifest\'s directory, \'\' for the repo root', () => {
+describe('manifestDir', () => {
+  test("is the root manifest's directory, '' for the repo root", () => {
     expect(manifestDir('kortix.yaml')).toBe('');
     expect(manifestDir('./kortix.yaml')).toBe('');
     expect(manifestDir('config/kortix.yaml')).toBe('config');
     expect(manifestDir(null)).toBe('');
   });
-
-  test('spacePathFor puts the file beside the root manifest', () => {
-    expect(spacePathFor('kortix.yaml', 'marketing')).toBe('kortix-marketing.yaml');
-    expect(spacePathFor('config/kortix.yaml', 'marketing')).toBe('config/kortix-marketing.yaml');
-  });
-
-  test('spaceFileEntries keeps only kortix-<slug>.yaml in exactly that directory, sorted', () => {
-    const entries = spaceFileEntries(
-      [
-        'kortix.yaml',
-        'kortix-research.yaml',
-        'kortix-marketing.yaml',
-        'kortix-marketing.yml',
-        'nested/kortix-nope.yaml',
-        'README.md',
-      ],
-      '',
-    );
-    expect(entries).toEqual([
-      { slug: 'marketing', path: 'kortix-marketing.yaml' },
-      { slug: 'research', path: 'kortix-research.yaml' },
-    ]);
-    expect(spaceFileEntries(['config/kortix-ops.yaml', 'kortix-root.yaml'], 'config')).toEqual([
-      { slug: 'ops', path: 'config/kortix-ops.yaml' },
-    ]);
-  });
 });
 
-describe('parseSpaceFile', () => {
+describe('parseSpaceEntry', () => {
   test('reads every field, owned agents carry the owner, references are listed', () => {
-    const result = parseSpaceFile('marketing', 'kortix-marketing.yaml', MARKETING);
+    const result = parseSpaceEntry('marketing', 'kortix.yaml', MARKETING);
     if (!result.ok) throw new Error(result.error.error);
     const spec = result.spec;
     expect(spec.slug).toBe('marketing');
-    expect(spec.path).toBe('kortix-marketing.yaml');
+    expect(spec.path).toBe('kortix.yaml');
     expect(spec.name).toBe('Marketing');
     expect(spec.description).toBe('Campaign work.');
     expect(spec.agent).toBe('writer');
@@ -114,7 +86,7 @@ describe('parseSpaceFile', () => {
     expect(spec.agents).toEqual(['writer', 'researcher']);
     expect(spec.ownedAgents.map((a) => a.name)).toEqual(['writer']);
     expect(spec.ownedAgents[0]?.space).toBe('marketing');
-    expect(spec.ownedAgents[0]?.path).toBe('kortix-marketing.yaml#agents.writer');
+    expect(spec.ownedAgents[0]?.path).toBe('kortix.yaml#agents.writer');
     expect(spec.ownedAgents[0]?.connectors).toEqual(['slack']);
     expect(spec.references).toEqual([{ name: 'researcher', from: 'research' }]);
     expect(spec.agentsRaw).toEqual({
@@ -123,59 +95,67 @@ describe('parseSpaceFile', () => {
     });
   });
 
-  test('an empty file is a space with defaults', () => {
-    const result = parseSpaceFile('yo', 'kortix-yo.yaml', '');
-    if (!result.ok) throw new Error(result.error.error);
-    expect(result.spec).toMatchObject({
-      name: 'yo',
-      description: null,
-      agent: null,
-      sessions: 'private',
-      agents: [],
-      ownedAgents: [],
-      references: [],
-      agentsRaw: null,
-    });
+  // `marketing:` with nothing under it parses as null, not `{}` — the most
+  // common hand-written shape, and the one a bare "create" produces.
+  test('an empty block is a space with defaults', () => {
+    for (const empty of [{}, null]) {
+      const result = parseSpaceEntry('yo', 'kortix.yaml', empty);
+      if (!result.ok) throw new Error(result.error.error);
+      expect(result.spec).toMatchObject({
+        name: 'yo',
+        description: null,
+        agent: null,
+        sessions: 'private',
+        agents: [],
+        ownedAgents: [],
+        references: [],
+        agentsRaw: null,
+      });
+    }
   });
 
-  test('invalid YAML, a bad mode, a bad path, an unknown key and a bad slug each report with the file path, not throw', () => {
-    const cases: Array<[string, string, string]> = [
-      ['marketing', 'name: [unclosed', 'not valid YAML'],
-      ['marketing', 'sessions: public', 'sessions'],
-      ['marketing', 'instruction: oops', 'instruction'],
-      ['Bad Slug', 'name: x', 'slug'],
-      ['marketing', 'kortix_version: 2', 'kortix_version'],
+  test('a bad mode, an unknown key, a bad slug and kortix_version each report with the manifest path, not throw', () => {
+    const cases: Array<[string, unknown, string]> = [
+      ['marketing', { sessions: 'public' }, 'sessions'],
+      ['marketing', { instruction: 'oops' }, 'instruction'],
+      ['Bad Slug', { name: 'x' }, 'slug'],
+      ['marketing', { kortix_version: 2 }, 'kortix_version'],
+      ['marketing', 'not a table', 'table'],
     ];
-    for (const [slug, text, needle] of cases) {
-      const result = parseSpaceFile(slug, 'kortix-marketing.yaml', text);
+    for (const [slug, raw, needle] of cases) {
+      const result = parseSpaceEntry(slug, 'kortix.yaml', raw);
       expect(result.ok).toBe(false);
       if (result.ok) continue;
-      expect(result.error.path).toBe('kortix-marketing.yaml');
+      expect(result.error.path).toBe('kortix.yaml');
       expect(result.error.error.toLowerCase()).toContain(needle.toLowerCase());
     }
   });
 });
 
-describe('extractSpacesFromFiles', () => {
-  test('specs and errors come back sorted by slug, and one bad file never hides the others', () => {
-    const loaded = extractSpacesFromFiles([
-      { slug: 'research', path: 'kortix-research.yaml', content: 'name: Research' },
-      { slug: 'broken', path: 'kortix-broken.yaml', content: 'sessions: nope' },
-      { slug: 'marketing', path: 'kortix-marketing.yaml', content: MARKETING },
-    ]);
+describe('extractSpaces', () => {
+  test('specs and errors come back sorted by slug, and one bad block never hides the others', () => {
+    const loaded = extractSpaces('kortix.yaml', {
+      research: { name: 'Research' },
+      broken: { sessions: 'nope' },
+      marketing: MARKETING,
+    });
     expect(loaded.specs.map((s) => s.slug)).toEqual(['marketing', 'research']);
     expect(loaded.errors.map((e) => e.slug)).toEqual(['broken']);
-    expect(loaded.errors[0]?.path).toBe('kortix-broken.yaml');
+    expect(loaded.errors[0]?.path).toBe('kortix.yaml');
+  });
+
+  test('a missing or non-map spaces: yields nothing rather than throwing', () => {
+    for (const raw of [undefined, null, 'nope', ['marketing']]) {
+      expect(extractSpaces('kortix.yaml', raw)).toEqual({ specs: [], errors: [] });
+    }
   });
 });
 
 describe('the usability rule', () => {
-  const marketing = parseSpaceFile('marketing', 'kortix-marketing.yaml', MARKETING);
-  const research = parseSpaceFile(
-    'research',
-    'kortix-research.yaml',
-    'agents:\n  researcher:\n    connectors: []\n',
-  );
+  const marketing = parseSpaceEntry('marketing', 'kortix.yaml', MARKETING);
+  const research = parseSpaceEntry('research', 'kortix.yaml', {
+    agents: { researcher: { connectors: [] } },
+  });
   if (!marketing.ok || !research.ok) throw new Error('fixtures must parse');
   const specs = [marketing.spec, research.spec];
   const root: LoadedAgents = { specs: [globalAgent('kortix')], errors: [], defaultAgent: 'kortix' };
@@ -199,7 +179,7 @@ describe('the usability rule', () => {
     expect(clash.specs.map((a) => a.path)).toEqual(['kortix.yaml#agents.writer']);
     expect(clash.errors).toHaveLength(1);
     expect(clash.errors[0]?.error).toContain('kortix.yaml#agents.writer');
-    expect(clash.errors[0]?.path).toBe('kortix-marketing.yaml#agents.writer');
+    expect(clash.errors[0]?.path).toBe('kortix.yaml#agents.writer');
   });
 
   test('globals everywhere; owned and referenced only in their space', () => {
@@ -223,11 +203,11 @@ describe('the usability rule', () => {
   });
 });
 
-describe('file round-trip', () => {
-  test('spaceSpecToFileEntry emits only what deviates, and the agents map verbatim', () => {
-    const parsed = parseSpaceFile('marketing', 'kortix-marketing.yaml', MARKETING);
+describe('manifest round-trip', () => {
+  test('spaceSpecToManifestEntry emits only what deviates, and the agents map verbatim', () => {
+    const parsed = parseSpaceEntry('marketing', 'kortix.yaml', MARKETING);
     if (!parsed.ok) throw new Error(parsed.error.error);
-    const entry = spaceSpecToFileEntry(parsed.spec);
+    const entry = spaceSpecToManifestEntry(parsed.spec);
     expect(Object.keys(entry)).toEqual(['name', 'description', 'agent', 'sessions', 'agents']);
     const minimal: SpaceSpec = {
       ...parsed.spec,
@@ -237,17 +217,29 @@ describe('file round-trip', () => {
       sessions: 'private',
       agentsRaw: null,
     };
-    expect(spaceSpecToFileEntry(minimal)).toEqual({});
+    expect(spaceSpecToManifestEntry(minimal)).toEqual({});
   });
 
+  // The write path serializes the WHOLE manifest with the block nested under
+  // `spaces:`, so the round-trip has to go through that nesting, not through
+  // a bare block — that is the shape a commit actually produces.
   test('serialize → parse keeps every field', () => {
-    const parsed = parseSpaceFile('marketing', 'kortix-marketing.yaml', MARKETING);
+    const parsed = parseSpaceEntry('marketing', 'kortix.yaml', MARKETING);
     if (!parsed.ok) throw new Error(parsed.error.error);
-    const text = serializeManifestObject(spaceSpecToFileEntry(parsed.spec), 'yaml');
-    const again = parseSpaceFile('marketing', 'kortix-marketing.yaml', text);
+    const text = serializeManifestObject(
+      {
+        kortix_version: 2,
+        default_agent: 'kortix',
+        agents: { kortix: {} },
+        spaces: { marketing: spaceSpecToManifestEntry(parsed.spec) },
+      },
+      'yaml',
+    );
+    const reparsed = parseManifestText(text, 'yaml') as Record<string, any>;
+    const again = parseSpaceEntry('marketing', 'kortix.yaml', reparsed.spaces.marketing);
     if (!again.ok) throw new Error(again.error.error);
     expect(again.spec).toEqual(parsed.spec);
-    expect(parseManifestText(text, 'yaml').agents).toEqual(parsed.spec.agentsRaw);
+    expect(reparsed.spaces.marketing.agents).toEqual(parsed.spec.agentsRaw);
   });
 
   test('strip clears `space:` only from the triggers naming it', () => {

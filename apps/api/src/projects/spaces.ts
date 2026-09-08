@@ -3,43 +3,48 @@
  *
  * A space is a named container INSIDE a project: it groups sessions, owns
  * the triggers that name it, may declare agents of its own, and is an IAM
- * object granted exactly like an agent. Each space is ONE FILE, `kortix-<slug>.yaml`, beside the
- * root manifest (spec `docs/specs/2026-09-06-space-files-and-scoped-agents.md`);
- * the slug is the filename. The database holds only the session join
- * (`project_sessions.space`) and the grants (`role_assignments`,
- * `object_type = 'space'`).
+ * object granted exactly like an agent. Every space lives in the ROOT
+ * MANIFEST under `spaces:`, keyed by slug (user, 2026-09-08: "we don't need
+ * different files for this, we can have everything in kortix.yaml"). The
+ * database holds only the session join (`project_sessions.space`) and the
+ * grants (`role_assignments`, `object_type = 'space'`).
  *
- * This module is the direct analogue of `./agents.ts` for those files: find
- * them, parse them, load them for a project, and serialize one back.
- * Authorization lives next door in `lib/space-access.ts` — nothing here
- * is a permission.
+ * This module is the direct analogue of `./agents.ts` for that map: read it,
+ * parse each block, and serialize one back. Authorization lives next door in
+ * `lib/space-access.ts` — nothing here is a permission.
  *
- * A v1 (kortix.toml) project has no spaces: the files are not even
- * listed, the same back-compat rule every other v2-only block follows.
+ * What the one-file move deleted: listing the repo for `kortix-<slug>.yaml`
+ * siblings, reading N files, the per-file read-error branch, and the
+ * duplicate-slug error (a YAML map cannot repeat a key). A space is now
+ * exactly as reachable as the manifest it lives in.
+ *
+ * A v1 (kortix.toml) project has no spaces: `spaces:` is not read at all,
+ * the same back-compat rule every other v2-only block follows.
  */
 import { posix as posixPath } from 'node:path';
 import {
   SPACE_SESSIONS_MODES_V2,
   isAgentReferenceV2,
   parseManifestText,
-  spaceFilePath,
-  spaceSlugFromPath,
-  validateSpaceFileV2,
+  validateSpaceEntryV2,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
 import { extractAgents, type AgentSpec, type LoadedAgents } from './agents';
 import type { GitBackedProject } from './git';
-import { listRepoFiles, readRepoFile } from './git';
-import type { ProjectFileEntry } from './git/types';
+import { readRepoFile } from './git';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
 export type SpaceSessionsMode = (typeof SPACE_SESSIONS_MODES_V2)[number];
 
 export interface SpaceSpec {
-  /** URL-safe slug — the filename, unique per project, and the IAM object id. */
+  /** URL-safe slug — the `spaces:` map key, unique per project, and the IAM
+   *  object id. */
   slug: string;
-  /** The file it lives in, repo-relative: `kortix-<slug>.yaml` (or `<dir>/kortix-<slug>.yaml`
-   *  when the root manifest lives in a subdirectory). */
+  /** The manifest this space is declared in, repo-relative (`kortix.yaml`, or
+   *  `<dir>/kortix.yaml` when the root manifest lives in a subdirectory).
+   *  The SAME value for every space in a project now that they share one
+   *  file — kept because it is what the UI and CLI cite when they tell
+   *  someone where a space is configured. */
   path: string;
   /** Display label; defaults to the slug. */
   name: string;
@@ -50,18 +55,18 @@ export interface SpaceSpec {
    *  every session in the space readable by everyone granted it. */
   sessions: SpaceSessionsMode;
   /**
-   * The agents usable here beyond the globals — the ones this file OWNS
+   * The agents usable here beyond the globals — the ones this space OWNS
    * (declares) and the ones it REFERENCES (`agents.<name>: { from: <slug> }`),
-   * in file order. A host builds the roster as globals + these.
+   * in declaration order. A host builds the roster as globals + these.
    */
   agents: string[];
-  /** The agents this file declares. Each carries `space = slug`. */
+  /** The agents this space declares. Each carries `space = slug`. */
   ownedAgents: AgentSpec[];
   /** `agents.<name>: { from }` entries — use imported from another space. */
   references: Array<{ name: string; from: string }>;
   /**
    * The raw `agents:` map exactly as written, or null when absent. Kept so a
-   * rewrite of the other fields (`spaceSpecToFileEntry`) never reformats
+   * rewrite of the other fields (`spaceSpecToManifestEntry`) never reformats
    * or drops a block it does not understand. Never serialized to the API.
    */
   agentsRaw: Record<string, unknown> | null;
@@ -76,13 +81,6 @@ export interface SpaceParseError {
 export interface LoadedSpaces {
   specs: SpaceSpec[];
   errors: SpaceParseError[];
-}
-
-/** One space file as read from the repo, before parsing. */
-export interface SpaceFile {
-  slug: string;
-  path: string;
-  content: string;
 }
 
 function isTable(value: unknown): value is Record<string, unknown> {
@@ -100,35 +98,10 @@ function dirOf(filePath: string): string {
   return dir === '.' ? '' : dir;
 }
 
-/** The directory the root manifest lives in — `''` for the repo root. This is
- *  where space files are looked for; nowhere else. */
+/** The directory the root manifest lives in — `''` for the repo root. Still
+ *  used by the repo-config reader to scope its file listing. */
 export function manifestDir(manifestPath: string | null | undefined): string {
   return dirOf(manifestPath || MANIFEST_FILENAME);
-}
-
-/** The repo-relative path a space with `slug` lives at, next to the root
- *  manifest at `manifestPath`. */
-export function spacePathFor(manifestPath: string | null | undefined, slug: string): string {
-  return spaceFilePath(manifestDir(manifestPath), slug);
-}
-
-/**
- * Pick the space files out of a repo listing: every `kortix-<slug>.yaml`
- * in `dir` (exactly that directory, never below it), sorted by slug. Pure.
- */
-export function spaceFileEntries(
-  files: readonly (ProjectFileEntry | string)[],
-  dir: string,
-): Array<{ slug: string; path: string }> {
-  const out: Array<{ slug: string; path: string }> = [];
-  for (const file of files) {
-    const filePath = typeof file === 'string' ? file : file.path;
-    if (dirOf(filePath) !== dir) continue;
-    const slug = spaceSlugFromPath(filePath);
-    if (!slug) continue;
-    out.push({ slug, path: filePath.replace(/^\.?\//, '') });
-  }
-  return out.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
 function issueText(issues: readonly ManifestIssue[]): string {
@@ -136,31 +109,31 @@ function issueText(issues: readonly ManifestIssue[]): string {
 }
 
 /**
- * Parse ONE space file into a spec. Never throws — invalid YAML, a
- * schema violation, or a bad owned-agent block all land in the error branch
- * with the file's path, so the UI can render it beside the good ones, exactly
- * like `extractTriggers`. Pure.
+ * Parse ONE `spaces.<slug>` block into a spec. Never throws — a schema
+ * violation or a bad owned-agent block lands in the error branch with the
+ * manifest path, so the UI can render it beside the good ones, exactly like
+ * `extractTriggers`. Pure.
  */
-export function parseSpaceFile(
+export function parseSpaceEntry(
   slug: string,
-  filePath: string,
-  content: string,
+  manifestPath: string,
+  raw: unknown,
 ): { ok: true; spec: SpaceSpec } | { ok: false; error: SpaceParseError } {
-  const fail = (error: string) => ({ ok: false as const, error: { slug, path: filePath, error } });
-
-  let raw: Record<string, unknown>;
-  try {
-    raw = parseManifestText(content, 'yaml');
-  } catch (err) {
-    return fail(`not valid YAML: ${(err as Error).message}`);
-  }
+  const fail = (error: string) => ({
+    ok: false as const,
+    error: { slug, path: manifestPath, error },
+  });
 
   const issues: ManifestIssue[] = [];
-  validateSpaceFileV2(raw, slug, issues);
+  validateSpaceEntryV2(raw, slug, issues);
   const errors = issues.filter((issue) => issue.severity === 'error');
   if (errors.length > 0) return fail(issueText(errors));
+  // `validateSpaceEntryV2` already rejected a non-table, so anything that
+  // reaches here is one — an empty block (`marketing:` with no body) parses
+  // as null and is the same as `{}`.
+  const body: Record<string, unknown> = isTable(raw) ? raw : {};
 
-  const agentsRaw = isTable(raw.agents) ? raw.agents : null;
+  const agentsRaw = isTable(body.agents) ? body.agents : null;
   const owned: Record<string, unknown> = {};
   const references: Array<{ name: string; from: string }> = [];
   for (const [name, entry] of Object.entries(agentsRaw ?? {})) {
@@ -168,12 +141,13 @@ export function parseSpaceFile(
     else owned[name] = entry;
   }
   // The same per-block reader the root's `agents:` map goes through, pointed
-  // at this file so each spec's `path` reads `kortix-<slug>.yaml#agents.<name>`.
+  // at the manifest so each spec's `path` reads
+  // `kortix.yaml#agents.<name>` — the block's own address inside the file.
   const ownedLoaded = extractAgents({
     schemaVersion: 2,
     raw: { agents: owned },
     format: 'yaml',
-    path: filePath,
+    path: manifestPath,
   });
   if (ownedLoaded.errors.length > 0) {
     return fail(ownedLoaded.errors.map((e) => `${e.path}: ${e.error}`).join('; '));
@@ -188,11 +162,11 @@ export function parseSpaceFile(
     ok: true,
     spec: {
       slug,
-      path: filePath,
-      name: optionalString(raw.name)?.trim() ?? slug,
-      description: optionalString(raw.description),
-      agent: optionalString(raw.agent)?.trim() ?? null,
-      sessions: (raw.sessions as SpaceSessionsMode | undefined) ?? 'private',
+      path: manifestPath,
+      name: optionalString(body.name)?.trim() ?? slug,
+      description: optionalString(body.description),
+      agent: optionalString(body.agent)?.trim() ?? null,
+      sessions: (body.sessions as SpaceSessionsMode | undefined) ?? 'private',
       agents: Object.keys(agentsRaw ?? {}),
       ownedAgents,
       references,
@@ -201,14 +175,20 @@ export function parseSpaceFile(
   };
 }
 
-/** Parse many files. Specs and errors come back sorted by slug. Pure. */
-export function extractSpacesFromFiles(files: readonly SpaceFile[]): LoadedSpaces {
+/**
+ * Parse a whole `spaces:` map. Specs and errors come back sorted by slug.
+ * A missing or malformed map yields none — the manifest validator is what
+ * reports that, not this loader. Pure.
+ */
+export function extractSpaces(manifestPath: string, rawSpaces: unknown): LoadedSpaces {
   const specs: SpaceSpec[] = [];
   const errors: SpaceParseError[] = [];
-  for (const file of files) {
-    const result = parseSpaceFile(file.slug, file.path, file.content);
-    if (result.ok) specs.push(result.spec);
-    else errors.push(result.error);
+  if (isTable(rawSpaces)) {
+    for (const [slug, raw] of Object.entries(rawSpaces)) {
+      const result = parseSpaceEntry(slug, manifestPath, raw);
+      if (result.ok) specs.push(result.spec);
+      else errors.push(result.error);
+    }
   }
   specs.sort((a, b) => a.slug.localeCompare(b.slug));
   errors.sort((a, b) => a.slug.localeCompare(b.slug));
@@ -216,7 +196,7 @@ export function extractSpacesFromFiles(files: readonly SpaceFile[]): LoadedSpace
 }
 
 /**
- * Read a project's space files and parse them. Never throws. Mirrors
+ * Read a project's spaces out of its root manifest. Never throws. Mirrors
  * `loadProjectAgents` — including the dynamic `./triggers` import that keeps
  * the module graph acyclic (git/config.ts imports this file).
  *
@@ -247,77 +227,44 @@ export async function loadProjectSpaces(
       };
     }
   }
-  // A v1 manifest has no spaces. A project with NO manifest yet is the
-  // synthesized-v2 case every other reader assumes (`loadProjectAgents`), so
-  // its files are looked for beside the configured manifest path.
-  if (manifest && manifest.schemaVersion < 2) return { specs: [], errors: [] };
-
-  const dir = manifestDir(manifest?.path ?? project.manifestPath);
-  let entries: Array<{ slug: string; path: string }>;
-  try {
-    entries = spaceFileEntries(
-      await listRepoFiles(project, project.defaultBranch, dir || null),
-      dir,
-    );
-  } catch (err) {
-    return {
-      specs: [],
-      errors: [
-        {
-          slug: '(manifest)',
-          path: dir ? `${dir}/` : '.',
-          error: `Failed to list space files: ${(err as Error).message}`,
-        },
-      ],
-    };
-  }
-
-  const files: SpaceFile[] = [];
-  const readErrors: SpaceParseError[] = [];
-  for (const entry of entries) {
-    try {
-      files.push({
-        ...entry,
-        content: await readRepoFile(project, entry.path, project.defaultBranch),
-      });
-    } catch (err) {
-      readErrors.push({
-        slug: entry.slug,
-        path: entry.path,
-        error: `Failed to read: ${(err as Error).message}`,
-      });
-    }
-  }
-  const loaded = extractSpacesFromFiles(files);
-  return {
-    specs: loaded.specs,
-    errors: [...loaded.errors, ...readErrors].sort((a, b) => a.slug.localeCompare(b.slug)),
-  };
+  // A v1 manifest has no spaces. A project with NO manifest yet has none
+  // either — there is no file to hold them.
+  if (!manifest || manifest.schemaVersion < 2) return { specs: [], errors: [] };
+  return extractSpaces(manifest.path, manifest.raw.spaces);
 }
 
 /**
- * The space files as they are at ONE ref — a session's `base_ref`, which
- * may differ from the default branch. Used by everything that compiles or
- * boots a session (envelope, agent config). Never throws; a file that cannot
- * be read is an `errors[]` entry.
+ * The spaces as they are at ONE ref — a session's `base_ref`, which may
+ * differ from the default branch. Used by everything that compiles or boots
+ * a session (envelope, agent config). Never throws; a manifest that cannot
+ * be read or parsed is an `errors[]` entry.
  */
 export async function loadProjectSpacesAtRef(
   project: GitBackedProject,
   opts: { manifestPath: string; ref: string },
 ): Promise<LoadedSpaces> {
-  const dir = manifestDir(opts.manifestPath);
-  const entries = spaceFileEntries(await listRepoFiles(project, opts.ref, dir || null), dir);
-  const files: SpaceFile[] = [];
-  const errors: SpaceParseError[] = [];
-  for (const entry of entries) {
-    try {
-      files.push({ ...entry, content: await readRepoFile(project, entry.path, opts.ref) });
-    } catch (err) {
-      errors.push({ slug: entry.slug, path: entry.path, error: `Failed to read: ${(err as Error).message}` });
-    }
+  const path = opts.manifestPath.replace(/^\.?\//, '');
+  let text: string;
+  try {
+    text = await readRepoFile(project, path, opts.ref);
+  } catch (err) {
+    return {
+      specs: [],
+      errors: [{ slug: '(manifest)', path, error: `Failed to read: ${(err as Error).message}` }],
+    };
   }
-  const loaded = extractSpacesFromFiles(files);
-  return { specs: loaded.specs, errors: [...loaded.errors, ...errors] };
+  let raw: Record<string, unknown>;
+  try {
+    raw = parseManifestText(text, path.endsWith('.toml') ? 'toml' : 'yaml');
+  } catch (err) {
+    return {
+      specs: [],
+      errors: [{ slug: '(manifest)', path, error: `not valid: ${(err as Error).message}` }],
+    };
+  }
+  // Same v1 rule as `loadProjectSpaces`: no `spaces:` is read below v2.
+  if (Number(raw.kortix_version ?? 1) < 2) return { specs: [], errors: [] };
+  return extractSpaces(path, raw.spaces);
 }
 
 // ─── The usability rule (spec 2026-09-06 §2) ─────────────────────────────────
@@ -389,7 +336,7 @@ export function agentBlocksUsableIn(
  * `context`) is not in the spec, so the first write after an edit sweeps it
  * out of the file.
  */
-export function spaceSpecToFileEntry(spec: SpaceSpec): Record<string, unknown> {
+export function spaceSpecToManifestEntry(spec: SpaceSpec): Record<string, unknown> {
   const entry: Record<string, unknown> = {};
   if (spec.name && spec.name !== spec.slug) entry.name = spec.name;
   if (spec.description) entry.description = spec.description;

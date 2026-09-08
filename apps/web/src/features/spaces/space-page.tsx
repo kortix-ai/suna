@@ -10,7 +10,7 @@
  * (share, `⋯`), and the space's recent sessions under the composer.
  *
  * ONE COLUMN, deliberately (user, 2026-09-07). What a space is
- * configured with now lives in its `kortix-<slug>.yaml`, written by a person
+ * configured with now lives in its `spaces.<slug>` block of `kortix.yaml`, written by a person
  * or an agent, not in a settings panel beside the composer. The page is
  * heading + composer + a list, which is also the shape a Slack-style tab strip
  * (Chat / a dashboard / another dashboard) drops into later, under the
@@ -405,7 +405,7 @@ function SpaceToolbar({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={`Delete ${space.name}?`}
-        description={`kortix-${space.slug}.yaml is removed from the repository and its triggers lose the back-reference. Its sessions are kept, but members granted only this space stop seeing them.`}
+        description={`The spaces.${space.slug} block is removed from kortix.yaml and its triggers lose the back-reference. Its sessions are kept, but members granted only this space stop seeing them.`}
         confirmLabel="Delete"
         confirmVariant="destructive"
         isPending={remove.isPending}

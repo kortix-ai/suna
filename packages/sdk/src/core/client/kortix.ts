@@ -568,7 +568,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       /** Named containers inside the project — the manifest is the source of
-       *  truth; writes commit `kortix-<slug>.yaml`. Grant one with
+       *  truth; writes commit its `spaces.<slug>` block. Grant one with
        *  `access.resourceGrants.create({ resourceType: 'space' })`. */
       spaces: {
         list: () => P.listProjectSpaces(projectId),
