@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { SessionPromptPart } from '@kortix/sdk';
 import {
   captureAttachmentSubmission,
+  planAttachmentReplacement,
   retainAttachmentPreviews,
   stageComposerFiles,
 } from './attachment-submission';
@@ -192,5 +193,19 @@ describe('retainAttachmentPreviews', () => {
     expect(retainedFile?.kind).toBe('local');
     if (retainedFile?.kind !== 'local') throw new Error('expected a local preview');
     expect(retainedFile.file).toBe(file.file);
+  });
+});
+
+describe('planAttachmentReplacement', () => {
+  test('removes superseded SDK entries and URLs but preserves active submissions', () => {
+    const removed = selectedFile('removed', 'removed.txt');
+    const active = selectedFile('active', 'active.txt');
+    const kept = selectedFile('kept', 'kept.txt');
+    expect(planAttachmentReplacement([removed, active, kept], [kept], new Set(['active']))).toEqual(
+      {
+        idsToRemove: ['removed'],
+        urlsToRevoke: ['blob:removed'],
+      },
+    );
   });
 });

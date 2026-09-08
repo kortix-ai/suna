@@ -40,7 +40,7 @@ import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
-import type { DraftScope, StoredDraft } from './draft/composer-draft';
+import { type DraftScope, restoreDraftFileOrder, type StoredDraft } from './draft/composer-draft';
 import { useComposerDraft } from './draft/use-composer-draft';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 
@@ -51,6 +51,7 @@ import { AnimatedComposerPlaceholder } from './animated-placeholder';
 import {
   attachedFileUploadId,
   captureAttachmentSubmission,
+  planAttachmentReplacement,
   stageComposerFiles,
 } from './attachment-submission';
 import { AttachmentTiles } from './attachment-tiles';
@@ -84,6 +85,7 @@ interface StashedDraft {
   content: ReturnType<ComposerEditorHandle['getContent']>;
   doc: JSONContent | null;
   files: AttachedFile[];
+  attachmentSubmission: ReturnType<typeof captureAttachmentSubmission>;
 }
 
 export interface SessionChatInputProps {
@@ -478,6 +480,11 @@ function ComposerImpl({
   const dragDepthRef = useRef(0);
   const savedDocBeforeQuestionRef = useRef<JSONContent | null>(null);
   const promptAttachments = usePromptAttachments(projectId);
+  const promptAttachmentsRef = useRef(promptAttachments);
+  useEffect(() => {
+    promptAttachmentsRef.current = promptAttachments;
+  }, [promptAttachments]);
+  const activeSubmissionIdsRef = useRef(new Set<string>());
   const {
     addMany: addPromptAttachments,
     attachments: promptAttachmentItems,
@@ -511,7 +518,7 @@ function ComposerImpl({
       if (draft.files.length === 0 && draft.attachments.length === 0) return;
       if (attachedFilesRef.current.length > 0) return;
       try {
-        const restored: AttachedFile[] = draft.attachments.map((attachment) => ({
+        const next = restoreDraftFileOrder(draft, (attachment) => ({
           kind: 'staged',
           uploadId: restorePromptAttachment(attachment),
           attachment,
@@ -519,7 +526,6 @@ function ComposerImpl({
           mime: attachment.mime,
           isImage: attachment.mime.startsWith('image/'),
         }));
-        const next = [...draft.files, ...restored];
         attachedFilesRef.current = next;
         setAttachedFiles(next);
       } catch (error) {
@@ -568,6 +574,15 @@ function ComposerImpl({
       }
     },
     [addPromptAttachments],
+  );
+
+  useEffect(
+    () => () => {
+      for (const file of attachedFilesRef.current) {
+        if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
+      }
+    },
+    [],
   );
 
   const handleFileSelect = useCallback(
@@ -966,6 +981,15 @@ function ComposerImpl({
         const current = attachedFilesRef.current;
         const next =
           prefillMode === 'merge' ? mergeFailedSubmissionFiles(current, prepared) : prepared;
+        if (prefillMode !== 'merge') {
+          const replacement = planAttachmentReplacement(
+            current,
+            next,
+            activeSubmissionIdsRef.current,
+          );
+          for (const uploadId of replacement.idsToRemove) removePromptAttachment(uploadId);
+          for (const url of replacement.urlsToRevoke) URL.revokeObjectURL(url);
+        }
         attachedFilesRef.current = next;
         setAttachedFiles(next);
       } catch (error) {
@@ -991,6 +1015,7 @@ function ComposerImpl({
     addPromptAttachments,
     getPromptAttachmentSnapshot,
     restorePromptAttachment,
+    removePromptAttachment,
   ]);
 
   useEffect(() => {
@@ -1264,14 +1289,16 @@ function ComposerImpl({
       const trimmed = plan.text;
       if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
 
-      const attachmentSubmission = (() => {
-        try {
-          return captureAttachmentSubmission(filesNow, promptAttachments);
-        } catch (error) {
-          errorToast(error instanceof Error ? error.message : 'Attachments are not ready');
-          return null;
-        }
-      })();
+      const attachmentSubmission =
+        stash?.attachmentSubmission ??
+        (() => {
+          try {
+            return captureAttachmentSubmission(filesNow, promptAttachments);
+          } catch (error) {
+            errorToast(error instanceof Error ? error.message : 'Attachments are not ready');
+            return null;
+          }
+        })();
       if (!attachmentSubmission) return;
 
       const filesToSend = filesNow.length > 0 ? [...filesNow] : undefined;
@@ -1287,6 +1314,7 @@ function ComposerImpl({
       }
 
       try {
+        for (const id of attachmentSubmission.submittedIds) activeSubmissionIdsRef.current.add(id);
         await onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission.parts);
         promptAttachments.forget(attachmentSubmission.submittedIds);
         for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
@@ -1319,6 +1347,9 @@ function ComposerImpl({
           attachedFilesRef.current = plan.attachedFiles;
           setAttachedFiles(plan.attachedFiles);
         }
+      } finally {
+        for (const id of attachmentSubmission.submittedIds)
+          activeSubmissionIdsRef.current.delete(id);
       }
     },
     [
@@ -1378,10 +1409,17 @@ function ComposerImpl({
         if (!editor || !content || !content.text.trim()) return null;
         const doc = editor.getDocument() ?? null;
         const files = attachedFilesRef.current;
+        let attachmentSubmission: ReturnType<typeof captureAttachmentSubmission>;
+        try {
+          attachmentSubmission = captureAttachmentSubmission(files, promptAttachmentsRef.current);
+        } catch (error) {
+          errorToast(error instanceof Error ? error.message : 'Attachments are not ready');
+          return null;
+        }
         editor.clear();
         attachedFilesRef.current = [];
         setAttachedFiles([]);
-        return { content, doc, files };
+        return { content, doc, files, attachmentSubmission };
       },
     );
     return submitLatchRef.current();

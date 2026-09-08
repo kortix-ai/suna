@@ -27,7 +27,10 @@ export type DraftScope =
 export type RemoteAttachedFile = Extract<AttachedFile, { kind: 'remote' }>;
 
 /** Bumped whenever `StoredDraft`'s shape changes. Old drafts then read as misses. */
-export const DRAFT_ENVELOPE_VERSION = 2;
+export const DRAFT_ENVELOPE_VERSION = 3;
+
+export type DraftAttachmentOrderEntry =
+  { kind: 'remote'; index: number } | { kind: 'attachment'; attachmentId: string };
 
 /**
  * Per-draft ceiling, bytes of serialized JSON. The whole origin shares one
@@ -61,6 +64,8 @@ export interface StoredDraft {
   files: RemoteAttachedFile[];
   /** Completed private handles only. No file bytes, blob URLs, or signed URLs. */
   attachments: PromptAttachment[];
+  /** Original mixed tray order, expressed only through safe stored metadata. */
+  order: DraftAttachmentOrderEntry[];
 }
 
 /** The `<kind>:<id>` half of the storage key. The family prefix is the store's. */
@@ -90,8 +95,46 @@ export function serializeDraft(input: {
   userId: string;
 }): StoredDraft | null {
   if (!input.userId) return null;
-  const files = input.files.filter(isRemote);
   const attachments = safeAttachments(input.attachments ?? []);
+  const files: RemoteAttachedFile[] = [];
+  const unusedAttachments = new Set(attachments.map((attachment) => attachment.attachment_id));
+  const attachmentsById = new Map(
+    attachments.map((attachment) => [attachment.attachment_id, attachment]),
+  );
+  const attachmentsByFile = new Map<string, PromptAttachment[]>();
+  for (const attachment of attachments) {
+    const key = `${attachment.filename}\0${attachment.mime}\0${attachment.size}`;
+    const matches = attachmentsByFile.get(key) ?? [];
+    matches.push(attachment);
+    attachmentsByFile.set(key, matches);
+  }
+  const order: DraftAttachmentOrderEntry[] = [];
+  for (const file of input.files) {
+    if (file.kind === 'remote') {
+      order.push({ kind: 'remote', index: files.push(file) - 1 });
+      continue;
+    }
+    let attachment: PromptAttachment | undefined;
+    if (file.kind === 'staged') {
+      attachment = attachmentsById.get(file.attachment.attachment_id);
+    } else {
+      const matches =
+        attachmentsByFile.get(`${file.file.name}\0${file.file.type}\0${file.file.size}`) ?? [];
+      while (matches.length > 0 && !unusedAttachments.has(matches[0]!.attachment_id)) {
+        matches.shift();
+      }
+      attachment = matches.shift();
+    }
+    if (attachment) {
+      unusedAttachments.delete(attachment.attachment_id);
+      order.push({ kind: 'attachment', attachmentId: attachment.attachment_id });
+    }
+  }
+  for (const attachment of attachments) {
+    if (unusedAttachments.has(attachment.attachment_id)) {
+      order.push({ kind: 'attachment', attachmentId: attachment.attachment_id });
+    }
+  }
   if (input.documentIsEmpty && files.length === 0 && attachments.length === 0) return null;
   const draft: StoredDraft = {
     v: DRAFT_ENVELOPE_VERSION,
@@ -99,6 +142,7 @@ export function serializeDraft(input: {
     doc: input.doc,
     files,
     attachments,
+    order,
   };
   if (JSON.stringify(draft).length > MAX_DRAFT_BYTES) return null;
   return draft;
@@ -118,13 +162,57 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
   if (!candidate.doc || typeof candidate.doc !== 'object') return null;
   if (!Array.isArray(candidate.files)) return null;
   if (!Array.isArray(candidate.attachments)) return null;
+  if (!Array.isArray(candidate.order)) return null;
+  const files = candidate.files.filter(isRemote);
+  const attachments = safeAttachments(candidate.attachments);
+  const attachmentIds = new Set(attachments.map((attachment) => attachment.attachment_id));
+  const order = candidate.order.filter((entry): entry is DraftAttachmentOrderEntry => {
+    if (!entry || typeof entry !== 'object') return false;
+    const value = entry as Partial<DraftAttachmentOrderEntry> & { index?: unknown };
+    return value.kind === 'remote'
+      ? Number.isSafeInteger(value.index) &&
+          (value.index as number) >= 0 &&
+          (value.index as number) < files.length
+      : value.kind === 'attachment' &&
+          typeof value.attachmentId === 'string' &&
+          attachmentIds.has(value.attachmentId);
+  });
   return {
     v: candidate.v,
     u: candidate.u,
     doc: candidate.doc,
-    files: candidate.files.filter(isRemote),
-    attachments: safeAttachments(candidate.attachments),
+    files,
+    attachments,
+    order,
   };
+}
+
+/** Rebuild the tray from safe descriptors without grouping it by storage kind. */
+export function restoreDraftFileOrder(
+  draft: StoredDraft,
+  restoreAttachment: (attachment: PromptAttachment) => AttachedFile,
+): AttachedFile[] {
+  const attachments = new Map(
+    draft.attachments.map((attachment) => [attachment.attachment_id, attachment]),
+  );
+  const staged = new Map<string, AttachedFile>();
+  const restored: AttachedFile[] = [];
+  for (const entry of draft.order) {
+    if (entry.kind === 'remote') {
+      const file = draft.files[entry.index];
+      if (file) restored.push(file);
+      continue;
+    }
+    let file = staged.get(entry.attachmentId);
+    if (!file) {
+      const attachment = attachments.get(entry.attachmentId);
+      if (!attachment) continue;
+      file = restoreAttachment(attachment);
+      staged.set(entry.attachmentId, file);
+    }
+    restored.push(file);
+  }
+  return restored;
 }
 
 function safeAttachment(value: unknown): PromptAttachment | null {
@@ -156,7 +244,11 @@ function safeAttachment(value: unknown): PromptAttachment | null {
 }
 
 function safeAttachments(values: readonly unknown[]): PromptAttachment[] {
-  const attachments = values.map(safeAttachment).filter(Boolean) as PromptAttachment[];
+  const attachments: PromptAttachment[] = [];
+  for (const value of values) {
+    const attachment = safeAttachment(value);
+    if (attachment) attachments.push(attachment);
+  }
   if (attachments.length > MAX_PROMPT_ATTACHMENT_FILES) return [];
   if (
     attachments.reduce((sum, attachment) => sum + attachment.size, 0) > MAX_PROMPT_ATTACHMENTS_BYTES

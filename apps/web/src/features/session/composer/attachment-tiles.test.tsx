@@ -29,12 +29,78 @@ const localDoc = (name: string): AttachedFile => ({
   isImage: false,
 });
 
+const restoredImage: AttachedFile = {
+  kind: 'staged',
+  uploadId: 'restored-image',
+  attachment: {
+    attachment_id: 'server-image',
+    filename: 'restored.png',
+    mime: 'image/png',
+    size: 8,
+    expires_at: '2099-01-01T00:00:00.000Z',
+  },
+  filename: 'restored.png',
+  mime: 'image/png',
+  isImage: true,
+};
+
 /** Every `class="..."` attribute value in a markup string. */
 function classAttrs(html: string): string[] {
   return [...html.matchAll(/class="([^"]*)"/g)].map((m) => m[1]);
 }
 
 describe('AttachmentTiles', () => {
+  test('a ready restored image without a thumbnail renders its name without a spinner', () => {
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[restoredImage]}
+        uploads={[
+          {
+            id: 'restored-image',
+            filename: 'restored.png',
+            mime: 'image/png',
+            size: 8,
+            status: 'ready',
+            receivedBytes: 8,
+            attachment: restoredImage.kind === 'staged' ? restoredImage.attachment : undefined,
+          },
+        ]}
+        onRemove={() => {}}
+      />,
+    );
+    expect(markup).toContain('restored.png');
+    expect(markup).not.toContain('animate-spinner-orbit');
+  });
+
+  test('restored image fallback reflects processing and error state', () => {
+    const item = {
+      id: 'restored-image',
+      filename: 'restored.png',
+      mime: 'image/png',
+      size: 8,
+      receivedBytes: 8,
+    } as const;
+    const processing = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[restoredImage]}
+        uploads={[{ ...item, status: 'processing' }]}
+        onRemove={() => {}}
+      />,
+    );
+    expect(processing).toContain('Processing');
+    expect(processing).toContain('animate-spinner-orbit');
+
+    const error = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[restoredImage]}
+        uploads={[{ ...item, status: 'error', error: new Error('expired') }]}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(error).toContain('Upload failed');
+    expect(error).not.toContain('animate-spinner-orbit');
+  });
   test('shows acknowledged upload progress and processing without replacing the file tile', () => {
     const file = { ...localDoc('notes.txt'), uploadId: 'local-1' };
     if (file.kind !== 'local') throw new Error('expected local file');

@@ -74,6 +74,7 @@ const draft = (text: string): StoredDraft => ({
   doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
   files: [],
   attachments: [],
+  order: [],
 });
 
 describe('composer draft store', () => {
@@ -91,6 +92,7 @@ describe('composer draft store', () => {
       doc: DOC,
       files: [],
       attachments: [],
+      order: [],
     });
     expect(readDraft(scope, USER)?.doc).toEqual(DOC);
   });

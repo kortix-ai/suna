@@ -48,6 +48,28 @@ export function attachedFileUploadId(file: AttachedFile): string | undefined {
   return file.kind === 'remote' ? undefined : file.uploadId;
 }
 
+/** Resources owned only by a replaced composer tray. Active submissions keep ownership. */
+export function planAttachmentReplacement(
+  current: readonly AttachedFile[],
+  next: readonly AttachedFile[],
+  protectedIds: ReadonlySet<string>,
+): { idsToRemove: string[]; urlsToRevoke: string[] } {
+  const retained = new Set<string>();
+  for (const file of next) {
+    const uploadId = attachedFileUploadId(file);
+    if (uploadId) retained.add(uploadId);
+  }
+  const idsToRemove: string[] = [];
+  const urlsToRevoke: string[] = [];
+  for (const file of current) {
+    const uploadId = attachedFileUploadId(file);
+    if (!uploadId || retained.has(uploadId) || protectedIds.has(uploadId)) continue;
+    idsToRemove.push(uploadId);
+    if (file.kind === 'local') urlsToRevoke.push(file.localUrl);
+  }
+  return { idsToRemove, urlsToRevoke };
+}
+
 /**
  * Capture one Send's private upload handles synchronously.
  *
@@ -62,11 +84,12 @@ export function captureAttachmentSubmission(
   const byLocalId = new Map<string, PromptAttachmentItem>(
     controller.getSnapshot().attachments.map((item) => [item.id, item]),
   );
-  const byAttachmentId = new Map(
-    readyParts
-      .filter((part) => part.type === 'file' && typeof part.attachment_id === 'string')
-      .map((part) => [part.attachment_id!, part]),
-  );
+  const byAttachmentId = new Map<string, SessionPromptPart>();
+  for (const part of readyParts) {
+    if (part.type === 'file' && typeof part.attachment_id === 'string') {
+      byAttachmentId.set(part.attachment_id, part);
+    }
+  }
   const submittedIds: string[] = [];
   const parts: SessionPromptPart[] = [];
 

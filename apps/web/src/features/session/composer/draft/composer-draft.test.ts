@@ -7,6 +7,7 @@ import {
   MAX_DRAFT_BYTES,
   deserializeDraft,
   draftScopeKey,
+  restoreDraftFileOrder,
   serializeDraft,
   shouldRestoreDraft,
   type StoredDraft,
@@ -189,6 +190,7 @@ describe('deserializeDraft', () => {
           expires_at: '2020-01-01T00:00:00.000Z',
         },
       ],
+      order: [{ kind: 'attachment', attachmentId: 'att-ready' }],
     };
 
     expect(deserializeDraft(raw, USER)?.attachments).toEqual([
@@ -200,6 +202,48 @@ describe('deserializeDraft', () => {
         expires_at: '2099-01-01T00:00:00.000Z',
       },
     ]);
+  });
+
+  test('preserves interleaved staged and remote attachment order without private bytes', () => {
+    const attachment = {
+      attachment_id: 'att-ready',
+      filename: 'first.png',
+      mime: 'image/png',
+      size: 1,
+      expires_at: '2099-01-01T00:00:00.000Z',
+    };
+    const staged: AttachedFile = {
+      kind: 'staged',
+      uploadId: 'local-ready',
+      attachment,
+      filename: attachment.filename,
+      mime: attachment.mime,
+      isImage: true,
+    };
+    const stored = serializeDraft({
+      doc: EMPTY_DOC,
+      documentIsEmpty: true,
+      files: [staged, REMOTE_FILE],
+      attachments: [attachment],
+      userId: USER,
+    });
+    const back = deserializeDraft(JSON.parse(JSON.stringify(stored)), USER);
+    expect(back?.order).toEqual([
+      { kind: 'attachment', attachmentId: 'att-ready' },
+      { kind: 'remote', index: 0 },
+    ]);
+    if (!back) throw new Error('expected stored draft');
+    expect(
+      restoreDraftFileOrder(back, (item) => ({
+        kind: 'staged',
+        uploadId: `restored-${item.attachment_id}`,
+        attachment: item,
+        filename: item.filename,
+        mime: item.mime,
+        isImage: item.mime.startsWith('image/'),
+      })).map((file) => (file.kind === 'local' ? file.file.name : file.filename)),
+    ).toEqual(['first.png', 'a.png']);
+    expect(JSON.stringify(back)).not.toContain('blob:');
   });
 
   test('a stale envelope version is refused', () => {

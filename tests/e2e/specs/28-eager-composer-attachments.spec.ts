@@ -281,19 +281,48 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
 
     holdChunk = true;
     const largeBytes = Array.from(Buffer.alloc(160 * 1024, 0x61));
-    await dispatchFileEvent(page, "paste", {
-      name: "paste-large.txt",
-      mime: "text/plain",
-      bytes: largeBytes,
-    });
-    await heldChunk;
     await input.fill("Eager attachment first prompt");
-    await input.press("Enter");
+    await input.evaluate((element, bytes) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File([new Uint8Array(bytes)], "paste-large.txt", {
+          type: "text/plain",
+        }),
+      );
+      element.dispatchEvent(
+        new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: transfer,
+        }),
+      );
+      element.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }, largeBytes);
+    await heldChunk;
     await page.waitForTimeout(250);
     expect(promptBodies).toHaveLength(0);
     await expect(send).toBeDisabled();
 
+    const deleteHeldRequest = page.waitForRequest(
+      (request) =>
+        request.method() === "DELETE" &&
+        pathname(request).includes(`/v1/projects/${project.id}/attachments/`),
+    );
+    await page.getByRole("button", { name: "Remove paste-large.txt" }).click();
+    const heldDelete = await deleteHeldRequest;
     releaseHeldChunk();
+    const heldDeleteResponse = await heldDelete.response();
+    expect(heldDeleteResponse?.status()).toBe(204);
+    await expect(
+      page.getByRole("button", { name: "Remove paste-large.txt" }),
+    ).toHaveCount(0);
     await expect(page.getByText(/^(Uploading|Processing|Waiting)/)).toHaveCount(
       0,
       {
@@ -317,6 +346,11 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     await expect(page.locator('img[alt="picker.png"]')).toBeVisible();
     await expect(input).toHaveText("Eager attachment first prompt");
     expect(promptBodies).toHaveLength(1);
+    const secondResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        pathname(response.request()) === `/v1/projects/${project.id}/sessions`,
+    );
     await send.click();
     await expect.poll(() => promptBodies.length, { timeout: 10_000 }).toBe(2);
     expect(attachmentIds(promptBodies[1])).toEqual(
@@ -324,10 +358,22 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     );
     expect(JSON.stringify(promptBodies[1])).not.toContain("data:");
     expect(chunkRequests).toBe(chunksBeforeRetry);
-    await expect(input).toHaveText("Eager attachment first prompt");
-    await expect(page.locator('img[alt="picker.png"]')).toBeVisible({
-      timeout: 15_000,
-    });
+    const response = await secondResponse;
+    if (isDeployedTarget()) {
+      expect(response.ok()).toBe(true);
+      await expect(page).toHaveURL(/\/projects\/[^/]+\/sessions\/[^/]+/, {
+        timeout: 60_000,
+      });
+      await expect(page.locator('img[alt="picker.png"]')).toBeVisible({
+        timeout: 30_000,
+      });
+    } else {
+      expect(response.status()).toBe(503);
+      await expect(input).toHaveText("Eager attachment first prompt");
+      await expect(page.locator('img[alt="picker.png"]')).toBeVisible({
+        timeout: 15_000,
+      });
+    }
 
     await testInfo.attach("eager-composer-selected-and-retried", {
       body: await page.screenshot(),
