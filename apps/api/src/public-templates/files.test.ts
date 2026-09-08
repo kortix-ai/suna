@@ -16,7 +16,7 @@ mock.module('../shared/github-fetch', () => ({
   githubFetch: async (input: string) => {
     requested.push(input);
     if (throwOnFetch) throw new Error('network down');
-    if (input.includes('api.github.com')) {
+    if (input.startsWith('https://api.github.com/')) {
       return {
         ok: treeResponse.ok,
         json: async () => treeResponse.body,

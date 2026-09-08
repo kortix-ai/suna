@@ -108,7 +108,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
       agent_tunnel: false,
-      templates: false,
       connectors_api_discover: false,
       agentmail_email: false,
       teams: false,
