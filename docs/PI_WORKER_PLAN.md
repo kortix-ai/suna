@@ -45,7 +45,7 @@ Status: done.
 | Worker image | small Alpine image with a supervisor and runtime fetcher |
 | Session start | Pi sessions boot on the worker and stream before workspace readiness |
 | Lazy environment | text-only prompts leave compute off; the first workspace tool creates or resumes the full box |
-| Durable transcript | message and part mutations persist in PostgreSQL |
+| Durable transcript | append-only Pi entries and turn-admission transitions persist in PostgreSQL with stable wire identities |
 | Shared filesystems | content-addressed blobs through S3 or PostgreSQL |
 
 ### P2.1 — latency evidence
@@ -132,17 +132,98 @@ Prompt sync and project-secret propagation target the worker and every active
 environment. Environment pushes update secret and runtime state without
 starting OpenCode or provisioning an unused environment.
 
+Environment RPC authorization can expire while the worker remains live. Fetch,
+keep-alive, WebSocket upgrade, and established WebSocket calls classify a
+pre-execution `401`. The worker then re-ensures the environment and retries once.
+Cancellation replies and ambiguous mutation failures never enter this replay
+path. Concurrent stale calls share one renewed client.
+
 ### P2.7 — every invocation source
 
 Status: done.
 
 All creation sources enter `createProjectSession`. Pi selection uses the
-project's `pi_worker` feature flag and `runtime: pi` at the selected Git ref.
+manifest's `kortix_version: 3` at the selected Git ref. Version 2 selects
+OpenCode. An explicit runtime must match the version.
 It does not inspect the invocation source. The same path covers the UI, API,
 Slack, Teams, Telegram, email, triggers, schedules, and sub-agents.
 
+A missing manifest or v1 manifest preserves OpenCode compatibility. Git, read,
+parse, and invalid-runtime failures return
+`409 PI_WORKER_RUNTIME_RESOLUTION_FAILED` before session persistence.
+
+Selection produces one durable runtime identity. Pi overrides the requested
+provider with Daytona and stores that effective provider with the immutable Git
+ref and SHA. The create response, database row, audit attribution, and provider
+request use that same provider. Restart and cold-open replacement rebuild from
+the stored ref and SHA with the Pi-only environment. They fail closed when the
+stored identity is incomplete or names another provider.
+
+Pi replaces only the harness image. It preserves the resolved request, agent,
+or project sandbox template as `environment_sandbox_slug`. The lazy compute
+environment builds that template from the stored Pi commit SHA. A custom
+Dockerfile, image, dependency set, and resource profile therefore remain part of
+the compute runtime instead of being replaced by the platform default.
+
+`pi-worker` is a server-owned sandbox slug. Session requests, custom-template
+creation, manifest template declarations, manifest defaults, and per-agent
+sandbox selectors cannot claim it. Authorization runs before these semantic
+checks, so an unauthorized session-create request remains `403`.
+
 The branch preview is the rollout boundary. No change on this branch merges or
 deploys to dev without explicit approval.
+
+### P2.8 — durable multi-worker turn ownership
+
+Status: done locally.
+
+The admission journal serializes accepted turns across workers. It enforces one
+durable head, a globally sortable wire-message floor, and exact retry matching.
+A started turn has one lease owner. Heartbeats, reclaim, Stop, and completion
+use compare-and-append fences against the owner and revision.
+
+The owner writes assistant metadata and terminal status in one `completed`
+record. A replacement worker claims an unchanged expired lease. It records the
+existing terminal result or branches before unsafe partial tool context and
+adds one interruption. It never repeats the model or an unknown side effect.
+Boot restores the Pi tree and journal from one log snapshot. Legacy pending
+repair runs only after `started` commits, and its lane move uses the owner lease
+fence. Lease-loss reconciliation removes rejected live output from both message
+reads and connected event clients.
+
+Stop is also durable. Any worker can request it. The owner acknowledges it only
+after calling Pi abort. The HTTP route returns success only after that durable
+acknowledgement or a terminal completion.
+
+Prompt routes reject unsupported agent, model, part, and attachment fields.
+They reject bodies larger than 512 KiB as soon as the limit is known. Benchmark
+routes are unavailable when the worker runs with a project identity.
+
+The web composer treats the compiled worker as immutable. It locks agent and
+model selection for Pi sessions. It blocks unsupported context, file, image,
+data URL, paste, and drop inputs. Prompt, command, and retry payloads omit stale
+agent, model, and variant fields. Unsupported slash actions are hidden.
+
+### P2.9 — OpenCode product compatibility
+
+Status: in progress.
+
+The architecture plan did not include a complete OpenCode replacement gate.
+[`PI_OPENCODE_PARITY.md`](./PI_OPENCODE_PARITY.md) is now the executable
+compatibility scorecard and release boundary.
+
+The local worker implements the core session protocol, global SSE, Stop,
+questions, permissions, project commands, project skills, and the six
+environment-backed workspace tools. It exposes the selected compiled agent and
+the effective built-in tool schemas through the installed OpenCode client. The
+SDK routes workspace reads to the environment and conversation reads to the
+worker.
+
+Full compatibility is not complete. Durable blocking interactions, complete
+command behavior, custom tools, plugins, hooks, MCP, subagents, todos,
+compaction, rewind, forks, attachments, web tools, LSP, and parts of the agent
+contract remain partial or missing. The branch cannot replace OpenCode until
+the P0 rows in the scorecard are green on a branch preview.
 
 ## Shared filesystems
 
@@ -171,6 +252,9 @@ Local gates:
 pnpm test
 pnpm test -- --sdk-only
 pnpm test -- --packages-only
+pnpm --filter @kortix/worker test
+pnpm --filter @kortix/worker typecheck
+pnpm --filter @kortix/sdk run smoke:install
 pnpm --filter kortix-api typecheck
 pnpm --filter @kortix/db typecheck
 pnpm --filter @kortix/db db:check
@@ -187,11 +271,35 @@ Deployed branch gates:
 6. Runtime projection accepts the worker and rejects the environment.
 7. Browser files, terminal, preview, and service URLs target the environment.
 8. Shared filesystem create, put, get, list, delete, and tenant isolation pass.
+9. Two workers preserve prompt order and expose the same durable status.
+10. Stop sent to a non-owner reaches and is acknowledged by the owner.
+11. A replacement worker resolves an expired started turn without rerunning it.
+
+Current delivery status:
+
+| Gate | Status |
+|---|---|
+| Local implementation and focused suites | done |
+| Full repository suite at the current branch tip | in progress |
+| Draft pull request | open |
+| Branch preview stack | `0ea36cfd55` deployed; compatibility working tree pending commit and redeploy |
+| Preview target-full managed Git flows | blocked by managed Git repository credentials |
+| Dev merge and deployment | requires explicit approval |
+
+The preview GitHub App can write repository contents but cannot create a
+managed repository. It needs repository Administration read/write permission.
+Alternatively, a repository administrator can add a machine-owned fine-grained
+token as `PREVIEW_MANAGED_GIT_GITHUB_TOKEN`. Personal user tokens from another
+environment are not valid preview credentials and must not be copied.
 
 ## Deliberate exclusions
 
 - Filesystem version history is a later feature.
-- Transcript compaction is separate from durable message storage.
+- Transcript compaction is separate from durable message storage. Pi sessions
+  hide the compact action until the worker implements it.
+- Rewind and restore require one durable mutation across Pi's model tree and
+  the HTTP transcript. Pi sessions hide these controls. The raw endpoints
+  return `501 feature_not_supported` without changing either state.
 - Durable Objects are not required for the micro-VM implementation.
 - Arbitrary custom in-process code can access its own worker process. The
   supported extension pattern uses SDK-backed remote tools.
@@ -201,3 +309,19 @@ Deployed branch gates:
 The branch can prove local and preview behavior. Dev and production verification
 require an approved merge and the documented release process. This branch must
 not merge itself.
+
+
+## Current checkpoint — 2026-09-08
+
+The remaining work continues on `pi-worker`; no merge is approved.
+
+- Version 3 selects Pi without a feature flag. Version 2 selects OpenCode.
+- The Pi environment boots an execution-only daemon. Files, Git, PTY, and
+  previews have no OpenCode process dependency.
+- Environment recovery preserves working files and the selected branch.
+- The provider bootstrap verifies artifacts and uses an execution-capable fallback.
+- Local proof: real daemon boot, provider-bootstrap process, dirty-workspace
+  recovery, authenticated workspace routes, negative readiness, and version selection.
+- Preview proof for this checkpoint is pending deployment.
+- Continue the product parity audit, remaining SDK/host flows, and the fair
+  Pi-direct/OpenCode/Pi-worker benchmark. Restore worker mode after the benchmark.

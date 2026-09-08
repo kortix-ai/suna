@@ -36,6 +36,8 @@ import {
   HEX_COLOR_RE_V2,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
+  PI_WORKER_SANDBOX_SLUG,
+  manifestDefaultRuntime,
   SLUG_RE,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -55,9 +57,7 @@ export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 /** Kortix governance field — validated only in this phase; enforcement is Phase 4. */
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
-/** Session runtimes. `pi` boots the compiled pi worker (behind the project's
- *  `pi_worker` feature flag); anything else — including absence — keeps the
- *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
+/** Version 2 selects OpenCode. Version 3 selects the compiled Pi worker. */
 export type RuntimeV2 = 'opencode' | 'pi';
 
 /** `$defs.PermissionActionConfig` in the OpenCode config schema. */
@@ -308,13 +308,22 @@ export function validateRequiredConnectorFields(
 }
 
 /** v2 dispatch: called from `index.ts`'s `validateManifestBodyV2`. */
-export function validateRuntimeV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+export function validateRuntimeV2(node: unknown, path: string, issues: ManifestIssue[], version = 2): void {
   if (node === undefined || node === null) return;
   const v = typeof node === 'string' ? node.trim() : '';
   if (!(V2_RUNTIME_VALUES as readonly string[]).includes(v)) {
     issues.push({
       path,
       message: `runtime must be one of: ${V2_RUNTIME_VALUES.join(', ')} (got ${JSON.stringify(node)}).`,
+      severity: 'error',
+    });
+    return;
+  }
+  const expected = manifestDefaultRuntime(version);
+  if (node !== expected) {
+    issues.push({
+      path,
+      message: `kortix_version ${version} requires runtime "${expected}".`,
       severity: 'error',
     });
   }
@@ -518,10 +527,13 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
 
   if (entry.sandbox !== undefined) {
     const sandbox = typeof entry.sandbox === 'string' ? entry.sandbox.trim() : '';
-    if (!sandbox || !SLUG_RE.test(sandbox)) {
+    if (!sandbox || !SLUG_RE.test(sandbox) || sandbox === PI_WORKER_SANDBOX_SLUG) {
       issues.push({
         path: `${where}.sandbox`,
-        message: 'sandbox must be a valid template slug.',
+        message:
+          sandbox === PI_WORKER_SANDBOX_SLUG
+            ? `sandbox "${PI_WORKER_SANDBOX_SLUG}" is reserved for the server-selected Pi runtime.`
+            : 'sandbox must be a valid template slug.',
         severity: 'error',
       });
     }

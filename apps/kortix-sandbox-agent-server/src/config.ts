@@ -94,7 +94,8 @@ const Schema = z.object({
   // ── Monitor box (docs/specs/2026-08-12-monitors.md) ──────────────────────
   // `monitor` selects the daemon's monitor mode: it clones the repo, skips
   // opencode entirely, and supervises the project's monitor processes instead.
-  // Anything else (including unset) is the normal session daemon.
+  // `environment` serves workspace operations without an agent runtime.
+  // Unset selects the OpenCode session daemon.
   KORTIX_WORKLOAD: z.string().default(''),
   // The enabled monitors, resolved from kortix.yaml BY apps/api and injected as
   // JSON. The daemon deliberately does not parse the manifest: one parser means

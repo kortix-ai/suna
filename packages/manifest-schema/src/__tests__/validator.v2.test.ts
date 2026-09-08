@@ -234,6 +234,17 @@ agents:
     expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
+  test('rejects the server-owned pi-worker slug on an agent', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: researcher
+agents:
+  researcher:
+    sandbox: pi-worker
+`);
+    expect(errorPaths).toContain('agents.researcher.sandbox');
+  });
+
   test('rejects an invalid agent sandbox slug', () => {
     const { valid, issues } = summarize(`
 kortix_version: 2

@@ -17,6 +17,50 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedSeededProject();
+    await ctx.step('NONMEMBER cannot probe reserved Pi runtime fields → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          '/v1/projects/:projectId/sessions',
+          { sandbox_slug: 'pi-worker' },
+          { params: { projectId: p.id } },
+        );
+      r.status(403);
+    });
+    for (const [key, value] of [
+      ['pi_worker_boot', true],
+      ['sandbox_slug', 'pi-worker'],
+      ['pi_worker_ref', 'main'],
+      ['pi_worker_sha', 'a'.repeat(40)],
+      ['runtimeArtifact', { runtimeProfile: 'pi-worker', sandboxSlug: 'pi-worker' }],
+    ] as const) {
+      await ctx.step(`create session with server-managed metadata.${key} → 400`, async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/sessions',
+            { metadata: { [key]: value } },
+            { params: { projectId: p.id } },
+          );
+        r.status(400).body().has('$.error', `metadata key is server-managed: ${key}`);
+      });
+    }
+    await ctx.step(
+      'create session with explicit sandbox_slug pi-worker → 400 reserved',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/sessions',
+            { sandbox_slug: 'pi-worker' },
+            { params: { projectId: p.id } },
+          );
+        r.status(400)
+          .body()
+          .has('$.error', 'sandbox_slug "pi-worker" is reserved for the server-selected Pi runtime')
+          .has('$.code', 'PI_WORKER_RUNTIME_RESERVED');
+      },
+    );
     await ctx.step('create session → 201 provisioning', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

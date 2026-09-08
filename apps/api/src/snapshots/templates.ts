@@ -50,6 +50,7 @@ import {
   DEFAULT_SANDBOX_SLUG,
   extractSandboxDefault,
   extractSandboxTemplates,
+  isReservedSandboxTemplateSlug,
   normalizeUserDockerfileForSnapshot,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   SANDBOX_SPEC_LIMITS,
@@ -902,7 +903,14 @@ function clamp(
   return n;
 }
 
-function validateTemplateMutation(args: { image?: unknown; dockerfilePath?: unknown }): void {
+function validateTemplateMutation(args: {
+  slug?: unknown;
+  image?: unknown;
+  dockerfilePath?: unknown;
+}): void {
+  if (typeof args.slug === 'string' && isReservedSandboxTemplateSlug(args.slug.trim())) {
+    throw new Error(`Sandbox template slug "${args.slug.trim()}" is server-owned.`);
+  }
   const image = typeof args.image === 'string' && args.image.trim() ? args.image.trim() : null;
   const dockerfilePath =
     typeof args.dockerfilePath === 'string' && args.dockerfilePath.trim()

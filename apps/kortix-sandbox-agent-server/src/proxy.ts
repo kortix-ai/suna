@@ -5,6 +5,7 @@ import { egressShimPort } from './egress-shim';
 import type { ServerWebSocket } from 'bun';
 
 import type { Config } from './config';
+import { createWorkspaceRouter } from './routes/workspace';
 import { logger } from './logger';
 import { createPartRouter } from './routes/part';
 import { stripInlineAttachmentBytes } from './inline-attachments';
@@ -327,6 +328,7 @@ export function buildOpencodeApp(
   agentEnvFile?: string,
 ): Hono {
   const app = new Hono();
+  const executionOnly = cfg.workload === 'environment';
 
   // The daemon owns a small Kortix-namespaced control surface. Everything else is
   // pure passthrough to opencode. Mount at both `/health` and `/health/` so
@@ -350,8 +352,10 @@ export function buildOpencodeApp(
   kortixRouter.route('/health/', healthRouter);
   kortixRouter.route('/refresh', refreshRouter);
   kortixRouter.route('/refresh/', refreshRouter);
-  kortixRouter.route('/abort', abortRouter);
-  kortixRouter.route('/abort/', abortRouter);
+  if (!executionOnly) {
+    kortixRouter.route('/abort', abortRouter);
+    kortixRouter.route('/abort/', abortRouter);
+  }
   kortixRouter.route('/git', gitRouter);
   kortixRouter.route('/git/', gitRouter);
   kortixRouter.route('/pty', ptyRouter);
@@ -363,9 +367,11 @@ export function buildOpencodeApp(
   kortixRouter.route('/env-rpc', envRpcRouter);
   kortixRouter.route('/env-rpc/', envRpcRouter);
   // /kortix/part — attachment bytes on demand; see routes/part.ts.
-  const partRouter = createPartRouter(opencode, { sidecarDir: defaultSidecarDir(OPENCODE_HOME) });
-  kortixRouter.route('/part', partRouter);
-  kortixRouter.route('/part/', partRouter);
+  if (!executionOnly) {
+    const partRouter = createPartRouter(opencode, { sidecarDir: defaultSidecarDir(OPENCODE_HOME) });
+    kortixRouter.route('/part', partRouter);
+    kortixRouter.route('/part/', partRouter);
+  }
   // /kortix/logs — the daemon's own log file + OpenCode's; see routes/logs.ts.
   const logsRouter = createLogsRouter(cfg, { opencodeHome: OPENCODE_HOME });
   kortixRouter.route('/logs', logsRouter);
@@ -396,24 +402,30 @@ export function buildOpencodeApp(
   // reload can invalidate it without threading a handle through the proxy —
   // `reload()` rebuilds this app on a warm-snapshot restore and must not orphan
   // the projection it was maintaining.
-  const opencodeDb = new OpencodeDb(opencodeDbPath(OPENCODE_HOME));
-  const runtimeState =
-    runtimeStateStore() ??
-    configureRuntimeState({
+  if (!executionOnly) {
+    const opencodeDb = new OpencodeDb(opencodeDbPath(OPENCODE_HOME));
+    const runtimeState =
+      runtimeStateStore() ??
+      configureRuntimeState({
+        opencode,
+        cfg,
+        db: opencodeDb,
+        pinnedSessionId: readPinnedSessionId,
+        daemonBuild: async () => (await runtimeConvergenceReport()).build,
+      });
+    const opencodeRuntimeRouter = createOpencodeRuntimeRouter(cfg, {
       opencode,
-      cfg,
       db: opencodeDb,
+      state: runtimeState,
       pinnedSessionId: readPinnedSessionId,
-      daemonBuild: async () => (await runtimeConvergenceReport()).build,
     });
-  const opencodeRuntimeRouter = createOpencodeRuntimeRouter(cfg, {
-    opencode,
-    db: opencodeDb,
-    state: runtimeState,
-    pinnedSessionId: readPinnedSessionId,
-  });
-  kortixRouter.route('/opencode', opencodeRuntimeRouter);
-  kortixRouter.route('/opencode/', opencodeRuntimeRouter);
+    kortixRouter.route('/opencode', opencodeRuntimeRouter);
+    kortixRouter.route('/opencode/', opencodeRuntimeRouter);
+  } else {
+    for (const endpoint of ['/opencode', '/opencode/*', '/part', '/part/*', '/abort', '/abort/']) {
+      kortixRouter.all(endpoint, (c) => c.json({ error: 'Agent requests belong to the worker', code: 'ENVIRONMENT_AGENT_RUNTIME_DISABLED' }, 409));
+    }
+  }
 
   app.route('/kortix', kortixRouter);
 
@@ -506,7 +518,7 @@ export function buildOpencodeApp(
       );
     }
 
-    if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
+    if (!executionOnly && cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
       return notReady(
         c,
         {
@@ -551,6 +563,11 @@ export function buildOpencodeApp(
   // poll fast (202 while generating, 200 + the file when ready) so it never
   // trips the apps/api preview-proxy's per-attempt timeout. See the router doc.
   app.route('/presentation', createPresentationRouter(cfg));
+
+  if (executionOnly) {
+    app.route('/', createWorkspaceRouter(cfg));
+    app.all('*', (c) => c.json({ error: 'Agent requests belong to the worker', code: 'ENVIRONMENT_AGENT_RUNTIME_DISABLED' }, 409));
+  }
 
   // Reverse-proxy catch-all → OpenCode. Stream both directions so SSE works.
   // If opencode hasn't bound its port yet (state !== 'ok') we 503 instead of
@@ -743,7 +760,9 @@ export function startProxy(
   // Box telemetry: a `[resources]` log line every minute and on every
   // opencode state change, `[resources] pressure` when a threshold is crossed.
   resourceMonitor?.stop();
-  const turnInFlight = () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace);
+  const turnInFlight = () => currentCfg.workload === 'environment'
+    ? Promise.resolve(false)
+    : opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace);
   // Attachment offload (attachment-offload.ts): inline image bytes out of the
   // transcript store, only while no turn runs. Every 5 min, and right after a
   // memory-guard abort.
@@ -751,7 +770,7 @@ export function startProxy(
   const offloadSidecarDir = defaultSidecarDir(OPENCODE_HOME);
   let offloadRunning = false;
   const runOffloadIfIdle = async (why: string): Promise<void> => {
-    if (offloadRunning) return;
+    if (currentCfg.workload === 'environment' || offloadRunning) return;
     if (process.env.KORTIX_ATTACHMENT_OFFLOAD === '0') return;
     offloadRunning = true;
     try {
@@ -780,6 +799,7 @@ export function startProxy(
       guardPct: Number(process.env.KORTIX_MEMORY_GUARD_PCT) || undefined,
       turnInFlight,
       abortTurn: async (reason) => {
+        if (currentCfg.workload === 'environment') return false;
         const sessionId = readPinnedSessionId();
         if (!sessionId) return false;
         const url =

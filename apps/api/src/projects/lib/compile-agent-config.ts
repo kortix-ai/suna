@@ -491,16 +491,18 @@ export async function resolveManifestRuntimeForPiSession(
   const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
   const version = manifestSchemaVersion(raw);
   if (version === 1) return null;
-  if (!Number.isInteger(version) || version < 2) {
+  if (version !== 2 && version !== 3) {
     throw new CompileAgentConfigError('Manifest must declare a valid kortix_version.');
   }
   const runtime = (raw as Record<string, unknown>).runtime;
-  if (runtime === 'pi') return 'pi';
-  if (runtime === 'opencode') return 'opencode';
-  if (runtime !== undefined && runtime !== null) {
+  if (runtime !== undefined && runtime !== null && runtime !== 'pi' && runtime !== 'opencode') {
     throw new CompileAgentConfigError('Manifest runtime must be "pi" or "opencode".');
   }
-  return manifestDefaultRuntime(version);
+  const expected = manifestDefaultRuntime(version);
+  if (runtime !== undefined && runtime !== null && runtime !== expected) {
+    throw new CompileAgentConfigError(`kortix_version ${version} requires runtime "${expected}".`);
+  }
+  return expected;
 }
 
 /**

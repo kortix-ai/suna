@@ -58,16 +58,18 @@ import {
   DURATION_RE,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  PI_WORKER_SANDBOX_SLUG,
   RESERVED_SANDBOX_SLUG,
+  RESERVED_SANDBOX_TEMPLATE_SLUGS,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
   TRIGGER_TYPES,
-  V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
   manifestDefaultConfigDir,
+  manifestDefaultRuntime,
   manifestUsesAgentMap,
 } from './constants';
 import {
@@ -288,7 +290,7 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
     type: 'object',
     required: ['slug'],
     properties: {
-      slug: { allOf: [SLUG_SCHEMA, { not: { const: RESERVED_SANDBOX_SLUG } }] },
+      slug: { allOf: [SLUG_SCHEMA, { not: { enum: [...RESERVED_SANDBOX_TEMPLATE_SLUGS] } }] },
       name: { type: 'string' },
       entrypoint: { type: 'string' },
       image: { type: 'string', minLength: 1 },
@@ -318,7 +320,9 @@ function sandboxSchema(): JsonSchemaFragment {
       templates: { type: 'array', items: sandboxTemplateSchema() },
       // Cross-field: must name a declared template slug — dynamic, left to
       // the imperative validator (see module doc "deliberate scope limits").
-      default: { type: 'string', minLength: 1 },
+      default: {
+        allOf: [SLUG_SCHEMA, { not: { const: PI_WORKER_SANDBOX_SLUG } }],
+      },
     },
     additionalProperties: true,
   };
@@ -576,7 +580,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
     type: 'object',
     properties: {
       enabled: { type: 'boolean' },
-      sandbox: SLUG_SCHEMA,
+      sandbox: { allOf: [SLUG_SCHEMA, { not: { const: PI_WORKER_SANDBOX_SLUG } }] },
       connectors: grantSetSchema(),
       connectors_required: {
         type: 'array',
@@ -700,7 +704,7 @@ export function buildManifestV1Schema(): JsonSchemaFragment {
 /**
  * The map-shaped body, shared by `kortix_version: 2` and `3`.
  *
- * v3 is v2 with two defaults flipped — `runtime` defaults to `pi` and project
+ * v3 selects Pi and shares the v2 body. Project
  * config lives in `.kortix/pi` — and NO new syntax, so it reuses this builder
  * rather than duplicating ~50 properties that would then drift.
  */
@@ -713,14 +717,14 @@ export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
     description:
       `kortix.yaml, schema version ${version} — YAML-only. ` +
       (version >= 3
-        ? 'The pi-native version: `runtime` defaults to `pi` and project config lives in ' +
+        ? 'The pi-native version: `runtime` is `pi` and project config lives in ' +
           '`.kortix/pi`. Otherwise identical to version 2. '
         : '') +
       '`agents` is a name→block MAP, ' +
       'GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must ' +
       'be declared, and OpenCode behavior (description/model/mode/temperature/permission/the ' +
       'prompt itself) lives entirely in that agent’s own native ' +
-      `\`${configDir}/agents/<name>.md\` frontmatter + body — authoring any of those fields ` + +
+      `\`${configDir}/agents/<name>.md\` frontmatter + body — authoring any of those fields ` +
       'here is a hard error. `[[channels]]` is removed outright. See ' +
       'docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.',
     type: 'object',
@@ -730,7 +734,7 @@ export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
       // Cross-field: must resolve to a declared, enabled agent — dynamic,
       // left to the imperative validator.
       default_agent: NON_EMPTY_STRING,
-      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      runtime: { const: manifestDefaultRuntime(version) },
       agents: {
         type: 'object',
         minProperties: 1,

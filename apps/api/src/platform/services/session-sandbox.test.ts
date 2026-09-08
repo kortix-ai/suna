@@ -69,7 +69,11 @@ let scenario: {
 let removedIds: string[] = [];
 let stoppedIds: string[] = [];
 let onRemoved: (() => void) | null = null;
-let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
+let computeSessionsOpened: Array<{
+  sandboxId: string;
+  accountId: string;
+  spec?: { cpuCores: number; memoryGb: number; diskGb: number; gpuCount: number };
+}> = [];
 let onComputeOpened: (() => void) | null = null;
 let recordedEvents: Array<{ outcome: string; marks?: Array<{ label: string }> }> = [];
 let identityConflict = false;
@@ -101,6 +105,8 @@ let activeRouting: {
   activeSnapshotName: string | null;
 } | null = null;
 let agentGrantError: Error | null = null;
+let gatewayEntitled = false;
+let projectGatewayEnabled = false;
 const testConfig = {
   ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
   KORTIX_URL: 'http://localhost:8008',
@@ -275,7 +281,14 @@ mock.module('./provider-balancer', () => ({
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensurePiWorkerImage: async () => undefined,
+  ensurePiWorkerImage: async () => ({
+    snapshotName: 'kortix-pi-worker-test',
+    slug: 'pi-worker',
+    contentHash: 'pi-hash-1',
+    isDefault: false,
+    built: false,
+    runtimeProfile: 'pi-worker',
+  }),
   ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     const queued = imageResolutionQueue.shift();
@@ -332,6 +345,7 @@ mock.module('../../billing/services/compute-metering', () => ({
     sandboxId: string;
     accountId: string;
     provider: string;
+    spec?: { cpuCores: number; memoryGb: number; diskGb: number; gpuCount: number };
   }) => {
     computeSessionsOpened.push(input);
     onComputeOpened?.();
@@ -357,7 +371,7 @@ mock.module('../../repositories/service-accounts', () => ({
 }));
 
 mock.module('../../shared/account-limits', () => ({
-  accountEntitledToLlmGateway: async (_accountId: string) => false,
+  accountEntitledToLlmGateway: async (_accountId: string) => gatewayEntitled,
 }));
 
 mock.module('../../projects/triggers', () => ({
@@ -377,7 +391,7 @@ mock.module('../../projects/agents', () => ({
 }));
 
 mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (_metadata: unknown) => false,
+  projectLlmGatewayEnabled: (_metadata: unknown) => projectGatewayEnabled,
 }));
 
 mock.module('../../shared/session-failure-notifier', () => ({
@@ -429,6 +443,8 @@ beforeEach(() => {
   providerSyncCalls = [];
   activeRouting = null;
   agentGrantError = null;
+  gatewayEntitled = false;
+  projectGatewayEnabled = false;
   testConfig.KORTIX_FAST_COLD_BOOT_ENABLED = false;
 });
 
@@ -457,6 +473,59 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await expect(provisionSessionSandbox(baseOpts())).rejects.toThrow('manifest unavailable');
     expect(accountTokenCreateCalls).toHaveLength(0);
     expect(providerCreateCalls).toBe(0);
+  });
+
+  test('refuses a Pi provider allocation when the project LLM gateway is disabled', async () => {
+    await expect(
+      provisionSessionSandbox({
+        ...baseOpts(),
+        sandboxSlug: 'pi-worker',
+        metadata: { pi_worker_boot: true },
+      }),
+    ).rejects.toThrow('Pi worker requires an enabled and entitled Kortix LLM gateway');
+
+    expect(providerCreateCalls).toBe(0);
+  });
+
+  test('refuses a Pi provider allocation when the account lacks gateway entitlement', async () => {
+    projectGatewayEnabled = true;
+
+    await expect(
+      provisionSessionSandbox({
+        ...baseOpts(),
+        sandboxSlug: 'pi-worker',
+        metadata: { pi_worker_boot: true },
+      }),
+    ).rejects.toThrow('Pi worker requires an enabled and entitled Kortix LLM gateway');
+
+    expect(providerCreateCalls).toBe(0);
+  });
+
+  test('injects the gateway credential pair into an entitled Pi allocation', async () => {
+    projectGatewayEnabled = true;
+    gatewayEntitled = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      sandboxSlug: 'pi-worker',
+      metadata: { pi_worker_boot: true },
+    });
+    await opened;
+
+    expect(providerCreateCalls).toBe(1);
+    expect(providerCreateOpts[0]?.envVars).toMatchObject({
+      KORTIX_TOKEN: 'exec-tok-1',
+      KORTIX_LLM_BASE_URL: 'http://localhost:8008/v1/llm',
+    });
+    expect(computeSessionsOpened[0]?.spec).toEqual({
+      cpuCores: 1,
+      memoryGb: 2,
+      diskGb: 8,
+      gpuCount: 0,
+    });
   });
 
   test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {

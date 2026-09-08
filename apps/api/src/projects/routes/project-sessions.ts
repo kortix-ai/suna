@@ -18,6 +18,7 @@ import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
+import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { and, eq, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
@@ -36,6 +37,7 @@ import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
+import { PI_WORKER_RUNTIME_METADATA_KEYS } from '../lib/session-sandbox-metadata';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'deletedAt',
@@ -47,12 +49,12 @@ const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'trigger_slug',
   'name',
   'title_source',
+  ...PI_WORKER_RUNTIME_METADATA_KEYS,
 ] as const;
 
 const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
   ...SERVER_MANAGED_SESSION_METADATA_KEYS,
   'workspace_mode',
-  'sandbox_slug',
 ] as const;
 
 function serverManagedSessionMetadataKey(
@@ -88,13 +90,6 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
-  const serverManagedMetadataKey = serverManagedSessionMetadataKey(body.metadata);
-  if (serverManagedMetadataKey) {
-    return c.json(
-      { error: `metadata key is server-managed: ${serverManagedMetadataKey}` },
-      400,
-    );
-  }
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Per-agent gate: starting a session provisions compute. A scoped agent token
@@ -143,6 +138,28 @@ projectsApp.openapi(
   // approved. Managers and owners keep the manifest default untouched.
   if (!launchAgent && agentAccess.memberTier && agentAccess.agentName) {
     body.agent_name = agentAccess.agentName;
+  }
+  // Authorization must win over semantic validation. Otherwise a caller with
+  // no session-start grant can probe server-owned runtime field names through
+  // a 400 response instead of receiving the route's normal 403.
+  const requestsPiWorkerSandbox = [body.sandbox_slug, body.sandboxSlug].some(
+    (value) => normalizeString(value) === PI_WORKER_SANDBOX_SLUG,
+  );
+  if (requestsPiWorkerSandbox) {
+    return c.json(
+      {
+        error: 'sandbox_slug "pi-worker" is reserved for the server-selected Pi runtime',
+        code: 'PI_WORKER_RUNTIME_RESERVED',
+      },
+      400,
+    );
+  }
+  const serverManagedMetadataKey = serverManagedSessionMetadataKey(body.metadata);
+  if (serverManagedMetadataKey) {
+    return c.json(
+      { error: `metadata key is server-managed: ${serverManagedMetadataKey}` },
+      400,
+    );
   }
   // Bound the client-supplied idempotency key at intake. It's stored in a unique
   // btree (index entry limit ~2704 bytes), so an oversized header would surface

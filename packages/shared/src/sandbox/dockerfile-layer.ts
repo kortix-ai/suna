@@ -46,6 +46,7 @@ import {
   UV_SHA256_ARM64,
   UV_VERSION,
 } from '../runtime-versions';
+import { PI_WORKER_SANDBOX_SLUG } from '../pi-worker';
 
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
@@ -749,6 +750,11 @@ export interface SandboxTemplate {
 /** Reserved slug for the platform-provided default template. */
 export const DEFAULT_SANDBOX_SLUG = 'default';
 
+/** True for a sandbox slug owned by the platform instead of a project. */
+export function isReservedSandboxTemplateSlug(slug: string): boolean {
+  return slug === DEFAULT_SANDBOX_SLUG || slug === PI_WORKER_SANDBOX_SLUG;
+}
+
 /**
  * Build the canonical platform default template. Always available, identity
  * derived purely from the platform runtime fingerprint — every project on the
@@ -849,8 +855,8 @@ export function extractSandboxTemplates(
       const row = entry as Record<string, unknown>;
       const tpl = parseSandboxTemplate(row);
       if (!tpl) continue;
-      if (tpl.slug === DEFAULT_SANDBOX_SLUG) {
-        console.warn(`[sandbox-templates] slug "default" is reserved — skipping entry`);
+      if (isReservedSandboxTemplateSlug(tpl.slug)) {
+        console.warn(`[sandbox-templates] slug "${tpl.slug}" is reserved — skipping entry`);
         continue;
       }
       if (seenSlugs.has(tpl.slug)) {
@@ -878,7 +884,7 @@ export function extractSandboxDefault(
   if (!sandbox || typeof sandbox !== 'object' || Array.isArray(sandbox)) return null;
   const raw = (sandbox as Record<string, unknown>).default;
   const slug = typeof raw === 'string' ? raw.trim() : '';
-  if (!slug || slug === DEFAULT_SANDBOX_SLUG || !SLUG_RE.test(slug)) return null;
+  if (!slug || isReservedSandboxTemplateSlug(slug) || !SLUG_RE.test(slug)) return null;
   return slug;
 }
 

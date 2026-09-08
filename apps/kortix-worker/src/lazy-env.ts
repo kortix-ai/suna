@@ -204,8 +204,8 @@ export class LazyKortixEnv {
             signal: AbortSignal.timeout(5000),
           });
           if (res.ok) {
-            const health = (await res.json()) as { repo_ready?: boolean };
-            if (health.repo_ready !== false) {
+            const health = (await res.json()) as { workload?: string; opencode?: string; runtimeReady?: boolean };
+            if (health.workload === 'environment' && health.opencode === 'disabled' && health.runtimeReady === true) {
               ready = true;
               break;
             }

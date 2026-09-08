@@ -39,6 +39,7 @@ import { ensureSandboxImage } from '../../snapshots/builder';
 import { getProvider } from '../providers';
 import { classifyDaytonaState } from '../providers/daytona-state';
 import { decideEnvironmentLiveness, environmentReconcileWrite } from './environment-liveness';
+import { ensureEnvironmentRuntimeStarted, ENVIRONMENT_RUNTIME_VERSION } from './environment-runtime-bootstrap';
 import type { SessionEnvironmentInfo } from './session-environment-types';
 import {
   type EnvironmentRuntimeState,
@@ -77,6 +78,13 @@ async function readRow(sessionId: string) {
     .where(eq(sessionEnvironments.sessionId, sessionId))
     .limit(1);
   return row ?? null;
+}
+
+export function shouldRemoveResumedEnvironmentAfterClaimLoss(
+  currentExternalId: string | null | undefined,
+  resumedExternalId: string,
+): boolean {
+  return currentExternalId !== resumedExternalId;
 }
 
 async function readWorkerStatus(sessionId: string): Promise<string | null> {
@@ -149,6 +157,7 @@ async function resumeEnvironment(externalId: string): Promise<void> {
     PROVIDER_CALL_TIMEOUT_MS,
     `Daytona get(${externalId})`,
   );
+  if (classifyDaytonaState((sandbox as unknown as { state?: unknown }).state) === 'running') return;
   await withTimeout(
     (daytona as unknown as { start(sandbox: unknown, opts?: unknown): Promise<unknown> }).start(
       sandbox,
@@ -221,6 +230,9 @@ export interface EnsureSessionEnvironmentInput {
   baseRef: string;
   gitProject: GitBackedProject;
   workspaceMode?: WorkspaceModeV2 | null;
+  sandboxSlug?: string;
+  /** Immutable Git commit used to derive the selected environment image. */
+  imageRef?: string;
 }
 
 /**
@@ -266,12 +278,12 @@ export async function ensureSessionEnvironment(
     // 'provisioning'. See `environment-liveness.ts`.
     const action = decideEnvironmentLiveness(await readBoxStatus(existing.externalId));
     const write = environmentReconcileWrite(action);
-    if (!write) return withPreview(existing);
+    if (!write && (existing.metadata as Record<string, unknown> | null)?.environmentRuntimeVersion === ENVIRONMENT_RUNTIME_VERSION) return withPreview(existing);
     // Write the truth, then fall through: the claim path below already knows
     // how to resume a 'stopped' row and rebuild an 'error' one. Clearing
     // external_id on a REMOVED box is what makes "rebuild" happen at all —
     // `runEnvironmentWork` resumes whenever that column is set.
-    existing = await reconcileEnvironmentStatus(input.sessionId, write);
+    if (write) existing = await reconcileEnvironmentStatus(input.sessionId, write);
   }
 
   const claimed = await claimEnvironmentWork(input, existing);
@@ -345,7 +357,9 @@ async function claimEnvironmentWork(
   const startedAt = existing.updatedAt?.getTime() ?? 0;
   const abandoned =
     existing.status === 'provisioning' && Date.now() - startedAt > PROVISION_STALE_MS;
-  if (existing.status !== 'error' && existing.status !== 'stopped' && !abandoned) return null;
+  const upgrade = existing.status === 'active' &&
+    (existing.metadata as Record<string, unknown> | null)?.environmentRuntimeVersion !== ENVIRONMENT_RUNTIME_VERSION;
+  if (existing.status !== 'error' && existing.status !== 'stopped' && !abandoned && !upgrade) return null;
   const legacyEnvironmentId = (existing.metadata as { environmentId?: string } | null)
     ?.environmentId;
   const reusesProviderBox = Boolean(existing.externalId);
@@ -400,6 +414,7 @@ async function runEnvironmentWork(
   if (externalId) {
     try {
       await resumeEnvironment(externalId);
+      await ensureEnvironmentRuntimeStarted(externalId, true);
       const claimed = await readRow(input.sessionId);
       const meteredId =
         claimed?.environmentId ??
@@ -408,9 +423,10 @@ async function runEnvironmentWork(
         sessionId: input.sessionId,
         provisionAttemptId,
         externalId,
+        metadata: { environmentRuntimeVersion: ENVIRONMENT_RUNTIME_VERSION },
       });
       if (!activated) {
-        await removeUnownedEnvironment(externalId, meteredId);
+        await removeResumedEnvironmentAfterClaimLoss(input.sessionId, externalId, meteredId);
         return;
       }
       if (meteredId) {
@@ -426,7 +442,7 @@ async function runEnvironmentWork(
         });
       }
       if (!(await environmentClaimIsOwned(input.sessionId, provisionAttemptId, externalId))) {
-        await removeUnownedEnvironment(externalId, meteredId);
+        await removeResumedEnvironmentAfterClaimLoss(input.sessionId, externalId, meteredId);
       }
       return;
     } catch (err) {
@@ -548,6 +564,16 @@ async function removeUnownedEnvironment(externalId: string, meteredId?: string):
     );
 }
 
+async function removeResumedEnvironmentAfterClaimLoss(
+  sessionId: string,
+  externalId: string,
+  meteredId?: string,
+): Promise<void> {
+  const current = await readRow(sessionId);
+  if (!shouldRemoveResumedEnvironmentAfterClaimLoss(current?.externalId, externalId)) return;
+  await removeUnownedEnvironment(externalId, meteredId);
+}
+
 async function provisionEnvironment(
   input: EnsureSessionEnvironmentInput,
   environmentId: string,
@@ -555,10 +581,22 @@ async function provisionEnvironment(
 ): Promise<void> {
   let credential: { tokenId: string; secretKey: string } | null = null;
   let credentialPublished = false;
+  let createdExternalId: string | null = null;
   const rpcSecret = randomBytes(32).toString('base64url');
   try {
     const [image, envVars] = await Promise.all([
-      ensureSandboxImage(input.gitProject, { provider: 'daytona' }),
+      ensureSandboxImage(
+        {
+          ...input.gitProject,
+          defaultBranch: input.imageRef ?? input.gitProject.defaultBranch,
+        },
+        {
+          slug: input.sandboxSlug,
+          accountId: input.accountId,
+          source: 'session-start',
+          provider: 'daytona',
+        },
+      ),
       buildSessionSandboxEnvVars({
         accountId: input.accountId,
         projectId: input.projectId,
@@ -602,11 +640,16 @@ async function provisionEnvironment(
         ...envVars,
         KORTIX_TOKEN: credential.secretKey,
         KORTIX_ENV_RPC_SECRET: rpcSecret,
+        KORTIX_WORKLOAD: 'environment',
+        KORTIX_WARM_SEED: '0',
+        KORTIX_COMPILED_BOOT_MODE: 'off',
         // The daemon serves /file, /find and /pty without an OpenCode
         // session; the worker is this session's harness, not OpenCode.
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0',
       },
     } as never);
+    createdExternalId = result.externalId;
+    await ensureEnvironmentRuntimeStarted(result.externalId);
     const activated = await activateEnvironmentClaim({
       sessionId: input.sessionId,
       provisionAttemptId,
@@ -618,6 +661,7 @@ async function provisionEnvironment(
         rpcSecret,
       },
       metadata: {
+        environmentRuntimeVersion: ENVIRONMENT_RUNTIME_VERSION,
         snapshot: image.snapshotName,
         providerMetadata: result.metadata ?? {},
       },
@@ -653,6 +697,9 @@ async function provisionEnvironment(
       await removeUnownedEnvironment(result.externalId, environmentId);
     }
   } catch (err) {
+    if (createdExternalId && !credentialPublished) {
+      await removeUnownedEnvironment(createdExternalId, environmentId);
+    }
     if (credential && !credentialPublished) {
       await revokeAccountToken(credential.tokenId, input.accountId, input.projectId).catch(
         () => {},

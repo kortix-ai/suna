@@ -38,7 +38,9 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  PI_WORKER_SANDBOX_SLUG,
   RESERVED_SANDBOX_SLUG,
+  RESERVED_SANDBOX_TEMPLATE_SLUGS,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
@@ -46,6 +48,7 @@ import {
   SLUG_RE,
   TRIGGER_TYPES,
   parseDurationSeconds,
+  isReservedSandboxTemplateSlug,
 } from './constants';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
 // file — validateAgentMdFrontmatter and friends moved to ./index.v2.ts, which
@@ -115,7 +118,9 @@ export {
   RESERVED_ENV_NAME_PREFIXES,
   RESERVED_ENV_NAMES,
   reservedEnvNameReason,
+  PI_WORKER_SANDBOX_SLUG,
   RESERVED_SANDBOX_SLUG,
+  RESERVED_SANDBOX_TEMPLATE_SLUGS,
   RESERVED_SLUG_PROVIDERS,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
@@ -124,6 +129,7 @@ export {
   DURATION_RE,
   formatDurationSeconds,
   parseDurationSeconds,
+  isReservedSandboxTemplateSlug,
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
@@ -310,7 +316,7 @@ function validateManifestBodyV2(
   validateConnectors(parsed.connectors, 'connectors', issues, version, format);
   validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
-  validateRuntimeV2(parsed.runtime, 'runtime', issues);
+  validateRuntimeV2(parsed.runtime, 'runtime', issues, version);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
@@ -638,6 +644,12 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], f
         message: '`default` must be a non-empty template slug.',
         severity: 'error',
       });
+    } else if (want === PI_WORKER_SANDBOX_SLUG) {
+      issues.push({
+        path: `${path}.default`,
+        message: `\`default\` cannot select "${PI_WORKER_SANDBOX_SLUG}" because that runtime is server-owned.`,
+        severity: 'error',
+      });
     } else if (want !== RESERVED_SANDBOX_SLUG) {
       const slugs = Array.isArray(node.templates)
         ? node.templates
@@ -687,10 +699,13 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
         message: `"${slug}" is not a valid slug (lowercase letters, digits, dashes, underscores; max 128 chars).`,
         severity: 'error',
       });
-    } else if (slug === RESERVED_SANDBOX_SLUG) {
+    } else if (isReservedSandboxTemplateSlug(slug)) {
       issues.push({
         path: `${where}.slug`,
-        message: `slug "${RESERVED_SANDBOX_SLUG}" is reserved for the platform default — use any other slug.`,
+        message:
+          slug === RESERVED_SANDBOX_SLUG
+            ? `slug "${RESERVED_SANDBOX_SLUG}" is reserved for the platform default — use any other slug.`
+            : `slug "${PI_WORKER_SANDBOX_SLUG}" is reserved for the server-selected Pi runtime — use any other slug.`,
         severity: 'error',
       });
     } else if (seenSlugs.has(slug)) {

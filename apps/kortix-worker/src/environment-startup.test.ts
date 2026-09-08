@@ -36,7 +36,7 @@ async function harness(startup?: 'lazy' | 'prewarm') {
         preview_url: origin, rpc_secret: 'test-rpc-secret',
       }));
     } else if (path === '/kortix/health') {
-      res.end(JSON.stringify({ repo_ready: true }));
+      res.end(JSON.stringify({ repo_ready: true, workload: 'environment', opencode: 'disabled', runtimeReady: true }));
     } else if (path === '/kortix/env-rpc/rpc-ws') {
       res.writeHead(404).end();
     } else if (path.startsWith('/kortix/env-rpc')) {

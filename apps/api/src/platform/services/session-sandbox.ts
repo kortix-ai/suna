@@ -13,7 +13,7 @@
  */
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
+import { PI_WORKER_SANDBOX_RESOURCES, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { META_SANDBOX_SLUG } from '@kortix/shared';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { startComputeSession } from '../../billing/services/compute-metering';
@@ -93,15 +93,25 @@ async function openComputeSessionForSandbox(
   sandboxSlug: string | undefined,
   provider: ProviderName,
 ): Promise<void> {
-  const spec = { ...DEFAULT_METERING_SPEC };
-  try {
-    const tpl = await resolveTemplate(project, sandboxSlug);
-    if (tpl.cpu !== undefined) spec.cpuCores = tpl.cpu;
-    if (tpl.memoryGb !== undefined) spec.memoryGb = tpl.memoryGb;
-    if (tpl.diskGb !== undefined) spec.diskGb = tpl.diskGb;
-  } catch {
-    // Template resolution failed (repo unreachable, parse error, etc.). Fall
-    // back to defaults so metering still records the session.
+  const spec =
+    sandboxSlug === PI_WORKER_SANDBOX_SLUG
+      ? {
+          cpuCores: PI_WORKER_SANDBOX_RESOURCES.cpu,
+          memoryGb: PI_WORKER_SANDBOX_RESOURCES.memoryGb,
+          diskGb: PI_WORKER_SANDBOX_RESOURCES.diskGb,
+          gpuCount: 0,
+        }
+      : { ...DEFAULT_METERING_SPEC };
+  if (sandboxSlug !== PI_WORKER_SANDBOX_SLUG) {
+    try {
+      const tpl = await resolveTemplate(project, sandboxSlug);
+      if (tpl.cpu !== undefined) spec.cpuCores = tpl.cpu;
+      if (tpl.memoryGb !== undefined) spec.memoryGb = tpl.memoryGb;
+      if (tpl.diskGb !== undefined) spec.diskGb = tpl.diskGb;
+    } catch {
+      // Template resolution failed (repo unreachable, parse error, etc.). Fall
+      // back to defaults so metering still records the session.
+    }
   }
   await startComputeSession({
     sandboxId,
@@ -478,6 +488,16 @@ export async function provisionSessionSandbox(opts: {
   // so legacy paying customers are no longer wrongly stripped to the Zen-only
   // catalog. Per-request affordability stays in the gateway's own billing gate.
   const gatewayEnabled = llmGatewayEnabled && gatewayEntitled;
+  const piWorkerBoot =
+    opts.metadata?.pi_worker_boot === true || slug === PI_WORKER_SANDBOX_SLUG;
+  // Pi v0 receives no project provider secrets and has no native-provider
+  // bootstrap. A real Pi model turn therefore requires both halves of the
+  // managed gateway decision. Re-check here because this function also serves
+  // restarts and because entitlement can change after session creation. Never
+  // allocate a provider box that can only boot into a credential error.
+  if (piWorkerBoot && !gatewayEnabled) {
+    throw new Error('Pi worker requires an enabled and entitled Kortix LLM gateway');
+  }
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,

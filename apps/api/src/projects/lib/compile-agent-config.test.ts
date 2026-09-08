@@ -631,11 +631,11 @@ describe('resolveManifestRuntime — the version decides when the manifest does 
     expect(await resolveManifestRuntime(PROJECT)).toBe('opencode');
   });
 
-  test('an explicit runtime always wins over the version default', async () => {
+  test('the tolerant resolver does not accept a runtime that contradicts the version', async () => {
     manifestFile = yaml('kortix_version: 3\nruntime: opencode\ndefault_agent: a\nagents:\n  a: {}\n');
-    expect(await resolveManifestRuntime(PROJECT)).toBe('opencode');
+    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
     manifestFile = yaml('kortix_version: 2\nruntime: pi\ndefault_agent: a\nagents:\n  a: {}\n');
-    expect(await resolveManifestRuntime(PROJECT)).toBe('pi');
+    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
   });
 
   test('a v1 manifest is not a runtime declaration at all', async () => {
@@ -650,6 +650,25 @@ describe('resolveManifestRuntime — the version decides when the manifest does 
 });
 
 describe('resolveManifestRuntimeForPiSession', () => {
+  test.each([[2, 'pi', 'opencode'], [3, 'opencode', 'pi']] as const)(
+    'rejects version %s with runtime %s', async (version, runtime, expected) => {
+      manifestFile = {
+        path: 'kortix.yaml',
+        content: `kortix_version: ${version}\nruntime: ${runtime}\ndefault_agent: a\nagents:\n  a: {}\n`,
+      };
+      await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+        `kortix_version ${version} requires runtime "${expected}".`,
+      );
+    },
+  );
+
+  test('rejects unsupported future versions instead of silently selecting Pi', async () => {
+    manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 4\n' };
+    await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+      'Manifest must declare a valid kortix_version.',
+    );
+  });
+
   test('preserves missing manifests and v1 manifests as deliberate OpenCode compatibility', async () => {
     manifestFile = null;
     expect(await resolveManifestRuntimeForPiSession(PROJECT)).toBeNull();

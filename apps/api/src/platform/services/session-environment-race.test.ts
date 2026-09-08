@@ -13,6 +13,19 @@ let endedMeters: string[];
 let workerStatus: string | null;
 let createCalls: number;
 let blockCreate: boolean;
+let resolvedImageProject: Record<string, unknown> | null;
+let resolvedImageOptions: Record<string, unknown> | null;
+let createdEnvVars: Record<string, string> | null;
+let bootstrappedExternalIds: string[];
+let bootstrapError: Error | null;
+
+mock.module('./environment-runtime-bootstrap', () => ({
+  ENVIRONMENT_RUNTIME_VERSION: 1,
+  ensureEnvironmentRuntimeStarted: async (externalId: string) => {
+    bootstrappedExternalIds.push(externalId);
+    if (bootstrapError) throw bootstrapError;
+  },
+}));
 
 mock.module('../../billing/services/compute-metering', () => ({
   startComputeSession: async ({ sandboxId }: { sandboxId: string }) => {
@@ -50,13 +63,21 @@ mock.module('../../shared/with-timeout', () => ({
 }));
 
 mock.module('../../snapshots/builder', () => ({
-  ensureSandboxImage: async () => ({ snapshotName: 'snapshot-1' }),
+  ensureSandboxImage: async (
+    project: Record<string, unknown>,
+    options: Record<string, unknown>,
+  ) => {
+    resolvedImageProject = project;
+    resolvedImageOptions = options;
+    return { snapshotName: 'snapshot-1' };
+  },
 }));
 
 mock.module('../providers', () => ({
   getProvider: () => ({
-    create: () => {
+    create: (input: { envVars: Record<string, string> }) => {
       createCalls += 1;
+      createdEnvVars = input.envVars;
       if (!blockCreate) {
         return Promise.resolve({ externalId: 'env-ext-fast', baseUrl: '', metadata: {} });
       }
@@ -119,7 +140,9 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-const { ensureSessionEnvironment } = await import('./session-environment');
+const { ensureSessionEnvironment, shouldRemoveResumedEnvironmentAfterClaimLoss } = await import(
+  './session-environment'
+);
 
 beforeEach(() => {
   environmentRow = null;
@@ -132,9 +155,27 @@ beforeEach(() => {
   workerStatus = 'running';
   createCalls = 0;
   blockCreate = true;
+  resolvedImageProject = null;
+  resolvedImageOptions = null;
+  createdEnvVars = null;
+  bootstrappedExternalIds = [];
+  bootstrapError = null;
 });
 
 describe('session environment provision ownership', () => {
+  test('preserves a resumed box when a newer claim still tracks the same provider id', () => {
+    expect(shouldRemoveResumedEnvironmentAfterClaimLoss('env-ext-1', 'env-ext-1')).toBe(false);
+  });
+
+  test.each([null, undefined, 'env-ext-2'])(
+    'removes a resumed box when the current claim tracks %p',
+    (currentExternalId) => {
+      expect(shouldRemoveResumedEnvironmentAfterClaimLoss(currentExternalId, 'env-ext-1')).toBe(
+        true,
+      );
+    },
+  );
+
   test.each(['stopped', 'failed', 'completed'])(
     'a %s worker cannot provision an environment',
     async (status) => {
@@ -209,5 +250,56 @@ describe('session environment provision ownership', () => {
     expect(removedExternalIds).toEqual(['env-ext-1']);
     expect(startedMeters).toEqual([]);
     expect(endedMeters).toHaveLength(1);
+  });
+
+  test('builds the selected compute template from the immutable Pi commit', async () => {
+    blockCreate = false;
+    const runtimeSha = 'a'.repeat(40);
+
+    await ensureSessionEnvironment({
+      sessionId: 'session-1',
+      projectId: 'project-1',
+      accountId: 'account-1',
+      userId: 'user-1',
+      agentName: 'kortix',
+      baseRef: 'main',
+      sandboxSlug: 'gpu-large',
+      imageRef: runtimeSha,
+      gitProject: {
+        projectId: 'project-1',
+        repoUrl: 'https://example.com/repo.git',
+        defaultBranch: 'main',
+        manifestPath: 'kortix.yaml',
+      } as never,
+    } as never);
+
+    for (let i = 0; i < 100 && createCalls === 0; i++) await Bun.sleep(1);
+
+    expect(resolvedImageProject).toMatchObject({ defaultBranch: runtimeSha });
+    expect(resolvedImageOptions).toEqual({
+      slug: 'gpu-large',
+      accountId: 'account-1',
+      source: 'session-start',
+      provider: 'daytona',
+    });
+    expect(createdEnvVars).toMatchObject({
+      KORTIX_WORKLOAD: 'environment', KORTIX_WARM_SEED: '0',
+      KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0', KORTIX_COMPILED_BOOT_MODE: 'off',
+    });
+    for (let i = 0; i < 100 && bootstrappedExternalIds.length === 0; i++) await Bun.sleep(1);
+    expect(bootstrappedExternalIds).toEqual(['env-ext-fast']);
+  });
+
+  test('removes a newly created box if execution-only bootstrap fails before activation', async () => {
+    blockCreate = false;
+    bootstrapError = new Error('daemon asset verification failed');
+    await ensureSessionEnvironment({
+      sessionId: 'session-1', projectId: 'project-1', accountId: 'account-1',
+      userId: 'user-1', agentName: 'kortix', baseRef: 'main',
+      gitProject: { projectId: 'project-1', repoUrl: 'https://example.com/repo.git', defaultBranch: 'main', manifestPath: 'kortix.yaml' } as never,
+    });
+    for (let i = 0; i < 100 && removedExternalIds.length === 0; i++) await Bun.sleep(1);
+    expect(removedExternalIds).toEqual(['env-ext-fast']);
+    expect(startedMeters).toEqual([]);
   });
 });

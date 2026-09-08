@@ -136,6 +136,16 @@ image = "ubuntu:22.04"
     expect(errorPaths).toContain('sandbox.templates[0].slug');
   });
 
+  test('rejects "pi-worker" as a server-owned template slug', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "pi-worker"
+image = "ubuntu:22.04"
+`);
+    expect(errorPaths).toContain('sandbox.templates[0].slug');
+  });
+
   test('rejects "latest" image tag with a warning (does not block)', () => {
     const { valid, warningPaths } = summarize(`
 kortix_version = 1

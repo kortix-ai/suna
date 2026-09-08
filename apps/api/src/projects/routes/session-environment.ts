@@ -22,7 +22,13 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX } from '../lib/serializers';
+import {
+  environmentSandboxSlugFromSessionMetadata,
+  piWorkerRuntimeIdentityFromSessionMetadata,
+  workspaceModeFromSessionMetadata,
+} from '../lib/session-sandbox-metadata';
 
 const EnvironmentSchema = z.object({
   session_id: z.string(),
@@ -168,11 +174,17 @@ projectsApp.openapi(
       return c.json({ error: 'Session does not run on the pi worker' }, 400);
     }
     const project = gate.row as {
+      projectId: string;
       repoUrl: string;
       defaultBranch: string;
       manifestPath: string | null;
     };
     try {
+      const identity = piWorkerRuntimeIdentityFromSessionMetadata(gate.session.metadata);
+      if (!identity) {
+        return c.json({ error: 'Pi runtime identity is incomplete' }, 409);
+      }
+      const gitProject = await withProjectGitAuth(gate.row as never);
       const info = await ensureSessionEnvironment({
         sessionId: gate.sessionId,
         projectId: gate.projectId,
@@ -180,12 +192,15 @@ projectsApp.openapi(
         userId: gate.userId,
         agentName: gate.session.agentName,
         baseRef: gate.session.baseRef || project.defaultBranch,
+        workspaceMode: workspaceModeFromSessionMetadata(gate.session.metadata),
+        sandboxSlug: environmentSandboxSlugFromSessionMetadata(gate.session.metadata) ?? 'default',
+        imageRef: identity.sha,
         gitProject: {
           projectId: gate.projectId,
-          repoUrl: project.repoUrl,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath ?? 'kortix.yaml',
-          gitAuthToken: null,
+          repoUrl: gitProject.repoUrl,
+          defaultBranch: gitProject.defaultBranch,
+          manifestPath: gitProject.manifestPath ?? 'kortix.yaml',
+          gitAuthToken: gitProject.gitAuthToken,
         },
       });
       return c.json(serializeWithRpc(info));

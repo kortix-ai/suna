@@ -4,6 +4,7 @@ import type {
   SessionStartResult,
 } from '@kortix/api-contract';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
+import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { type SQL, and, eq, sql } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
@@ -22,11 +23,18 @@ import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
+  piWorkerRuntimeIdentityFromSessionMetadata,
+  piWorkerSandboxProviderMatches,
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
+  sessionMetadataClaimsPiWorker,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import {
+  buildPiWorkerSessionSandboxEnvVars,
+  buildSessionSandboxEnvVars,
+  sandboxCallbackUnreachableReason,
+} from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
 import {
   RUNTIME_IDENTITY_UNAVAILABLE,
@@ -438,17 +446,63 @@ export async function allocateRuntimeOnOpen(
   },
   projectId: string,
   sessionId: string,
-): Promise<void> {
+): Promise<SessionStartResult | null> {
   const providerName = session.sandboxProvider as SandboxProviderName;
-  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
-  if (sandboxCallbackUnreachableReason()) return;
+  const piWorkerClaimed = sessionMetadataClaimsPiWorker(session.metadata);
+  const piWorkerIdentity = piWorkerRuntimeIdentityFromSessionMetadata(session.metadata);
+  if (
+    (piWorkerClaimed && !piWorkerIdentity) ||
+    (piWorkerIdentity && !piWorkerSandboxProviderMatches(providerName))
+  ) {
+    const message =
+      piWorkerIdentity && !piWorkerSandboxProviderMatches(providerName)
+        ? 'The persisted Pi runtime provider does not match its Daytona runtime.'
+        : 'The persisted Pi runtime identity is incomplete. Start a new session.';
+    await db
+      .update(projectSessions)
+      .set({ status: 'failed', error: message, updatedAt: new Date() })
+      .where(eq(projectSessions.sessionId, sessionId));
+    return {
+      stage: 'failed',
+      agent_name: session.agentName ?? 'default',
+      retriable: false,
+      sandbox: null,
+      opencode_session_id: null,
+      reason: 'pi_runtime_identity_invalid',
+      failure: {
+        category: 'sandbox-provider',
+        message,
+        retryable: false,
+      },
+    };
+  }
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return null;
+  if (sandboxCallbackUnreachableReason()) return null;
   await db
     .update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
   const opencodeModel =
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
-  const runtimeMetadata = { opened_at: new Date().toISOString() };
+  const sandboxSlug = sandboxSlugFromSessionMetadata(session.metadata);
+  const piWorkerModel =
+    piWorkerIdentity &&
+    session.metadata?.opencode_model_source === 'explicit' &&
+    opencodeModel
+      ? opencodeModel.replace(/^kortix\//, '')
+      : null;
+  const runtimeMetadata = {
+    opened_at: new Date().toISOString(),
+    ...(piWorkerIdentity
+      ? {
+          sandbox_slug: PI_WORKER_SANDBOX_SLUG,
+          pi_worker_boot: true,
+          pi_worker_ref: piWorkerIdentity.ref,
+          pi_worker_sha: piWorkerIdentity.sha,
+          runtimeArtifact: null,
+        }
+      : {}),
+  };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
   const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
 
@@ -461,29 +515,40 @@ export async function allocateRuntimeOnOpen(
     providerName,
     baseRef: session.baseRef ?? loaded.row.defaultBranch,
     agentName: session.agentName ?? 'default',
-    allowProjectImage: projectImageAllowedForSession(
-      session.agentName,
-      workspaceModeFromSessionMetadata(session.metadata),
-    ),
-    sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
+    allowProjectImage:
+      !piWorkerIdentity &&
+      projectImageAllowedForSession(
+        session.agentName,
+        workspaceModeFromSessionMetadata(session.metadata),
+      ),
+    sandboxSlug,
     runtimeMetadata,
     sessionMetadata,
     buildEnvVars: () =>
-      buildSessionSandboxEnvVars({
-        accountId: loaded.row.accountId,
-        projectId,
-        sessionId,
-        userId: loaded.userId,
-        repoUrl: loaded.row.repoUrl,
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        agentName: session.agentName ?? 'default',
-        opencodeModel,
-        defaultBranch: loaded.row.defaultBranch,
-        manifestPath: loaded.row.manifestPath,
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
-        workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
-        restoreSessionBranch: true,
-      }),
+      piWorkerIdentity
+        ? buildPiWorkerSessionSandboxEnvVars({
+            projectId,
+            sessionId,
+            agentName: session.agentName ?? 'default',
+            runtimeRef: piWorkerIdentity.ref,
+            runtimeSha: piWorkerIdentity.sha,
+            opencodeModel: piWorkerModel,
+          })
+        : buildSessionSandboxEnvVars({
+            accountId: loaded.row.accountId,
+            projectId,
+            sessionId,
+            userId: loaded.userId,
+            repoUrl: loaded.row.repoUrl,
+            baseRef: session.baseRef ?? loaded.row.defaultBranch,
+            agentName: session.agentName ?? 'default',
+            opencodeModel,
+            defaultBranch: loaded.row.defaultBranch,
+            manifestPath: loaded.row.manifestPath,
+            llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+            workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+            restoreSessionBranch: true,
+          }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
     beforeActive: rehydrate
       ? (externalId) =>
@@ -495,6 +560,7 @@ export async function allocateRuntimeOnOpen(
           })
       : undefined,
   });
+  return null;
 }
 
 // ── Unified session-open orchestration ──────────────────────────────────────
@@ -968,7 +1034,13 @@ async function preserveEstablishedRuntimeOnOpen(
 ): Promise<SessionStartResult> {
   if (!row.externalId) {
     await retireUnmaterializedRuntime(row, reason);
-    await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+    const allocationFailure = await allocateRuntimeOnOpen(
+      loaded,
+      visible.row,
+      projectId,
+      sessionId,
+    );
+    if (allocationFailure) return allocationFailure;
     return {
       stage: 'provisioning',
       agent_name: visible.row.agentName ?? 'default',
@@ -1187,7 +1259,13 @@ async function runOpenSession(args: {
         );
       }
       if (row) await retireUnmaterializedRuntime(row, 'non_usable_unmaterialized_runtime');
-      await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+      const allocationFailure = await allocateRuntimeOnOpen(
+        loaded,
+        visible.row,
+        projectId,
+        sessionId,
+      );
+      if (allocationFailure) return allocationFailure;
       log.did('provisioned');
     }
     return {

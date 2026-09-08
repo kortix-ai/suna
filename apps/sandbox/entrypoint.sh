@@ -25,6 +25,17 @@ case ":${PATH:-}:" in
 esac
 export PATH
 
+if [ -f /opt/kortix/workload ] && [ "$(cat /opt/kortix/workload)" = "environment" ]; then
+  export KORTIX_WORKLOAD=environment
+fi
+if [ "${KORTIX_WORKLOAD:-}" = "environment" ]; then
+  export KORTIX_WARM_SEED=0 KORTIX_BOOTSTRAP_OPENCODE_SESSION=0 KORTIX_COMPILED_BOOT_MODE=off
+  if [ -x /opt/kortix/environment-runtime/agent.floor ]; then
+    export KORTIX_AGENT_BIN=/opt/kortix/environment-runtime/agent.floor
+    export KORTIX_AGENT_STATE_DIR=/opt/kortix/environment-runtime
+  fi
+fi
+
 if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
   # TEMPORARY: Platinum starts with /dev/shm as a plain directory and low
   # nofile limits. Both settings must be repaired before the privilege drop.

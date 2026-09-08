@@ -25,6 +25,7 @@ const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
+const SESSION_DENIED_AGENT_PAT = 'kortix_pat_session_denied_agent';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
 const SESSION_BOUND_PAT = 'kortix_pat_session_connector';
@@ -39,6 +40,7 @@ process.env.KORTIX_URL = 'https://api.test.kortix.local';
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
 
 const { config } = await import('../config');
+const ORIGINAL_LLM_GATEWAY_ENABLED = config.LLM_GATEWAY_ENABLED;
 
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
@@ -79,12 +81,19 @@ let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
 let assertedIamActions: string[] = [];
 let deniedIamAction: string | null = null;
+let managedModelsAllowed = true;
+let manifestFile: { path: string; content: string } | null = null;
+let commitShaResolutionError: Error | null = null;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
   projectId: string;
   userId: string;
+  agentName?: string;
+  allowProjectImage?: boolean;
   provider?: string;
+  providerLocked?: boolean;
+  sandboxSlug?: string;
   extraEnvVars?: Record<string, string>;
   metadata?: Record<string, unknown>;
 } | null = null;
@@ -112,6 +121,7 @@ const projectRow: typeof projects.$inferSelect = {
 };
 
 function resetState() {
+  config.LLM_GATEWAY_ENABLED = ORIGINAL_LLM_GATEWAY_ENABLED;
   branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
@@ -177,6 +187,9 @@ function resetState() {
   gitCredentialRows = [];
   assertedIamActions = [];
   deniedIamAction = null;
+  managedModelsAllowed = true;
+  manifestFile = null;
+  commitShaResolutionError = null;
 }
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -215,6 +228,23 @@ mock.module('../middleware/auth', () => ({
         agent: 'contract-agent',
         connectors: 'all',
         kortixCli: 'all',
+        env: 'all',
+      });
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${SESSION_DENIED_AGENT_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000904');
+      c.set('agentGrant', {
+        agent: 'contract-agent',
+        connectors: 'all',
+        kortixCli: [],
         env: 'all',
       });
       await next();
@@ -286,7 +316,14 @@ mock.module('../projects/git', () => ({
   // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
   // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
   // exercises get no compiled agent config, matching their pre-compiler behavior.
-  readManifestFromRepo: async () => null,
+  readManifestFromRepo: async (_project: unknown, candidatePaths: string[]) =>
+    manifestFile
+      ? {
+          ...manifestFile,
+          sha: 'c'.repeat(40),
+          candidatePaths,
+        }
+      : null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -295,7 +332,10 @@ mock.module('../projects/git', () => ({
   diffStat: async () => ({ filesChanged: 0, insertions: 0, deletions: 0 }),
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   getFileAtRef: async () => null,
-  resolveCommitSha: async () => 'a'.repeat(40),
+  resolveCommitSha: async () => {
+    if (commitShaResolutionError) throw commitShaResolutionError;
+    return 'a'.repeat(40);
+  },
   resolveFastBootGitHint: async () => ({
     baseSha: 'a'.repeat(40),
     gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
@@ -571,6 +611,12 @@ mock.module('../shared/account-limits', () => ({
   accountEntitledToLlmGateway: async () => true,
   FREE_TIER_PROJECT_LIMIT: 1,
   clearAccountLimitCache: () => undefined,
+}));
+
+const realEntitlements = await import('../billing/services/entitlements');
+mock.module('../billing/services/entitlements', () => ({
+  ...realEntitlements,
+  accountMayUseManagedModels: async () => managedModelsAllowed,
 }));
 
 const realDefaultModelResolution = await import('../llm-gateway/resolution/default-model');
@@ -1014,6 +1060,7 @@ mock.module('../shared/db', () => ({
 
 const { projectsApp } = await import('../projects/index');
 const { encryptProjectSecret } = await import('../projects/secrets');
+const { createProjectSession } = await import('../projects/lib/sessions');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
 const { applyStoppedState, reconcileSandboxStoppedByExternalId } = await import(
   '../projects/reaping/sandbox-state-sync'
@@ -1076,6 +1123,387 @@ describe('project session API contract', () => {
       experimental: { meta_agent: true },
     };
   }
+
+  function enablePiWorker() {
+    config.LLM_GATEWAY_ENABLED = true;
+    projectRow.metadata = {
+      ...(projectRow.metadata as Record<string, unknown>),
+      experimental: { pi_worker: true, llm_gateway: true },
+    };
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: 'kortix_version: 3\ndefault_agent: default\nagents:\n  default: {}\n',
+    };
+  }
+
+  function expectPiReplacementProvisionInput() {
+    expect(lastProvisionInput).toMatchObject({
+      provider: 'daytona',
+      sandboxSlug: 'pi-worker',
+      allowProjectImage: false,
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+        runtimeArtifact: null,
+      },
+      extraEnvVars: {
+        KORTIX_PI_RUNTIME_REF: 'main',
+        KORTIX_PI_RUNTIME_SHA: 'a'.repeat(40),
+        KORTIX_PROJECT_AUTO_CLONE: '0',
+        KORTIX_MODEL_MODE: 'real',
+      },
+    });
+    expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty(
+      'KORTIX_BOOTSTRAP_OPENCODE_SESSION',
+    );
+    expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_REPO_URL');
+    expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
+    expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_PROJECT_SECRET_NAMES');
+  }
+
+  test('rejects every client-supplied Pi runtime classifier in create metadata', async () => {
+    const app = createApp();
+    const forgedMetadata = [
+      { pi_worker_boot: true },
+      { sandbox_slug: 'pi-worker' },
+      { pi_worker_ref: 'main' },
+      { pi_worker_sha: 'a'.repeat(40) },
+      { runtimeArtifact: { runtimeProfile: 'pi-worker' } },
+    ];
+
+    for (const metadata of forgedMetadata) {
+      const [key] = Object.keys(metadata);
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'daytona', base_ref: 'main', metadata }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: `metadata key is server-managed: ${key}`,
+      });
+    }
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('an internal create cannot forge Pi runtime identity through caller metadata', async () => {
+    const result = await createProjectSession({
+      project: projectRow,
+      userId: USER_ID,
+      requestingPrincipalType: 'human',
+      body: { provider: 'daytona', base_ref: 'main' },
+      metadata: {
+        source: 'internal:test',
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'forged-ref',
+        pi_worker_sha: 'b'.repeat(40),
+        runtimeArtifact: { runtimeProfile: 'pi-worker', sandboxSlug: 'pi-worker' },
+      },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.row?.metadata).toMatchObject({
+      source: 'internal:test',
+      sandbox_slug: 'default',
+      pi_worker_boot: false,
+      pi_worker_ref: null,
+      pi_worker_sha: null,
+      runtimeArtifact: null,
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput?.metadata).toMatchObject({
+      source: 'internal:test',
+      sandbox_slug: 'default',
+      pi_worker_boot: false,
+      pi_worker_ref: null,
+      pi_worker_sha: null,
+      runtimeArtifact: null,
+    });
+  });
+
+  test('explicit Pi sandbox slug aliases cannot select the server-owned runtime', async () => {
+    const app = createApp();
+    for (const explicitSlug of [{ sandbox_slug: 'pi-worker' }, { sandboxSlug: 'pi-worker' }]) {
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'daytona', base_ref: 'main', ...explicitSlug }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: 'sandbox_slug "pi-worker" is reserved for the server-selected Pi runtime',
+        code: 'PI_WORKER_RUNTIME_RESERVED',
+      });
+    }
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('authorization precedes validation of server-owned Pi runtime fields', async () => {
+    const app = createApp();
+    const bodies = [
+      { provider: 'daytona', base_ref: 'main', sandbox_slug: 'pi-worker' },
+      {
+        provider: 'daytona',
+        base_ref: 'main',
+        metadata: { runtimeArtifact: { runtimeProfile: 'pi-worker' } },
+      },
+    ];
+
+    for (const body of bodies) {
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${SESSION_DENIED_AGENT_PAT}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      expect(response.status).toBe(403);
+    }
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('v3 selects Pi with the pi_worker feature disabled', async () => {
+    enablePiWorker();
+    projectRow.metadata = { experimental: { pi_worker: false, llm_gateway: true } };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      sandbox_provider: 'daytona',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        environment_sandbox_slug: 'default',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+        runtimeArtifact: null,
+      },
+    });
+    expect(lastSessionInsertValues).toMatchObject({
+      sandboxProvider: 'daytona',
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput).toMatchObject({
+      provider: 'daytona',
+      providerLocked: true,
+      sandboxSlug: 'pi-worker',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        environment_sandbox_slug: 'default',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+        runtimeArtifact: null,
+      },
+      extraEnvVars: {
+        KORTIX_PI_RUNTIME_REF: 'main',
+        KORTIX_PI_RUNTIME_SHA: 'a'.repeat(40),
+      },
+    });
+  });
+
+  test('v2 keeps OpenCode even with the Pi feature enabled', async () => {
+    enablePiWorker();
+    manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 2\ndefault_agent: default\nagents:\n  default: {}\n' };
+    const response = await createApp().request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ metadata: { pi_worker_boot: false, sandbox_slug: 'default' } });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput).toMatchObject({ sandboxSlug: 'default' });
+  });
+
+  test.each([[2, 'pi'], [3, 'opencode']] as const)('version %s rejects contradictory runtime %s before provisioning', async (version, runtime) => {
+    enablePiWorker();
+    manifestFile = { path: 'kortix.yaml', content: `kortix_version: ${version}\nruntime: ${runtime}\ndefault_agent: default\nagents:\n  default: {}\n` };
+    const response = await createApp().request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: 'PI_WORKER_RUNTIME_RESOLUTION_FAILED' });
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('a Pi session preserves its selected sandbox template for the compute environment', async () => {
+    enablePiWorker();
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', sandbox_slug: 'gpu-large' }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        environment_sandbox_slug: 'gpu-large',
+        pi_worker_boot: true,
+      },
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput?.metadata).toMatchObject({
+      sandbox_slug: 'pi-worker',
+      environment_sandbox_slug: 'gpu-large',
+      pi_worker_boot: true,
+    });
+  });
+
+  test('a Pi-enabled project fails closed when its manifest runtime cannot be resolved', async () => {
+    enablePiWorker();
+    commitShaResolutionError = new Error('git backend unavailable');
+    const app = createApp();
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Pi runtime selection could not be resolved from the session Git commit',
+      code: 'PI_WORKER_RUNTIME_RESOLUTION_FAILED',
+    });
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('a Pi feature flag with no manifest preserves the OpenCode runtime', async () => {
+    enablePiWorker();
+    manifestFile = null;
+    const app = createApp();
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      metadata: {
+        sandbox_slug: 'default',
+        pi_worker_boot: false,
+        pi_worker_ref: null,
+        pi_worker_sha: null,
+      },
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput).toMatchObject({ sandboxSlug: 'default' });
+  });
+
+  test('a Pi feature flag with a v1 manifest preserves the OpenCode runtime', async () => {
+    enablePiWorker();
+    manifestFile = {
+      path: 'kortix.toml',
+      content: 'kortix_version = 1\n[project]\nname = "legacy"\n',
+    };
+    const app = createApp();
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      metadata: {
+        sandbox_slug: 'default',
+        pi_worker_boot: false,
+        pi_worker_ref: null,
+        pi_worker_sha: null,
+      },
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput).toMatchObject({ sandboxSlug: 'default' });
+  });
+
+  test('a Pi-enabled project fails closed when its manifest runtime is malformed', async () => {
+    enablePiWorker();
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: 'kortix_version: 3\nruntime: [invalid]\n',
+    };
+    const app = createApp();
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Pi runtime selection could not be resolved from the session Git commit',
+      code: 'PI_WORKER_RUNTIME_RESOLUTION_FAILED',
+    });
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('rejects a Pi session before allocation when the project LLM gateway is disabled', async () => {
+    enablePiWorker();
+    projectRow.metadata = {
+      ...(projectRow.metadata as Record<string, unknown>),
+      experimental: { pi_worker: true, llm_gateway: false },
+    };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Pi sessions require the Kortix LLM gateway',
+      code: 'PI_WORKER_LLM_GATEWAY_REQUIRED',
+    });
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('rejects a Pi session before allocation when the account lacks gateway entitlement', async () => {
+    enablePiWorker();
+    managedModelsAllowed = false;
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'This account cannot use the Kortix LLM gateway required by Pi sessions',
+      code: 'PI_WORKER_LLM_GATEWAY_ENTITLEMENT_REQUIRED',
+    });
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
+  });
 
   test('creates an omitted-agent session with the meta REST runtime', async () => {
     enableMetaAgent();
@@ -2288,6 +2716,14 @@ describe('project session API contract', () => {
       {
         body: { metadata: { sandbox_slug: 'default' } },
         message: 'metadata key is server-managed: sandbox_slug',
+      },
+      {
+        body: { metadata: { pi_worker_ref: 'main' } },
+        message: 'metadata key is server-managed: pi_worker_ref',
+      },
+      {
+        body: { metadata: { pi_worker_sha: 'a'.repeat(40) } },
+        message: 'metadata key is server-managed: pi_worker_sha',
       },
       {
         body: { random: 'field' },
@@ -4252,6 +4688,215 @@ describe('project session API contract', () => {
     expect(res.status).toBe(202);
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
+  });
+
+  test('cold /start rebuilds a Pi session with its durable runtime identity only', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      sandboxProvider: 'daytona',
+      opencodeSessionId: 'ses_existing',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+        runtimeArtifact: null,
+        workspace_mode: 'branch',
+      },
+    };
+    sessionSandboxRows = [];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expectPiReplacementProvisionInput();
+  });
+
+  test('replacement restart rebuilds a Pi session with its durable runtime identity only', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      sandboxProvider: 'daytona',
+      opencodeSessionId: 'ses_existing',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+        runtimeArtifact: null,
+        workspace_mode: 'branch',
+      },
+    };
+    sessionSandboxRows = [];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(202);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expectPiReplacementProvisionInput();
+  });
+
+  test('cold /start fails closed when persisted Pi identity is incomplete', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      sandboxProvider: 'daytona',
+      opencodeSessionId: 'ses_existing',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+      },
+    };
+    sessionSandboxRows = [];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      reason: 'pi_runtime_identity_invalid',
+      failure: {
+        category: 'sandbox-provider',
+        retryable: false,
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionRow?.status).toBe('failed');
+  });
+
+  test('replacement restart rejects an incomplete persisted Pi identity', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      sandboxProvider: 'daytona',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'not-a-commit',
+      },
+    };
+    sessionSandboxRows = [];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: 'PI_WORKER_RUNTIME_IDENTITY_INVALID',
+      session_id: SESSION_ID,
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('cold /start fails closed when persisted Pi identity names a non-Daytona provider', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      sandboxProvider: 'platinum',
+      opencodeSessionId: 'ses_existing',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+      },
+    };
+    sessionSandboxRows = [];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      reason: 'pi_runtime_identity_invalid',
+      failure: {
+        category: 'sandbox-provider',
+        retryable: false,
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionRow?.status).toBe('failed');
+  });
+
+  test('cold /start validates a claimed Pi identity before an unsupported persisted provider', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      sandboxProvider: 'unsupported' as any,
+      opencodeSessionId: 'ses_existing',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+      },
+    };
+    sessionSandboxRows = [];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      reason: 'pi_runtime_identity_invalid',
+      failure: { retryable: false },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionRow?.status).toBe('failed');
+  });
+
+  test('replacement restart rejects a persisted Pi identity on a non-Daytona provider', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      sandboxProvider: 'platinum',
+      metadata: {
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+      },
+    };
+    sessionSandboxRows = [];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: 'PI_WORKER_RUNTIME_PROVIDER_INVALID',
+      session_id: SESSION_ID,
+    });
+    expect(sandboxProvisionCalls).toBe(0);
   });
 
   test('explicit restart replaces an unmaterialized capacity failure without auto-sending its prompt', async () => {

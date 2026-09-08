@@ -56,6 +56,80 @@ linked, not inlined.
 **Rule:** install each required executable in the shared/custom layer and standalone image. Verify it during image build and invalidate the runtime layer cache.
 **Enforcer:** `workspace-search-floor.test.ts` requires ripgrep and `rg --version` in both image definitions.
 
+### Permission checks must inspect the complete compound operation (2026-09-04)
+
+**When:** deriving permission patterns from a shell command that contains multiple operations.
+**Near-miss:** the external-directory check inspected only the first command segment, so
+`echo ok; cat /tmp/secret.txt` bypassed an `external_directory: deny` policy.
+**Rule:** evaluate the complete raw command for secondary permission classes. Keep per-segment
+patterns only for the primary shell permission decision.
+**Enforcer:** `permission-broker.test.ts` denies an external path in the second command before
+the environment tool executes.
+
+### Optional compatibility flags must preserve upstream defaults (2026-09-04)
+
+**When:** implementing an OpenCode-compatible request or response with optional fields.
+**Near-miss:** Pi treated an omitted question `custom` flag as `false`, while OpenCode and the web
+client treat omission as `true`; valid free-form answers failed after the user submitted them.
+**Rule:** encode and test the upstream default for every optional compatibility field. Do not use
+JavaScript truthiness when omission and `false` have different meanings.
+**Enforcer:** `question-broker.test.ts` covers both omitted `custom` and explicit `custom: false`.
+
+### Persist one effective runtime identity before detached provisioning (2026-09-04)
+
+**When:** a specialized runtime overrides the caller's provider or boot artifact.
+**Near-miss:** Pi provisioned on Daytona while the session row stored Platinum; replacement then
+rebuilt it with OpenCode environment variables because the first boot's ref and SHA were not durable.
+**Rule:** persist one effective provider with the immutable boot ref and SHA, and use it for the
+response, row, audit, provision, restart, and cold-open. Reject incomplete identity; never downgrade.
+**Enforcer:** `e2e-project-session-contract.test.ts` pins both replacement paths and malformed rows.
+
+### Server-owned runtime classifiers must win every metadata merge (2026-09-04)
+
+**When:** accepting or forwarding session-creation metadata.
+**Incident:** fail-before tests returned `201` for forged `pi_worker_boot` and explicit `pi-worker`;
+the internal create path also retained forged `pi_worker_boot: true` and `runtimeArtifact`.
+**Rule:** deny reserved classifiers at public ingress, strip all three from internal caller metadata,
+then write authoritative `pi_worker_boot`, `sandbox_slug`, and `runtimeArtifact` after caller spreads.
+**Enforcer:** `e2e-project-session-contract.test.ts` and `SESS-1` cover nested forgery, explicit
+slug aliases, internal rows, and the legitimate feature-plus-immutable-manifest selection path.
+
+### Bootstrap every durable projection from one snapshot (2026-09-04)
+
+**When:** restoring the Pi transcript and turn journal in a multi-worker session.
+**Incident:** a completion committed between two startup reads, so the replacement combined an
+old transcript with a new journal envelope and exposed an assistant message without durable parts.
+**Rule:** read the append-only log once and build every startup projection from those exact items.
+Revalidate ownership after any later remote hydration before model or tool execution.
+**Enforcer:** `turn-routes.test.ts` blocks the former second read and commits across the boundary.
+
+### A legacy transcript repair requires the active turn lease (2026-09-04)
+
+**When:** rewinding an accepted legacy user entry before replay.
+**Incident:** startup called `moveLane` before acquiring ownership, so a simultaneous worker could
+mutate the shared transcript for a turn it did not own.
+**Rule:** acquire the journal owner first, attach its `_kortixTurnLease` to the repair, then reload
+durable state and revalidate the owner before entering the model.
+**Enforcer:** `turn-routes.test.ts` requires one lease-fenced `lane_move` during restart replay.
+
+### Lease loss invalidates the worker's live transcript cache (2026-09-04)
+
+**When:** a model run loses its owner lease after live assistant or tool events reached memory.
+**Incident:** durable append fencing rejected the losing worker's answer, but its old runtime
+surface still served that rejected answer after a replacement completed the turn.
+**Rule:** after every non-durable run exit, replace the live cache from durable Pi and journal state,
+then publish removal and replacement events so connected clients converge.
+**Enforcer:** `runtime-surface.test.ts` and the reclaim integration in `turn-routes.test.ts`.
+
+### A malformed append-reconciliation read must fail closed (2026-09-04)
+
+**When:** resolving an append after all request attempts lose or fail their responses.
+**Incident:** a successful non-array read caused a raw `TypeError` and left the log writable even
+though the append outcome was unknown.
+**Rule:** validate the snapshot shape, compare JSON-canonical wire content, return only on an exact
+match, report same-key/different-content as conflict, and poison every absent or malformed outcome.
+**Enforcer:** `session-store.test.ts` covers canonical success, conflict, absence, and malformed data.
+
 ### A two-runtime lifecycle policy must drive production writes (2026-09-04)
 
 **When:** adding an auxiliary runtime whose lifecycle follows a session worker.
@@ -5278,3 +5352,22 @@ the losing session wake recorded a failure and cooldown. A real provider test
 reproduced one rejection before the fix and two successful callers after it.
 Automation: Daytona provider tests cover concurrent starting/started states,
 stopped/stopping/error conflicts, unrelated errors, and bounded waiting.
+
+
+### 2026-09-08 — Environment recovery preserves the owned workspace
+
+**Near-miss:** Removing OpenCode from Pi environments reused the session checkout
+bootstrap. That bootstrap clears a checkout when an adoption marker is absent.
+An older environment can lack that marker while containing uncommitted work.
+
+**Rule:** First-time environment checkout and existing-environment recovery use
+separate paths. The control plane marks reuse explicitly. A daemon ownership
+marker binds later boots to the same session and workspace. Recovery never
+replaces files or changes the selected branch. Missing storage fails closed.
+Execution-only daemon upgrades use a separate compatible fallback; they cannot
+roll back to a daemon that starts OpenCode.
+
+**Enforcement:** `apps/kortix-sandbox-agent-server/src/__tests__/environment-workspace.test.ts`
+checks dirty files and a user-selected branch with an unreachable remote.
+`apps/api/src/platform/services/environment-runtime-bootstrap.test.ts` executes
+the provider bootstrap and checks digest rejection, file preservation, and retry.

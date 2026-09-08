@@ -20,7 +20,7 @@ mock.module('./mirror', () => ({
   refreshMirror: async () => repoPath,
 }));
 
-const { readRepoFile } = await import('./files');
+const { readManifestFromRepo, readRepoFile } = await import('./files');
 
 const project = {
   projectId: 'test-project',
@@ -209,6 +209,31 @@ describe('readRepoFile', () => {
     };
     await readRepoFile(project, 'file.txt');
     expect(capturedArgs).toEqual(['show', 'main:file.txt']);
+  });
+});
+
+describe('readManifestFromRepo', () => {
+  test('returns null only when git successfully reports that no candidate exists', async () => {
+    runGitImpl = async () => ({ stdout: '', stderr: '' });
+
+    await expect(
+      readManifestFromRepo(project, ['kortix.yaml', 'kortix.toml'], 'main'),
+    ).resolves.toBeNull();
+  });
+
+  test('propagates an ls-tree failure instead of treating it as a missing manifest', async () => {
+    const failure = new GitOperationError({
+      kind: 'failed',
+      message: 'fatal: not a git repository',
+      gitArgs: ['ls-tree', 'main'],
+      stderr: 'fatal: not a git repository',
+      exitCode: 128,
+    });
+    runGitImpl = async () => {
+      throw failure;
+    };
+
+    await expect(readManifestFromRepo(project, ['kortix.yaml'], 'main')).rejects.toBe(failure);
   });
 });
 

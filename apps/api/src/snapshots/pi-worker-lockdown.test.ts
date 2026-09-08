@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { createServer, type Server } from 'node:http';
+import { type Server, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { compilePiRuntime } from '../git-proxy/compiled-pi-runtime';
@@ -180,6 +180,49 @@ describe.skipIf(!workerDistExists)('pi worker lockdown — the real bundle under
     await new Promise<void>((r) => env.listen(0, '127.0.0.1', () => r()));
     const envPort = (env.address() as { port: number }).port;
 
+    // The deployed worker fails closed without its control-plane transcript.
+    // Exercise that production contract here instead of weakening the worker
+    // for this bundle test. The store accepts the exact append/read protocol
+    // used by RemoteSessionLog and records authentication on every request.
+    const logItems: unknown[] = [];
+    const storeAuthorization: Array<string | undefined> = [];
+    const store = createServer((req, res) => {
+      if (req.url !== '/sessions/session-lockdown/log') {
+        res.writeHead(404).end();
+        return;
+      }
+      storeAuthorization.push(req.headers.authorization);
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(logItems));
+        return;
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405).end();
+        return;
+      }
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+      req.on('end', () => {
+        const item = JSON.parse(body) as { _kortixAppendId?: string };
+        const committed = logItems.find(
+          (candidate) =>
+            candidate !== null &&
+            typeof candidate === 'object' &&
+            (candidate as { _kortixAppendId?: string })._kortixAppendId ===
+              item._kortixAppendId,
+        );
+        if (!committed) logItems.push(item);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    });
+    servers.push(store);
+    await new Promise<void>((r) => store.listen(0, '127.0.0.1', () => r()));
+    const storePort = (store.address() as { port: number }).port;
+
     const port = 19400 + Math.floor(Math.random() * 500);
     const TOKEN = 'lockdown-token';
     const child = spawn('node', [...piWorkerNodeArgs(dir), runtimePath], {
@@ -187,8 +230,18 @@ describe.skipIf(!workerDistExists)('pi worker lockdown — the real bundle under
         ...process.env,
         PORT: String(port),
         KORTIX_MODEL_MODE: 'faux',
+        KORTIX_FAUX_SCRIPT: JSON.stringify([
+          { tool: 'bash', args: { command: 'echo hi > escaped.txt' } },
+          {
+            tool: 'write',
+            args: { path: '/workspace/agent-wrote-this.txt', content: 'payload' },
+          },
+          { text: 'done' },
+        ]),
         KORTIX_PROJECT_ID: 'project-lockdown',
         KORTIX_TOKEN: TOKEN,
+        KORTIX_SESSION_ID: 'session-lockdown',
+        KORTIX_STORE_URL: `http://127.0.0.1:${storePort}`,
         KORTIX_ENV_URL: `http://127.0.0.1:${envPort}`,
         KORTIX_ENV_TRANSPORT: 'fetch',
       },
@@ -212,29 +265,36 @@ describe.skipIf(!workerDistExists)('pi worker lockdown — the real bundle under
     expect(healthBody.confined).toBe(true);
     expect(healthBody.environment?.mode).toBe('url');
 
-    // A scripted faux turn: one bash call, one write, then an answer. Every
-    // operation must land in the stand-in environment; the worker's own tree
-    // is unwritable, so a local fallback would surface as a tool error.
-    const turn = await fetch(`${base}/prompt`, {
+    const runtimeHealth = (await (
+      await fetch(`${base}/kortix/health`)
+    ).json()) as { opencode_session_id?: string };
+    const rootId = runtimeHealth.opencode_session_id;
+    expect(rootId).toStartWith('ses_pi');
+
+    // Drive the product route with a deterministic faux provider: one bash
+    // call, one write, then an answer. Every operation must land in the
+    // stand-in environment; the worker's own tree is unwritable, so a local
+    // fallback would surface as a tool error.
+    const turn = await fetch(`${base}/session/${rootId}/message`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        text: 'probe',
-        script: [
-          { tool: 'bash', args: { command: 'echo hi > escaped.txt' } },
-          { tool: 'write', args: { path: '/workspace/agent-wrote-this.txt', content: 'payload' } },
-          { text: 'done' },
-        ],
+        parts: [{ type: 'text', text: 'probe' }],
       }),
       signal: AbortSignal.timeout(30_000),
     });
     expect(turn.status).toBe(200);
-    const result = (await turn.json()) as { ok?: boolean; rpcCalls?: string[] };
-    expect(result.ok).toBe(true);
-    expect(result.rpcCalls).toContain('exec');
-    expect(result.rpcCalls).toContain('writeFile');
+    const result = (await turn.json()) as {
+      info?: { role?: string };
+      parts?: Array<{ type?: string; text?: string }>;
+    };
+    expect(result.info?.role).toBe('assistant');
+    expect(result.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'done' }));
     expect(ops).toContain('exec');
     expect(ops).toContain('writeFile');
+    expect(logItems.length).toBeGreaterThan(0);
+    expect(storeAuthorization).not.toContain(undefined);
+    expect(new Set(storeAuthorization)).toEqual(new Set([`Bearer ${TOKEN}`]));
     // Still alive, still confined: no permission error reached stderr as a
     // crash, and the process did not exit.
     expect(child.exitCode).toBeNull();

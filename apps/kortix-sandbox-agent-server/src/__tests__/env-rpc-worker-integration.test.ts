@@ -89,7 +89,7 @@ async function buildRig(): Promise<Rig> {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'lazy-env-ws-'));
 
   const daemon = new Hono();
-  daemon.get('/kortix/health', (c) => c.json({ ok: true, repo_ready: true }));
+  daemon.get('/kortix/health', (c) => c.json({ ok: true, repo_ready: true, workload: 'environment', opencode: 'disabled', runtimeReady: true }));
   daemon.route(
     '/kortix/env-rpc',
     createEnvRpcRouter({

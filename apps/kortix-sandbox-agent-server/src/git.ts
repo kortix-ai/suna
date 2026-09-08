@@ -55,7 +55,7 @@ function execGit(
  */
 export function runGit(
   args: string[],
-  opts: { cwd?: string; input?: string; timeoutMs?: number } = {},
+  opts: { cwd?: string; input?: string; timeoutMs?: number; maxOutputBytes?: number } = {},
 ): Promise<ExecResult> {
   const timeoutMs = opts.timeoutMs ?? 10_000
   return new Promise((resolve, reject) => {
@@ -66,6 +66,8 @@ export function runGit(
     })
     let stdout = ''
     let stderr = ''
+    let outputBytes = 0
+    let outputExceeded = false
     let timer: ReturnType<typeof setTimeout> | undefined
     if (timeoutMs > 0) {
       timer = setTimeout(() => {
@@ -73,10 +75,25 @@ export function runGit(
         child.kill('SIGKILL')
       }, timeoutMs)
     }
-    child.stdout?.on('data', (d) => (stdout += d.toString()))
-    child.stderr?.on('data', (d) => (stderr += d.toString()))
+    const collect = (data: string, isError: boolean) => {
+      if (outputExceeded) return
+      outputBytes += Buffer.byteLength(data)
+      if (opts.maxOutputBytes && outputBytes > opts.maxOutputBytes) {
+        outputExceeded = true
+        child.kill('SIGKILL')
+        return
+      }
+      if (isError) stderr += data
+      else stdout += data
+    }
+    child.stdout?.setEncoding('utf8').on('data', (data) => collect(data, false))
+    child.stderr?.setEncoding('utf8').on('data', (data) => collect(data, true))
     child.on('error', (e) => { if (timer) clearTimeout(timer); reject(e) })
-    child.on('close', (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? 0, stdout, stderr }) })
+    child.on('close', (code) => {
+      if (timer) clearTimeout(timer)
+      if (outputExceeded) { reject(new Error(`Git output exceeds ${opts.maxOutputBytes} bytes`)); return }
+      resolve({ code: code ?? 1, stdout, stderr })
+    })
     if (opts.input !== undefined) {
       child.stdin?.end(opts.input)
     }

@@ -64,6 +64,24 @@ describe('session environment routes', () => {
     const occurrences = source.split('authorizeEnvironmentCall(c,').length - 1;
     expect(occurrences).toBe(3);
   });
+
+  test('ensure preserves the persisted workspace mode for restricted pi sessions', async () => {
+    const source = await routeSource();
+    const ensure = source.indexOf('ensureSessionEnvironment({');
+    const ensureCall = source.slice(
+      ensure,
+      source.indexOf('return c.json(serializeWithRpc(info))'),
+    );
+    expect(ensure).toBeGreaterThan(-1);
+    expect(ensureCall).toContain(
+      'workspaceMode: workspaceModeFromSessionMetadata(gate.session.metadata)',
+    );
+    expect(ensureCall).toContain(
+      'environmentSandboxSlugFromSessionMetadata(gate.session.metadata)',
+    );
+    expect(ensureCall).toContain("?? 'default'");
+    expect(ensureCall).toContain('imageRef: identity.sha');
+  });
 });
 
 describe('session environment service', () => {
@@ -309,9 +327,9 @@ describe('an environment meters against its PARENT session', () => {
   test('a resumed environment opens a NEW window — the old one closed on stop', async () => {
     const source = await serviceSource();
     const resume = source.slice(source.indexOf('await resumeEnvironment(externalId)'));
-    expect(resume.slice(0, 900)).toContain('startComputeSession({');
-    expect(resume.slice(0, 900)).toContain('sessionId: input.sessionId');
-    expect(resume.slice(0, 900)).toContain("workloadType: 'environment'");
+    expect(resume.slice(0, resume.indexOf("return;\n    } catch"))).toContain('startComputeSession({');
+    expect(resume.slice(0, resume.indexOf("return;\n    } catch"))).toContain('sessionId: input.sessionId');
+    expect(resume.slice(0, resume.indexOf("return;\n    } catch"))).toContain("workloadType: 'environment'");
   });
 
   test('metering keys off environmentId, never the provider externalId', async () => {

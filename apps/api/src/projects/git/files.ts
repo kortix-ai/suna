@@ -174,7 +174,7 @@ export async function readManifestFromRepo(
   const repoPath = await refreshMirror(project, opts?.forceRefresh);
   // A pathspec-scoped ls-tree prints only the candidates present at this ref
   // (order-agnostic), so we pick the highest-priority one ourselves.
-  const listed = await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);
+  const listed = await runGit(['ls-tree', treeRef, '--', ...normalized], repoPath, false);
   const revisions = new Map<string, string>();
   for (const line of listed.stdout.split('\n')) {
     const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
