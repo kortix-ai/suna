@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
+import { Hono } from 'hono';
+import { requestDeadline } from '../../middleware/request-deadline';
 import { createHash } from 'node:crypto';
 import { preparePiPromptAttachments } from './pi-prompt-attachments';
 
@@ -198,4 +200,46 @@ test('transport errors never expose upstream response details or signed URLs', a
   const error = await prepare().catch((error) => error as Error);
   if (!(error instanceof Error)) throw new Error('expected image rejection');
   expect(error.message).toBe('remote image download failed');
+});
+
+
+test('an exhausted request budget rejects images before downloading or accepting bytes', async () => {
+  let now = 100_000;
+  const clock = spyOn(Date, 'now').mockImplementation(() => now);
+  const app = new Hono();
+  app.use('*', requestDeadline);
+  app.post('/v1/projects/p1/sessions/s1/prompts', async c => {
+    now += 25_000;
+    try { await prepare(); return c.json({ accepted: true }); }
+    catch (error) { return c.json({ error: (error as Error).message }, 400); }
+  });
+  try {
+    const response = await app.request('/v1/projects/p1/sessions/s1/prompts', { method: 'POST' });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/timed out/);
+    expect(calls).toHaveLength(0);
+  } finally { clock.mockRestore(); }
+});
+
+test('a late response is discarded after cancellation and cannot supply accepted bytes', async () => {
+  const controller = new AbortController();
+  let complete!: (response: Response) => void;
+  let started!: () => void;
+  let cancelled = false;
+  let discarded!: () => void;
+  const discardedResponse = new Promise<void>(resolve => { discarded = resolve; });
+  const downloading = new Promise<void>(resolve => { started = resolve; });
+  globalThis.fetch = (async () => {
+    started();
+    return new Promise<Response>(resolve => { complete = resolve; });
+  }) as unknown as typeof fetch;
+  const result = prepare([remote()], controller.signal);
+  await downloading;
+  controller.abort();
+  await expect(result).rejects.toThrow(/cancelled/);
+  complete(new Response(new ReadableStream({
+    cancel() { cancelled = true; discarded(); },
+  }), { headers: { 'content-type': 'image/png' } }));
+  await discardedResponse;
+  expect(cancelled).toBe(true);
 });

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { remainingRequestBudgetMs } from '../../middleware/request-deadline';
 import { MAX_SESSION_ATTACHMENT_BYTES } from '../lib/session-attachment-input';
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import { readRemotePiImage } from './pi-remote-image';
@@ -59,8 +60,11 @@ export async function preparePiPromptAttachments(
     return { part, remoteUrl: url.href };
   });
 
+  const timeoutMs = remainingRequestBudgetMs(20_000);
+  if (timeoutMs === 0 && images.some(image => image.remoteUrl))
+    throw new Error('remote image download cancelled or timed out');
   const signal = AbortSignal.any([
-    AbortSignal.timeout(30_000),
+    AbortSignal.timeout(timeoutMs),
     ...(options.signal ? [options.signal] : []),
   ]);
   const downloads = new Map<string, Buffer>();

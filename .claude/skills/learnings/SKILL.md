@@ -21,6 +21,14 @@ linked, not inlined.
 
 ## Register
 
+### Bound attachment downloads by the remaining request deadline (2026-09-09)
+
+**When:** materializing external inputs before a durable write.
+**Incident:** preview `0e515ced49` used a 30-second image timeout under the API's 25-second request deadline. A slow image returned `503 request_deadline` before its own error.
+**Rule:** cap the download below the enclosing deadline, subtract time already spent, and reserve time for the response. Do not exempt ordinary prompt admission from the API deadline.
+**Enforcer:** `request-deadline.test.ts` checks remaining budgets. `pi-remote-prompt-attachments.test.ts` proves an exhausted budget returns 400 with zero fetches. The live fixture permits 60-second responses to expose the real boundary.
+
+
 ### Normalize IPv6 before checking private egress ranges (2026-09-09)
 
 **When:** accepting external URLs or checking DNS answers for remote image ingestion.

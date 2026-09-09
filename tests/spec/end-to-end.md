@@ -304,7 +304,7 @@ rewritten in place before the next prompt.
 prompt admission replace staged PNG, JPEG, GIF, and WebP data URLs or public HTTPS
 image URLs with immutable session attachment references. Remote downloads revalidate
 each redirect, require a matching image MIME and signature, send no caller credentials,
-and stop after 30 seconds or cancellation. The image bytes and prompt commit in one transaction.
+and stop within 20 seconds, the remaining API request budget, or cancellation. The image bytes and prompt commit in one transaction.
 The worker receives no inline bytes. Image admission does not start an environment.
 Malformed, unsafe, unavailable, or unsupported images return 400 before any part
 of the batch is stored. Each image is at most 8 MiB; a prompt holds at most 16 images

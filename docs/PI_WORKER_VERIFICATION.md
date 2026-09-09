@@ -1656,8 +1656,8 @@ The final full API gate passes **9,293 tests**, with **82 existing skips**,
 
 Pi session creation, warm claims, and durable queued prompts can ingest public
 HTTPS PNG, JPEG, GIF, and WebP images. The API checks every redirect, MIME and
-signature, 8 MiB per image, 16 images and 16 MiB per prompt, and a 30-second total
-download deadline. It sends no caller credentials upstream. The worker receives
+signature, 8 MiB per image, 16 images and 16 MiB per prompt, and a 20-second total
+download cap bounded by the remaining API request budget. It sends no caller credentials upstream. The worker receives
 private immutable references and does not download source URLs.
 
 Existing prompt retries return the original durable command before URL access.
@@ -1687,3 +1687,32 @@ Evidence files: `/tmp/pi-remote-attachments-red.log`,
 Deployment and live-source expiry verification remain pending at this checkpoint.
 The direct runtime `s.send()` still accepts immutable attachment references;
 HTTPS ingestion uses `pending_prompt` or `s.prompts.create()`.
+
+
+### Live deadline correction
+
+Preview `0e515ced49` passes first-prompt and queued HTTPS image ingestion,
+real model vision, expired-source viewer access, accepted retry without another
+source request, valid redirects, unsafe redirects, disguised HTML, and oversize
+rejection. Its 30-second image deadline loses to the API's 25-second request
+deadline and returns 503. The image budget now caps downloads at 20 seconds and
+reserves response time from the enclosing request deadline, including time
+already spent in authorization and billing. Exhausted budgets perform no fetch.
+The request deadline itself and route exemptions remain unchanged.
+
+Two earlier fixture errors are separate from that integration failure. The first
+probe used an incorrect message-ID clock; corrected wire IDs pass queued delivery.
+The next fixture closed slow responses at Bun's default 10-second idle timeout.
+The fixture now allows 60 seconds, so the actual API deadline is observable.
+All three interrupted probe workers are stopped. Their failed evidence remains
+in `/tmp/pi-remote-images-initial-probe.json`,
+`/tmp/pi-remote-images-deadline-fixture-probe.json`, and
+`/tmp/pi-remote-images-outer-deadline-probe.json`.
+
+
+The deadline correction passes 42 focused tests, including cancellation of a
+late upstream response. The full API suite passes 9,367 tests with 82 existing
+skips and zero failures (32,497 assertions, 49.06 seconds). The late-response
+case passes separately after that full run. `pnpm test` passes all six lanes
+in 120.3 seconds: 400/400 REST/CLI flows, 827 worker tests, seven Node artifact
+cases, and the SDK lane. Benchmark `1788957140799`.

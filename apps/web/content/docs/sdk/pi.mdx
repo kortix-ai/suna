@@ -68,7 +68,7 @@ published as a production SDK release.
 Pi prompt admission can download public HTTPS images into private session storage.
 Use PNG, JPEG, GIF, or WebP. The server validates the destination and every redirect,
 checks the response MIME and image signature, and enforces 8 MiB per image,
-16 images, and 16 MiB per prompt. Downloads have a 30-second deadline.
+16 images, and 16 MiB per prompt. Downloads have a 20-second cap and finish before the remaining API request deadline.
 
 ```ts
 const created = await kortix.project(projectId).sessions.create({
@@ -89,7 +89,7 @@ const created = await kortix.project(projectId).sessions.create({
 ```
 
 For an existing session, the same file parts are accepted by `s.prompts.create()`.
-That method returns the durable inbox admission. Reuse its `client_message_id` on
+That method returns the durable inbox admission. Reuse its `clientMessageId` on
 retries. An accepted retry returns the original prompt without downloading again.
 The worker reads the stored bytes, so later turns and worker restarts do not depend
 on the source URL remaining available. Image admission does not start an environment.
