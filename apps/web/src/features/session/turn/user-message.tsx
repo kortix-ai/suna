@@ -45,9 +45,9 @@ import {
 } from '@/ui';
 import {
   AttachmentTile,
+  isPreviewableImage,
   TILE_INTERACTIVE,
   TILE_SURFACE,
-  isPreviewableImage,
 } from '../attachment-tile';
 import { MentionChip } from '../mention-chip';
 import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
@@ -710,10 +710,12 @@ export interface AttachmentUploadStatus {
 
 export function MessageAttachments({
   attachments,
+  align = 'end',
   pending,
   status,
 }: {
   attachments: NormalizedAttachment[];
+  align?: 'start' | 'end';
   /** The whole message is still being sent, so every tile is still uploading. */
   pending?: boolean;
   /** Progress for the strip as a whole — see {@link AttachmentUploadStatus}. */
@@ -733,8 +735,13 @@ export function MessageAttachments({
   const caption = status?.state === 'failed' ? (status.message ?? 'Upload failed') : null;
 
   return (
-    <div className="flex flex-col items-end gap-1.5">
-      <ul className="flex max-w-md flex-wrap justify-end gap-2">
+    <div className={cn('flex flex-col gap-1.5', align === 'start' ? 'items-start' : 'items-end')}>
+      <ul
+        className={cn(
+          'flex max-w-md flex-wrap gap-2',
+          align === 'start' ? 'justify-start' : 'justify-end',
+        )}
+      >
         {visible.map((file, index) => {
           // The LAST visible tile carries the overflow count over its own
           // contents, so the grid never shows a blank slot — the count is an
@@ -766,26 +773,26 @@ export function MessageAttachments({
             );
           }
 
-        if (isImageAttachment(file)) {
+          if (isImageAttachment(file)) {
+            return (
+              <li key={file.key} className="contents">
+                <AttachmentImage file={file} pending={pending} />
+              </li>
+            );
+          }
+
+          const canOpen = Boolean(file.path);
           return (
             <li key={file.key} className="contents">
-              <AttachmentImage file={file} pending={pending} />
+              <AttachmentTile
+                filename={file.filename}
+                mime={file.mime}
+                pending={pending || file.pending}
+                onOpen={canOpen ? () => openFileInComputer(file.path!) : undefined}
+              />
             </li>
           );
-        }
-
-        const canOpen = Boolean(file.path);
-        return (
-          <li key={file.key} className="contents">
-            <AttachmentTile
-              filename={file.filename}
-              mime={file.mime}
-              pending={pending || file.pending}
-              onOpen={canOpen ? () => openFileInComputer(file.path!) : undefined}
-            />
-          </li>
-        );
-      })}
+        })}
       </ul>
       {caption && (
         // Right-aligned under the strip, on the same rail as the tiles. One

@@ -11,6 +11,13 @@ import {
 const SHA = 'a'.repeat(40);
 
 describe('ephemeral self-host preview stack', () => {
+  it('rejects sensitive paths before forwarding to either application', () => {
+    const caddy = buildPreviewCaddyfile('preview.example.test');
+    expect(caddy).toContain('@sensitive path /.env /.env.* /.git /.git/* /package.json /etc/passwd /v1/.env /v1/.env.*');
+    expect(caddy).toContain('handle @sensitive {\n    respond "Not found" 404\n  }');
+    expect(caddy.indexOf('handle @sensitive')).toBeLessThan(caddy.indexOf('handle @api'));
+  });
+
   it('routes every public surface through one origin', () => {
     const caddy = buildPreviewCaddyfile('preview.example.test');
     expect(caddy).toContain(':8080');

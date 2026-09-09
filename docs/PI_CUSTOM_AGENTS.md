@@ -244,3 +244,33 @@ removes the session override and restores compiled agent permissions. A failed
 reset keeps the saved grant visible until retry succeeds.
 
 These controls do not alter the Git configuration or another session.
+
+
+## Native tool images
+
+Custom tools can return native Pi image blocks alongside text:
+
+```ts
+return {
+  content: [
+    { type: 'text', text: 'Capture complete.' },
+    { type: 'image', mimeType: 'image/png', data: pngBase64 },
+  ],
+  details: { source: 'capture' },
+};
+```
+
+The worker saves PNG, JPEG, GIF, and WebP bytes in session-scoped PostgreSQL
+storage before it records the tool result. Each result accepts up to 16 images,
+8 MiB per image, and 16 MiB total. Invalid base64, unsupported MIME types, and
+storage failures produce a tool error. Stop cancels a pending upload.
+
+The durable journal and SSE transcript contain immutable references. Provider
+requests and native custom hooks receive hydrated image bytes. Tool metadata,
+text, and `afterToolCall` overrides retain their native behavior. Replayed tool
+results reuse saved assets without executing the tool again.
+
+The conversation displays completed tool images using authenticated thumbnails
+and the existing image viewer. Reload and worker replacement preserve the asset
+URLs and exact bytes. Images produced in the worker do not start an environment.
+The native `read` tool reads workspace images through the execution environment.

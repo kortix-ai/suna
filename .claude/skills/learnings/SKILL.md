@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Return plain denials for sensitive preview paths (2026-09-09)
+
+**When:** a preview shares one origin between the API and frontend.
+**Incident:** SEC-J at `6363074d0f` matched a public translation's PEM header placeholder in a 1.45 MB HTML 404 for `/.env`; no encoded key block was present.
+**Rule:** reject sensitive paths at the preview edge before application routing. Inspect response status, content type, and matched material before classifying a disclosure. Keep sensitive response bodies out of logs.
+**Enforcer:** `preview-stack.test.ts` requires the denial route; the unchanged SEC-J flow verifies the public response.
+
 ### Stop the core agent before optional custom shutdown hooks (2026-09-08)
 
 **When:** closing or replacing a Pi worker.

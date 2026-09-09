@@ -1046,8 +1046,14 @@ export async function buildHarness(cfg: WorkerConfig) {
     agentName: process.env.KORTIX_AGENT ?? ((globalThis as any).__KORTIX_COMPILED__?.manifest?.default_agent ?? 'build'),
     sessionId: cfg.sessionId ?? 'session-local',
     sourceSha: process.env.KORTIX_BASE_SHA ?? '',
-  }, (globalThis as any).__KORTIX_PI_AGENT__);
+  }, (globalThis as any).__KORTIX_PI_AGENT__, (value, signal) => attachments.hydrateHookInput(value, signal));
 
+  const customAfterToolCall = agent.afterToolCall;
+  agent.afterToolCall = async (context, signal) => {
+    const override = await customAfterToolCall?.(context, signal);
+    const content = await attachments.persistImages(override?.content ?? context.result.content ?? [], signal);
+    return { ...override, content };
+  };
   const customTransform = agent.transformContext;
   let toolRoundCompaction: ((signal?: AbortSignal) => Promise<void>) | null = null;
   const setToolRoundCompaction = (handler: NonNullable<typeof toolRoundCompaction>) => {
@@ -1474,6 +1480,7 @@ export async function startWorker(cfg = configFromEnv()) {
   );
   agent.state.systemPrompt = appendRuntimeToolGuidance(agent.state.systemPrompt, agent.state.tools);
   surface = new RuntimeSurface({
+    registerAttachment: attachments.registerPart,
     sessionId: cfg.sessionId ?? 'session-local',
     projectId: cfg.projectId,
     token: cfg.kortixToken,
@@ -1649,6 +1656,7 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   };
   const wireAdapter = new ChatEventAdapter({
+    registerAttachment: attachments.registerPart,
     sessionID: surface.rootId,
     mintMessageId: surface.mintMessageId,
     parentMessageId: () => surface.turnEndIdentity().messageId,
@@ -2458,8 +2466,11 @@ export async function startWorker(cfg = configFromEnv()) {
       const match = url.pathname.match(/^\/kortix\/part\/([^/]+)\/([^/]+)\/([^/]+)$/);
       const admission = match && match[1] === surface.rootId ? turnJournal.admission(match[2]!) : null;
       const index = admission?.wireUserMessage.parts.findIndex(part => part.id === match?.[3]) ?? -1;
-      const file = index > 0 ? (admission?.options.files as unknown as PromptAttachment[] | undefined)?.[index - 1] : undefined;
-      if (!file || !surface.transcript.messageById(match![2]!)) { res.writeHead(404).end(); return; }
+      const message = match && match[1] === surface.rootId ? surface.transcript.messageById(match[2]!) : null;
+      const visible = message?.parts.some((part: any) => part.id === match?.[3] ||
+        (part.type === 'tool' && part.state?.status === 'completed' && part.state.attachments?.some((file: any) => file.id === match?.[3])));
+      const file = index > 0 ? (admission?.options.files as unknown as PromptAttachment[] | undefined)?.[index - 1] : attachments.referenceForPart(url.pathname);
+      if (!file || !visible) { res.writeHead(404).end(); return; }
       try {
         const bytes = await attachments.read(file);
         res.writeHead(200, { 'content-type': file.mime, 'content-length': String(bytes.length), 'cache-control': 'private, max-age=31536000, immutable', 'x-content-type-options': 'nosniff', etag: `"${attachmentDigest(file.url)}"`, vary: 'Authorization, Cookie' }).end(bytes);

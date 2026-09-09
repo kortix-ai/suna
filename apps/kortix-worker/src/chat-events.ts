@@ -19,6 +19,7 @@
  * Deltas are available at the Agent layer. No pi-ai tapping is required.
  */
 
+import { toolImageParts, type RegisterAttachmentPart } from './session-attachments.ts';
 import type { AssistantMessage } from '@opencode-ai/sdk/v2';
 
 type Wire = {
@@ -44,7 +45,7 @@ function toolOutputText(result: any): string {
       .filter((c: any) => c?.type === 'text')
       .map((c: any) => c.text)
       .join('');
-    if (text) return text;
+    return text;
   }
   return result == null ? '' : JSON.stringify(result);
 }
@@ -54,6 +55,7 @@ const partId = (messageId: string, index: number) => `${messageId}-p${index}`;
 
 export interface AdapterOptions {
   sessionID: string;
+  registerAttachment?: RegisterAttachmentPart;
   /** Stable id for the assistant message currently being streamed. */
   messageId?: () => string;
   /**
@@ -173,6 +175,7 @@ export class ChatEventAdapter {
   private readonly agent: string;
   private readonly mode: string;
   private readonly workspace: string;
+  private readonly registerAttachment?: RegisterAttachmentPart;
   private readonly now: () => number;
   private messageSeq = 0;
   private currentMessageId = '';
@@ -193,6 +196,7 @@ export class ChatEventAdapter {
 
   constructor(opts: AdapterOptions) {
     this.sessionID = opts.sessionID;
+    this.registerAttachment = opts.registerAttachment;
     this.mint = opts.mintMessageId;
     this.fixedMessageId = opts.messageId;
     this.parent = opts.parentMessageId;
@@ -388,6 +392,8 @@ export class ChatEventAdapter {
         // own output, so hand them the text — a JSON envelope would render as
         // a blob where stdout belongs.
         const output = toolOutputText(event.result);
+        const attachments = event.isError ? [] : toolImageParts(event.result?.content,
+          { sessionID, messageID: this.currentMessageId, partID: t.partId }, this.registerAttachment);
         const endedAt = this.now();
         t.endedAt = endedAt;
         return [
@@ -407,6 +413,7 @@ export class ChatEventAdapter {
                   output,
                   title: t.name,
                   metadata: toolResultMetadata(event.result?.details),
+                  ...(attachments.length ? { attachments } : {}),
                   time: { start: t.startedAt, end: endedAt },
                 },
           ),

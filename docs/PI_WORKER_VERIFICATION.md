@@ -1046,3 +1046,44 @@ agent hooks, immutable image prompts, and fixed model/agent controls.
 - The second full run passes all 398 REST/CLI flows, SDK, worker quality, runner
   units, route coverage, and worktree units. Browser and package gates remain
   in progress at this checkpoint. Final deployment proof is recorded separately.
+
+
+## Merged preview and native tool images — 2026-09-09
+
+Merge commit `6363074d0fcbe7125bf02242d884ff6db1ae14cf` deploys through run
+`34283955003`. Remote Git, all three image tags, and public API health report
+that commit. The browser integration check passes: a question card survives
+reload, the selected Blue answer posts with `200`, 303 text deltas produce 22
+visible rendering states, Stop aborts the reply, and the next prompt reads
+`LIME731` from the original image. All 16 messages survive worker stop/resume
+unchanged. The environment remains absent. The test worker is stopped afterward.
+Evidence: `/tmp/pi-merge-preview.json` and `/tmp/pi-merge-preview.png`.
+
+The full preview gate `34311203161` completes with 456/464 REST/CLI passes,
+five failures, and three existing skips. SESS-29 now passes its byte and ETag
+checks. SHIP-1/4/6/9 still fail at Platinum ingress. SEC-J receives a `404` HTML
+page for `/.env`, containing the public translation `text8bcac7908eb9` whose
+value is a PEM header placeholder. It contains no encoded key block. The preview
+edge now rejects sensitive paths with a plain `404`; the detector stays unchanged.
+The failed assertion is reproduced before the configuration fix, then all 11
+preview-stack tests pass. A real Caddy container also returns exact `404 Not found` for all seven sensitive-path probes, including encoded traversal. Deployed SEC-J verification is pending this commit.
+
+Preview browser results are 19 passes and two failures: billing loses its dialog
+after Subscribe; German onboarding shows Slack when the test expects Tools.
+The local browser suite passes all 21 configured journeys with two existing
+skips. These preview failures remain unresolved and prevent a full-gate claim.
+
+The native tool-image implementation saves raw image bytes before the journal,
+returns stable authenticated file parts, hydrates provider and custom-hook inputs,
+and renders images with the existing viewer. Tests cover exact restart, no tool
+reexecution, storage failure, unauthorized access, other-message access, and Stop
+during upload. Worker quality passes 749 tests plus seven compiled Node sandbox
+tests. Frontend typechecking passes; focused lint reports zero errors and one
+existing warning. The full local run passes 398 REST/CLI flows, SDK, runner,
+coverage, worktree, and browser lanes. Its initial worker lane reports three type
+errors, corrected and covered by the full worker-quality rerun. Package quality passes in 237.9 seconds, including SDK typecheck and packed-install smoke. All eight local lanes now have passing evidence; the initial aggregate remains failed because its worker type errors preceded the correction. Live tool-image verification remains pending at this checkpoint.
+
+The previous overnight local run crossed macOS maintenance sleep and recorded
+hour-long test durations and a negative browser performance timestamp. The
+replacement run uses `caffeinate -i` for its process lifetime. It does not change
+machine-wide power settings or suppress browser exceptions.

@@ -102,6 +102,11 @@ export function buildPreviewCaddyfile(publicHost: string): string {
 :8080 {
   encode zstd gzip
 
+  @sensitive path /.env /.env.* /.git /.git/* /package.json /etc/passwd /v1/.env /v1/.env.*
+  handle @sensitive {
+    respond "Not found" 404
+  }
+
   # A deployed environment gives the API a host of its own, so EVERY path it
   # serves reaches it. A preview shares ONE origin with the frontend and splits
   # by prefix, so each API route mounted outside \`/v1\` has to be listed here or

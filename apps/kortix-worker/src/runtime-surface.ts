@@ -1,3 +1,4 @@
+import { toolImageParts, type RegisterAttachmentPart } from './session-attachments.ts';
 import { serveGlobalEventStream } from './global-event-stream.ts';
 /**
  * The Kortix Runtime API, pi-worker half — `/kortix/opencode/*` served by the
@@ -442,6 +443,7 @@ function readRawJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<un
 }
 
 export interface RuntimeSurfaceOptions {
+  registerAttachment?: RegisterAttachmentPart;
   todos?: () => PiTodo[];
   sessionId: string;
   projectId?: string;
@@ -670,10 +672,12 @@ export class RuntimeSurface {
           .filter((b: any) => b && typeof b.text === 'string')
           .map((b: any) => b.text)
           .join('');
+        const attachments = message.isError ? [] : toolImageParts(message.content,
+          { sessionID: this.rootId, messageID: pending.messageId, partID: pending.partId }, this.opts.registerAttachment);
         this.applyToolPart(pending, {
           ...(message.isError
             ? { status: 'error', error: output }
-            : { status: 'completed', output, title: pending.tool, metadata: toolResultMetadata(message.details) }),
+            : { status: 'completed', output, title: pending.tool, metadata: toolResultMetadata(message.details), ...(attachments.length ? { attachments } : {}) }),
           input: pending.input,
           time: message.kortixWireToolTime ?? { start: pending.startedAt, end: created },
         });

@@ -33,6 +33,7 @@ export async function installCustomAgent(
   env: ExecutionEnv,
   identity: Omit<PiAgentContext, 'env' | 'signal'>,
   factory?: PiAgentFactory,
+  prepareHookInput?: (value: any, signal: AbortSignal) => Promise<any>,
 ) {
   if (!factory) return { close: async () => {} };
   const scope = new AsyncLocalStorage<AbortSignal>();
@@ -135,7 +136,7 @@ export async function installCustomAgent(
     const original = agent[key];
     if (original) throw new Error(`Pi agent hook "${key}" is already installed`);
     (agent as any)[key] = (value: unknown, signal?: AbortSignal) =>
-      run(key, (current) => (hook as any)(value, current), signal, timeout);
+      run(key, async (current) => (hook as any)(prepareHookInput ? await prepareHookInput(value, current) : value, current), signal, timeout);
   }
   for (const key of ['onPayload', 'onResponse'] as const) {
     const hook = definition[key];
@@ -160,7 +161,7 @@ export async function installCustomAgent(
     try {
       await run(
         `onEvent:${event.type}`,
-        (current) => definition.onEvent!(structuredClone(event), signal.aborted ? signal : current),
+        async (current) => definition.onEvent!(prepareHookInput ? await prepareHookInput(structuredClone(event), current) : structuredClone(event), signal.aborted ? signal : current),
         terminal ? undefined : signal,
         timeout,
       );

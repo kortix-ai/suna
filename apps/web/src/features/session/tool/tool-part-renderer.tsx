@@ -19,6 +19,8 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolError } from '@/features/session/tool/tool-error';
+import { MessageAttachments, normalizeAttachments } from '@/features/session/turn/user-message';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
   PERMISSION_LABELS,
@@ -26,7 +28,6 @@ import {
   type QuestionRequest,
   type ToolPart,
 } from '@/ui';
-import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 interface PermissionPromptInlineProps {
@@ -112,6 +113,13 @@ function ToolPartRendererImpl({
   disableNavigation = false,
 }: ToolPartRendererProps & { sessionId?: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const attachments = useMemo(
+    () =>
+      part.state.status === 'completed'
+        ? normalizeAttachments(part.state.attachments ?? [], [])
+        : [],
+    [part.state],
+  );
   const toolDurationMs = useMemo(() => {
     const s = (part.state as any)?.time?.start;
     const e = (part.state as any)?.time?.end;
@@ -233,6 +241,11 @@ function ToolPartRendererImpl({
               <BoundActivateContext.Provider value={boundActivate}>
                 <div className={cn('relative', fillsPanel && 'h-full')}>
                   {toolElement}
+                  {attachments.length > 0 && (
+                    <div className="mt-2">
+                      <MessageAttachments attachments={attachments} align="start" />
+                    </div>
+                  )}
 
                   {permission && onPermissionReply && (
                     <div className="mt-1.5">

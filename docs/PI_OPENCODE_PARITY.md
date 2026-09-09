@@ -65,7 +65,7 @@ extensions. The native Pi lifecycle surface is documented in
 
 | Capability | Current behavior | Required work |
 |---|---|---|
-| File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, and capability-gated existing-session composer | First-prompt creation, remote attachment conversion, tool-result images, and full large-upload provider verification |
+| File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, and capability-gated existing-session composer | First-prompt creation, remote attachment conversion, and full large-upload provider verification. Native tool-image persistence, provider/hook hydration, and viewer are implemented locally; deployed proof is pending |
 | Provider context-overflow recovery | Threshold compaction runs before new prompts and between tool rounds | Recovery when one input or tool result already exceeds the provider window; full-size preview proof remains blocked by ingress |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
@@ -83,12 +83,13 @@ White-label fixed agent/model controls and real incremental streaming passed
 against the preview API. The saved reply, empty turn queue, and absent environment
 match the browser. These controls do not implement live reconfiguration.
 
-The latest full preview gate at `1186af73` passes 455 of 463 REST/CLI flows,
-with five failures and three existing skips. All 19 browser journeys pass.
-Four Git shipping failures occur at Platinum ingress. The fifth is a strict
-ETag assertion: the proxy compresses the exact attachment bytes and returns a
-weak ETag with the same SHA-256. The corrected assertion verifies the response
-bytes and accepts that representation marker; its preview rerun is pending.
+The latest full preview gate at `6363074d0f` passes 456 of 464 REST/CLI flows,
+with five failures and three existing skips. Browser results are 19 passes and
+two failures. Four Git shipping failures occur at Platinum ingress. SEC-J matches
+a public translation's PEM header placeholder in the frontend HTML 404 response;
+a plain sensitive-path 404 is implemented and awaits deployed verification.
+SESS-29 now passes its exact bytes and compressed ETag checks. Preview billing and
+German onboarding failures remain open; the local browser suite passes 21 tests.
 Large-context automatic compaction remains blocked by the ingress upload failure.
 See the verification log for exact probes.
 
