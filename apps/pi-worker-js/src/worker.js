@@ -593,11 +593,25 @@ export class AgentCell {
       const agent = this.buildAgent(sessionId, script, withSkills(SYSTEM_PROMPT, block),
         this.wireSessionId(next, sessionId));
       tMark("buildAgent");
-      // First model byte: the adapter emits message.updated when the assistant
-      // message opens, so the first wire frame IS the model having started.
-      let firstFrame = 0;
-      const markFirst = () => {
-        if (!firstFrame) { firstFrame = 1; tMark("modelFirstByte"); this.persistTurnTiming(next.i, tLap); }
+      // TWO MARKS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
+      //
+      // `modelOpen` is when the assistant message opened. The adapter emits
+      // `message.updated` for that the moment the turn starts talking, before
+      // the model has produced a character — which is why the single mark this
+      // replaces was useless: measured on dev 2026-09-09 it read
+      // `modelFirstByte: 2` on a turn that took 1602 ms end to end, and a
+      // report built on it named the model as the cost of a wait the model had
+      // not started yet.
+      //
+      // `modelFirstText` is when the user's empty bubble first has something in
+      // it. That is the number a slow turn is actually about, and on the same
+      // dev session it is ~1.3 s — the gateway's own overhead plus prefill.
+      let opened = 0, texted = 0;
+      const markFirst = (frames) => {
+        if (!opened) { opened = 1; tMark("modelOpen"); this.persistTurnTiming(next.i, tLap); }
+        if (!texted && frames?.some((f) => this.wire?.carriesVisibleText(f))) {
+          texted = 1; tMark("modelFirstText"); this.persistTurnTiming(next.i, tLap);
+        }
       };
       this.__markFirstFrame = markFirst;
       // Held so /stop has something to abort. Without a reference to the
@@ -905,8 +919,10 @@ export class AgentCell {
       // pin the delta/snapshot split this bus depends on.
       try {
         const frames = wireAdapter.translate(event);
-        if (frames.length) this.__markFirstFrame?.();
         this.wire?.publish(frames);
+        // AFTER publishing, not before: `carriesVisibleText` asks the bus which
+        // parts are reasoning, and the bus learns that as it publishes.
+        if (frames.length) this.__markFirstFrame?.(frames);
       } catch { /* never break a turn to publish it */ }
       // Stream what a watcher actually needs: which tool is running, and what
       // came back. Previously this sent only `{type}`, which tells a UI that

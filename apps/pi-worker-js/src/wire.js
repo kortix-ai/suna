@@ -141,6 +141,36 @@ export class WireBus {
     return false;
   }
 
+  /**
+   * DOES THIS FRAME CARRY TEXT THE USER WILL SEE?
+   *
+   * `message.updated` is emitted when the assistant message OPENS, before the
+   * model has produced anything, so a turn timer that stops on the first frame
+   * measures nothing about the model. Measured on dev 2026-09-09 against a live
+   * session: that mark read `modelFirstByte: 2` while the turn took 1602 ms.
+   *
+   * Visible text means a text delta, or the snapshot that opens a text part.
+   * Reasoning is excluded for the same reason `publish` drops it: it is not the
+   * answer, and timing to it would report a turn as responsive while the user
+   * still has an empty bubble.
+   */
+  carriesVisibleText(frame) {
+    if (!frame || typeof frame.type !== "string") return false;
+    const props = frame.properties ?? {};
+    if (frame.type === "message.part.updated") {
+      return props.part?.type === "text" && !!props.part?.text;
+    }
+    if (frame.type === "message.part.delta") {
+      // A delta names only its part id. `publish` has already recorded which
+      // parts are reasoning, which is why this is asked AFTER publishing and
+      // not before: the snapshot that introduces a part always precedes its
+      // deltas, so by now the set is complete for anything that could be asked.
+      if (this.reasoningParts?.has(props.partID)) return false;
+      return typeof props.delta === "string" && props.delta.length > 0;
+    }
+    return false;
+  }
+
   /** The opening bytes for one attach: hello, then whatever replay is owed. */
   opening({ since = null, epoch = null } = {}) {
     const plan = replayPlan({

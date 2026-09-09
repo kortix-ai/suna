@@ -150,5 +150,29 @@ const collect = () => {
     bus.seq === 2, String(bus.seq));
 }
 
+{
+  // WHEN DOES THE USER'S EMPTY BUBBLE GET SOMETHING IN IT?
+  //
+  // The turn timer used to stop on the first wire frame of any kind. The first
+  // frame is `message.updated`, which the adapter emits when the assistant
+  // message OPENS — before the model has produced a character. Measured on dev
+  // 2026-09-09 that mark read 2 ms on a turn that took 1602 ms, and a report
+  // built on it blamed the model for a wait the model had not begun.
+  const bus = new WireBus({ epoch: "e1" });
+  check("the message opening is not text — timing to it measures nothing",
+    !bus.carriesVisibleText({ type: "message.updated", properties: { info: { id: "m1" } } }), "");
+  check("nor is the empty part that opens before any token",
+    !bus.carriesVisibleText({ type: "message.part.updated", properties: { part: { id: "p1", type: "text", text: "" } } }), "");
+  check("a text delta is text",
+    bus.carriesVisibleText({ type: "message.part.delta", properties: { partID: "p1", delta: "hi" } }), "");
+  check("a snapshot that already carries text is text",
+    bus.carriesVisibleText({ type: "message.part.updated", properties: { part: { id: "p1", type: "text", text: "hi" } } }), "");
+  // The reasoning case is the one that makes this a predicate and not a
+  // type check: a reasoning delta looks exactly like a text delta.
+  bus.publish([{ type: "message.part.updated", properties: { part: { id: "p0", type: "reasoning", text: "" } } }]);
+  check("a reasoning delta is NOT the bubble filling — it is never shown",
+    !bus.carriesVisibleText({ type: "message.part.delta", properties: { partID: "p0", delta: "thinking" } }), "");
+}
+
 console.log(bad ? `\n  ${bad} failed` : "");
 process.exit(bad ? 1 : 0);
