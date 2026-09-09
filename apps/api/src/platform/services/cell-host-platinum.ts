@@ -35,6 +35,27 @@
  * 4.3x to ready and 3.0x to an answer. The earlier per-component figures above
  * predicted this and are now confirmed at the level a user actually feels.
  *
+ * WHERE THE TIME ACTUALLY GOES, measured 2026-09-09 from INSIDE the region
+ * (against the API on localhost, so no Cloudflare hop and no transatlantic
+ * round trips), with every cross-session defect closed and the answer verified
+ * as a real model reply rather than a leaked one:
+ *
+ *   run 1 (cold)  create 823  ready 1910  answer 3569  TOTAL 6302 ms
+ *   run 2         create 722  ready  187  answer 2735  TOTAL 3644 ms
+ *   run 3         create 130  ready  173  answer 2555  TOTAL 2858 ms
+ *
+ * Warm, the control plane costs 300-900 ms and the MODEL costs ~2.6 s — about
+ * 85% of what a user waits for. Further work on provisioning is optimising the
+ * small half.
+ *
+ * An earlier in-region figure of "542 ms end to end" in this session was wrong
+ * and is withdrawn: it was taken while the transcript leak was live, so a new
+ * session found somebody else's answer already in the transcript and the clock
+ * stopped before its own model call had started. The gateway log for that
+ * window shows the real calls, 1098-2674 ms, completing after the measurement
+ * had ended. A timing harness that does not check WHAT came back is measuring
+ * its own polling.
+ *
  * THOSE FIGURES WERE MEASURED WITH A POLLING HARNESS AND READ SLIGHTLY HIGH.
  * Re-measured 2026-09-09 with a single long-poll (`/start?wait_ms=8000`), which
  * returns `ready` on the FIRST call rather than the three the loop made at
