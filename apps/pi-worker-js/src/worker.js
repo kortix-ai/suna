@@ -1862,10 +1862,30 @@ export class AgentCell {
     if (path === "/kortix/opencode/state") {
       const e = this.effectiveEnv();
       const c = modelConfig(e);
-      const sid = this.wireSessionId(
-        this.sql.exec("SELECT session_id FROM turns ORDER BY i DESC LIMIT 1").toArray()[0],
-        sessionId,
-      );
+      // THE SESSION THIS REQUEST NAMED, and nothing else.
+      //
+      // `wireSessionId` prefers the node's KORTIX_SESSION_ID over its fallback,
+      // which is right for an ALARM — a turn running with no request to read
+      // `?c=` from — and wrong here, because `fetchRuntimeState` always names
+      // the session it is asking about. On a shared host the node's env is
+      // whoever created the BOX, so a cell with no turns yet answered for a
+      // stranger.
+      //
+      // Measured on dev 2026-09-09 by asking a box about a cell that had never
+      // run a turn:
+      //
+      //   GET /kortix/opencode/state?c=never-had-a-turn-20951
+      //   -> identity.opencode_session_id = f6fc9d40-…   (the box's creator)
+      //
+      // That is the FIRST projection every session stores, because the UI opens
+      // the session before it has said anything. The control plane then compares
+      // it with the session's own pin, gets `identity_mismatch`, and serves an
+      // empty runtime leg from then on — which is exactly what a full end-to-end
+      // run reported: fourteen legs green and the session open still blank.
+      //
+      // `sessionId` is already `?c=` ?? path ?? node env ?? this object's name,
+      // so it is the addressed session whenever anyone addressed one.
+      const sid = sessionId;
       let skills = [];
       try { ({ skills } = await this.skills(sid)); } catch { /* a cell with no workspace still has a projection */ }
       const doc = runtimeStateDoc({

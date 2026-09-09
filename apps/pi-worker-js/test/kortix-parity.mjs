@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=99
+// EXPECTED_PASSES=103
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -818,6 +818,38 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const after = await (await h.fetch("/model?c=s")).json();
   check("and /model reports them, which is what an eviction used to hide",
     after.tools?.files === 2, JSON.stringify(after.tools));
+}
+
+
+// A PROJECTION ANSWERS FOR THE SESSION IT WAS ASKED ABOUT.
+//
+// `fetchRuntimeState` always names the session; the cell must not answer for
+// the one that happens to be in the node's env. On a shared host that is
+// whoever created the BOX, and a session's FIRST projection is read before it
+// has run a turn — so every session stored a projection under a stranger's id,
+// the control plane compared it with the real pin, and served
+// `identity_mismatch` for the life of the session.
+//
+// Measured on dev 2026-09-09: GET /kortix/opencode/state?c=never-had-a-turn-N
+// answered `identity.opencode_session_id = f6fc9d40-…`, the box's creator.
+{
+  const h = makeCell(AgentCell, { ...ENV, KORTIX_SESSION_ID: "whoever-made-the-box" });
+  const doc = await (await h.fetch("/kortix/opencode/state?c=a-session-with-no-turns")).json();
+  check("a cell with no turns still answers for the session it was addressed as",
+    doc.identity.opencode_session_id === "a-session-with-no-turns",
+    doc.identity.opencode_session_id);
+  check("and its session list names that session too, not the node's",
+    doc.sessions.value[0]?.id === "a-session-with-no-turns",
+    JSON.stringify(doc.sessions.value[0]?.id));
+  check("its status is keyed by that session, or the UI reads nobody's state",
+    Object.keys(doc.statuses.value)[0] === "a-session-with-no-turns",
+    JSON.stringify(Object.keys(doc.statuses.value)));
+
+  // The node's env is still the answer when the caller named nobody — that is
+  // the one case where it is the best available.
+  const un = await (await h.fetch("/kortix/opencode/state")).json();
+  check("with no session named at all, the node's own is used rather than nothing",
+    un.identity.opencode_session_id === "whoever-made-the-box", un.identity.opencode_session_id);
 }
 
 process.exit(bad ? 1 : 0);
