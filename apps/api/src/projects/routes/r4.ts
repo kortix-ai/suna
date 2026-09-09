@@ -25,6 +25,7 @@ import {
   resolveAgentMailApiKey,
 } from '../../channels/agentmail-api';
 import { compileEmailSenderRegex } from '../../channels/email/sender-policy-regex';
+import { warmProjectMirrorAfterTurn } from '../git/turn-end-mirror-warmup';
 import {
   type AgentMailSenderPolicy,
   deleteAgentMailInstall,
@@ -2742,6 +2743,20 @@ projectsApp.openapi(
       // never throws.
       if (!childSession) {
         void captureSessionTranscriptMirror(sessionId);
+      }
+      // AND FETCH THE MANIFEST NOW, WHILE THE USER IS READING THE ANSWER.
+      //
+      // The next prompt's grant re-mint forces a mirror refresh so a
+      // `kortix.yaml` this turn narrowed is enforced from its first call. That
+      // is one authenticated GitHub round trip — measured 583 ms on the path of
+      // a one-word reply on dev, 2026-09-09 — and the person who pressed enter
+      // pays it. The turn that just ended is the only thing that can have
+      // changed the manifest, so fetching HERE gives the next prompt the same
+      // guarantee for free: it either finds the coalesce window warm (485 ms ->
+      // 15 ms, measured) or joins this fetch through `refreshMirror`'s lock.
+      // Fire-and-forget beside the mirror above; it never throws.
+      if (!childSession) {
+        warmProjectMirrorAfterTurn({ projectId, terminal: true });
       }
       // THE TURN ENDED — the session's next queued prompt is admissible NOW.
       // Await the durable promotion before acknowledging the terminal relay.

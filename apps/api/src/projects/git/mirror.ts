@@ -338,8 +338,35 @@ export { spawn };
  *  `lastRefreshAt`, which any refresh bumps: only a force may satisfy a force. */
 const lastForcedRefreshAt = new Map<string, number>();
 
-/** Window in which a second forced refresh reuses the first. 0 = off. */
-function forcedRefreshCoalesceMs(): number {
+/** When a turn last ENDED for a project. The only in-session event that can
+ *  change `kortix.yaml`, so a forced refresh taken after it stays current for
+ *  as long as nothing runs — see forced-refresh-window.ts. */
+const lastTurnEndAt = new Map<string, number>();
+
+/**
+ * Stamped by the turn-end warm-up BEFORE it fetches, so the fetch it then
+ * performs lands strictly after the stamp and the ordering is unambiguous.
+ *
+ * It also DROPS the previous forced stamp, and that is what makes the warm-up
+ * work at all. Without it the warm-up's own `force` hits the coalesce window
+ * left by the prompt three seconds earlier, returns `reuse_recent_force`, and
+ * never fetches — so nothing is warmed and the next prompt pays the round trip
+ * anyway. Measured on dev 2026-09-09: `[git-mirror] warmed after turn end`
+ * logged while the next prompt still spent `remintGrant: 556 ms`.
+ *
+ * Dropping it is also the honest state: a refresh taken BEFORE this turn ended
+ * predates the turn that could have narrowed the manifest, so it can no longer
+ * satisfy a `force`.
+ */
+export function noteTurnEnded(projectId: string, at = Date.now()): void {
+  lastTurnEndAt.set(projectId, at);
+  lastForcedRefreshAt.delete(projectId);
+}
+
+/** Window in which a second forced refresh reuses the first. 0 = off.
+ *  Exported because the turn-end warm-up has to know whether a fetch it kicks
+ *  would be reused by the next prompt — see turn-end-mirror-warmup.ts. */
+export function forcedRefreshCoalesceMs(): number {
   const raw = Number(process.env.KORTIX_GIT_FORCE_COALESCE_MS ?? 0);
   return Number.isFinite(raw) && raw > 0 ? raw : 0;
 }
@@ -423,6 +450,9 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     planForcedRefresh({
       sinceLastForcedMs: Date.now() - (lastForcedRefreshAt.get(project.projectId) ?? Number.NaN),
       windowMs: forcedRefreshCoalesceMs(),
+      sinceLastTurnEndMs: lastTurnEndAt.has(project.projectId)
+        ? Date.now() - lastTurnEndAt.get(project.projectId)!
+        : null,
     }) === 'reuse_recent_force'
   ) {
     return repoPath;
