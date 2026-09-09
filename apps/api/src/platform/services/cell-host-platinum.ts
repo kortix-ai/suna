@@ -60,11 +60,20 @@
  *   2. the session token — `serviceKeyForExternalId` matches on external_id, so
  *      every session relayed its turn end with the host-creator's token and
  *      /turn-stream refused it 403 (fixed: serviceKeyForSession);
- *   3. THE TURN LEDGER — `activeTurns` lives in the sandbox row and is written
- *      per box. Measured: two different sessions held the byte-identical set of
- *      five `active` records, including records whose `opencodeSessionId`
- *      belonged to neither of them, so one session's unfinished turn blocked
- *      every other session on that box behind `turn_active`. NOT FIXED.
+ *   3. the turn ledger — `activeTurns` lives in the sandbox row and the proxy
+ *      wrote it with an `{externalId}` target, which matches every session on
+ *      the box. Measured: two sessions held the byte-identical set of five
+ *      `active` records, including records belonging to neither, so one
+ *      session's unfinished turn blocked every other session behind
+ *      `turn_active` (fixed: projects/turn-target.ts).
+ *
+ * ALL FOUR ARE NOW SETTLED, and the fourth was verified rather than assumed:
+ * two sessions on one cell sandbox do not share /work
+ * (apps/pi-worker-js/test/cell-fs-isolation.sh, which had to be rewritten four
+ * times before it was capable of failing). Re-measured with the flag on, dev
+ * 2026-09-09: two sessions, ONE box, answering 42 and 81 independently, holding
+ * 0 and 1 turn records rather than an identical five, and a second prompt on the
+ * first session answering 56 instead of hanging.
  *
  * With the flag off, the same product path is correct and repeatable: three
  * consecutive prompts on one session answered 42, 56 and 81, and the session
@@ -75,8 +84,10 @@
  * Anything keyed by `external_id` that describes a SESSION is a bug waiting for
  * the flag to be turned on. Search for those before enabling it again.
  *
- * STILL GATED. `KORTIX_CELL_SHARED_HOST_ENABLED` remains off by default and is
- * now off on the dev stack too. The reason it was off — "the reaper stops a box
+ * STILL GATED, and still off by default: a wider rollout needs a story for a
+ * host that outlives every session on it (nothing stops one when the last
+ * session ends) and for sharing beyond a single project. It is ON for the dev
+ * stack. The reason it was off — "the reaper stops a box
  * when its session is done, and nothing here yet teaches it that a host is
  * shared" — is fixed (projects/reaping/shared-box-stop.ts: a box another ACTIVE
  * session is on is released, not stopped). What is NOT yet done, and what a

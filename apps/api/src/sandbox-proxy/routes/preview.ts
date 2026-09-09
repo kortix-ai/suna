@@ -1,3 +1,4 @@
+import { turnTargetFor } from '../../projects/turn-target';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
@@ -1067,8 +1068,11 @@ export async function forwardToSandbox(
   const beginTurnLifecycle = async (): Promise<'granted' | 'unavailable'> => {
     if (!turnIdentity || !turnToken || turnLifecycleBegun) return 'granted';
     try {
+      // The SESSION's row, not every session on this box — a cell sandbox holds
+      // many, and `s.external_id = $1` wrote one session's turn record into all
+      // of them. See projects/turn-target.ts.
       const outcome = await beginSandboxTurn(
-        { externalId: sandboxId },
+        turnTargetFor(record.sessionId, sandboxId),
         { token: turnToken, ...turnIdentity },
       );
       turnLifecycleBegun = outcome === 'granted';
@@ -1084,7 +1088,10 @@ export async function forwardToSandbox(
   const acceptTurnLifecycle = async (): Promise<void> => {
     if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
     try {
-      turnLifecycleAccepted = await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
+      turnLifecycleAccepted = await acceptSandboxTurn(
+        turnTargetFor(record.sessionId, sandboxId),
+        turnToken,
+      );
     } catch (error) {
       // OpenCode already accepted this non-idempotent request. Do not convert a
       // post-delivery database outage into a failed send or delete the durable
