@@ -648,24 +648,44 @@ export async function repairCellSessionEnv(args: {
   providerHeaders: Record<string, string>;
   llmBaseUrl?: string | null;
 }): Promise<void> {
+  // NAMED PARTS, because the total was a mystery for a whole tick.
+  //
+  // `[env-sync] cell-env` is 96-147 ms on a steady-state prompt and it is the
+  // largest single item in the sync. Measured 2026-09-09 from inside the API
+  // container, none of its named work accounts for that: the session-key read
+  // is 1 ms, the cell-runtime read is 0 ms (cached), and the POST itself is
+  // 9 ms p50 over a warm connection. What IS ~200 ms is the FIRST request to a
+  // sandbox origin from a process that has not talked to it yet — 205 ms cold
+  // against 5-9 ms warm, with the pool surviving a 12 s idle.
+  //
+  // So this reports its own parts rather than one number, and the next reading
+  // says which of them it is instead of inviting another guess.
+  const t0 = Date.now();
+  const lap: Record<string, number> = {};
+  let at = t0;
+  const mark = (k: string) => { const now = Date.now(); lap[k] = now - at; at = now; };
   try {
     if (!(await isCellSandbox(args.externalId))) return;
+    mark('is-cell');
     // THE TOKEN THE CELL CARRIES IS THE SESSION'S, not the box's — see
     // cell-env-token.ts. `args.serviceKey` is whatever reached this box, and
     // the prompt path resolves that from `external_id`, which on a shared cell
     // host names the session that CREATED the box rather than the one this
     // env belongs to. It stays the bearer for the push itself; only what is
     // written INTO the cell is session-scoped.
+    const sessionKey = cellEnvToken(
+      await serviceKeyForSession(args.sessionId).catch(() => undefined),
+      args.serviceKey,
+    );
+    mark('session-key');
     const env = cellSessionEnv({
       sessionId: args.sessionId,
       projectId: args.projectId,
       apiUrl: `${(config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`,
-      serviceKey: cellEnvToken(
-        await serviceKeyForSession(args.sessionId).catch(() => undefined),
-        args.serviceKey,
-      ),
+      serviceKey: sessionKey,
       llmBaseUrl: args.llmBaseUrl,
     });
+    mark('build-env');
     const res = await fetch(envPushUrl(args.previewUrl, args.sessionId), {
       method: 'POST',
       headers: {
@@ -676,9 +696,13 @@ export async function repairCellSessionEnv(args: {
       body: JSON.stringify({ env }),
       signal: AbortSignal.timeout(5_000),
     });
+    mark('post');
     if (!res.ok) {
       console.warn(`[cell-env] repair for ${args.sessionId} answered ${res.status}`);
     }
+    console.log(
+      `[cell-env] timing sandbox=${args.externalId} total=${Date.now() - t0}ms ${JSON.stringify(lap)}`,
+    );
   } catch (err) {
     console.warn(
       `[cell-env] repair for ${args.sessionId} failed:`,
@@ -828,7 +852,16 @@ export async function syncSandboxEnvForPrompt(args: {
     await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
     lap('mark');
     // A cell can lose its own configuration without any secret changing.
-    await repairCellSessionEnv({
+    // NOT AWAITED. The repair is best-effort by construction — it swallows
+    // every error, logs, and returns void — so awaiting it buys the prompt
+    // nothing and costs it a round trip to the box. Measured 2026-09-09 in
+    // named parts: `post` is 63-73 ms of a 64-74 ms call, on every steady-state
+    // prompt, while the DB reads around it are 1-3 ms. The turn does not read
+    // anything this writes; a cell that has lost its env is repaired for the
+    // NEXT prompt either way, which is the same guarantee an awaited call gave
+    // (the delivery has already been sent by the time a wiped cell could
+    // answer differently).
+    void repairCellSessionEnv({
       projectId: args.projectId,
       sessionId: args.sessionId,
       externalId: args.externalId,
@@ -836,7 +869,7 @@ export async function syncSandboxEnvForPrompt(args: {
       previewUrl: args.previewUrl,
       providerHeaders: args.providerHeaders,
       llmBaseUrl: llmGatewayBaseUrl,
-    });
+    }).catch(() => {});
     lap('cell-env');
     console.log(
       `[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`,
@@ -854,7 +887,9 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayEnabled,
     llmGatewayBaseUrl,
   });
-  await repairCellSessionEnv({
+  // Same reasoning as the skipped branch above: best-effort, nothing on this
+  // turn reads it, and a round trip to the box is not the prompt's to pay.
+  void repairCellSessionEnv({
     projectId: args.projectId,
     sessionId: args.sessionId,
     externalId: args.externalId,
@@ -862,7 +897,7 @@ export async function syncSandboxEnvForPrompt(args: {
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     llmBaseUrl: llmGatewayBaseUrl,
-  });
+  }).catch(() => {});
   // Remember only AFTER a successful push. A throw below (network/HTTP
   // failure) must leave the memo alone so the next prompt retries with
   // `refreshModels: true` again instead of assuming the failed attempt landed.
