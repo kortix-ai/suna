@@ -21,7 +21,7 @@
  */
 
 import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { type SQL, and, eq, gt, ne, sql } from 'drizzle-orm';
+import { type SQL, and, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import {
   type ProviderName,
   type ResolvedSandboxIngress,
@@ -156,6 +156,34 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
  * when no row exists. Fresh on every call (status must not be cached); the
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
  */
+/**
+ * THE SESSION A BOX UNAMBIGUOUSLY BELONGS TO, or null when it shares.
+ *
+ * `loadSandbox` resolves by `external_id` with `orderBy(...).limit(1)`, so on a
+ * shared cell host it returns whichever row the ordering prefers — NOT the
+ * session whose page is open. Using that to address a cell appears to work for
+ * the newest session and silently routes every older one into a stranger's
+ * conversation. Measured on dev 2026-09-09: one box, four active sessions, and
+ * the row that came back was the same one whichever session was being viewed.
+ *
+ * So the question is not "which session is this box's" but "does this box have
+ * exactly one". One indexed count, and a shared host gets no answer — the cell
+ * then refuses honestly instead of serving the wrong conversation.
+ */
+export async function soleSessionOfSandbox(externalId: string): Promise<string | null> {
+  const rows = await db
+    .select({ sessionId: sessionSandboxes.sessionId })
+    .from(sessionSandboxes)
+    .where(
+      and(
+        eq(sessionSandboxes.externalId, externalId),
+        inArray(sessionSandboxes.status, ['provisioning', 'active']),
+      ),
+    )
+    .limit(2);
+  return rows.length === 1 ? rows[0].sessionId : null;
+}
+
 export async function loadSandbox(externalId: string): Promise<SandboxRecord | null> {
   const columns = {
     sandboxId: sessionSandboxes.sandboxId,

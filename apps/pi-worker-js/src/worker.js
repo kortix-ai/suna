@@ -1909,7 +1909,19 @@ export class AgentCell {
       return Response.json(doc, { headers: { etag } });
     }
 
-    if (path === "/kortix/opencode/events") {
+    // `/global/event` IS THE PRODUCT'S NAME FOR THIS STREAM, and it must carry
+    // the OpenCode wire, not pi's raw events.
+    //
+    // It used to alias `/events`, which pushes pi's own AgentEvents verbatim —
+    // `turn_started`, `message_start`, `text`. That is the harness's contract
+    // and it is meaningless to the web client, whose reducer repaints only on
+    // `message.part.delta`. Measured 2026-09-09 end to end through the
+    // browser's own path: the answer DID arrive on the stream, as
+    // `{"type":"text"}`, and nothing rendered until a transcript poll caught up
+    // — which is exactly "the message appears a couple of seconds later".
+    //
+    // `/events` keeps the raw shapes; every name the product uses gets the wire.
+    if (path === "/kortix/opencode/events" || path === "/global/event" || path === "/event") {
       const bus = this.wire;
       const sinceRaw = url.searchParams.get("since");
       const since = sinceRaw === null || sinceRaw === "" ? null : Number(sinceRaw);
@@ -1949,7 +1961,7 @@ export class AgentCell {
       });
     }
 
-    if (path === "/events" || path === "/global/event" || path === "/event") {
+    if (path === "/events") {
       this.sseListeners = this.sseListeners ?? new Set();
       const set = this.sseListeners;
       const enc = new TextEncoder();

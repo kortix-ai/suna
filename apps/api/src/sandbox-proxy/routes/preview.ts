@@ -1,5 +1,6 @@
 import { turnTargetFor } from '../../projects/turn-target';
 import { addressCellSession } from '../address-cell';
+import { soleSessionOfSandbox } from '../backend';
 import { upstreamAnsweredFinally } from '../upstream-final';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -1199,11 +1200,14 @@ export async function forwardToSandbox(
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
-      // NAME THE SESSION. The in-box URLs the web client uses carry none, and a
-      // cell cannot answer without one — see ../address-cell.ts.
+      // NAME THE SESSION — but only when the box has exactly one, because
+      // `record.sessionId` on a SHARED host is whichever row the ordering
+      // preferred, not the session whose page is open. See
+      // ../backend.ts soleSessionOfSandbox and ../address-cell.ts.
+      const addressable = await soleSessionOfSandbox(record.externalId ?? sandboxId);
       const targetUrl = addressCellSession(
         previewUrl.replace(/\/$/, '') + remainingPath + queryString,
-        record.sessionId,
+        addressable,
       );
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {

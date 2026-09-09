@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=107
+// EXPECTED_PASSES=110
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -616,6 +616,34 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   check("the event stream is reachable under the name the product subscribes to",
     sse.headers.get("content-type")?.includes("text/event-stream"),
     String(sse.status) + " " + sse.headers.get("content-type"));
+
+  // THE PRODUCT'S STREAM CARRIES THE WIRE, NOT pi's RAW EVENTS.
+  //
+  // `/global/event` aliased `/events`, which pushes AgentEvents verbatim —
+  // `turn_started`, `message_start`, `text`. The web client repaints only on
+  // `message.part.delta`, so the answer arrived on the stream and rendered
+  // nothing until a transcript poll caught up. Measured end to end through the
+  // browser's own path 2026-09-09: 0 delta frames, and types `text`,
+  // `turn_started`, `agent_start`.
+  // ONE CHUNK, never .text(): an event stream has no end, so reading the whole
+  // body hangs the suite forever. The first version did exactly that.
+  const firstChunk = async (res) => {
+    const r = res.body.getReader();
+    const { value } = await r.read();
+    await r.cancel().catch(() => {});
+    return new TextDecoder().decode(value ?? new Uint8Array());
+  };
+  const wire = await h.fetch("/session/s/global/event");
+  const wireHead = await firstChunk(wire).catch(() => "");
+  check("/global/event opens the OpenCode wire — it starts with kortix.hello",
+    wireHead.startsWith("event: kortix.hello"), wireHead.slice(0, 60));
+  check("and it carries the epoch header the API reads",
+    wire.headers.get("x-kortix-epoch") !== null, String(wire.headers.get("x-kortix-epoch")));
+
+  const raw = await h.fetch("/session/s/events");
+  const rawHead = await firstChunk(raw).catch(() => "");
+  check("/events still carries the RAW harness contract, unchanged",
+    rawHead.startsWith(": connected"), rawHead.slice(0, 40));
 
   // The example moved: `/kortix/opencode/state` was the unserved route this
   // claim pointed at, and the cell serves it now — the claim noticed, which is
