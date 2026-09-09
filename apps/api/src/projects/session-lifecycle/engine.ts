@@ -12,7 +12,7 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import type { ProviderName } from '../../platform/providers';
-import { serviceKeyForExternalId } from '../../platform/service-key';
+import { serviceKeyForExternalId, serviceKeyForSession } from '../../platform/service-key';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
@@ -490,7 +490,10 @@ export async function continueSession(
       projectId: session.projectId,
       sessionId,
       externalId: awake.externalId,
-      serviceKey: await serviceKeyForExternalId(awake.externalId).catch(() => null),
+      // The SESSION's own key: on a shared cell host the box's key belongs to
+      // whichever session created it, and a turn end relayed with that token is
+      // refused 403 by /turn-stream. See platform/service-key.ts.
+      serviceKey: (await serviceKeyForSession(sessionId).catch(() => undefined)) ?? null,
       previewUrl: (await resolveSandboxIngress(awake.externalId, { port: DAEMON_PORT, transport: 'http' }).catch(() => null))?.url ?? '',
       providerHeaders: {},
     }).catch(() => {});
