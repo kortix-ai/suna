@@ -68,7 +68,8 @@ async function waitFor(url: string, init: RequestInit = {}, tries = 120): Promis
   for (let i = 0; i < tries; i++) {
     try {
       const res = await fetch(url, init);
-      if (res.ok) return res;
+      if (res.ok && (await res.clone().json() as { ok?: boolean }).ok === true) return res;
+      await res.body?.cancel();
     } catch {
       // not listening yet
     }

@@ -4,6 +4,10 @@ This contract applies to the `pi-worker` preview. It is not a production release
 Pi runs in the worker sandbox. The environment sandbox runs the execution daemon,
 files, and processes. This design uses no Durable Objects.
 
+The session lifecycle starts and stops the worker. Passive proxy retries and SSE
+reconnects cannot start it or change its lifecycle state. Explicit session start
+remains available after a stop.
+
 For a Pi session, the environment disables OpenCode startup and runs no Pi
 worker. Custom tools call the execution RPC. YAML v3 selects Pi; YAML v2 selects
 OpenCode. Existing Pi environments receive the same execution-only daemon upgrade.

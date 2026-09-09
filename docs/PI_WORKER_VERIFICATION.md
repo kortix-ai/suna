@@ -1467,7 +1467,7 @@ resources. This does not implement MCP resource discovery or subscriptions.
   call, persists exact bytes, hydrates native hooks/provider content, enforces
   private reads, and restores identical messages without a second execution.
 - Worker typecheck passes. Evidence: `/tmp/pi-mcp-resource-focused.log` and
-  `/tmp/pi-mcp-resource-types.log`. Deployed image-resource proof is pending.
+  `/tmp/pi-mcp-resource-types.log`. The deployed image-resource proof is recorded below.
 
 
 For embedded resource conversion, `pnpm test` passes all six core lanes in
@@ -1502,3 +1502,52 @@ passes on synthetic session `638095ce-68dd-4c19-b7e0-2d9af02525bf`:
 
 Evidence: `/tmp/pi-turn-recovery-live.json`, `/tmp/pi-turn-recovery-live.png`,
 and `/tmp/pi-recovery-deployed-status.log`. No main/dev/staging/production change.
+
+
+### Deployed embedded image resource proof
+
+Deployment `34336323093` succeeds at `278b28f42c9966a7cc944b321bdb6941f9ac3ea9`.
+Git, API/gateway/frontend image tags, and public health report that SHA.
+`node /tmp/pi-mcp-resource-live.mjs 278b28f42c9966a7cc944b321bdb6941f9ac3ea9`
+passes the real browser journey with a new 420×260 PNG. Its unseen text is
+`RESOURCE_9241`; the left shape is a purple triangle and the right shape is a
+yellow circle. Pi reads the new image through an embedded MCP resource. The UI
+thumbnail and viewer work. Exact private bytes and 51 messages survive restart,
+with one tool execution, 22 text deltas, and no environment.
+
+Evidence: `/tmp/pi-mcp-resource-live.json`, `/tmp/pi-mcp-resource-live.png`, and
+`/tmp/pi-resource-deployed-status.log`. Immediate stop readback passes. A later
+cleanup read detects a passive proxy restart, investigated below.
+
+## Passive SSE retries cannot own Pi lifecycle — 2026-09-09
+
+At 09:50:59 UTC the browser reconnects `/global/event` while the manual stop is
+still in flight. Daytona reports no runner. The legacy preview proxy calls
+`ensureRunning` despite the stop. The API returns stop success at 09:51:11;
+the provider starts again afterward. The turn ledger and queue remain empty.
+This is not a user `/start` request. Evidence: `/tmp/pi-cleanup-start-logs.log`.
+
+Pi workers now bypass legacy proxy wake, status healing, and error-state writes.
+The guard reads server-owned session metadata through an explicit join. It also
+recognizes incomplete Pi identities. Session lifecycle operations remain the
+only worker state writers. OpenCode and execution-environment proxy behavior
+remain unchanged. Passive traffic may update a usage timestamp; it cannot start
+a Pi worker or overwrite its lifecycle state.
+
+- Real PostgreSQL regression: four Pi cases fail before the guard. Afterward,
+  **6 pass, 0 fail**, 21 assertions, including OpenCode/environment alternatives.
+- PostgreSQL recovery and lifecycle group: **57 pass, 0 fail**, 170 assertions.
+- `pnpm test`: all six core lanes pass, **400/400 REST/CLI flows**, **818 worker
+  tests**, and seven Node artifact cases. Total 119.8 seconds; benchmark
+  `1788948312873`.
+- API typecheck passes. Full API: **9,293 pass, 82 existing skips, 0 fail**,
+  32,294 assertions; `/tmp/pi-passive-proxy-api-final.log`.
+- The first API run finds a readiness race in the confinement test. Its helper
+  now waits for `health.ok: true` instead of accepting HTTP 200 during startup.
+  The separate first-artifact timeout does not recur in the unchanged focused
+  compiler case or final full run. Its cause remains unconfirmed.
+- Focused compiled-artifact and confinement cases: **16 pass, 0 fail**,
+  89 assertions. No timeout or product assertion is relaxed.
+
+The stop race must pass on the deployed preview with the browser left open,
+concurrent SSE retries, provider-state verification, and explicit resume.

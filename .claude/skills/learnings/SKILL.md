@@ -6154,3 +6154,11 @@ install and asserts the exact version and checksum.
 **Incident:** the Pi preview restored the permission and reported native busy status, but its control-plane turn ledger was empty. A delayed completion from the previous worker also matched an older ended attempt and could promote the queue.
 **Rule:** obtain an idempotent, owner-bound turn grant before provider or tool execution. A completion from an older owner cannot close the replacement attempt or trigger terminal side effects.
 **Enforcer:** `integration-pi-turn-recovery.test.ts` verifies the real PostgreSQL grant, history, concurrency, terminal fences, and stale completion. `turn-recovery-authority.test.ts` kills real worker processes and holds or rejects the API acknowledgment before saved approval execution.
+
+
+### Passive proxy recovery must not reverse a Pi worker stop (2026-09-09)
+
+**When:** a browser stream reconnects while the provider stop is in flight.
+**Incident:** the live Pi image test returned `stopped`, then cleanup found the worker running again. At 09:50:59 UTC, `/global/event` received Daytona's no-runner response. The legacy proxy called `ensureRunning` while manual stop completed. No user start or active turn existed.
+**Rule:** Pi worker state belongs to the session lifecycle. Passive proxy requests cannot start the provider, heal the worker/session to running, or mark the worker errored. A future worker recovery path must use the same lifecycle authority as explicit start.
+**Enforcer:** `integration-pi-passive-proxy-lifecycle.test.ts` checks real PostgreSQL state and a provider spy for active, stopped, errored, and incomplete Pi identities. OpenCode and environment alternatives remain covered. `wake-deadline-guard.test.ts` checks the Pi marker fence in the normal API gate.

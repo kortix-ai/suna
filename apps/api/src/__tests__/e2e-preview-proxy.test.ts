@@ -123,12 +123,12 @@ mock.module('../shared/db', () => {
         // (a field the sandbox-row query shape shares), which would otherwise
         // misclassify it as a sandbox-table query and starve resolveOwnerRawEnv.
         const isProjectSessionQuery = fieldKeys.includes('createdBy');
-        // `wakeSandbox`'s deadline probe: a one-column projection of
+        // `wakeSandbox`'s deadline and runtime identity probe of
         // session_sandboxes. It must be classified BEFORE the loose sandbox
         // check and served a LIVE deadline, otherwise every wake in this file is
         // refused as expired and the auto-wake/retry assertions all fail. The
         // refusal path itself is covered in sandbox-proxy/wake-deadline-guard.test.ts.
-        const isDeadlineProbe = fieldKeys.length === 1 && fieldKeys[0] === 'deadlineAt';
+        const isDeadlineProbe = fieldKeys.includes('deadlineAt');
         const isSandboxQuery =
           !isDeadlineProbe &&
           !isProjectSessionQuery &&

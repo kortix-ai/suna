@@ -30,6 +30,7 @@ import {
   getProvider,
 } from '../platform/providers';
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
+import { sessionMetadataClaimsPiWorker } from '../projects/lib/session-sandbox-metadata';
 import { db } from '../shared/db';
 import { KORTIX_USER_CONTEXT_HEADER, encodeKortixUserContext } from '../shared/kortix-user-context';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
@@ -371,14 +372,18 @@ export async function wakeSandbox(externalId: string): Promise<void> {
     // rows. That leaves a box RUNNING, unreapable and unbilled: strictly worse
     // than the zombie this design deletes.
     const [live] = await db
-      .select({ deadlineAt: sessionSandboxes.deadlineAt })
+      .select({ deadlineAt: sessionSandboxes.deadlineAt, sessionMetadata: projectSessions.metadata })
       .from(sessionSandboxes)
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
       .where(
         record.runtimeKind === 'environment'
           ? eq(sessionSandboxes.sessionId, record.sessionId)
           : eq(sessionSandboxes.sandboxId, record.sandboxId),
       )
       .limit(1);
+    if (record.runtimeKind === 'worker' && sessionMetadataClaimsPiWorker(live?.sessionMetadata)) {
+      return;
+    }
     if (!live || live.deadlineAt.getTime() <= Date.now()) {
       console.log(`[PREVIEW] Wake refused for expired sandbox ${externalId}`);
       return;
@@ -441,8 +446,10 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
         sessionId: sessionSandboxes.sessionId,
         status: sessionSandboxes.status,
         metadata: sessionSandboxes.metadata,
+        sessionMetadata: projectSessions.metadata,
       })
       .from(sessionSandboxes)
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
       .where(
         and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')),
       )
@@ -465,6 +472,10 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
       .update(sessionSandboxes)
       .set({ lastUsedAt: now, updatedAt: now })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+
+    // Only the session lifecycle can change a Pi worker's state. A delayed
+    // response or SSE reconnect cannot reverse an explicit stop.
+    if (sessionMetadataClaimsPiWorker(row.sessionMetadata)) return;
 
     // Passive proxy traffic (an open tab polling opencode, a background stream
     // reconnect) must NOT heal a deliberately-stopped box back to active —
@@ -500,8 +511,9 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
 export async function markSandboxErrored(externalId: string): Promise<void> {
   try {
     const [row] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status })
+      .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status, sessionMetadata: projectSessions.metadata })
       .from(sessionSandboxes)
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
       .where(
         and(eq(sessionSandboxes.externalId, externalId), ne(sessionSandboxes.status, 'archived')),
       )
@@ -519,6 +531,7 @@ export async function markSandboxErrored(externalId: string): Promise<void> {
         );
       return;
     }
+    if (sessionMetadataClaimsPiWorker(row.sessionMetadata)) return;
     await db
       .update(sessionSandboxes)
       .set({ status: 'error', updatedAt: new Date() })
