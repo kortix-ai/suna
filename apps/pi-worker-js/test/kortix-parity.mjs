@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=92
+// EXPECTED_PASSES=95
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -757,6 +757,35 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
       names.length === 6, `${names.length} requests for n=4`);
     check("and its note claims the agentOS quantity, which the cold one must not",
       hot.note.includes("4.8 ms") && !cold.note.includes("4.8 ms"), hot.note);
+
+    // THE TAIL MUST HAVE AN OWNER. A cold sample is celld reaching an isolate
+    // plus the isolate answering; the callee reports the second half in
+    // `x-cell-ms`, so the bench can subtract it. Measured on a QUIET box, the
+    // worst of 100 cold spawns was 15062 ms — a number that says nothing at
+    // all until it is attributed.
+    const withHeader = {
+      idFromName: (n) => n,
+      get: () => ({ fetch: async () => new Response("{}", {
+        headers: { "content-type": "application/json", "x-cell-ms": "2" },
+      }) }),
+    };
+    const attributed = await (await worker.fetch(
+      new Request("http://cell/bench/spawn?n=4"), { AGENT: withHeader })).json();
+    check("a cold reading splits into dispatch and isolate, not one opaque number",
+      attributed.dispatch !== null && typeof attributed.dispatch.p50 === "number",
+      JSON.stringify(attributed.dispatch));
+    check("and the dispatch half excludes what the isolate reported",
+      attributed.dispatch.p50 <= attributed.p50, `${attributed.dispatch.p50} vs ${attributed.p50}`);
+
+    // A callee that reports nothing must not be invented a number for.
+    const noHeader = {
+      idFromName: (n) => n,
+      get: () => ({ fetch: async () => Response.json({ ok: true }) }),
+    };
+    const blind = await (await worker.fetch(
+      new Request("http://cell/bench/spawn?n=3"), { AGENT: noHeader })).json();
+    check("with no x-cell-ms there is no dispatch split, rather than a made-up one",
+      blind.dispatch === null, JSON.stringify(blind.dispatch));
   }
 }
 

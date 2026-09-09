@@ -2130,6 +2130,27 @@ export default {
     // mode, and the claims below refuse to let cold and warm blur into one
     // number.
     //
+    // THE TAIL HAS AN OWNER, AND IT IS NOT THIS WORKER. The baseline this work
+    // is judged against carries p50 74 ms and p99 681 ms — a 10x tail nobody
+    // had attributed. `dispatch` subtracts the callee's own `x-cell-ms` from
+    // each sample, so a reading says which half it was. Dev 2026-09-09:
+    //
+    //   quiet box   total p50 95  p90 302  max 705 | dispatch 94  301  705
+    //   quiet box   total p50 75  p90 199  max 990 | dispatch 75  199  987
+    //   shared host total p50 85  p90 219  max 629 | dispatch 84  217  628
+    //
+    // Dispatch is within 1-3 ms of the total in every row, tail included. The
+    // isolate's own work is ~1 ms — the warm number — and everything else is
+    // celld getting to it. So nothing in this worker can move a cold spawn:
+    // this worker is 1 ms of it.
+    //
+    // TWO THINGS THE FIRST ATTEMPT GOT WRONG. The tail is NOT other tenants: a
+    // box with nothing else on it produced 705, 990 and 649 ms maxima against
+    // the shared host's 629, 501 and 625, and one first run on a brand-new node
+    // hit 15062 ms. And at n=100 the reported "p99" IS the maximum — index 99
+    // of 100 — so it is the worst sample, not a percentile anyone should quote
+    // as one.
+    //
     // AND THE OTHER HALF OF THE COMPARISON, measured for the first time on
     // 2026-09-09 rather than restated: what one cell costs in memory.
     //
@@ -2180,6 +2201,7 @@ export default {
       // number outlives its method.
       const warm = url.searchParams.get("warm") === "1";
       const t = [];
+      const d = [];   // dispatch: the part of each sample that was not the isolate
       const fixed = `bench-warm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       if (warm) {
         // Pay for the isolate once, outside the clock. Twice, because the
@@ -2193,13 +2215,33 @@ export default {
           ? fixed
           : `bench-${Date.now().toString(36)}-${i}-${Math.random().toString(36).slice(2, 8)}`;
         const t0 = performance.now();
-        await env.AGENT.get(env.AGENT.idFromName(name)).fetch(new Request(`http://cell${stop}`));
-        t.push(performance.now() - t0);
+        const r = await env.AGENT.get(env.AGENT.idFromName(name)).fetch(new Request(`http://cell${stop}`));
+        const took = performance.now() - t0;
+        t.push(took);
+        // WHOSE MILLISECONDS THESE ARE. The callee sets `x-cell-ms` (see the
+        // wrapper on this class's fetch), so each sample splits into the
+        // isolate's own work and everything celld did to reach it. Without
+        // this the tail is a number with no owner: a 15 s cold sample on an
+        // idle box says nothing about whether the isolate was slow or whether
+        // getting to it was.
+        // `Number(null)` is 0, not NaN, so a MISSING header would have been
+        // counted as an isolate that answered instantly and the whole sample
+        // attributed to dispatch. Read the header first, convert second.
+        const raw = r.headers.get("x-cell-ms");
+        const cm = raw === null ? NaN : Number(raw);
+        if (Number.isFinite(cm)) d.push(Math.max(0, took - cm));
       }
       t.sort((a, b) => a - b);
       const at = (q) => Math.round(t[Math.min(t.length - 1, Math.floor(t.length * q))] * 100) / 100;
+      const ds = [...d].sort((a, b) => a - b);
+      const dat = (q) => Math.round(ds[Math.min(ds.length - 1, Math.floor(ds.length * q))] * 100) / 100;
       return Response.json({
         n, stop, mode: warm ? "warm" : "cold",
+        // The same percentiles over the dispatch half, so the tail can be
+        // attributed rather than described.
+        dispatch: d.length
+          ? { p50: dat(0.5), p90: dat(0.9), max: Math.round(Math.max(...d) * 100) / 100 }
+          : null,
         p50: at(0.5), p90: at(0.9), p99: at(0.99),
         min: Math.round(t[0] * 100) / 100,
         max: Math.round(t[t.length - 1] * 100) / 100,
