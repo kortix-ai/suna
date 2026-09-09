@@ -259,5 +259,30 @@ async function loadGrantForRunningAgent(
   }
 
   const env = secretGrantEnvForRunningAgent(loaded, runningAgent);
-  return { grant: grantFromLoadedAgents(runningAgent, loaded), env };
+  return { grant: withGrantProvenance(grantFromLoadedAgents(runningAgent, loaded), loaded), env };
+}
+
+/**
+ * Stamp WHERE a grant came from onto the grant itself.
+ *
+ * The re-mint policy (`session-token-grant.ts`) compares a freshly derived
+ * grant against the one the token already holds. Without provenance it can
+ * only compare the two lists — and a list derived from a stale or glitched
+ * manifest read looks exactly like a deliberate narrowing. With the blob sha
+ * and commit attached, "same manifest, different grant" and "older commit,
+ * narrower grant" are both recognisable as reads that must NOT rewrite the
+ * token. A `null` grant (unrestricted) carries nothing: there is no row to
+ * protect.
+ */
+export function withGrantProvenance(
+  grant: AgentGrant | null,
+  loaded: Pick<LoadedAgents, 'manifest'>,
+): AgentGrant | null {
+  if (!grant) return null;
+  return {
+    ...grant,
+    manifestRevision: loaded.manifest?.revision ?? null,
+    manifestCommit: loaded.manifest?.commit ?? null,
+    resolvedAt: new Date().toISOString(),
+  };
 }

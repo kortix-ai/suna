@@ -37,10 +37,10 @@ export function useRefreshReferralCode() {
     onSuccess: (data) => {
       queryClient.setQueryData(REFERRALS_QUERY_KEYS.code, data);
       queryClient.invalidateQueries({ queryKey: REFERRALS_QUERY_KEYS.stats });
-      successToast(tI18nComplete('text15be258f884e'));
+      successToast(t('codeRefreshed'));
     },
     onError: () => {
-      errorToast(tI18nComplete('text9a076574cb80'));
+      errorToast(t('refreshFailed'));
     },
   });
 }
@@ -125,7 +125,7 @@ export function useSendReferralEmails() {
           );
         }
       } else {
-        successToast(tI18nComplete('textd9016ff54bb6'));
+        successToast(t('emailSent'));
       }
     },
     onError: (error: any) => {

@@ -127,12 +127,17 @@ test.describe
     test('an owner starts checkout, reads the active plan, buys credits, and opens billing management', async ({
       page,
     }) => {
-      const billingUrl = `/accounts/${accountId}?tab=billing`;
+      // The account hub is a modal over a page, not a route (2026-09-08), so
+      // billing needs a host. `/new` is the one stable `(app)` route a
+      // brand-new account with NO project can sit on: `/projects` auto-creates
+      // a first project and `router.replace`s into it, which would drop the
+      // query and never open the hub.
+      const billingUrl = `/new?accountId=${accountId}&accountTab=billing`;
       await installBrowserSessionDirect(page, session, billingUrl, authOptions);
       // The pane heading is "Plan", not "Billing". `?tab=billing` is still the
-      // route, and "Billing" is still the nav GROUP label, but the pane itself
+      // param, and "Billing" is still the nav GROUP label, but the pane itself
       // renders `PANE_META.billing.title` = 'Plan' as an `<h2>`
-      // (`app/(app)/accounts/[id]/page.tsx:224` and `:577`). "Billing" survives
+      // (`features/accounts/hub/account-hub-content.tsx`). "Billing" survives
       // only as a group label, which is not a heading — so the old locator
       // could never resolve and failed at 0 ms on every release run.
       await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();

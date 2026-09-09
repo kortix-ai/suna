@@ -45,6 +45,8 @@ import {
   expiresAtIso,
   expiryOptions,
 } from '@/components/iam/api-key-expiry';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { type ApiKeyRow, type ApiKeyStatus, buildApiKeyRows } from '@/components/iam/api-key-rows';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -216,11 +218,11 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   const revokeMutation = useMutation({
     mutationFn: (row: ApiKeyRow) => revokeAccountToken(row.id, accountId),
     onSuccess: () => {
-      successToast(tI18nComplete('text096e0be6bb57'));
+      successToast(t('keyRevoked'));
       queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId ?? '') });
       setRevokeTarget(null);
     },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete('text4840dd3bd303')),
+    onError: (err: Error) => errorToast(err.message || t('revokeFailed')),
   });
 
   const rows = buildApiKeyRows({
@@ -359,12 +361,12 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
         {t.rich('serviceAccountTokens', {
           link: (chunks) =>
             accountId ? (
-              <Link
-                href={`/accounts/${accountId}?tab=tokens`}
+              <HubLink
+                to={hubTarget(accountId, { tab: 'tokens' })}
                 className="text-foreground underline underline-offset-2"
               >
                 {chunks}
-              </Link>
+              </HubLink>
             ) : (
               <>{chunks}</>
             ),
@@ -475,7 +477,7 @@ function CreateApiKeyDialog({
       onCreated();
       setCreated(result);
     },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete('textc8e60f01cd4e')),
+    onError: (err: Error) => errorToast(err.message || t('createFailed')),
   });
 
   function close() {

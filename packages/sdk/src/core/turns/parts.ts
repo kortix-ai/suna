@@ -85,7 +85,7 @@ export function getPartText(part: PartLike): string | undefined {
 // ============================================================================
 
 /**
- * Check if a file part is an image or PDF attachment.
+ * Check if a file part is a model-native image or PDF attachment.
  * Matches SolidJS `isAttachment()` — session-turn.tsx:128
  */
 export function isAttachment<P extends PartLike>(part: P): part is P & { type: 'file' } {
@@ -103,11 +103,11 @@ export function splitUserParts<P extends PartLike>(
 } {
   const attachments: Array<P & { type: 'file' }> = [];
   const stickyParts: P[] = [];
-  for (const p of parts) {
-    if (isAttachment(p)) {
-      attachments.push(p);
+  for (const part of parts) {
+    if (isFilePart(part)) {
+      attachments.push(part);
     } else {
-      stickyParts.push(p);
+      stickyParts.push(part);
     }
   }
   return { attachments, stickyParts };

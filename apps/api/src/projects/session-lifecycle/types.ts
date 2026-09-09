@@ -119,6 +119,18 @@ export interface ContinueSessionCommand {
    * that hold no transcript and therefore cannot place an id correctly.
    */
   wireMessageId?: string;
+  /** Stable lifecycle row identity used only for deterministic workspace paths. */
+  materializationKey?: string;
+  /** Skip legacy first-message repair only for the pending-first row itself. */
+  isPendingFirstPrompt?: boolean;
+}
+
+/** JSON metadata used to gate the one-time repair of pre-materialization prompts. */
+export interface LegacyInlineAttachmentRepairMetadata extends Record<string, unknown> {
+  pending_prompt?: {
+    attachment_names?: unknown;
+  };
+  legacy_inline_attachments_repaired_at?: unknown;
 }
 
 export interface StartSessionCommand {
@@ -174,7 +186,12 @@ export type SessionDeliveryOutcome =
   | 'pending'
   | 'unreachable'
   | 'no-session'
-  | 'failed';
+  | 'failed'
+  /** The runtime ACCEPTED the prompt and then never wrote the message. Not a
+   *  retry under the same key: the proxy's dedupe claim would answer that
+   *  `duplicate` and the row would close as delivered again. The row goes
+   *  back on the queue with a fresh attempt, a fresh key and a fresh wire id. */
+  | 'not-landed';
 
 export interface SessionLifecycleResult {
   status: SessionLifecycleStatus;

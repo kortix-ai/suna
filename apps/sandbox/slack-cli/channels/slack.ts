@@ -18,6 +18,33 @@ import {
 // apps/api owns the streamed message; here we just hand it the content.
 //   detail → subtitle line under the new task's title (in_progress state).
 //   output → result line on the *previous* task as it transitions to complete.
+// What a relay that did NOT reach the thread reports. `reason` is the API's
+// own code (see apps/api channels/slack/turn.ts TurnRelayReason) or one of the
+// local ones below; `hint` is the one line an agent needs to act on it.
+type RelayOutcome =
+  | { ok: true }
+  | { ok: false; reason: string; hint: string; status?: number };
+
+const RELAY_HINTS: Record<string, string> = {
+  no_open_turn:
+    'No Slack turn is open for this run (the prompt did not come from Slack, or the turn was already closed). To post anyway, use `slack send --channel <id> --thread <ts>`.',
+  turn_finalized:
+    'This turn was already answered — one `slack send` per turn. Further progress is not shown; post a new message with `--channel/--thread` if there is more to say.',
+  finalize_lost_race:
+    'The turn was closed a moment ago by the runtime. Post the answer with `slack send --channel <id> --thread <ts>` if it did not land.',
+  stream_open_failed:
+    'Slack refused to open the live plan block. Continue working; post the answer with `slack send` when done.',
+  no_slack_thread: 'This session has no Slack thread to fall back to.',
+  answer_already_posted: 'This exact answer was already posted to the thread.',
+  post_failed: 'Slack rejected the post. Retry once; if it keeps failing, report it in the thread with `--channel/--thread`.',
+  missing_session_context:
+    'KORTIX_PROJECT_ID / KORTIX_SESSION_ID are not set in this environment, so there is no turn to relay into.',
+};
+
+function relayHint(reason: string, fallback: string): string {
+  return RELAY_HINTS[reason] ?? fallback;
+}
+
 async function relayTurnStream(
   kind: 'step' | 'answer',
   text: string,
@@ -27,23 +54,43 @@ async function relayTurnStream(
     sources?: Array<{ url: string; text: string }>;
     blocks?: unknown[];
   } = {},
-): Promise<boolean> {
+): Promise<RelayOutcome> {
   const projectId = kortixProjectId();
   const sessionId = kortixSessionId();
-  if (!projectId || !sessionId) return false;
+  if (!projectId || !sessionId) {
+    return {
+      ok: false,
+      reason: 'missing_session_context',
+      hint: RELAY_HINTS.missing_session_context,
+    };
+  }
   try {
-    const r = await kortixPost<{ ok?: boolean }>(`/projects/${projectId}/turn-stream`, {
-      session_id: sessionId,
-      kind,
-      text,
-      ...(extras.detail ? { detail: extras.detail } : {}),
-      ...(extras.output ? { output: extras.output } : {}),
-      ...(extras.sources && extras.sources.length > 0 ? { sources: extras.sources } : {}),
-      ...(extras.blocks && extras.blocks.length > 0 ? { blocks: extras.blocks } : {}),
-    });
-    return r?.ok === true;
-  } catch {
-    return false;
+    const r = await kortixPost<{ ok?: boolean; reason?: string }>(
+      `/projects/${projectId}/turn-stream`,
+      {
+        session_id: sessionId,
+        kind,
+        text,
+        ...(extras.detail ? { detail: extras.detail } : {}),
+        ...(extras.output ? { output: extras.output } : {}),
+        ...(extras.sources && extras.sources.length > 0 ? { sources: extras.sources } : {}),
+        ...(extras.blocks && extras.blocks.length > 0 ? { blocks: extras.blocks } : {}),
+      },
+    );
+    if (r?.ok === true) return { ok: true };
+    const reason = typeof r?.reason === 'string' && r.reason ? r.reason : 'not_relayed';
+    return { ok: false, reason, hint: relayHint(reason, 'The relay was not delivered.') };
+  } catch (err) {
+    // Never collapse an HTTP failure into "no turn". A 401/403/5xx/timeout is a
+    // different problem with a different fix, and the agent must see it.
+    const message = err instanceof Error ? err.message : String(err);
+    const status = (err as { status?: number })?.status;
+    return {
+      ok: false,
+      reason: 'relay_request_failed',
+      hint: `The turn-stream request failed: ${message}. This is an API/auth problem, not a missing turn — retry once, then report it in the thread with \`slack send --channel <id> --thread <ts>\`.`,
+      ...(status ? { status } : {}),
+    };
   }
 }
 
@@ -437,8 +484,20 @@ async function main(): Promise<void> {
       const output = flags.output?.trim() || undefined;
       const sources = readSourcesFlag(flags);
       const relayed = await relayTurnStream('step', text, { detail, output, sources });
-      out({ ok: true, relayed });
-      break;
+      if (relayed.ok) {
+        out({ ok: true, relayed: true });
+        break;
+      }
+      // Loud on purpose. `ok: true, relayed: false` made a dropped checkpoint
+      // indistinguishable from a delivered one, so an agent could stream a
+      // whole run into nothing and believe it was seen
+      // (INC-2026-09-08-CONNECTOR-GATEWAY, S3). Exit non-zero with the reason.
+      throw new CliError(
+        `Progress step was not relayed to Slack (${relayed.reason}). ${relayed.hint}`,
+        'STEP_NOT_RELAYED',
+        1,
+        { relayed: false, reason: relayed.reason, ...(relayed.status ? { status: relayed.status } : {}) },
+      );
     }
     case 'send': {
       const text = readTextFlag(flags) ?? args[0];
@@ -455,11 +514,16 @@ async function main(): Promise<void> {
         const relayed = await relayTurnStream('answer', fallbackText, {
           blocks: blocks && blocks.length > 0 ? blocks : undefined,
         });
-        if (relayed) {
+        if (relayed.ok) {
           out({ ok: true, delivered: 'stream', mode: blocks ? 'blocks' : 'text' });
           break;
         }
-        throw new CliError('No active Slack turn to answer. To post to a channel, pass --channel.');
+        throw new CliError(
+          `The answer was not delivered into a Slack turn (${relayed.reason}). ${relayed.hint}`,
+          'ANSWER_NOT_RELAYED',
+          1,
+          { reason: relayed.reason, ...(relayed.status ? { status: relayed.status } : {}) },
+        );
       }
       validateRequired(flags, 'channel');
       if (!text && !flags.file && !blocks) {

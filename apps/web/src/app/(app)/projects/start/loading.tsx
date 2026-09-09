@@ -1,4 +1,5 @@
-import { useTranslations } from '@/i18n/use-translations';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
+
 /**
  * Navigation Suspense boundary for /projects/start.
  *
@@ -11,35 +12,14 @@ import { useTranslations } from '@/i18n/use-translations';
  *     and every arrival pays a full server round-trip — which is what lets a
  *     bad RSC response turn the click into a full document load.
  *
- * Deliberately imports nothing: plain markup keeps the prefetched payload
- * small, which is the entire point of the boundary. It mirrors
- * `ProjectStartSkeleton` in `page.tsx` so the handover does not shift layout.
+ * A skeleton used to stand here — a header bar, two title bars, a composer
+ * block and three chips. It was guessing at a page this route never renders:
+ * the door resolves to `/projects/<id>` and the real project chrome replaces
+ * it, so the fake layout only ever flashed a shape the user was not about to
+ * get. `ProjectPendingScreen` is the one frame every "opening a project"
+ * surface shares, so the boundary, the client resolve below it, and a hard
+ * refresh of the project itself are now a single unbroken paint.
  */
 export default function ProjectStartLoading() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <div className="flex min-h-screen flex-col" aria-busy="true" aria-live="polite">
-      <span className="sr-only">{tI18nComplete.raw('text9498be620d80')}</span>
-      <div className="w-full border-b">
-        <div className="kx-app-header px-mobile mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 py-4 sm:gap-3">
-          <div className="bg-muted-foreground/10 h-5 w-32 animate-pulse rounded-md" />
-          <div className="bg-muted-foreground/10 h-8 w-20 animate-pulse rounded-full" />
-        </div>
-      </div>
-      <main className="bg-background px-mobile flex flex-1 items-center py-10 sm:py-12">
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-          <div className="space-y-3">
-            <div className="bg-muted-foreground/10 mx-auto h-9 w-64 animate-pulse rounded-md" />
-            <div className="bg-muted-foreground/10 mx-auto h-5 w-96 max-w-full animate-pulse rounded-md" />
-          </div>
-          <div className="bg-muted-foreground/10 h-32 w-full animate-pulse rounded-lg" />
-          <div className="flex flex-wrap justify-center gap-2">
-            <div className="bg-muted-foreground/10 h-8 w-28 animate-pulse rounded-full" />
-            <div className="bg-muted-foreground/10 h-8 w-36 animate-pulse rounded-full" />
-            <div className="bg-muted-foreground/10 h-8 w-24 animate-pulse rounded-full" />
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+  return <ProjectPendingScreen />;
 }

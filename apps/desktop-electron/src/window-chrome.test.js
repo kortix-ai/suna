@@ -10,6 +10,11 @@ const {
 } = require('./window-chrome');
 
 describe('desktop window chrome', () => {
+  test('does not turn product navigation containers into window drag regions', () => {
+    expect(DESKTOP_CHROME_JS).not.toContain('[role="tablist"]');
+    expect(DESKTOP_CHROME_JS).not.toContain('[data-sidebar="sidebar"]');
+    expect(DESKTOP_CHROME_JS).not.toContain('[data-sidebar="header"]');
+  });
   test('keeps interactive title-bar elements outside drag regions', () => {
     expect(DESKTOP_CHROME_JS).toContain('button,a,input,textarea');
     expect(DESKTOP_CHROME_JS).toContain('-webkit-app-region:no-drag');

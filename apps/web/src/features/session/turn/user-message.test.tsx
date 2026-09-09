@@ -312,6 +312,231 @@ describe('UserMessage timestamp', () => {
   });
 });
 
+describe('UserMessage persisted attachments', () => {
+  test('renders every persisted file part in order without losing the timestamp', () => {
+    const persisted = {
+      info: {
+        id: 'message-files',
+        role: 'user',
+        time: { created: Date.parse('2026-09-01T18:58:54.410Z') },
+      },
+      parts: [
+        {
+          id: 'part-text',
+          messageID: 'message-files',
+          type: 'text',
+          text: 'Inspect these files.',
+        },
+        {
+          id: 'part-zip',
+          messageID: 'message-files',
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+        {
+          id: 'part-markdown',
+          messageID: 'message-files',
+          type: 'file',
+          mime: 'text/markdown',
+          filename: 'README.md',
+          url: 'data:text/markdown;base64,IyBSRUFETUU=',
+        },
+        {
+          id: 'part-png',
+          messageID: 'message-files',
+          type: 'file',
+          mime: 'image/png',
+          filename: 'shot.png',
+          url: 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      ],
+    } as MessageWithParts;
+
+    const html = render(false, persisted);
+    expect(html).toContain('bundle.zip');
+    expect(html).toContain('README.md');
+    expect(html).toContain('shot.png');
+    expect(html.match(/rounded-md border/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(html).toMatch(/datetime="2026-09-01T18:58:54.410Z"/i);
+    expect(html.indexOf('bundle.zip')).toBeLessThan(html.indexOf('README.md'));
+    expect(html.indexOf('README.md')).toBeLessThan(html.indexOf('shot.png'));
+  });
+
+  // The 2026-09-04 incident, rendered. Two SVG logos plus a PDF used to reach
+  // OpenCode as inline image parts; the SVGs failed to decode, `prompt_async`
+  // threw, and NO message was written — so the transcript showed a spinner and
+  // nothing else, text included. The SVGs now arrive as materialized `<file>`
+  // references beside the still-native PDF, and all three must be visible with
+  // the prompt text intact.
+  test('renders the undecodable-image batch that used to delete the message', () => {
+    const persisted = {
+      info: {
+        id: 'message-svg-batch',
+        role: 'user',
+        time: { created: Date.parse('2026-09-04T13:27:55.967Z') },
+      },
+      parts: [
+        { id: 'p-text', messageID: 'message-svg-batch', type: 'text', text: 'HII' },
+        {
+          id: 'p-svg-1',
+          messageID: 'message-svg-batch',
+          type: 'text',
+          text: '<file path="/workspace/uploads/.kortix-inbox/cmd/1-Jay Suthar.svg" mime="image/svg+xml" filename="Jay Suthar.svg">uploaded</file>',
+        },
+        {
+          id: 'p-svg-2',
+          messageID: 'message-svg-batch',
+          type: 'text',
+          text: '<file path="/workspace/uploads/.kortix-inbox/cmd/2-Jay Suthar@2x.svg" mime="image/svg+xml" filename="Jay Suthar@2x.svg">uploaded</file>',
+        },
+        {
+          id: 'p-pdf',
+          messageID: 'message-svg-batch',
+          type: 'file',
+          mime: 'application/pdf',
+          filename: 'Account Settings _ Kortix Slack.pdf',
+          url: 'data:application/pdf;base64,JVBERi0=',
+        },
+      ],
+    } as MessageWithParts;
+
+    const html = render(false, persisted);
+    expect(html).toContain('HII');
+    expect(html).toContain('Jay Suthar.svg');
+    expect(html).toContain('Jay Suthar@2x.svg');
+    expect(html).toContain('Account Settings _ Kortix Slack.pdf');
+    // Raw XML must never leak into the bubble as text.
+    expect(html).not.toContain('&lt;file path=');
+    // Attached order is send order.
+    expect(html.indexOf('Jay Suthar.svg')).toBeLessThan(html.indexOf('Jay Suthar@2x.svg'));
+    expect(html.indexOf('Jay Suthar@2x.svg')).toBeLessThan(
+      html.indexOf('Account Settings _ Kortix Slack.pdf'),
+    );
+  });
+
+  // The runtime streams the text part first and the file parts seconds later.
+  // The names the preview promised fill the gap as pending tiles, and the
+  // strip says so — instead of blinking out (review finding, 2026-09-05: the
+  // earlier fix held a SECOND bubble over this one).
+  test('draws promised-but-unarrived files as pending tiles on the real message', () => {
+    const streaming = {
+      info: { id: 'message-streaming', role: 'user', time: { created: Date.parse('2026-09-05T22:00:00.000Z') } },
+      parts: [
+        { id: 'p-text', messageID: 'message-streaming', type: 'text', text: 'REPRO' },
+        { id: 'p-png', messageID: 'message-streaming', type: 'file', mime: 'image/png', filename: 'tiny.png', url: 'data:image/png;base64,iVBORw0KGgo=' },
+      ],
+    } as MessageWithParts;
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <UserMessage
+            message={streaming}
+            sessionId="s"
+            ownsPlan={false}
+            pendingAttachments={[
+              { filename: 'tiny.png', mime: 'image/png' },
+              { filename: 'logo.svg', mime: 'image/svg+xml' },
+              { filename: 'doc.pdf', mime: 'application/pdf' },
+            ]}
+            uploadStatus={{ state: 'uploading' }}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('REPRO');
+    expect(html).toContain('logo.svg');
+    expect(html).toContain('doc.pdf');
+    // tiny.png arrived as a real part — it is drawn ONCE, not doubled by its name.
+    expect(html.split('tiny.png').length - 1).toBe(
+      renderToStaticMarkup(
+        <QueryClientProvider client={new QueryClient()}>
+          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+            <UserMessage message={streaming} sessionId="s" ownsPlan={false} />
+          </NextIntlClientProvider>
+        </QueryClientProvider>,
+      ).split('tiny.png').length - 1,
+    );
+    expect(html).not.toContain('Uploading');
+    expect(html).toContain('animate-spinner-orbit');
+  });
+
+  // The store swaps the optimistic copy for the runtime's echo and the parts
+  // stream back in over ~176 ms; for those frames this message has NO parts.
+  // Once the boot stand-in has stepped aside (a latch — see
+  // `resolveFirstPromptHandover`), this component is the only thing on screen
+  // for the prompt, so it draws what the sender knew: the text and the files.
+  // Left to its own parts it blanked, and the stand-in popped back in front
+  // at full opacity — "the same message twice, then it vanishes" (2026-09-06).
+  test('keeps the bubble and the promised tiles through a frame with no parts', () => {
+    const swapping = {
+      info: { id: 'message-swapping', role: 'user', time: { created: Date.parse('2026-09-06T00:00:00.000Z') } },
+      parts: [],
+    } as unknown as MessageWithParts;
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <UserMessage
+            message={swapping}
+            sessionId="s"
+            ownsPlan={false}
+            pendingText="FLICKER"
+            pendingAttachments={[
+              { filename: 'tiny.png', mime: 'image/png' },
+              { filename: 'doc.pdf', mime: 'application/pdf' },
+            ]}
+            uploadStatus={{ state: 'uploading' }}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('FLICKER');
+    expect(html).toContain('tiny.png');
+    expect(html).toContain('doc.pdf');
+    expect(html).not.toContain('Uploading');
+    expect(html).toContain('animate-spinner-orbit');
+  });
+
+  test('keeps workspace references before a later native file after reload', () => {
+    const persisted = {
+      info: {
+        id: 'message-mixed-files',
+        role: 'user',
+        time: { created: Date.parse('2026-09-02T10:15:30.000Z') },
+      },
+      parts: [
+        {
+          id: 'part-reference-one',
+          messageID: 'message-mixed-files',
+          type: 'text',
+          text: 'Review these files.\n<file path="/workspace/README.md" mime="text/markdown" filename="README.md">README.md</file>',
+        },
+        {
+          id: 'part-reference-two',
+          messageID: 'message-mixed-files',
+          type: 'text',
+          text: '<file path="/workspace/report.pdf" mime="application/pdf" filename="report.pdf">report.pdf</file>',
+        },
+        {
+          id: 'part-native-image',
+          messageID: 'message-mixed-files',
+          type: 'file',
+          mime: 'image/png',
+          filename: 'shot.png',
+          url: 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      ],
+    } as MessageWithParts;
+
+    const html = render(false, persisted);
+    expect(html).toContain('Review these files.');
+    expect(html).not.toContain('&lt;file path=');
+    expect(html.indexOf('README.md')).toBeLessThan(html.indexOf('report.pdf'));
+    expect(html.indexOf('report.pdf')).toBeLessThan(html.indexOf('shot.png'));
+  });
+});
+
 describe('UserMessage renders the plan it owns', () => {
   /**
    * The plan card is the only surface left for session todos ON MOBILE:

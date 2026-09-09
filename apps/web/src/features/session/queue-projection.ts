@@ -22,6 +22,10 @@ export interface QueueRow {
   id: string;
   text: string;
   lastError?: string;
+  /** The row's files, by name and type only — see `projectQueueRows`. */
+  attachments?: ReadonlyArray<{ filename: string; mime: string }>;
+  /** `uploading` while the row is undelivered, `failed` with the row's error. */
+  uploadStatus?: { state: 'uploading' } | { state: 'failed'; message: string };
 }
 
 export interface QueueProjection {
@@ -54,10 +58,27 @@ export function projectQueueRows(input: {
   let held = false;
 
   for (const prompt of input.prompts) {
+    const attachments = prompt.attachments ?? [];
     const row: QueueRow = {
       id: prompt.prompt_id,
       text: prompt.text,
       ...(prompt.last_error ? { lastError: prompt.last_error } : {}),
+      // The row's files, by name — the only thing a bubble can draw for bytes
+      // that are still travelling to the box. On a WARM box the transcript
+      // component mounts within seconds and this list is what stands in for
+      // the message until the runtime echoes it; drawn text-only, a send of
+      // three files read as a send of none (2026-09-04, browser-measured).
+      ...(attachments.length > 0
+        ? {
+            attachments,
+            // `state`, never `last_error` alone — a queued row can carry a
+            // stale error from an attempt the server is about to retry.
+            uploadStatus:
+              prompt.state === 'failed'
+                ? ({ state: 'failed', message: prompt.last_error ?? 'Upload failed' } as const)
+                : ({ state: 'uploading' } as const),
+          }
+        : {}),
     };
     if (prompt.reason === 'held') held = true;
     if (prompt.state === 'failed') {

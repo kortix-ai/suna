@@ -1,5 +1,7 @@
 'use client';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // SCIM provisioning card on the Settings tab. Two things:
 //   1. Surface the per-account SCIM base URL the IdP needs to configure.
@@ -25,7 +27,6 @@ import {
   UsersIcon as Users,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -249,9 +250,9 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
           // Step-by-step Directory Sync setup per IdP (mirrors the SSO
           // wizard) — mints the token and hands over the Tenant URL inline.
           <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link href={`/accounts/${accountId}/scim-setup`}>
+            <HubLink to={hubTarget(accountId, { tab: 'identity', setup: 'scim' })}>
               {tI18nComplete.raw('text8ef7823ca89b')}
-            </Link>
+            </HubLink>
           </Button>
         )}
       </div>
@@ -385,12 +386,16 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                       <span className="w-24 shrink-0">{g.name.split(' (')[0]}</span>
                       <span className="text-foreground min-w-0 flex-1">
                         {g.config.startSyncHint}{' '}
-                        <Link
-                          href={`/accounts/${accountId}/scim-setup?provider=${g.id}`}
+                        <HubLink
+                          to={hubTarget(accountId, {
+                            tab: 'identity',
+                            setup: 'scim',
+                            provider: g.id,
+                          })}
                           className="text-muted-foreground hover:text-foreground underline underline-offset-2"
                         >
                           {tI18nComplete.raw('text8dd65d0952ed')}
-                        </Link>
+                        </HubLink>
                       </span>
                     </div>
                   ))}

@@ -2,7 +2,7 @@
 
 import { errorToast } from '@/components/ui/toast';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { attachedFilesToDataUrlParts } from '@/features/session/uploaded-file-refs';
+import { stageFirstPromptAttachments } from '@/features/session/uploaded-file-refs';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
@@ -126,9 +126,9 @@ export default function ProjectIndexPage() {
       // API turns this whole pending_prompt into a durable inbox row in the
       // same transaction as the session, so the message survives a closed tab
       // from this moment on. Over the cap, the refusal names the way out.
-      let parts: Awaited<ReturnType<typeof attachedFilesToDataUrlParts>>;
+      let parts: Awaited<ReturnType<typeof stageFirstPromptAttachments>>;
       try {
-        parts = await attachedFilesToDataUrlParts(files);
+        parts = await stageFirstPromptAttachments(files);
       } catch (error) {
         errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'));
         setSending(false);
