@@ -555,6 +555,25 @@ const envSchema = z.object({
   // OFF by default because a shared box changes what ending one session may do
   // to another: the reaper stops a box when its session is finished and nothing
   // yet teaches it that a host is shared. See cell-host-platinum.ts.
+  //
+  // AND BECAUSE THE WEB CLIENT CANNOT NAME ITS SESSION. It reaches the agent
+  // through the in-box path — `/v1/p/<box>/8000/global/event`, `/session`,
+  // `/agent`, `/command` — and those URLs carry no session. A cell resolves an
+  // unaddressed request from the node's KORTIX_SESSION_ID, which on a shared
+  // host is whoever CREATED the box. So the second session on a host is served
+  // the first one's event stream and conversation, or refused.
+  //
+  // Measured on dev 2026-09-09 against a real user session: the box declared
+  // CELLD_VAR_KORTIX_SESSION_ID=8e211e7c while 8f95b623 also lived on it, every
+  // in-box call answered 503, and the proxy read that as "port not ready" and
+  // retried four times per call. The browser fell back to polling `/turn`,
+  // `/prompts` and `/audit` every 7-15 s — 57, 39 and 39 requests in half an
+  // hour — which is what a user reports as the session being unusably slow.
+  //
+  // Turning it on again needs the client to name its session on those calls (a
+  // `?c=` the proxy already forwards), or those routes moved onto the API's own
+  // session-scoped equivalents, which exist and work:
+  // GET /v1/projects/:p/sessions/:s/events and .../open-bundle.
   KORTIX_CELL_SHARED_HOST_ENABLED: optBoolUnset,
   // THIS DEPLOYMENT RUNS PI. On an environment that exists to run the pi
   // worker — pi-js.kortix.com is one — the per-project `pi_worker` flag is
