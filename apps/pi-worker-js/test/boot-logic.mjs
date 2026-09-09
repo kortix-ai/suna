@@ -4,9 +4,9 @@
 // never connected (every boot route 404), and every message showed twice (the
 // transcript read named messages by row number while the stream had named
 // them by wire id, and painted pi's thinking as a visible part).
-// EXPECTED_PASSES=26
+// EXPECTED_PASSES=28
 import { bootAnswer, isBootRoute, configModel, agentNameFrom } from "../src/opencode-boot.js";
-import { transcriptMessages, partType, messageIdFor, sortableLegacyId } from "../src/transcript-read.js";
+import { transcriptMessages, partType, messageIdFor, legacyIdAfter } from "../src/transcript-read.js";
 
 let bad = 0;
 const check = (name, ok, detail = "") => {
@@ -51,22 +51,28 @@ const check = (name, ok, detail = "") => {
 
 {
   const rows = [
-    { i: 1, role: "user", json: JSON.stringify({ role: "user", content: [{ type: "text", text: "suppp" }] }), ts: 10, wire_id: "msg_0879abc" },
+    { i: 1, role: "user", json: JSON.stringify({ role: "user", content: [{ type: "text", text: "suppp" }] }), ts: 10, wire_id: "msg_088088c790015gYS8fAEf15ugc" },
     { i: 2, role: "assistant", json: JSON.stringify({ role: "assistant", content: [{ type: "thinking", thinking: "the user greets" }, { type: "text", text: "sup!" }] }), ts: 20, wire_id: "msg_cell_00000001" },
     { i: 3, role: "assistant", json: JSON.stringify({ role: "assistant", content: [{ type: "text", text: "old row" }] }), ts: 30 },
   ];
   const out = transcriptMessages(rows, "s1");
   check("a user message is named by the id the client sent — the optimistic bubble reconciles",
-    out[0].info.id === "msg_0879abc" && out[0].parts[0].messageID === "msg_0879abc", JSON.stringify(out[0]));
-  // A legacy counter id is re-expressed where it happened in time, so the
-  // client's id ordering agrees with the clock: user, assistant, user, assistant.
-  const legacy = sortableLegacyId("msg_cell_00000001", 20);
-  check("a legacy msg_cell id is named by its row's time on read — 12 hex of the client's clock, then a stable tail",
-    /^msg_[0-9a-f]{12}cell0000000001$/.test(legacy) && out[1].info.id === legacy && out[1].parts.every((p) => p.messageID === legacy), `${legacy} ${out[1].info.id}`);
-  check("and it sorts between the user ids around it, by id, exactly as by time",
-    (() => { const a = "msg_" + ((BigInt(10 - 120000) * 0x1000n) & 0xffffffffffffn).toString(16).padStart(12, "0") + "abcdefghijklmn";
-             const b = "msg_" + ((BigInt(30 - 120000) * 0x1000n) & 0xffffffffffffn).toString(16).padStart(12, "0") + "abcdefghijklmn";
-             return a < legacy && legacy < b; })(), legacy);
+    out[0].info.id === "msg_088088c790015gYS8fAEf15ugc" && out[0].parts[0].messageID === "msg_088088c790015gYS8fAEf15ugc", JSON.stringify(out[0]));
+  // A legacy counter id is placed right after the real id before it, so the
+  // client's id ordering reads user, assistant, user, assistant — even when
+  // the client's clock ran ahead of the cell's and packed its ids newest+1.
+  const legacy = legacyIdAfter("msg_cell_00000001", out[0].info.id);
+  check("a legacy msg_cell id borrows the 12-hex clock of the preceding real id and takes a tail past any random one",
+    /^msg_[0-9a-f]{12}zzzzzzzzz[0-9A-Za-z]{5}$/.test(legacy ?? "") && legacy.slice(4, 16) === out[0].info.id.slice(4, 16)
+      && out[1].info.id === legacy && out[1].parts.every((p) => p.messageID === legacy), `${legacy} ${out[1].info.id}`);
+  check("and it sorts after that user id and before the very next clock value — the packed case measured on a46a8c1a",
+    (() => { const u1 = out[0].info.id; const t = BigInt("0x" + u1.slice(4, 16)) + 1n;
+             const u2 = "msg_" + t.toString(16).padStart(12, "0") + "00000000000000";
+             return u1 < legacy && legacy < u2; })(), legacy);
+  check("two legacy replies in one turn keep their order and both hang off the same message",
+    (() => { const a1 = legacyIdAfter("msg_cell_00000007", out[0].info.id), a2 = legacyIdAfter("msg_cell_00000008", out[0].info.id);
+             return a1 < a2 && a1.slice(0, 25) === a2.slice(0, 25); })(), "");
+  check("with no real id before it a legacy id is left as stored", messageIdFor({ i: 3, wire_id: "msg_cell_00000001" }, null) === "msg_cell_00000001", "");
   check("a real wire id is left exactly as it is", messageIdFor({ i: 9, ts: 5, wire_id: "msg_088088c790015gYS8fAEf15ugc" }) === "msg_088088c790015gYS8fAEf15ugc", "");
   check("pi's thinking block is NOT in the transcript — the stream hides it, so must the read (the chat paints a `reasoning` part as an answer)",
     out[1].parts.length === 1 && out[1].parts[0].type === "text" && out[1].parts[0].text === "sup!", JSON.stringify(out[1].parts));
