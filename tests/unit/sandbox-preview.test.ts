@@ -163,7 +163,7 @@ describe('provider-neutral preview lifecycle', () => {
     // for new bytes in it, and Caddy does not watch it. Without an explicit
     // reload a reused sandbox keeps the config it booted with — which pins a
     // stale X-Forwarded-Host and kills every Server Action.
-    expect(script).toContain('exec -T preview-edge caddy reload --config /etc/caddy/Caddyfile');
+    expect(script).toContain('exec -T preview-edge caddy reload --config /dev/stdin --adapter caddyfile < "$STATE/Caddyfile.preview"');
     expect(script).not.toContain('https://pi.example.test/v1/health');
     // The stack is still CONFIGURED with the public origin — that is what ends
     // up in SITE_URL, the redirect allowlist and the frontend's own URLs.

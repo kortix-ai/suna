@@ -1087,3 +1087,32 @@ The previous overnight local run crossed macOS maintenance sleep and recorded
 hour-long test durations and a negative browser performance timestamp. The
 replacement run uses `caffeinate -i` for its process lifetime. It does not change
 machine-wide power settings or suppress browser exceptions.
+
+
+## Tool-image preview follow-up — 2026-09-09
+
+Commit `78009fa8915a0bf77dd9e575bb8d50c5681c08bd` deploys through
+`34313114290`. Public health, remote Git, and frontend/API/gateway tags match.
+The custom capture returns the exact 4,687-byte PNG. The real provider payload,
+`onEvent`, and `transformContext` each receive the native bytes. The model reads
+`LIME 731` and both colored shapes. The immutable tool asset returns `200` with
+the expected digest after worker replacement. The test fixture is session
+`9b348de2-401e-4502-b76e-4185441d6d35` in `pi-lab`.
+
+Browser verification found an extra grouped-tool disclosure above the image.
+Native reads also bypassed the attachment renderer through file-chip rows.
+The follow-up keeps image-bearing tools as individual rows and retains the full
+renderer for image reads. Two regressions fail first; the corrected renderer
+suite passes 140 tests and 341 assertions. Frontend typechecking passes. Focused
+lint reports zero errors and four existing warnings. Deployed UI proof is pending.
+
+The preview edge's bind-mounted Caddyfile retained the previous inode even though
+the host file and reload command were current. Reloading through stdin applies
+the deployed rule without restarting the edge. The unchanged live SEC-J and
+SESS-29 flows both pass: 2/2, no skips, 8.5 seconds. Bootstrap and guard now use
+that command; all 44 preview lifecycle tests pass.
+
+The German onboarding failure is a test assumption: the browser's public runtime
+configuration reports `CONNECTORS_ENABLED: false`, so Tools is correctly absent.
+The test now asserts the configured path before proceeding to Slack. Preview
+billing remains unresolved; the four Platinum shipping failures remain open.

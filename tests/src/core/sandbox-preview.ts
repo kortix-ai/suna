@@ -297,8 +297,9 @@ done
 # it loaded on first boot. That silently pins the WRONG X-Forwarded-Host after
 # the public name changes, and Next kills every Server Action when it does not
 # match \`origin\` (React #441 — the whole auth flow). Reload explicitly; it is
-# idempotent and costs nothing on a fresh container.
-${compose} exec -T preview-edge caddy reload --config /etc/caddy/Caddyfile
+# idempotent and costs nothing on a fresh container. Read host bytes through
+# stdin because a replaced file can leave the bind mount on an old inode.
+${compose} exec -T preview-edge caddy reload --config /dev/stdin --adapter caddyfile < "$STATE/Caddyfile.preview"
 
 # Ask the edge container directly rather than through the public name. What is
 # being proven here is that THIS stack came up on THIS commit, and a stable

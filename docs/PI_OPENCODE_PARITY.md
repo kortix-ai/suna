@@ -87,9 +87,8 @@ The latest full preview gate at `6363074d0f` passes 456 of 464 REST/CLI flows,
 with five failures and three existing skips. Browser results are 19 passes and
 two failures. Four Git shipping failures occur at Platinum ingress. SEC-J matches
 a public translation's PEM header placeholder in the frontend HTML 404 response;
-a plain sensitive-path 404 is implemented and awaits deployed verification.
-SESS-29 now passes its exact bytes and compressed ETag checks. Preview billing and
-German onboarding failures remain open; the local browser suite passes 21 tests.
+the plain sensitive-path 404 now passes live SEC-J after reloading current host bytes through stdin.
+SESS-29 now passes its exact bytes and compressed ETag checks. Preview billing remains open. German onboarding correctly skips Tools when managed connectors are disabled; its test now reads the deployment flag. The local browser suite passes 21 tests.
 Large-context automatic compaction remains blocked by the ingress upload failure.
 See the verification log for exact probes.
 

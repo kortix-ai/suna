@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Reload generated proxy configuration from host bytes (2026-09-09)
+
+**When:** refreshing Caddy inside a reused preview container.
+**Incident:** `78009fa891` wrote the new sensitive-path rule on the host, but the file bind mount retained an old inode. Reload reported success while `/.env` still reached Next.js.
+**Rule:** feed the current host file to `caddy reload --config /dev/stdin --adapter caddyfile`. A path inside a running container does not prove it sees the current host file.
+**Enforcer:** preview bootstrap and guard tests require stdin reload. Live SEC-J and SESS-29 pass after the same reload command; no edge restart is needed.
+
 ### Return plain denials for sensitive preview paths (2026-09-09)
 
 **When:** a preview shares one origin between the API and frontend.
