@@ -2094,6 +2094,49 @@ export class AgentCell {
   }
 }
 
+/**
+ * WHICH SESSIONS THIS NODE HAS BEEN ASKED ABOUT.
+ *
+ * A cell resolves an unaddressed request from the node's KORTIX_SESSION_ID, and
+ * a RESUMED box has none: the sandbox record still declares all 14
+ * CELLD_VAR_KORTIX_*, and the isolate sees zero, because `sandbox.start` does
+ * not carry envVars (platinum-dev 1a026358, committed and not deployed).
+ * Measured 2026-09-09 on two of the user's own boxes, both restarted at 11:36 —
+ * every in-box call the web client makes answered 503, which is streaming
+ * simply not working.
+ *
+ * The worker sees EVERY request, and the product names a session on most of
+ * them (`/session/<id>/message`, `?c=`). So the node can learn what its env
+ * forgot, from traffic it is already serving.
+ *
+ * IN MEMORY, AFTER TRYING IT THE OTHER WAY. The first version kept this in a
+ * reserved cell so it would survive a restart. On a node capped at one resident
+ * cell — `CELLD_MAX_RESIDENT_CELLS=1`, which test/eviction.sh runs — that index
+ * cell took the only slot and evicted the working cell on every request, so its
+ * in-memory meter never accumulated and the suite caught it: "the meter did not
+ * count: 0". A second permanent resident cell is not free. This costs a Set
+ * insert, and the product re-teaches it within one addressed request.
+ */
+const namedSessions = new Set();
+
+/** Remember a session this node was asked about. Bounded: past two the answer is already "ambiguous". */
+function rememberNamedSession(id) {
+  if (typeof id !== "string" || !id || id.length > 200) return;
+  if (namedSessions.size < 64) namedSessions.add(id);
+}
+
+/**
+ * The session this node serves, when it serves exactly one.
+ *
+ * ONE, deliberately. On a shared host the answer is genuinely ambiguous — the
+ * web client's in-box calls name no session, so serving the "first" one would
+ * hand a second user the first one's stream. Two means no answer, and the
+ * caller gets the same honest 503 it got before.
+ */
+function soleSessionOnThisNode() {
+  return namedSessions.size === 1 ? [...namedSessions][0] : null;
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -2339,9 +2382,18 @@ export default {
     // later — 2443 ms before anything can answer. Spawning another isolate on
     // a cell that already exists is 86 ms resumed, 146 ms new.
     const fromPath = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
+    // Every request that names a session teaches this node something its env
+    // may have forgotten — see rememberNamedSession. A Set insert on a string
+    // the request has already parsed.
+    const namedHere = url.searchParams.get("c") ?? (fromPath ? decodeURIComponent(fromPath[1]) : null);
+    if (namedHere) rememberNamedSession(namedHere);
     const name = url.searchParams.get("c")
       ?? (fromPath ? decodeURIComponent(fromPath[1]) : null)
       ?? env.KORTIX_SESSION_ID
+      // Node env is not the last word: a resume erases it, and then every
+      // unaddressed call is refused until someone re-pushes. What this node has
+      // been ASKED about survives that, because it never lived in the node.
+      ?? soleSessionOnThisNode()
       ?? null;
 
     // "default" IS THE ONE NAME celld CANNOT ROUTE, and it was this worker's

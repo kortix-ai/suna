@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=103
+// EXPECTED_PASSES=107
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -850,6 +850,55 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const un = await (await h.fetch("/kortix/opencode/state")).json();
   check("with no session named at all, the node's own is used rather than nothing",
     un.identity.opencode_session_id === "whoever-made-the-box", un.identity.opencode_session_id);
+}
+
+
+// A RESUMED BOX RE-LEARNS ITS SESSION FROM ITS OWN TRAFFIC.
+//
+// `sandbox.start` does not carry envVars, so a restarted cell has no
+// KORTIX_SESSION_ID at all — measured on two of the user's boxes 2026-09-09,
+// both restarted at 11:36, both answering 503 to every in-box call the web
+// client makes. The node learns from the requests that DO name a session.
+{
+  // A FRESH MODULE INSTANCE. What the node has been asked about is module
+  // state, and every earlier claim in this file has named a session — so a
+  // shared instance is already "ambiguous" and would refuse for the wrong
+  // reason. This is the same trick test/build-and-model.mjs uses.
+  const fresh = await import(`../dist/worker.js?relearn=${Date.now()}`);
+  const worker = fresh.default;
+  const reached = [];
+  const AGENT = {
+    idFromName: (n) => ({ toString: () => n, name: n }),
+    get: (id) => { reached.push(id.name); return { fetch: async () => Response.json({ ok: true }) }; },
+  };
+  const noEnv = { AGENT };   // exactly what a resumed box looks like
+
+  const before = await worker.fetch(new Request("http://cell/model"), noEnv);
+  check("a node that has been asked about nothing refuses — nothing is invented",
+    before.status === 503, String(before.status));
+
+  await worker.fetch(new Request("http://cell/session/learned-one/message"), noEnv);
+  reached.length = 0;
+  const after = await worker.fetch(new Request("http://cell/model"), noEnv);
+  check("an addressed request teaches the node, so the next unaddressed one resolves",
+    after.status === 200 && reached.includes("learned-one"),
+    `${after.status} reached=${JSON.stringify(reached)} (baseline ${before.status})`);
+
+  // A SECOND session makes it ambiguous, and ambiguous must mean refused —
+  // serving the first would hand one user another user's stream.
+  await worker.fetch(new Request("http://cell/session/learned-two/message"), noEnv);
+  reached.length = 0;
+  const ambiguous = await worker.fetch(new Request("http://cell/model"), noEnv);
+  check("with two sessions known, an unaddressed request is REFUSED, not served the first",
+    ambiguous.status === 503 && !reached.includes("learned-one"),
+    `${ambiguous.status} reached=${JSON.stringify(reached)}`);
+
+  // And naming one explicitly still works regardless of what the node knows.
+  reached.length = 0;
+  const explicit = await worker.fetch(new Request("http://cell/model?c=learned-two"), noEnv);
+  check("an explicit ?c= is unaffected by any of this",
+    explicit.status === 200 && reached[reached.length - 1] === "learned-two",
+    JSON.stringify(reached));
 }
 
 process.exit(bad ? 1 : 0);
