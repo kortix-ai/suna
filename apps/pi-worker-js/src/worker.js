@@ -2115,7 +2115,22 @@ export default {
       // cannot be faster — which is itself the result: in the middle of the
       // distribution, node scheduling dominates and the work does not show.
       //
-      // AND THE OTHER HALF OF THE COMPARISON, measured for the first time on
+      // THE COMPARABLE NUMBER, MEASURED. `?warm=1` asks for an isolate that
+    // already exists, which is the only reading here that answers the same
+    // question agentOS's 4.8 ms does — it has no isolate to create and no
+    // durable state to lease, so its number can never include either.
+    //
+    // Dev 2026-09-09, three runs of n=100 on one node:
+    //
+    //   warm   p50 1 ms    p90 1-3 ms    p99 3-10 ms    min 0
+    //   cold   p50 59-77 ms   p90 191-230 ms            min 20
+    //
+    // 1 ms against a published 4.8 ms. This had been restated all session as
+    // "about 1 ms" without anything measuring it; it is now the bench's warm
+    // mode, and the claims below refuse to let cold and warm blur into one
+    // number.
+    //
+    // AND THE OTHER HALF OF THE COMPARISON, measured for the first time on
     // 2026-09-09 rather than restated: what one cell costs in memory.
     //
     // A cell sandbox refuses `exec` — `runtime_capability_unsupported` — so
@@ -2152,9 +2167,31 @@ export default {
       // size; it is the isolate boundary itself, which is the one thing
       // agentOS's in-process number never crosses.
       const stop = url.searchParams.get("to") === "turns" ? "/turns" : "/ping";
+      // WARM DISPATCH IS THE ONE QUANTITY COMPARABLE TO 4.8 ms.
+      //
+      // agentOS reports "time from requesting an execution to first code
+      // running" for an in-process runtime with no isolate boundary and no
+      // durable state. The closest thing here is asking the binding for an
+      // isolate that ALREADY EXISTS and stopping the clock when its code
+      // answers: no creation, no lease, no schema — just dispatch.
+      //
+      // Cold and warm are different questions and the default stays cold,
+      // because a benchmark that quietly reports the flattering one is how a
+      // number outlives its method.
+      const warm = url.searchParams.get("warm") === "1";
       const t = [];
+      const fixed = `bench-warm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      if (warm) {
+        // Pay for the isolate once, outside the clock. Twice, because the
+        // first request also evaluates the script.
+        for (let i = 0; i < 2; i++) {
+          await env.AGENT.get(env.AGENT.idFromName(fixed)).fetch(new Request(`http://cell${stop}`));
+        }
+      }
       for (let i = 0; i < n; i++) {
-        const name = `bench-${Date.now().toString(36)}-${i}-${Math.random().toString(36).slice(2, 8)}`;
+        const name = warm
+          ? fixed
+          : `bench-${Date.now().toString(36)}-${i}-${Math.random().toString(36).slice(2, 8)}`;
         const t0 = performance.now();
         await env.AGENT.get(env.AGENT.idFromName(name)).fetch(new Request(`http://cell${stop}`));
         t.push(performance.now() - t0);
@@ -2162,11 +2199,13 @@ export default {
       t.sort((a, b) => a - b);
       const at = (q) => Math.round(t[Math.min(t.length - 1, Math.floor(t.length * q))] * 100) / 100;
       return Response.json({
-        n, stop,
+        n, stop, mode: warm ? "warm" : "cold",
         p50: at(0.5), p90: at(0.9), p99: at(0.99),
         min: Math.round(t[0] * 100) / 100,
         max: Math.round(t[t.length - 1] * 100) / 100,
-        note: "in-node: no network, no TLS, no edge — the same quantity agentOS reports as 4.8 ms",
+        note: warm
+          ? "in-node, warm dispatch to an isolate that already exists — the same quantity agentOS reports as 4.8 ms"
+          : "in-node: no network, no TLS, no edge — a COLD isolate each sample, which agentOS never pays",
       });
     }
     // The session polls readiness BEFORE it has a session to name, so this one

@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=87
+// EXPECTED_PASSES=92
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -732,6 +732,32 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     typeof b.note === "string" && b.note.includes("in-node"), JSON.stringify(b.note));
   check("and it reports how many samples the distribution came from",
     b.n === 2, String(b.n));
+
+  // COLD AND WARM ARE DIFFERENT QUESTIONS, and a bench that quietly reports the
+  // flattering one is how a number outlives its method. agentOS's 4.8 ms is an
+  // in-process dispatch with no isolate to create; only the warm reading here
+  // is the same quantity, and the answer has to say which it gave.
+  {
+    const names = [];
+    const A2 = {
+      idFromName: (n) => { names.push(n); return n; },
+      get: () => ({ fetch: async () => Response.json({ ok: true }) }),
+    };
+    const cold = await (await worker.fetch(new Request("http://cell/bench/spawn?n=4"), { AGENT: A2 })).json();
+    check("cold is the DEFAULT — four samples, four isolates that never existed",
+      cold.mode === "cold" && new Set(names).size === 4, `${cold.mode} ${new Set(names).size}`);
+    check("and it says so, rather than implying the comparable number",
+      cold.note.includes("COLD"), cold.note);
+
+    names.length = 0;
+    const hot = await (await worker.fetch(new Request("http://cell/bench/spawn?n=4&warm=1"), { AGENT: A2 })).json();
+    check("warm asks for ONE isolate, which is what makes it a dispatch and not a spawn",
+      hot.mode === "warm" && new Set(names).size === 1, `${hot.mode} ${new Set(names).size}`);
+    check("and it pays for that isolate outside the clock — 4 samples, 6 requests",
+      names.length === 6, `${names.length} requests for n=4`);
+    check("and its note claims the agentOS quantity, which the cold one must not",
+      hot.note.includes("4.8 ms") && !cold.note.includes("4.8 ms"), hot.note);
+  }
 }
 
 process.exit(bad ? 1 : 0);
