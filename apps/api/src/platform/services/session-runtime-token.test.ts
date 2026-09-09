@@ -4,9 +4,11 @@ import type { AgentGrant } from '@kortix/db';
 let grant: AgentGrant | null;
 let minted: Record<string, unknown> | undefined;
 const resolutions: string[] = [];
+let resolvedRef: unknown;
 mock.module('../../projects/agents', () => ({
-  resolveAgentGrant: async (name: string) => {
+  resolveAgentGrant: async (name: string, project: { defaultBranch?: string }) => {
     resolutions.push(name);
+    resolvedRef = project.defaultBranch;
     return grant;
   },
 }));
@@ -23,7 +25,17 @@ const { mintSessionRuntimeToken } = await import('./session-runtime-token');
 beforeEach(() => {
   resolutions.length = 0;
   minted = undefined;
+  resolvedRef = undefined;
   grant = { agent: 'meta', connectors: [], env: [], kortixCli: [] };
+});
+
+test('a pinned runtime mints its grant from the same immutable source', async () => {
+  await mintSessionRuntimeToken({
+    accountId: 'account', userId: 'user', projectId: 'project', sessionId: 'session',
+    runtimeId: 'runtime', runtimeKind: 'worker', agentName: 'denied',
+    gitProject: { defaultBranch: 'main' } as never, sourceSha: 'a'.repeat(40),
+  });
+  expect(resolvedRef).toBe('a'.repeat(40));
 });
 
 test.each(['worker', 'environment'] as const)(

@@ -164,6 +164,7 @@ mock.module('../shared/db', () => {
         };
         return {
           from: (table: any) => ({
+            leftJoin() { return this; },
             // `.where(...)` is both awaitable (resolveShareSubject awaits it
             // directly, expecting an array) and chainable via `.limit(n)`.
             where: (condition: any) => {

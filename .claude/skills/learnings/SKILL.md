@@ -6140,3 +6140,9 @@ install and asserts the exact version and checksum.
 **Incident:** preview `a4fb080893` passed local builds but failed the API Docker build. The isolated worker stage copied only the SDK Pi module; its new connector import could not resolve. The existing preview remained deployed.
 **Rule:** copy every required workspace package into the build stage and resolve its external imports through the locked runtime dependencies. A full checkout build does not verify an isolated stage.
 **Enforcer:** `apps/kortix-worker/src/isolated-build.test.ts` executes the actual stage's COPY and RUN instructions in an empty temporary tree. It fails on the missing SDK source and passes with the complete inputs. Linux preview image builds verify the same stage.
+### Join the session when resolving a runtime's agent (2026-09-09)
+
+**When:** selecting a session principal through Drizzle.
+**Incident:** a live Pi agent with `connectors: none` reached the synthetic MCP server. `loadSandbox` returned an unrelated session's `default` agent. Drizzle removed table qualifiers from the scalar SQL projection and emitted `where "session_id" = "session_id"`. The pre-prompt grant refresh then assigned the project default agent's connector grant.
+**Rule:** use an explicit relational join for the runtime-to-session lookup. Verify the result against PostgreSQL with at least two distinct agents. A mocked row cannot prove this identity boundary.
+**Enforcer:** `apps/api/src/__tests__/integration-preview-session-principal.test.ts` checks worker and environment resolution, including hostname case normalization. Both cases fail before the join and pass afterward with 40 assertions.

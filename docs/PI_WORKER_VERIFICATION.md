@@ -1387,3 +1387,28 @@ launcher retains its flock descriptor in the detached entrypoint.
 The same MCP session must pass the deployed resume and tool checks before this
 checkpoint receives live verification. No main, dev, staging, or production
 deployment occurs in this checkpoint.
+# Connector agent isolation — 2026-09-09
+
+The live MCP probe exposed a proxy principal bug. A session created with the `denied`
+agent executed `fixture.read_fixture` despite `connectors: none`. Its worker used the
+correct agent. The proxy loaded an unrelated `default` agent and rewrote the token's grant.
+Drizzle rendered the scalar projection as `where "session_id" = "session_id"`.
+
+The proxy now joins `project_sessions` explicitly for worker and environment lookups.
+Pi connector authorization derives the agent from the session and resolves its grant
+at `pi_worker_sha`. It repairs a stale token grant before the connector call.
+Unsupported Pi agent switches fail before token reassignment. Newly minted worker
+credentials use the same pinned source. OpenCode retains its existing agent-switch behavior.
+
+Local verification:
+
+- PostgreSQL regression: 2 tests, 40 assertions. Both lookup cases fail before the join.
+- Focused grant, provisioning, and bootstrap tests: 71 pass, 0 fail, 245 assertions.
+- API suite: 9,290 pass, 82 existing skips, 0 fail, 32,287 assertions.
+- `pnpm test`: all 6 core lanes pass in 115.3 seconds; benchmark `1788944799354`.
+
+Preview verification of this correction is pending deployment. The previous live MCP
+probe passed discovery, native images and model vision, permission UI across reload,
+Stop, a follow-up prompt, 155 text deltas, and 61 visible streaming states. Its denied-agent
+case failed and is not a passing parity result. Recovered interactions also need a new
+active control-plane turn record; the worker's busy state alone is insufficient.

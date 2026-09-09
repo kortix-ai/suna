@@ -9,6 +9,7 @@ import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-vers
 import { eq, sql } from 'drizzle-orm';
 import { type ProviderName, getProvider } from '../../platform/providers';
 import { mintSessionRuntimeToken } from '../../platform/services/session-runtime-token';
+import { piWorkerRuntimeIdentityFromSessionMetadata } from './session-sandbox-metadata';
 import { runtimeAssetsManifest, runtimeEntrypointPath } from '../../runtime-assets/manifest';
 import { buildSandboxUpstreamHeaders, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { recordAuditEvent } from '../../shared/audit';
@@ -120,6 +121,7 @@ async function mintReplacementServiceKey(row: LegacyBootstrapRow): Promise<strin
       projectId: projectSessions.projectId,
       createdBy: projectSessions.createdBy,
       agentName: projectSessions.agentName,
+      metadata: projectSessions.metadata,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, row.sessionId))
@@ -145,6 +147,7 @@ async function mintReplacementServiceKey(row: LegacyBootstrapRow): Promise<strin
     runtimeId: row.sandboxId,
     agentName: session.agentName ?? 'default',
     gitProject: { ...project, gitAuthToken: null },
+    sourceSha: piWorkerRuntimeIdentityFromSessionMetadata(session.metadata)?.sha,
   });
   return token.secretKey;
 }

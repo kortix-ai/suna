@@ -161,12 +161,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     sandboxId: sessionSandboxes.sandboxId,
     externalId: sessionSandboxes.externalId,
     sessionId: sessionSandboxes.sessionId,
-    agentName: sql<string | null>`(
-      select ${projectSessions.agentName}
-      from ${projectSessions}
-      where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
-      limit 1
-    )`,
+    agentName: projectSessions.agentName,
     projectId: sessionSandboxes.projectId,
     accountId: sessionSandboxes.accountId,
     provider: sessionSandboxes.provider,
@@ -178,6 +173,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     const [match] = await db
       .select(columns)
       .from(sessionSandboxes)
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
       .where(condition)
       .orderBy(...preferredSandboxOrder())
       .limit(1);
@@ -196,12 +192,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       sandboxId: sql<string>`coalesce(${sessionEnvironments.environmentId}::text, ${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
       externalId: sessionEnvironments.externalId,
       sessionId: sessionEnvironments.sessionId,
-      agentName: sql<string | null>`(
-        select ${projectSessions.agentName}
-        from ${projectSessions}
-        where ${projectSessions.sessionId} = ${sessionEnvironments.sessionId}
-        limit 1
-      )`,
+      agentName: projectSessions.agentName,
       projectId: sessionEnvironments.projectId,
       accountId: sessionEnvironments.accountId,
       provider: sessionEnvironments.provider,
@@ -213,6 +204,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       const [match] = await db
         .select(environmentColumns)
         .from(sessionEnvironments)
+        .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionEnvironments.sessionId))
         .where(condition)
         .limit(1);
       return match ?? null;

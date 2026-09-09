@@ -17,10 +17,13 @@ export async function mintSessionRuntimeToken(opts: {
   runtimeId: string;
   agentName: string;
   gitProject: GitBackedProject;
+  sourceSha?: string;
 }): Promise<{ tokenId: string; secretKey: string }> {
   const platformMetaAgent = isMetaAgentName(opts.agentName);
   const [agentGrant, serviceAccountId] = await Promise.all([
-    resolveAgentGrant(opts.agentName, opts.gitProject),
+    resolveAgentGrant(opts.agentName, opts.sourceSha
+      ? { ...opts.gitProject, defaultBranch: opts.sourceSha }
+      : opts.gitProject),
     platformMetaAgent
       ? null
       : ensureAgentServiceAccount({

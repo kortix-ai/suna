@@ -68,6 +68,7 @@ import {
 } from './sandbox-init-state';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { mintSessionRuntimeToken } from './session-runtime-token';
+import { piWorkerRuntimeIdentityFromSessionMetadata } from '../../projects/lib/session-sandbox-metadata';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -446,6 +447,7 @@ export async function provisionSessionSandbox(opts: {
       runtimeId: sandboxId,
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
+      sourceSha: piWorkerRuntimeIdentityFromSessionMetadata(opts.metadata)?.sha,
     }),
     llmGatewayEnabled
       ? accountEntitledToLlmGateway(accountId).catch((err) => {

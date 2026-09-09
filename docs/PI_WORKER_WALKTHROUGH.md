@@ -15,8 +15,8 @@ Today’s coupled startup must prepare the workspace before the agent can answer
 The split removes workspace preparation from the initial response path.
 It also separates conversation storage from either machine's lifetime.
 
-The diagram shows the intended boundaries. Compiled project skills and the durable
-turn journal still have local changes that are not part of the verified preview.
+The diagram shows the implemented boundaries. Compiled project skills and the durable
+turn journal run on the Pi preview. The verification record lists remaining parity gaps.
 
 ```mermaid
 flowchart TB

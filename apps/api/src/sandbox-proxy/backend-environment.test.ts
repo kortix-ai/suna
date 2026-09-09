@@ -43,6 +43,7 @@ mock.module('../shared/db', () => ({
         queriedTables.push(table);
         if (table === sessionEnvironments) environmentColumns = columns;
         return {
+          leftJoin() { return this; },
           where: () => ({
             orderBy: () => ({ limit: async () => [] }),
             limit: async () => (table === sessionEnvironments ? [environmentRow] : []),
