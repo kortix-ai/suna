@@ -160,6 +160,7 @@ run_suite parity     node test/ledger-parity.mjs
 # The Kortix session surface on a cell — in-process, no Docker (kortix-parity.mjs).
 run_suite kparity    node --experimental-sqlite ./test/kortix-parity.mjs
 run_suite wire    node --experimental-sqlite ./test/wire-logic.mjs
+run_suite boot    node --experimental-sqlite ./test/boot-logic.mjs
 run_suite proj    node --experimental-sqlite ./test/projection-logic.mjs
 run_suite archive    node test/archive-logic.mjs
 run_suite meter      node test/meter-logic.mjs

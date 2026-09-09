@@ -53,6 +53,8 @@ import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 import { providerStream, resolveModel, scriptedStream, supportedProviders } from "./model.js";
 import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
 import { WireBus, WIRE_HEARTBEAT_MS } from "./wire.js";
+import { agentNameFrom, bootAnswer } from "./opencode-boot.js";
+import { transcriptMessages } from "./transcript-read.js";
 import { runtimeStateDoc, projectionEtag } from "./projection.js";
 import { ChatEventAdapter } from "../../kortix-worker/src/chat-events.ts";
 
@@ -427,6 +429,20 @@ export class AgentCell {
     // the browser's path: prompt to first delta 2230-2989 ms against an LLM
     // call of ~880 ms. This records the parts so the lump has names.
     try { this.sql.exec("ALTER TABLE turns ADD COLUMN timing TEXT"); } catch { /* already there */ }
+    // The id a message was streamed under, so the transcript read can name it
+    // the same way (transcript-read.js). Rows that predate the column fall back
+    // to their row number, which is what the read used to emit for every row.
+    try { this.sql.exec("ALTER TABLE msgs ADD COLUMN wire_id TEXT"); } catch { /* already there */ }
+    // THE WIRE COUNTER OUTLIVES THE ISOLATE. `msg_cell_<seq>` was minted from
+    // an in-memory counter, so a rebuilt isolate started again at 00000001 and
+    // a later turn re-used an id the transcript already held — two messages,
+    // one name. Seeded from the messages that carry one, it is monotonic across
+    // every eviction, and the format the tests pin is unchanged.
+    if (this.wireMessageSeq == null) {
+      try {
+        this.wireMessageSeq = this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE wire_id LIKE 'msg_cell_%'").toArray()[0].n;
+      } catch { this.wireMessageSeq = 0; }
+    }
     // THE SESSION'S OWN CONFIGURATION, WHICH MUST OUTLIVE THE ISOLATE.
     //
     // Per-session config does not arrive in the cell's process env — that is
@@ -622,7 +638,7 @@ export class AgentCell {
       // Where the transcript stood before this turn, so "did the model say
       // anything" is a question with an exact answer rather than a guess.
       const beforeMsgId = this.sql.exec("SELECT COALESCE(MAX(i), 0) AS i FROM msgs").toArray()[0].i;
-      this.saveMessage("user", { role: "user", content: [{ type: "text", text: next.text }] });
+      this.saveMessage("user", { role: "user", content: [{ type: "text", text: next.text }] }, next.message_id ?? null);
       await agent.prompt(next.text);
       const compacted = await this.compactIfNeeded(sessionId, streamFnOf(agent), agent.state.model, next.window || undefined);
       if (compacted) this.broadcast({ type: "compacted", ...compacted });
@@ -710,10 +726,10 @@ export class AgentCell {
       .map((r) => JSON.parse(r.json));
   }
 
-  saveMessage(role, message) {
+  saveMessage(role, message, wireId = null) {
     this.sql.exec(
-      "INSERT INTO msgs(role, json, ts) VALUES (?, ?, ?)",
-      role, JSON.stringify(message), Date.now(),
+      "INSERT INTO msgs(role, json, ts, wire_id) VALUES (?, ?, ?, ?)",
+      role, JSON.stringify(message), Date.now(), wireId ?? null,
     );
   }
 
@@ -919,6 +935,13 @@ export class AgentCell {
       // pin the delta/snapshot split this bus depends on.
       try {
         const frames = wireAdapter.translate(event);
+        // The id the stream names this assistant message by. Saved with the
+        // message at turn_end so the transcript read answers in the same id.
+        for (const f of frames) {
+          if (f?.type === "message.updated" && f.properties?.info?.role === "assistant" && f.properties.info.id) {
+            this.turnAssistantWireId = f.properties.info.id;
+          }
+        }
         this.wire?.publish(frames);
         // AFTER publishing, not before: `carriesVisibleText` asks the bus which
         // parts are reasoning, and the bus learns that as it publishes.
@@ -939,7 +962,7 @@ export class AgentCell {
       // persisting the assistant message alone would leave a tool call with no
       // result if the isolate died in between, and pi would resend it.
       if (event.type === "turn_end") {
-        if (event.message) this.saveMessage("assistant", event.message);
+        if (event.message) this.saveMessage("assistant", event.message, this.turnAssistantWireId ?? null);
         // Recorded from the message the provider actually returned, not from an
         // estimate. A turn with no usage (the scripted model) writes nothing
         // rather than a row of zeros that would dilute the averages.
@@ -1553,19 +1576,10 @@ export class AgentCell {
         if (rootId !== sessionId) {
           return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
         }
-        const rows = [...this.sql.exec("SELECT i, role, json, ts FROM msgs ORDER BY i")];
-        return Response.json(rows.map((r) => {
-          let parsed = {};
-          try { parsed = JSON.parse(r.json); } catch { /* a row we cannot read is still a row */ }
-          return {
-            info: { id: String(r.i), role: r.role, sessionID: sessionId, time: { created: r.ts } },
-            parts: (parsed.content ?? []).map((c, k) => ({
-              id: `${r.i}-${k}`, messageID: String(r.i), sessionID: sessionId,
-              type: c?.type === "text" ? "text" : (c?.type ?? "text"),
-              ...(c?.text != null ? { text: c.text } : {}),
-            })),
-          };
-        }));
+        // In the ids the wire used, with pi's thinking as `reasoning` — see
+        // transcript-read.js for the two ways this painted every message twice.
+        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
+        return Response.json(transcriptMessages(rows, sessionId));
       }
     }
 
@@ -2142,6 +2156,26 @@ export class AgentCell {
     // The counts stay in the body, because they are what the probes read and
     // they cost one query; the STATUS is what changes, and it is the part a
     // caller believes.
+    // THE OPENCODE BOOT SURFACE — see opencode-boot.js. Answered here, last,
+    // so a real route is never shadowed by a boot shape.
+    {
+      const e = this.effectiveEnv();
+      // The RESOLVED model, as /model reports it — not the raw env, which on a
+      // live cell named `openai-codex/gpt-5.6-luna` while the turn actually ran
+      // on the gateway's `openrouter/deepseek-v4-flash`.
+      let resolved = null;
+      try { resolved = modelConfig(e)?.model ?? null; } catch { resolved = null; }
+      const boot = bootAnswer(req.method, path, {
+        sessionId,
+        agentName: agentNameFrom(e),
+        projectId: e.KORTIX_PROJECT_ID,
+        provider: resolved?.provider ?? e.MODEL_PROVIDER,
+        modelId: resolved?.id ?? e.MODEL_ID,
+        cwd: "/work",
+        createdAt: this.sql.exec("SELECT MIN(ts) AS t FROM msgs").toArray()[0]?.t ?? Date.now(),
+      });
+      if (boot) return Response.json(boot.body, { status: boot.status });
+    }
     return Response.json({
       ok: false,
       error: "unknown route",

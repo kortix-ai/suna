@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=110
+// EXPECTED_PASSES=117
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -927,6 +927,60 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   check("an explicit ?c= is unaffected by any of this",
     explicit.status === 200 && reached[reached.length - 1] === "learned-two",
     JSON.stringify(reached));
+}
+
+// THE OPENCODE BOOT SURFACE, THROUGH THE CELL. On a page refresh the web client
+// calls these before it will talk to a session; on dev 2026-09-09, session
+// 5192652f, every one answered 404 and the page never connected.
+{
+  const env = { ...ENV, KORTIX_AGENT_NAME: "kortix", KORTIX_PROJECT_ID: "proj-1", MODEL_PROVIDER: "openrouter", MODEL_ID: "deepseek-v4-flash" };
+  const hb = makeCell(AgentCell, env);
+  const codes = {};
+  for (const p of ["/agent", "/command", "/global/config", "/project/current", "/permission", "/question", "/lsp/diagnostics"]) {
+    codes[p] = (await hb.fetch(`${p}?c=s`)).status;
+  }
+  check("every boot route the client calls on refresh answers 200 through the cell",
+    Object.values(codes).every((c) => c === 200), JSON.stringify(codes));
+  const agent = await (await hb.fetch("/agent?c=s")).json();
+  check("and /agent names the session's agent from the cell's own env",
+    Array.isArray(agent) && agent[0]?.name === "kortix" && agent[0]?.model?.modelID === "deepseek-v4-flash", JSON.stringify(agent).slice(0, 140));
+  const cfg = await (await hb.fetch("/global/config?c=s")).json();
+  check("and /global/config carries the model the way the client splits it",
+    cfg.model === "openrouter/deepseek-v4-flash", JSON.stringify(cfg));
+  check("a route the cell does serve is not shadowed by the boot surface",
+    (await hb.fetch("/session?c=s")).status === 200 && (await hb.fetch("/nope?c=s")).status === 404, "");
+}
+
+// THE TRANSCRIPT ANSWERS IN THE IDS THE WIRE USED. Same session, same day: the
+// stream painted `msg_0879…` and `msg_cell_00000001`, the poll answered `1`
+// and `2`, and every message showed twice.
+{
+  const db = new DatabaseSync(":memory:");
+  const env = { ...ENV, SCRIPT: JSON.stringify([{ text: "sup!" }, { text: "again" }]) };
+  const h1 = makeCell(AgentCell, env, { db });
+  await h1.fetch("/session/s/prompt_async?c=s", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messageID: "msg_client_0001", parts: [{ type: "text", text: "suppp" }] }),
+  });
+  await h1.drain();
+  const t1 = await (await h1.fetch("/session/s/message?c=s")).json();
+  const user = t1.find((m) => m.info.role === "user"); const asst = t1.find((m) => m.info.role === "assistant");
+  check("the user message is named by the messageID the client sent",
+    user?.info.id === "msg_client_0001" && user.parts[0]?.messageID === "msg_client_0001", JSON.stringify(t1).slice(0, 200));
+  check("the assistant message is named by the id the stream minted, parts included",
+    asst?.info.id === "msg_cell_00000001" && asst.parts[0]?.id === "msg_cell_00000001-p0", JSON.stringify(asst).slice(0, 200));
+
+  // A REBUILT ISOLATE MUST NOT MINT AN ID THE TRANSCRIPT ALREADY HOLDS.
+  const h2 = makeCell(AgentCell, env, { db });
+  await h2.fetch("/session/s/prompt_async?c=s", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messageID: "msg_client_0002", parts: [{ type: "text", text: "and?" }] }),
+  });
+  await h2.drain();
+  const t2 = await (await h2.fetch("/session/s/message?c=s")).json();
+  const ids = t2.filter((m) => m.info.role === "assistant").map((m) => m.info.id);
+  check("after an eviction the next assistant id continues the sequence — no two messages share a name",
+    ids.length === 2 && ids[0] === "msg_cell_00000001" && ids[1] === "msg_cell_00000002", JSON.stringify(ids));
 }
 
 process.exit(bad ? 1 : 0);
