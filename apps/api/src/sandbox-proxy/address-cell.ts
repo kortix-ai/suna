@@ -95,33 +95,3 @@ export function ownRowForCaller<R extends { externalId?: string | null; sessionI
   return own;
 }
 
-/**
- * THE SESSION THE PAGE IS ON, from the request's Referer.
- *
- * The web app builds every in-box call on a BOX-shaped base
- * (`/v1/p/<externalId>/8000/…`, use-session.ts) and names no session in the
- * path. On a runner holding several sessions that request is ambiguous, and
- * measured on dev 2026-09-09 (session 14bc9c57, runner pi-cell-d5db884a): the
- * moment a second session joined, at 19:29:54, `/global/config`, `/command`,
- * `/question`, `/log` went 503 and the page fell back to polling — a 7 s reply.
- * The SDK fix (runtimeUrlForSandbox) needs a frontend deploy; this does not.
- *
- * The one thing that request already carries is the page's own URL: the app
- * and the API share an origin, and a same-origin fetch sends the full Referer
- * under the browser's default policy — `…/projects/<p>/sessions/<sid>`.
- *
- * A HINT, NOT AN AUTHORITY. The caller must still be verified to hold that
- * session's row on the box the URL named (ownRowForCaller), so a forged header
- * can only select among the sessions this box already serves — exactly what an
- * explicit `?c=` on the same path already allows, since the proxy forwards
- * query strings. Anything not shaped like a session page yields null and the
- * older rules apply.
- */
-export function sessionFromReferer(referer: string | null | undefined): string | null {
-  const raw = referer?.trim();
-  if (!raw) return null;
-  let path: string;
-  try { path = new URL(raw).pathname; } catch { return null; }
-  const m = path.match(/\/sessions\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\/|$)/);
-  return m ? m[1].toLowerCase() : null;
-}

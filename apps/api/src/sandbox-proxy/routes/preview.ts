@@ -1,5 +1,5 @@
 import { turnTargetFor } from '../../projects/turn-target';
-import { addressCellSession, ownRowForCaller, sessionFromReferer, sessionNamedByUrl } from '../address-cell';
+import { addressCellSession, ownRowForCaller, sessionNamedByUrl } from '../address-cell';
 import { soleSessionOfSandbox } from '../backend';
 import { upstreamAnsweredFinally } from '../upstream-final';
 import { Hono } from 'hono';
@@ -873,18 +873,13 @@ export async function forwardToSandbox(
     record = ownRowForCaller(record, own, access.callerSessionId);
     if (record.sessionId === access.callerSessionId) exactSession = record.sessionId;
   }
-  // THE PAGE NAMES ITS SESSION when the URL does not: the web app's in-box calls
-  // are box-shaped, and on a runner holding several sessions the row above is
-  // whichever the ordering preferred. Its Referer is the session page. Taken
-  // only when that session's row sits on THIS box — see sessionFromReferer.
-  if (!exactSession) {
-    const hinted = sessionFromReferer(incomingHeaders.get('referer'));
-    if (hinted && hinted !== record.sessionId) {
-      const own = await loadSandbox(hinted);
-      record = ownRowForCaller(record, own, hinted);
-    }
-    if (hinted && record.sessionId === hinted) exactSession = hinted;
-  }
+  // A Referer-named session was tried here and withdrawn the same day: the
+  // deployed web app answers every page with `referrer-policy: no-referrer`,
+  // and its in-box requests arrive with none (measured 2026-09-09, 19:36,
+  // from the user's own browser: refShape "none", mode "cors"). A rule that
+  // cannot fire is not a rule. The deployed frontend is addressed by the
+  // per-session base URL the SDK now honours (runtimeUrlForSandbox), which
+  // lands with the frontend image built from this branch.
   bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
@@ -1239,6 +1234,15 @@ export async function forwardToSandbox(
       const addressable =
         exactSession ??
         (await soleSessionOfSandbox(record.externalId ?? sandboxId));
+      if (!addressable) {
+        // A shared box that stayed unaddressed: the deployed frontend's
+        // box-shaped stream on a runner holding several sessions. Named so the
+        // count is a query, not a guess (see ../address-cell.ts).
+        console.warn('[PREVIEW] unaddressed on a shared box', {
+          method, path: remainingPath, box: record.externalId,
+          mode: incomingHeaders.get('sec-fetch-mode'),
+        });
+      }
       const targetUrl = addressCellSession(
         previewUrl.replace(/\/$/, '') + remainingPath + queryString,
         addressable,
