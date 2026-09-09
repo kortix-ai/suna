@@ -6071,3 +6071,17 @@ install and asserts the exact version and checksum.
 **Incident:** Pi preview run `34279668235` returned exact attachment bytes with a matching weak ETag after Cloudflare applied zstd. SESS-29 incorrectly reported a changed digest because it required a strong ETag.
 **Rule:** compute the returned content's digest. Compare ETag identity after its optional weak prefix. Do not infer corrupted bytes from changed ETag strength.
 **Enforcer:** `tests/src/flows/sessions.flow.ts`, SESS-29, checks both content SHA-256 and ETag identity.
+
+### Select an overloaded RPC with an explicit nullable discriminator (2026-09-09)
+
+**When:** calling the idempotency-aware credit admission function during mixed-schema development.
+**Incident:** SESS-31 received `402` with a positive balance. PostgREST returned `PGRST203` because both the idempotency and legacy thread/message overloads matched the omitted argument.
+**Rule:** send `p_idempotency_key: null` when no key exists. Its name selects the intended overload without changing idempotency semantics.
+**Enforcer:** `billing/services/credits-admission.test.ts`, the billing credit contract test, and live SESS-31. The two new omitted-key cases fail before the correction; the unchanged HTTP flow passes afterward. No schema mutation is needed.
+
+### A cancelled preview controller can leave its remote tests running (2026-09-09)
+
+**When:** replacing a persistent preview deployment after cancelling its controller.
+**Incident:** the older remote test process wrote `kortix-preview.exit` at 05:43:14 UTC. Run `34315723121` read that file during the next deployment and exited before its own tests started at 05:43:40. The new tests continued on the sandbox.
+**Rule:** establish that the previous remote process has ended before replacing this preview. A future controller must use per-run completion identities and terminate only its own remote process on cancellation.
+**Enforcement status:** manual process and timestamp verification for this checkpoint. Automated ownership fencing remains open. A shared exit file is not proof of the current run.

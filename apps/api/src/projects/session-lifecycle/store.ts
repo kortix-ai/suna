@@ -2,6 +2,8 @@ import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { storeSessionAttachments } from '../lib/session-attachment-store';
+import type { StagedSessionAttachment } from './pi-prompt-attachments';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
 import { inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
 import type {
@@ -206,6 +208,7 @@ export interface EnqueueContinueSessionCommandInput {
   clientSentAtMs?: number;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
+  attachments?: StagedSessionAttachment[];
 }
 
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
@@ -253,19 +256,33 @@ export interface EnqueuedContinueSessionCommand {
 export async function enqueueContinueSessionCommand(
   input: EnqueueContinueSessionCommandInput,
 ): Promise<EnqueuedContinueSessionCommand> {
+  const attachments = input.attachments;
+  if (attachments?.length) {
+    return db.transaction(async (tx) => {
+      await storeSessionAttachments(tx, input.sessionId, attachments);
+      return insertContinueSessionCommand(input, tx);
+    });
+  }
+  return insertContinueSessionCommand(input, db);
+}
+
+async function insertContinueSessionCommand(
+  input: EnqueueContinueSessionCommandInput,
+  executor: Pick<typeof db, 'insert' | 'select'>,
+): Promise<EnqueuedContinueSessionCommand> {
   const values = buildContinueSessionCommandValues(input);
   if (!input.idempotencyKey) {
-    const [row] = await db.insert(sessionLifecycleCommands).values(values).returning();
+    const [row] = await executor.insert(sessionLifecycleCommands).values(values).returning();
     return { row, deduped: false };
   }
-  const inserted = await db
+  const inserted = await executor
     .insert(sessionLifecycleCommands)
     .values(values)
     .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
     .returning();
   if (inserted[0]) return { row: inserted[0], deduped: false };
 
-  const [existing] = await db
+  const [existing] = await executor
     .select()
     .from(sessionLifecycleCommands)
     .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey))

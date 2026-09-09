@@ -68,14 +68,14 @@ describe('existing project session composer runtime contract', () => {
 });
 
 describe('new project session composer runtime contract', () => {
-  test('keeps creation agent selection but hides unsafe first-prompt controls', () => {
+  test('keeps creation agent selection and image attachments while locking compiled model controls', () => {
     expect(projectHome).toContain('modelOverridesEnabled={modelOverridesEnabled}');
-    expect(projectHome).toContain('attachmentsEnabled={modelOverridesEnabled}');
+    expect(projectHome).toContain('attachmentsEnabled={projectDetailQuery.data != null}');
     expect(projectHome).not.toContain('agentOverridesEnabled={modelOverridesEnabled}');
   });
 
   test('keeps the compiled agent but removes unsafe first-prompt fields at the create boundary', () => {
-    expect(projectIndexPage).toContain('attachmentsEnabled: runtimePromptOverridesAllowed');
+    expect(projectIndexPage).toContain('attachmentsEnabled: projectDetail != null');
     expect(projectIndexPage).toContain('const promptOverrides = resolveRuntimePromptOverrides({');
     expect(projectIndexPage).toContain('agentEnabled: true');
     expect(projectIndexPage).toContain('modelEnabled: runtimePromptOverridesAllowed');
@@ -87,10 +87,11 @@ describe('new project session composer runtime contract', () => {
 });
 
 describe('instant session composer runtime contract', () => {
-  test('locks all unsupported controls while runtime identity is unknown or Pi', () => {
+  test('locks compiled selectors and enables attachments after runtime identity resolves', () => {
     expect(instantSessionShell).toContain('modelOverridesEnabled={runtimePromptOverridesAllowed}');
     expect(instantSessionShell).toContain('agentOverridesEnabled={runtimePromptOverridesAllowed}');
-    expect(instantSessionShell).toContain('attachmentsEnabled={runtimePromptOverridesAllowed}');
+    expect(instantSessionShell).toContain('attachmentsEnabled={runtimeAttachmentsAllowed}');
+    expect(instantSessionShell).toContain("const runtimeAttachmentsAllowed = projectSessionRuntimeIdentity !== 'unknown'");
     expect(instantSessionShell).toContain(
       'sandboxIsPiWorker={isPiWorkerRuntimeMetadata(projectSessionRow?.metadata)}',
     );

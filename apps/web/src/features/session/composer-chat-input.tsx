@@ -120,7 +120,7 @@ export function ComposerChatInput({
   modelOverridesEnabled?: boolean;
   /** Existing Pi sessions run the agent compiled at creation. */
   agentOverridesEnabled?: boolean;
-  /** Pi's prompt contract currently accepts text parts only. */
+  /** Whether the resolved runtime accepts attachments. */
   attachmentsEnabled?: boolean;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });

@@ -52,6 +52,7 @@ import {
 } from '../agents';
 import { createRemoteSessionBranch , resolveCommitSha } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
+import { storeSessionAttachments } from './session-attachment-store';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { validateNativeOpencodeModelRef } from './session-model-change';
 import {
@@ -1551,6 +1552,7 @@ export async function createProjectSession(input: {
   const pendingPromptConversion = pendingPrompt
     ? convertPendingPromptToInboxRow({
         pendingPrompt,
+        piWorker: piWorkerBoot,
         projectId,
         accountId,
         sessionId,
@@ -1682,6 +1684,7 @@ export async function createProjectSession(input: {
           .returning({ sessionId: projectSessionRuntimeContexts.sessionId });
     }
       if (pendingPromptConversion?.rowValues) {
+        await storeSessionAttachments(tx, sessionId, pendingPromptConversion.attachments ?? []);
         // Same transaction as the session row: either the session exists WITH
         // its first prompt durable, or neither does. No conflict handling —
         // `sessionId` is fresh here, so the idempotency key cannot collide

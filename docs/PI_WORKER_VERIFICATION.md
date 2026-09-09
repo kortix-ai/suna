@@ -1150,10 +1150,49 @@ its image. Expand **Completed 3 steps** to inspect the native file-read image.
 Ask it to read `/workspace/pi-tool-image-fixture.png` again. It must show the
 same image and read `LIME 731`. Stop a long reply, then send another prompt.
 
-The full preview rerun at this commit is superseded before its tests start by
+The full preview rerun at this commit is superseded by
 the billing accessibility fix. Its screenshot proves two global upgrade dialogs
 rendered together: visible content was absent from the accessibility tree. One
 host now owns that dialog across authenticated routes; share pages retain their
 fallback host. The billing journey requires exactly one dialog and an accessible
 heading. All 9,635 frontend tests pass; typechecking and focused lint pass. Live
-billing verification remains pending the next deployment.
+billing verification is recorded below.
+
+## Billing dialog and first-prompt images — 2026-09-09
+
+Deployment `34315185423` publishes `8e52bd100e46cbac2e2795db634665070853e618`.
+Remote Git, API, gateway, frontend image tags, and public health match that SHA.
+The read-only billing reproduction changes from two dialogs and zero accessible
+headings to one dialog and one accessible heading. The full preview billing
+journey also passes in 40.8 seconds, including test-mode checkout, subscription
+read-back, credit checkout, and billing management.
+
+The cancelled older preview controller did not stop its remote test process.
+That process wrote its exit file after the next deployment started. Controller
+`34315723121` read the stale exit code and exited while the current tests continued.
+Its archive also exceeded Platinum's single-read limit: 443,342,408 bytes versus
+268,435,456. The running tests are inspected directly. Do not treat that controller
+result as the current suite result. The controller checks out `main`, so branch
+changes to bootstrap routing are not used by the controller before merge.
+
+First-prompt image changes are locally verified and await deployment:
+
+- Pi session creation, warm claims, and boot-time prompts replace staged image
+  data URLs with immutable attachment references. Bytes and commands commit in
+  one transaction. The OpenCode conversion stays unchanged.
+- The project composer and boot shell expose attachments once their project or
+  runtime identity is known. Compiled model and agent controls remain locked.
+- Images accept PNG, JPEG, GIF, and WebP, up to 8 MiB each and 16 per prompt,
+  within the existing 12 MiB serialized-parts limit. Remote and unsupported
+  attachments fail before storage. MIME conflicts preserve the existing asset.
+- `pnpm test -- --id SESS-27,SESS-29,SESS-31`: 3/3 pass, no skips. The new flow
+  proves atomic admission, refusal without partial storage, exact bytes, retry
+  identity, MIME conflicts, and authorization through HTTP.
+- API and frontend typechecks pass. The frontend suite passes 9,635 tests.
+  Focused frontend lint reports zero errors and six existing warnings.
+
+The live local flow exposed an RPC overload ambiguity in credit admission:
+`PGRST203` became a `402` despite a positive balance. Sending the explicit nullable
+`p_idempotency_key` selects the intended function. Both new regression cases fail
+before the fix. The credit tests pass 26 tests; the unchanged HTTP flows then pass.
+No database schema changes are required for this correction.

@@ -60,6 +60,8 @@ import {
   sanitizeInboxPromptParts,
 } from '../session-lifecycle/prompt-parts';
 import { isWarmProjectSession } from '../lib/warm-sessions';
+import { sessionMetadataClaimsPiWorker } from '../lib/session-sandbox-metadata';
+import { preparePiPromptAttachments } from '../session-lifecycle/pi-prompt-attachments';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
 import { readSessionTurnState } from '../lib/session-turn-read';
@@ -552,7 +554,15 @@ projectsApp.openapi(
     }
     const sanitized = sanitizeInboxPromptParts(rawParts);
     if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
-    const parts = sanitized.parts;
+    let prepared;
+    try {
+      prepared = sessionMetadataClaimsPiWorker(metadata)
+        ? preparePiPromptAttachments(sanitized.parts, { allowReferences: true })
+        : { parts: sanitized.parts, attachments: [] };
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+    const parts = prepared.parts;
     const text = flattenPromptText(parts);
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
@@ -597,6 +607,7 @@ projectsApp.openapi(
     // cache that a second pod would not share.
     const idempotencyKey = `prompt:${sessionId}:${clientMessageId}`;
     const enqueued = await enqueueContinueSessionCommand({
+      attachments: prepared.attachments,
       source: 'ui',
       projectId,
       accountId: loaded.row.accountId,

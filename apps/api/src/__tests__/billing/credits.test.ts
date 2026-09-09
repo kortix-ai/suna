@@ -187,7 +187,7 @@ describe('deductCredits', () => {
     }
   });
 
-  test('binds the canonical overload by NAME, always sending p_ledger_type', async () => {
+  test('binds the canonical overload by name with an explicit nullable idempotency key', async () => {
     // Use the rpcCalls-tracking mock from beforeEach
     // Override with a mock that ALSO tracks and returns success
     mockRegistry.supabaseRpc = {
@@ -208,10 +208,12 @@ describe('deductCredits', () => {
     expect(rpcCalls[0].params.p_amount).toBe(1);
     expect(rpcCalls[0].params.p_description).toBe('Test');
     expect(rpcCalls[0].params.p_ledger_type).toBe('usage');
+    expect(rpcCalls[0].params.p_idempotency_key).toBeNull();
     expect(Object.keys(rpcCalls[0].params).sort()).toEqual([
       'p_account_id',
       'p_amount',
       'p_description',
+      'p_idempotency_key',
       'p_ledger_type',
     ]);
     expect(rpcCalls[0].params.p_thread_id).toBeUndefined();

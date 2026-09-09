@@ -103,7 +103,7 @@ export default function ProjectIndexPage() {
     async (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
       if (!text.trim() && !files?.length) return;
       const fileError = runtimePromptFilesError({
-        attachmentsEnabled: runtimePromptOverridesAllowed,
+        attachmentsEnabled: projectDetail != null,
         attachmentCount: files?.length ?? 0,
       });
       if (fileError) {
@@ -203,6 +203,7 @@ export default function ProjectIndexPage() {
       billingLoading,
       accountState,
       projectAccountId,
+      projectDetail,
       openUpgradeDialog,
       newSession,
       runtimePromptOverridesAllowed,

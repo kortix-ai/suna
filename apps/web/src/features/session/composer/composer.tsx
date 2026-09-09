@@ -162,8 +162,8 @@ export interface SessionChatInputProps {
    */
   slashFiles?: SlashFile[];
   /**
-   * Whether this runtime accepts file prompt parts. Pi currently accepts text
-   * parts only, so its hosts disable the picker, slash action, paste and drop.
+   * Whether this runtime accepts attachments. The server validates supported
+   * file types before admitting the prompt.
    */
   attachmentsEnabled?: boolean;
   /**

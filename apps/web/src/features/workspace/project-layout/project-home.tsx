@@ -241,7 +241,7 @@ export function ProjectHome({
             toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
             sandboxSlot={sandboxSlot}
             modelOverridesEnabled={modelOverridesEnabled}
-            attachmentsEnabled={modelOverridesEnabled}
+            attachmentsEnabled={projectDetailQuery.data != null}
           />
         }
       />

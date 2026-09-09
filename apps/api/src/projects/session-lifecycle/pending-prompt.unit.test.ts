@@ -11,6 +11,29 @@ const BASE = {
 };
 
 describe('convertPendingPromptToInboxRow', () => {
+  test('a Pi first prompt stores image bytes separately from its durable command', () => {
+    const result = convertPendingPromptToInboxRow({
+      ...BASE,
+      piWorker: true,
+      pendingPrompt: { text: 'Read this', parts: [{ type: 'text', text: 'Read this' }, { type: 'file', mime: 'image/png', filename: 's.png', url: 'data:image/png;base64,AQID' }] },
+    });
+    expect(result.error).toBeNull();
+    expect(result.attachments?.[0]?.content).toEqual(Buffer.from([1, 2, 3]));
+    expect(JSON.stringify(result.rowValues)).not.toContain('data:');
+    expect((result.rowValues?.payload as any).parts[1].url).toMatch(/^kortix-attachment:sha256:[a-f0-9]{64}$/);
+  });
+
+  test('a Pi first prompt refuses an unsupported attachment without creating a command', () => {
+    const result = convertPendingPromptToInboxRow({
+      ...BASE,
+      piWorker: true,
+      pendingPrompt: { text: 'Read this', parts: [{ type: 'file', mime: 'application/pdf', url: 'data:application/pdf;base64,AQID' }] },
+    });
+    expect(result.error).toContain('PNG, JPEG, GIF, or WebP');
+    expect(result.rowValues).toBeNull();
+    expect(result.attachments).toBeUndefined();
+  });
+
   test('a text prompt becomes one durable row plus metadata picks without the text', () => {
     const result = convertPendingPromptToInboxRow({
       ...BASE,

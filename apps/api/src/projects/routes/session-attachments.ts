@@ -6,6 +6,7 @@ import { auth, errors } from "../../openapi";
 import { db } from "../../shared/db";
 import { projectsApp } from "../lib/app";
 import { authorizeSessionStorageCall } from "../lib/session-storage-access";
+import { storeSessionAttachments } from "../lib/session-attachment-store";
 import {
   readSessionAttachment,
   validateAttachmentIdentity,
@@ -56,37 +57,7 @@ projectsApp.openapi(
       c.req.header("content-type") ?? "",
       content,
     );
-    const inserted = await db
-      .insert(sessionAttachments)
-      .values({ sessionId: gate.sessionId, sha256, contentType, content })
-      .onConflictDoNothing({
-        target: [sessionAttachments.sessionId, sessionAttachments.sha256],
-      })
-      .returning({ sha256: sessionAttachments.sha256 });
-    if (inserted.length) return c.body(null, 204);
-    const [existing] = await db
-      .select({
-        contentType: sessionAttachments.contentType,
-        content: sessionAttachments.content,
-      })
-      .from(sessionAttachments)
-      .where(
-        and(
-          eq(sessionAttachments.sessionId, gate.sessionId),
-          eq(sessionAttachments.sha256, sha256),
-        ),
-      )
-      .limit(1);
-    if (
-      !existing ||
-      existing.contentType !== contentType ||
-      !Buffer.from(existing.content).equals(content)
-    ) {
-      return c.json(
-        { error: "attachment bytes and MIME type are immutable" },
-        409,
-      );
-    }
+    await storeSessionAttachments(db, gate.sessionId, [{ sha256, contentType, content }]);
     return c.body(null, 204);
   },
 );

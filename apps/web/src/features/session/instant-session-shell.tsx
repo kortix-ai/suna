@@ -110,6 +110,7 @@ export function InstantSessionShell({
     enabled: !!projectId && !!sessionId,
   }).data;
   const projectSessionRuntimeIdentity = resolveProjectSessionRuntimeIdentity(projectSessionRow);
+  const runtimeAttachmentsAllowed = projectSessionRuntimeIdentity !== 'unknown';
   const runtimePromptOverridesAllowed = runtimePromptOverridesEnabled({
     hasProjectSession: true,
     projectRuntimeIdentity: projectSessionRuntimeIdentity,
@@ -265,7 +266,7 @@ export function InstantSessionShell({
     async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       if (!text.trim() && !files?.length) return;
       const fileError = runtimePromptFilesError({
-        attachmentsEnabled: runtimePromptOverridesAllowed,
+        attachmentsEnabled: runtimeAttachmentsAllowed,
         attachmentCount: files?.length ?? 0,
       });
       if (fileError) {
@@ -324,7 +325,7 @@ export function InstantSessionShell({
         setExtraSends((prev) => [...prev, { id: `shell-extra-${Date.now()}`, text }]);
       }
     },
-    [projectId, sessionId, submitted, onSubmit, runtimePromptOverridesAllowed, tI18nHardcoded],
+    [projectId, sessionId, submitted, onSubmit, runtimePromptOverridesAllowed, runtimeAttachmentsAllowed, tI18nHardcoded],
   );
 
   const handleCommand = useCallback(
@@ -352,7 +353,7 @@ export function InstantSessionShell({
       boundAgentName={boundAgentName}
       modelOverridesEnabled={runtimePromptOverridesAllowed}
       agentOverridesEnabled={runtimePromptOverridesAllowed}
-      attachmentsEnabled={runtimePromptOverridesAllowed}
+      attachmentsEnabled={runtimeAttachmentsAllowed}
       // While the computer boots after the first send the input stays fully
       // normal (typeable) — only the send button flips to a stop button. The
       // stop is disabled because there's nothing running to stop yet; the real
