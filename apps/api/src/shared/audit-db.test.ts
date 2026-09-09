@@ -8,11 +8,7 @@
  * `insert into "kortix"."audit_events"` in chained pids.
  */
 import { describe, expect, test } from 'bun:test';
-import {
-  AUDIT_LOCK_TIMEOUT_MS_DEFAULT,
-  AUDIT_STATEMENT_TIMEOUT_MS_DEFAULT,
-  isAuditContentionError,
-} from './audit-db';
+import { AUDIT_LOCK_TIMEOUT_MS_DEFAULT, AUDIT_STATEMENT_TIMEOUT_MS_DEFAULT, auditErrorSqlstate, isAuditContentionError } from './audit-db';
 
 describe('audit pool timeout budget', () => {
   test('a lock wait is capped well below the statement budget', () => {
@@ -63,5 +59,38 @@ describe('isAuditContentionError', () => {
     const error: { code?: string; cause?: unknown } = {};
     error.cause = error;
     expect(isAuditContentionError(error)).toBe(false);
+  });
+});
+
+describe('auditErrorSqlstate', () => {
+  test('reads the SQLSTATE off a Drizzle wrapper whose pg error is the cause', () => {
+    // The prod shape: DrizzleQueryError prints the statement and every bound
+    // parameter and no code at all — the pg error hangs off `cause`.
+    const cause = Object.assign(new Error('canceling statement due to statement timeout'), {
+      code: '57014',
+    });
+    const wrapper = Object.assign(new Error('Failed query: insert into "kortix"."audit_events"'), {
+      cause,
+    });
+    expect(auditErrorSqlstate(wrapper)).toBe('57014');
+  });
+
+  test('finds a SQLSTATE nested more than one level down', () => {
+    const pg = Object.assign(new Error('deadlock detected'), { code: '40P01' });
+    const inner = Object.assign(new Error('inner'), { cause: pg });
+    expect(auditErrorSqlstate(Object.assign(new Error('outer'), { cause: inner }))).toBe('40P01');
+  });
+
+  test('answers null rather than inventing a code', () => {
+    expect(auditErrorSqlstate(new Error('boom'))).toBeNull();
+    expect(auditErrorSqlstate(null)).toBeNull();
+    expect(auditErrorSqlstate('57014')).toBeNull();
+    expect(auditErrorSqlstate(Object.assign(new Error('x'), { code: '' }))).toBeNull();
+  });
+
+  test('a self-referencing cause cannot loop', () => {
+    const error: { code?: string; cause?: unknown } = {};
+    error.cause = error;
+    expect(auditErrorSqlstate(error)).toBeNull();
   });
 });

@@ -1008,6 +1008,90 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(r.stopped).toBe(0);
   });
 
+  test('a turn record past the absolute ceiling is settled, never probed and never renewed', async () => {
+    // PROD 2026-09-09: 44 open turn records on `active` boxes, 42 of them older
+    // than 24 h and the oldest 20 DAYS. The daemon on those boxes answers every
+    // probe `active`, so `renewActiveSandboxTurn` re-granted four more hours on
+    // every pass and the box became immortal — while its audit relay produced
+    // ~13k contended-ingest 503s an hour. Age is the one bound the box cannot
+    // author.
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'wedged-token': {
+              token: 'wedged-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - 20 * 24 * HOUR,
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    // The daemon still insists the turn is live; that must no longer matter.
+    turnObservationByToken['wedged-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'wedged-token' }]);
+    expect(clearedTurnReasons).toEqual(['unknown']);
+    // Settled BEFORE the probe: nothing asked the box, and nothing renewed it.
+    expect(turnObservationCalls).toEqual([]);
+    expect(activeTurnRenewalCalls).toEqual([]);
+    expect(unconfirmedTurnDrips).toEqual([]);
+    expect(r.turnsSettled).toBe(1);
+    // The prompt behind a turn wedged for weeks is NOT re-run by a sweep.
+    expect(promptRedeliveries).toEqual([]);
+  });
+
+  test('a turn inside the ceiling keeps its box, and a record with no start instant is exempt', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'young-token': {
+              token: 'young-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              // 23h — under the 24h ceiling, and far past the 4h grant, so this
+              // is exactly the long turn the grant exists to keep alive.
+              startedAtMs: NOW.getTime() - 23 * HOUR,
+            },
+            // No `startedAtMs`: it can prove no age, so the ceiling cannot
+            // apply to it. Inventing an anchor would expire live work.
+            'ageless-token': {
+              token: 'ageless-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_2',
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['young-token'] = 'active';
+    turnObservationByToken['ageless-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([]);
+    expect(r.turnsSettled).toBe(0);
+    expect(turnObservationCalls.map((call) => call.token).sort()).toEqual([
+      'ageless-token',
+      'young-token',
+    ]);
+    expect(r.stopped).toBe(0);
+  });
+
   test('the delivery grace is the DELIVERY’s, not the box’s four-hour turn grant', async () => {
     // A prompt forwarded INTO a live turn writes a second, `delivering` record
     // on a box whose deadline the accepted turn already pushed four hours out.

@@ -102,6 +102,24 @@ const AUDIT_CONTENTION_SQLSTATES = new Set([
   '40P01', // deadlock_detected
 ]);
 
+/**
+ * The SQLSTATE behind a Drizzle write failure, or null.
+ *
+ * `DrizzleQueryError` prints the statement and its parameters and nothing else;
+ * the pg error — where `code` lives — is its `cause`, one or more levels down.
+ * A prod log that says only "Failed query: insert into audit_events …" cannot
+ * be triaged: a unique violation, a statement timeout, a dead connection and a
+ * NUL byte in jsonb all look identical. Mirrors `isAuditContentionError`'s walk
+ * so the two always agree about which error they are describing.
+ */
+export function auditErrorSqlstate(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'string' && code.length > 0) return code;
+  const cause = (error as { cause?: unknown }).cause;
+  return cause != null && cause !== error ? auditErrorSqlstate(cause) : null;
+}
+
 export function isAuditContentionError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const code = (error as { code?: unknown }).code;
