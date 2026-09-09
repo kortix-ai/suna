@@ -1474,3 +1474,31 @@ For embedded resource conversion, `pnpm test` passes all six core lanes in
 116.0 seconds: 400/400 REST/CLI flows, 818 worker tests, and seven Node artifact
 checks. Benchmark: `1788946701894`. No SDK source or API contract changes occur
 in this image-resource checkpoint.
+
+
+### Deployed recovery proof
+
+Preview `30bff991791be75faede2b114db9a03d393ddc90` passes the complete browser
+journey after deployment `34335177109`. Git, all three application image tags,
+and the public health commit match the SHA. A duplicate workflow is cancelled
+before its deployment job starts; the verified deployment remains active.
+
+`node /tmp/pi-turn-recovery-live.mjs 30bff991791be75faede2b114db9a03d393ddc90`
+passes on synthetic session `638095ce-68dd-4c19-b7e0-2d9af02525bf`:
+
+- Stop the worker at a pending permission, resume, and reload the real page.
+  The API reports one active `pi-resume-…` attempt. Native status is busy and
+  the UI shows one Stop button.
+- Send a stale `turn_end` over authenticated HTTP. It returns `identity_mismatch`,
+  closes zero turns, and reports `queue_promoted: false`. The same turn remains
+  active, with no MCP execution before human approval.
+- Approve through the actual UI. The permission reply returns `200`; the MCP
+  server receives one exact marker. The API ledger and queue settle empty.
+- Verify native model vision, exact private image bytes, thumbnail and viewer.
+  Stop a delayed tool, submit the next prompt, and observe **158 text deltas**
+  and **59 distinct visible streaming states**.
+- Stop/resume again and compare all 47 messages exactly. Tools do not
+  repeat. The environment stays off and the fixture worker ends stopped.
+
+Evidence: `/tmp/pi-turn-recovery-live.json`, `/tmp/pi-turn-recovery-live.png`,
+and `/tmp/pi-recovery-deployed-status.log`. No main/dev/staging/production change.

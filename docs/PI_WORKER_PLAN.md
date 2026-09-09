@@ -295,8 +295,6 @@ environment are not valid preview credentials and must not be copied.
 ## Deliberate exclusions
 
 - Filesystem version history is a later feature.
-- Transcript compaction is separate from durable message storage. Pi sessions
-  hide the compact action until the worker implements it.
 - Rewind and restore require one durable mutation across Pi's model tree and
   the HTTP transcript. Pi sessions hide these controls. The raw endpoints
   return `501 feature_not_supported` without changing either state.
@@ -311,7 +309,7 @@ require an approved merge and the documented release process. This branch must
 not merge itself.
 
 
-## Current checkpoint — 2026-09-08
+## Current checkpoint — 2026-09-09
 
 The remaining work continues on `pi-worker`; no merge is approved.
 
@@ -322,6 +320,11 @@ The remaining work continues on `pi-worker`; no merge is approved.
 - The provider bootstrap verifies artifacts and uses an execution-capable fallback.
 - Local proof: real daemon boot, provider-bootstrap process, dirty-workspace
   recovery, authenticated workspace routes, negative readiness, and version selection.
-- Preview proof for this checkpoint is pending deployment.
-- Continue the product parity audit, remaining SDK/host flows, and the fair
-  Pi-direct/OpenCode/Pi-worker benchmark. Restore worker mode after the benchmark.
+- The deployed proof verifies zero Pi and OpenCode servers in the environment,
+  unchanged working files, and history while both sandboxes are stopped.
+- Custom per-agent code, hooks, questions, permissions, streaming, images,
+  compaction, reasoning variants, structured output, and connector tools are
+  implemented. See the capability matrix for exact verification and limits.
+- The same-environment Pi/OpenCode benchmark has 60 passing samples; worker
+  mode is restored. The full three-path lifecycle benchmark remains open.
+- Continue the missing capabilities and host checks in `PI_OPENCODE_PARITY.md`.
