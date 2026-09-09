@@ -52,6 +52,7 @@ of each feature or the remaining parity matrix passed.
 | Public conversation while stopped | Sanitized worker transcript or PostgreSQL mirror | Preview: 24 messages preserved byte-for-byte as sanitized envelopes; anonymous HTTP 200, revoked HTTP 410 |
 | Worker/environment lifecycle | Distinct runtime principals, restore/stop/replacement, lease fencing | Race, credential, immutable identity, and live restart tests |
 | Context compaction | Manual and automatic checks before new prompts and between tool rounds; bounded retention and complete display history | HTTP threshold, Stop, retry, queue, replacement, oversize, and crash tests; real Luna with an 8,192-token fixture window, one tool execution, saved summary, exact restart, and recall; preview manual-compaction UI |
+| Native tool images | PostgreSQL assets, native provider and hook hydration, authenticated tiles and image viewer | Preview `cc5a217ef2`: custom capture and native environment read, exact bytes, 243 deltas, 73 visible states, 11-message exact restart, execution-only environment |
 | Native user images | Immutable PostgreSQL references, native provider hydration, session-scoped SDK upload, composer picker, and authenticated image viewer | Preview `1186af73`: 4,687-byte PNG, 50 text deltas, nine visible streaming states, Stop/next prompt, exact stop/resume history, image zoom/close, and absent environment |
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
 | Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls; preview UI High/None/Auto payloads and provider results; reload, nine-message stop/resume, and question recovery |
@@ -65,7 +66,7 @@ extensions. The native Pi lifecycle surface is documented in
 
 | Capability | Current behavior | Required work |
 |---|---|---|
-| File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, and capability-gated existing-session composer | First-prompt creation, remote attachment conversion, and full large-upload provider verification. Native tool-image persistence, provider/hook hydration, and viewer are implemented locally; deployed proof is pending |
+| File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, and capability-gated existing-session composer | First-prompt creation, remote attachment conversion, and full large-upload provider verification. Native tool images are verified separately above |
 | Provider context-overflow recovery | Threshold compaction runs before new prompts and between tool rounds | Recovery when one input or tool result already exceeds the provider window; full-size preview proof remains blocked by ingress |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |

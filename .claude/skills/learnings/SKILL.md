@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Mount one global billing dialog per authenticated app (2026-09-09)
+
+**When:** a global dialog can open from nested settings and account surfaces.
+**Incident:** preview `6363074d0f` displayed two upgrade dialogs after Subscribe. Their accessibility hiding made both headings absent from the accessibility tree.
+**Rule:** own the renderer above authenticated routes. Nested legacy hosts must defer to that owner; keep a fallback for public share pages.
+**Enforcer:** the live billing journey asserts one dialog and an accessible heading before submitting checkout.
+
 ### Reload generated proxy configuration from host bytes (2026-09-09)
 
 **When:** refreshing Caddy inside a reused preview container.

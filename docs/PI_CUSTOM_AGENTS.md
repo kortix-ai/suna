@@ -85,6 +85,8 @@ Use review_text when asked to count words. Explain the result briefly.
 | `description`, `mode`, `color`, `hidden` | Agent metadata exposed through the compatibility API |
 | `disable` | Disables this agent; manifest `enabled: false` also disables it |
 
+For file tools, permission patterns inside the workspace are relative to the workspace root. For example, `read: { "images/**": allow }` permits files under `/workspace/images`. External paths use absolute patterns.
+
 Unknown fields fail compilation. Nonempty `options` is unsupported.
 Empty legacy `variant: ''` and `options: {}` are tolerated. OpenCode plugins, MCP
 configuration, Pi CLI settings files, and coding-agent TUI extensions are not

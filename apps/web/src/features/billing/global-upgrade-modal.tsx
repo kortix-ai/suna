@@ -33,6 +33,7 @@ import {
   billingStateNeedsTopUp,
   resolveBillingState,
 } from '@/lib/billing/billing-gate-state';
+import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -44,7 +45,7 @@ import {
   UserPlusIcon as UserPlus,
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
 
 export interface UpgradePlansModalProps {
   open: boolean;
@@ -394,7 +395,23 @@ function CreditTopUpModal({
   );
 }
 
+const UpgradeModalHostedContext = createContext(false);
+
+export function UpgradeModalHost({ children }: { children: ReactNode }) {
+  return (
+    <UpgradeModalHostedContext.Provider value={true}>
+      {children}
+      {isBillingEnabled() && <UpgradeModalRenderer />}
+    </UpgradeModalHostedContext.Provider>
+  );
+}
+
 export function GlobalUpgradeModal() {
+  const hosted = useContext(UpgradeModalHostedContext);
+  return hosted ? null : <UpgradeModalRenderer />;
+}
+
+function UpgradeModalRenderer() {
   const {
     isOpen,
     closeUpgradeDialog,

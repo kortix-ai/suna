@@ -144,6 +144,9 @@ test.describe
 
       await test.step('The owner starts Team checkout from the Billing page', async () => {
         await page.getByRole('button', { name: 'Subscribe to Team' }).click();
+        await expect(page.locator('[role="dialog"]').filter({
+          has: page.getByText('Subscribe to Kortix Team', { exact: true }),
+        })).toHaveCount(1);
         await expect(page.getByRole('heading', { name: 'Subscribe to Kortix' })).toBeVisible();
         const checkout = await captureJsonPost<CheckoutResult>(
           page,

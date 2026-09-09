@@ -1116,3 +1116,44 @@ The German onboarding failure is a test assumption: the browser's public runtime
 configuration reports `CONNECTORS_ENABLED: false`, so Tools is correctly absent.
 The test now asserts the configured path before proceeding to Slack. Preview
 billing remains unresolved; the four Platinum shipping failures remain open.
+
+
+## Native tool-image UI — verified 2026-09-09
+
+Commit `cc5a217ef225d2f4f942e5b9c1b680c365ee5880` deploys through
+`34314371034`. The corrected source fixture is
+`fb80627c29012dc0a107b8224c3b9a4d263540dc` on
+`codex/pi-tool-images-20260909`. Its read permission uses the workspace-relative
+`pi-tool-image-fixture.png` pattern. The project's default branch is unchanged;
+the temporary source token is revoked.
+
+The real browser check passes in session `04aac850-23c9-4bed-811d-e5183e34ffec`:
+
+- Capture returns the original PNG from the worker. Provider and native hooks
+  receive the exact bytes. No environment starts for capture or its image viewer.
+- The completed tool shows an authenticated image tile after expanding the
+  activity list. The viewer opens the original 400×240 image and closes normally.
+- `write_sample` starts the environment and creates the PNG. Native `read`
+  returns a second image tile with identical bytes. The actual provider payload
+  contains both images.
+- Environment `6d708ba7-09c2-4da3-8fed-ff7925b09ae9` reports
+  `workload: environment`, `opencode: disabled`, and `runtimeReady: true`.
+- A UI prompt produces 243 text deltas and 73 visible rendering states.
+- All 11 messages and image URLs survive worker replacement without repeating
+  the completed tools. The worker and environment are stopped after verification.
+
+Evidence: `/tmp/pi-tool-images-preview.json`, `/tmp/pi-tool-images-preview.png`,
+and `/tmp/pi-tool-native-read-live.json`.
+
+Manual check: open the fixture session, expand **Completed 2 steps**, and click
+its image. Expand **Completed 3 steps** to inspect the native file-read image.
+Ask it to read `/workspace/pi-tool-image-fixture.png` again. It must show the
+same image and read `LIME 731`. Stop a long reply, then send another prompt.
+
+The full preview rerun at this commit is superseded before its tests start by
+the billing accessibility fix. Its screenshot proves two global upgrade dialogs
+rendered together: visible content was absent from the accessibility tree. One
+host now owns that dialog across authenticated routes; share pages retain their
+fallback host. The billing journey requires exactly one dialog and an accessible
+heading. All 9,635 frontend tests pass; typechecking and focused lint pass. Live
+billing verification remains pending the next deployment.

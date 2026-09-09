@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 
 import { AccountHubPanel } from '@/features/accounts/hub/account-hub-panel';
 import { BillingReturnWatcher } from '@/features/billing/billing-return';
+import { UpgradeModalHost } from '@/features/billing/global-upgrade-modal';
 import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watcher';
 
 /**
@@ -25,7 +26,7 @@ import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watche
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <>
+    <UpgradeModalHost>
       {/* useSearchParams needs a Suspense boundary to avoid opting every route
           under (app) into client-side rendering at build time. */}
       <Suspense fallback={null}>
@@ -39,6 +40,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <AccountHubPanel />
       </Suspense>
       {children}
-    </>
+    </UpgradeModalHost>
   );
 }
