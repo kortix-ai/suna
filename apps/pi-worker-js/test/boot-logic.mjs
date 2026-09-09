@@ -4,9 +4,9 @@
 // never connected (every boot route 404), and every message showed twice (the
 // transcript read named messages by row number while the stream had named
 // them by wire id, and painted pi's thinking as a visible part).
-// EXPECTED_PASSES=24
+// EXPECTED_PASSES=26
 import { bootAnswer, isBootRoute, configModel, agentNameFrom } from "../src/opencode-boot.js";
-import { transcriptMessages, partType, messageIdFor } from "../src/transcript-read.js";
+import { transcriptMessages, partType, messageIdFor, sortableLegacyId } from "../src/transcript-read.js";
 
 let bad = 0;
 const check = (name, ok, detail = "") => {
@@ -58,12 +58,20 @@ const check = (name, ok, detail = "") => {
   const out = transcriptMessages(rows, "s1");
   check("a user message is named by the id the client sent — the optimistic bubble reconciles",
     out[0].info.id === "msg_0879abc" && out[0].parts[0].messageID === "msg_0879abc", JSON.stringify(out[0]));
-  check("an assistant message is named by the id the stream used, parts included",
-    out[1].info.id === "msg_cell_00000001" && out[1].parts.every((p) => p.messageID === "msg_cell_00000001"), JSON.stringify(out[1].parts.map((p) => p.id)));
+  // A legacy counter id is re-expressed where it happened in time, so the
+  // client's id ordering agrees with the clock: user, assistant, user, assistant.
+  const legacy = sortableLegacyId("msg_cell_00000001", 20);
+  check("a legacy msg_cell id is named by its row's time on read — 12 hex of the client's clock, then a stable tail",
+    /^msg_[0-9a-f]{12}cell0000000001$/.test(legacy) && out[1].info.id === legacy && out[1].parts.every((p) => p.messageID === legacy), `${legacy} ${out[1].info.id}`);
+  check("and it sorts between the user ids around it, by id, exactly as by time",
+    (() => { const a = "msg_" + ((BigInt(10 - 120000) * 0x1000n) & 0xffffffffffffn).toString(16).padStart(12, "0") + "abcdefghijklmn";
+             const b = "msg_" + ((BigInt(30 - 120000) * 0x1000n) & 0xffffffffffffn).toString(16).padStart(12, "0") + "abcdefghijklmn";
+             return a < legacy && legacy < b; })(), legacy);
+  check("a real wire id is left exactly as it is", messageIdFor({ i: 9, ts: 5, wire_id: "msg_088088c790015gYS8fAEf15ugc" }) === "msg_088088c790015gYS8fAEf15ugc", "");
   check("pi's thinking block is NOT in the transcript — the stream hides it, so must the read (the chat paints a `reasoning` part as an answer)",
     out[1].parts.length === 1 && out[1].parts[0].type === "text" && out[1].parts[0].text === "sup!", JSON.stringify(out[1].parts));
   check("and the surviving part keeps the index the stream named it by — p1, not p0",
-    out[1].parts[0].id === "msg_cell_00000001-p1", out[1].parts[0].id);
+    out[1].parts[0].id === `${legacy}-p1`, out[1].parts[0].id);
   check("a row from before the column falls back to its row number — exactly what the read used to emit",
     out[2].info.id === "3" && out[2].parts[0].id === "3-p0", JSON.stringify(out[2]));
   check("partType: thinking and reasoning both hide; text is text; tools keep their name",

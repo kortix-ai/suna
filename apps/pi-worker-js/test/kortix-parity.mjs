@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=124
+// EXPECTED_PASSES=125
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -962,27 +962,34 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const h1 = makeCell(AgentCell, env, { db });
   await h1.fetch("/session/s/prompt_async?c=s", {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ messageID: "msg_client_0001", parts: [{ type: "text", text: "suppp" }] }),
+    body: JSON.stringify({ messageID: `msg_${((BigInt(Date.now() - 120000) * 0x1000n) & 0xffffffffffffn).toString(16).padStart(12, "0")}AAAAAAAAAAAAAA`, parts: [{ type: "text", text: "suppp" }] }),
   });
   await h1.drain();
   const t1 = await (await h1.fetch("/session/s/message?c=s")).json();
   const user = t1.find((m) => m.info.role === "user"); const asst = t1.find((m) => m.info.role === "assistant");
   check("the user message is named by the messageID the client sent",
-    user?.info.id === "msg_client_0001" && user.parts[0]?.messageID === "msg_client_0001", JSON.stringify(t1).slice(0, 200));
-  check("the assistant message is named by the id the stream minted, parts included",
-    asst?.info.id === "msg_cell_00000001" && asst.parts[0]?.id === "msg_cell_00000001-p0", JSON.stringify(asst).slice(0, 200));
+    /^msg_[0-9a-f]{12}AAAAAAAAAAAAAA$/.test(user?.info.id ?? "") && user.parts[0]?.messageID === user.info.id, JSON.stringify(t1).slice(0, 200));
+  check("the assistant message is named by a WIRE id the stream minted — the client's own time-sortable shape — parts included",
+    /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/.test(asst?.info.id ?? "") && asst.parts[0]?.id === `${asst.info.id}-p0`, JSON.stringify(asst).slice(0, 200));
 
   // A REBUILT ISOLATE MUST NOT MINT AN ID THE TRANSCRIPT ALREADY HOLDS.
   const h2 = makeCell(AgentCell, env, { db });
   await h2.fetch("/session/s/prompt_async?c=s", {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ messageID: "msg_client_0002", parts: [{ type: "text", text: "and?" }] }),
+    body: JSON.stringify({ messageID: `msg_${((BigInt(Date.now() - 120000) * 0x1000n) & 0xffffffffffffn).toString(16).padStart(12, "0")}ZZZZZZZZZZZZZZ`, parts: [{ type: "text", text: "and?" }] }),
   });
   await h2.drain();
   const t2 = await (await h2.fetch("/session/s/message?c=s")).json();
   const ids = t2.filter((m) => m.info.role === "assistant").map((m) => m.info.id);
-  check("after an eviction the next assistant id continues the sequence — no two messages share a name",
-    ids.length === 2 && ids[0] === "msg_cell_00000001" && ids[1] === "msg_cell_00000002", JSON.stringify(ids));
+  check("after an eviction the next assistant id still sorts strictly after the previous one — by id, as the client orders",
+    ids.length === 2 && ids[0] < ids[1] && ids[0] !== ids[1], JSON.stringify(ids));
+  // THE ORDER THE CLIENT PAINTS: by id. Two turns whose user ids are real wire
+  // ids must interleave user, assistant, user, assistant — measured wrong on
+  // session 89848ff8 with counter ids.
+  const all = t2.map((m) => m.info);
+  const byId = [...all].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((m) => m.role);
+  check("sorted by id the transcript reads user, assistant, user, assistant",
+    JSON.stringify(byId) === JSON.stringify(["user", "assistant", "user", "assistant"]), JSON.stringify(byId));
 }
 
 // `/session/status` IS A ROUTE. OpenCode answers a map keyed by session id; the

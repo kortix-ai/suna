@@ -23,10 +23,37 @@ export function partType(blockType) {
   return String(blockType);
 }
 
+// The wire-id clock (apps/api projects/wire-message-id.ts): milliseconds,
+// backdated and scaled, 48 bits, hex. Repeated here rather than imported so
+// this module stays importable under plain node for its claims.
+const WIRE_ID_BACKDATE_MS = 2 * 60 * 1000;
+const WIRE_ID_TIME_SCALE = 0x1000n;
+const WIRE_ID_TIME_MASK = 0xffffffffffffn;
+const LEGACY_CELL_ID = /^msg_cell_(\d{1,8})$/;
+
+/**
+ * A legacy `msg_cell_<seq>` id, re-expressed where it happened in time.
+ *
+ * Those ids were minted from a counter and sort after every client id
+ * (`msg_<time>…`), so a transcript that holds them reads user, user,
+ * assistant, assistant. The rows keep their stored id; the READ names them by
+ * the row's own timestamp, in the same 12-hex clock the client sorts on, with
+ * the sequence folded into a fixed tail so the mapping is stable and unique.
+ * Nothing live can still reference a legacy id — the stream that used it is
+ * long closed — so renaming on read changes no correlation.
+ */
+export function sortableLegacyId(wireId, ts) {
+  const m = LEGACY_CELL_ID.exec(wireId ?? "");
+  if (!m || !Number.isFinite(ts)) return null;
+  const encoded = ((BigInt(Math.trunc(ts) - WIRE_ID_BACKDATE_MS) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK)
+    .toString(16).padStart(12, "0");
+  return `msg_${encoded}cell${m[1].padStart(10, "0")}`;
+}
+
 /** The id a message is known by on the wire, else the row number as text. */
 export function messageIdFor(row) {
   const wire = typeof row?.wire_id === "string" ? row.wire_id.trim() : "";
-  return wire || String(row.i);
+  return sortableLegacyId(wire, row?.ts) ?? (wire || String(row.i));
 }
 
 /**

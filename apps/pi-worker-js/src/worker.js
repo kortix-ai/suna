@@ -55,6 +55,7 @@ import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
 import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
 import { agentNameFrom, bootAnswer } from "./opencode-boot.js";
 import { transcriptMessages } from "./transcript-read.js";
+import { mintWireMessageId, newestWireIdTime } from "../../api/src/projects/wire-message-id.ts";
 import { runtimeStateDoc, projectionEtag } from "./projection.js";
 import { ChatEventAdapter } from "../../kortix-worker/src/chat-events.ts";
 
@@ -433,16 +434,8 @@ export class AgentCell {
     // the same way (transcript-read.js). Rows that predate the column fall back
     // to their row number, which is what the read used to emit for every row.
     try { this.sql.exec("ALTER TABLE msgs ADD COLUMN wire_id TEXT"); } catch { /* already there */ }
-    // THE WIRE COUNTER OUTLIVES THE ISOLATE. `msg_cell_<seq>` was minted from
-    // an in-memory counter, so a rebuilt isolate started again at 00000001 and
-    // a later turn re-used an id the transcript already held — two messages,
-    // one name. Seeded from the messages that carry one, it is monotonic across
-    // every eviction, and the format the tests pin is unchanged.
-    if (this.wireMessageSeq == null) {
-      try {
-        this.wireMessageSeq = this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE wire_id LIKE 'msg_cell_%'").toArray()[0].n;
-      } catch { this.wireMessageSeq = 0; }
-    }
+    // Assistant ids are minted time-sortable, past the newest id the transcript
+    // holds (see mintWireMessageId below) — nothing to seed.
     // THE SESSION'S OWN CONFIGURATION, WHICH MUST OUTLIVE THE ISOLATE.
     //
     // Per-session config does not arrive in the cell's process env — that is
@@ -837,9 +830,31 @@ export class AgentCell {
     try { this.sql.exec("UPDATE turns SET timing=? WHERE i=?", JSON.stringify(lap), i); } catch { /* column may predate this build */ }
   }
 
+  /**
+   * AN ASSISTANT ID MUST SORT WHERE THE MESSAGE HAPPENED.
+   *
+   * The client orders a transcript by id when the ids are well-formed wire ids
+   * (packages/sdk core/turns/grouping.ts), and the user's ids are: the API
+   * mints `msg_<12 hex of time><14 random>` (apps/api projects/wire-message-id.ts).
+   * `msg_cell_00000001` sorts after every one of those, so after a second
+   * message the conversation read user, user, assistant, assistant — measured
+   * 2026-09-09 on session 89848ff8: sorted by id the two assistant replies
+   * came last; sorted by time they were in place.
+   *
+   * Same module, same scheme, bumped strictly past the newest id this cell
+   * already holds — the user message that opened this turn included — and past
+   * the last id this instance minted, so a tool loop's second assistant message
+   * still follows its first within the same millisecond.
+   */
   mintWireMessageId() {
-    this.wireMessageSeq = (this.wireMessageSeq ?? 0) + 1;
-    return `msg_cell_${String(this.wireMessageSeq).padStart(8, "0")}`;
+    let newest = null;
+    try {
+      newest = newestWireIdTime(this.sql.exec("SELECT wire_id FROM msgs WHERE wire_id IS NOT NULL").toArray().map((r) => r.wire_id));
+    } catch { newest = null; }
+    if (this.lastMintedWireTime != null && (newest === null || this.lastMintedWireTime > newest)) newest = this.lastMintedWireTime;
+    const { id, time } = mintWireMessageId({ nowMs: Date.now(), newestKnownTime: newest });
+    this.lastMintedWireTime = time;
+    return id;
   }
 
   broadcast(event, { mirror = true } = {}) {
