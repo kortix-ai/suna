@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=81
+// EXPECTED_PASSES=85
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -673,6 +673,45 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     String(cell.wireSessionId({}, "object-id")));
   check("and the object id is the last resort, not the first",
     cell.wireSessionId({}, "object-id") !== "object-id", "");
+}
+
+
+// THE CELL SAYS HOW LONG IT TOOK, so a caller's number can be split.
+//
+// A caller timing a cell measures connection + hop + isolate + hop. When it is
+// wrong, nothing says which. Measured 2026-09-09: the API's env repair
+// reported `post: 73 ms` against a POST that answered in 9 ms p50 from a warm
+// connection elsewhere, and neither side could name the other 64 ms.
+{
+  const h = makeCell(AgentCell, ENV);
+  const r = await h.fetch("/model?c=s");
+  const v = r.headers.get("x-cell-ms");
+  check("every answer carries the cell's own service time",
+    v !== null && Number.isFinite(Number(v)) && Number(v) >= 0, String(v));
+
+  // A route that answers before init() must carry it too — that one is the
+  // spawn path, and it is the reading the whole comparison rests on.
+  const ping = await h.fetch("/ping?c=s");
+  check("including /ping, which answers before init() and is what spawn is timed on",
+    Number.isFinite(Number(ping.headers.get("x-cell-ms"))), String(ping.headers.get("x-cell-ms")));
+
+  // A MEASUREMENT, NOT A CONSTANT. The first version of this claim compared a
+  // cheap route against an expensive one and passed under a mutant that
+  // reported a hardcoded "0" — because 0 >= 0. A whole scripted turn cannot
+  // take zero milliseconds: it runs the model fixture and writes the
+  // transcript to SQLite.
+  const turn = await h.fetch("/prompt?c=s", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "go", script: [{ text: "answered" }] }),
+  });
+  check("and it is a measurement, not a constant — a whole turn cannot take 0 ms",
+    Number(turn.headers.get("x-cell-ms")) > 0, String(turn.headers.get("x-cell-ms")));
+
+  // The projection asks the cell about itself. If that inner call went through
+  // `fetch` it would start a second clock inside the first.
+  const proj = await h.fetch("/kortix/opencode/state?c=s");
+  check("the projection still answers, with the cell asking itself through handle()",
+    proj.status === 200 && (await proj.json()).identity !== undefined, String(proj.status));
 }
 
 process.exit(bad ? 1 : 0);

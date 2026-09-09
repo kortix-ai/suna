@@ -1071,7 +1071,35 @@ export class AgentCell {
     return wrote;
   }
 
+  /**
+   * THE CELL'S OWN CLOCK, on every answer.
+   *
+   * A caller timing a request to a cell measures four things at once: opening
+   * a connection, the hop, this isolate's work, and the hop back. When the
+   * number is wrong there is no way to tell which — and a whole tick went into
+   * guessing. Measured 2026-09-09, the API's env repair reported `post: 73 ms`
+   * to a box whose same POST answered in 9 ms p50 from a warm connection in
+   * another process, and nothing on either side said where the other 64 ms
+   * went.
+   *
+   * `x-cell-ms` is the part this isolate is responsible for. Subtracting it
+   * from the caller's own measurement leaves the network, which is the only
+   * other place the time can be. One header, every route, no new endpoint to
+   * remember to call.
+   *
+   * Deliberately NOT `Server-Timing`: that is a browser-facing format with a
+   * parser, and this is read by a log line and a shell script.
+   */
   async fetch(req) {
+    const cellT0 = performance.now();
+    const res = await this.handle(req);
+    try {
+      res.headers.set("x-cell-ms", (performance.now() - cellT0).toFixed(1));
+    } catch { /* a response whose headers are sealed still answers */ }
+    return res;
+  }
+
+  async handle(req) {
     // BEFORE init(), DELIBERATELY. /ping is the only path that reaches a cell
     // without paying for its schema, which is what makes the two halves of a
     // cold start separable: everything up to here is celld creating the
@@ -1819,7 +1847,9 @@ export class AgentCell {
         sessionId: sid,
         epoch: this.wire?.epoch ?? this.instance,
         seq: this.wire?.seq ?? 0,
-        sessions: await (await this.fetch(new Request(`http://cell/session?c=${encodeURIComponent(sid)}`))).json(),
+        // `handle`, not `fetch`: this is the cell asking itself, so it must not
+        // start a second `x-cell-ms` clock inside the one already running.
+        sessions: await (await this.handle(new Request(`http://cell/session?c=${encodeURIComponent(sid)}`))).json(),
         busy: !!this.running,
         model: { id: c?.model ?? null, provider: c?.provider ?? null },
         skills,

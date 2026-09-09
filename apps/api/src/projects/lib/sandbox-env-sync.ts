@@ -700,8 +700,15 @@ export async function repairCellSessionEnv(args: {
     if (!res.ok) {
       console.warn(`[cell-env] repair for ${args.sessionId} answered ${res.status}`);
     }
+    // THE CELL'S OWN CLOCK, SUBTRACTED. `post` is connection + hop + isolate +
+    // hop; `x-cell-ms` is the isolate alone, so `wire` is everything that is
+    // not the cell. That difference is the only way to tell a slow box from a
+    // cold connection, and guessing at it cost a tick.
+    const cellMs = Number(res.headers.get('x-cell-ms'));
+    const wire = Number.isFinite(cellMs) ? Math.max(0, (lap.post ?? 0) - cellMs) : null;
     console.log(
-      `[cell-env] timing sandbox=${args.externalId} total=${Date.now() - t0}ms ${JSON.stringify(lap)}`,
+      `[cell-env] timing sandbox=${args.externalId} total=${Date.now() - t0}ms ` +
+        `${JSON.stringify(lap)} cell=${Number.isFinite(cellMs) ? cellMs : '?'}ms wire=${wire ?? '?'}ms`,
     );
   } catch (err) {
     console.warn(
