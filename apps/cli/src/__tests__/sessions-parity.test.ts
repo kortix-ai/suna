@@ -642,6 +642,7 @@ describe('kortix sessions chat --queue', () => {
       parts: unknown[];
       overrides: unknown;
       client_sent_at_ms: number;
+      remint_on_delivery: boolean;
     };
     // The API refuses anything that is not an OpenCode wire message id.
     expect(body.message_id).toMatch(/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
@@ -652,6 +653,7 @@ describe('kortix sessions chat --queue', () => {
       model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
     });
     expect(typeof body.client_sent_at_ms).toBe('number');
+    expect(body.remint_on_delivery).toBe(true);
     expect(JSON.parse(r.stdout).prompt_id).toBe(PROMPT_ROW);
   });
 

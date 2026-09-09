@@ -183,7 +183,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'connect',
             args: '[session-id]',
-            blurb: 'Attach the full OpenCode TUI to a session (picker when no id given)',
+            blurb: 'Connect to a session runtime (picker when no id given)',
           },
           {
             name: 'chat',

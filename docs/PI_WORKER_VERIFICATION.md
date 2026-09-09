@@ -7,6 +7,82 @@ Architecture: [walkthrough, Q&A, and diagram](./PI_WORKER_WALKTHROUGH.md).
 
 Latest UI and streaming checks: [runtime UI verification](./PI_RUNTIME_UI_VERIFICATION.md).
 
+## Native Pi terminal — 2026-09-09
+
+`kortix sessions connect` and interactive `sessions chat` select the Kortix
+terminal for server-owned Pi metadata. They do not download or launch OpenCode.
+YAML v2 sessions retain the version-matched OpenCode TUI. Pi rejects `--port`
+and OpenCode attach arguments instead of silently ignoring them.
+
+The terminal consumes the SDK event stream. It renders incremental text and
+tool status, restores recent history and pending requests, and supports single,
+multiple, and free-text question answers. Failed replies preserve prior answers.
+Permissions show tool patterns and arguments. `once`, `always`, and `reject`
+use the existing permission contract. `/stop` and Ctrl-C abort the turn;
+`/exit` and EOF detach without stopping it. Initial reads have a 20-second cap.
+
+The CLI message-ID minter now keeps the low 48 clock bits. Both queued CLI
+submission paths request server-side placement against the live transcript.
+The CLI does not load that transcript before durable admission.
+
+Local checks:
+
+- `pnpm --filter @kortix/cli test`: 1,270 pass, zero failures, 5,232 assertions
+  across 107 files in 50.93 seconds. The stalled-read case exits after 20.14 seconds.
+- New terminal tests initially pass one OpenCode case and fail five Pi cases.
+  The final suite covers failed-answer retry, numeric custom input, foreign-session
+  filtering, EOF, SIGINT, permission details, and the read deadline.
+- `pnpm --filter @kortix/cli typecheck`: exit zero.
+- `pnpm test`: all six lanes pass in 116.0 seconds; REST/CLI 400/400,
+  worker 827 tests and seven Node artifact cases. Benchmark `1788959855122`.
+- SDK typecheck and packed-install smoke pass. SDK source and exports are unchanged.
+- `pnpm test -- --id CLI-SESS` selects no local flow because Daytona and funded
+  capabilities are external. It is not counted as passed.
+
+Live proof uses API `b918ca0b199ab323a8bcf3f332b7be06366e1903`, the local CLI
+source in this checkpoint, and owned session
+`79300a58-b107-495f-a283-dc2b76680069`. Agent source is pinned to
+`5b948d5476affa33a6e2f5e0fa1aa693a5224c7e`. Its custom tool returns a test
+marker entirely in the worker and requires permission.
+
+1. A real PTY receives partial model output before the final marker. The first
+   response produces 68 terminal chunks. The full test captures 783 text deltas.
+2. A native request asks two questions. The terminal returns `Triangle` and
+   both `Purple` and `Yellow`. The real assistant repeats those labels.
+3. Permission details include the exact marker. `once` executes one tool call.
+   The next call asks again; `reject` prevents its success result.
+4. Detaching leaves a permission pending. A second PTY restores that exact
+   request, approves it, and receives the tool result. Both PTYs exit zero.
+5. Ctrl-C interrupts a long streamed response. A subsequent prompt returns
+   `AFTER_TERMINAL_STOP_9142`. The standalone `chat --queue` process then
+   returns zero and produces `CLI_QUEUE_AFTER_HISTORY_3758` after prior history.
+6. Stop/resume preserves 26 exact messages. The environment route returns 404.
+   A fail-fast OpenCode executable remains unused throughout.
+
+Evidence: `/tmp/pi-cli-terminal-proof.json`, `/tmp/pi-cli-terminal-output.log`,
+and `/tmp/pi-cli-terminal-live.log`. An earlier PTY probe stalls before its first
+admission and is not counted as passed. Direct SDK hydration afterward returns
+all three reads in 992–1,140 ms. Its cause remains unconfirmed; the new stalled-read
+test proves a bounded error instead of an indefinite wait. That failed probe is
+preserved under `/tmp/pi-cli-terminal-first-pty-*`.
+The API and Daytona both report the owned worker stopped at
+`2026-09-09T13:16:23.769Z`; `/tmp/pi-cli-terminal-owned-state.json` records this check.
+
+### Manual terminal test
+
+Use this branch's CLI against `https://pi.kortix.com` and a running YAML v3 session:
+
+```sh
+kortix sessions connect <session-id> --project <project-id>
+```
+
+Ask for two structured questions. Select one option, then multiple options.
+Ask for an action whose agent policy requires approval. Check the arguments and
+try `once` or `reject`. Exit during another permission request, then reconnect.
+Generate a long response, press Ctrl-C, and send another prompt. Use `/exit` to
+detach. Verify YAML v2 still opens OpenCode. Full-screen Pi CLI extensions and
+complete CLI/mobile/white-label parity remain outside this checkpoint.
+
 ## MCP resources and prompts — 2026-09-09
 
 Code commit: `48e1acb70fea51fc50b744336fb2ddae23d46b85`.
@@ -1684,7 +1760,7 @@ Local evidence:
 Evidence files: `/tmp/pi-remote-attachments-red.log`,
 `/tmp/pi-remote-inputs-final.log`, `/tmp/pi-remote-inbox-pg.log`,
 `/tmp/pi-remote-rest-focused.log`, and `/tmp/pi-remote-api-suite.log`.
-Deployment and live-source expiry verification remain pending at this checkpoint.
+Deployment and live-source expiry verification pass at `b918ca0b199`, as recorded below.
 The direct runtime `s.send()` still accepts immutable attachment references;
 HTTPS ingestion uses `pending_prompt` or `s.prompts.create()`.
 
@@ -1716,3 +1792,36 @@ skips and zero failures (32,497 assertions, 49.06 seconds). The late-response
 case passes separately after that full run. `pnpm test` passes all six lanes
 in 120.3 seconds: 400/400 REST/CLI flows, 827 worker tests, seven Node artifact
 cases, and the SDK lane. Benchmark `1788957140799`.
+
+### Deployed HTTPS proof
+
+Commit `b918ca0b199ab323a8bcf3f332b7be06366e1903` deploys through
+[34351763833](https://github.com/kortix-ai/suna/actions/runs/34351763833).
+The checkout, API/gateway/frontend image tags, and public health match.
+The owned live session is `a798b6eb-16f2-4425-afe1-7d17a67a666b`.
+
+- First-prompt admission stores exact private bytes before `ensureReady()`.
+- Luna identifies `RESOURCE_9241`, the left purple triangle, and the right
+  yellow circle. The source then returns 410. The thumbnail and full 420×260
+  browser viewer still load from authenticated storage.
+- A queued image produces another real vision answer. Retrying its accepted
+  client ID after source expiry returns the same prompt and makes no download.
+- A public redirect succeeds. A private redirect, disguised HTML, and an image
+  above 8 MiB return 400 without creating a prompt. The 35-second source returns
+  400 after 20,261 ms with the bounded download error.
+- No upstream request receives caller Authorization or Cookie headers.
+  Anonymous access to the private image returns 401.
+- Stop/resume preserves six exact messages and private bytes. It makes zero
+  further image-source requests. No environment exists.
+
+`/tmp/pi-remote-images-live.json` records the passing assertions.
+`/tmp/pi-remote-images-live.png` records the browser.
+`/tmp/pi-remote-images-owned-state.json` verifies all four image-probe workers
+stopped in both the API and Daytona. The temporary image server and tunnel are
+terminated after verification.
+
+Manual test: submit a public HTTPS image using the example at `/docs/sdk/pi`.
+Ask Pi to describe it, open its image viewer, then stop and resume the session.
+An expired source URL must not remove the accepted image. Retrying the same
+`clientMessageId` must return the original prompt. The SDK's direct `send()`
+method still uses references returned by `attachments.image()`.

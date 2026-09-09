@@ -68,7 +68,7 @@ Subcommands:
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
-                                    --connect attaches the OpenCode TUI as
+                                    --connect opens the runtime terminal as
                                     soon as it's ready (implies --wait); on an
                                     interactive terminal without it, you're
                                     asked whether to connect after creation.
@@ -101,8 +101,9 @@ Subcommands:
   queue <session-id> [<sub>]        The durable prompt inbox: ls (default), rm
                                     <prompt-id>, now <prompt-id>, hold,
                                     release. --json.
-  connect [<session-id>]            Attach local OpenCode to the running
-                                    session sandbox. Pass args after --.
+  connect [<session-id>]            Connect to the selected session runtime.
+                                    Pi uses the Kortix terminal; OpenCode uses
+                                    its TUI. Pass OpenCode args after --.
   shell [<session-id>]              Open a raw interactive terminal (PTY) in
                                     the sandbox — no agent, just a shell.
                                     Reattaches to the existing one; --new
@@ -680,6 +681,7 @@ async function sendPromptToSession(
   await handle.prompts.create({
     clientMessageId: randomUUID(),
     messageId: wireMessageId(),
+    remintOnDelivery: true,
     parts: [{ type: 'text', text }],
     ...(defaults.agent || defaults.model
       ? {

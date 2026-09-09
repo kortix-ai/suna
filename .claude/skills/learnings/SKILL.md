@@ -6187,3 +6187,10 @@ install and asserts the exact version and checksum.
 **Near-miss:** a regression test with an 812-character synthetic credential exposed its prefix because the error message was truncated before exact-value redaction. A malformed string JSON-RPC error code also echoed the credential.
 **Rule:** redact the full message before normalization or truncation. Accept only integer JSON-RPC error codes. Do not return raw transport exceptions or HTTP failure bodies from protocol execution.
 **Enforcer:** `apps/api/src/connectors/mcp-protocol.test.ts` exercises long credentials, query-auth transport errors, and malformed error codes. `unit-connector-gateway.test.ts` verifies failed audit status and credential-free replies and records.
+
+### CLI message IDs must preserve the runtime clock (2026-09-09)
+
+**When:** submitting a durable prompt without reading the live transcript.
+**Near-miss:** the Pi parity audit found that the CLI retained the first twelve hex digits instead of the low six bytes. The resulting ID has the correct shape but the wrong ordering clock.
+**Rule:** preserve the low 48 clock bits. Callers without a current transcript must request placement at delivery. A regular-expression format check does not verify ordering.
+**Enforcer:** `apps/cli/src/commands/sessions-queue.test.ts` verifies exact clock bytes and wraparound. The real-process `sessions-parity.test.ts` asserts `remint_on_delivery`. The preview CLI proof delivers a queued prompt after existing assistant history.

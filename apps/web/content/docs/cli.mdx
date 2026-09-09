@@ -82,14 +82,23 @@ kortix connect
 
 With no session id, `kortix connect` (alias: `attach`) opens a session picker
 for the bound project — running sessions attach immediately, stopped ones boot
-first, and `+ New session` starts a fresh sandbox — then lands you in the full
-OpenCode TUI attached to that session. Pass an id to skip the picker:
+first, and `+ New session` starts a fresh sandbox. The selected runtime determines
+the terminal interface. Pass an id to skip the picker:
 `kortix connect <session-id>`.
 
-The CLI manages the `opencode` binary for you: on first connect it downloads
+YAML v3 Pi sessions use the Kortix terminal. It streams responses and tool status.
+Questions show numbered options, including multiple selections and free text.
+Permission requests show the tool, patterns, and arguments. Reply `once`,
+`always`, or `reject`. `/reject` dismisses the current question or permission.
+`/stop` or Ctrl-C stops the turn. `/exit` or Ctrl-D detaches and leaves the turn
+running. Reconnecting restores history and pending requests. Typed messages use
+the durable prompt inbox. This terminal is available on the Pi preview branch.
+
+YAML v2 sessions use the OpenCode TUI. The CLI manages its binary: on first connect it downloads
 the exact version the session's server runs and caches it under
 `~/.kortix/opencode/<version>/`, so the TUI and server never skew. Set
 `KORTIX_OPENCODE_BIN` to force your own binary.
+`--port` and arguments after `--` apply only to OpenCode sessions.
 
 For a lighter-weight line-based chat instead of the full TUI, run:
 
@@ -97,7 +106,7 @@ For a lighter-weight line-based chat instead of the full TUI, run:
 kortix sessions chat
 ```
 
-This opens an interactive chat with your most recent session. Add an id to target a specific session: `kortix sessions chat <id>`.
+This opens an interactive chat with your most recent session. Add an id to target a specific session: `kortix sessions chat <id>`. Pi uses the same terminal interface as `connect`. `chat --prompt` remains a one-shot command; `--json` prints one final JSON response.
 
 To open a raw shell in the sandbox, with no agent involved, run:
 
@@ -343,9 +352,9 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions ls` | List every session on the project. |
 | `kortix sessions status [--all] [--json]` | Every session and what its agent is doing right now. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id> [--json]` | Detail view: status, branch, agent, sandbox URL. |
-| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--connect] [--json]` | Start a session. `--connect` attaches the OpenCode TUI once it is ready (implies `--wait`); on an interactive terminal without it, the CLI asks whether to connect after creation. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. |
+| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--connect] [--json]` | Start a session. `--connect` opens the selected runtime’s terminal once it is ready (implies `--wait`); on an interactive terminal without it, the CLI asks whether to connect after creation. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--queue] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. `--queue` is one-shot only: it stores the prompt in the session's durable inbox and returns as soon as it is stored, instead of handing it to the runtime. |
-| `kortix sessions connect [<id>] [-- <opencode args>]` | Attach the OpenCode TUI to the session's OpenCode server. Also available top-level: `kortix connect` / `kortix attach`. With no id, opens a session picker (running, stopped-with-restart, or new). The CLI auto-downloads the version-matched `opencode` binary (cache: `~/.kortix/opencode/<version>/`; override: `KORTIX_OPENCODE_BIN`). |
+| `kortix sessions connect [<id>] [-- <opencode args>]` | Open the Kortix terminal for Pi or the OpenCode TUI for OpenCode. Also available top-level: `kortix connect` / `kortix attach`. With no id, opens a session picker (running, stopped-with-restart, or new). For OpenCode sessions, the CLI auto-downloads the version-matched `opencode` binary (cache: `~/.kortix/opencode/<version>/`; override: `KORTIX_OPENCODE_BIN`). |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Reattaches to the session's existing terminal; `--new` always starts a fresh one. Aliases: `terminal`, `ssh`. |
 | `kortix sessions shell <id> ls [--json]` | List the session's terminals: id, status, command. Needs no TTY. |
 | `kortix sessions shell <id> kill <pty-id>` | Kill one terminal. The ambient shell respawns on the next attach; anything running inside it does not. |
