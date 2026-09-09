@@ -1,4 +1,5 @@
 import { turnTargetFor } from '../../projects/turn-target';
+import { addressCellSession } from '../address-cell';
 import { upstreamAnsweredFinally } from '../upstream-final';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -1198,7 +1199,12 @@ export async function forwardToSandbox(
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
-      const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
+      // NAME THE SESSION. The in-box URLs the web client uses carry none, and a
+      // cell cannot answer without one — see ../address-cell.ts.
+      const targetUrl = addressCellSession(
+        previewUrl.replace(/\/$/, '') + remainingPath + queryString,
+        record.sessionId,
+      );
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
