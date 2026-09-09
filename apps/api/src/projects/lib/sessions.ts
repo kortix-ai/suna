@@ -859,6 +859,22 @@ export async function createProjectSession(input: {
   headers?: Record<string, string>;
   pendingPromptIdempotencyKey?: string | null;
 }> {
+  // THE PART THE USER WAITS FOR, which nothing was measuring.
+  //
+  // The `session-create` timeline lower down lives inside a fire-and-forget
+  // `void (async () => …)()`, so it reports BACKGROUND provisioning: 60-105 ms,
+  // every time, whatever the request cost. Measured in-region 2026-09-09, the
+  // request itself was 158-181 ms warm and 666-773 ms on the first create after
+  // a pause — while the timeline printed 93 ms for the 666 ms one. Reading that
+  // number and concluding create was fast is a mistake this made easy, and I
+  // made it.
+  //
+  // Not auth: a cheap authenticated GET on the same process is 76-131 ms and
+  // does not change after 25 s idle. Whatever is cold is in here.
+  const reqT0 = Date.now();
+  const reqLap: Record<string, number> = {};
+  let reqAt = reqT0;
+  const reqMark = (k: string) => { const now = Date.now(); reqLap[k] = now - reqAt; reqAt = now; };
   const { project, userId, body } = input;
   const projectId = project.projectId;
   const accountId = project.accountId;
@@ -988,9 +1004,21 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  // `forceRefresh: true` COSTS ~500 ms ON EVERY SESSION CREATE, and it is the
-  // single largest thing in creating one. Measured on dev 2026-09-09 by timing
-  // the three steps inside readManifestFromRepo:
+  // `forceRefresh: true` COSTS ~500 ms ON A SESSION CREATE THAT STANDS ALONE,
+  // and it is the single largest thing in creating one. Re-measured in-region
+  // on 2026-09-09 with the request timed in its own right — `agents` is the
+  // first lap of `[session-create:request]`:
+  //
+  //   total=748ms {"agents":686,"connectors":7,"caps+billing":31,"insert":24}
+  //   total= 44ms {"agents": 11,"connectors":1,"caps+billing":18,"insert":14}
+  //   total=616ms {"agents":566,"connectors":4,"caps+billing":29,"insert":17}
+  //
+  // NOT every create, which this comment used to say: the middle one is 11 ms
+  // because it fell inside the coalescing window in
+  // git/forced-refresh-window.ts, so back-to-back creates share one fetch. It
+  // is every create that stands alone — which is what a user does.
+  //
+  // Originally measured by timing the three steps inside readManifestFromRepo:
   //
   //   {"mirror":  3, "lsTree":0, "show":3}   warm reads elsewhere in the request
   //   {"mirror":502, "lsTree":0, "show":16}  THIS read
@@ -1011,6 +1039,7 @@ export async function createProjectSession(input: {
     forceRefresh: true,
     rethrowReadErrors: true,
   });
+  reqMark('agents');
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.
@@ -1215,6 +1244,7 @@ export async function createProjectSession(input: {
     mayManageSystemConnections: input.mayManageSystemConnections ?? false,
     bindings: parsedConnectorBindings.bindings,
   });
+  reqMark('connectors');
   if (!validatedConnectorBindings.ok) {
     return {
       error: {
@@ -1470,6 +1500,7 @@ export async function createProjectSession(input: {
       : Promise.resolve(null),
     checkBillingActive(accountId),
   ]);
+  reqMark('caps+billing');
   if (capResult) {
     responseHeaders = capResult.headers;
     if (capResult.error) return { error: capResult.error };
@@ -1703,6 +1734,10 @@ export async function createProjectSession(input: {
     };
   }
 
+  reqMark('insert');
+  console.log(
+    `[session-create:request] session=${sessionId} total=${Date.now() - reqT0}ms ${JSON.stringify(reqLap)}`,
+  );
   setContextField('sessionId', sessionId);
 
   // A prompt supplied at create is claimed by the session daemon. This is the
