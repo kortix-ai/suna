@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=95
+// EXPECTED_PASSES=99
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -787,6 +787,37 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     check("with no x-cell-ms there is no dispatch split, rather than a made-up one",
       blind.dispatch === null, JSON.stringify(blind.dispatch));
   }
+}
+
+
+// A CELL THAT HAS NOT LOOKED MUST NOT SAY ITS FILES ARE GONE.
+//
+// `files` was gated on `this.cellFs`, an instance field a REBUILT isolate does
+// not have until something builds tools again — so every eviction made a cell
+// report 0 files. Measured on dev 2026-09-09 on a dedicated box: before the
+// rebuild files=2, after it files=0, and the agent then read its own file back
+// by content in the very next turn. The data survived; the count did not.
+{
+  const h = makeCell(AgentCell, { ...ENV, TOOLS_BACKEND: "cell" });
+  const cell = h.cell ?? h;
+
+  // Before any tool build there is no table. That is unknown, not zero.
+  check("a cell with no files table reports null rather than claiming none",
+    cell.fileCount() === null, String(cell.fileCount()));
+  const fresh = await (await h.fetch("/model?c=s")).json();
+  check("and /model carries that null through instead of a false 0",
+    fresh.tools?.files === null, JSON.stringify(fresh.tools));
+
+  // With a table and rows, the count is the rows — with no cellFs in sight,
+  // which is exactly the state a rebuilt isolate is in.
+  cell.sql.exec("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, body TEXT)");
+  cell.sql.exec("INSERT INTO files(path, body) VALUES ('/work/a.txt', 'a')");
+  cell.sql.exec("INSERT INTO files(path, body) VALUES ('/work/b.txt', 'b')");
+  check("a rebuilt isolate counts the rows that outlived it, without cellFs",
+    cell.cellFs === undefined && cell.fileCount() === 2, `cellFs=${cell.cellFs} count=${cell.fileCount()}`);
+  const after = await (await h.fetch("/model?c=s")).json();
+  check("and /model reports them, which is what an eviction used to hide",
+    after.tools?.files === 2, JSON.stringify(after.tools));
 }
 
 process.exit(bad ? 1 : 0);

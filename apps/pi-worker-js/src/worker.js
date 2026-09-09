@@ -752,6 +752,34 @@ export class AgentCell {
     return turnRow?.session_id || this.effectiveEnv().KORTIX_SESSION_ID || fallback;
   }
 
+  /**
+   * HOW MANY FILES THIS CELL HAS, or `null` when it cannot say — never 0.
+   *
+   * The table is made by cellFs() on the first tool build, so a read-only
+   * status route asking before that threw "no such table" (kparity 2026-09-07).
+   * The guard added then answered `0` instead, gated on `this.cellFs` — an
+   * instance field that a REBUILT isolate does not have until something builds
+   * tools again. So every eviction made a cell report that its files were gone.
+   *
+   * Measured on dev 2026-09-09, one session on its own box, isolate rebuilt by
+   * idle eviction with the box untouched:
+   *
+   *   before   instance mttpznfgsy701f   files 2
+   *   after    instance mttq1nkb4gfc5d   files 0
+   *   and the agent read its own file back, by content, in the next turn
+   *
+   * The data was never lost. The count was. `0` and "I have not looked" are
+   * different answers and only one of them is true here, which is the whole
+   * reason this returns null rather than a number it has not earned.
+   */
+  fileCount() {
+    try {
+      return this.sql.exec("SELECT COUNT(*) AS n FROM files").toArray()[0]?.n ?? 0;
+    } catch {
+      return null;   // no table yet: unknown, which is not the same as none
+    }
+  }
+
   mintWireMessageId() {
     this.wireMessageSeq = (this.wireMessageSeq ?? 0) + 1;
     return `msg_cell_${String(this.wireMessageSeq).padStart(8, "0")}`;
@@ -1684,10 +1712,7 @@ export class AgentCell {
           : (this.cellFs || e.TOOLS_BACKEND === "cell" || normalizeModelEnv(e).MODEL_BASE_URL || e.KORTIX_SESSION_ID)
             // `files` is what is DURABLE — rows in the cell's SQLite — not the
             // in-memory tree, which carries just-bash's 181-path skeleton.
-            // The table is made by cellFs() on the first tool build, so before
-            // any turn there is nothing to count — and asking SQLite threw
-            // "no such table" out of a read-only status route (kparity, 2026-09-07).
-            ? { backend: "cell", cwd: "/work", files: this.cellFs ? (this.sql.exec("SELECT COUNT(*) AS n FROM files").toArray()[0]?.n ?? 0) : 0 }
+            ? { backend: "cell", cwd: "/work", files: this.fileCount() }
             : { backend: "daemon", url: e.TOOL_DAEMON_URL },
         active: c ? { provider: c.model.provider, id: c.model.id, api: c.model.api, baseUrl: c.model.baseUrl } : "scripted",
         credential: { length: key.length, segments: key.split(".").length, accountIdClaim: claimOk },
