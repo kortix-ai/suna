@@ -225,3 +225,26 @@ describe('MCP session handshake', () => {
     expect(calls[0]!.headers['Mcp-Session-Id']).toBeUndefined();
   });
 });
+
+test('MCP tools discovery follows opaque cursors and preserves page order', async () => {
+  const params: Record<string, unknown>[] = [];
+  const tools = await listMcpTools({ url: 'https://paged.example.test/mcp', fetchImpl: async (_url, init) => {
+    const request = JSON.parse(init.body!); params.push(request.params);
+    return { status: 200, ok: true, text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1,
+      result: request.params.cursor ? { tools: [{ name: 'two' }] } : { tools: [{ name: 'one' }], nextCursor: 'opaque/+=cursor' },
+    }) };
+  } });
+  expect(tools.map(t => t.name)).toEqual(['one', 'two']);
+  expect(params).toEqual([{}, { cursor: 'opaque/+=cursor' }]);
+});
+
+test('repeated MCP tool cursors fail instead of exposing a partial catalog', async () => {
+  let calls = 0;
+  await expect(listMcpTools({ url: 'https://loop.example.test/mcp', fetchImpl: async () => {
+    calls++;
+    return { status: 200, ok: true, text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1,
+      result: { tools: [{ name: 'one' }], nextCursor: 'loop' },
+    }) };
+  } })).rejects.toThrow('MCP tools/list failed: repeated cursor');
+  expect(calls).toBe(2);
+});

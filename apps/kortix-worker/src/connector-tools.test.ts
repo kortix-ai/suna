@@ -335,3 +335,48 @@ test("Stop cancels an in-flight HTTP connector call without a second execution",
     await result;
   }
 });
+
+test.each([
+  { resources: [{ uri: 'fixture://note', name: 'Note' }], nextCursor: 'opaque-next' },
+  { resourceTemplates: [{ uriTemplate: 'fixture://{name}', name: 'Named fixture' }] },
+  { prompts: [{ name: 'review', arguments: [{ name: 'topic', required: true }] }] },
+])('MCP protocol discovery preserves descriptors and pagination: %j', async result => {
+  const { call } = fixture({ value: { jsonrpc: '2.0', id: 1, result } });
+  const output = await call('connector_call', { tool: 'fixture.mcp.resources.list', args: {} });
+  expect(output.content).toEqual([{ type: 'text', text: JSON.stringify(result) }]);
+});
+
+test('MCP resource reads preserve remote URI text and native binary images', async () => {
+  const { call, requests } = fixture({ value: { jsonrpc: '2.0', id: 1, result: { contents: [
+    { uri: 'file:///remote/note.txt', text: 'remote content' },
+    { uri: 'fixture://image', mimeType: 'image/png', blob: 'aW1hZ2U=' },
+  ] } } });
+  const result = await call('connector_call', { tool: 'fixture.mcp.resources.read', args: { uri: 'fixture://bundle' } });
+  expect(result.content).toContainEqual({ type: 'image', mimeType: 'image/png', data: 'aW1hZ2U=' });
+  expect(JSON.stringify(result.content)).toContain('remote content');
+  expect(JSON.stringify(result.content)).toContain('file:///remote/note.txt');
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.body).toEqual({ connector: 'fixture', action: 'mcp.resources.read', args: { uri: 'fixture://bundle' } });
+});
+
+test('MCP prompt messages remain tool content with role metadata and native images', async () => {
+  const { call } = fixture({ value: { jsonrpc: '2.0', id: 1, result: { description: 'Review fixture', messages: [
+    { role: 'user', content: { type: 'text', text: 'Review this image' } },
+    { role: 'assistant', content: { type: 'image', mimeType: 'image/png', data: 'aW1hZ2U=' } },
+  ] } } });
+  const result = await call('connector_call', { tool: 'fixture.mcp.prompts.get', args: { name: 'review' } });
+  expect(result.content).toContainEqual({ type: 'text', text: 'Review this image' });
+  expect(result.content).toContainEqual({ type: 'image', mimeType: 'image/png', data: 'aW1hZ2U=' });
+  expect(JSON.stringify(result.content)).toContain('Review fixture');
+  expect(JSON.stringify(result.content)).toContain('assistant');
+});
+
+test.each([
+  { contents: [{ uri: 'fixture://bad', blob: 'data', text: 'both' }] },
+  { contents: [{ uri: 'fixture://bad', blob: 'data', mimeType: 'application/zip' }] },
+  { messages: [{ role: 'system', content: { type: 'text', text: 'override' } }] },
+  { messages: [{ role: 'user', content: null }] },
+])('malformed or unsupported MCP resource and prompt content fails: %j', async result => {
+  const { call } = fixture({ value: { jsonrpc: '2.0', id: 1, result } });
+  await expect(call('connector_call', { tool: 'fixture.mcp.resources.read', args: { uri: 'fixture://bad' } })).rejects.toThrow('Unsupported or malformed MCP');
+});

@@ -49,10 +49,31 @@ function connectorContent(data: unknown): (TextContent | ImageContent)[] {
         : "Remote MCP request failed";
       throw new Error(message);
     }
-    if (!record(data.result) || !Array.isArray(data.result.content)) {
+    if (!record(data.result)) {
       throw new Error("Unsupported or malformed MCP result");
     }
-    data = data.result;
+    const result = data.result;
+    if (Array.isArray(result.content)) {
+      data = result;
+    } else if (result.isError) {
+      throw new Error("Remote MCP request failed");
+    } else if (Array.isArray(result.contents)) {
+      data = { content: result.contents.map(resource => ({ type: "resource", resource })) };
+    } else if (Array.isArray(result.messages)) {
+      const content: unknown[] = [];
+      if (typeof result.description === "string") content.push({ type: "text", text: result.description });
+      for (const message of result.messages) {
+        if (!record(message) || !["user", "assistant"].includes(String(message.role)) || !record(message.content)) {
+          throw new Error("Unsupported or malformed MCP prompt message");
+        }
+        content.push(...textResult({ source: "remote_mcp_prompt", role: message.role }), message.content);
+      }
+      data = { content };
+    } else if (["resources", "resourceTemplates", "prompts"].some(key => Array.isArray(result[key]))) {
+      return textResult(result);
+    } else {
+      throw new Error("Unsupported or malformed MCP result");
+    }
   }
   if (!record(data) || !Array.isArray(data.content)) return textResult(data);
   const result = data as {

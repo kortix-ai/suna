@@ -24,6 +24,7 @@ import type {
 } from '../connectors/gateway';
 import { resolveEffectiveAction, type Policy } from '../connectors/policy';
 import type { ConnectorAuthDiscovery } from '../connectors/auth-discovery';
+import { mcpProtocolActions } from '../connectors/mcp-protocol';
 
 const ACCOUNT = 'acct-1';
 const PROJECT = 'proj-1';
@@ -327,6 +328,70 @@ describe('GET /catalog', () => {
 });
 
 describe('POST /call', () => {
+  test.each([
+    [
+      'resources/list',
+      {},
+      { resources: [{ name: 'Note', uri: 'fixture://note' }], nextCursor: 'second' },
+    ],
+    [
+      'resources/templates/list',
+      {},
+      { resourceTemplates: [{ name: 'Note', uriTemplate: 'fixture://{name}' }] },
+    ],
+    [
+      'resources/read',
+      { uri: 'fixture://note' },
+      { contents: [{ uri: 'fixture://note', text: 'fixture text' }] },
+    ],
+    ['prompts/list', {}, { prompts: [{ name: 'review' }] }],
+    [
+      'prompts/get',
+      { name: 'review', arguments: { topic: 'boundaries' } },
+      { messages: [{ role: 'user', content: { type: 'text', text: 'Review boundaries' } }] },
+    ],
+  ] as const)(
+    'HTTP MCP %s exposes its schema, returns native results, and enforces policies',
+    async (method, args, result) => {
+      const connector = { ...world.connectors.get('stripe')!, provider: 'mcp' as const };
+      world.connectors.set('stripe', connector);
+      const normalized = mcpProtocolActions({ resources: {}, prompts: {} }).find(
+        (item) => item.binding.kind === 'mcp_protocol' && item.binding.method === method,
+      )!;
+      world.actions.clear();
+      world.actions.set('conn-stripe|' + normalized.path, {
+        ...normalized,
+        path: 'stripe.' + normalized.path,
+        relPath: normalized.path,
+      });
+      const data = { jsonrpc: '2.0', id: 1, result };
+      world.upstreamBody = JSON.stringify(data);
+      const catalog = await (await req('/catalog', { headers: { 'x-test-user': ALICE } })).json();
+      expect(catalog.connectors[0].actions[0]).toMatchObject({
+        path: normalized.path,
+        risk: 'read',
+        inputSchema: normalized.inputSchema,
+      });
+      const request = {
+        method: 'POST',
+        headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+        body: JSON.stringify({ connector: 'stripe', action: normalized.path, args }),
+      };
+      const response = await req('/call', request);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, data, risk: 'read' });
+      expect(JSON.parse(world.upstream[0]!.body!)).toMatchObject({ method, params: args });
+      expect(world.executions.at(-1)).toMatchObject({
+        status: 'ok',
+        actionPath: 'stripe.' + normalized.path,
+      });
+      world.projectPolicies = [{ match: 'stripe.mcp.*', action: 'block' }];
+      expect((await req('/call', request)).status).toBe(403);
+      expect(world.upstream).toHaveLength(1);
+      expect(world.executions.at(-1)?.status).toBe('denied');
+    },
+  );
+
   test('runs end-to-end: shared credential resolved server-side, upstream hit, audited', async () => {
     const res = await req('/call', {
       method: 'POST',

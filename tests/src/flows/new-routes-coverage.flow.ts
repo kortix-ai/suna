@@ -72,6 +72,15 @@ flow(
         r.status([400, 403, 404, 501]);
       },
     );
+    await ctx.step('MCP resource and prompt operations preserve anonymous and cross-project authorization gates', async () => {
+      for (const action of ['mcp.resources.list', 'mcp.resources.templates.list', 'mcp.resources.read', 'mcp.prompts.list', 'mcp.prompts.get']) {
+        const body = { connector: 'fixture', action, args: {} };
+        const anonymous = await ctx.client.as(ctx.P.ANON).post('/v1/connectors/projects/:projectId/call', body, { params: { projectId: p.id } });
+        anonymous.status(401);
+        const unrelated = await ctx.client.as(ctx.P.NONMEMBER).post('/v1/connectors/projects/:projectId/call', body, { params: { projectId: p.id } });
+        unrelated.status(403);
+      }
+    });
   },
 );
 

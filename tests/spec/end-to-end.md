@@ -975,7 +975,9 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `CONN-16` A project manager deletes a connector credential. Unknown connectors and unauthorized callers are rejected.
 `CONN-17` A project member reads connector policies. Unknown connectors and non-members are rejected.
 `CONN-18` A project manager creates a connector setup request. Missing or unconnected connector slugs are rejected.
-`CONN-20` Authentication protects connection status, connector catalog, and connector call routes. Invalid calls do not reach an upstream service.
+`CONN-20` Authentication protects connection status, connector catalog, and connector call routes. Invalid calls do not reach an upstream service. All five MCP resource/prompt action paths preserve anonymous (401) and cross-project (403) gates.
+
+MCP catalog synchronization negotiates capabilities before listing tools. Advertised resource and prompt capabilities add `mcp.resources.list`, `mcp.resources.templates.list`, `mcp.resources.read`, `mcp.prompts.list`, and `mcp.prompts.get`. Existing gateway routes, SDK calls, CLI calls, agent grants, policies, approvals, and audit records govern them. List operations preserve `nextCursor`; prompt arguments contain only strings. Remote resource URIs never resolve against local compute. Invalid protocol responses and JSON-RPC errors produce failed executions. Existing MCP catalog hashes invalidate on the next sync. Positive remote-server and Pi browser proof is recorded in `docs/PI_OPENCODE_PARITY.md`; the deterministic local profile does not host an external HTTPS MCP server.
 `CONN-21` A project creates, lists, activates, authenticates, credentials, and revokes project and member connections through their complete lifecycle.
 `CONN-23` Connection roster and default-connection mutations hide an unknown project with 404.
 `DEL-4` Immediate account deletion removes the owned account state and the deletion-status read confirms the result.

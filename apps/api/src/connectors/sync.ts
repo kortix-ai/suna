@@ -47,7 +47,8 @@ import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
 import { synthesizeComputerConnectors } from './computer-materialize';
 import { COMPUTER_SLUG, computerCatalog } from './computers';
 import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
-import { listMcpTools, type FetchImpl } from './call';
+import { discoverMcpCatalog, type FetchImpl } from './call';
+import { mcpProtocolActions } from './mcp-protocol';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
@@ -940,7 +941,7 @@ export async function resolveCatalog(
       }
       case 'mcp': {
         assertAllowedEndpointUrl(spec.url!);
-        const tools = await listMcpTools({
+        const catalog = await discoverMcpCatalog({
           url: spec.url!,
           auth: spec.auth,
           headers: spec.headers,
@@ -954,7 +955,7 @@ export async function resolveCatalog(
                 body: init.body,
               })),
         });
-        return { actions: normalizeMcp(tools), server: spec.url };
+        return { actions: [...normalizeMcp(catalog.tools), ...mcpProtocolActions(catalog.capabilities)], server: spec.url };
       }
       case 'pipedream': {
         if (!pipedreamConfigured() || !spec.app) return { actions: [], server: null };

@@ -11,6 +11,7 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import type { ActionBinding } from './types';
+import { supportsMcpCapability, validateMcpProtocolArgs, validMcpProtocolResult } from './mcp-protocol';
 
 export interface ConnectorAuth {
   type:
@@ -606,6 +607,7 @@ const MCP_SESSION_CACHE_MAX = 500;
 interface McpSession {
   sessionId: string;
   protocolVersion: string;
+  capabilities: Record<string, unknown>;
   expiresAt: number;
 }
 
@@ -616,8 +618,25 @@ export function resetMcpSessionCache(): void {
   mcpSessions.clear();
 }
 
-function mcpSessionKey(url: string, secret: string | null): string {
-  return `${url}\u0000${secret ? createHash('sha256').update(secret).digest('hex') : ''}`;
+function mcpSessionKey(
+  connection: Pick<McpExchange, 'url' | 'auth' | 'headers' | 'secret'>,
+): string {
+  const headers = Object.entries(connection.headers ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        connection.url,
+        [
+          connection.auth.type,
+          connection.auth.in,
+          connection.auth.name ?? null,
+          connection.auth.prefix ?? null,
+        ],
+        headers,
+        connection.secret ?? null,
+      ]),
+    )
+    .digest('hex');
 }
 
 function readMcpSession(key: string, now: number): McpSession | null {
@@ -675,7 +694,7 @@ function buildMcpJsonRpcRequest(opts: {
     Accept: 'application/json, text/event-stream',
   };
   if (opts.session) {
-    headers[MCP_SESSION_HEADER] = opts.session.sessionId;
+    if (opts.session.sessionId) headers[MCP_SESSION_HEADER] = opts.session.sessionId;
     headers[MCP_PROTOCOL_HEADER] = opts.session.protocolVersion;
   }
   const query = new URLSearchParams();
@@ -782,11 +801,12 @@ interface McpExchange {
 }
 
 /**
- * `initialize` + `notifications/initialized`. Returns the negotiated session,
- * or null when the server refuses to initialize — in which case the caller
- * surfaces the original failure rather than a confusing handshake error.
+ * Negotiate capabilities and cache the session only after the server accepts
+ * notifications/initialized. Failed handshakes return a credential-free error.
  */
-async function establishMcpSession(exchange: McpExchange): Promise<McpSession | null> {
+async function establishMcpSession(
+  exchange: McpExchange,
+): Promise<{ ok: true; session: McpSession } | { ok: false; error: string }> {
   const initialize = await performRequestWithHeaders(
     buildMcpJsonRpcRequest({
       url: exchange.url,
@@ -805,18 +825,31 @@ async function establishMcpSession(exchange: McpExchange): Promise<McpSession | 
     exchange.secret ?? null,
     exchange.now,
   );
-  if (!initialize.result.ok) return null;
-  const payload = initialize.result.data;
-  const negotiated =
-    payload && typeof payload === 'object'
-      ? (payload as { result?: { protocolVersion?: unknown } }).result?.protocolVersion
-      : undefined;
+  if (!initialize.result.ok)
+    return { ok: false, error: `MCP initialize failed: HTTP ${initialize.result.status}` };
+  const rpcError = mcpJsonRpcError(initialize.result.data, exchange.secret);
+  if (rpcError) return { ok: false, error: `MCP initialize failed: JSON-RPC ${rpcError}` };
+  const payload = initialize.result.data as {
+    result?: { protocolVersion?: unknown; capabilities?: unknown };
+  } | null;
+  const negotiated = payload?.result?.protocolVersion;
+  const capabilities = payload?.result?.capabilities;
+  if (
+    typeof negotiated !== 'string' ||
+    !['2024-11-05', '2025-03-26', MCP_PROTOCOL_VERSION].includes(negotiated) ||
+    !capabilities ||
+    typeof capabilities !== 'object' ||
+    Array.isArray(capabilities)
+  ) {
+    return { ok: false, error: 'MCP initialize failed: invalid version or capabilities' };
+  }
   const session: McpSession = {
     sessionId: initialize.header(MCP_SESSION_HEADER) ?? '',
-    protocolVersion: typeof negotiated === 'string' ? negotiated : MCP_PROTOCOL_VERSION,
+    protocolVersion: negotiated,
+    capabilities: capabilities as Record<string, unknown>,
     expiresAt: exchange.now().getTime() + MCP_SESSION_TTL_MS,
   };
-  await performRequest(
+  const notified = await performRequest(
     buildMcpJsonRpcRequest({
       url: exchange.url,
       auth: exchange.auth,
@@ -825,17 +858,17 @@ async function establishMcpSession(exchange: McpExchange): Promise<McpSession | 
       method: 'notifications/initialized',
       params: {},
       notification: true,
-      session: session.sessionId ? session : null,
+      session,
     }),
     exchange.fetchImpl,
     exchange.auth,
     exchange.secret ?? null,
     exchange.now,
-  ).catch(() => undefined);
-  if (session.sessionId) {
-    writeMcpSession(mcpSessionKey(exchange.url, exchange.secret ?? null), session);
-  }
-  return session;
+  );
+  if (!notified.ok)
+    return { ok: false, error: `MCP initialized notification failed: HTTP ${notified.status}` };
+  writeMcpSession(mcpSessionKey(exchange), session);
+  return { ok: true, session };
 }
 
 /**
@@ -844,7 +877,7 @@ async function establishMcpSession(exchange: McpExchange): Promise<McpSession | 
  * "not initialized" / "session not found", initialize once and replay.
  */
 async function performMcpExchange(exchange: McpExchange): Promise<ExecResult> {
-  const key = mcpSessionKey(exchange.url, exchange.secret ?? null);
+  const key = mcpSessionKey(exchange);
   const build = (session: McpSession | null) =>
     buildMcpJsonRpcRequest({
       url: exchange.url,
@@ -853,7 +886,7 @@ async function performMcpExchange(exchange: McpExchange): Promise<ExecResult> {
       secret: exchange.secret,
       method: exchange.method,
       params: exchange.params,
-      session: session?.sessionId ? session : null,
+      session,
     });
   const cached = readMcpSession(key, exchange.now().getTime());
   const first = await performRequest(
@@ -866,9 +899,9 @@ async function performMcpExchange(exchange: McpExchange): Promise<ExecResult> {
   if (!needsMcpSession(first)) return first;
   mcpSessions.delete(key);
   const session = await establishMcpSession(exchange);
-  if (!session) return first;
+  if (!session.ok) return first;
   return performRequest(
-    build(session),
+    build(session.session),
     exchange.fetchImpl,
     exchange.auth,
     exchange.secret ?? null,
@@ -898,20 +931,45 @@ function mcpJsonRpcError(data: unknown, secret?: string | null): string | null {
   if (!error || typeof error !== 'object') return 'unknown error';
   const record = error as { code?: unknown; message?: unknown };
   const code =
-    typeof record.code === 'number' || typeof record.code === 'string'
+    typeof record.code === 'number' && Number.isSafeInteger(record.code)
       ? String(record.code)
       : 'unknown';
   const message =
     typeof record.message === 'string'
-      ? redactExactValue(
-          record.message
-            .replace(/[\r\n\t\0-\x1f\x7f]/g, ' ')
-            .trim()
-            .slice(0, 512),
-          secret,
-        )
+      ? redactExactValue(record.message, secret)
+          .replace(/[\r\n\t\0-\x1f\x7f]/g, ' ')
+          .trim()
+          .slice(0, 512)
       : 'unknown error';
   return `${code} ${message}`;
+}
+
+export async function discoverMcpCatalog(
+  opts: Parameters<typeof listMcpTools>[0],
+): Promise<{ tools: any[]; capabilities: Record<string, unknown> }> {
+  const exchange: McpExchange = {
+    ...opts,
+    auth: opts.auth ?? NO_AUTH,
+    method: 'initialize',
+    params: {},
+    now: opts.now ?? (() => new Date()),
+  };
+  let session = readMcpSession(mcpSessionKey(exchange), exchange.now().getTime());
+  if (!session) {
+    let initialized: Awaited<ReturnType<typeof establishMcpSession>>;
+    try {
+      initialized = await establishMcpSession(exchange);
+    } catch {
+      throw new Error('MCP initialize failed: transport error');
+    }
+    if (!initialized.ok) throw new Error(initialized.error);
+    session = initialized.session;
+  }
+  const tools = supportsMcpCapability(session.capabilities, 'tools')
+    ? await listMcpTools(opts)
+    : [];
+  const current = readMcpSession(mcpSessionKey(exchange), exchange.now().getTime()) ?? session;
+  return { capabilities: current.capabilities, tools };
 }
 
 /** List an MCP connector's tools through the same auth path used for tool calls. */
@@ -924,35 +982,45 @@ export async function listMcpTools(opts: {
   fetchImpl: FetchImpl;
 }): Promise<any[]> {
   const auth = opts.auth ?? NO_AUTH;
-  let result: ExecResult;
-  try {
-    result = await performMcpExchange({
-      url: opts.url,
-      auth,
-      headers: opts.headers,
-      secret: opts.secret,
-      method: 'tools/list',
-      params: {},
-      fetchImpl: opts.fetchImpl,
-      now: opts.now ?? (() => new Date()),
-    });
-  } catch {
-    // Fetch implementations commonly include the full URL in thrown errors.
-    // Query-auth credentials are part of that URL, so never persist or return
-    // the raw transport exception from catalog discovery.
-    throw new Error('MCP tools/list failed: transport error');
+  const tools: any[] = [];
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 100; page += 1) {
+    let result: ExecResult;
+    try {
+      result = await performMcpExchange({
+        url: opts.url,
+        auth,
+        headers: opts.headers,
+        secret: opts.secret,
+        method: 'tools/list',
+        params: cursor === undefined ? {} : { cursor },
+        fetchImpl: opts.fetchImpl,
+        now: opts.now ?? (() => new Date()),
+      });
+    } catch {
+      throw new Error('MCP tools/list failed: transport error');
+    }
+    if (!result.ok) throw new Error(`MCP tools/list failed: HTTP ${result.status}`);
+    const rpcError = mcpJsonRpcError(result.data, opts.secret);
+    if (rpcError) throw new Error(`MCP tools/list failed: JSON-RPC ${rpcError}`);
+    const body =
+      result.data && typeof result.data === 'object'
+        ? (result.data as { result?: { tools?: unknown; nextCursor?: unknown } }).result
+        : null;
+    if (!Array.isArray(body?.tools))
+      throw new Error('MCP tools/list failed: response has no result.tools array');
+    if (tools.length + body.tools.length > 10_000)
+      throw new Error('MCP tools/list failed: catalog exceeds 10000 tools');
+    tools.push(...body.tools);
+    if (body.nextCursor === undefined) return tools;
+    if (typeof body.nextCursor !== 'string' || body.nextCursor.length > 8192)
+      throw new Error('MCP tools/list failed: invalid cursor');
+    if (cursors.has(body.nextCursor)) throw new Error('MCP tools/list failed: repeated cursor');
+    cursors.add(body.nextCursor);
+    cursor = body.nextCursor;
   }
-  if (!result.ok) throw new Error(`MCP tools/list failed: HTTP ${result.status}`);
-  const rpcError = mcpJsonRpcError(result.data, opts.secret);
-  if (rpcError) throw new Error(`MCP tools/list failed: JSON-RPC ${rpcError}`);
-  const tools =
-    result.data && typeof result.data === 'object'
-      ? (result.data as { result?: { tools?: unknown } }).result?.tools
-      : null;
-  if (!Array.isArray(tools)) {
-    throw new Error('MCP tools/list failed: response has no result.tools array');
-  }
-  return tools;
+  throw new Error('MCP tools/list failed: catalog exceeds 100 pages');
 }
 
 /**
@@ -1016,6 +1084,35 @@ export async function executeCall(opts: {
       paramHints: opts.paramHints,
     });
     return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+  }
+
+  if (binding.kind === 'mcp_protocol') {
+    const args = opts.args ?? {};
+    validateMcpProtocolArgs(binding.method, args);
+    if (!opts.baseUrl) throw new Error('mcp connector has no url');
+    let result: ExecResult;
+    try {
+      result = await performMcpExchange({
+        url: opts.baseUrl,
+        auth: opts.auth ?? NO_AUTH,
+        headers: opts.headers,
+        secret: opts.secret,
+        method: binding.method,
+        params: args,
+        fetchImpl: opts.fetchImpl,
+        now: opts.now ?? (() => new Date()),
+      });
+    } catch {
+      throw new Error(`MCP ${binding.method} failed: transport error`);
+    }
+    if (!result.ok)
+      return { ...result, data: `MCP ${binding.method} failed: HTTP ${result.status}` };
+    const error = mcpJsonRpcError(result.data, opts.secret);
+    if (error)
+      return { ...result, ok: false, data: `MCP ${binding.method} failed: JSON-RPC ${error}` };
+    if (!validMcpProtocolResult(binding.method, result.data))
+      return { ...result, ok: false, data: `MCP ${binding.method} failed: malformed result` };
+    return result;
   }
 
   if (binding.kind === 'mcp') {
