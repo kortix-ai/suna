@@ -1,4 +1,5 @@
 import { turnTargetFor } from '../../projects/turn-target';
+import { upstreamAnsweredFinally } from '../upstream-final';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
@@ -1505,7 +1506,10 @@ export async function forwardToSandbox(
         // dropped the response), so re-POSTing would enqueue the message twice or
         // write the file twice. Pass the upstream response straight through to the
         // passthrough below. GET/idempotent requests retry as before.
-        if (!nonReplayableWrite && attempt < MAX_RETRIES) {
+        // An upstream that marked its answer FINAL is not a port coming up: it
+        // refused deliberately and will refuse identically three more times.
+        // See ../upstream-final.ts for the four-and-a-half seconds this cost.
+        if (!nonReplayableWrite && attempt < MAX_RETRIES && !upstreamAnsweredFinally(upstream.headers)) {
           // Port not ready yet — sandbox is booting (container running, port down).
           console.warn(
             `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,

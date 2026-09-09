@@ -331,6 +331,14 @@ export async function runPrePromptEnvSync(
     record.externalId,
     requestedAgent,
   );
+  // NAMED PARTS. The proxy times this whole function as `env-sync` and it came
+  // back 613 ms for a one-character reply, while the [env-sync] line inside it
+  // only accounts for ~91 ms. A number with 520 unexplained milliseconds in it
+  // is not a measurement.
+  const ppT0 = Date.now();
+  const ppLap: Record<string, number | boolean> = { skipped: alreadySynced };
+  let ppAt = ppT0;
+  const ppMark = (k: string) => { const now = Date.now(); ppLap[k] = now - ppAt; ppAt = now; };
   try {
     if (!alreadySynced) {
       await deps.syncEnv({
@@ -353,12 +361,28 @@ export async function runPrePromptEnvSync(
     // the token row at call time. Synchronous, same-agent case included: a
     // manifest that narrowed the grant in the previous turn must be enforced
     // from the first call of this one (see `remintGrantForAgentSwitch`).
+    // NOT CONCURRENT, AND THAT IS LOAD-BEARING. `remintGrant` is 512 ms of the
+    // 695 ms this function costs a prompt (measured on dev 2026-09-09,
+    // `{"syncEnv":183,"remintGrant":512}` for a one-character reply), and both
+    // calls read the same project mirror, so running them together looked like
+    // ~175 ms of free latency.
+    //
+    // It is not free. `command-env-sync.test.ts` pins "refused BEFORE the grant
+    // re-mint — one switch never half-applies": when the env sync fails, the
+    // token's connector/CLI grant must NOT be re-pointed, or a refused agent
+    // switch leaves the box on the old env and the token on the new grant. The
+    // test caught the parallel version immediately. The order is the invariant.
+    ppMark('syncEnv');
     await deps.remintGrant({
       projectId: record.projectId,
       sessionId: record.sessionId,
       sessionAgent,
       requestedAgent,
     });
+    ppMark('remintGrant');
+    console.log(
+      `[pre-prompt] timing sandbox=${record.externalId} total=${Date.now() - ppT0}ms ${JSON.stringify(ppLap)}`,
+    );
   } catch (err) {
     // Fail closed on anything to do with the secret grant: refuse the prompt
     // rather than forwarding it against an env we can't vouch for.

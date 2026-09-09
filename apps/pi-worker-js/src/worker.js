@@ -2379,13 +2379,29 @@ export default {
     // a user ends up talking to an empty agent that answers with the scripted
     // fixture. 503, because re-pushing the session env repairs it.
     if (name === null || name === "default") {
+      // FINAL, NOT COLD. The API's sandbox proxy retries a 502/503 four times
+      // with backoff, because a 5xx from a preview normally means the port is
+      // still coming up. This one never will: the request named no session and
+      // the next three attempts will say so again.
+      //
+      // Measured on dev 2026-09-09 against a real user's box — the cell
+      // answered in 43-85 ms and the browser waited 4.4-4.7 SECONDS:
+      //
+      //   GET  /v1/p/<box>/8000/question         503 4645ms  upstream_ms 52
+      //   POST /v1/p/<box>/8000/log              503 4722ms  upstream_ms 85
+      //   GET  /v1/p/<box>/8000/permission       503 4739ms  upstream_ms 43
+      //   GET  /v1/p/<box>/8000/lsp/diagnostics  503 4454ms  upstream_ms 48
+      //
+      // The web client makes about ten of those per view, so a session took
+      // tens of seconds to show anything. `x-kortix-final` says the agent
+      // answered and meant it; the proxy stops retrying on it.
       return Response.json({
         error: "no session named",
         detail: name === "default"
           ? "celld cannot route a cell named \"default\""
           : "this box has no KORTIX_SESSION_ID; name the session with ?c= or /session/<id>/",
         hint: "POST /kortix/env?c=<session> to configure this box",
-      }, { status: 503, headers: { "retry-after": "5" } });
+      }, { status: 503, headers: { "retry-after": "5", "x-kortix-final": "1" } });
     }
     return env.AGENT.get(env.AGENT.idFromName(name)).fetch(req);
   },
