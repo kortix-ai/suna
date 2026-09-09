@@ -10,6 +10,7 @@ import type { ServerStore } from '../../core/session/server-store/types';
 // '../browser/stores/server-store' (and '@kortix/sdk/server-store') stay unchanged.
 export {
   getSandboxUrlForExternalId,
+  runtimeUrlForSandbox,
   getPublicShareUrlForToken,
 } from '../../core/session/server-store/url-helpers';
 export {

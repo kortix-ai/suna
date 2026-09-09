@@ -652,7 +652,10 @@ export async function provisionSessionSandbox(opts: {
         // project already has a host, and only then whether a park is going.
         const sharedHost =
           opts.metadata?.pi_worker_boot === true && providerName === 'platinum'
-            ? await adoptSharedCellHost(opts.projectId).catch((err) => {
+            // The session's own id rides in the base URL, so the browser's
+            // in-box calls name it on a box that holds many — see
+            // sharedCellBaseUrl. `sandbox.sandboxId` IS the session id.
+            ? await adoptSharedCellHost(opts.projectId, sandbox.sandboxId).catch((err) => {
                 console.warn(
                   `[session-sandbox] shared cell host lookup failed for ${sandbox.sandboxId}; cold create:`,
                   err,

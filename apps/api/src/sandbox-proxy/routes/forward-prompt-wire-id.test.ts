@@ -73,6 +73,9 @@ mock.module('../../projects/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 mock.module('../backend', () => ({
+  // The proxy names the cell's session only when the box has exactly one; a
+  // stub that lists exports by hand must carry it or the route cannot load.
+  soleSessionOfSandbox: async () => null,
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
   routeSandboxIngress: () => ({ effectivePort: 8000 }),
   resolveSandboxIngress: async () => ({ url: 'http://sandbox.local', headers: {} }),

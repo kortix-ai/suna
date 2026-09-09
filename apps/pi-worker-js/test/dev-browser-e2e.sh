@@ -1,52 +1,91 @@
 #!/usr/bin/env bash
-# THE BROWSER'S OWN PATH, end to end. Not the API's /events — the in-box proxy
-# route the web client actually uses: /v1/p/<box>/8000/global/event.
+# THE BROWSER'S OWN PATH, end to end, on the pi-js dev stack.
+#
+# Not the API's /events — the in-box proxy route the web client actually opens.
+# The SDK builds every in-box call on `sandbox.base_url` when the backend hands
+# a proxy-shaped one (packages/sdk runtimeUrlForSandbox), so this reads that
+# field off the session's own /start answer and opens `${base_url}/global/event`
+# exactly as the app does.
+#
+# ONE RUNNER PER PROJECT, NOT ONE BOX PER SESSION. A box per session was the
+# design flaw the owner named on 2026-09-09 ("never place celld inside a
+# microVM"): a 4 GB VM booted per session, ~2 s to ready, and a capacity
+# ceiling that made sessions fail to create at all. A project's sessions now
+# share one cell runner (`pi-cell-<hash(project)>`), and what keeps them apart
+# is ADDRESSING: the base_url names the SESSION, the proxy resolves that exact
+# row, and the cell serves that session's isolate. Measured after the fix:
+# adopt 500-694 ms create / 549-717 ms ready, two streams, zero cross-talk.
+#
+# SKIP rather than fail where the stack is not reachable or not configured; a
+# reachable stack that answers wrong is a FAILURE.
 set -uo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin:$PATH
-N=$(dirname "$0"); BASE=https://pi-js.kortix.com; PROJ=$(cat "$N/e2e-project")
+N=$(dirname "$0"); BASE=${KORTIX_E2E_BASE:-https://pi-js.kortix.com}
+PROJ=${KORTIX_E2E_PROJECT:-}
+[ -n "$PROJ" ] || { echo "  SKIP: no KORTIX_E2E_PROJECT (the project this drives a session in)"; exit 0; }
+E2E_EMAIL=${KORTIX_E2E_EMAIL:-pt-e2e-1788648166@example.test}
+E2E_PASSWORD=${KORTIX_E2E_PASSWORD:-Pt-e2e-2026!x}
 ms(){ python3 -c 'import time;print(int(time.time()*1000))'; }
 P=0; F=0
 ck(){ if [ "$2" = 1 ]; then echo "  PASS $1"; P=$((P+1)); else echo "  FAIL $1 ${3:-}"; F=$((F+1)); fi; }
-A=$(curl -s -m 30 -X POST "$BASE/v1/auth/sign-in/password" -H 'content-type: application/json' \
-  -d '{"email":"pt-e2e-1788648166@example.test","password":"Pt-e2e-2026!x"}' \
-  | python3 -c 'import json,sys;print(json.load(sys.stdin)["session"]["access_token"])')
+j(){ python3 -c 'import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print(""); raise SystemExit
+for k in sys.argv[1].split("."):
+    d = d.get(k) if isinstance(d, dict) else None
+print("" if d is None else d)' "$1"; }
+
+SICODE=$(curl -s -m 30 -o /tmp/be2e.si -w '%{http_code}' -X POST "$BASE/v1/auth/sign-in/password" -H 'content-type: application/json' \
+  -d "$(python3 -c 'import json,sys;print(json.dumps({"email":sys.argv[1],"password":sys.argv[2]}))' "$E2E_EMAIL" "$E2E_PASSWORD")")
+if [ "$SICODE" = "000" ]; then echo "  SKIP: $BASE is unreachable"; exit 0; fi
+A=$(j session.access_token < /tmp/be2e.si)
+[ -n "$A" ] || { echo "  FAIL sign-in answered $SICODE with no token"; exit 1; }
 AH=(-H "authorization: Bearer $A" -H 'content-type: application/json')
+
 T0=$(ms)
-SID=$(curl -s -m 180 -X POST "$BASE/v1/projects/$PROJ/sessions" "${AH[@]}" -d '{}' | python3 -c 'import json,sys;print(json.load(sys.stdin).get("session_id",""))')
-[ -n "$SID" ] || { echo "  create failed"; exit 1; }
+SID=$(curl -s -m 180 -X POST "$BASE/v1/projects/$PROJ/sessions" "${AH[@]}" -d '{}' | j session_id)
+[ -n "$SID" ] || { echo "  FAIL create returned no session_id"; exit 1; }
+: > /tmp/be2e.start
 for i in $(seq 1 12); do
-  ST=$(curl -s -m 60 -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/start?wait_ms=8000" "${AH[@]}" -d '{}' | python3 -c 'import json,sys;print(json.load(sys.stdin).get("stage","?"))')
-  [ "$ST" = ready ] && break; done
+  curl -s -m 60 -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/start?wait_ms=8000" "${AH[@]}" -d '{}' > /tmp/be2e.start
+  [ "$(j stage < /tmp/be2e.start)" = ready ] && break; done
 TR=$(ms)
 echo "  session $SID  ready in $((TR-T0)) ms"
-BOX=$(bash "$N/dbq.sh" "SELECT external_id FROM kortix.session_sandboxes WHERE session_id='$SID'" 2>/dev/null | python3 -c "import json,sys;r=sys.stdin.read();i=r.find('[');print(json.loads(r[i:])[0]['external_id'])" 2>/dev/null)
-NS=$(bash "$N/dbq.sh" "SELECT count(*) AS n FROM kortix.session_sandboxes WHERE external_id='$BOX' AND status='active'" 2>/dev/null | python3 -c "import json,sys;r=sys.stdin.read();i=r.find('[');print(json.loads(r[i:])[0]['n'])" 2>/dev/null)
-echo "  box $BOX  sessions on it: $NS"
-ck "the session has its own box — no sharing" "$([ "$NS" = 1 ] && echo 1 || echo 0)" "sessions=$NS"
+BOX=$(j sandbox.external_id < /tmp/be2e.start); BURL=$(j sandbox.base_url < /tmp/be2e.start)
+if [ -z "$BOX" ] || [ -z "$BURL" ]; then
+  curl -s -m 30 "$BASE/v1/projects/$PROJ/sessions/$SID" "${AH[@]}" > /tmp/be2e.sess
+  [ -n "$BOX" ] || BOX=$(j sandbox.external_id < /tmp/be2e.sess); [ -n "$BURL" ] || BURL=$(j sandbox.base_url < /tmp/be2e.sess)
+fi
+echo "  box $BOX  base_url $BURL"
+ck "the session reports its box and a base_url the SDK will use" "$([ -n "$BOX" ] && [ -n "$BURL" ] && echo 1 || echo 0)"
+ck "the base_url names the SESSION, so its stream cannot be another session's" "$([ "${BURL##*/p/}" = "$SID/8080" ] && echo 1 || echo 0)" "$BURL"
+PTOK=$(sed -n 's/^default = //p' ~/.config/platinum/credentials 2>/dev/null | head -1)
+if [ -n "$PTOK" ] && [ -n "$BOX" ]; then
+  BNAME=$(curl -s -m 30 -H "Authorization: Bearer $PTOK" "${PT_API_URL:-https://api-dev.platinum.dev}/v1/sandboxes/$BOX" | j name)
+  ck "the session rides the project's shared cell runner, not a box of its own" "$(echo "$BNAME" | grep -q '^pi-cell-' && echo 1 || echo 0)" "box name=$BNAME"
+fi
 
-# THE BROWSER'S STREAM
-echo "$(ms)" > /tmp/be2e.base
-( curl -sN -m 90 "$BASE/v1/p/$BOX/8000/global/event" -H "authorization: Bearer $A" -H 'accept: text/event-stream' \
-  | while IFS= read -r l; do [ -z "$l" ] && continue
-      echo "$(python3 -c 'import time;print(int(time.time()*1000))') $l"; done ) > /tmp/be2e.sse 2>&1 &
+# THE BROWSER'S STREAM — on the session's own base_url, as the SDK opens it.
+: > /tmp/be2e.sse
+( curl -sN -m 90 "$BURL/global/event" -H "authorization: Bearer $A" -H 'accept: text/event-stream' > /tmp/be2e.sse 2>&1 ) &
 PUMP=$!
-sleep 4
+for i in $(seq 1 40); do [ -s /tmp/be2e.sse ] && break; sleep 0.2; done
 ATT=$(head -c 200 /tmp/be2e.sse | tr '\n' ' ')
-ck "the browser's in-box stream attaches" "$(grep -qE 'connected|kortix|event' /tmp/be2e.sse && echo 1 || echo 0)" "got: ${ATT:-nothing}"
+ck "the browser's in-box stream attaches (200 + hello)" "$(grep -q 'kortix.hello' /tmp/be2e.sse && echo 1 || echo 0)" "got: ${ATT:-nothing}"
 
-python3 "$N/mkprompt.py" "Reply with exactly one word: streamcheck" /tmp/be2e.body
+W=streamcheck$RANDOM
+python3 -c 'import json,random,string,sys
+h="".join(random.choice("0123456789abcdef") for _ in range(12)); t="".join(random.choice(string.ascii_letters+string.digits) for _ in range(14))
+json.dump({"client_message_id":"cm-"+h,"message_id":"msg_"+h+t,"parts":[{"type":"text","text":sys.argv[1]}]}, open(sys.argv[2],"w"))' "Reply with exactly one word: $W" /tmp/be2e.body
 TP=$(ms)
 PC=$(curl -s -m 30 -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/prompts" "${AH[@]}" -d @/tmp/be2e.body)
 ck "the prompt is accepted" "$([ "$PC" = 200 ] || [ "$PC" = 202 ] && echo 1 || echo 0)" "http $PC"
-t=0; while [ $t -lt 90 ]; do grep -q "streamcheck" /tmp/be2e.sse && break; sleep 0.5; t=$((t+1)); done
+t=0; while [ $t -lt 180 ]; do grep -q "$W" /tmp/be2e.sse && break; sleep 0.5; t=$((t+1)); done
 TA=$(ms)
-FIRST=$(grep -m1 -nE 'message.part.delta|message_update|text' /tmp/be2e.sse | head -1 | cut -d: -f1)
-D=$(grep -cE 'message.part.delta|message_update' /tmp/be2e.sse 2>/dev/null | head -1)
 kill $PUMP 2>/dev/null || true
-ck "the answer arrived ON THE BROWSER'S STREAM, not by polling" \
-  "$(grep -q 'streamcheck' /tmp/be2e.sse && echo 1 || echo 0)" "$(tail -3 /tmp/be2e.sse | head -c 150)"
-echo "  frames carrying deltas: ${D:-0}   prompt->answer $((TA-TP)) ms"
-echo "  --- event types on the browser stream:"
-grep -oE '"type":"[a-z._]+"' /tmp/be2e.sse | sort | uniq -c | sort -rn | head -6 | sed 's/^/    /'
+D=$(grep -c 'message.part.delta' /tmp/be2e.sse)
+ck "the answer arrived ON THE BROWSER'S STREAM, not by polling" "$(grep -q "$W" /tmp/be2e.sse && echo 1 || echo 0)" "$(tail -c 150 /tmp/be2e.sse)"
+ck "and it arrived as deltas" "$([ "$D" -ge 1 ] && echo 1 || echo 0)" "deltas=$D"
+echo "  frames carrying deltas: $D   prompt->answer $((TA-TP)) ms"
 echo; echo "  browser path: $P passed, $F failed"
 exit $([ "$F" -eq 0 ] && echo 0 || echo 1)

@@ -21,7 +21,7 @@
  */
 
 import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { type SQL, and, eq, gt, inArray, ne, sql } from 'drizzle-orm';
+import { type SQL, and, eq, gt, inArray, ne, or, sql } from 'drizzle-orm';
 import {
   type ProviderName,
   type ResolvedSandboxIngress,
@@ -202,21 +202,52 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     baseUrl: sessionSandboxes.baseUrl,
     config: sessionSandboxes.config,
   };
-  const selectOne = async (condition: SQL) => {
+  const selectOne = async (condition: SQL, prefer: SQL[] = []) => {
     const [match] = await db
       .select(columns)
       .from(sessionSandboxes)
       .where(condition)
-      .orderBy(...preferredSandboxOrder())
+      .orderBy(...prefer, ...preferredSandboxOrder())
       .limit(1);
     return match ?? null;
   };
 
+  // THE ID IN THE URL MAY NAME A SESSION, NOT A BOX.
+  //
+  // A session's `sandbox_id` IS its session id (sessions.ts writes
+  // `sandboxId: sessionId`) and is unique per session, while `external_id` is
+  // the provider box — which on a shared cell runner is ONE box for many
+  // sessions. Resolved by box, `record.sessionId` was whichever row
+  // `preferredSandboxOrder` liked best, so the proxy could not tell one
+  // session's `/global/event` from another's: the cell refused, the browser
+  // polled, and a reply that already existed appeared seconds later. Measured
+  // on dev 2026-09-09, session 8e211e7c on a box shared by four: every in-box
+  // call 503, 57/39/39 polls in 30 minutes.
+  //
+  // So a per-session base URL carries the SESSION id in the sandbox segment —
+  // `/v1/p/<sessionId>/<port>` — and this lookup prefers that match. One query,
+  // not two: an exact `sandbox_id` hit is ordered ahead of an `external_id`
+  // hit, and the two cannot collide (a uuid against `sbx_…`). Ingress still
+  // goes to `record.externalId`, so the box is reached exactly as before; only
+  // WHICH session the request is for becomes knowable.
+  //
   // The exact comparison is the indexed path used by REST proxy URLs. Preview
-  // subdomains need the fallback because browsers lowercase hostnames while
-  // Platinum external ids contain uppercase ULIDs.
+  // subdomains need the lower() fallback because browsers lowercase hostnames
+  // while Platinum external ids contain uppercase ULIDs.
+  //
+  // `sandbox_id` is a uuid column and the id in a URL is usually `sbx_…`:
+  // compared as uuid, Postgres refuses the string outright (22P02, "invalid
+  // input syntax for type uuid") and the whole request is a 500 — measured on
+  // dev 2026-09-09 the moment this shipped, on every box-shaped URL including
+  // the API's own prompt delivery. So the comparison is on the TEXT form.
   const row =
-    (await selectOne(eq(sessionSandboxes.externalId, externalId))) ??
+    (await selectOne(
+      or(
+        sql`${sessionSandboxes.sandboxId}::text = ${externalId}`,
+        eq(sessionSandboxes.externalId, externalId),
+      )!,
+      [sql`case when ${sessionSandboxes.sandboxId}::text = ${externalId} then 0 else 1 end`],
+    )) ??
     (await selectOne(sql`lower(${sessionSandboxes.externalId}) = lower(${externalId})`));
 
   if (!row) {

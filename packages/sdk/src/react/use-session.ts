@@ -37,7 +37,7 @@ import {
   setOpenCodeHealth,
   setSandboxStatus,
 } from '../browser/stores/sandbox-connection-store';
-import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { getSandboxUrlForExternalId, runtimeUrlForSandbox } from '../browser/stores/server-store';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
@@ -936,8 +936,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // Point the app's runtime at THIS session's box — no global "switch", just set
     // the current control-runtime URL. Chat and the event stream resolve through
     // it. Workspace surfaces resolve their environment independently.
+    // The backend may hand a session its own base — one that names the
+    // SESSION on a box shared by many. See runtimeUrlForSandbox for when it
+    // is honoured and when the box-shaped default still wins.
     setCurrentRuntime(
-      getSandboxUrlForExternalId(sandbox.external_id),
+      runtimeUrlForSandbox(sandbox),
       sandbox.external_id,
       sandbox.sandbox_id,
       (sandbox.metadata as Record<string, unknown> | undefined)?.sandbox_slug === 'pi-worker'

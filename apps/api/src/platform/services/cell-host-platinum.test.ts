@@ -80,4 +80,23 @@ describe('adopting a host', () => {
     expect(sharedCellBaseUrl('sbx_h')).not.toMatch(/\/8000$/);
     expect(sharedCellBaseUrl('sbx_h')).not.toMatch(/\/v1\/v1\//);
   });
+
+  test('and it names the SESSION, not the box — the box is shared, the URL must not be', async () => {
+    // Every in-box call the browser makes is built on this base and names no
+    // session in its path. With the box in the URL, two sessions on one runner
+    // sent byte-identical requests and the proxy could not tell them apart.
+    const { sharedCellBaseUrl } = await import('./cell-host-platinum');
+    const a = sharedCellBaseUrl('sbx_h', 'sess-a');
+    const b = sharedCellBaseUrl('sbx_h', 'sess-b');
+    expect(a).toMatch(/\/v1\/p\/sess-a\/8080$/);
+    expect(b).toMatch(/\/v1\/p\/sess-b\/8080$/);
+    expect(a).not.toBe(b);
+    expect(a).not.toContain('sbx_h');
+  });
+
+  test('a session id that is only whitespace is no session — the box URL it always was', async () => {
+    const { sharedCellBaseUrl } = await import('./cell-host-platinum');
+    expect(sharedCellBaseUrl('sbx_h', '  ')).toMatch(/\/v1\/p\/sbx_h\/8080$/);
+    expect(sharedCellBaseUrl('sbx_h', null)).toMatch(/\/v1\/p\/sbx_h\/8080$/);
+  });
 });

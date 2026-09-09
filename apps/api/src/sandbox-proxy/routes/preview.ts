@@ -1,5 +1,5 @@
 import { turnTargetFor } from '../../projects/turn-target';
-import { addressCellSession } from '../address-cell';
+import { addressCellSession, ownRowForCaller, sessionNamedByUrl } from '../address-cell';
 import { soleSessionOfSandbox } from '../backend';
 import { upstreamAnsweredFinally } from '../upstream-final';
 import { Hono } from 'hono';
@@ -856,6 +856,18 @@ export async function forwardToSandbox(
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
+  // A CALLER THAT NAMES ITS SESSION GETS ITS OWN ROW. The API's own prompt
+  // delivery forwards by the BOX and carries `callerSessionId`; on a shared
+  // cell runner the box resolves to whichever session the ordering preferred,
+  // and the turn admission below then binds the prompt to THAT session —
+  // measured on dev 2026-09-09: the first of two sessions delivered in 913 ms,
+  // the second hung 45 s and never ran. The caller's row is taken only when it
+  // sits on the same box the URL named (ownRowForCaller). A session's
+  // `sandbox_id` IS its session id, so `loadSandbox` finds it exactly.
+  if (access.kind === 'principal' && access.callerSessionId && record.sessionId !== access.callerSessionId) {
+    const own = await loadSandbox(access.callerSessionId);
+    record = ownRowForCaller(record, own, access.callerSessionId);
+  }
   bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
@@ -1194,17 +1206,22 @@ export async function forwardToSandbox(
         console.warn(
           `[PREVIEW] previous /global/event stream for ${sandboxId}:${port} delivered 0 bytes — re-resolving ingress`,
         );
-        invalidatePreviewLink(sandboxId, port);
+        invalidatePreviewLink(record.externalId ?? sandboxId, port);
       }
       const ingress = await resolveSandboxIngress(record, ingressRequest);
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
-      // NAME THE SESSION — but only when the box has exactly one, because
-      // `record.sessionId` on a SHARED host is whichever row the ordering
-      // preferred, not the session whose page is open. See
-      // ../backend.ts soleSessionOfSandbox and ../address-cell.ts.
-      const addressable = await soleSessionOfSandbox(record.externalId ?? sandboxId);
+      // NAME THE SESSION. A per-session base URL carries the session's own id
+      // in the sandbox segment, and then `record` IS that session — exact,
+      // however many sessions share the box (sessionNamedByUrl). A box-shaped
+      // URL says nothing about the viewer, so it is addressed only when the box
+      // has exactly one session; on a shared runner `record.sessionId` is
+      // whichever row the ordering preferred, not the page that is open. See
+      // ../backend.ts loadSandbox / soleSessionOfSandbox and ../address-cell.ts.
+      const addressable =
+        sessionNamedByUrl(sandboxId, record) ??
+        (await soleSessionOfSandbox(record.externalId ?? sandboxId));
       const targetUrl = addressCellSession(
         previewUrl.replace(/\/$/, '') + remainingPath + queryString,
         addressable,
@@ -1494,7 +1511,7 @@ export async function forwardToSandbox(
           .text()
           .catch(() => '');
         if (bodyText.includes('opencode not ready')) {
-          void markSandboxUsed(sandboxId);
+          void markSandboxUsed(record.externalId ?? sandboxId);
           // opencode explicitly rejected the request as not-ready, so it did NOT
           // enqueue the prompt. Release the dedupe claim so the client's retry
           // (once opencode is up) actually delivers instead of short-circuiting
@@ -1524,7 +1541,7 @@ export async function forwardToSandbox(
           console.warn(
             `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
           );
-          invalidatePreviewLink(sandboxId, port);
+          invalidatePreviewLink(record.externalId ?? sandboxId, port);
           await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
           continue;
         }
@@ -1532,7 +1549,7 @@ export async function forwardToSandbox(
         // "port unreachable" page to browsers instead of the upstream's bare 5xx;
         // programmatic clients still get the real status + JSON via passthrough.
         if (!nonReplayableWrite && isBrowserNavigation(incomingHeaders)) {
-          void markSandboxUsed(sandboxId);
+          void markSandboxUsed(record.externalId ?? sandboxId);
           return portUnreachableResponse({
             port,
             status: upstream.status,
@@ -1576,7 +1593,7 @@ export async function forwardToSandbox(
               `[PREVIEW] Sandbox ${sandboxId} still booting (attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
             );
           }
-          invalidatePreviewLink(sandboxId, port);
+          invalidatePreviewLink(record.externalId ?? sandboxId, port);
           await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
           continue;
         }
@@ -1777,7 +1794,7 @@ export async function forwardToSandbox(
         wakeTriggered = true;
       }
       if (attempt < MAX_RETRIES) {
-        invalidatePreviewLink(sandboxId, port);
+        invalidatePreviewLink(record.externalId ?? sandboxId, port);
         await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
       }
     }

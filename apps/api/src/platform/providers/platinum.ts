@@ -470,7 +470,16 @@ export class PlatinumProvider implements SandboxProvider {
     }
 
     const ingressPort = bodyOverride ? CELL_PORT : (workloadType === 'app' ? 8080 : AGENT_PORT);
-    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`;
+    // A CELL'S BASE NAMES THE SESSION, NOT THE BOX. `bodyOverride` is the cell
+    // create, and `opts.sandboxId` is the session's own id. The session that
+    // CREATES a shared runner is its first tenant, and it must be addressed
+    // like every session that adopts it later (cell-host-platinum.ts
+    // sharedCellBaseUrl) — measured on dev 2026-09-09: the creator got the box
+    // URL, the adopter got a session URL, and only one of them could be told
+    // apart from its neighbours. The proxy resolves a session id first and
+    // still routes ingress to the box (sandbox-proxy/backend.ts loadSandbox).
+    const baseId = bodyOverride && opts.sandboxId ? opts.sandboxId : externalId;
+    const baseUrl = `${sandboxApiBase}/v1/p/${baseId}/${ingressPort}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
     // the sandbox is running — before the FE connects. Expose is otherwise lazy

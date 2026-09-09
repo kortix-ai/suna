@@ -18,6 +18,9 @@ let forwardedQuery = '';
 let shares: Record<string, unknown> = {};
 
 mock.module('./backend', () => ({
+  // The proxy names the cell's session only when the box has exactly one; a
+  // stub that lists exports by hand must carry it or the route cannot load.
+  soleSessionOfSandbox: async () => null,
   resolveExternalIdFromHostLabel: async (label: string) => {
     labelLookups.push(label);
     return label === 'sbx-known' ? 'sbx_KNOWN' : null;

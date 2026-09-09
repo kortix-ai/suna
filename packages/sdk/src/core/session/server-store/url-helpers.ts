@@ -67,3 +67,41 @@ export function getSandboxUrlForExternalId(externalId: string): string {
 export function getPublicShareUrlForToken(token: string, port: number): string {
   return `${getBackendUrl()}/p/public-share/${token}/${port}`;
 }
+
+/**
+ * THE RUNTIME URL FOR A SESSION'S SANDBOX — the backend's per-session base
+ * when it gave one, else the box-shaped default.
+ *
+ * `getSandboxUrlForExternalId(sandbox.external_id)` names the BOX. On a cell
+ * runner one box holds many sessions, and every in-box call the app makes
+ * (`/global/event`, `/session`, `/agent`, `/command`) is built on this base
+ * and names no session in its path — so the proxy could not tell one
+ * session's stream from another's, the cell refused, and the app fell back to
+ * polling (dev 2026-09-09: every in-box call 503, 57/39/39 polls in 30 min).
+ *
+ * The backend fixes that by handing such a session a base that names the
+ * SESSION in the sandbox segment (`/v1/p/<sessionId>/8080`). It arrives as
+ * `sandbox.base_url`, and it is honoured ONLY when it is a proxy URL on this
+ * backend's own origin: a provider box's `base_url` can be the box's direct
+ * edge address, and sending the bearer there would 401 at best and leak at
+ * worst. Anything else falls back to exactly what was built before.
+ */
+export function runtimeUrlForSandbox(
+  sandbox: { external_id?: string | null; base_url?: string | null },
+  backendUrl: string = getBackendUrl(),
+): string {
+  const candidate = sandbox.base_url?.trim();
+  if (candidate) {
+    try {
+      const backend = new URL(backendUrl);
+      const url = new URL(candidate);
+      const proxyPrefix = `${stripTrailingSlashes(backend.pathname)}/p/`;
+      if (url.origin === backend.origin && url.pathname.startsWith(proxyPrefix)) {
+        return stripTrailingSlashes(candidate);
+      }
+    } catch {
+      /* not a URL — ignore it */
+    }
+  }
+  return sandbox.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : '';
+}

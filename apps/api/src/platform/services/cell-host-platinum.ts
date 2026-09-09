@@ -158,9 +158,28 @@ function sandboxApiBase(): string {
     .replace(/\/v1$/, '');
 }
 
-/** The URL a session uses to reach its cell on a shared host. */
-export function sharedCellBaseUrl(externalId: string): string {
-  return `${sandboxApiBase()}/v1/p/${externalId}/${CELL_PORT}`;
+/**
+ * The URL a session uses to reach its cell on a shared host.
+ *
+ * THE SESSION GOES IN THE SANDBOX SEGMENT, NOT THE BOX. The web client builds
+ * every in-box call — `/global/event`, `/session`, `/agent`, `/command` — on
+ * top of this base and names no session anywhere in the path, so a base that
+ * names the BOX gives the proxy nothing to address the cell with: on a runner
+ * holding several sessions it resolved whichever row the ordering preferred,
+ * the cell refused, and the browser fell back to polling (dev 2026-09-09,
+ * session 8e211e7c: every in-box call 503, 57/39/39 polls in 30 minutes).
+ *
+ * A session's `sandbox_id` IS its session id, so `/v1/p/<sessionId>/8080`
+ * names it exactly; the proxy's `loadSandbox` prefers that match and still
+ * routes ingress to the row's `external_id` — the shared box. Nothing about
+ * the path the browser appends changes.
+ *
+ * Without a session (a caller that only has a box) this is the box URL it
+ * always was.
+ */
+export function sharedCellBaseUrl(externalId: string, sessionId?: string | null): string {
+  const id = sessionId?.trim() || externalId;
+  return `${sandboxApiBase()}/v1/p/${id}/${CELL_PORT}`;
 }
 
 interface Row { id?: string; name?: string | null; state?: string | null; runtime?: string | null; worker?: string | null }
@@ -198,13 +217,16 @@ export async function findSharedCellHost(projectId: string): Promise<string | nu
  * cannot find a host must still start, and a cold create is what it did before
  * this module existed.
  */
-export async function adoptSharedCellHost(projectId: string | null | undefined): Promise<ClaimedPiWorkerBox | null> {
+export async function adoptSharedCellHost(
+  projectId: string | null | undefined,
+  sessionId?: string | null,
+): Promise<ClaimedPiWorkerBox | null> {
   if (!sharedCellHostEnabled()) return null;
   if (!projectId) return null;
   try {
     const externalId = await findSharedCellHost(projectId);
     if (!externalId) return null;
-    return { externalId, baseUrl: sharedCellBaseUrl(externalId) };
+    return { externalId, baseUrl: sharedCellBaseUrl(externalId, sessionId) };
   } catch (err) {
     console.warn('[cell-host] lookup failed; cold create:', err);
     return null;

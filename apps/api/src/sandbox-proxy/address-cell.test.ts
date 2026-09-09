@@ -31,3 +31,65 @@ describe('addressing the cell', () => {
     expect(addressCellSession('not a url', 's1')).toBe('not a url');
   });
 });
+
+import { sessionNamedByUrl } from './address-cell';
+
+describe('whether the URL named the session', () => {
+  const record = { sandboxId: 'sess-1', sessionId: 'sess-1', externalId: 'sbx_shared' };
+
+  test('a per-session base URL names it exactly — however many sessions share the box', () => {
+    expect(sessionNamedByUrl('sess-1', record)).toBe('sess-1');
+  });
+
+  test('a box-shaped URL names nothing — the row was picked by ordering, not by the viewer', () => {
+    // This is the shared-runner case that served one user another's stream.
+    expect(sessionNamedByUrl('sbx_shared', record)).toBeNull();
+  });
+
+  test('an id that is BOTH the session and the box is treated as the box — ambiguity goes to the stricter rule', () => {
+    expect(sessionNamedByUrl('same', { sandboxId: 'same', externalId: 'same', sessionId: 'sess-1' })).toBeNull();
+  });
+
+  test('a row with no session cannot be named by anything', () => {
+    expect(sessionNamedByUrl('sess-1', { sandboxId: 'sess-1', sessionId: null })).toBeNull();
+    expect(sessionNamedByUrl('sess-1', null)).toBeNull();
+  });
+
+  test('an empty id is not a name', () => {
+    expect(sessionNamedByUrl('', record)).toBeNull();
+    expect(sessionNamedByUrl('  ', record)).toBeNull();
+    expect(sessionNamedByUrl(undefined, record)).toBeNull();
+  });
+});
+
+import { ownRowForCaller } from './address-cell';
+
+describe("a caller that names its session, on a box that holds many", () => {
+  const box = 'sbx_shared';
+  const s1 = { sandboxId: 's1', sessionId: 's1', externalId: box };
+  const s2 = { sandboxId: 's2', sessionId: 's2', externalId: box };
+
+  test('gets ITS row, not the one the ordering preferred', () => {
+    // The API delivered s2's prompt by box; the box resolved to s1.
+    expect(ownRowForCaller(s1, s2, 's2')).toBe(s2);
+  });
+
+  test('when the resolved row already is the caller, nothing changes', () => {
+    expect(ownRowForCaller(s2, s2, 's2')).toBe(s2);
+    expect(ownRowForCaller(s2, null, 's2')).toBe(s2);
+  });
+
+  test('never redirects to a DIFFERENT box — the URL named the box', () => {
+    const elsewhere = { sandboxId: 's2', sessionId: 's2', externalId: 'sbx_other' };
+    expect(ownRowForCaller(s1, elsewhere, 's2')).toBe(s1);
+  });
+
+  test("a row that is not the caller's is not the caller's, whatever was passed", () => {
+    expect(ownRowForCaller(s1, s2, 's3')).toBe(s1);
+  });
+
+  test('with no caller session there is nothing to prefer — the browser path is untouched', () => {
+    expect(ownRowForCaller(s1, s2, null)).toBe(s1);
+    expect(ownRowForCaller(s1, s2, '')).toBe(s1);
+  });
+});

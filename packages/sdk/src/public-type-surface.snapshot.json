@@ -3914,6 +3914,7 @@
     "getBackendPort",
     "getPublicShareUrlForToken",
     "getSandboxUrlForExternalId",
+    "runtimeUrlForSandbox",
     "useServerStore"
   ],
   "./internal/sandbox-connection-store": [
@@ -7093,6 +7094,7 @@
     "getBackendPort",
     "getPublicShareUrlForToken",
     "getSandboxUrlForExternalId",
+    "runtimeUrlForSandbox",
     "useServerStore"
   ],
   "./sandbox-connection-store": [

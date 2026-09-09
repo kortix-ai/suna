@@ -121,6 +121,9 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
 }));
 
 mock.module('../backend', () => ({
+  // The proxy names the cell's session only when the box has exactly one; a
+  // stub that lists exports by hand must carry it or the route cannot load.
+  soleSessionOfSandbox: async () => null,
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
   routeSandboxIngress: () => ({ effectivePort: upstreamPort }),
   resolveSandboxIngress: async () => ({

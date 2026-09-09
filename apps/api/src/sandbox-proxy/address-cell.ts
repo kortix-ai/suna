@@ -39,3 +39,58 @@ export function addressCellSession(
     return targetUrl;
   }
 }
+
+/**
+ * Did the URL itself name the session?
+ *
+ * The browser's in-box base is `/v1/p/<id>/<port>`. When `<id>` is the
+ * session's own `sandbox_id` — which IS its session id — `loadSandbox` resolved
+ * that exact row and `record.sessionId` is the session being viewed, no matter
+ * how many sessions the box holds. When `<id>` is the box's `external_id`, the
+ * row is whichever the ordering preferred and says nothing about the viewer;
+ * the caller must fall back to the sole-session rule (`soleSessionOfSandbox`).
+ *
+ * Pure, so the distinction is asserted rather than reproduced with two
+ * sessions on one runner.
+ */
+export function sessionNamedByUrl(
+  urlId: string | null | undefined,
+  record: { sandboxId?: string | null; externalId?: string | null; sessionId?: string | null } | null | undefined,
+): string | null {
+  const id = urlId?.trim();
+  if (!id || !record?.sandboxId || !record.sessionId) return null;
+  // Named the session AND not the box. In real rows the two ids never
+  // coincide (a uuid against `sbx_…`), so this costs nothing there; where a
+  // fixture gives both the same value the stricter, box-shaped rule applies —
+  // an ambiguous name must not be treated as an exact one.
+  if (record.externalId === id) return null;
+  return record.sandboxId === id ? record.sessionId : null;
+}
+
+/**
+ * A CALLER THAT NAMES ITS SESSION GETS ITS OWN ROW, on a box that holds many.
+ *
+ * The API's own prompt delivery forwards by the BOX (`forwardToSandbox(
+ * externalId, …)`) while carrying `callerSessionId`. Resolved by box on a
+ * shared runner, the row was whichever session the ordering preferred, and
+ * the turn admission then bound the prompt to THAT session: measured on dev
+ * 2026-09-09, two sessions on one runner, the first delivered in 913 ms and
+ * the second hung for 45 s (`delivered=+45267ms`) and never ran.
+ *
+ * `own` is the caller's session row, looked up separately. It is taken only
+ * when it sits on the SAME box the URL resolved to — a caller must not be able
+ * to redirect a request to a box it did not name — and when it really is the
+ * caller's. Otherwise the resolved row stands.
+ */
+export function ownRowForCaller<R extends { externalId?: string | null; sessionId?: string | null }>(
+  resolved: R,
+  own: R | null | undefined,
+  callerSessionId: string | null | undefined,
+): R {
+  const caller = callerSessionId?.trim();
+  if (!caller || !own) return resolved;
+  if (resolved.sessionId === caller) return resolved;
+  if (own.sessionId !== caller) return resolved;
+  if (!own.externalId || own.externalId !== resolved.externalId) return resolved;
+  return own;
+}
