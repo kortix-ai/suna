@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Reject truncated summaries before replacing model context (2026-09-09)
+
+**When:** committing an agent conversation summary.
+**Incident:** a local Luna overflow fixture used a 4,096-token window. Pi's fixed safety reserve clamped summary output to one token; the accepted partial goal lost the completed tool and caused repeated calls. No environment was used.
+**Rule:** treat the provider's `length` stop reason as a compaction failure. Preserve the original transcript and completed tools. Set fixture windows above Pi's fixed reserve when measuring successful summarization.
+**Enforcer:** direct and overflow-path truncation tests plus HTTP tool-round failure tests in the worker suite. The real 16,384-token fault fixture completes with one tool call and exact restart history.
+
 ### Mount one global billing dialog per authenticated app (2026-09-09)
 
 **When:** a global dialog can open from nested settings and account surfaces.

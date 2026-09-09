@@ -9,6 +9,10 @@ import {
   type Entry,
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import {
+  isCompactionOverflow,
+  recoverCompactionOverflow,
+} from "./compaction-overflow";
 
 export function transcriptMessagesFromEntries(
   entries: readonly Entry[],
@@ -143,15 +147,40 @@ export async function summarizeContext(
     };
   }
   signal.throwIfAborted();
+  const summaryModels: Models = {
+    ...models,
+    completeSimple: async (...args) => {
+      const response = await models.completeSimple(...args);
+      if (response.stopReason !== "length") return response;
+      return {
+        ...response,
+        stopReason: "error",
+        errorMessage:
+          "Compaction summary reached the output limit; the original conversation was kept",
+      };
+    },
+  };
   const result = await compact(
     preparation,
-    models,
+    summaryModels,
     model,
     undefined,
     signal,
     "off",
   );
-  if (!result.ok) throw result.error;
+  if (!result.ok) {
+    if (!isCompactionOverflow(result.error)) throw result.error;
+    const allFileOps = prepareBranchEntries(entries).fileOps;
+    for (const kind of ['read', 'written', 'edited'] as const) {
+      for (const path of preparation.fileOps[kind]) allFileOps[kind].add(path);
+    }
+    return recoverCompactionOverflow(
+      { ...preparation, fileOps: allFileOps },
+      summaryModels,
+      model,
+      signal,
+    );
+  }
   signal.throwIfAborted();
   if (!result.value.summary.trim())
     throw new Error("The model returned an empty compaction summary");

@@ -1196,3 +1196,51 @@ The live local flow exposed an RPC overload ambiguity in credit admission:
 `p_idempotency_key` selects the intended function. Both new regression cases fail
 before the fix. The credit tests pass 26 tests; the unchanged HTTP flows then pass.
 No database schema changes are required for this correction.
+
+
+## Compaction request overflow recovery — 2026-09-09
+
+A recognized context-limit error from summarization retries the conversation in
+ordered segments. Each successful summary carries into the next request. UTF-8
+boundaries preserve the source text. Recovery permits at most 128 segments and
+eight adaptive splits. It preserves file metadata and sums all successful recovery
+requests' usage. Cancellation or an unrecoverable provider error commits no partial
+summary. Ordinary agent-request overflow and oversized first input remain open.
+
+- Focused compaction tests: 15 pass, 0 fail, 83 assertions.
+- Worker HTTP tests verify one committed summary, one completed tool, idempotent
+  prompt replay, exact history after replacement, and recall from the summary.
+- Complete worker suite: 760 pass, 0 fail, 4,178 assertions across 87 files.
+- `pnpm test`: all six core lanes pass in 106.2 seconds. REST/CLI flows pass
+  399/399 without skips. SDK tests, runner tests, route coverage, and worktree
+  tests pass. Worker typecheck and a fresh build pass. The compiled Node and
+  confinement tests pass 7 tests with 71 assertions.
+- Evidence: `/tmp/pi-compaction-guard-root.log` and
+  `tests/test-results/local/benchmark-1788935608905.json`.
+
+An earlier core run failed because two local dependency installs ran concurrently.
+The unchanged sequential rerun above passes. Its compiled-artifact tests use the
+freshly built worker, not the artifact left from the failed install.
+
+The initial real fault fixture exposed a second failure: Pi reserves 4,096 context
+tokens internally. A 4,096-token fixture therefore sent `max_tokens: 1`. Native
+compaction accepted the truncated response and discarded completed-tool context.
+The fixture timed out, stopped its local worker, and revoked its temporary key.
+The worker now rejects the provider's `length` stop reason before committing
+any summary. Both initial and recovery-path regression tests fail before the fix.
+
+The corrected real Luna fault fixture uses a 16,384-token window. Its proxy
+rejects exactly one 16,560-byte summary request. Two real gateway requests of
+9,946 and 9,701 bytes recover the summary. One fixture tool executes, one summary
+commits, and all six messages survive replacement exactly. The model recalls
+`cobalt` after replacement. No environment starts; the temporary gateway key is
+revoked. This is a deliberately injected HTTP error with real model responses,
+not a claim that Luna's actual context window is 16,384 tokens.
+Evidence: `/tmp/pi-overflow-live.json`, `/tmp/pi-overflow-live-fixed.log`.
+
+The full remote suite at `8e52bd100e` finishes at 06:30 UTC. Its browser lane
+passes in 2,784.3 seconds: 21 initial passes and two gateway-502 retries that pass.
+The language sweep passes in 41.1 minutes. The overall suite remains failed
+because REST/CLI reports 456 passes, five failures, and three existing skips.
+Four failures are Platinum Git uploads. SEC-J ran before the routing hot reload.
+The run's benchmark is `benchmark-1788935404978.json` on the preview.

@@ -3931,6 +3931,53 @@ describe('durable context compaction', () => {
     expect((await post(replacement, 'message', { parts: [{ type: 'text', text: 'Recall the reads.' }] })).status).toBe(200);
   });
 
+  test('overflow recovery commits one durable summary and does not repeat tools after replacement', async () => {
+    const { worker, config, items, post, history, toolCall, calls } = await toolRoundFixture();
+    const before = await history();
+    const segments: string[] = [];
+    const responses = Array.from({ length: 20 }, () => (ctx: any) => {
+      const text = JSON.stringify(ctx.messages);
+      if (text.includes('<conversation>')) {
+        segments.push(text);
+        return fauxAssistantMessage('RECOVERED_COBALT: the read completed.');
+      }
+      expect(text).toContain('RECOVERED_COBALT');
+      expect(text).not.toContain('ROUND_OUTPUT_');
+      return fauxAssistantMessage('Read complete after recovery.');
+    });
+    worker.faux!.setResponses([
+      toolCall(),
+      fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'maximum context length is 4096 tokens' }),
+      ...responses,
+    ]);
+    const input = { messageID: mintWireMessageId({ nowMs: Date.now() }).id, parts: [{ type: 'text', text: 'Read and report.' }] };
+    expect((await post(worker, 'message', input)).status).toBe(200);
+    expect(calls()).toBe(1);
+    expect(segments.length).toBeGreaterThan(1);
+    expect(items.filter((i: any) => i.kind === 'entry' && i.entry.type === 'compaction')).toHaveLength(1);
+    const after = await history();
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after.filter(m => m.info.summary)).toHaveLength(1);
+    expect(after.flatMap(m => m.parts).filter((p: any) => p.tool === 'large_result')).toHaveLength(1);
+    expect(after.at(-1).info.error).toBeUndefined();
+    expect(after.at(-1).info.parentID).toBe(input.messageID);
+    const count = worker.faux!.state.callCount;
+    expect((await post(worker, 'message', input)).status).toBe(200);
+    expect(worker.faux!.state.callCount).toBe(count);
+    await worker.close();
+    const replacement = await startWorker(config);
+    workers.push(replacement);
+    expect(await history(replacement)).toEqual(after);
+    replacement.faux!.setResponses([ctx => {
+      const text = JSON.stringify(ctx.messages);
+      expect(text).toContain('RECOVERED_COBALT');
+      expect(text).not.toContain('ROUND_OUTPUT_');
+      return fauxAssistantMessage('The read remains completed.');
+    }]);
+    expect((await post(replacement, 'message', { parts: [{ type: 'text', text: 'Recall the read.' }] })).status).toBe(200);
+    expect(replacement.env.calls).toHaveLength(0);
+  });
+
   test('replacement preserves a summary committed between tool rounds and never replays completed tools', async () => {
     const { worker, config, post, history, items, toolCall, calls } = await toolRoundFixture();
     let atCrash: SessionLogItem[] = [];
@@ -3989,11 +4036,11 @@ describe('durable context compaction', () => {
     expect(after.flatMap(m => m.parts).find((p: any) => p.tool === 'large_result').state.output).toContain('ROUND_OUTPUT_1');
   });
 
-  test('a failed tool-round summary retains the completed tool without executing another model round', async () => {
+  test.each(['error', 'length'] as const)('a failed tool-round summary retains the completed tool without another model round, reason=%s', async (stopReason) => {
     const { worker, post, history, toolCall, calls } = await toolRoundFixture();
     worker.faux!.setResponses([
       toolCall(),
-      fauxAssistantMessage([], { stopReason: 'error', errorMessage: 'summary service unavailable' }),
+      fauxAssistantMessage('Partial summary', { stopReason, errorMessage: 'summary service unavailable' }),
     ]);
     const input = { messageID: mintWireMessageId({ nowMs: Date.now() }).id, parts: [{ type: 'text', text: 'Read and summarize.' }] };
     await post(worker, 'message', input);

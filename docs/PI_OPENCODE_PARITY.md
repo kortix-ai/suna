@@ -67,7 +67,7 @@ extensions. The native Pi lifecycle surface is documented in
 | Capability | Current behavior | Required work |
 |---|---|---|
 | File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, existing-session composer, and atomic first-prompt image admission | First-prompt browser deployment verification, remote attachment conversion, and full large-upload provider verification. Native tool images are verified separately above |
-| Provider context-overflow recovery | Threshold compaction runs before new prompts and between tool rounds | Recovery when one input or tool result already exceeds the provider window; full-size preview proof remains blocked by ingress |
+| Provider context-overflow recovery | Threshold compaction plus bounded segmented recovery when the summarization request exceeds the provider window | Ordinary agent-request overflow and oversized first input remain open; full-size preview proof remains blocked by ingress |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
@@ -84,13 +84,16 @@ White-label fixed agent/model controls and real incremental streaming passed
 against the preview API. The saved reply, empty turn queue, and absent environment
 match the browser. These controls do not implement live reconfiguration.
 
-The latest full preview gate at `6363074d0f` passes 456 of 464 REST/CLI flows,
-with five failures and three existing skips. Browser results are 19 passes and
-two failures. Four Git shipping failures occur at Platinum ingress. SEC-J matches
-a public translation's PEM header placeholder in the frontend HTML 404 response;
-the plain sensitive-path 404 now passes live SEC-J after reloading current host bytes through stdin.
-SESS-29 now passes its exact bytes and compressed ETag checks. Preview billing remains open. German onboarding correctly skips Tools when managed connectors are disabled; its test now reads the deployment flag. The local browser suite passes 21 tests.
-Large-context automatic compaction remains blocked by the ingress upload failure.
+The complete preview run at `8e52bd100e` passes 456 of 464 REST/CLI flows,
+with five failures and three existing skips. The browser lane passes: 21 tests
+pass initially and two pass after retrying gateway 502 responses. The complete
+language sweep passes in 41.1 minutes. Billing passes in 40.8 seconds.
+Four Git shipping failures occur at Platinum ingress. SEC-J ran before the
+sensitive-path routing reload; it passes separately after reloading current host
+bytes through stdin. SESS-29 passes exact attachment bytes and compressed ETags.
+The controller incorrectly reports an earlier exit file; the actual current
+remote suite completes and writes its own benchmark.
+Large-context upload proof remains blocked by the ingress failure.
 See the verification log for exact probes.
 
 ## Benchmarks
