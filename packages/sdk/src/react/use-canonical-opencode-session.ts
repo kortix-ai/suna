@@ -1,5 +1,6 @@
 'use client';
 
+import { markRuntimeRootPinned } from './use-opencode-sessions/shared';
 import { useEffect, useLayoutEffect, useState } from 'react';
 
 import {
@@ -113,6 +114,10 @@ export function useCanonicalOpenCodeSession(params: {
     initialPin,
     persistedPin: pin,
   });
+  // A pinned root is a root, even when it is a UUID (a cell's is) — see
+  // canQueryOpenCodeSession. Registered here, in render, because the hooks
+  // that ask run later in this same render.
+  markRuntimeRootPinned(rootSessionId);
 
   // Mirror a freshly-resolved canonical id back to disk so the NEXT mount of
   // this (projectId, sessionId) can paint synchronously via `cachedPin`
