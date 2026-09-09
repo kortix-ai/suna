@@ -20,6 +20,7 @@
  * fills, which is the same defect wearing a compression hat.
  */
 
+import { daemonSessionUrl } from './daemon-session-url';
 import {
   buildSandboxUpstreamHeaders,
   resolveSandboxIngress,
@@ -43,6 +44,12 @@ export const RUNTIME_STREAM_CONNECT_TIMEOUT_MS = 10_000;
 
 export interface DaemonCallTarget {
   externalId: string;
+  /**
+   * The session this call is ABOUT, which the box URL cannot say. A cell
+   * sandbox holds one isolate per session and picks from `?c=`; see
+   * ./daemon-session-url.ts for what happened without it.
+   */
+  sessionId?: string | null;
   /** The user the call is made on behalf of; signs the `X-Kortix-User-Context`. */
   userId: string;
 }
@@ -98,10 +105,13 @@ export async function fetchRuntimeState(
   if (options.ifNoneMatch) headers['If-None-Match'] = options.ifNoneMatch;
 
   try {
-    const response = await fetch(`${endpoint.url}/kortix/opencode/state`, {
-      headers,
-      signal: options.signal ?? AbortSignal.timeout(RUNTIME_STATE_TIMEOUT_MS),
-    });
+    const response = await fetch(
+      daemonSessionUrl(endpoint.url, '/kortix/opencode/state', target.sessionId),
+      {
+        headers,
+        signal: options.signal ?? AbortSignal.timeout(RUNTIME_STATE_TIMEOUT_MS),
+      },
+    );
     const etag = response.headers.get('etag');
     if (response.status === 304) return { ok: true, status: 304, etag };
     if (!response.ok) {
@@ -139,11 +149,10 @@ export async function openRuntimeEventStream(
   }
   if (!endpoint) return { ok: false, reason: 'no_service_key', status: null };
 
-  const url = new URL(`${endpoint.url}/kortix/opencode/events`);
-  if (typeof options.since === 'number' && Number.isFinite(options.since)) {
-    url.searchParams.set('since', String(options.since));
-  }
-  if (options.epoch) url.searchParams.set('epoch', options.epoch);
+  const url = daemonSessionUrl(endpoint.url, '/kortix/opencode/events', target.sessionId, {
+    since: typeof options.since === 'number' && Number.isFinite(options.since) ? options.since : null,
+    epoch: options.epoch ?? null,
+  });
 
   // The connect is bounded; the STREAM is not. Two signals, combined, because
   // `AbortSignal.timeout` on the request would also abort the live body.

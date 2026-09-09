@@ -452,7 +452,7 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     }
 
     const opened = await openRuntimeEventStream(
-      { externalId: sandbox.externalId, userId: args.userId },
+      { externalId: sandbox.externalId, userId: args.userId, sessionId: args.sessionId },
       { since: args.runtime.seq, epoch: args.runtime.epoch, signal: args.abort.signal },
     );
     if (!opened.ok) {

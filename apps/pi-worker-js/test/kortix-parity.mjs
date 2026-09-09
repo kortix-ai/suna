@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=75
+// EXPECTED_PASSES=78
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -630,6 +630,27 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const named = await worker.fetch(new Request("http://cell/model"), { AGENT, KORTIX_SESSION_ID: "sess-1" });
   check("and a box that knows its session still routes to it",
     named.status === 200 && reached[reached.length - 1] === "sess-1", JSON.stringify(reached));
+}
+
+
+// THE WIRE FRAMES MUST NAME THE SESSION THE PRODUCT KNOWS.
+//
+// A turn runs in `alarm()`, which has no request to read `?c=` from, so the
+// only session name in scope is celld's own 64-hex object id. Built from that,
+// every frame named a session no client has heard of — measured on dev
+// 2026-09-09, 117 deltas carrying `"sessionID":"5e46f994978d338d…"` for
+// session 69658df3-b530-410f-b5d6-2f89822f00c9.
+{
+  const h = makeCell(AgentCell, { ...ENV, KORTIX_SESSION_ID: "node-session" });
+  const cell = h.cell ?? h;
+  check("a turn's own session wins — the node's env names whoever made the box",
+    cell.wireSessionId({ session_id: "turn-session" }, "object-id") === "turn-session",
+    String(cell.wireSessionId({ session_id: "turn-session" }, "object-id")));
+  check("with no session on the turn, the node's env is better than the object id",
+    cell.wireSessionId({}, "object-id") === "node-session",
+    String(cell.wireSessionId({}, "object-id")));
+  check("and the object id is the last resort, not the first",
+    cell.wireSessionId({}, "object-id") !== "object-id", "");
 }
 
 process.exit(bad ? 1 : 0);

@@ -88,7 +88,7 @@ export async function refreshRuntimeProjection(
     }
 
     const result = await fetchRuntimeState(
-      { externalId: sandbox.externalId, userId: target.userId },
+      { externalId: sandbox.externalId, userId: target.userId, sessionId: target.sessionId },
       { ifNoneMatch: etags.get(target.sessionId) ?? null },
     );
     if (!result.ok) return { refreshed: false, reason: result.reason };

@@ -52,6 +52,8 @@ import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 // stays for platinum-shapes.mjs, which unit-tests its ledger and bodies.
 import { providerStream, resolveModel, scriptedStream, supportedProviders } from "./model.js";
 import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
+import { WireBus, WIRE_HEARTBEAT_MS } from "./wire.js";
+import { ChatEventAdapter } from "../../kortix-worker/src/chat-events.ts";
 
 const streamFnOf = (agent) => agent.__streamFn;
 
@@ -435,6 +437,13 @@ export class AgentCell {
     // session's Kortix token: the same store already holds the conversation,
     // and a session whose credential does not survive its own eviction cannot
     // finish the turn it was resumed for.
+    // THE WIRE BUS, whose epoch is this isolate.
+    //
+    // `instance` changes when celld destroys and rebuilds the cell, which is
+    // exactly when a cursor stops meaning anything — so the API is told to
+    // drop it, by the same `epoch` field the reference daemon uses. Nothing
+    // durable: a replay older than this boot is a resync, honestly.
+    this.wire = this.wire ?? new WireBus({ epoch: this.instance });
     this.sql.exec("CREATE TABLE IF NOT EXISTS session_env (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
     this.sessionEnv = this.sessionEnv ?? {};
     for (const row of this.sql.exec("SELECT k, v FROM session_env")) {
@@ -566,7 +575,8 @@ export class AgentCell {
     try {
       const script = next.script ? JSON.parse(next.script) : undefined;
       const { block } = await this.skills(sessionId);
-      const agent = this.buildAgent(sessionId, script, withSkills(SYSTEM_PROMPT, block));
+      const agent = this.buildAgent(sessionId, script, withSkills(SYSTEM_PROMPT, block),
+        this.wireSessionId(next, sessionId));
       // Held so /stop has something to abort. Without a reference to the
       // running agent there is no way to stop a turn at all: pi creates the
       // abort signal inside the run, and every cancellation the ExecutionEnv
@@ -712,6 +722,40 @@ export class AgentCell {
    * themselves and once as a stub, and a consumer that renders what it is sent
    * would render the turn twice.
    */
+  /**
+   * The id of the assistant message currently being streamed.
+   *
+   * ZERO-PADDED and monotonic because the ORDER is load-bearing: the transcript
+   * sorts by it, and "has this prompt been answered" is decided by comparing
+   * the newest assistant id to the user's. `msg-2` sorting before `msg-10` is
+   * how an answered turn reads as unanswered.
+   */
+  /**
+   * THE SESSION NAME THE PRODUCT KNOWS, resolved from a turn that is running
+   * without a request.
+   *
+   * Turns run in `alarm()`, and an alarm has no `?c=` and no path — so
+   * `sessionId` there is `this.state.id.toString()`, celld's own 64-hex object
+   * id. Every wire frame built from it named a session no client has ever
+   * heard of: measured on dev 2026-09-09, 117 `message.part.delta` frames
+   * reached the browser carrying
+   * `"sessionID":"5e46f994978d338d8fa19d95836d6279…"` while the session was
+   * 69658df3-b530-410f-b5d6-2f89822f00c9. A reducer that keys parts by session
+   * drops every one of them, and the answer still does not paint.
+   *
+   * Same order `relayTurnEnd` already uses, and for the same reason: the
+   * TURN's own session first, because `KORTIX_SESSION_ID` is the node's env
+   * and names the session that created a shared host.
+   */
+  wireSessionId(turnRow, fallback) {
+    return turnRow?.session_id || this.effectiveEnv().KORTIX_SESSION_ID || fallback;
+  }
+
+  mintWireMessageId() {
+    this.wireMessageSeq = (this.wireMessageSeq ?? 0) + 1;
+    return `msg_cell_${String(this.wireMessageSeq).padStart(8, "0")}`;
+  }
+
   broadcast(event, { mirror = true } = {}) {
     if (mirror) this.sse({ ...event, at: Date.now() });
     const payload = JSON.stringify({ ...event, at: Date.now() });
@@ -759,7 +803,7 @@ export class AgentCell {
     return loaded;
   }
 
-  buildAgent(sessionId, script, systemPrompt = SYSTEM_PROMPT) {
+  buildAgent(sessionId, script, systemPrompt = SYSTEM_PROMPT, wireSessionId = sessionId) {
     const configured = modelConfig(this.effectiveEnv());
     const streamFn = configured
       ? configured.streamFn
@@ -783,11 +827,27 @@ export class AgentCell {
       },
     });
 
+    // ONE ADAPTER PER AGENT, because it is stateful across a turn: part ids,
+    // the accumulated text of each part, and which assistant message is open.
+    // Sharing one across turns would collide their part ids; making one per
+    // EVENT would restart the accumulation on every delta.
+    const wireAdapter = new ChatEventAdapter({
+      sessionID: wireSessionId,
+      mintMessageId: () => this.mintWireMessageId(),
+    });
+
     agent.subscribe((event) => {
       // RAW, FIRST. The harness pushes every agent event onto /events verbatim,
       // and a consumer written against it expects the same shapes — deltas
       // included, which is what makes an answer arrive rather than appear.
       this.sse(event);
+      // AND THE SAME EVENT IN THE SHAPE THE PRODUCT READS. The web client's
+      // reducer applies OpenCode wire events and repaints incrementally only
+      // from `message.part.delta`; pi's own event names mean nothing to it.
+      // Translated by kortix-worker's adapter rather than a second copy of the
+      // mapping — it is the one the UI was written against, and its own tests
+      // pin the delta/snapshot split this bus depends on.
+      try { this.wire?.publish(wireAdapter.translate(event)); } catch { /* never break a turn to publish it */ }
       // Stream what a watcher actually needs: which tool is running, and what
       // came back. Previously this sent only `{type}`, which tells a UI that
       // something happened and nothing about what.
@@ -1733,6 +1793,55 @@ export class AgentCell {
     // 200. It does NOT by itself make the UI render deltas — that also needs
     // these events in OpenCode's wire shape (kortix-worker's ChatEventAdapter
     // is the mapping) — and that is deliberately not claimed here.
+    // THE ROUTE THE CONTROL PLANE OPENS.
+    //
+    // `openRuntimeEventStream` in the API fetches `<box>/kortix/opencode/events`
+    // with `?since=` and `?epoch=` and requires `text/event-stream` back — it
+    // treats a 200 that is not one as `daemon_protocol_unsupported` and takes
+    // the backoff ladder, which is what the cell's catch-all used to produce.
+    // Measured on dev 2026-09-09 before this existed: the UI stream announced
+    // `{"state":"down","reason":"daemon_503"}` at 959 ms and carried no runtime
+    // frame for the next 75 seconds.
+    if (path === "/kortix/opencode/events") {
+      const bus = this.wire;
+      const sinceRaw = url.searchParams.get("since");
+      const since = sinceRaw === null || sinceRaw === "" ? null : Number(sinceRaw);
+      const opening = bus.opening({ since, epoch: url.searchParams.get("epoch") });
+      const enc = new TextEncoder();
+      let writer = null;
+      let beat = null;
+      const set = bus.listeners;
+      const stream = new ReadableStream({
+        start(controller) {
+          writer = { write: (line) => controller.enqueue(enc.encode(line)) };
+          controller.enqueue(enc.encode(opening));
+          set.add(writer);
+          // A SILENT STREAM IS A CLOSED STREAM. Measured on dev 2026-09-09: an
+          // attach with nothing to say was cut at 15161 ms and the API's pump
+          // announced `{"state":"down","reason":"stream_ended"}`, then took the
+          // backoff ladder — the flap this route exists to end. A comment costs
+          // three bytes and is not an event, so it cannot advance a cursor or
+          // reach a reducer.
+          beat = setInterval(() => {
+            try { controller.enqueue(enc.encode(": beat\n\n")); }
+            catch { clearInterval(beat); }
+          }, WIRE_HEARTBEAT_MS);
+        },
+        cancel() { set.delete(writer); if (beat) clearInterval(beat); },
+      });
+      return new Response(stream, {
+        headers: {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          // The API reads the boot id off the HEADER as well as the hello, so a
+          // caller that never parses a frame still knows which epoch it got.
+          "x-kortix-epoch": bus.epoch,
+          "x-accel-buffering": "no",
+        },
+      });
+    }
+
     if (path === "/events" || path === "/global/event" || path === "/event") {
       this.sseListeners = this.sseListeners ?? new Set();
       const set = this.sseListeners;
