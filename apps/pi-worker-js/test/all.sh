@@ -176,6 +176,7 @@ run_suite platinum   ./test/platinum.sh
 run_suite eviction   ./test/eviction.sh
 run_suite dev-evict  ./test/dev-evict.sh
 run_suite file-dur   ./test/dev-file-durability.sh
+run_suite box-loss   ./test/dev-box-loss.sh
 # The cell against a REAL Platinum dev sandbox as its workspace. Opt-in by the
 # presence of a dev token (PT_SANDBOX_KEY or ~/.config/platinum/credentials);
 # without one it SKIPs and says so. Last, because it owns the node's lifecycle.
