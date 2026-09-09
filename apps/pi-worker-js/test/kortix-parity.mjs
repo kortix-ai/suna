@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=85
+// EXPECTED_PASSES=87
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -712,6 +712,26 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const proj = await h.fetch("/kortix/opencode/state?c=s");
   check("the projection still answers, with the cell asking itself through handle()",
     proj.status === 200 && (await proj.json()).identity !== undefined, String(proj.status));
+}
+
+
+// THE SPAWN BENCH IS THE COMPARISON, so it must keep saying what it measured.
+//
+// Its comment carries the whole agentOS comparison — 4.8 ms in-process against
+// this worker's numbers, and now the memory slope beside it. A bench whose
+// answer stops naming its own conditions is a number without a method, which
+// is what every stale claim in this repo started as.
+{
+  const worker = mod.default;
+  const AGENT = {
+    idFromName: (n) => n,
+    get: () => ({ fetch: async () => Response.json({ ok: true }) }),
+  };
+  const b = await (await worker.fetch(new Request("http://cell/bench/spawn?n=2"), { AGENT })).json();
+  check("the bench states the quantity it is comparable to, not just a number",
+    typeof b.note === "string" && b.note.includes("in-node"), JSON.stringify(b.note));
+  check("and it reports how many samples the distribution came from",
+    b.n === 2, String(b.n));
 }
 
 process.exit(bad ? 1 : 0);

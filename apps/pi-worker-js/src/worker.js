@@ -2115,7 +2115,35 @@ export default {
       // cannot be faster — which is itself the result: in the middle of the
       // distribution, node scheduling dominates and the work does not show.
       //
-      // THIS CORRECTS THE RECORD. It was written here that the 65-96 ms first
+      // AND THE OTHER HALF OF THE COMPARISON, measured for the first time on
+    // 2026-09-09 rather than restated: what one cell costs in memory.
+    //
+    // A cell sandbox refuses `exec` — `runtime_capability_unsupported` — so
+    // RSS is not readable from inside one. The platform's own /metrics reports
+    // the box's `mem_used_mb` and is live (it moves 1-2 MB between reads and
+    // differs across boxes by hundreds), so the question is asked from outside:
+    // spawn N isolates on a box with nothing else on it and take the slope.
+    // test/dev-memory.sh is that probe.
+    //
+    //   N=0     488 MB     the node itself
+    //   N=100   488 MB     +0
+    //   N=200   919 MB     +431 MB   2.15 MiB/instance
+    //   N=400  1239 MB     +751 MB   1.88 MiB/instance
+    //
+    // The marginal cost from 200 to 400 is 320 MB over 200 isolates: 1.6 MiB
+    // each. The figure this work is judged against is 1.38 MiB/instance, so it
+    // is the right order and mildly understated — call it 1.6-2.2 MiB measured.
+    // Against agentOS's ~131 MB that is still ~80x, so the size claim survives
+    // its first contact with a measurement.
+    //
+    // TWO THINGS THE PROBE HAD TO LEARN. `/ping` answers BEFORE init(), so 400
+    // isolates touched that way added 0 MB — true, and not the question: an
+    // isolate that never built its schema is not a session. And reading
+    // /metrics straight after a spawn gave 486 MB for N=50, 100 and 200 then
+    // 1146 for N=400, a step function that is the sampler's lag rather than
+    // the memory's shape; the reading has to settle first.
+    //
+    // THIS CORRECTS THE RECORD. It was written here that the 65-96 ms first
       // touch is celld's object-storage lease and therefore architectural. The
       // durable half is ~12 ms of it. The other ~40 ms is celld routing to and
       // starting an isolate, BEFORE any storage — and it does not move with
