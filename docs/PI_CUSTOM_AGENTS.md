@@ -276,3 +276,53 @@ The conversation displays completed tool images using authenticated thumbnails
 and the existing image viewer. Reload and worker replacement preserve the asset
 URLs and exact bytes. Images produced in the worker do not start an environment.
 The native `read` tool reads workspace images through the execution environment.
+
+## Connector and remote MCP tools
+
+Pi exposes `connector_search`, `connector_describe`, and `connector_call` when
+the worker has its project identity and API credential. Registration performs no
+network discovery. Calls use the SDK and the existing Kortix connector gateway.
+They do not start the execution environment.
+
+Declare remote MCP servers through the existing project connector configuration:
+
+```yaml
+kortix_version: 3
+default_agent: reviewer
+connectors:
+  - slug: research
+    provider: mcp
+    url: https://example.com/mcp
+    transport: http
+    auth:
+      type: none
+agents:
+  reviewer:
+    connectors: [research]
+    secrets: none
+```
+
+Replace the example URL with the actual server. Configure credentials through
+Kortix Connections or project secrets. Do not commit credentials in YAML.
+The connector gateway owns discovery, MCP protocol negotiation, credentials,
+agent grants, and action policy. The worker receives only authorized tools.
+
+Use `connector_search` to find `connector.action` identifiers. Use
+`connector_describe` to inspect the input schema before `connector_call`.
+Per-agent permission patterns match that identifier. For example,
+`connector_call: { "research.*": ask }` requests the existing permission UI.
+Custom Pi modules cannot replace these three platform tools.
+
+MCP text, text resources, resource links, structured output, and native images
+reach the model. Images use the existing private attachment pipeline. Unsupported
+binary content fails explicitly. Text results are bounded to 512 KiB.
+A JSON-RPC error or MCP `isError` result fails the tool even when HTTP succeeds.
+
+A connector policy approval returns the existing approval link. The agent shows
+that link and waits. The worker does not poll or automatically resubmit a write.
+Stop cancels its HTTP request and permits the next prompt. Cancellation cannot
+undo an action that the remote service already accepted.
+
+This adapter supports remote MCP through project connectors. It does not load
+OpenCode `mcp` configuration, Pi CLI settings, stdio servers, MCP prompts, or
+resource subscriptions. Those remain separate parity work.

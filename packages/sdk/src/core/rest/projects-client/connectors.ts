@@ -73,18 +73,25 @@ function connectorGatewayPath(projectId: string | undefined, suffix: string): st
     : `/connectors/${suffix}`;
 }
 
-export async function getConnectorCatalog(projectId?: string): Promise<ConnectorCatalogEntry[]> {
+export async function getConnectorCatalog(
+  projectId?: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ConnectorCatalogEntry[]> {
   const result = unwrap(
     await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
       connectorGatewayPath(projectId, 'catalog'),
+      options,
     ),
   );
   return result.connectors ?? [];
 }
 
-export async function listConnectorTools(projectId?: string): Promise<ConnectorTool[]> {
+export async function listConnectorTools(
+  projectId?: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ConnectorTool[]> {
   const tools: ConnectorTool[] = [];
-  for (const connector of await getConnectorCatalog(projectId)) {
+  for (const connector of await getConnectorCatalog(projectId, options)) {
     for (const action of connector.actions) {
       tools.push({
         tool: `${connector.slug}.${action.path}`,
@@ -102,13 +109,13 @@ export async function listConnectorTools(projectId?: string): Promise<ConnectorT
 export async function searchConnectorTools(
   projectId: string | undefined,
   query = '',
-  options: { limit?: number } = {},
+  options: { limit?: number; signal?: AbortSignal } = {},
 ): Promise<ConnectorTool[]> {
   const normalized = query.trim().toLowerCase();
   const tokens = normalized.split(/\s+/).filter(Boolean);
   const exact: ConnectorTool[] = [];
   const tokenMatches: ConnectorTool[] = [];
-  for (const tool of await listConnectorTools(projectId)) {
+  for (const tool of await listConnectorTools(projectId, options)) {
     const haystack = `${tool.tool} ${tool.description}`.toLowerCase();
     if (!normalized || haystack.includes(normalized)) exact.push(tool);
     else if (tokens.every((token) => haystack.includes(token))) tokenMatches.push(tool);
@@ -119,8 +126,9 @@ export async function searchConnectorTools(
 export async function describeConnectorTool(
   projectId: string | undefined,
   tool: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<ConnectorTool | null> {
-  return (await listConnectorTools(projectId)).find((candidate) => candidate.tool === tool) ?? null;
+  return (await listConnectorTools(projectId, options)).find((candidate) => candidate.tool === tool) ?? null;
 }
 
 function parseConnectorTool(tool: string): { connector: string; action: string } {
@@ -137,12 +145,14 @@ export async function callConnector<T = unknown>(
   projectId: string | undefined,
   tool: string,
   args: Record<string, unknown> = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<ConnectorCallResult<T>> {
   const { connector, action } = parseConnectorTool(tool);
   return unwrap(
     await backendApi.post<ConnectorCallResult<T>>(
       connectorGatewayPath(projectId, 'call'),
       { connector, action, args },
+      options,
     ),
   );
 }

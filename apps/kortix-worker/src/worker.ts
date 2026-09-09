@@ -57,6 +57,7 @@ import { QuestionBroker } from './question-broker.ts';
 import { QuestionCheckpointStore, type QuestionCheckpoint } from './question-checkpoint.ts';
 import { planQuestionReplay } from './question-replay.ts';
 import { createWebFetchTool } from './web-fetch-tool.ts';
+import { createConnectorTools } from './connector-tools.ts';
 import { createWebSearchTool } from './web-search-tool.ts';
 import { createTodoTools } from './todo-tools.ts';
 import { createQuestionTool } from './question-tool.ts';
@@ -1472,6 +1473,9 @@ export async function startWorker(cfg = configFromEnv()) {
       createWebSearchTool(),
       createWebFetchTool({ authorizeRedirect: (url) => permissions.requirePreauthorized('webfetch', url) }),
       createSkillTool(compiledPayload?.skills ?? [], cfg.envCwd),
+      ...(cfg.apiUrl && cfg.projectId && cfg.kortixToken
+        ? createConnectorTools({ apiUrl: cfg.apiUrl, projectId: cfg.projectId, token: cfg.kortixToken })
+        : []),
     ],
     permissions,
     cfg.envCwd,

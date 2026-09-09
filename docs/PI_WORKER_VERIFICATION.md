@@ -1175,7 +1175,7 @@ Its archive also exceeded Platinum's single-read limit: 443,342,408 bytes versus
 result as the current suite result. The controller checks out `main`, so branch
 changes to bootstrap routing are not used by the controller before merge.
 
-First-prompt image changes are locally verified and await deployment:
+First-prompt image changes are locally verified and deployed at `d8fa198f49`:
 
 - Pi session creation, warm claims, and boot-time prompts replace staged image
   data URLs with immutable attachment references. Bytes and commands commit in
@@ -1244,3 +1244,58 @@ The language sweep passes in 41.1 minutes. The overall suite remains failed
 because REST/CLI reports 456 passes, five failures, and three existing skips.
 Four failures are Platinum Git uploads. SEC-J ran before the routing hot reload.
 The run's benchmark is `benchmark-1788935404978.json` on the preview.
+
+
+## Deployed first-prompt images — 2026-09-09
+
+Deployment `34319703180` publishes `d8fa198f4986313899c4a7a401a2b5cce9936108`.
+Remote Git, API, gateway, and frontend image tags match. Both live probes assert
+that public `/v1/health` returns this exact commit.
+
+- The real project composer submits a 4,687-byte PNG through warm claim. The model
+  reads `LIME731`, the blue circle on the left, and the orange square on the right.
+- Session `fbbffce4-9a85-4561-9da5-03fa00272582` contains exactly two messages.
+  The authenticated viewer loads the original 400×240 image. The asset bytes,
+  messages, and image remain available after worker stop/resume and browser reload.
+- Direct SDK session creation independently submits the same first-prompt image.
+  The model reads it correctly. Exact asset bytes and the two-message history pass.
+- Neither input path starts an environment. Both test workers finish stopped.
+- Preview `SEC-J`, `SESS-29`, and `SESS-31`: 3/3 pass, no skips, 9.1 seconds.
+  Caddy loads current routing bytes through stdin before these checks.
+- Evidence: `/tmp/pi-first-prompt-image-preview.json`,
+  `/tmp/pi-first-image-create-preview.json`, and `/tmp/pi-first-images-api-proof.log`.
+- Preview API report: `20260909064444-le1kqc/report.html`.
+
+## Native connector tools — local verification, 2026-09-09
+
+Pi registers project-scoped search, describe, and call tools through the SDK.
+Construction does not fetch a catalog or request an environment. The gateway
+keeps credentials and enforces agent grants and action policy. Native MCP results
+unwrap the gateway's JSON-RPC envelope before image conversion and error handling.
+
+The SDK previously replaced caller cancellation with its own timeout signal.
+Failing tests reproduce pre-abort execution, continued POST requests, and GET
+retries after Stop. The transport now honors cancellation during credentials,
+requests, and retry waits. Connector methods expose the optional signal without
+changing existing required arguments or exported names.
+
+- `pnpm --filter @kortix/sdk typecheck`: pass, including examples.
+- `pnpm --filter @kortix/sdk test`: 2,938 pass, 0 fail, 0 skips.
+- `pnpm --filter @kortix/sdk run smoke:install`: pass. Packed SDK and executor
+  adapter install and construct in Node ESM.
+- `pnpm test`: six core lanes pass in 111.0 seconds. REST/CLI: 399/399 pass,
+  no skips. Complete worker suite: 785 pass, 0 fail, across 89 files.
+- Worker typecheck and fresh Node bundle pass. Compiled artifact and confinement:
+  7 pass, 0 fail, 71 assertions. The new worker bundle is 1,665,750 bytes.
+- Worker HTTP tests prove discovery, exact action arguments, action permission
+  patterns, denial without execution, unanswered approval cancellation, in-flight
+  Stop followed by another prompt, and exact transcript restoration.
+- Connector HTTP tests prove scoped credentials under concurrent workers,
+  approval handoff without resubmission, native content, JSON-RPC errors,
+  malformed binary rejection, size limits, and cancellation.
+- Evidence: `/tmp/pi-connector-sdk-gates.log`, `/tmp/pi-connectors-root.log`,
+  `tests/test-results/local/benchmark-1788937551355.json`.
+
+Live connector verification follows deployment. The original `pi-lab` project
+has a one-project account limit. The MCP probe uses an isolated synthetic preview
+user and project, rather than changing that account's subscription or repository.

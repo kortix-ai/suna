@@ -191,6 +191,10 @@ function permissionRequest(
       metadata: {},
     };
   }
+  if (toolName === 'connector_call' || toolName === 'connector_describe') {
+    const tool = stringField(input, 'tool') ?? '*';
+    return { permission, patterns: [tool], always: [tool], metadata: structuredClone(input) };
+  }
   return {
     permission,
     patterns: ['*'],

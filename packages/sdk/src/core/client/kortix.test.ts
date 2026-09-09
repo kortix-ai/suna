@@ -1759,3 +1759,15 @@ test.each(['pi', 'opencode'])('send forwards file parts once and does not inheri
     [{ type: 'text', text: 'Describe this image.' }, file], [{ type: 'text', text: 'Recall it.' }],
   ]);
 });
+
+
+test('project and token connector facades preserve cancellation options', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const options = {signal:controller.signal};
+  for (const connectors of [kortix.connectors, kortix.project('p1').connectors]) {
+    await expect(connectors.catalog(options)).rejects.toMatchObject({code:'ABORTED'});
+    await expect(connectors.tools(options)).rejects.toMatchObject({code:'ABORTED'});
+  }
+  expect(calls).toHaveLength(0);
+});

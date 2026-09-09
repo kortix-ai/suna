@@ -122,6 +122,22 @@ const isRequestDeadlineResponse = (
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+function withCallerSignal<T>(operation: Promise<T>, signal?: AbortSignal | null): Promise<T> {
+  if (!signal) return operation;
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => {
+      signal.removeEventListener('abort', abort);
+      reject(signal.reason ?? new DOMException('Request aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    operation.then(
+      value => { signal.removeEventListener('abort', abort); resolve(value); },
+      error => { signal.removeEventListener('abort', abort); reject(error); },
+    );
+    if (signal.aborted) abort();
+  });
+}
+
 /**
  * HTTP statuses that represent a transient gateway / overload condition rather
  * than a deterministic server-side failure: 502 (Bad Gateway), 503 (Service
@@ -178,8 +194,13 @@ async function makeRequest<T = any>(
   // (client navigation, tab close, dropped connection). Only the former is a
   // real timeout; the latter must not be surfaced as one.
   let didTimeout = false;
+  let activeController = controller;
+  const callerSignal = fetchOptions.signal;
+  const abortFromCaller = () => activeController.abort(callerSignal?.reason);
+  callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
 
   try {
+    callerSignal?.throwIfAborted();
     timeoutId = setTimeout(() => {
       if (!isAborted && !controller.signal.aborted) {
         isAborted = true;
@@ -188,7 +209,8 @@ async function makeRequest<T = any>(
       }
     }, timeout);
 
-    const token = await getSupabaseAccessTokenWithRetry();
+    const token = await withCallerSignal(getSupabaseAccessTokenWithRetry(), callerSignal);
+    callerSignal?.throwIfAborted();
 
     // Don't set Content-Type for FormData - browser will set it automatically with boundary
     const isFormData = fetchOptions.body instanceof FormData;
@@ -240,11 +262,14 @@ async function makeRequest<T = any>(
     let response!: Response;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      callerSignal?.throwIfAborted();
       if (attempt > 0) {
-        await sleep(250 * 2 ** (attempt - 1));
+        await withCallerSignal(sleep(250 * 2 ** (attempt - 1)), callerSignal);
       }
+      callerSignal?.throwIfAborted();
 
       const attemptController = attempt === 0 ? controller : new AbortController();
+      activeController = attemptController;
       if (attempt > 0) {
         timeoutId = setTimeout(() => {
           didTimeout = true;
@@ -260,12 +285,13 @@ async function makeRequest<T = any>(
           signal: attemptController.signal,
           credentials: fetchOptions.credentials ?? 'omit',
         });
+        callerSignal?.throwIfAborted();
       } catch (error) {
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
-        if (isAbortError(error) || attempt === maxAttempts - 1) {
+        if (callerSignal?.aborted || isAbortError(error) || attempt === maxAttempts - 1) {
           throw error;
         }
         continue;
@@ -449,7 +475,7 @@ async function makeRequest<T = any>(
     }
 
     // Check if this is an abort error (timeout or manual abort)
-    const requestWasAborted = isAbortError(error);
+    const requestWasAborted = callerSignal?.aborted || isAbortError(error);
 
     // If it was aborted, mark it so we don't try to abort again
     if (requestWasAborted) {
@@ -510,6 +536,9 @@ async function makeRequest<T = any>(
       error: apiError,
       success: false,
     };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
   }
 }
 

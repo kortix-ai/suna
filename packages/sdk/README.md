@@ -58,6 +58,12 @@ await connectors.uploadAttachment(bytes, {
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
 
+`catalog`, `tools`, `search`, `describe`, and `call` accept an optional final
+`{ signal: AbortSignal }` argument. Search also accepts `limit` in that object.
+Cancellation stops the client request, including credential lookup and GET
+retry waits. It cannot undo an action already accepted by the remote service.
+Connector calls are not automatically retried.
+
 ## Worker and environment routing
 
 A Pi session has two runtimes. The worker owns messages and events. The environment

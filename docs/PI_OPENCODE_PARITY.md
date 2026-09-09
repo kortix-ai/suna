@@ -66,12 +66,12 @@ extensions. The native Pi lifecycle surface is documented in
 
 | Capability | Current behavior | Required work |
 |---|---|---|
-| File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, existing-session composer, and atomic first-prompt image admission | First-prompt browser deployment verification, remote attachment conversion, and full large-upload provider verification. Native tool images are verified separately above |
+| File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, existing-session composer, and atomic first-prompt image admission | Remote attachment conversion and full large-upload provider verification. First-prompt UI and direct session creation pass on preview `d8fa198f49`. Native tool images are verified separately above |
 | Provider context-overflow recovery | Threshold compaction plus bounded segmented recovery when the summarization request exceeds the provider window | Ordinary agent-request overflow and oversized first input remain open; full-size preview proof remains blocked by ingress |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
-| MCP configuration | No native Pi MCP loader | Governed compiled config, remote/stdio execution placement, authorization, cancellation, and discovery |
+| MCP configuration | Native Pi tools use the existing remote MCP connector gateway; local permission, cancellation, content, and restoration tests pass | Deployed session verification, stdio placement, MCP prompts/resources, and complete discovery UI |
 | Live model and agent switching | Config is fixed; API and host controls reject unsupported changes | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |

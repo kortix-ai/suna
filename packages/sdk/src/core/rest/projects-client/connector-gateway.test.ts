@@ -264,3 +264,21 @@ test('gateway failures use the SDK ApiError with the server reason', async () =>
     expect((error as ApiError).details).toEqual(responseBody);
   }
 });
+
+
+test('connector discovery and execution honor caller cancellation before sending requests', async () => {
+  const controller = new AbortController();
+  controller.abort(new Error('Stop connector work'));
+  const options = { signal: controller.signal };
+  const requests = [
+    () => getConnectorCatalog('p1', options),
+    () => listConnectorTools('p1', options),
+    () => searchConnectorTools('p1', 'history', options),
+    () => describeConnectorTool('p1', 'slack.get_history', options),
+    () => callConnector('p1', 'slack.get_history', {}, options),
+  ];
+  for (const request of requests) {
+    await expect(request()).rejects.toMatchObject({code:'ABORTED'});
+  }
+  expect(calls).toHaveLength(0);
+});
