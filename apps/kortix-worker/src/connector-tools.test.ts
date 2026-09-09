@@ -219,6 +219,10 @@ test.each([
     type: "resource",
     resource: { uri: "fixture://binary", blob: "PRIVATE_BINARY" },
   },
+  { type: "resource", resource: { uri: "fixture://svg", mimeType: "image/svg+xml", blob: "PRIVATE_BINARY" } },
+  { type: "resource", resource: { uri: "fixture://image", mimeType: "image/png", blob: 42 } },
+  { type: "resource", resource: { mimeType: "image/png", blob: "PRIVATE_BINARY" } },
+  { type: "resource", resource: { uri: "fixture://mixed", mimeType: "image/png", blob: "PRIVATE_BINARY", text: "ambiguous" } },
   { type: "text", text: 42 },
 ])(
   "unsupported or malformed MCP content is rejected without returning binary text: %j",
@@ -227,6 +231,25 @@ test.each([
     await expect(
       call("connector_call", { tool: "fixture.bad", args: {} }),
     ).rejects.toThrow("Unsupported or malformed MCP content");
+  },
+);
+
+test.each(["image/png", "image/jpeg", "image/gif", "image/webp"])(
+  "embedded %s resources preserve their URI and use native image content",
+  async (mimeType) => {
+    const resource = { uri: "fixture://capture/image", mimeType, blob: "aW1hZ2U=" };
+    const { call } = fixture({ value: { jsonrpc: "2.0", id: 1, result: {
+      content: [{ type: "text", text: "capture" }, { type: "resource", resource }],
+      structuredContent: { color: "cobalt" },
+    } } });
+    const result = await call("connector_call", { tool: "fixture.capture", args: {} });
+    expect(result.content).toEqual([
+      { type: "text", text: "capture" },
+      { type: "text", text: JSON.stringify({ type: "resource", resource: { uri: resource.uri, mimeType } }) },
+      { type: "image", mimeType, data: resource.blob },
+      { type: "text", text: '{"color":"cobalt"}' },
+    ]);
+    expect(result.content.filter((part) => part.type === "text").map((part) => part.text).join("")).not.toContain(resource.blob);
   },
 );
 

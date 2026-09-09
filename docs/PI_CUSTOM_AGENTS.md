@@ -328,8 +328,9 @@ Per-agent permission patterns match that identifier. For example,
 Custom Pi modules cannot replace these three platform tools.
 
 MCP text, text resources, resource links, structured output, and native images
-reach the model. Images use the existing private attachment pipeline. Unsupported
-binary content fails explicitly. Text results are bounded to 512 KiB.
+reach the model. Embedded PNG, JPEG, GIF, and WebP resources also become native
+images. Their URI remains text metadata; their base64 bytes use the private
+attachment pipeline. Unsupported binary content fails explicitly. Text results are bounded to 512 KiB.
 A JSON-RPC error or MCP `isError` result fails the tool even when HTTP succeeds.
 
 A connector policy approval returns the existing approval link. The agent shows

@@ -74,26 +74,40 @@ function connectorContent(data: unknown): (TextContent | ImageContent)[] {
         .slice(0, 4096) || "Remote MCP tool failed",
     );
   }
-  const content: (TextContent | ImageContent)[] = result.content.map(
-    (block) => {
+  const content = result.content.flatMap<TextContent | ImageContent>(
+    (block): (TextContent | ImageContent)[] => {
       if (!record(block))
         throw new Error("Unsupported or malformed MCP content");
       if (block.type === "text" && typeof block.text === "string")
-        return { type: "text", text: block.text };
+        return [{ type: "text", text: block.text }];
       if (
         block.type === "image" &&
         typeof block.mimeType === "string" &&
         imageTypes.has(block.mimeType) &&
         typeof block.data === "string"
       ) {
-        return { type: "image", mimeType: block.mimeType, data: block.data };
+        return [{ type: "image", mimeType: block.mimeType, data: block.data }];
       }
       if (
         block.type === "resource_link" &&
         typeof block.uri === "string" &&
         typeof block.name === "string"
       )
-        return textResult(block)[0]!;
+        return textResult(block);
+      if (
+        block.type === "resource" &&
+        record(block.resource) &&
+        typeof block.resource.uri === "string" &&
+        typeof block.resource.mimeType === "string" &&
+        imageTypes.has(block.resource.mimeType) &&
+        typeof block.resource.blob === "string" &&
+        !("text" in block.resource)
+      ) {
+        return [
+          ...textResult({ type: "resource", resource: { uri: block.resource.uri, mimeType: block.resource.mimeType } }),
+          { type: "image", mimeType: block.resource.mimeType, data: block.resource.blob },
+        ];
+      }
       if (
         block.type === "resource" &&
         record(block.resource) &&
@@ -101,7 +115,7 @@ function connectorContent(data: unknown): (TextContent | ImageContent)[] {
         typeof block.resource.uri === "string" &&
         !("blob" in block.resource)
       )
-        return textResult(block)[0]!;
+        return textResult(block);
       throw new Error("Unsupported or malformed MCP content");
     },
   );

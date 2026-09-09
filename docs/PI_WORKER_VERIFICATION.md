@@ -1451,3 +1451,26 @@ end event. Ordinary OpenCode turn records retain their existing completion path.
 - Worker and API typechecks pass. Full API: **9,290 pass, 82 existing skips,
   0 fail**, 32,288 assertions; `/tmp/pi-turn-recovery-api-final.log`.
   Preview verification follows this commit's deployment.
+
+
+## Embedded MCP image resources — 2026-09-09
+
+`connector_call` now accepts an MCP `resource` block containing a PNG, JPEG,
+GIF, or WebP `blob`. It preserves the resource URI as text metadata and sends
+its bytes through native image storage and model conversion. It rejects missing
+URIs, unsupported MIME types, non-string blobs, and ambiguous text-plus-blob
+resources. This does not implement MCP resource discovery or subscriptions.
+
+- Four image-format cases fail before conversion and pass afterward.
+- Connector and attachment pipeline tests: **34 pass, 0 fail**, 133 assertions.
+  The real worker receives an embedded image through its scoped SDK connector
+  call, persists exact bytes, hydrates native hooks/provider content, enforces
+  private reads, and restores identical messages without a second execution.
+- Worker typecheck passes. Evidence: `/tmp/pi-mcp-resource-focused.log` and
+  `/tmp/pi-mcp-resource-types.log`. Deployed image-resource proof is pending.
+
+
+For embedded resource conversion, `pnpm test` passes all six core lanes in
+116.0 seconds: 400/400 REST/CLI flows, 818 worker tests, and seven Node artifact
+checks. Benchmark: `1788946701894`. No SDK source or API contract changes occur
+in this image-resource checkpoint.

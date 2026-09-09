@@ -27,7 +27,7 @@ const image = Buffer.from(
 );
 const digest = createHash("sha256").update(image).digest("hex");
 
-async function fixture() {
+async function fixture(mode: "native" | "mcp_resource" = "native") {
   const items: any[] = [];
   const blobs = new Map<string, Uint8Array<ArrayBuffer>>();
   const writes: string[] = [];
@@ -42,6 +42,17 @@ async function fixture() {
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/v1/connectors/projects/image-fixture/call") {
+        expect(request.headers.get("authorization")).toBe("Bearer runtime-token");
+        expect(await request.json()).toEqual({ connector: "fixture", action: "capture", args: {} });
+        executions++;
+        return Response.json({ ok: true, data: { jsonrpc: "2.0", id: 1, result: {
+          content: [{ type: "resource", resource: {
+            uri: "fixture://capture/image", mimeType: "image/png", blob: image.toString("base64"),
+          } }],
+        } } });
+      }
+      if (path === "/v1/projects/image-fixture/turn-stream") return Response.json({ ok: true });
       if (path.includes("/attachments/")) {
         expect(request.headers.get("authorization")).toBe(
           "Bearer storage-token",
@@ -90,7 +101,7 @@ async function fixture() {
         }
       return messages;
     },
-    tools: [
+    tools: mode === "mcp_resource" ? [] : [
       {
         name: "capture",
         label: "Capture",
@@ -130,6 +141,7 @@ async function fixture() {
     systemPrompt: "Use capture when requested.",
     modelMode: "faux" as const,
     sessionId: "tool-images",
+    ...(mode === "mcp_resource" ? { projectId: "image-fixture", apiUrl: store.url.toString() + "v1" } : {}),
     kortixToken: "runtime-token",
     storeUrl: store.url.toString().replace(/\/$/, ""),
     storeHeaders: { authorization: "Bearer storage-token" },
@@ -186,7 +198,7 @@ async function fixture() {
     async send() {
       worker.faux!.setResponses([
         fauxAssistantMessage(
-          [fauxToolCall("capture", {}, { id: "image-call" })],
+          [fauxToolCall(mode === "native" ? "capture" : "connector_call", mode === "native" ? {} : { tool: "fixture.capture", args: {} }, { id: "image-call" })],
           { stopReason: "toolUse" },
         ),
         fauxAssistantMessage("Saw the image."),
@@ -198,8 +210,9 @@ async function fixture() {
   };
 }
 
-test("tool images survive native hooks, lazy reads, provider conversion, and worker restart", async () => {
-  const f = await fixture();
+test.each(["native", "mcp_resource"] as const)("%s images survive native hooks, lazy reads, provider conversion, and worker restart", async (mode) => {
+  const f = await fixture(mode);
+  const resourceText = JSON.stringify({ type: "resource", resource: { uri: "fixture://capture/image", mimeType: "image/png" } });
   const contexts: any[][] = [];
   const convert = f.worker.agent.convertToLlm;
   f.worker.agent.convertToLlm = async (messages) => {
@@ -220,6 +233,7 @@ test("tool images survive native hooks, lazy reads, provider conversion, and wor
     .flat()
     .find((message) => message.role === "toolResult");
   expect(providerResult.content).toEqual([
+    ...(mode === "mcp_resource" ? [{ type: "text", text: resourceText }] : []),
     { type: "image", data: image.toString("base64"), mimeType: "image/png" },
     { type: "text", text: "Capture complete" },
   ]);
@@ -229,7 +243,7 @@ test("tool images survive native hooks, lazy reads, provider conversion, and wor
     .find((part: any) => part.type === "tool");
   expect(tool.state).toMatchObject({
     status: "completed",
-    output: "Capture complete",
+    output: mode === "native" ? "Capture complete" : resourceText + "Capture complete",
     metadata: { hook: true },
   });
   expect(tool.state.attachments).toHaveLength(1);
