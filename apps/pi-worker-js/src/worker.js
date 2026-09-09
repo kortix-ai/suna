@@ -418,6 +418,15 @@ export class AgentCell {
     // b673ad47-4365-4ab4-951d-0b592f9b9423, which the control plane then pinned
     // as all three roots, and all three read one transcript.
     try { this.sql.exec("ALTER TABLE turns ADD COLUMN session_id TEXT"); } catch { /* already there */ }
+    // WHERE A TURN'S OWN MILLISECONDS GO, inside the cell.
+    //
+    // Everything from the prompt landing to the first character is measured
+    // from outside today: the API sees `upstream`, the browser sees the first
+    // delta, and the gap between them — queue, skills, agent build, the model's
+    // time to first token — is one unexplained lump. Measured 2026-09-09 from
+    // the browser's path: prompt to first delta 2230-2989 ms against an LLM
+    // call of ~880 ms. This records the parts so the lump has names.
+    try { this.sql.exec("ALTER TABLE turns ADD COLUMN timing TEXT"); } catch { /* already there */ }
     // THE SESSION'S OWN CONFIGURATION, WHICH MUST OUTLIVE THE ISOLATE.
     //
     // Per-session config does not arrive in the cell's process env — that is
@@ -572,12 +581,25 @@ export class AgentCell {
     // confused with a token.
     this.sql.exec("UPDATE turns SET error=NULL WHERE i=?", next.i);
     this.currentTurn = next.i;
+    const tT0 = Date.now();
+    const tLap = { queued: tT0 - (next.created_at ?? tT0) };
+    let tAt = tT0;
+    const tMark = (k) => { const now = Date.now(); tLap[k] = now - tAt; tAt = now; };
     this.broadcast({ type: "turn_started", turn: next.i, text: String(next.text).slice(0, 120) });
     try {
       const script = next.script ? JSON.parse(next.script) : undefined;
       const { block } = await this.skills(sessionId);
+      tMark("skills");
       const agent = this.buildAgent(sessionId, script, withSkills(SYSTEM_PROMPT, block),
         this.wireSessionId(next, sessionId));
+      tMark("buildAgent");
+      // First model byte: the adapter emits message.updated when the assistant
+      // message opens, so the first wire frame IS the model having started.
+      let firstFrame = 0;
+      const markFirst = () => {
+        if (!firstFrame) { firstFrame = 1; tMark("modelFirstByte"); this.persistTurnTiming(next.i, tLap); }
+      };
+      this.__markFirstFrame = markFirst;
       // Held so /stop has something to abort. Without a reference to the
       // running agent there is no way to stop a turn at all: pi creates the
       // abort signal inside the run, and every cancellation the ExecutionEnv
@@ -780,6 +802,11 @@ export class AgentCell {
     }
   }
 
+  /** Store a turn's own laps, so `/turns` can report where its time went. */
+  persistTurnTiming(i, lap) {
+    try { this.sql.exec("UPDATE turns SET timing=? WHERE i=?", JSON.stringify(lap), i); } catch { /* column may predate this build */ }
+  }
+
   mintWireMessageId() {
     this.wireMessageSeq = (this.wireMessageSeq ?? 0) + 1;
     return `msg_cell_${String(this.wireMessageSeq).padStart(8, "0")}`;
@@ -876,7 +903,11 @@ export class AgentCell {
       // Translated by kortix-worker's adapter rather than a second copy of the
       // mapping — it is the one the UI was written against, and its own tests
       // pin the delta/snapshot split this bus depends on.
-      try { this.wire?.publish(wireAdapter.translate(event)); } catch { /* never break a turn to publish it */ }
+      try {
+        const frames = wireAdapter.translate(event);
+        if (frames.length) this.__markFirstFrame?.();
+        this.wire?.publish(frames);
+      } catch { /* never break a turn to publish it */ }
       // Stream what a watcher actually needs: which tool is running, and what
       // came back. Previously this sent only `{type}`, which tells a UI that
       // something happened and nothing about what.
