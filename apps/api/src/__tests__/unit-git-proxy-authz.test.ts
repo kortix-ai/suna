@@ -22,6 +22,8 @@ let patResult: Record<string, unknown> = {};
 let apiKeyResult: Record<string, unknown> = {};
 let sandboxRow: Record<string, unknown> | null = null;
 let monitorBoxRow: Record<string, unknown> | null = null;
+/** The session connector-token grant the sandbox path resolves (account_tokens.agent_grant). */
+let grantRow: Record<string, unknown> | null = null;
 let authorizeAllowed = false;
 let authorizeCalls: Array<{
   userId: string;
@@ -33,11 +35,13 @@ let authorizeCalls: Array<{
 mock.module('../shared/db', () => ({
   db: {
     select: (fields?: Record<string, unknown>) => {
-      const rows = fields?.sessionMetadata
-        ? () => (sandboxRow ? [sandboxRow] : [])
-        : fields?.boxEpoch
-          ? () => (monitorBoxRow ? [monitorBoxRow] : [])
-          : () => (projectRow ? [projectRow] : []);
+      const rows = fields?.agentGrant
+        ? () => (grantRow ? [grantRow] : [])
+        : fields?.sessionMetadata
+          ? () => (sandboxRow ? [sandboxRow] : [])
+          : fields?.boxEpoch
+            ? () => (monitorBoxRow ? [monitorBoxRow] : [])
+            : () => (projectRow ? [projectRow] : []);
       return {
         from: () => ({
           innerJoin: () => ({ where: () => ({ limit: async () => rows() }) }),
@@ -96,6 +100,7 @@ beforeEach(() => {
   patResult = { isValid: true, accountId: OWNER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
   apiKeyResult = { isValid: false };
   sandboxRow = null;
+  grantRow = null;
   authorizeAllowed = false;
   authorizeCalls = [];
 });
@@ -130,6 +135,29 @@ describe('authorizeGitProxy — CLI PAT', () => {
       status: 403,
       message: 'session workspace does not allow repository access',
     });
+  });
+
+  test('a session-scoped PAT surfaces the grant stamped on its token row', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-1',
+      projectId: PROJECT_ID,
+      sessionId: 'sandbox-1',
+      agentGrant: { agent: 'main', kortixCli: 'all', connectors: 'all' },
+    };
+    sandboxRow = {
+      sandboxId: 'sandbox-1',
+      sessionId: 'sandbox-1',
+      branchName: 'sandbox-1',
+      sessionMetadata: { workspace_mode: 'branch' },
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: 'all', connectors: 'all' });
   });
 
   test('a PAT on another account passes when the user holds the git capability', async () => {
@@ -276,6 +304,36 @@ describe('authorizeGitProxy — sandbox token', () => {
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
 
     expect(res.ok).toBe(true);
+  });
+
+  test('a branch session surfaces its agent grant so the ref gate can widen the lane', async () => {
+    sandboxRow = {
+      sandboxId: 'sandbox-1',
+      sessionId: 'sandbox-1',
+      branchName: 'sandbox-1',
+      sessionMetadata: { workspace_mode: 'branch' },
+    };
+    grantRow = { agentGrant: { agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' } };
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' });
+  });
+
+  test('a session with no connector-token grant reads null, not widened', async () => {
+    sandboxRow = {
+      sandboxId: 'sandbox-1',
+      sessionId: 'sandbox-1',
+      branchName: 'sandbox-1',
+      sessionMetadata: { workspace_mode: 'branch' },
+    };
+    grantRow = null;
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.agentGrant).toBeNull();
   });
 
   // A monitor box has NO session_sandboxes row by design — its token scopes
