@@ -53,6 +53,7 @@ import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 import { providerStream, resolveModel, scriptedStream, supportedProviders } from "./model.js";
 import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
 import { WireBus, WIRE_HEARTBEAT_MS } from "./wire.js";
+import { runtimeStateDoc, projectionEtag } from "./projection.js";
 import { ChatEventAdapter } from "../../kortix-worker/src/chat-events.ts";
 
 const streamFnOf = (agent) => agent.__streamFn;
@@ -1802,6 +1803,37 @@ export class AgentCell {
     // Measured on dev 2026-09-09 before this existed: the UI stream announced
     // `{"state":"down","reason":"daemon_503"}` at 959 ms and carried no runtime
     // frame for the next 75 seconds.
+    // THE DOCUMENT THE CONTROL PLANE READS ON EVERY SESSION OPEN — see
+    // src/projection.js for the two rules that decide whether it is accepted
+    // or stored and then refused.
+    if (path === "/kortix/opencode/state") {
+      const e = this.effectiveEnv();
+      const c = modelConfig(e);
+      const sid = this.wireSessionId(
+        this.sql.exec("SELECT session_id FROM turns ORDER BY i DESC LIMIT 1").toArray()[0],
+        sessionId,
+      );
+      let skills = [];
+      try { ({ skills } = await this.skills(sid)); } catch { /* a cell with no workspace still has a projection */ }
+      const doc = runtimeStateDoc({
+        sessionId: sid,
+        epoch: this.wire?.epoch ?? this.instance,
+        seq: this.wire?.seq ?? 0,
+        sessions: await (await this.fetch(new Request(`http://cell/session?c=${encodeURIComponent(sid)}`))).json(),
+        busy: !!this.running,
+        model: { id: c?.model ?? null, provider: c?.provider ?? null },
+        skills,
+        builtAt: Date.now(),
+      });
+      const etag = projectionEtag(doc);
+      // The API sends If-None-Match on every refresh; answering 304 is what
+      // keeps a session open from writing a new projection row each time.
+      if (req.headers.get("if-none-match") === etag) {
+        return new Response(null, { status: 304, headers: { etag } });
+      }
+      return Response.json(doc, { headers: { etag } });
+    }
+
     if (path === "/kortix/opencode/events") {
       const bus = this.wire;
       const sinceRaw = url.searchParams.get("since");

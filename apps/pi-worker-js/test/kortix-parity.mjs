@@ -617,7 +617,11 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     sse.headers.get("content-type")?.includes("text/event-stream"),
     String(sse.status) + " " + sse.headers.get("content-type"));
 
-  const unknown = await h.fetch("/session/s/kortix/opencode/state");
+  // The example moved: `/kortix/opencode/state` was the unserved route this
+  // claim pointed at, and the cell serves it now — the claim noticed, which is
+  // the only reason this comment exists. `/kortix/opencode/messages/:id` is the
+  // control plane's next unimplemented read.
+  const unknown = await h.fetch("/session/s/kortix/opencode/messages/msg-1");
   check("a route the cell does not serve is a 404, not a 200 that looks served",
     unknown.status === 404 && (await unknown.json()).ok === false, String(unknown.status));
 }
