@@ -177,6 +177,7 @@ run_suite dev-evict  ./test/dev-evict.sh
 # presence of a dev token (PT_SANDBOX_KEY or ~/.config/platinum/credentials);
 # without one it SKIPs and says so. Last, because it owns the node's lifecycle.
 run_suite dev-e2e    ./test/dev-e2e.sh
+run_suite fs-iso     ./test/cell-fs-isolation.sh
 # THE WORKER IN A REAL CELL ON DEV, folder-scoped. Needs the dev bucket's S3
 # credentials in PT_S3_* on top of the token; SKIPs by name without them.
 run_suite cell-dev   ./test/cell-dev-e2e.sh
