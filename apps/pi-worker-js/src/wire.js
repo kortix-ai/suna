@@ -89,6 +89,7 @@ export class WireBus {
     const out = [];
     for (const frame of frames ?? []) {
       if (!frame || typeof frame.type !== "string" || frame.transcriptOnly) continue;
+      if (this.isReasoning(frame)) continue;
       const seq = ++this.seq;
       const line = encodeFrame(frame, seq);
       this.ring.push({ seq, line });
@@ -101,6 +102,43 @@ export class WireBus {
       try { w.write(joined); } catch { this.listeners.delete(w); }
     }
     return out.length;
+  }
+
+  /**
+   * A REASONING PART IS NOT AN ANSWER, and putting it on the wire renders it
+   * as one.
+   *
+   * `deepseek-v4-flash` is a reasoning model: every reply arrives as two parts,
+   * the model's thinking and then the answer. The SDK's own transcript
+   * formatter hides a `reasoning` part unless `thinking` is asked for
+   * (packages/sdk/src/transcript.ts — it returns an empty string), so the
+   * product's default is not to show it. Streamed onto the bus it was painted
+   * like any other text and the user saw two answers, the first being the
+   * model talking to itself. Measured 2026-09-09 on a one-word reply:
+   *
+   *   part p0  type=reasoning  'The user asked to reply with exactly one word…'
+   *   part p1  type=text       'streamcheck'
+   *
+   * The transcript still keeps it — this drops it from the LIVE stream only,
+   * so a reader that wants thinking can still fetch it.
+   */
+  isReasoning(frame) {
+    const props = frame.properties ?? {};
+    if (frame.type === "message.part.updated") {
+      const t = props.part?.type;
+      if (t === "reasoning" || t === "thinking") {
+        this.reasoningParts = this.reasoningParts ?? new Set();
+        if (props.part?.id) this.reasoningParts.add(props.part.id);
+        return true;
+      }
+      return false;
+    }
+    if (frame.type === "message.part.delta") {
+      // A delta names only its part id, so the snapshot that introduced the
+      // part is what tells us the type — and it always precedes the deltas.
+      return !!this.reasoningParts?.has(props.partID);
+    }
+    return false;
   }
 
   /** The opening bytes for one attach: hello, then whatever replay is owed. */

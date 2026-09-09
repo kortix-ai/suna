@@ -124,5 +124,31 @@ const collect = () => {
     JSON.stringify(encodeFrame({ type: "x", a: 1 }, 9)));
 }
 
+
+{
+  // A REASONING PART IS NOT AN ANSWER. The model thinks out loud, the adapter
+  // makes that a `reasoning` part, and the SDK's own transcript formatter hides
+  // it by default — so streaming it painted the thinking as a first answer and
+  // the reply as a second. Measured on a one-word reply: p0 reasoning ("The
+  // user asked to reply with exactly one word…"), p1 text ("streamcheck").
+  const bus = new WireBus({ epoch: "e1" });
+  const { w, lines } = collect();
+  bus.listeners.add(w);
+  const n = bus.publish([
+    { type: "message.part.updated", properties: { part: { id: "p0", type: "reasoning", text: "" } } },
+    { type: "message.part.delta", properties: { partID: "p0", field: "text", delta: "thinking out loud" } },
+    { type: "message.part.updated", properties: { part: { id: "p1", type: "text", text: "" } } },
+    { type: "message.part.delta", properties: { partID: "p1", field: "text", delta: "the answer" } },
+  ]);
+  const body = lines.join("");
+  check("a reasoning part never reaches the live stream", !body.includes("reasoning"), body.slice(0, 90));
+  check("nor do its deltas — the thinking would have been painted as text",
+    !body.includes("thinking out loud"), body.slice(0, 120));
+  check("but the answer does, untouched",
+    body.includes("the answer") && n === 2, `published ${n}`);
+  check("and the dropped frames consume no sequence numbers",
+    bus.seq === 2, String(bus.seq));
+}
+
 console.log(bad ? `\n  ${bad} failed` : "");
 process.exit(bad ? 1 : 0);
