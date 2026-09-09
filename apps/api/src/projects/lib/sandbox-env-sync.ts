@@ -1,5 +1,7 @@
 import { cellRuntimeFromSandboxMetadata } from '../cell-runtime-detect';
 import { cellSessionEnv } from './cell-session-env';
+import { cellEnvToken } from './cell-env-token';
+import { serviceKeyForSession } from '../../platform/service-key';
 import { envPushUrl } from './env-push-url';
 import { createHash } from 'node:crypto';
 import { projectSessions, projects, sessionEnvironments, sessionSandboxes } from '@kortix/db';
@@ -648,11 +650,20 @@ export async function repairCellSessionEnv(args: {
 }): Promise<void> {
   try {
     if (!(await isCellSandbox(args.externalId))) return;
+    // THE TOKEN THE CELL CARRIES IS THE SESSION'S, not the box's — see
+    // cell-env-token.ts. `args.serviceKey` is whatever reached this box, and
+    // the prompt path resolves that from `external_id`, which on a shared cell
+    // host names the session that CREATED the box rather than the one this
+    // env belongs to. It stays the bearer for the push itself; only what is
+    // written INTO the cell is session-scoped.
     const env = cellSessionEnv({
       sessionId: args.sessionId,
       projectId: args.projectId,
       apiUrl: `${(config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`,
-      serviceKey: args.serviceKey,
+      serviceKey: cellEnvToken(
+        await serviceKeyForSession(args.sessionId).catch(() => undefined),
+        args.serviceKey,
+      ),
       llmBaseUrl: args.llmBaseUrl,
     });
     const res = await fetch(envPushUrl(args.previewUrl, args.sessionId), {
