@@ -1690,7 +1690,28 @@ export class AgentCell {
     }
 
     // GET /events — SSE, the shape kortix-worker serves and the product reads.
-    if (url.pathname === "/events") {
+    // THE STREAM, UNDER EVERY NAME A CLIENT ASKS FOR IT BY.
+    //
+    // The cell serves its event stream at `/events`. The product subscribes at
+    // `/global/event` — OpenCode's name, which the daemon serves and the
+    // frontend proxies to. On a cell that path fell through to the generic
+    // handler at the bottom of this file, which answers 200 with JSON to ANY
+    // path, so a subscriber received `{"ok":true,...}` once and then nothing:
+    // no stream, no error, no way to tell the difference from a quiet session.
+    //
+    // Measured on dev 2026-09-09:
+    //   /global/event   200 application/json   {"ok":true,"sessionId":...}
+    //   /events?c=<id>  200 text/event-stream  ": connected"
+    //
+    // What it costs is the whole of streaming: a 200-word answer arrived as 703
+    // bytes in a single step 6712 ms after the prompt, with nothing before it,
+    // so the user watches a blank screen for the entire model call.
+    //
+    // Serving the same stream under the names clients use removes the silent
+    // 200. It does NOT by itself make the UI render deltas — that also needs
+    // these events in OpenCode's wire shape (kortix-worker's ChatEventAdapter
+    // is the mapping) — and that is deliberately not claimed here.
+    if (url.pathname === "/events" || url.pathname === "/global/event" || url.pathname === "/event") {
       this.sseListeners = this.sseListeners ?? new Set();
       const set = this.sseListeners;
       const enc = new TextEncoder();

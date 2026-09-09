@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=65
+// EXPECTED_PASSES=68
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -275,6 +275,23 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
       check("a cell with no control-plane identity tells nobody — a bench has no ledger",
         !seen.some((x) => x.url.endsWith("/turn-stream")), JSON.stringify(seen.map((x) => x.url)));
     } finally { globalThis.fetch = realFetch; }
+  }
+
+
+  // THE STREAM UNDER THE NAME THE PRODUCT ASKS FOR. The frontend subscribes to
+  // `/global/event` (OpenCode's name, which the daemon serves); on a cell that
+  // fell through to the generic handler, which answers 200 with JSON to any
+  // path — so a subscriber got one `{"ok":true}` and then silence, with nothing
+  // anywhere reporting a problem. Measured on dev 2026-09-09: /global/event
+  // returned application/json while /events returned text/event-stream.
+  {
+    for (const path of ["/global/event", "/event", "/events"]) {
+      const res = await h.fetch(`${path}?c=s`);
+      check(`GET ${path} is an SSE stream, not a JSON 200`,
+        res.headers.get("content-type")?.includes("text/event-stream") === true,
+        `${path} -> ${res.headers.get("content-type")}`);
+      await res.body.getReader().cancel();
+    }
   }
 
   {
