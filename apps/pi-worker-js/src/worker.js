@@ -1584,6 +1584,23 @@ export class AgentCell {
     // OpenCode client asks for. The harness serves it at the same raw root and
     // for the same reason: the SDK has no prefix.
     {
+      // Two more routes an OpenCode client polls, seen 404ing in a real
+      // browser's boot (2026-09-09): `GET /session/:id/todo` (the todo list,
+      // an array) and `POST /log` (the app's client-side log sink, answered
+      // `true`). A cell keeps no todos and needs no log; answering the shapes
+      // stops the client re-asking every few seconds.
+      const todo = url.pathname.match(/^\/session\/([^/]+)\/todo$/);
+      if (todo && req.method === "GET") {
+        if (decodeURIComponent(todo[1]) !== sessionId) {
+          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        }
+        return Response.json([]);
+      }
+      if (path === "/log" && req.method === "POST") {
+        return Response.json(true);
+      }
+    }
+    {
       const m = url.pathname.match(/^\/session\/([^/]+)\/message$/);
       if (m && req.method === "GET") {
         const rootId = decodeURIComponent(m[1]);

@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=119
+// EXPECTED_PASSES=122
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -994,6 +994,18 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const learned = await (await hs.fetch("/session?c=s")).json();
   check("and the node did not learn a session named 'status'",
     Array.isArray(learned) && learned.every((x) => x.id !== "status"), JSON.stringify(learned).slice(0, 120));
+}
+
+// Two routes an OpenCode client polls that 404'd in a real browser's boot.
+{
+  const ht = makeCell(AgentCell, ENV);
+  const todo = await ht.fetch("/session/s/todo?c=s");
+  check("GET /session/:id/todo answers an empty list, not 404 — the client polls it",
+    todo.status === 200 && Array.isArray(await todo.json()), String(todo.status));
+  const log = await ht.fetch("/log?c=s", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ level: "info", message: "hi" }) });
+  check("POST /log is accepted the way OpenCode answers it (true)", log.status === 200 && (await log.json()) === true, String(log.status));
+  check("a todo list for another session is still refused",
+    (await ht.fetch("/session/other/todo?c=s")).status === 404, "");
 }
 
 process.exit(bad ? 1 : 0);
