@@ -1299,3 +1299,12 @@ changing existing required arguments or exported names.
 Live connector verification follows deployment. The original `pi-lab` project
 has a one-project account limit. The MCP probe uses an isolated synthetic preview
 user and project, rather than changing that account's subscription or repository.
+
+
+Preview build `34322671315` rejects `a4fb080893` before deployment. The isolated
+worker stage cannot resolve the new SDK connector import because it copied only
+`core/pi/agent.ts`. The stage now copies SDK and model-catalog source and resolves
+external imports from the worker's frozen dependencies. No runtime install is added.
+The new isolated-stage test reproduces the missing-source failure, then builds
+the corrected stage in 940 ms. It executes the Docker stage instructions against
+an empty temporary tree. Existing checkout dependencies cannot hide missing inputs.

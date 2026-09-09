@@ -112,8 +112,14 @@ WORKDIR /repo/apps/kortix-worker
 COPY apps/kortix-worker/package.json apps/kortix-worker/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY apps/kortix-worker/ ./
-COPY packages/sdk/src/core/pi/agent.ts /repo/packages/sdk/src/core/pi/agent.ts
-RUN bun build src/main.ts --target=node --format=esm --minify --outfile dist/worker-runtime.mjs \
+COPY packages/sdk /repo/packages/sdk
+COPY packages/llm-catalog /repo/packages/llm-catalog
+# SDK source resolves the worker's pinned dependencies. No dependency is
+# downloaded at worker startup; both workspace packages are bundled here.
+RUN ln -s /repo/apps/kortix-worker/node_modules /repo/node_modules \
+    && mkdir -p node_modules/@kortix \
+    && ln -s /repo/packages/llm-catalog node_modules/@kortix/llm-catalog \
+    && bun build src/main.ts --target=node --format=esm --minify --outfile dist/worker-runtime.mjs \
     && grep -q "kortix-worker starting" dist/worker-runtime.mjs
 
 # ---- Deps Stage ----

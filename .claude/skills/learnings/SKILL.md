@@ -6092,3 +6092,10 @@ install and asserts the exact version and checksum.
 **Incident:** the older remote test process wrote `kortix-preview.exit` at 05:43:14 UTC. Run `34315723121` read that file during the next deployment and exited before its own tests started at 05:43:40. The new tests continued on the sandbox.
 **Rule:** establish that the previous remote process has ended before replacing this preview. A future controller must use per-run completion identities and terminate only its own remote process on cancellation.
 **Enforcement status:** manual process and timestamp verification for this checkpoint. Automated ownership fencing remains open. A shared exit file is not proof of the current run.
+
+### Build isolated runtime stages without checkout dependencies (2026-09-09)
+
+**When:** a runtime bundle imports another workspace package.
+**Incident:** preview `a4fb080893` passed local builds but failed the API Docker build. The isolated worker stage copied only the SDK Pi module; its new connector import could not resolve. The existing preview remained deployed.
+**Rule:** copy every required workspace package into the build stage and resolve its external imports through the locked runtime dependencies. A full checkout build does not verify an isolated stage.
+**Enforcer:** `apps/kortix-worker/src/isolated-build.test.ts` executes the actual stage's COPY and RUN instructions in an empty temporary tree. It fails on the missing SDK source and passes with the complete inputs. Linux preview image builds verify the same stage.
