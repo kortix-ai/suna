@@ -171,6 +171,7 @@ import {
   completeSandboxTurn,
   turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
+import { resumePiSandboxTurn } from '../pi-turn-recovery';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
@@ -2442,6 +2443,7 @@ projectsApp.openapi(
       opencode_session_id?: string;
       turn_message_id?: string;
       turn_token?: string;
+      turn_owner_id?: string;
       // Turn-end error detail (opencode AssistantMessage.error / session.error),
       // so Slack can render "out of credits" / rate-limit / the real error.
       error_name?: string;
@@ -2643,12 +2645,21 @@ projectsApp.openapi(
       return c.json({ ok });
     }
 
-    // A BOX-INITIATED turn: the daemon observed the root go busy on a user
-    // message the control plane never delivered (OpenCode's synthetic
-    // `<pty_exited>` wake-ups). Adopt it into the ledger so `GET .../turn`
-    // reports the running turn and the deadline grant covers it. Idempotent —
-    // see adoptRuntimeSandboxTurn; requires the sandbox credential like every
-    // upward lifecycle transition.
+    if (body.kind === 'turn_resume') {
+      if (!authenticatedSandboxId || !isSessionSandboxCredential(c, 'worker')) {
+        return c.json({ error: 'turn_resume requires a worker token' }, 403);
+      }
+      const opencodeSessionId = typeof body.opencode_session_id === 'string' ? body.opencode_session_id.trim() : '';
+      const messageId = typeof body.turn_message_id === 'string' ? body.turn_message_id.trim() : '';
+      const ownerId = typeof body.turn_owner_id === 'string' ? body.turn_owner_id.trim() : '';
+      if (!opencodeSessionId || opencodeSessionId.length > 256 || !messageId || messageId.length > 256
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerId)) {
+        return c.json({ error: 'opencode_session_id, turn_message_id, and a UUID turn_owner_id are required' }, 400);
+      }
+      const outcome = await resumePiSandboxTurn(authenticatedSandboxId, { opencodeSessionId, messageId, ownerId });
+      return c.json({ ok: outcome === 'resumed' || outcome === 'already_active', outcome });
+    }
+    // Adopt an OpenCode-initiated turn that the control plane did not deliver.
     if (body.kind === 'turn_begin') {
       if (!authenticatedSandboxId) {
         return c.json({ error: 'turn_begin requires a sandbox token' }, 403);
@@ -2711,7 +2722,20 @@ projectsApp.openapi(
         },
         errorInfo,
         childSession ? childIdleGraceMs() : undefined,
+        { runtimeOwnerId: typeof body.turn_owner_id === 'string' ? body.turn_owner_id : null },
       );
+      if (turnCompletion.outcome === 'identity_mismatch') {
+        return c.json({
+          ok: true,
+          turn_completion: {
+            outcome: turnCompletion.outcome,
+            active_turn_count: turnCompletion.activeTurnCount,
+            closed_turn_count: turnCompletion.closedTurnCount,
+          },
+          queue_promoted: false,
+          promoted_prompt_id: null,
+        });
+      }
       // Prompts forwarded INTO the turn that just ended: close the ones the
       // step answered (older than the ended message), and re-queue any that
       // the loop stranded below a newer assistant — see

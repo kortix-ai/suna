@@ -65,6 +65,7 @@ export function turnEndPayload(input: {
       ? { opencode_session_id: input.identity.opencodeSessionId }
       : {}),
     ...(input.identity?.messageId ? { turn_message_id: input.identity.messageId } : {}),
+    ...(input.identity?.ownerId ? { turn_owner_id: input.identity.ownerId } : {}),
   };
 }
 
@@ -82,6 +83,7 @@ export function turnEndPayload(input: {
 export interface TurnEndIdentity {
   opencodeSessionId?: string | null;
   messageId?: string | null;
+  ownerId?: string | null;
 }
 
 const MAX_ATTEMPTS = 4;

@@ -954,7 +954,7 @@ export async function completeSandboxTurn(
   identity?: Partial<SandboxTurnIdentity> | null,
   error?: { isRetryable?: boolean } | null,
   graceMs = idleGraceMs(),
-  options: { allowUnidentifiedFallback?: boolean } = {},
+  options: { allowUnidentifiedFallback?: boolean; runtimeOwnerId?: string | null } = {},
 ): Promise<SandboxTurnCompletionResult> {
   if (!isTerminalTurnEnd(status, error)) {
     return { outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 };
@@ -1016,6 +1016,9 @@ export async function completeSandboxTurn(
         FROM turn_candidates candidate
        WHERE ${identity?.messageId ?? null}::text IS NOT NULL
          AND candidate.value->>'messageId' = ${identity?.messageId ?? null}
+         AND (${options.runtimeOwnerId === undefined}::boolean
+           OR candidate.value->>'runtimeOwnerId' IS NULL
+           OR candidate.value->>'runtimeOwnerId' = ${options.runtimeOwnerId ?? null}::text)
     ), fallback_match AS (
       SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
              candidate.value
@@ -1111,6 +1114,9 @@ export async function completeSandboxTurn(
   const turns = endedLedgerTurns(rows?.[0]?.ended_turns);
   const activeTurnCount = Number(rows[0]?.active_turn_count ?? 0);
   if (turns.length === 0) {
+    if (activeTurnCount > 0 && options.runtimeOwnerId !== undefined) {
+      return { outcome: 'identity_mismatch', activeTurnCount, closedTurnCount: 0 };
+    }
     if (await wasSandboxTurnAlreadyClosed(sessionId, identity)) {
       return {
         outcome: 'already_closed',

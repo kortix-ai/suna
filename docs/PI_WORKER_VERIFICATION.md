@@ -1407,8 +1407,47 @@ Local verification:
 - API suite: 9,290 pass, 82 existing skips, 0 fail, 32,287 assertions.
 - `pnpm test`: all 6 core lanes pass in 115.3 seconds; benchmark `1788944799354`.
 
-Preview verification of this correction is pending deployment. The previous live MCP
-probe passed discovery, native images and model vision, permission UI across reload,
-Stop, a follow-up prompt, 155 text deltas, and 61 visible streaming states. Its denied-agent
-case failed and is not a passing parity result. Recovered interactions also need a new
-active control-plane turn record; the worker's busy state alone is insufficient.
+Preview `fd6be556a36619ef50242bc3031453168b39f9f0` passes the denied-agent case.
+Deployment `34333095893` succeeds. The public health commit and API, gateway, and
+frontend image tags match that SHA. `node /tmp/pi-mcp-denied-live.mjs` returns
+`connector_not_assigned`, with zero upstream calls for its unique marker. The
+fixture worker is stopped. Evidence: `/tmp/pi-mcp-denied-live.json`.
+
+The earlier live MCP probe passes discovery, native images and model vision,
+permission UI across reload, Stop, a follow-up prompt, 155 text deltas, and 61
+visible streaming states. Recovered interactions expose a separate missing
+control-plane turn record; the worker's busy state alone is insufficient.
+
+
+## Recovered turn authority — 2026-09-09
+
+A replacement worker must restore control-plane authority before replaying a
+saved question or permission. `turn_resume` validates its worker credential,
+immutable Pi identity, accepted message, latest durable owner, and nonterminal
+journal. One transaction locks the sandbox, preserves the old ended attempt,
+creates one active attempt, and grants its execution deadline. Repeated requests
+for that owner acknowledge the same attempt. Stop claims, terminal journals,
+wrong owners, and unrelated active turns cannot revive execution.
+
+The worker waits for explicit acknowledgment before calling the provider or
+executing an approved tool. Transient failures retry within a bounded budget.
+A rejected resume interrupts the turn. Completion names the durable owner.
+A stale completion closes zero turns and cannot promote the queue or relay an
+end event. Ordinary OpenCode turn records retain their existing completion path.
+
+- PostgreSQL recovery regression: **9 pass, 0 fail**, 43 assertions. The stale
+  completion test first fails because an older ended row yields `already_closed`.
+  It passes with `identity_mismatch` and queue promotion refused.
+- Recovery plus existing PostgreSQL lifecycle tests: **51 pass, 0 fail**,
+  149 assertions; `/tmp/pi-turn-recovery-db-final.log`.
+- Actual worker subprocess recovery and relay tests: **8 pass, 0 fail**,
+  36 assertions. A saved approval executes no tool before API acknowledgment.
+- Deep permission, question, journal, and relay regressions: **87 pass, 0 fail**,
+  1,170 assertions; `/tmp/pi-turn-recovery-deep.log`.
+- Black-box `pnpm test -- --id PROJ-17`: **1/1 pass**. A project owner's JWT
+  cannot acquire worker recovery authority; the route returns `403`.
+- `pnpm test`: all six core lanes pass, **400/400 REST/CLI flows**, **809 worker tests**, and seven
+  real Node artifact cases. Total 116.6 seconds; benchmark `1788946152238`.
+- Worker and API typechecks pass. Full API: **9,290 pass, 82 existing skips,
+  0 fail**, 32,288 assertions; `/tmp/pi-turn-recovery-api-final.log`.
+  Preview verification follows this commit's deployment.

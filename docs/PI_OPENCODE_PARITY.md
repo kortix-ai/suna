@@ -71,7 +71,7 @@ extensions. The native Pi lifecycle surface is documented in
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
-| MCP configuration | Native Pi tools use the existing remote MCP connector gateway; local permission, cancellation, content, and restoration tests pass | Deployed session verification, stdio placement, MCP prompts/resources, and complete discovery UI |
+| MCP configuration | Native Pi tools use the existing remote MCP connector gateway; local permission, cancellation, content, and restoration tests pass | Stdio placement, MCP prompts/resources, and complete discovery UI. Preview verifies remote tool discovery/schema/calls, permission UI, images, Stop, and denied-agent isolation at `fd6be556a3` |
 | Live model and agent switching | Config is fixed; API and host controls reject unsupported changes | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |

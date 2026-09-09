@@ -6146,3 +6146,11 @@ install and asserts the exact version and checksum.
 **Incident:** a live Pi agent with `connectors: none` reached the synthetic MCP server. `loadSandbox` returned an unrelated session's `default` agent. Drizzle removed table qualifiers from the scalar SQL projection and emitted `where "session_id" = "session_id"`. The pre-prompt grant refresh then assigned the project default agent's connector grant.
 **Rule:** use an explicit relational join for the runtime-to-session lookup. Verify the result against PostgreSQL with at least two distinct agents. A mocked row cannot prove this identity boundary.
 **Enforcer:** `apps/api/src/__tests__/integration-preview-session-principal.test.ts` checks worker and environment resolution, including hostname case normalization. Both cases fail before the join and pass afterward with 40 assertions.
+
+
+### Restore control-plane authority before replaying a saved interaction (2026-09-09)
+
+**When:** replacing a worker with a durable pending question or permission.
+**Incident:** the Pi preview restored the permission and reported native busy status, but its control-plane turn ledger was empty. A delayed completion from the previous worker also matched an older ended attempt and could promote the queue.
+**Rule:** obtain an idempotent, owner-bound turn grant before provider or tool execution. A completion from an older owner cannot close the replacement attempt or trigger terminal side effects.
+**Enforcer:** `integration-pi-turn-recovery.test.ts` verifies the real PostgreSQL grant, history, concurrency, terminal fences, and stale completion. `turn-recovery-authority.test.ts` kills real worker processes and holds or rejects the API acknowledgment before saved approval execution.

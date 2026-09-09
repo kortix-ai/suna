@@ -25,6 +25,7 @@ export const TURN_STREAM_LIFECYCLE_KINDS: ReadonlySet<string> = new Set([
   'end',
   'turn_end',
   'turn_begin',
+  'turn_resume',
   'turn_accepted',
   'turn_abandoned',
   'initial_turn_claim',

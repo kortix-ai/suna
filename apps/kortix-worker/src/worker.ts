@@ -59,6 +59,7 @@ import { QuestionCheckpointStore, type QuestionCheckpoint } from './question-che
 import { planQuestionReplay } from './question-replay.ts';
 import { createWebFetchTool } from './web-fetch-tool.ts';
 import { createConnectorTools } from './connector-tools.ts';
+import { buildTurnResumeRelay, TurnResumeRejectedError } from './turn-resume-relay.ts';
 import { createWebSearchTool } from './web-search-tool.ts';
 import { createTodoTools } from './todo-tools.ts';
 import { createQuestionTool } from './question-tool.ts';
@@ -1266,6 +1267,7 @@ export async function buildHarness(cfg: WorkerConfig) {
   // commit can be replayed after a crash and execute the same side effects
   // twice while the control plane reports the turn finished.
   const relayTurnEnd = buildTurnEndRelay(cfg);
+  const relayTurnResume = buildTurnResumeRelay(cfg);
   // WHICH turn ended. `completeSandboxTurn` selects the row by identity, so a
   // relay that names no turn closes none and still answers 200 — set by
   // `startWorker` once the RuntimeSurface exists (it is built after the
@@ -1335,6 +1337,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     turnJournal,
     bootReconcile,
     relayTurnEnd,
+    relayTurnResume,
     setBootReconcileState,
   };
 }
@@ -1415,6 +1418,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     turnJournal,
     bootReconcile,
     relayTurnEnd,
+    relayTurnResume,
     setBootReconcileState,
   } = await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
@@ -1736,7 +1740,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     pending: () => turnJournal.unrelayed,
     relay: relayTurnEnd,
     markRelayed: (messageId) => turnJournal.markRelayed(messageId),
-    identity: (messageId) => ({ opencodeSessionId: surface.rootId, messageId }),
+    identity: (messageId) => ({ opencodeSessionId: surface.rootId, messageId, ownerId: turnJournal.turnOwnerId(messageId) }),
   });
   let lastAgentEndStatus: 'idle' | 'error' = 'idle';
   const runContextCompaction = async (compactUser: any) => {
@@ -1837,6 +1841,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
   type WorkerTurn = TurnAdmission & {
     cancelBarrier: Promise<boolean> | null;
     modelStarted: boolean;
+    recovered?: boolean;
   };
 
   const publishUserMessage = (turn: TurnAdmission): void => {
@@ -1954,6 +1959,23 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
         }
       }
       if (closing) return 'interrupted';
+      if (sessionLog && (resumingInteraction || turn.recovered)) {
+        const lease = turnJournal.startedLease(turn.messageId);
+        if (!lease?.ownerId) throw new TurnOwnerLeaseLostError('Recovered turn has no durable owner');
+        try {
+          await relayTurnResume({ opencodeSessionId: surface.rootId, messageId: turn.messageId, ownerId: lease.ownerId });
+        } catch (error) {
+          if (error instanceof TurnResumeRejectedError) {
+            await turnJournal.requestAbort(turn.messageId, { ownLeaseOnly: true });
+            await recoverAndProjectTurn(turn.messageId);
+            return 'interrupted';
+          }
+          throw new SessionLogReadUnavailableError('Recovered turn authority is unavailable', { cause: error });
+        }
+        if (!(await turnJournal.heartbeat(turn.messageId))) {
+          throw new TurnOwnerLeaseLostError('Recovered turn lost its owner during authority restoration');
+        }
+      }
       turn.modelStarted = turn.options.noReply !== true;
       // The at-most-once boundary committed above. A process that restarts with
       // this state interrupts model turns instead of replaying unknown tool
@@ -2230,7 +2252,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     },
   });
 
-  const queueAdmission = (admission: TurnAdmission): Promise<TurnCompletion> => {
+  const queueAdmission = (admission: TurnAdmission, recovered = false): Promise<TurnCompletion> => {
     const retry = admissionRetries.get(admission.messageId);
     if (retry) clearTimeout(retry);
     admissionRetries.delete(admission.messageId);
@@ -2240,6 +2262,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
       ...admission,
       cancelBarrier: null,
       modelStarted: false,
+      recovered,
     };
     turns.set(turn.messageId, turn);
     const queued = turnQueue.enqueue(turn);
@@ -2285,7 +2308,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
               }
             }
             const current = turnJournal.admission(turn.messageId);
-            if (current) queueAdmission(current);
+            if (current) queueAdmission(current, turn.recovered);
           }, delay);
           timer.unref();
           admissionRetries.set(turn.messageId, timer);
@@ -2503,9 +2526,9 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
   // Replay accepted, non-terminal turns in durable acceptance order. Their
   // exact user envelopes were seeded above; old data is not emitted as news.
   for (const admission of turnJournal.started) {
-    if (hasResumableTurn(admission.messageId)) queueAdmission(admission);
+    if (hasResumableTurn(admission.messageId)) queueAdmission(admission, true);
   }
-  for (const admission of turnJournal.pending) queueAdmission(admission);
+  for (const admission of turnJournal.pending) queueAdmission(admission, true);
 
   const runTurn = async (text: string, opts?: { userMessageId?: string }) => {
     const admitted = await admitTurn(text, opts?.userMessageId);

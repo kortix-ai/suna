@@ -134,8 +134,9 @@ The local journal implementation distinguishes accepted turns from started turns
 an accepted turn that never started. It must not automatically repeat a started turn
 whose tool effects are unknown. It records an interruption or the durable completed
 result. This gives an explicit recovery outcome instead of duplicate side effects.
-This recovery implementation still needs committed-preview verification. The deployed
-proof covers normal stop/resume and durable history while both machines are stopped.
+Preview verification covers persisted questions, permissions, and completed results.
+Recovered interactions must also reacquire the control-plane turn and deadline before
+execution. The verification record identifies the tested SHA and remaining gaps.
 
 **What happens if the environment stops?**
 
@@ -151,7 +152,8 @@ Its artifact should be read-only after startup, with bounded scratch space and r
 These measures reduce accidental damage. They do not isolate arbitrary JavaScript
 from a harness running in the same process. A safe extension contract must specify
 which hooks run in the worker, which operations run remotely, and how failures behave.
-The current branch does not yet load project tools or lifecycle extensions.
+The branch compiles custom tools and native lifecycle hooks from per-agent modules.
+[Custom Pi agents](./PI_CUSTOM_AGENTS.md) defines that supported contract.
 
 **Can one worker use several environments?**
 

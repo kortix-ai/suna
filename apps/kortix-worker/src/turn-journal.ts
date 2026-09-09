@@ -745,6 +745,10 @@ export class TurnAdmissionJournal {
     return { ownerId: turn.ownerId, revision: turn.leaseRevision };
   }
 
+  turnOwnerId(messageId: string): string | null {
+    return this.reduced.turns.get(messageId)?.ownerId ?? null;
+  }
+
   abortRequested(messageId: string): boolean {
     return this.reduced.turns.get(messageId)?.abortRequested ?? false;
   }

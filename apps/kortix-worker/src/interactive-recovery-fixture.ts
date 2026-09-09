@@ -33,6 +33,7 @@ export async function fixture(
     modelId?: string;
     modelLimits?: WorkerModelLimits;
     pauseReadAfterCompletion?: boolean;
+    turnRecovery?: 'pause' | 'reject';
   } = {},
 ) {
   const items: SessionLogItem[] = [];
@@ -40,6 +41,9 @@ export async function fixture(
   const providerRequests: any[] = [];
   const effects: string[] = [];
   const children: ReturnType<typeof Bun.spawn>[] = [];
+  const controlRequests: any[] = [];
+  let releaseTurnResume!: () => void;
+  const turnResumeReleased = new Promise<void>((resolve) => { releaseTurnResume = resolve; });
   let storeUnavailableUntil = 0;
   let failedStoreRequests = 0;
   let pauseNextRead = false;
@@ -53,6 +57,16 @@ export async function fixture(
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path.endsWith('/turn-stream')) {
+        const body = await request.json() as any;
+        controlRequests.push(body);
+        if (body.kind === 'turn_resume') {
+          if (options.turnRecovery === 'pause') await turnResumeReleased;
+          return Response.json(options.turnRecovery === 'reject'
+            ? { ok: false, outcome: 'terminal' } : { ok: true, outcome: 'resumed' });
+        }
+        return Response.json({ ok: true });
+      }
       if (path.startsWith('/rpc')) {
         if (request.method !== 'POST') return new Response(null, { status: 404 });
         const body = (await request.json()) as any;
@@ -213,6 +227,7 @@ export async function fixture(
     apiKey: 'fixture',
     sessionId,
     kortixToken: 'fixture',
+    ...(options.turnRecovery ? { apiUrl: server.url + 'v1', projectId: 'fixture' } : {}),
     storeUrl: server.url + 'store',
     turnOwnerLeaseMs: options.ownerLeaseMs ?? 1000,
     turnOwnerHeartbeatMs: 20,
@@ -268,6 +283,8 @@ export async function fixture(
   };
   return {
     items,
+    controlRequests,
+    releaseTurnResume,
     readPaused,
     releaseRead,
     allowPermissionRelease: () => {
@@ -286,6 +303,7 @@ export async function fixture(
     start,
     until,
     cleanup: async () => {
+      releaseTurnResume();
       releaseRead();
       for (const child of children) {
         if (child.exitCode === null) child.kill('SIGKILL');
