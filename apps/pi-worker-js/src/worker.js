@@ -1038,6 +1038,29 @@ export class AgentCell {
     }
     this.init();
     const url = new URL(req.url);
+    const pathSession = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
+
+    // ADDRESSING IS NOT ROUTING, and conflating the two cost this worker every
+    // route it has except three.
+    //
+    // The API's sandbox proxy forwards the path and DROPS the query, so
+    // `/session/<id>/…` is the only way the product can name one session's
+    // isolate on a box that holds several. Every route below was written as an
+    // exact pathname, so under that form all of them missed and fell through to
+    // the catch-all — which answered 200 to anything. Measured on dev
+    // 2026-09-09 against sbx_01M21XGVJNB5TZE6SV8MRC8FMW, same isolate, same
+    // route, addressed the two ways:
+    //
+    //   GET /model?c=<session>        {"tools":{"backend":"cell","cwd":"/work"…
+    //   GET /session/<session>/model  {"ok":true,"sessionId":…,"messages":4}
+    //
+    // One of those two answers is a shrug wearing a 200, and it is the one the
+    // product gets. The prefix says WHICH cell; it must not decide WHICH route.
+    // Strip it once, here, and route on what is left. A bare `/session/<id>` is
+    // a question about the session itself, which is what `/session` answers.
+    const path = pathSession
+      ? (url.pathname.slice(pathSession[0].replace(/\/$/, "").length) || "/session")
+      : url.pathname;
 
     // NOT EVERY REQUEST IS BILLABLE, and getting this wrong is not a rounding
     // error. /meter and /health are what a monitor polls; counting them would
@@ -1045,8 +1068,7 @@ export class AgentCell {
     // could not see why. Excluded by an explicit list rather than by a prefix
     // convention, so adding an endpoint is a decision about billing rather than
     // an accident of its name.
-    if (!UNBILLED_PATHS.has(url.pathname)) this.meterRequest();
-    const pathSession = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
+    if (!UNBILLED_PATHS.has(path)) this.meterRequest();
     const sessionId = url.searchParams.get("c")
       ?? (pathSession ? decodeURIComponent(pathSession[1]) : null)
       ?? this.effectiveEnv().KORTIX_SESSION_ID
@@ -1111,7 +1133,7 @@ export class AgentCell {
     //
     // Deliberately NOT aliases in a table: each one answers in the shape the
     // session expects, which is not always the shape this cell returns.
-    if (url.pathname === "/kortix/health") {
+    if (path === "/kortix/health") {
       // THE FIELDS THE SESSION ACTUALLY READS, not the ones a cell would
       // naturally report. Kortix classifies a box from this body
       // (apps/api/src/projects/lib/legacy-runtime-bootstrap.ts): `daemon` must
@@ -1197,7 +1219,7 @@ export class AgentCell {
     }
     // Env sync. The session pushes the environment a turn must run with; a cell
     // keeps it per session, so this is a write, not a restart.
-    if (url.pathname === "/kortix/env" && req.method === "POST") {
+    if (path === "/kortix/env" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const incoming = (body && typeof body === "object" && body.env && typeof body.env === "object") ? body.env : body;
       const applied = [];
@@ -1210,17 +1232,17 @@ export class AgentCell {
       }
       return Response.json({ ok: true, sessionId, applied: applied.length, keys: applied.slice(0, 40) });
     }
-    if (url.pathname === "/kortix/env") {
+    if (path === "/kortix/env") {
       return Response.json({ ok: true, sessionId, keys: Object.keys(this.sessionEnv ?? {}) });
     }
     // Refresh: a session asks a worker to re-read what it can re-read. For a
     // cell that is its skills; nothing else here is cached across a turn.
-    if (url.pathname === "/kortix/refresh" && req.method === "POST") {
+    if (path === "/kortix/refresh" && req.method === "POST") {
       const { skills, diagnostics } = await this.skills(sessionId, { reload: true });
       return Response.json({ ok: true, sessionId, skills: skills.length, diagnostics });
     }
     // The session's own stop verb.
-    if (url.pathname === "/interrupt" && req.method === "POST") {
+    if (path === "/interrupt" && req.method === "POST") {
       const running = this.running;
       if (!running) return Response.json({ stopped: false, reason: "no turn is running" });
       running.agent.abort();
@@ -1228,7 +1250,7 @@ export class AgentCell {
     }
     // One turn's state, the way a session asks for it: the newest turn, and
     // whether anything is running right now.
-    if (url.pathname === "/turn") {
+    if (path === "/turn") {
       // `i` is the turn id everywhere else in this file (this.running.turn is
       // set from it); there is no `turn` column.
       const rows = [...this.sql.exec("SELECT i, status, error FROM turns ORDER BY i DESC LIMIT 1")];
@@ -1261,7 +1283,7 @@ export class AgentCell {
     // apps/kortix-worker/src/runtime-surface.ts): one root, no parent. The
     // cell's own facts ride along as extra keys, which the resolver ignores and
     // a cell-aware caller can still read.
-    if (url.pathname === "/session") {
+    if (path === "/session") {
       const msgs = this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n;
       const turns = this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n;
       const t = this.sql.exec("SELECT MIN(ts) AS a, MAX(ts) AS b FROM msgs").toArray()[0] ?? {};
@@ -1285,7 +1307,7 @@ export class AgentCell {
         contextFrom: this.contextFrom(),
       }]);
     }
-    if (url.pathname === "/stop" && req.method === "POST") {
+    if (path === "/stop" && req.method === "POST") {
       const running = this.running;
       let dropped = 0;
       if (url.searchParams.get("queue") === "1") {
@@ -1303,7 +1325,7 @@ export class AgentCell {
     // a way to read those the only symptom is a model that never uses a skill
     // somebody swears they wrote. `?reload=1` re-reads the workspace, which
     // matters because the agent can WRITE skills into it.
-    if (url.pathname === "/skills") {
+    if (path === "/skills") {
       const reload = url.searchParams.get("reload") === "1";
       const { skills, diagnostics, dirs } = await this.skills(sessionId, { reload });
       return Response.json({
@@ -1411,7 +1433,7 @@ export class AgentCell {
       }
     }
 
-    if (url.pathname === "/prompt" && req.method === "POST") {
+    if (path === "/prompt" && req.method === "POST") {
       const body = await req.json();
       const { script, contextWindow } = body;
       let { text } = body;
@@ -1481,7 +1503,7 @@ export class AgentCell {
       return Response.json({ ok: true, messages: await result });
     }
 
-    if (url.pathname === "/history") {
+    if (path === "/history") {
       // The ACTIVE CONTEXT by default — what the model is actually working
       // from. `?all=1` adds everything compaction has summarised, which is the
       // record of what the agent did and is kept rather than deleted.
@@ -1509,7 +1531,7 @@ export class AgentCell {
     //
     // Never prints the credential: status, timings, byte counts and the first
     // few characters of content only.
-    if (url.pathname === "/bench/model") {
+    if (path === "/bench/model") {
       const e = normalizeModelEnv(this.effectiveEnv());
       if (!e.MODEL_BASE_URL || !e.MODEL_API_KEY) {
         return Response.json({ ok: false, reason: "no gateway or no key", hasGateway: !!e.MODEL_BASE_URL, hasKey: !!e.MODEL_API_KEY });
@@ -1556,7 +1578,7 @@ export class AgentCell {
       return Response.json(out);
     }
 
-    if (url.pathname === "/model") {
+    if (path === "/model") {
       const e = this.effectiveEnv();
       const c = modelConfig(e);
       // Length and segment count only — never the credential itself. Enough to
@@ -1585,7 +1607,7 @@ export class AgentCell {
     }
 
     // What the transcript costs right now, and whether pi would compact it.
-    if (url.pathname === "/context") {
+    if (path === "/context") {
       const c = modelConfig(this.effectiveEnv());
       const model = c?.model ?? pricedModel(this.env);
       const st = compactionState(this.loadMessages(), this.contextWindowFor(model, url.searchParams.get("window")));
@@ -1650,11 +1672,11 @@ export class AgentCell {
       });
     }
 
-    if (url.pathname === "/turns") {
+    if (path === "/turns") {
       return Response.json({ turns: [...this.sql.exec("SELECT * FROM turns ORDER BY i")] });
     }
 
-    if (url.pathname === "/ops") {
+    if (path === "/ops") {
       return Response.json({ ops: [...this.sql.exec("SELECT * FROM ops ORDER BY started_at")] });
     }
 
@@ -1668,7 +1690,7 @@ export class AgentCell {
     // read would lose everything between the reader crashing and its next call,
     // and would make two readers each see half the truth. The CP takes
     // differences between readings instead.
-    if (url.pathname === "/meter") {
+    if (path === "/meter") {
       // Settle first: a reader must never see a number that is behind what the
       // cell has actually served, or the control plane would difference two
       // readings and bill the gap to whichever one happened to flush.
@@ -1711,7 +1733,7 @@ export class AgentCell {
     // 200. It does NOT by itself make the UI render deltas — that also needs
     // these events in OpenCode's wire shape (kortix-worker's ChatEventAdapter
     // is the mapping) — and that is deliberately not claimed here.
-    if (url.pathname === "/events" || url.pathname === "/global/event" || url.pathname === "/event") {
+    if (path === "/events" || path === "/global/event" || path === "/event") {
       this.sseListeners = this.sseListeners ?? new Set();
       const set = this.sseListeners;
       const enc = new TextEncoder();
@@ -1737,7 +1759,7 @@ export class AgentCell {
       });
     }
 
-    if (url.pathname === "/sockets") {
+    if (path === "/sockets") {
       // BOTH SOURCES, because they disagree after an eviction and the
       // disagreement is the interesting part: the runtime may hand back none
       // while the cell has re-adopted one from an inbound message.
@@ -1763,7 +1785,7 @@ export class AgentCell {
     // A cell cannot write another cell's SQLite — that is the isolation the
     // whole design rests on — so the parent READS its own messages and the child
     // IMPORTS them over the Durable Object binding. One RPC, no shared state.
-    if (url.pathname === "/fork" && req.method === "POST") {
+    if (path === "/fork" && req.method === "POST") {
       const { to, upTo } = await req.json();
       if (!to || typeof to !== "string") return Response.json({ error: "to (a session id) is required" }, { status: 400 });
       if (to === sessionId) return Response.json({ error: "a session cannot fork onto itself" }, { status: 400 });
@@ -1792,7 +1814,7 @@ export class AgentCell {
     // The other half of /fork. Refuses a session that already has a transcript:
     // silently merging two conversations is worse than failing, and a fork onto
     // a live session is a mistake rather than an intention.
-    if (url.pathname === "/import" && req.method === "POST") {
+    if (path === "/import" && req.method === "POST") {
       const { from, messages } = await req.json();
       const existing = this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n;
       if (existing > 0) {
@@ -1809,7 +1831,7 @@ export class AgentCell {
       return Response.json({ ok: true, imported: (messages ?? []).length, from });
     }
 
-    if (url.pathname === "/reset") {
+    if (path === "/reset") {
       this.sql.exec("DELETE FROM msgs");
       this.sql.exec("DELETE FROM ops");
       // The context watermark has to go with them. Left behind, it points past
@@ -1821,12 +1843,38 @@ export class AgentCell {
       return Response.json({ ok: true });
     }
 
+    // The cell's own root is a real answer: "I am here, I am this session, and
+    // this is how much of it there is." The probes read it and it costs two
+    // counts. Everything BELOW it is a path nobody wrote.
+    if (path === "/") {
+      return Response.json({
+        ok: true,
+        sessionId,
+        messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n,
+        ops: this.sql.exec("SELECT COUNT(*) AS n FROM ops").toArray()[0].n,
+      });
+    }
+
+    // A ROUTE THAT DOES NOT EXIST IS NOT A SUCCESS.
+    //
+    // This used to answer 200 `{ok:true,…}` to every unmatched path, and that
+    // one shrug has now cost four separate investigations: `/global/event`
+    // looked implemented, `/session/<id>/model` looked implemented, and the
+    // control plane's `GET /kortix/opencode/state` — which the cell does not
+    // serve at all — looks implemented to this day. A caller checking
+    // `res.ok` cannot tell a served route from an invented one.
+    //
+    // The counts stay in the body, because they are what the probes read and
+    // they cost one query; the STATUS is what changes, and it is the part a
+    // caller believes.
     return Response.json({
-      ok: true,
+      ok: false,
+      error: "unknown route",
+      path,
       sessionId,
       messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n,
       ops: this.sql.exec("SELECT COUNT(*) AS n FROM ops").toArray()[0].n,
-    });
+    }, { status: 404 });
   }
 }
 
@@ -1938,7 +1986,51 @@ export default {
     const name = url.searchParams.get("c")
       ?? (fromPath ? decodeURIComponent(fromPath[1]) : null)
       ?? env.KORTIX_SESSION_ID
-      ?? "default";
+      ?? null;
+
+    // "default" IS THE ONE NAME celld CANNOT ROUTE, and it was this worker's
+    // fallback.
+    //
+    // Measured on dev 2026-09-09 against a box thirty seconds old, so this is
+    // not stale ownership — it is the literal string:
+    //
+    //   ?c=default   Worker failed: rejected: DurableObjectRoutingError:
+    //                The Durable Object owner is currently unreachable
+    //   ?c=Default   200      ?c=DEFAULT  200      ?c=default1  200
+    //   ?c=main 200   ?c=agent 200   ?c=session 200   ?c=<uuid> 200
+    //
+    // Every other name in that list routes. So any cell that reached the
+    // fallback answered 500 to every request, and a cell reaches the fallback
+    // exactly when its box came back without `KORTIX_SESSION_ID` — which is
+    // what a RESUMED sandbox did until `sandbox.start` began carrying env.
+    // Three of the four cell boxes running on dev at the time were in that
+    // state: every request the product made to them, none of which can carry
+    // `?c=` through a proxy that drops the query, failed at the router.
+    //
+    // AND ROUTING IT WOULD BE WORSE THAN FAILING, because a cell name is not
+    // scoped to its sandbox. Measured the same day: a box created seconds
+    // earlier, asked for the cell `sess-b`, answered with forty messages
+    // written 100 minutes before by a box that no longer exists. To repeat
+    // it: create a cell sandbox and GET /history?c=<a name an older box used>.
+    // Cell state is keyed by NAME across every
+    // sandbox sharing the deployment's storage identity. A session id is a
+    // uuid and cannot collide; "default" collides with every other box that
+    // ever lost its env, so the fallback was one shared transcript for all of
+    // them. celld refusing to route it is the only reason that never happened.
+    //
+    // Refusing is the honest answer. A request that names no session on a box
+    // that knows no session has no isolate to go to, and inventing one is how
+    // a user ends up talking to an empty agent that answers with the scripted
+    // fixture. 503, because re-pushing the session env repairs it.
+    if (name === null || name === "default") {
+      return Response.json({
+        error: "no session named",
+        detail: name === "default"
+          ? "celld cannot route a cell named \"default\""
+          : "this box has no KORTIX_SESSION_ID; name the session with ?c= or /session/<id>/",
+        hint: "POST /kortix/env?c=<session> to configure this box",
+      }, { status: 503, headers: { "retry-after": "5" } });
+    }
     return env.AGENT.get(env.AGENT.idFromName(name)).fetch(req);
   },
 };

@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=68
+// EXPECTED_PASSES=75
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -576,4 +576,60 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     body.daemon === "ok" && typeof body.runtime === "object" && body.runtime !== null && body.runtimeReady === true,
     JSON.stringify(body));
 }
+
+// ADDRESSING BY PATH MUST REACH THE SAME ROUTES AS ADDRESSING BY QUERY.
+//
+// The proxy in front of a session drops the query string, so `/session/<id>/…`
+// is the only addressing the product has. Every one of these went to the
+// catch-all before, and the catch-all answered 200.
+{
+  const h = makeCell(AgentCell, ENV);
+  const byQuery = await (await h.fetch("/model?c=s")).json();
+  const byPath = await (await h.fetch("/session/s/model")).json();
+  check("a path-addressed request reaches the same route a query-addressed one does",
+    byPath.tools?.backend === byQuery.tools?.backend && byPath.active !== undefined,
+    JSON.stringify(byPath).slice(0, 120));
+
+  const bare = await (await h.fetch("/session/s")).json();
+  check("a bare /session/<id> answers the session document, not a shrug",
+    Array.isArray(bare) && bare[0]?.id === "s", JSON.stringify(bare).slice(0, 120));
+
+  const sse = await h.fetch("/session/s/events");
+  check("the event stream is reachable under the name the product subscribes to",
+    sse.headers.get("content-type")?.includes("text/event-stream"),
+    String(sse.status) + " " + sse.headers.get("content-type"));
+
+  const unknown = await h.fetch("/session/s/kortix/opencode/state");
+  check("a route the cell does not serve is a 404, not a 200 that looks served",
+    unknown.status === 404 && (await unknown.json()).ok === false, String(unknown.status));
+}
+
+// THE ONE CELL NAME celld CANNOT ROUTE.
+//
+// Measured on dev 2026-09-09 on a box thirty seconds old: `?c=default` is
+// `DurableObjectRoutingError: The Durable Object owner is currently
+// unreachable`, while `Default`, `DEFAULT`, `default1`, `main`, `agent` and a
+// uuid all answer. This worker used to fall back to exactly that name whenever
+// a box came back without `KORTIX_SESSION_ID`, so every request the product
+// made to a resumed cell died at the router.
+{
+  const reached = [];
+  const AGENT = {
+    idFromName: (name) => ({ toString: () => name, name }),
+    get: (id) => { reached.push(id.name); return { fetch: async () => Response.json({ ok: true }) }; },
+  };
+  const worker = mod.default;
+  const d = await worker.fetch(new Request("http://cell/model?c=default"), { AGENT });
+  check("the worker refuses the unroutable name instead of handing it to celld",
+    d.status === 503 && reached.length === 0, String(d.status) + " reached=" + JSON.stringify(reached));
+
+  const none = await worker.fetch(new Request("http://cell/model"), { AGENT });
+  check("a box with no session refuses rather than inventing one",
+    none.status === 503 && reached.length === 0, String(none.status) + " reached=" + JSON.stringify(reached));
+
+  const named = await worker.fetch(new Request("http://cell/model"), { AGENT, KORTIX_SESSION_ID: "sess-1" });
+  check("and a box that knows its session still routes to it",
+    named.status === 200 && reached[reached.length - 1] === "sess-1", JSON.stringify(reached));
+}
+
 process.exit(bad ? 1 : 0);

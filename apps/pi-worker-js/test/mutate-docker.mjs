@@ -77,14 +77,18 @@ const CHECKS = [
     from: "          AND NOT EXISTS (SELECT 1 FROM turns WHERE status='running')", to: "" },
   { claim: "one session's events do not reach another's watcher", expect: new RegExp("cross-session leakage"), suite: "streaming.sh",
     file: "src/worker.js",
-    from: 'const name = url.searchParams.get("c") ?? "default";', to: 'const name = "default";' },
+    from: '    const name = url.searchParams.get("c")\n'
+      + '      ?? (fromPath ? decodeURIComponent(fromPath[1]) : null)\n'
+      + '      ?? env.KORTIX_SESSION_ID\n'
+      + '      ?? null;',
+    to: '    const name = "shared";' },
   { claim: "a scope refusal is an error, not an empty success", expect: new RegExp("scope refusal|sandbox_scope"), suite: "platinum.sh",
     file: "src/execenv.platinum.js",
     from: "if (r.status !== 200) return { ok: false, status: r.status, error: r.json?.error ?? `exec ${r.status}`, code: r.json?.code };",
     to: 'if (r.status !== 200) return { ok: true, stdout: "", stderr: "", exitCode: 0 };' },
   { claim: "requests are metered", expect: new RegExp("meter did not count"), suite: "eviction.sh",
     file: "src/worker.js",
-    from: '    if (!UNBILLED_PATHS.has(url.pathname)) this.meter("requests");', to: "    ;" },
+    from: '    if (!UNBILLED_PATHS.has(path)) this.meterRequest();', to: "    ;" },
   // NOT A CODE MUTATION — a STATE one, and the same question. "A new process
   // read all N messages back from the bucket" is a claim about where the
   // transcript comes from, and the way to test that is to take the bucket away
