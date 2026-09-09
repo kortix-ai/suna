@@ -8,6 +8,11 @@ For a Pi session, the environment disables OpenCode startup and runs no Pi
 worker. Custom tools call the execution RPC. YAML v3 selects Pi; YAML v2 selects
 OpenCode. Existing Pi environments receive the same execution-only daemon upgrade.
 
+YAML v3 requires no `pi_worker` feature flag. It selects Pi during session
+creation and push-time compilation, and its worker can download the exact
+compiled artifact with its existing session credential. The legacy flag only
+requests OpenCode prebuilds for YAML v2 projects when platform prebuilds are off.
+
 ## Configuration ownership
 
 | Location | Purpose |

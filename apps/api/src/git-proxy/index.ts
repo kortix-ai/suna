@@ -55,7 +55,6 @@ import { createHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { featureDisabledBody } from '../feature-flags/gate';
 import {
   buildCompiledPiRuntimeArtifact,
   CompiledPiRuntimeSourceMovedError,
@@ -64,7 +63,7 @@ import {
   COMPILED_PI_RUNTIME_CONTENT_TYPE,
   COMPILED_PI_RUNTIME_FORMAT,
 } from './compiled-pi-runtime';
-import { prebuildDefaultBranchPiRuntime } from './compiled-prebuild';
+import { prebuildManifestRuntime } from './compiled-prebuild';
 import {
   COMPILED_CHECKOUT_CONTENT_TYPE,
   COMPILED_CHECKOUT_FORMAT,
@@ -80,7 +79,6 @@ import {
   COMPILED_RUNTIME_CONTENT_TYPE,
   COMPILED_RUNTIME_FORMAT,
 } from './compiled-runtime';
-import { prebuildDefaultBranchArtifacts } from './compiled-prebuild';
 import {
   GIT_SERVICES,
   type GitService,
@@ -215,6 +213,7 @@ async function serveLocalGit(
   repoPath: string,
   scope: GitScope,
   suffix: string,
+  input: ReadableStream<Uint8Array> | null,
 ): Promise<Response> {
   const requested =
     suffix === '/info/refs'
@@ -247,7 +246,7 @@ async function serveLocalGit(
   }
 
   // Negotiation / pack transfer: the request body IS the client's side.
-  const body = new Uint8Array(await c.req.arrayBuffer());
+  const body = new Uint8Array(await new Response(input).arrayBuffer());
   const r = await runGitService(service, repoPath, ['--stateless-rpc'], body);
   if (!r.ok) {
     console.warn(`[git-proxy] local ${service} failed for ${repoPath}: ${r.stderr}`);
@@ -297,7 +296,6 @@ async function forwardAuthorized(
   // answer `502 git upstream unreachable` for every clone. Serve it directly
   // instead — smart-HTTP is a thin envelope around the same git services.
   const localRepo = resolveLocalRepo(upstream.url);
-  if (localRepo) return serveLocalGit(c, localRepo, scope, suffix);
 
   const search = new URL(c.req.url).search; // includes leading '?' or ''
   const base = upstream.url.replace(/\/$/, '');
@@ -318,7 +316,9 @@ async function forwardAuthorized(
   const isIdempotentGet = method === 'GET' || method === 'HEAD';
   let res: Response;
   try {
-    if (isIdempotentGet) {
+    if (localRepo) {
+      res = await serveLocalGit(c, localRepo, scope, suffix, body);
+    } else if (isIdempotentGet) {
       res = await fetchUpstreamBuffered(target, {
         method,
         headers,
@@ -367,12 +367,8 @@ async function forwardAuthorized(
           typeof (auth.project.metadata as Record<string, unknown> | null)?.default_sandbox_provider === 'string'
             ? ((auth.project.metadata as Record<string, unknown>).default_sandbox_provider as string)
             : null;
-        // The pi_worker flag also lifts the compiled-boot env gate for THIS
-        // project's opencode artifacts: dev runs with KORTIX_COMPILED_BOOT_MODE
-        // unset ('off'), and the harness/worker experiment needs both engines'
-        // artifacts warm per project without touching the environment. The env
-        // mode stays the platform-wide switch; the flag is the per-project one.
-        const piWorkerEnabled = resolveFeatureFlag(auth.project.metadata, 'pi_worker');
+        const opencodePrebuildEnabled = config.KORTIX_COMPILED_BOOT_MODE !== 'off' ||
+          resolveFeatureFlag(auth.project.metadata, 'pi_worker');
         // Warm the fresh-session git hint (base tip + scaffold delta + OpenCode
         // config dir) right after the push that moved the tip, so the next
         // session create finds it cached instead of losing the 2 s create-time
@@ -431,35 +427,11 @@ async function forwardAuthorized(
           }
         })();
 
-        const [compiledResult, piResult] = await Promise.allSettled([
-          config.KORTIX_COMPILED_BOOT_MODE !== 'off' || piWorkerEnabled
-            ? prebuildDefaultBranchArtifacts(
-                gitProject,
-                `${new URL(c.req.url).origin}/v1/git/${projectId}.git`,
-              )
-            : Promise.resolve(null),
-          // Compile-on-push for the pi worker runtime (harness/worker split
-          // experiment). Per-project opt-in; the metadata is already loaded by
-          // this push's auth, so the flag check costs nothing. Fire-and-forget
-          // like everything else in this block — the on-demand build inside
-          // GET /compiled-pi-runtime stays the correctness path for pushes
-          // that bypass this proxy (e.g. straight to a user's own GitHub).
-          piWorkerEnabled ? prebuildDefaultBranchPiRuntime(gitProject) : Promise.resolve(null),
-        ]);
-        if (compiledResult.status === 'rejected') {
-          console.warn(
-            `[git-proxy] compiled artifact prebuild skipped for ${projectId}:`,
-            compiledResult.reason instanceof Error
-              ? compiledResult.reason.message
-              : compiledResult.reason,
-          );
-        }
-        if (piResult.status === 'rejected') {
-          console.warn(
-            `[git-proxy] compiled pi runtime prebuild skipped for ${projectId}:`,
-            piResult.reason instanceof Error ? piResult.reason.message : piResult.reason,
-          );
-        }
+        await prebuildManifestRuntime(
+          gitProject,
+          `${new URL(c.req.url).origin}/v1/git/${projectId}.git`,
+          opencodePrebuildEnabled,
+        );
       } catch (err) {
         console.warn(
           `[git-proxy] warm prebake-on-push skipped for ${projectId}:`,
@@ -939,7 +911,7 @@ gitProxyApp.openapi(
       },
       400: { description: 'Invalid project id, ref, or source SHA' },
       401: gitResponses[401],
-      403: { description: 'Forbidden, or the pi_worker feature flag is off for this project' },
+      403: { description: 'Token is not authorized for this project' },
       404: gitResponses[404],
       409: { description: 'The requested ref no longer points at the requested source SHA' },
       503: { description: 'The compiled pi runtime could not be generated' },
@@ -952,12 +924,6 @@ gitProxyApp.openapi(
     if (!auth.ok) {
       if (auth.status === 401) return unauthorized(c, auth.message);
       return c.text(auth.message, auth.status === 404 ? 404 : 403);
-    }
-    // Per-project opt-in: the artifact must not exist for a project that never
-    // asked for it, and the on-demand build below is exactly as gated as the
-    // push-time prebuild.
-    if (!resolveFeatureFlag(auth.project.metadata, 'pi_worker')) {
-      return c.json(featureDisabledBody('pi_worker'), 403);
     }
     const { ref, sha, agent } = c.req.valid('query');
     try {

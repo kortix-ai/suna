@@ -17,6 +17,11 @@
  *  - upstream credentials remain inside the Git proxy.
  */
 import { flow } from '../core/flow';
+import { strict as assert } from 'node:assert';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const UNKNOWN = '00000000-0000-4000-a000-000000000000';
 
@@ -72,9 +77,6 @@ flow(
       r.status([401, 403]);
     });
     await ctx.step('compiled pi runtime without git auth → 401', async () => {
-      // Same auth boundary as compiled-runtime; the pi_worker feature-flag
-      // gate sits BEHIND auth, so an anonymous caller never learns whether
-      // the flag is on.
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/git/:project/compiled-pi-runtime', {
         params: { project: p.id },
         query: { ref: 'main', sha: 'a'.repeat(40) },
@@ -439,3 +441,77 @@ flow(
     });
   },
 );
+
+flow('GH-18', {
+  domain: 'git',
+  routes: [
+    'GET /v1/git/:project/info/refs',
+    'POST /v1/git/:project/git-upload-pack',
+    'POST /v1/git/:project/git-receive-pack',
+    'GET /v1/git/:project/compiled-pi-runtime',
+    'PATCH /v1/projects/:projectId/features',
+  ],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project({ managedGit: true });
+  const token = await ctx.fixtures.pat();
+  const client = ctx.client.as({ label: 'artifact owner PAT', auth: { mode: 'bearer', token } });
+  const root = await mkdtemp(join(tmpdir(), 'ke2e-pi-artifact-'));
+  const repo = join(root, 'repo');
+  const env = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.extraheader',
+    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+  };
+  const git = async (args: string[]) => {
+    const child = Bun.spawn(['git', ...args], { cwd: root, env, stdout: 'pipe', stderr: 'pipe' });
+    const timer = setTimeout(() => child.kill(), 60_000);
+    try {
+      const [out, error, exit] = await Promise.all([
+        new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+      ]);
+      assert.equal(exit, 0, error.replaceAll(token, '[redacted]'));
+      return out.trim();
+    } finally { clearTimeout(timer); }
+  };
+  let sha = '';
+  try {
+    await ctx.step('A fresh project with the legacy flag disabled receives a YAML v3 source commit', async () => {
+      const flag = await ctx.client.as(ctx.P.OWNER).patch('/v1/projects/:projectId/features',
+        { feature: 'pi_worker', enabled: false }, { params: { projectId: project.id } });
+      flag.status(200).body().has('$.experimental.pi_worker', false);
+      await git(['clone', `${ctx.env.apiUrl}/git/${project.id}.git`, repo]);
+      await writeFile(join(repo, 'kortix.yaml'), 'kortix_version: 3\ndefault_agent: reader\nagents:\n  reader: {}\n');
+      await mkdir(join(repo, '.kortix/pi/agents'), { recursive: true });
+      await writeFile(join(repo, '.kortix/pi/agents/reader.md'), '---\nmodel: kortix/gpt-5.6-luna\n---\nArtifact fixture reader.\n');
+      await git(['-C', repo, 'add', 'kortix.yaml', '.kortix/pi/agents/reader.md']);
+      await git(['-C', repo, '-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-m', 'Declare Pi runtime']);
+      sha = await git(['-C', repo, 'rev-parse', 'HEAD']);
+      await git(['-C', repo, 'push', 'origin', 'HEAD:main']);
+    });
+    await ctx.step('The exact Pi artifact downloads without an experiment flag and its digest matches', async () => {
+      const artifact = await client.get('/v1/git/:project/compiled-pi-runtime', {
+        params: { project: `${project.id}.git` }, query: { ref: sha, sha }, timeoutMs: 120_000,
+      });
+      artifact.status(200).headerEquals('x-kortix-artifact-source-sha', sha);
+      const raw = await fetch(`${ctx.env.apiUrl}/git/${project.id}.git/compiled-pi-runtime?ref=${sha}&sha=${sha}`, {
+        headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120_000),
+      });
+      assert.equal(raw.status, 200);
+      const content = Buffer.from(await raw.arrayBuffer());
+      assert.ok(content.toString('utf8').includes('kortix-worker starting'));
+      artifact.headerEquals('x-kortix-artifact-sha256', createHash('sha256').update(content).digest('hex'));
+    });
+    await ctx.step('Anonymous downloads fail and a mismatched source SHA returns 409', async () => {
+      (await ctx.client.as(ctx.P.ANON).get('/v1/git/:project/compiled-pi-runtime', {
+        params: { project: project.id }, query: { ref: sha, sha },
+      })).status(401);
+      (await client.get('/v1/git/:project/compiled-pi-runtime', {
+        params: { project: project.id }, query: { ref: sha, sha: 'b'.repeat(40) },
+      })).status(409);
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -17,7 +17,7 @@ describe('compiled boot prebuild wiring', () => {
 
   test('prebuilds default-branch artifacts after a successful Git push', () => {
     const receivePackGate = gitProxy.indexOf("suffix === '/git-receive-pack'");
-    const prebuild = gitProxy.indexOf('prebuildDefaultBranchArtifacts(');
+    const prebuild = gitProxy.indexOf('prebuildManifestRuntime(');
 
     expect(receivePackGate).toBeGreaterThan(-1);
     expect(prebuild).toBeGreaterThan(receivePackGate);

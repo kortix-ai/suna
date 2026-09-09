@@ -21,6 +21,28 @@ linked, not inlined.
 
 ## Register
 
+### Verify runtime selection with a fresh project and every old flag disabled (2026-09-09)
+
+**When:** making a manifest version select a runtime automatically.
+**Incident:** preview `ab9aa58479` selected Pi for YAML v3, but its artifact route returned `403 feature_disabled` on a fresh MCP test project. Existing flagged projects hid the failure.
+**Rule:** apply runtime selection through creation, compilation, download, and restart. Compile only the selected runtime on push. Verify fresh projects independently of migrated fixtures.
+**Enforcer:** `GH-18` pushes YAML v3 with `pi_worker: false`, checks exact artifact bytes, and preserves anonymous and source-SHA denial checks. `compiled-prebuild.test.ts` asserts Pi never invokes OpenCode compilation.
+
+### Reuse the policy-checked body for local Git pushes (2026-09-09)
+
+**When:** serving a local bare Git upstream after reading receive-pack commands.
+**Incident:** `GH-18` reproduced `500 Body already used`; the local path read the original request after the ref gate consumed it.
+**Rule:** pass the reconstructed authorized stream to every upstream implementation. Run successful-push hooks for local repositories too.
+**Enforcer:** `GH-18` uses a real authenticated Git clone and push against the local API before downloading the committed artifact.
+
+### Keep compiled source out of artifact-store error logs (2026-09-09)
+
+**When:** logging database failures while storing compiled agent artifacts.
+**Near-miss:** fixture teardown raced an asynchronous prebuild; the foreign-key error printed SQL parameters containing the synthetic agent bundle.
+**Rule:** log only a validated database error code. Database error objects can contain full agent source and configuration.
+**Enforcer:** `pi-runtime-store.test.ts` injects failed reads and writes with private source in the error and asserts code-only output.
+
+
 ### Reject truncated summaries before replacing model context (2026-09-09)
 
 **When:** committing an agent conversation summary.

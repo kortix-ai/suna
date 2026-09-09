@@ -282,15 +282,13 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'pi_worker',
-    name: 'Pi Worker Runtime (compiled)',
+    name: 'Legacy compiled boot prebuild',
     description:
-      'Compile boot artifacts for every push: a pi-based worker runtime .mjs per commit (agent config from kortix.yaml baked in at that exact sha, downloadable per ref+sha) plus the OpenCode compiled-boot artifacts for this project even where KORTIX_COMPILED_BOOT_MODE is off. Harness/worker split experiment. Sessions boot ON the worker when the manifest also sets `runtime: pi`; without that manifest line sessions keep the OpenCode path.',
+      'Prebuild OpenCode artifacts for YAML v2 projects even when the platform compiled boot switch is off. YAML v3 always selects Pi and compiles Pi artifacts independently of this legacy flag.',
     stability: 'experimental',
     available: () => true,
-    // Explicit opt-in per project. Off ⇒ no artifact is compiled on push and
-    // the download route answers 403.
     platformDefault: () => false,
-    enforcement: 'routes',
+    enforcement: 'behavioral',
   },
 ];
 

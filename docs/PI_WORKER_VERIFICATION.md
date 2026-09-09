@@ -1308,3 +1308,33 @@ external imports from the worker's frozen dependencies. No runtime install is ad
 The new isolated-stage test reproduces the missing-source failure, then builds
 the corrected stage in 940 ms. It executes the Docker stage instructions against
 an empty temporary tree. Existing checkout dependencies cannot hide missing inputs.
+
+
+## Fresh YAML v3 bootstrap and compilation (2026-09-09)
+
+A new remote-MCP fixture found a remaining download gate in preview `ab9aa58479`.
+Session creation selected Pi, but its worker received `403 feature_disabled`
+from `compiled-pi-runtime` because the project never enabled the old experiment.
+The route now uses its existing authenticated project scope without that flag.
+Push-time prebuild resolves the committed manifest and builds only its runtime.
+The legacy flag retains only its OpenCode prebuild override for YAML v2.
+
+`pnpm test -- --id GH-18`: **1 passed, 0 failed, 0 skipped**, 1.2 s flow time.
+The flow clones and pushes real Git, explicitly disables `pi_worker`, downloads
+and hashes the exact artifact, and checks anonymous `401` and mismatched SHA `409`.
+The raw body is hashed because the test client's captured body is redacted.
+The first run also reproduced a self-hosted receive-pack `500`; the local Git
+path now receives the reconstructed policy-checked stream and runs prebuild hooks.
+
+Focused prebuild tests: **8 passed, 0 failed**. Artifact-store log tests:
+**2 passed, 0 failed**. Failed artifact persistence logs only a database code,
+not SQL parameters or compiled agent source. Live MCP session verification
+remains pending the deployment of this bootstrap fix.
+
+`pnpm test`: **6/6 core lanes pass**, 112.6 s; **400/400 REST/CLI flows**,
+**786 worker tests**, and **7 real Node artifact checks** pass.
+`pnpm --filter kortix-api typecheck` passes. Two full API runs hit a 15-second timeout in the first artifact test.
+The unchanged focused file passes **9/9 in 2.11 s**. Temporary tracing showed
+a 307 ms build, then the tracing was removed. The final unchanged full gate
+passes **9,285 tests, 0 failures, 82 existing skips in 43.65 s**.
+The earlier timeout cause remains unconfirmed; no timeout or assertion was relaxed.

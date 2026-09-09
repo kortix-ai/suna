@@ -1,6 +1,7 @@
 import { resolveCommitSha } from '../projects/git';
 import type { GitBackedProject } from '../projects/git/types';
 import { refreshMirror } from '../projects/git/mirror';
+import { resolveManifestRuntimeForPiSession } from '../projects/lib/compile-agent-config';
 import {
   buildCompiledPiRuntimeArtifact,
   listPiAgentNames,
@@ -74,9 +75,7 @@ export async function prebuildDefaultBranchArtifacts(
 /**
  * Compile the pi worker runtime for the default branch tip. Same shape as
  * `prebuildDefaultBranchArtifacts` above, and deliberately a SEPARATE entry
- * point: the pi artifact is per-project opt-in (the `pi_worker` feature flag),
- * while the opencode artifacts follow the platform-wide
- * KORTIX_COMPILED_BOOT_MODE — the caller composes the two gates.
+ * point: YAML v3 selects Pi; OpenCode artifacts use the compiled boot switch.
  */
 export async function prebuildDefaultBranchPiRuntime(
   project: GitBackedProject,
@@ -120,4 +119,34 @@ export async function prebuildDefaultBranchPiRuntime(
     );
   }
   return primary;
+}
+
+interface ManifestPrebuildDependencies {
+  refresh(project: GitBackedProject): Promise<unknown>;
+  resolveTip: typeof resolveCommitSha;
+  resolveRuntime: typeof resolveManifestRuntimeForPiSession;
+  pi(project: GitBackedProject, resolveTip: typeof resolveCommitSha): Promise<unknown>;
+  opencode(project: GitBackedProject, ref: string, sha: string, url: string): Promise<unknown>;
+}
+
+export async function prebuildManifestRuntime(
+  project: GitBackedProject,
+  runtimeRepoUrl: string,
+  opencodeEnabled: boolean,
+  dependencies: ManifestPrebuildDependencies = {
+    refresh: (project) => refreshMirror(project, true),
+    resolveTip: resolveCommitSha,
+    resolveRuntime: resolveManifestRuntimeForPiSession,
+    pi: prebuildDefaultBranchPiRuntime,
+    opencode: prebuildCompiledBootArtifacts,
+  },
+): Promise<void> {
+  await dependencies.refresh(project);
+  const sha = await dependencies.resolveTip(project, project.defaultBranch);
+  const runtime = await dependencies.resolveRuntime(project, sha);
+  if (runtime === 'pi') {
+    await dependencies.pi(project, async () => sha);
+  } else if (opencodeEnabled) {
+    await dependencies.opencode(project, project.defaultBranch, sha, runtimeRepoUrl);
+  }
 }

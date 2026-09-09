@@ -26,6 +26,12 @@ import { db } from '../shared/db';
 /** Newest artifacts kept per (project, agent). Older ones are pruned on write. */
 const RETAIN_PER_AGENT = 3;
 
+function storeFailure(error: unknown): { code: string } {
+  const value = error as { code?: unknown; cause?: { code?: unknown } } | null;
+  const code = value?.cause?.code ?? value?.code;
+  return { code: typeof code === 'string' && /^[A-Z0-9]{5}$/.test(code) ? code : 'unknown' };
+}
+
 export interface StoredPiRuntimeRecord {
   sha256: string;
   size: number;
@@ -72,7 +78,7 @@ export async function readStoredPiRuntimeArtifact(
       content: Buffer.from(row.content),
     };
   } catch (error) {
-    console.warn('[pi-runtime-store] read failed, falling back to a local compile', error);
+    console.warn('[pi-runtime-store] read failed, falling back to a local compile', storeFailure(error));
     return null;
   }
 }
@@ -103,7 +109,7 @@ export async function putStoredPiRuntimeArtifact(input: PutPiRuntimeInput): Prom
   } catch (error) {
     // Publishing is an optimisation. A failure here costs a recompile on the
     // next boot; it must never fail the boot that produced the artifact.
-    console.warn('[pi-runtime-store] publish failed', error);
+    console.warn('[pi-runtime-store] publish failed', storeFailure(error));
   }
 }
 
