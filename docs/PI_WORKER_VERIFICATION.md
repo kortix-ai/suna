@@ -7,6 +7,77 @@ Architecture: [walkthrough, Q&A, and diagram](./PI_WORKER_WALKTHROUGH.md).
 
 Latest UI and streaming checks: [runtime UI verification](./PI_RUNTIME_UI_VERIFICATION.md).
 
+## MCP resources and prompts — 2026-09-09
+
+Code commit: `48e1acb70fea51fc50b744336fb2ddae23d46b85`.
+Deployment: [34345565828](https://github.com/kortix-ai/suna/actions/runs/34345565828).
+The remote checkout, API/gateway/frontend image tags, and public health commit
+match this SHA. This push deployment skips the complete target suite.
+
+Local checks:
+
+- `pnpm test`: all six lanes pass in 120.6 seconds. REST/CLI: 400/400;
+  worker: 827 tests and seven real Node artifact cases. Benchmark `1788952963778`.
+- `pnpm --filter kortix-api test`: 9,332 pass, 82 existing skips, zero failures;
+  32,418 assertions across 821 files, 51.18 seconds.
+- API and worker typechecks pass. SDK typecheck and packed-install smoke pass.
+- New protocol, executor, worker, and HTTP tests cover malformed responses,
+  credential redaction, pagination loops, initialization failure, header-based
+  session isolation, exact-path policies, approval, and failed audit outcomes.
+
+Live checks use the owned synthetic project
+`adb8bd66-c6d2-41bd-bd1a-b0913754d7bb`:
+
+1. Saving the existing connector name triggers a non-forced synchronization.
+   Its connection settings remain equal. The catalog upgrades from three to
+   eight actions. Repeating the save makes no initialization or tools-list request.
+   A README-only Git push does not trigger connector synchronization; that probe
+   is not counted as a passing upgrade test.
+2. The SDK and real CLI execute all five resource/prompt operations. Every CLI
+   process exits zero with empty stderr. Pagination follows `nextCursor`, and
+   prompt arguments reach the server unchanged. Invalid arguments make zero
+   upstream requests. Remote errors and malformed successful responses fail.
+3. A block rule hides the resource action and prevents execution. An approval
+   rule creates an inbox entry. Approval permits one exact retry. The original
+   policy is restored and read back. PostgreSQL contains successful, failed,
+   and denied audit records, with no unresolved approval from the probe.
+4. Pi retrieves a prompt through the browser. Its role-marked messages remain
+   tool content. The assistant returns the unique topic and reference marker.
+5. Pi reads `fixture://image`, identifies `RESOURCE_9241`, the left purple
+   triangle, and the right yellow circle. The private attachment bytes match
+   the fixture. The browser thumbnail and full viewer load. Base64 does not
+   appear in transcript or SSE payloads. The run records 47 text deltas.
+6. Stop/resume restores all 63 messages exactly and does not repeat the resource
+   read. The denied agent receives `connector_not_assigned`, with zero upstream
+   requests for its unique URI. Neither session creates an environment.
+
+The two sessions retain installed agent source
+`30df2084e64241f5c293d464760ffeff502acf9f`. Runtime code upgrades do not replace
+their pinned agent identity. API and Daytona both report stopped at
+`2026-09-09T11:38:49.594Z`. The temporary fixture and tunnel are removed afterward.
+
+Evidence: `/tmp/pi-mcp-catalog-settings-upgrade.json`,
+`/tmp/pi-mcp-protocol-api-live.json`, `/tmp/pi-mcp-protocol-audit.json`,
+`/tmp/pi-mcp-protocol-ui-live.json`, `/tmp/pi-mcp-protocol-ui-live.png`, and
+`/tmp/pi-mcp-protocol-owned-state.json`.
+
+### Manual test path
+
+Use a remote MCP connector that advertises `resources` or `prompts`, and grant
+it to the selected Pi agent. Synchronize it from the connector settings.
+
+1. Ask Pi to list that connector's resources, templates, and reusable prompts.
+2. Ask it to read a returned resource URI and retrieve a prompt with its named
+   string arguments. Resource images should open in the existing image viewer.
+3. Require approval for `<connector>.mcp.resources.read`, then retry a resource
+   read. Verify that approval precedes execution.
+4. Stop and resume the session. Verify that prior results remain and the
+   resource is not fetched again until requested.
+
+The exact SDK and CLI calls are documented in
+`apps/web/content/docs/connect/connectors.mdx`. Stdio servers, subscriptions,
+and the complete runtime MCP discovery UI remain outside this checkpoint.
+
 ## Source and deployment
 
 This session started at `0ea36cfd55483344184ab70080f75505547c4024` with extensive

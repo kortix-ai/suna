@@ -6164,3 +6164,10 @@ install and asserts the exact version and checksum.
 **Enforcer:** `integration-pi-passive-proxy-lifecycle.test.ts` checks real PostgreSQL state and a provider spy for active, stopped, errored, and incomplete Pi identities. OpenCode and environment alternatives remain covered. `wake-deadline-guard.test.ts` checks the Pi marker fence in the normal API gate.
 
 **Second wake path found in live verification:** at 10:19:20 UTC, browser `POST /log` entered `resumeStoppedSandboxByExternalId`. This helper classifies proxy mutations as wake intent. Pi now rejects that path using authoritative session metadata; explicit `/start` continues through `resumeStoppedSandbox`. Two real PostgreSQL cases fail before this additional guard and pass afterward. Live stop verification must include background writes as well as SSE reads.
+
+### Redact complete credentials before truncating provider errors (2026-09-09)
+
+**When:** converting an upstream MCP failure into a user-visible or audited error.
+**Near-miss:** a regression test with an 812-character synthetic credential exposed its prefix because the error message was truncated before exact-value redaction. A malformed string JSON-RPC error code also echoed the credential.
+**Rule:** redact the full message before normalization or truncation. Accept only integer JSON-RPC error codes. Do not return raw transport exceptions or HTTP failure bodies from protocol execution.
+**Enforcer:** `apps/api/src/connectors/mcp-protocol.test.ts` exercises long credentials, query-auth transport errors, and malformed error codes. `unit-connector-gateway.test.ts` verifies failed audit status and credential-free replies and records.

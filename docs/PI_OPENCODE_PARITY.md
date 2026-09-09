@@ -57,6 +57,7 @@ of each feature or the remaining parity matrix passed.
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
 | Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls; preview UI High/None/Auto payloads and provider results; reload, nine-message stop/resume, and question recovery |
 | Structured output | Prompt-scoped JSON Schema, `info.structured`, validation retries, terminal errors, and SDK `send(..., { format })` | Draft 7/2020-12 object schemas and local references through real Luna; HTTP validation, queue, cancellation, lifecycle, crash, and question-recovery tests |
+| Remote MCP resources and prompts | Capability-based resource/template discovery, resource reads, prompt discovery/retrieval, native image content, and existing connector policies | Preview `48e1acb70f`: all five operations through SDK and real CLI; catalog upgrade, pagination, errors, block/approval, PostgreSQL audit, Pi prompt/image UI, 47 text deltas, exact 63-message restart, denied-agent isolation, and absent environments |
 
 Custom Pi modules are supported. OpenCode plugins are not automatically Pi
 extensions. The native Pi lifecycle surface is documented in
@@ -71,7 +72,7 @@ extensions. The native Pi lifecycle surface is documented in
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
-| MCP configuration | Native Pi tools use the existing remote MCP connector gateway. Capability-based resource/template discovery, resource reads, and prompt discovery/retrieval are implemented with existing authorization and audit gates | New protocol actions await preview verification. Stdio placement, subscriptions, and complete discovery UI remain open. Preview verifies remote tool discovery/schema/calls, permission UI, Stop, and denied-agent isolation. `30bff99179` verifies recovered permission authority and stale completion rejection. `278b28f42c` verifies embedded MCP image resources, exact private bytes, native rendering, and replay |
+| MCP configuration | Native Pi tools use the existing remote MCP connector gateway. Resource and prompt operations pass preview verification at `48e1acb70f` | Stdio placement, subscriptions, and complete discovery UI remain open. `30bff99179` verifies recovered permission authority and stale completion rejection. `278b28f42c` verifies embedded MCP image resources, exact private bytes, native rendering, and replay |
 | Live model and agent switching | Config is fixed; API and host controls reject unsupported changes | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |
