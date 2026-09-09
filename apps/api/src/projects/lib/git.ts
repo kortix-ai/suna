@@ -746,16 +746,66 @@ export type GitProxyAuth =
       project: ProjectRow;
       principal: GitPrincipal;
       /**
-       * The resolved agent grant for a session principal (null otherwise). The
-       * receive-pack route places this on the request context so the ref-scope
-       * resolver can honor `project.gitops.ref.any` / `kortix_cli: all` for the
-       * session pushing. Without it a session is default-denied beyond its own
-       * branch no matter what its manifest grants — the exact failure behind the
-       * 2026-09-07 monitoring-metadata persistence incident.
+       * The resolved agent grant for a session principal (null otherwise),
+       * ALREADY intersected with the launching user's role (see
+       * `foldSessionGrantRefScopes`). The receive-pack route places this on the
+       * request context so the ref-scope resolver can honor
+       * `project.gitops.ref.any` / `kortix_cli: all` for the session pushing.
+       * Without it a session is default-denied beyond its own branch no matter
+       * what its manifest grants — the exact failure behind the 2026-09-07
+       * monitoring-metadata persistence incident.
        */
       agentGrant: AgentGrant | null;
     }
   | { ok: false; status: number; message: string };
+
+/**
+ * Fold a session's agent grant down to the ref leaves its launching principal
+ * actually holds.
+ *
+ * The ref-scope resolver (git-proxy/ref-scopes.ts) reads a session's grant
+ * alone — it performs no `userRole ∩ agentGrant` step — so the grant surfaced to
+ * it must already be that intersection. Without the fold, a project `member`
+ * who launches an agent whose manifest declares `project.gitops.ref.delete`
+ * (or `kortix_cli: all`) would gain manager-tier ref authority that the member's
+ * own role denies. Only the two ref leaves are consumed by the resolver, so only
+ * they are folded; `authorize(actorForToken(...))` re-applies the canonical
+ * identity fold (activated service account vs. launching user).
+ */
+async function foldSessionGrantRefScopes(
+  grant: AgentGrant | null,
+  launcherUserId: string | null | undefined,
+  sessionTokenId: string | null | undefined,
+  accountId: string,
+  projectId: string,
+  requestCtx: RequestContext,
+): Promise<AgentGrant | null> {
+  if (!grant || !launcherUserId) return null;
+  const refLeaves: string[] = [
+    PROJECT_ACTIONS.PROJECT_GITOPS_REF_ANY,
+    PROJECT_ACTIONS.PROJECT_GITOPS_REF_DELETE,
+  ];
+  const requested =
+    grant.kortixCli === 'all'
+      ? refLeaves
+      : grant.kortixCli.filter((action) => refLeaves.includes(action));
+  if (requested.length === 0) return grant;
+  const held: string[] = [];
+  for (const leaf of requested) {
+    const verdict = await authorize(
+      await actorForToken(launcherUserId, accountId, sessionTokenId, { ctx: requestCtx }),
+      leaf,
+      { type: 'project', id: projectId },
+    );
+    if (verdict.allowed) held.push(leaf);
+  }
+  if (grant.kortixCli === 'all') {
+    return held.length === 0 ? null : { ...grant, kortixCli: held };
+  }
+  const remaining = grant.kortixCli.filter((action) => !refLeaves.includes(action));
+  const next = [...remaining, ...held];
+  return next.length === 0 ? null : { ...grant, kortixCli: next };
+}
 
 /**
  * Authorize a Kortix git-proxy request: a bare credential (extracted from the
@@ -935,9 +985,19 @@ async function authorizeGitProxyUncached(
           tokenId: result.tokenId ?? null,
         },
       // A session-scoped PAT already carries the resolved grant on the token row
-      // (`validateAccountToken` returns it). Only meaningful for the session
-      // principal; null for the laptop-CLI-PAT user principal.
-      agentGrant: sessionPrincipal ? (result.agentGrant ?? null) : null,
+      // (`validateAccountToken` returns it). Fold it against the launching user's
+      // role so a member-launched agent cannot widen its ref authority beyond
+      // what that user holds. Null for the laptop-CLI-PAT user principal.
+      agentGrant: sessionPrincipal
+        ? await foldSessionGrantRefScopes(
+            result.agentGrant ?? null,
+            result.userId,
+            result.tokenId,
+            project.accountId,
+            projectId,
+            requestCtx,
+          )
+        : null,
     };
   }
 
@@ -999,13 +1059,18 @@ async function authorizeGitProxyUncached(
       if (!sandbox.branchName) {
         return { ok: false, status: 403, message: 'session has no branch to push' };
       }
-      // Resolve the session's agent grant so the ref-scope resolver can widen a
-      // session that deliberately holds `project.gitops.ref.any` / `kortix_cli:
-      // all`. The grant lives on the session's connector token(s) in
+      // Resolve the session's connector token (agent grant + launcher identity)
+      // so the ref-scope resolver can widen a session that deliberately holds
+      // `project.gitops.ref.any` / `kortix_cli: all` — intersected with the
+      // launcher's role. The grant lives on the session's connector token(s) in
       // `account_tokens`; a sandbox key carries no grant of its own. Missing row
       // (or a project with no per-agent governance) reads null = default-deny.
       const [grantRow] = await db
-        .select({ agentGrant: accountTokens.agentGrant })
+        .select({
+          agentGrant: accountTokens.agentGrant,
+          userId: accountTokens.userId,
+          tokenId: accountTokens.tokenId,
+        })
         .from(accountTokens)
         .where(
           and(
@@ -1024,7 +1089,17 @@ async function authorizeGitProxyUncached(
           sessionId: sandbox.sessionId,
           branch: sandbox.branchName,
         },
-        agentGrant: grantRow?.agentGrant ?? null,
+        // Fold the raw manifest grant against the launching user's role, so a
+        // member-launched agent cannot widen its ref authority beyond what that
+        // user holds.
+        agentGrant: await foldSessionGrantRefScopes(
+          grantRow?.agentGrant ?? null,
+          grantRow?.userId ?? null,
+          grantRow?.tokenId ?? null,
+          project.accountId,
+          projectId,
+          requestCtx,
+        ),
       };
     }
     // Account-scoped user API key. No per-project fallback here: an API key

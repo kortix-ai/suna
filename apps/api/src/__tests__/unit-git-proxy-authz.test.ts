@@ -137,7 +137,31 @@ describe('authorizeGitProxy — CLI PAT', () => {
     });
   });
 
-  test('a session-scoped PAT surfaces the grant stamped on its token row', async () => {
+  test('a session-scoped PAT surfaces its grant folded to the launcher role', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-1',
+      projectId: PROJECT_ID,
+      sessionId: 'sandbox-1',
+      agentGrant: { agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' },
+    };
+    sandboxRow = {
+      sandboxId: 'sandbox-1',
+      sessionId: 'sandbox-1',
+      branchName: 'sandbox-1',
+      sessionMetadata: { workspace_mode: 'branch' },
+    };
+    authorizeAllowed = true;
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' });
+  });
+
+  test('a session-scoped PAT with a wildcard grant folds to null when the launcher lacks ref leaves', async () => {
     patResult = {
       isValid: true,
       accountId: OWNER_ACCOUNT,
@@ -153,11 +177,12 @@ describe('authorizeGitProxy — CLI PAT', () => {
       branchName: 'sandbox-1',
       sessionMetadata: { workspace_mode: 'branch' },
     };
+    authorizeAllowed = false;
 
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
 
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: 'all', connectors: 'all' });
+    if (res.ok) expect(res.agentGrant).toBeNull();
   });
 
   test('a PAT on another account passes when the user holds the git capability', async () => {
@@ -306,19 +331,45 @@ describe('authorizeGitProxy — sandbox token', () => {
     expect(res.ok).toBe(true);
   });
 
-  test('a branch session surfaces its agent grant so the ref gate can widen the lane', async () => {
+  test('a branch session surfaces its agent grant folded to the ref leaves the launcher holds', async () => {
     sandboxRow = {
       sandboxId: 'sandbox-1',
       sessionId: 'sandbox-1',
       branchName: 'sandbox-1',
       sessionMetadata: { workspace_mode: 'branch' },
     };
-    grantRow = { agentGrant: { agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' } };
+    grantRow = {
+      agentGrant: { agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' },
+      userId: 'user-1',
+      tokenId: 'tok-1',
+    };
+    authorizeAllowed = true;
 
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
 
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' });
+  });
+
+  test('a wildcard grant folds to null when the launcher holds neither ref leaf', async () => {
+    sandboxRow = {
+      sandboxId: 'sandbox-1',
+      sessionId: 'sandbox-1',
+      branchName: 'sandbox-1',
+      sessionMetadata: { workspace_mode: 'branch' },
+    };
+    grantRow = {
+      agentGrant: { agent: 'main', kortixCli: 'all', connectors: 'all' },
+      userId: 'user-1',
+      tokenId: 'tok-1',
+    };
+    authorizeAllowed = false; // a member whose role denies ref delete/rewrite
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
+    // Folded to null → the ref-scope resolver default-denies the session.
+    if (res.ok) expect(res.agentGrant).toBeNull();
   });
 
   test('a session with no connector-token grant reads null, not widened', async () => {
