@@ -1257,6 +1257,12 @@ export class AgentCell {
     const path = pathSession
       ? (url.pathname.slice(pathSession[0].replace(/\/$/, "").length) || "/session")
       : url.pathname;
+    // `GET /session/<id>` is OpenCode's `session.get`: ONE session object. It
+    // used to fall into the list route and answer `[session]`, and the client
+    // read `session.time.created` on an array — measured 2026-09-09 in Chromium
+    // after a page reload: "TypeError: Cannot read properties of undefined
+    // (reading 'created')", the crash card, and an empty conversation.
+    const bareSession = !!pathSession && (url.pathname.slice(pathSession[0].replace(/\/$/, "").length) === "");
 
     // NOT EVERY REQUEST IS BILLABLE, and getting this wrong is not a rounding
     // error. /meter and /health are what a monitor polls; counting them would
@@ -1490,7 +1496,7 @@ export class AgentCell {
       const t = this.sql.exec("SELECT MIN(ts) AS a, MAX(ts) AS b FROM msgs").toArray()[0] ?? {};
       const created = t.a ?? this.bornAt;
       const updated = t.b ?? created;
-      return Response.json([{
+      const entry = {
         id: sessionId,
         title: sessionId,
         // No parentID: this cell IS the root. A parent would make it
@@ -1506,7 +1512,9 @@ export class AgentCell {
         messages: msgs,
         turns,
         contextFrom: this.contextFrom(),
-      }]);
+      };
+      // The list for `/session`; the one object for `/session/<id>` (session.get).
+      return Response.json(bareSession ? entry : [entry]);
     }
     if (path === "/stop" && req.method === "POST") {
       const running = this.running;

@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=122
+// EXPECTED_PASSES=124
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -609,8 +609,10 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     JSON.stringify(byPath).slice(0, 120));
 
   const bare = await (await h.fetch("/session/s")).json();
+  // OpenCode's `session.get`: ONE object. It was pinned as `[session]` here,
+  // and the client read `session.time.created` on an array after a reload.
   check("a bare /session/<id> answers the session document, not a shrug",
-    Array.isArray(bare) && bare[0]?.id === "s", JSON.stringify(bare).slice(0, 120));
+    !Array.isArray(bare) && bare?.id === "s" && typeof bare.time?.created === "number", JSON.stringify(bare).slice(0, 120));
 
   const sse = await h.fetch("/session/s/events");
   check("the event stream is reachable under the name the product subscribes to",
@@ -1006,6 +1008,17 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   check("POST /log is accepted the way OpenCode answers it (true)", log.status === 200 && (await log.json()) === true, String(log.status));
   check("a todo list for another session is still refused",
     (await ht.fetch("/session/other/todo?c=s")).status === 404, "");
+}
+
+// `GET /session/<id>` is session.get — ONE object. Answering the list here
+// crashed the chat after a reload: `session.time.created` on an array.
+{
+  const hg = makeCell(AgentCell, ENV);
+  const one = await (await hg.fetch("/session/s?c=s")).json();
+  const list = await (await hg.fetch("/session?c=s")).json();
+  check("GET /session/<id> answers ONE session object with its time — not the list",
+    !Array.isArray(one) && one.id === "s" && typeof one.time?.created === "number", JSON.stringify(one).slice(0, 120));
+  check("and GET /session is still the list", Array.isArray(list) && list[0]?.id === "s", JSON.stringify(list).slice(0, 80));
 }
 
 process.exit(bad ? 1 : 0);
