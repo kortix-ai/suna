@@ -259,11 +259,25 @@ export async function enqueueContinueSessionCommand(
   const attachments = input.attachments;
   if (attachments?.length) {
     return db.transaction(async (tx) => {
-      await storeSessionAttachments(tx, input.sessionId, attachments);
-      return insertContinueSessionCommand(input, tx);
+      const result = await insertContinueSessionCommand(input, tx);
+      if (!result.deduped) await storeSessionAttachments(tx, input.sessionId, attachments);
+      return result;
     });
   }
   return insertContinueSessionCommand(input, db);
+}
+
+export async function findContinueSessionCommand(sessionId: string, clientMessageId: string) {
+  const [row] = await db
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(and(
+      eq(sessionLifecycleCommands.sessionId, sessionId),
+      eq(sessionLifecycleCommands.commandType, 'continue_session'),
+      eq(sessionLifecycleCommands.idempotencyKey, `prompt:${sessionId}:${clientMessageId}`),
+    ))
+    .limit(1);
+  return row ?? null;
 }
 
 async function insertContinueSessionCommand(

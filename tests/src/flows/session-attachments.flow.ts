@@ -309,7 +309,7 @@ flow(
         (
           await claim([
             image,
-            { ...image, url: "https://example.test/image.png" },
+            { ...image, url: "http://example.test/image.png" },
           ])
         ).status(400);
         (await readImage()).status(404);
@@ -373,6 +373,35 @@ flow(
           throw new Error("retry duplicated the image prompt");
         if ((await readImage()).text() !== content)
           throw new Error("retry changed the image");
+      },
+    );
+    await ctx.step(
+      "an accepted Pi prompt retry reuses immutable content without fetching replacement URLs",
+      async () => {
+        const retry = await owner.post(
+          "/v1/projects/:projectId/sessions/:sessionId/prompts",
+          { ...prompt, parts: [{ ...image, url: "https://127.0.0.1/private.png" }] },
+          { params },
+        );
+        retry.status(200).body().has("$.deduped", true);
+        if ((await readPrompts()).json<any>().prompts.length !== 2)
+          throw new Error("replacement URL duplicated the accepted prompt");
+        if ((await readImage()).text() !== content)
+          throw new Error("replacement URL changed the accepted bytes");
+      },
+    );
+    await ctx.step(
+      "new Pi prompts refuse private HTTPS targets without persisting a command",
+      async () => {
+        for (const url of ["https://127.0.0.1/private.png", "https://[::ffff:7f00:1]/private.png"]) {
+          (await owner.post(
+            "/v1/projects/:projectId/sessions/:sessionId/prompts",
+            { ...prompt, client_message_id: crypto.randomUUID(), parts: [{ ...image, url }] },
+            { params },
+          )).status(400);
+        }
+        if ((await readPrompts()).json<any>().prompts.length !== 2)
+          throw new Error("unsafe URL created a partial prompt");
       },
     );
     await ctx.step(

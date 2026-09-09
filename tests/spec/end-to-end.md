@@ -301,13 +301,16 @@ same exact timestamp and completed-turn duration. A legacy pending-first ZIP par
 rewritten in place before the next prompt.
 
 `SESS-31` Pi first-prompt images. Session creation, warm-session claims, and boot-time
-prompt admission replace staged PNG, JPEG, GIF, and WebP data URLs with immutable
-session attachment references. The image bytes and prompt commit in one transaction.
+prompt admission replace staged PNG, JPEG, GIF, and WebP data URLs or public HTTPS
+image URLs with immutable session attachment references. Remote downloads revalidate
+each redirect, require a matching image MIME and signature, send no caller credentials,
+and stop after 30 seconds or cancellation. The image bytes and prompt commit in one transaction.
 The worker receives no inline bytes. Image admission does not start an environment.
-Malformed, remote, or unsupported files return 400 before any part of the batch is
-stored. Each image is at most 8 MiB; a prompt holds at most 16 images within the
-existing serialized-prompt limit. A MIME conflict returns 409 and preserves stored
-bytes and commands. Retries do not duplicate prompts. Attachment reads retain the
+Malformed, unsafe, unavailable, or unsupported images return 400 before any part
+of the batch is stored. Each image is at most 8 MiB; a prompt holds at most 16 images
+and 16 MiB total, within the existing serialized-prompt limit. A MIME conflict returns 409 and preserves stored
+bytes and commands. Accepted prompt retries reuse the original command and bytes
+without downloading the URL again. Attachment reads retain the
 session authorization boundary.
 
 ---

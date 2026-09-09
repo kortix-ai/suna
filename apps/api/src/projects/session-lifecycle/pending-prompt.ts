@@ -34,7 +34,7 @@ export interface PendingPromptConversion {
   attachments?: StagedSessionAttachment[];
 }
 
-export function convertPendingPromptToInboxRow(input: {
+export async function convertPendingPromptToInboxRow(input: {
   pendingPrompt: Record<string, unknown>;
   projectId: string;
   accountId: string;
@@ -42,7 +42,8 @@ export function convertPendingPromptToInboxRow(input: {
   actorUserId: string | null;
   nowMs?: number;
   piWorker?: boolean;
-}): PendingPromptConversion {
+  signal?: AbortSignal;
+}): Promise<PendingPromptConversion> {
   const { pendingPrompt } = input;
   const { text: _text, parts: _parts, ...metadataPicks } = pendingPrompt;
 
@@ -58,7 +59,7 @@ export function convertPendingPromptToInboxRow(input: {
   let attachments: StagedSessionAttachment[] | undefined;
   if (input.piWorker) {
     try {
-      const prepared = preparePiPromptAttachments(parts);
+      const prepared = await preparePiPromptAttachments(parts, { signal: input.signal });
       parts = prepared.parts;
       attachments = prepared.attachments;
     } catch (error) {

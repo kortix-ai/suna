@@ -367,8 +367,9 @@ projectsApp.openapi(
         ? (body.pending_prompt as Record<string, unknown>)
         : null;
     const conversion = rawPendingPrompt
-      ? convertPendingPromptToInboxRow({
+      ? await convertPendingPromptToInboxRow({
           pendingPrompt: rawPendingPrompt,
+          signal: c.req.raw.signal,
           piWorker: sessionMetadataClaimsPiWorker(candidate.metadata),
           projectId,
           accountId: loaded.row.accountId,

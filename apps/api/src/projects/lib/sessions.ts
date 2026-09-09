@@ -1550,7 +1550,7 @@ export async function createProjectSession(input: {
   // the session row — see `convertPendingPromptToInboxRow` for the contract
   // (and why stored metadata keeps only the picks).
   const pendingPromptConversion = pendingPrompt
-    ? convertPendingPromptToInboxRow({
+    ? await convertPendingPromptToInboxRow({
         pendingPrompt,
         piWorker: piWorkerBoot,
         projectId,

@@ -61,6 +61,7 @@ import {
 } from '../session-lifecycle/prompt-parts';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { sessionMetadataClaimsPiWorker } from '../lib/session-sandbox-metadata';
+import { findContinueSessionCommand } from '../session-lifecycle/store';
 import { preparePiPromptAttachments } from '../session-lifecycle/pi-prompt-attachments';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
@@ -554,16 +555,6 @@ projectsApp.openapi(
     }
     const sanitized = sanitizeInboxPromptParts(rawParts);
     if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
-    let prepared;
-    try {
-      prepared = sessionMetadataClaimsPiWorker(metadata)
-        ? preparePiPromptAttachments(sanitized.parts, { allowReferences: true })
-        : { parts: sanitized.parts, attachments: [] };
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
-    }
-    const parts = prepared.parts;
-    const text = flattenPromptText(parts);
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
     const model = overridesInput.model as { providerID?: unknown; modelID?: unknown } | null;
@@ -602,11 +593,27 @@ projectsApp.openapi(
       );
     }
 
+    const piWorker = sessionMetadataClaimsPiWorker(metadata);
+    const existing = piWorker ? await findContinueSessionCommand(sessionId, clientMessageId) : null;
+    let prepared;
+    try {
+      prepared = piWorker && !existing
+        ? await preparePiPromptAttachments(sanitized.parts, {
+            allowReferences: true,
+            signal: c.req.raw.signal,
+          })
+        : { parts: sanitized.parts, attachments: [] };
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+    const parts = prepared.parts;
+    const text = flattenPromptText(parts);
+
     // The unique index on `idempotency_key` IS the "retry = same
     // clientMessageId = same row" contract — enforced by the database, not by a
     // cache that a second pod would not share.
     const idempotencyKey = `prompt:${sessionId}:${clientMessageId}`;
-    const enqueued = await enqueueContinueSessionCommand({
+    const enqueued = existing ? { row: existing, deduped: true } : await enqueueContinueSessionCommand({
       attachments: prepared.attachments,
       source: 'ui',
       projectId,

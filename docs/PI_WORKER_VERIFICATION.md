@@ -1650,3 +1650,40 @@ state sample and verifies the real provider state.
 The final full API gate passes **9,293 tests**, with **82 existing skips**,
 **0 failures**, and **32,294 assertions** in 44.08 seconds. Evidence:
 `/tmp/pi-passive-mutation-api-final.log`.
+
+
+## Public HTTPS image admission — 2026-09-09
+
+Pi session creation, warm claims, and durable queued prompts can ingest public
+HTTPS PNG, JPEG, GIF, and WebP images. The API checks every redirect, MIME and
+signature, 8 MiB per image, 16 images and 16 MiB per prompt, and a 30-second total
+download deadline. It sends no caller credentials upstream. The worker receives
+private immutable references and does not download source URLs.
+
+Existing prompt retries return the original durable command before URL access.
+Concurrent admissions insert one command and only the winning attachment set.
+A storage conflict rolls back the new command. Remote errors expose neither the
+signed URL nor the upstream response body. The shared egress guard now normalizes
+literal and mapped IPv6 addresses and closes followed redirect streams.
+
+Local evidence:
+
+- New remote-image tests: 25 fail before implementation; 25 pass after it.
+- Focused attachment, first-prompt, and egress tests: 95 pass, zero failures.
+- Real local PostgreSQL inbox tests: 56 pass, 160 assertions, zero failures.
+  The new cases cover duplicate content, concurrent admission, and rollback.
+- `pnpm test -- --id SESS-31`: one flow passes, including private URL denial and
+  idempotent retry without downloading replacement content.
+- `pnpm --filter kortix-api test`: 9,364 pass, 82 existing skips, zero failures;
+  32,487 assertions across 822 files in 58.10 seconds.
+- `pnpm --filter kortix-api typecheck` passes.
+- `pnpm test`: all six lanes pass in 123.4 seconds. REST/CLI 400/400;
+  worker 827 tests and seven real Node artifact cases; SDK passes.
+  Benchmark `1788955693190`.
+
+Evidence files: `/tmp/pi-remote-attachments-red.log`,
+`/tmp/pi-remote-inputs-final.log`, `/tmp/pi-remote-inbox-pg.log`,
+`/tmp/pi-remote-rest-focused.log`, and `/tmp/pi-remote-api-suite.log`.
+Deployment and live-source expiry verification remain pending at this checkpoint.
+The direct runtime `s.send()` still accepts immutable attachment references;
+HTTPS ingestion uses `pending_prompt` or `s.prompts.create()`.

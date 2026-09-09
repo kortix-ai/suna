@@ -21,6 +21,14 @@ linked, not inlined.
 
 ## Register
 
+### Normalize IPv6 before checking private egress ranges (2026-09-09)
+
+**When:** accepting external URLs or checking DNS answers for remote image ingestion.
+**Near-miss:** local image tests exposed bracketed literal hosts reaching DNS and hexadecimal IPv4-mapped addresses escaping the dotted IPv4 check. No live private endpoint was contacted.
+**Rule:** normalize IPv6, unwrap URL brackets, and classify mapped IPv4 addresses before connecting. Cancel redirect bodies before following a new destination.
+**Enforcer:** `unit-ssrf-guard.test.ts` covers literal, expanded, and mapped private addresses. `pi-remote-prompt-attachments.test.ts` proves rejected destinations cause zero fetches and redirect responses are not persisted.
+
+
 ### Verify runtime selection with a fresh project and every old flag disabled (2026-09-09)
 
 **When:** making a manifest version select a runtime automatically.
