@@ -428,11 +428,16 @@ export async function resumeStoppedSandboxByExternalId(externalId: string): Prom
       externalId: sessionSandboxes.externalId,
       status: sessionSandboxes.status,
       metadata: sessionSandboxes.metadata,
+      sessionMetadata: projectSessions.metadata,
     })
     .from(sessionSandboxes)
+    .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row || row.status !== 'stopped' || !row.externalId) return false;
+  // Background POST /log is a proxy mutation, not authority to resume Pi.
+  // Explicit /start uses resumeStoppedSandbox directly.
+  if (sessionMetadataClaimsPiWorker(row.sessionMetadata)) return false;
   return resumeStoppedSandbox({
     sandboxId: row.sandboxId,
     sessionId: row.sessionId,

@@ -5,7 +5,8 @@ Pi runs in the worker sandbox. The environment sandbox runs the execution daemon
 files, and processes. This design uses no Durable Objects.
 
 The session lifecycle starts and stops the worker. Passive proxy retries and SSE
-reconnects cannot start it or change its lifecycle state. Explicit session start
+reconnects, including background `POST /log` writes, cannot start it or change
+its lifecycle state. Explicit session start
 remains available after a stop.
 
 For a Pi session, the environment disables OpenCode startup and runs no Pi

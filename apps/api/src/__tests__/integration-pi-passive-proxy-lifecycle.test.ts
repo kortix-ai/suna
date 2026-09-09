@@ -13,6 +13,7 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 const { wakeSandbox, markSandboxUsed, markSandboxErrored } = await import('../sandbox-proxy/backend');
+const { resumeStoppedSandboxByExternalId } = await import('../projects/routes/shared');
 const accountId = crypto.randomUUID();
 const projectId = crypto.randomUUID();
 const pi = { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: 'main', pi_worker_sha: 'a'.repeat(40) };
@@ -59,6 +60,24 @@ test('incomplete Pi identity still cannot enter legacy wake and state repair', a
   expect(starts).not.toContain(f.externalId);
   expect((await f.box()).status).toBe('stopped');
   expect((await f.session()).status).toBe('stopped');
+});
+
+test.each([pi, { sandbox_slug: 'pi-worker' }])('proxy mutations cannot claim a stopped Pi worker wake: %j', async (metadata) => {
+  const f = await fixture(metadata);
+  expect(await resumeStoppedSandboxByExternalId(f.externalId)).toBe(false);
+  expect((await f.box()).metadata?.runtimeWakeId).toBeUndefined();
+  expect((await f.box()).status).toBe('stopped');
+  expect((await f.session()).status).toBe('stopped');
+  expect(starts).not.toContain(f.externalId);
+});
+
+test('OpenCode proxy mutations retain their claimed resume path', async () => {
+  const f = await fixture({});
+  expect(await resumeStoppedSandboxByExternalId(f.externalId)).toBe(true);
+  const deadline = Date.now() + 2_000;
+  while ((await f.box()).status !== 'active' && Date.now() < deadline) await Bun.sleep(10);
+  expect((await f.box()).status).toBe('active');
+  expect((await f.session()).status).toBe('running');
 });
 
 test('OpenCode keeps its existing deadline-authorized proxy recovery', async () => {

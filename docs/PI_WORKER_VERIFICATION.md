@@ -1551,3 +1551,31 @@ a Pi worker or overwrite its lifecycle state.
 
 The stop race must pass on the deployed preview with the browser left open,
 concurrent SSE retries, provider-state verification, and explicit resume.
+
+## Background log writes cannot resume Pi — 2026-09-09
+
+The deployed `f9e0a35680` regression still fails: the stopped state changes to
+running after three reads. The legacy retry wake is fenced, but browser
+`POST /log` enters a separate `resumeStoppedSandboxByExternalId` path. No new
+`/start` request exists. Evidence: `/tmp/pi-passive-failure-full.log` and
+`/tmp/pi-passive-stop-live.json`.
+
+The proxy mutation helper now reads authoritative session metadata and refuses
+to claim Pi wake ownership. Explicit session start keeps its direct lifecycle
+path. Two database cases fail before the guard. The focused database, existing
+start/resume contract, and proxy-policy group then passes: **141 tests, 0 failures,
+748 assertions**. The live regression also posts `/log` after every stopped
+state sample and verifies the real provider state.
+
+- Final focused PostgreSQL coverage: **9 pass, 0 fail**, 34 assertions, including
+  the unchanged OpenCode proxy-mutation resume path.
+- `pnpm test`: six core lanes pass, **400/400 REST/CLI flows**, **818 worker
+  tests**, and seven Node artifact cases. Total **120.9 seconds**; benchmark
+  `1788949946694`. SDK lane passes in 15.0 seconds. API typecheck passes.
+- The first full API run has one unrelated `hashBlobs` hook timeout. The
+  unchanged hashing file then passes **3 tests, 44 assertions** in isolation.
+  The timeout cause is unconfirmed; no test assertion or budget is relaxed.
+
+The final full API gate passes **9,293 tests**, with **82 existing skips**,
+**0 failures**, and **32,294 assertions** in 44.08 seconds. Evidence:
+`/tmp/pi-passive-mutation-api-final.log`.
