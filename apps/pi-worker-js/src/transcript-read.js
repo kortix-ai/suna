@@ -41,9 +41,16 @@ export function transcriptMessages(rows, sessionId) {
     try { parsed = JSON.parse(r.json); } catch { /* a row we cannot read is still a row */ }
     const id = messageIdFor(r);
     const content = Array.isArray(parsed?.content) ? parsed.content : [];
+    // THE TRANSCRIPT HIDES WHAT THE STREAM HIDES. The bus drops reasoning
+    // (wire.js isReasoning) because the product does not show it; a transcript
+    // that returns it — even typed `reasoning` — is painted by the chat as an
+    // assistant bubble. Measured on dev 2026-09-09, session 3efeb3f1: the user
+    // saw their own words inside an assistant answer, which was the model's
+    // 'The user said "yooooo"…' reasoning block. The part keeps its index so
+    // `<id>-p<k>` still matches what the stream named.
     out.push({
       info: { id, role: r.role, sessionID: sessionId, time: { created: r.ts } },
-      parts: content.map((c, k) => ({
+      parts: content.map((c, k) => [c, k]).filter(([c]) => partType(c?.type) !== "reasoning").map(([c, k]) => ({
         id: `${id}-p${k}`,
         messageID: id,
         sessionID: sessionId,

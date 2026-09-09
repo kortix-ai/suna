@@ -5,7 +5,7 @@
 // is owed a replay rather than a resync. Getting any of them wrong produces a
 // stream that LOOKS healthy — the UI's flapping green light — while the text
 // is doubled, missing, or silently starting mid-conversation.
-import { WireBus, replayPlan, encodeFrame } from "../src/wire.js";
+import { WireBus, replayPlan, encodeFrame, heartbeatFrame, connectedFrame } from "../src/wire.js";
 
 let bad = 0;
 const check = (claim, ok, detail = "") => {
@@ -172,6 +172,23 @@ const collect = () => {
   bus.publish([{ type: "message.part.updated", properties: { part: { id: "p0", type: "reasoning", text: "" } } }]);
   check("a reasoning delta is NOT the bubble filling — it is never shown",
     !bus.carriesVisibleText({ type: "message.part.delta", properties: { partID: "p0", delta: "thinking" } }), "");
+}
+
+{
+  // A QUIET CELL MUST NOT LOOK DEAD. The app's watchdog counts parsed frames;
+  // an SSE comment is not one. Measured in Chromium 2026-09-09: "SSE heartbeat
+  // timeout, forcing reconnect" and 24 s of "Connecting" on an idle session.
+  const hb = heartbeatFrame(1234);
+  check("the heartbeat is an EVENT the client parses, not a comment it discards",
+    hb.startsWith("event: server.heartbeat\n") && hb.includes('"type":"server.heartbeat"') && !hb.startsWith(":"), JSON.stringify(hb));
+  check("and it is unsequenced — no id, no seq — so it never enters a cursor or a replay",
+    !hb.includes("\nid:") && !hb.includes('"seq"'), JSON.stringify(hb));
+  const bus = new WireBus({ epoch: "e1" });
+  const open = bus.opening();
+  check("a stream opens with hello THEN server.connected, the frame an OpenCode client waits for",
+    open.indexOf("event: kortix.hello") === 0 && open.indexOf("event: server.connected") > open.indexOf("event: kortix.hello"), open.slice(0, 160));
+  check("neither opening frame consumes a sequence number",
+    bus.seq === 0 && !connectedFrame().includes("\nid:"), String(bus.seq));
 }
 
 console.log(bad ? `\n  ${bad} failed` : "");

@@ -52,7 +52,7 @@ import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 // stays for platinum-shapes.mjs, which unit-tests its ledger and bodies.
 import { providerStream, resolveModel, scriptedStream, supportedProviders } from "./model.js";
 import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
-import { WireBus, WIRE_HEARTBEAT_MS } from "./wire.js";
+import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
 import { agentNameFrom, bootAnswer } from "./opencode-boot.js";
 import { transcriptMessages } from "./transcript-read.js";
 import { runtimeStateDoc, projectionEtag } from "./projection.js";
@@ -1225,7 +1225,16 @@ export class AgentCell {
     }
     this.init();
     const url = new URL(req.url);
-    const pathSession = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
+    // `/session/status` IS A ROUTE, NOT A SESSION NAMED "status". OpenCode's
+    // client asks it at boot (`GET /session/status` -> `{ [sessionID]: {type} }`).
+    // The prefix parser below took "status" for a session id, answered the
+    // root document as an ARRAY where a keyed map is the contract, and — worse
+    // — rememberNamedSession() learned a session called "status", after which
+    // every unaddressed request on the node was ambiguous and refused 503.
+    // Measured on dev 2026-09-09 from a real browser's boot sequence.
+    const pathSession = url.pathname === "/session/status"
+      ? null
+      : url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
 
     // ADDRESSING IS NOT ROUTING, and conflating the two cost this worker every
     // route it has except three.
@@ -1470,6 +1479,11 @@ export class AgentCell {
     // apps/kortix-worker/src/runtime-surface.ts): one root, no parent. The
     // cell's own facts ride along as extra keys, which the resolver ignores and
     // a cell-aware caller can still read.
+    if (path === "/session/status") {
+      // OpenCode's shape: a map keyed by session id. `busy` is the cell's own
+      // running flag — the same truth /kortix/health and /session report.
+      return Response.json({ [sessionId]: { type: this.running ? "busy" : "idle" } });
+    }
     if (path === "/session") {
       const msgs = this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n;
       const turns = this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n;
@@ -2002,8 +2016,10 @@ export class AgentCell {
           // backoff ladder — the flap this route exists to end. A comment costs
           // three bytes and is not an event, so it cannot advance a cursor or
           // reach a reducer.
+          // A FRAME, not a comment — a comment never reaches the app's
+          // watchdog and the page read a quiet cell as dead. See heartbeatFrame.
           beat = setInterval(() => {
-            try { controller.enqueue(enc.encode(": beat\n\n")); }
+            try { controller.enqueue(enc.encode(heartbeatFrame())); }
             catch { clearInterval(beat); }
           }, WIRE_HEARTBEAT_MS);
         },
@@ -2474,7 +2490,9 @@ export default {
     // POST 198 ms, row running at 1296 ms, expose 141 ms, edge live 928 ms
     // later — 2443 ms before anything can answer. Spawning another isolate on
     // a cell that already exists is 86 ms resumed, 146 ms new.
-    const fromPath = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
+    const fromPath = url.pathname === "/session/status"
+      ? null   // a route, not a session — see the cell's own parser
+      : url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
     // Every request that names a session teaches this node something its env
     // may have forgotten — see rememberNamedSession. A Set insert on a string
     // the request has already parsed.

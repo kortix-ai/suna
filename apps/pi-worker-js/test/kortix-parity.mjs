@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=117
+// EXPECTED_PASSES=119
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -981,6 +981,19 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const ids = t2.filter((m) => m.info.role === "assistant").map((m) => m.info.id);
   check("after an eviction the next assistant id continues the sequence — no two messages share a name",
     ids.length === 2 && ids[0] === "msg_cell_00000001" && ids[1] === "msg_cell_00000002", JSON.stringify(ids));
+}
+
+// `/session/status` IS A ROUTE. OpenCode answers a map keyed by session id; the
+// cell took "status" for a session name, answered the root ARRAY, and taught the
+// node a session called "status" — after which unaddressed requests were 503.
+{
+  const hs = makeCell(AgentCell, ENV);
+  const st = await (await hs.fetch("/session/status?c=s")).json();
+  check("GET /session/status answers OpenCode's keyed map, not an array",
+    !Array.isArray(st) && st.s && (st.s.type === "idle" || st.s.type === "busy"), JSON.stringify(st).slice(0, 120));
+  const learned = await (await hs.fetch("/session?c=s")).json();
+  check("and the node did not learn a session named 'status'",
+    Array.isArray(learned) && learned.every((x) => x.id !== "status"), JSON.stringify(learned).slice(0, 120));
 }
 
 process.exit(bad ? 1 : 0);

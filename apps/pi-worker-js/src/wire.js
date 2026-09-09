@@ -30,6 +30,36 @@
  */
 export const WIRE_HEARTBEAT_MS = 10_000;
 
+/**
+ * THE HEARTBEAT IS A FRAME, NOT A COMMENT.
+ *
+ * The stream used to keep itself alive with an SSE comment (`: beat`). A
+ * comment never reaches JavaScript — EventSource and the OpenCode SDK's SSE
+ * client both discard it — so to the web app a quiet cell looked DEAD: its
+ * watchdog counts parsed frames only (packages/sdk event-stream.ts,
+ * `resetHeartbeat()` on every yielded item), fired "SSE heartbeat timeout,
+ * forcing reconnect", and the page flickered between Connecting and connected
+ * for as long as the session sat idle. Measured 2026-09-09 in a real Chromium
+ * against pi-js.kortix.com: 24 s on "Connecting" with every in-box call 200.
+ *
+ * A real OpenCode server heartbeats with an EVENT. This is that event: an
+ * unknown type to the reducer (chat-events.ts returns null for it), activity
+ * to the watchdog, and UNSEQUENCED — no `id:`, no `seq` — so it never enters
+ * the ring, never advances a cursor, and a replay never contains one.
+ */
+export function heartbeatFrame(at = Date.now()) {
+  return `event: server.heartbeat\ndata: ${JSON.stringify({ type: "server.heartbeat", at })}\n\n`;
+}
+
+/**
+ * The frame a real OpenCode server sends first. The SDK maps it to
+ * `{ type: "connection", status: "connected" }`; a client that waits for it
+ * before calling the stream established is right to. Unsequenced, like hello.
+ */
+export function connectedFrame() {
+  return `event: server.connected\ndata: ${JSON.stringify({ type: "server.connected" })}\n\n`;
+}
+
 /** How many frames stay replayable. A turn is tens of frames; this is many turns. */
 export const WIRE_RING_MAX = 2000;
 
@@ -181,6 +211,8 @@ export class WireBus {
     let out = `event: kortix.hello\ndata: ${JSON.stringify({
       type: "kortix.hello", epoch: this.epoch, seq: this.seq,
     })}\n\n`;
+    // What an OpenCode client expects first — see connectedFrame.
+    out += connectedFrame();
     if (plan.kind === "resync") {
       out += `event: kortix.resync\ndata: ${JSON.stringify({
         type: "kortix.resync", epoch: this.epoch,
