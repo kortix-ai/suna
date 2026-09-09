@@ -1338,3 +1338,52 @@ The unchanged focused file passes **9/9 in 2.11 s**. Temporary tracing showed
 a 307 ms build, then the tracing was removed. The final unchanged full gate
 passes **9,285 tests, 0 failures, 82 existing skips in 43.65 s**.
 The earlier timeout cause remains unconfirmed; no timeout or assertion was relaxed.
+
+## Ordinary provider overflow and recovery readiness (2026-09-09)
+
+Ordinary provider context rejection now permits one summary and replacement
+request per prompt, before visible output. Completed tools are not replayed.
+First-input oversize, visible partials, unrelated errors, and repeated rejection
+retain their errors. Stop cancels summarization and prevents the replacement.
+Custom context transforms and native image hydration apply to the retry.
+
+`pnpm exec bun /tmp/pi-provider-overflow-live.ts` passes against the preview's
+real Luna gateway with one injected HTTP `400 context_length_exceeded` response.
+The local worker executes one synthetic tool, writes one compaction, returns
+the launch code, restores six identical messages, and recalls the code after
+restart. The rejected request contains the archive; the replacement contains
+the summary without that archive. No environment is used. The temporary
+gateway credential is revoked. Evidence: `/tmp/pi-provider-overflow-live.json`.
+This is controlled fault injection, not a measured natural model-window limit.
+
+Preview `dbd3c9fb6c` also verifies a fresh YAML v3 MCP session without a Pi flag.
+Its real browser reaches the exact `fixture.read_fixture` permission request.
+Reload preserves the request and the MCP server receives no call before approval.
+Stopping at that request exposes a resume failure: two worker processes wait
+on a 60-second journal lease while the API gives an unbound process 30 seconds.
+
+The worker now binds readiness before durable recovery. Until initialization
+finishes, health reports `runtimeReady: false`, and runtime requests return
+`503` with `x-kortix-boot-phase: worker-restoring`. A second process cannot read
+or claim the journal. Initialization failure releases the port. The Daytona
+launcher retains its flock descriptor in the detached entrypoint.
+
+- Startup test: red on unreachable boot health, then **3 pass, 0 fail**.
+- Startup, permission, and question recovery: **27 pass, 0 fail**, 925 assertions.
+- Daytona provider: **17 pass, 0 fail**, 32 assertions. Descriptor test fails
+  before the launcher correction.
+- Actual bootstrap command on Linux: eight simultaneous calls launch one child;
+  seven report `lock-held`; a later call launches after the child exits.
+  The enclosing exec stays alive for the test. Evidence: `/tmp/pi-worker-lock-live.log`.
+- Worker and API typechecks pass. Full API: **9,285 pass, 0 fail, 82 existing
+  skips**, 43.72 s. Evidence: `/tmp/pi-worker-recovery-api.log`.
+- Final `pnpm test`: **6/6 core lanes pass**, 112.5 s. REST/CLI: **400/400**.
+  Seven real Node artifact checks pass. The first run found two source-location
+  tests referencing the moved initializer; their scope checks now target
+  `initializeWorker`. Existing runtime prewarm assertions pass unchanged.
+  Evidence: `/tmp/pi-worker-recovery-root-final.log`,
+  `tests/test-results/local/benchmark-1788942270663.json`.
+
+The same MCP session must pass the deployed resume and tool checks before this
+checkpoint receives live verification. No main, dev, staging, or production
+deployment occurs in this checkpoint.

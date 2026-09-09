@@ -6074,6 +6074,25 @@ force fresh builds. *Enforcer:* `tests/unit/platinum-ci.test.ts` and
 `tests/unit/daytona-ci.test.ts` assert both new cache names and the exact image
 digest.
 
+## Worker recovery must bind before observing an owner lease (2026-09-09)
+
+The remote MCP preview reached a permission request, then failed to resume the
+same session. Two worker processes waited on its journal. Recovery required a
+60-second unchanged lease, but the API declared an unbound runtime unreachable
+after 30 seconds. The bootstrap flock also released when its shell backgrounded
+the entrypoint, allowing another launch before the port opened.
+
+**The rule.** Bind a single readiness listener before accessing the durable
+session. Report `runtimeReady: false` and reject runtime requests with `503`
+until initialization finishes. Competing listeners must fail before reading or
+claiming the journal. A detached launcher must retain its lock descriptor for
+the worker lifetime. Do not shorten a lease to disguise a readiness failure.
+
+**Enforcers:** `worker-startup.test.ts` checks boot health, blocked prompts,
+listener promotion, competing startup, and port release after failure.
+`daytona.test.ts` checks detached descriptor inheritance. Permission and question
+recovery tests retain their unchanged exactly-once assertions.
+
 ## A persistent sandbox does not inherit a replacement template runtime (2026-09-05)
 
 PR #7109 selected the ready Node `22.22.2` Platinum template. The workflow then

@@ -21,7 +21,7 @@ import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
  *   real  — a normal provider; KORTIX_GATEWAY_URL sets the model endpoint so
  *           traffic goes through the Kortix LLM gateway rather than direct.
  */
-import { createServer, type IncomingMessage } from 'node:http';
+import { createServer, type IncomingMessage, type RequestListener, type Server } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
 import { Agent, convertToLlm } from '@earendil-works/pi-agent-core';
 import { compactedModelContext, contextNeedsCompaction, summarizeContext, transcriptMessagesFromEntries } from './context-compaction.ts';
@@ -35,6 +35,7 @@ import {
   fauxToolCall,
 } from '@earendil-works/pi-ai';
 import type { AssistantMessage, AssistantMessageEventStream } from '@earendil-works/pi-ai';
+import { recoverProviderOverflow } from './provider-overflow';
 import { Session } from '@earendil-works/pi-agent-core';
 import { assistantContractFields, ChatEventAdapter } from './chat-events.ts';
 import {
@@ -1020,17 +1021,25 @@ export async function buildHarness(cfg: WorkerConfig) {
   }
 
   const timing: { firstTokenMs: number | null } = { firstTokenMs: null };
+  let recoverRejectedContext: ((signal?: AbortSignal) => Promise<any[] | null>) | undefined;
 
   const agent = new Agent({
-    streamFn: (m: any, ctx: any, opts: any) =>
-      tapFirstToken(
-        models.streamSimple(m, ctx, opts),
-        (ms) => {
-          if (timing.firstTokenMs === null) timing.firstTokenMs = ms;
+    streamFn: (m: any, ctx: any, opts: any) => {
+      const open = (context: typeof ctx) => tapFirstToken(
+        models.streamSimple(m, context, opts),
+        (ms) => { if (timing.firstTokenMs === null) timing.firstTokenMs = ms; },
+        m, opts?.signal,
+      );
+      return recoverProviderOverflow(
+        open(ctx),
+        async () => {
+          const messages = await recoverRejectedContext?.(opts?.signal);
+          opts?.signal?.throwIfAborted();
+          return messages ? open({ ...ctx, messages }) : null;
         },
-        m,
         opts?.signal,
-      ),
+      );
+    },
     toolExecution: 'sequential',
     initialState: {
       systemPrompt: cfg.systemPrompt,
@@ -1056,12 +1065,18 @@ export async function buildHarness(cfg: WorkerConfig) {
     return { ...override, content };
   };
   const customTransform = agent.transformContext;
+  let activeModelMessages: typeof agent.state.messages | undefined;
+  let recoveredProviderOverflow = false;
+  agent.subscribe(event => {
+    if (event.type === 'agent_start') recoveredProviderOverflow = false;
+  });
   let toolRoundCompaction: ((signal?: AbortSignal) => Promise<void>) | null = null;
   const setToolRoundCompaction = (handler: NonNullable<typeof toolRoundCompaction>) => {
     toolRoundCompaction = handler;
   };
   agent.convertToLlm = async messages => convertToLlm(await attachments.hydrate(messages, agent.signal));
   agent.transformContext = async (messages, signal) => {
+    activeModelMessages = messages;
     let context = compactedModelContext(messages, restoredBranchEntries);
     const latest = context.at(-1);
     if (session && toolRoundCompaction && latest?.role === 'toolResult' &&
@@ -1075,6 +1090,19 @@ export async function buildHarness(cfg: WorkerConfig) {
       context = compactedModelContext(messages, restoredBranchEntries);
     }
     return customTransform ? customTransform(context, signal) : context;
+  };
+  recoverRejectedContext = async signal => {
+    if (!session || !toolRoundCompaction || !activeModelMessages || recoveredProviderOverflow ||
+      !agent.state.messages.some(message => message.role === 'assistant')) return null;
+    signal?.throwIfAborted();
+    recoveredProviderOverflow = true;
+    await persistCurrentMessages();
+    await toolRoundCompaction(signal);
+    signal?.throwIfAborted();
+    activeModelMessages.splice(0, activeModelMessages.length, ...agent.state.messages);
+    const context = compactedModelContext(activeModelMessages, restoredBranchEntries);
+    const transformed = customTransform ? await customTransform(context, signal) : context;
+    return convertToLlm(await attachments.hydrate(transformed, signal));
   };
   let compactionAbort: AbortController | null = null;
   const abortAgent = agent.abort.bind(agent);
@@ -1317,6 +1345,41 @@ let LISTEN_UPTIME_MS: number | null = null;
 let LISTEN_MS: number | null = null;
 
 export async function startWorker(cfg = configFromEnv()) {
+  let handler: RequestListener = (req, res) => {
+    const path = new URL(req.url ?? '/', 'http://worker').pathname;
+    const health = req.method === 'GET' && (path === '/kortix/health' || path === '/health');
+    res.writeHead(health ? 200 : 503, {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+      'x-kortix-boot-phase': 'worker-restoring',
+      connection: 'close',
+    }).end(JSON.stringify(health ? {
+      daemon: 'ok',
+      status: 'starting',
+      runtimeReady: false,
+      workload: 'session',
+      engine: 'pi',
+      boot_phase: 'worker-restoring',
+    } : { error: 'runtime_not_ready' }), () => req.destroy());
+  };
+  const server = createServer((req, res) => handler(req, res));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(cfg.port, '0.0.0.0', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
+  try {
+    return await initializeWorker(cfg, server, (ready) => { handler = ready; });
+  } catch (error) {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw error;
+  }
+}
+
+async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (handler: RequestListener) => void) {
   const {
     agent,
     customAgent,
@@ -2462,7 +2525,7 @@ export async function startWorker(cfg = configFromEnv()) {
       : {};
   };
 
-  const server = createServer(async (req, res) => {
+  activate(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (sessionLog) res.setHeader('x-kortix-prompt-admission', 'durable-message-id-v1');
     if (url.pathname.startsWith('/kortix/part/') && req.method === 'GET') {
@@ -3231,7 +3294,6 @@ export async function startWorker(cfg = configFromEnv()) {
     res.writeHead(404).end();
   });
 
-  await new Promise<void>((r) => server.listen(cfg.port, '0.0.0.0', r));
   LISTEN_UPTIME_MS = vmUptimeMs();
   LISTEN_MS = Date.now() - BOOT_T0;
   const port = (server.address() as any).port;

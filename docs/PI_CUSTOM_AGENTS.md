@@ -282,6 +282,15 @@ and the existing image viewer. Reload and worker replacement preserve the asset
 URLs and exact bytes. Images produced in the worker do not start an environment.
 The native `read` tool reads workspace images through the execution environment.
 
+## Provider context overflow
+
+When an ordinary provider request rejects an existing conversation for context
+overflow, Pi can summarize and retry once per prompt. Recovery preserves completed
+tool results. It does not repeat the prompt or an executed tool. Custom context
+transforms and native image hydration also run for the replacement request.
+Stop cancels recovery. A visible partial response, repeated overflow, unrelated
+provider error, or oversized first input retains an error instead of retrying.
+
 ## Connector and remote MCP tools
 
 Pi exposes `connector_search`, `connector_describe`, and `connector_call` when

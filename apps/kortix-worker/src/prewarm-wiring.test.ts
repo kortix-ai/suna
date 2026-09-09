@@ -6,9 +6,9 @@
  * that was true and none of it mattered, because the call site was wrong:
  *
  *     buildHarness()  — declares `lazy`        (worker.ts:239-456)
- *     startWorker()   — calls `lazy.prewarm()` (worker.ts:463+)
+ *     initializeWorker()   — calls `lazy.prewarm()` (worker.ts:463+)
  *
- * `lazy` is a `const` inside `buildHarness`, so the reference in `startWorker`
+ * `lazy` is a `const` inside `buildHarness`, so the reference in `initializeWorker`
  * is simply not in scope. Every turn on pi.kortix.com answered
  *
  *     event: error
@@ -49,22 +49,22 @@ describe('the prompt-time prewarm is wired to something that exists', () => {
     expect(build).toMatch(/return \{[^}]*\blazy\b/s);
   });
 
-  test('startWorker destructures `lazy` before using it', async () => {
+  test('initializeWorker destructures `lazy` before using it', async () => {
     const source = await workerSource();
-    const start = functionBody(source, 'export async function startWorker');
+    const start = functionBody(source, 'async function initializeWorker');
     expect(start).toContain('lazy.prewarm()');
     const destructure = start.slice(0, start.indexOf('await buildHarness'));
     expect(destructure).toMatch(/\blazy\b/);
   });
 
-  test('every `lazy` reference in startWorker is inside startWorker', async () => {
+  test('every `lazy` reference in initializeWorker is inside initializeWorker', async () => {
     // The general form of the bug: a binding used across a function boundary.
     const source = await workerSource();
     const build = functionBody(source, 'export async function buildHarness');
-    const start = functionBody(source, 'export async function startWorker');
+    const start = functionBody(source, 'async function initializeWorker');
     // The two bodies must not overlap — if they did, this test proves nothing.
     expect(source.indexOf(start)).toBeGreaterThan(source.indexOf(build) + build.length - 1);
-    // And startWorker must bind `lazy` itself rather than borrowing it.
+    // And initializeWorker must bind `lazy` itself rather than borrowing it.
     const bindsOwn = /\blazy\b/.test(start.slice(0, start.indexOf('buildHarness') + 20));
     expect(bindsOwn).toBe(true);
   });

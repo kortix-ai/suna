@@ -67,7 +67,7 @@ extensions. The native Pi lifecycle surface is documented in
 | Capability | Current behavior | Required work |
 |---|---|---|
 | File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, existing-session composer, and atomic first-prompt image admission | Remote attachment conversion and full large-upload provider verification. First-prompt UI and direct session creation pass on preview `d8fa198f49`. Native tool images are verified separately above |
-| Provider context-overflow recovery | Threshold compaction plus bounded segmented recovery when the summarization request exceeds the provider window | Ordinary agent-request overflow and oversized first input remain open; full-size preview proof remains blocked by ingress |
+| Provider context-overflow recovery | Threshold and segmented summary compaction; one ordinary provider rejection can compact and retry before visible output, without repeating completed tools | Ordinary recovery passes real Luna fault injection locally; preview proof and full-size ingress verification remain open. An oversized first input returns the provider error without truncation |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |

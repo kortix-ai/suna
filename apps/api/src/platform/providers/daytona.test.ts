@@ -241,17 +241,19 @@ test('runtime bootstrap probes the configured port through the actual shell comm
   }
 });
 
-test('runtime bootstrap passes one intact detached command to flock when the port is closed', async () => {
+test('runtime bootstrap detaches a worker with the lock descriptor held through its lifetime', async () => {
   const root = await mkdtemp(join(tmpdir(), 'daytona-bootstrap-'));
   const record = join(root, 'flock-args');
   const refRecord = join(root, 'runtime-ref');
+  const launchRecord = join(root, 'launch-args');
   await writeFile(join(root, 'node'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
   await writeFile(join(root, 'flock'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$BOOTSTRAP_RECORD"\nprintf "%s" "$KORTIX_PI_RUNTIME_REF" > "$BOOTSTRAP_REF_RECORD"\n', { mode: 0o755 });
+  await writeFile(join(root, 'setsid'), '#!/bin/sh\ntest -e /dev/fd/9 || exit 70\nprintf "%s\\n" "$@" > "$BOOTSTRAP_LAUNCH_RECORD"\n', { mode: 0o755 });
   getDaytonaSandbox = async () => ({
     process: {
       executeCommand: async (command: string) => {
         const child = Bun.spawn(['/bin/sh', '-c', command], {
-          env: { ...process.env, PATH: root + ':' + process.env.PATH, BOOTSTRAP_RECORD: record, BOOTSTRAP_REF_RECORD: refRecord, KORTIX_PI_RUNTIME_REF: 'main', KORTIX_PI_RUNTIME_SHA: 'a'.repeat(40) },
+          env: { ...process.env, PATH: root + ':' + process.env.PATH, BOOTSTRAP_RECORD: record, BOOTSTRAP_REF_RECORD: refRecord, BOOTSTRAP_LAUNCH_RECORD: launchRecord, KORTIX_PI_RUNTIME_REF: 'main', KORTIX_PI_RUNTIME_SHA: 'a'.repeat(40) },
           stdout: 'pipe',
           stderr: 'pipe',
         });
@@ -270,12 +272,11 @@ test('runtime bootstrap passes one intact detached command to flock when the por
     expect(await readFile(refRecord, 'utf8')).toBe('a'.repeat(40));
     expect((await readFile(record, 'utf8')).split('\n')).toEqual([
       '-n',
-      '/tmp/kortix-pi-worker.lock',
-      '/bin/sh',
-      '-c',
-      'setsid /usr/local/bin/pi-worker-entrypoint >>/tmp/kortix-pi-worker.log 2>&1 &',
+      '9',
       '',
     ]);
+    for (let i = 0; i < 100 && !(await Bun.file(launchRecord).exists()); i++) await Bun.sleep(5);
+    expect(await readFile(launchRecord, 'utf8')).toBe('/usr/local/bin/pi-worker-entrypoint\n');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

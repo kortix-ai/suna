@@ -335,8 +335,10 @@ export class DaytonaProvider implements SandboxProvider {
    * Idempotent by construction:
    *  - the port probe returns early when the runtime is already listening, so
    *    calling this on a healthy box does nothing;
-   *  - `flock -n` means two concurrent wakes cannot launch two workers, and a
-   *    losing caller exits 0 rather than failing the wake.
+   *  - the detached entrypoint inherits the locked descriptor for its lifetime;
+   *    a losing caller exits 0 rather than failing the wake;
+   *  - the worker binds before restoring history, fencing a simultaneous
+   *    provider entrypoint before either process can claim the same turn.
    *
    * `setsid` + full redirection detaches the worker from the exec channel —
    * the entrypoint `exec`s the worker in the FOREGROUND, so without this the
@@ -357,16 +359,19 @@ export class DaytonaProvider implements SandboxProvider {
     // uses node (guaranteed present — it is what the worker runs on) rather
     // than curl, which the pi-worker image does not ship.
     const probe = "require('node:net').connect({port:process.env.PORT,host:'127.0.0.1'}).on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))";
-    const launch = 'setsid /usr/local/bin/pi-worker-entrypoint >>/tmp/kortix-pi-worker.log 2>&1 &';
     const script = [
       'export PORT=${KORTIX_SERVICE_PORT:-8000}',
       'if [ -n "${KORTIX_PI_RUNTIME_SHA:-}" ]; then export KORTIX_PI_RUNTIME_REF=$KORTIX_PI_RUNTIME_SHA; fi',
       `if node -e ${shellQuote(probe)} 2>/dev/null; then`,
       'echo already-listening; exit 0; fi',
-      `flock -n /tmp/kortix-pi-worker.lock /bin/sh -c ${shellQuote(launch)}`,
+      'exec 9>/tmp/kortix-pi-worker.lock',
+      'flock -n 9',
       'launch_status=$?',
       'if [ "$launch_status" -eq 1 ]; then echo lock-held; exit 0; fi',
       'if [ "$launch_status" -ne 0 ]; then exit "$launch_status"; fi',
+      `if node -e ${shellQuote(probe)} 2>/dev/null; then`,
+      'echo already-listening; exit 0; fi',
+      'setsid /usr/local/bin/pi-worker-entrypoint </dev/null 9>&9 >>/tmp/kortix-pi-worker.log 2>&1 &',
       'echo launched',
     ].join('\n');
     const command = `sh -c ${shellQuote(script)}`;

@@ -3833,7 +3833,7 @@ describe("prompt tool controls", () => {
 });
 
 describe('durable context compaction', () => {
-  async function fixture(fullContext = false, turnOwnerLeaseMs = 100) {
+  async function fixture(fullContext = false, turnOwnerLeaseMs = 100, seed = true) {
     const items: SessionLogItem[] = [];
     const config = {
       port: 0,
@@ -3856,7 +3856,7 @@ describe('durable context compaction', () => {
     const compactBody = { providerID: worker.agent.state.model!.provider, modelID: worker.agent.state.model!.id };
     const history = async (target = worker) => (await request(target, `/session/${sessionID}/message`)).json() as Promise<any[]>;
     worker.faux!.setResponses([fauxAssistantMessage('OLD_ASSISTANT_DETAIL')]);
-    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'OLD_USER_DETAIL: remember the launch code cobalt.' }] })).status).toBe(200);
+    if (seed) expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'OLD_USER_DETAIL: remember the launch code cobalt.' }] })).status).toBe(200);
     if (fullContext) {
       for (let index = 0; index < 4; index++) {
         expect((await post(worker, 'message', { noReply: true, parts: [{ type: 'text', text: `ARCHIVE_${index}: ${'data '.repeat(24000)}` }] })).status).toBe(200);
@@ -3882,6 +3882,130 @@ describe('durable context compaction', () => {
     const toolCall = () => fauxAssistantMessage([fauxToolCall('large_result', {})], { stopReason: 'toolUse' });
     return { ...result, toolCall, calls: () => calls };
   }
+
+  test('provider context rejection compacts committed tools once and restores exact history', async () => {
+    const { worker, config, post, history, items } = await fixture();
+    let executions = 0;
+    worker.agent.state.tools.push({
+      name: 'overflow_read', label: 'Read', description: 'Read one fixture.',
+      parameters: { type: 'object', properties: {} } as any,
+      execute: async () => {
+        executions++;
+        return { content: [{ type: 'text', text: 'cobalt read completed' }], details: {} };
+      },
+    });
+    const before = await history();
+    worker.faux!.setResponses([
+      fauxAssistantMessage([fauxToolCall('overflow_read', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'maximum context length is 8192 tokens' }),
+      fauxAssistantMessage('OVERFLOW_SUMMARY: read completed exactly once, report cobalt.'),
+      ctx => {
+        expect(JSON.stringify(ctx.messages)).toContain('OVERFLOW_SUMMARY');
+        return fauxAssistantMessage('Recovered cobalt.');
+      },
+    ]);
+    expect((await post(worker, 'message', { parts: [{ type: 'text', text: 'Read once then report.' }] })).status).toBe(200);
+    expect(executions).toBe(1);
+    expect(items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(1);
+    const after = await history();
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after.at(-1).info.error).toBeUndefined();
+    expect(after.at(-1).parts.some((part: any) => part.text === 'Recovered cobalt.')).toBe(true);
+    await worker.close();
+    const replacement = await startWorker(config);
+    workers.push(replacement);
+    expect(await history(replacement)).toEqual(after);
+    expect(replacement.env.calls).toHaveLength(0);
+  });
+
+  test('provider context recovery is bounded across subsequent tool rounds of one turn', async () => {
+    const { worker, post, history, items } = await fixture();
+    worker.agent.state.tools.push({
+      name: 'overflow_read', label: 'Read', description: 'Read one fixture.',
+      parameters: { type: 'object', properties: {} } as any,
+      execute: async () => ({ content: [{ type: 'text', text: 'cobalt' }], details: {} }),
+    });
+    const overflow = () => fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'maximum context length is 8192 tokens' });
+    worker.faux!.setResponses([
+      overflow(), fauxAssistantMessage('OVERFLOW_SUMMARY'),
+      fauxAssistantMessage([fauxToolCall('overflow_read', {})], { stopReason: 'toolUse' }),
+      overflow(),
+    ]);
+    await post(worker, 'message', { parts: [{ type: 'text', text: 'Read and report.' }] });
+    expect(items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(1);
+    expect((await history()).at(-1).info.error).toBeDefined();
+    expect(worker.faux!.state.callCount).toBe(5);
+    worker.faux!.setResponses([overflow(), fauxAssistantMessage('NEXT_SUMMARY'), fauxAssistantMessage('next prompt recovered')]);
+    await post(worker, 'message', { parts: [{ type: 'text', text: 'Try a new prompt.' }] });
+    expect(items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(2);
+    expect((await history()).at(-1).info.error).toBeUndefined();
+  });
+
+  test('a rejected first input stays intact and does not enter summary recovery', async () => {
+    const { worker, post, history, items } = await fixture(false, 100, false);
+    worker.faux!.setResponses([fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'maximum context length is 8192 tokens' })]);
+    await post(worker, 'message', { parts: [{ type: 'text', text: 'Original first input must remain intact.' }] });
+    const after = await history();
+    expect(after).toHaveLength(2);
+    expect(after[0].parts[0].text).toBe('Original first input must remain intact.');
+    expect(after[1].info.error).toBeDefined();
+    expect(worker.faux!.state.callCount).toBe(1);
+    expect(items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(0);
+  });
+
+  test('Stop during provider context recovery prevents retry and permits the next prompt', async () => {
+    const { worker, post, sessionID, history, items } = await fixture();
+    const entered = deferred();
+    worker.faux!.setResponses([
+      fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'maximum context length is 8192 tokens' }),
+      async (_ctx, options) => {
+        entered.resolve();
+        await new Promise<void>(resolve => {
+          if (options?.signal?.aborted) resolve();
+          else options?.signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        return fauxAssistantMessage('', { stopReason: 'aborted', errorMessage: 'summary stopped' });
+      },
+    ]);
+    const response = post(worker, 'message', { parts: [{ type: 'text', text: 'Recover then wait.' }] });
+    await entered.promise;
+    expect((await request(worker, `/session/${sessionID}/abort`, { method: 'POST' })).status).toBe(200);
+    await response;
+    expect(worker.faux!.state.callCount).toBe(3);
+    expect((await history()).at(-1).info.error).toBeDefined();
+    expect(items.filter((item: any) => item.kind === 'entry' && item.entry.type === 'compaction')).toHaveLength(0);
+    worker.faux!.setResponses([fauxAssistantMessage('NEXT_PROMPT_WORKS')]);
+    await post(worker, 'message', { parts: [{ type: 'text', text: 'Continue without recovery.' }] });
+    expect((await history()).at(-1).info.error).toBeUndefined();
+  });
+
+  test('provider context recovery reapplies the custom context hook to the saved summary', async () => {
+    const globals = globalThis as Record<string, unknown>;
+    const original = globals.__KORTIX_PI_AGENT__;
+    let hooks = 0;
+    globals.__KORTIX_PI_AGENT__ = () => ({
+      transformContext: (messages: any[]) => {
+        hooks++;
+        return [...messages, { role: 'user', content: [{ type: 'text', text: 'CUSTOM_CONTEXT' }], timestamp: 1 }];
+      },
+    });
+    let setup: Awaited<ReturnType<typeof fixture>>;
+    try { setup = await fixture(); } finally { globals.__KORTIX_PI_AGENT__ = original; }
+    const { worker, post, history } = setup;
+    worker.faux!.setResponses([
+      fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'maximum context length is 8192 tokens' }),
+      fauxAssistantMessage('OVERFLOW_SUMMARY'),
+      ctx => {
+        const content = JSON.stringify(ctx.messages);
+        expect(content).toContain('OVERFLOW_SUMMARY');
+        expect(content.match(/CUSTOM_CONTEXT/g)).toHaveLength(1);
+        return fauxAssistantMessage('Custom recovery complete');
+      },
+    ]);
+    await post(worker, 'message', { parts: [{ type: 'text', text: 'Recover with custom behavior.' }] });
+    expect(hooks).toBe(3);
+    expect((await history()).at(-1).info.error).toBeUndefined();
+  });
 
   test('compacts between tool rounds without duplicating tools or removing the visible transcript', async () => {
     const { worker, config, items, post, history, toolCall, calls } = await toolRoundFixture();
