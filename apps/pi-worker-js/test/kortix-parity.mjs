@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=78
+// EXPECTED_PASSES=81
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -374,6 +374,24 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     const b = await r.json();
     check("the spawn bench reports a distribution, not one lucky sample",
       b.n === 3 && typeof b.p50 === "number" && typeof b.min === "number", JSON.stringify(b).slice(0, 140));
+    // THE TWO READINGS MUST ACTUALLY DIFFER, or the decomposition is one
+    // number printed twice. `/ping` answers before init(); `/turns` runs it.
+    // The measured gap between them is the whole cost of a cell having state.
+    const paths = [];
+    const AGENT2 = {
+      idFromName: (nm) => nm,
+      get: () => ({ fetch: async (req) => { paths.push(new URL(req.url).pathname);
+        return new Response("{}", { headers: { "content-type": "application/json" } }); } }),
+    };
+    await worker.fetch(new Request("http://cell/bench/spawn?n=2"), { AGENT: AGENT2 });
+    check("by default the bench stops BEFORE init(), so the reading excludes storage",
+      paths.every((p) => p === "/ping"), paths.join(","));
+    paths.length = 0;
+    const withInit = await worker.fetch(new Request("http://cell/bench/spawn?n=2&to=turns"), { AGENT: AGENT2 });
+    check("and `to=turns` stops at a route that runs init() and reads a table",
+      paths.every((p) => p === "/turns") && paths.length === 2, paths.join(","));
+    check("the answer says which of the two it measured — a number with no path is not a reading",
+      (await withInit.json()).stop === "/turns", "");
     check("and it asked for THREE DIFFERENT isolates — a reused name is not a spawn",
       spawnedNames.size === 3, `${spawnedNames.size} distinct names for n=3`);
   }

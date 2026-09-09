@@ -2031,17 +2031,48 @@ export default {
     // no business shipping. The answer is here.
     if (url.pathname === "/bench/spawn") {
       const n = Math.max(1, Math.min(Number(url.searchParams.get("n") ?? 25), 200));
+      // WHERE THE COLD MILLISECONDS ACTUALLY GO, in two readings over the same
+      // path rather than one number and a story about it.
+      //
+      // `/ping` answers BEFORE init(), so the default reading is isolate +
+      // script evaluation + constructor and NOTHING durable. `?to=turns` stops
+      // instead at a route that runs init() and reads a table, which is the
+      // first thing that can force the object-storage lease and the schema.
+      // Subtracting them is the cost of a cell HAVING state, which is exactly
+      // the thing agentOS's 4.8 ms does not pay for: it has no durable store
+      // per instance, so there is nothing to lease.
+      //
+      // MEASURED 2026-09-09 on a probe box with nothing else on it, 80 cold
+      // spawns each, alternating so drift hit both readings equally:
+      //
+      //                    median of p50s     floor (fastest of 80)
+      //   stop=/ping           122.5 ms            39.5 ms
+      //   stop=/turns           82.0 ms            51.5 ms
+      //
+      // Read the FLOORS. The p50s are inverted — doing strictly more work
+      // cannot be faster — which is itself the result: in the middle of the
+      // distribution, node scheduling dominates and the work does not show.
+      //
+      // THIS CORRECTS THE RECORD. It was written here that the 65-96 ms first
+      // touch is celld's object-storage lease and therefore architectural. The
+      // durable half is ~12 ms of it. The other ~40 ms is celld routing to and
+      // starting an isolate, BEFORE any storage — and it does not move with
+      // the bundle either: a 38% smaller bundle floored at the same 20-35 ms
+      // (see build.mjs). So the cold cost is neither the lease nor the code
+      // size; it is the isolate boundary itself, which is the one thing
+      // agentOS's in-process number never crosses.
+      const stop = url.searchParams.get("to") === "turns" ? "/turns" : "/ping";
       const t = [];
       for (let i = 0; i < n; i++) {
         const name = `bench-${Date.now().toString(36)}-${i}-${Math.random().toString(36).slice(2, 8)}`;
         const t0 = performance.now();
-        await env.AGENT.get(env.AGENT.idFromName(name)).fetch(new Request("http://cell/ping"));
+        await env.AGENT.get(env.AGENT.idFromName(name)).fetch(new Request(`http://cell${stop}`));
         t.push(performance.now() - t0);
       }
       t.sort((a, b) => a - b);
       const at = (q) => Math.round(t[Math.min(t.length - 1, Math.floor(t.length * q))] * 100) / 100;
       return Response.json({
-        n,
+        n, stop,
         p50: at(0.5), p90: at(0.9), p99: at(0.99),
         min: Math.round(t[0] * 100) / 100,
         max: Math.round(t[t.length - 1] * 100) / 100,
