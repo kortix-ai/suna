@@ -50,8 +50,33 @@
  * What is left is roughly 500 ms of forced `git fetch` in session create (see
  * projects/lib/sessions.ts, loadProjectAgents) and the client's own round trips.
  *
+ * TURNED OFF AGAIN ON DEV, 2026-09-09, after a THIRD cross-session defect of
+ * the same shape. Each one is state that was safely per-BOX until a box began
+ * carrying many sessions:
+ *
+ *   1. the transcript root — `GET /session` carries no session, so every
+ *      session adopted the first one's root and they read one conversation
+ *      (fixed: opencode-root-pin.ts);
+ *   2. the session token — `serviceKeyForExternalId` matches on external_id, so
+ *      every session relayed its turn end with the host-creator's token and
+ *      /turn-stream refused it 403 (fixed: serviceKeyForSession);
+ *   3. THE TURN LEDGER — `activeTurns` lives in the sandbox row and is written
+ *      per box. Measured: two different sessions held the byte-identical set of
+ *      five `active` records, including records whose `opencodeSessionId`
+ *      belonged to neither of them, so one session's unfinished turn blocked
+ *      every other session on that box behind `turn_active`. NOT FIXED.
+ *
+ * With the flag off, the same product path is correct and repeatable: three
+ * consecutive prompts on one session answered 42, 56 and 81, and the session
+ * ended with zero active turn records.
+ *
+ * The pattern is worth stating before the next attempt: sharing a box is not a
+ * provisioning change, it is a change to what "this sandbox's state" means.
+ * Anything keyed by `external_id` that describes a SESSION is a bug waiting for
+ * the flag to be turned on. Search for those before enabling it again.
+ *
  * STILL GATED. `KORTIX_CELL_SHARED_HOST_ENABLED` remains off by default and is
- * set only on the dev stack. The reason it was off — "the reaper stops a box
+ * now off on the dev stack too. The reason it was off — "the reaper stops a box
  * when its session is done, and nothing here yet teaches it that a host is
  * shared" — is fixed (projects/reaping/shared-box-stop.ts: a box another ACTIVE
  * session is on is released, not stopped). What is NOT yet done, and what a
