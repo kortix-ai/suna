@@ -1,5 +1,5 @@
 import { turnTargetFor } from '../../projects/turn-target';
-import { addressCellSession, ownRowForCaller, sessionNamedByUrl } from '../address-cell';
+import { addressCellSession, ownRowForCaller, sessionFromReferer, sessionNamedByUrl } from '../address-cell';
 import { soleSessionOfSandbox } from '../backend';
 import { upstreamAnsweredFinally } from '../upstream-final';
 import { Hono } from 'hono';
@@ -864,9 +864,26 @@ export async function forwardToSandbox(
   // the second hung 45 s and never ran. The caller's row is taken only when it
   // sits on the same box the URL named (ownRowForCaller). A session's
   // `sandbox_id` IS its session id, so `loadSandbox` finds it exactly.
+  // The row was chosen EXACTLY — by the URL, by the caller, or by the page —
+  // and then it is the session to address. Only a box-shaped URL from a caller
+  // that names nothing falls back to the sole-session rule further down.
+  let exactSession: string | null = sessionNamedByUrl(sandboxId, record);
   if (access.kind === 'principal' && access.callerSessionId && record.sessionId !== access.callerSessionId) {
     const own = await loadSandbox(access.callerSessionId);
     record = ownRowForCaller(record, own, access.callerSessionId);
+    if (record.sessionId === access.callerSessionId) exactSession = record.sessionId;
+  }
+  // THE PAGE NAMES ITS SESSION when the URL does not: the web app's in-box calls
+  // are box-shaped, and on a runner holding several sessions the row above is
+  // whichever the ordering preferred. Its Referer is the session page. Taken
+  // only when that session's row sits on THIS box — see sessionFromReferer.
+  if (!exactSession) {
+    const hinted = sessionFromReferer(incomingHeaders.get('referer'));
+    if (hinted && hinted !== record.sessionId) {
+      const own = await loadSandbox(hinted);
+      record = ownRowForCaller(record, own, hinted);
+    }
+    if (hinted && record.sessionId === hinted) exactSession = hinted;
   }
   bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
@@ -1220,7 +1237,7 @@ export async function forwardToSandbox(
       // whichever row the ordering preferred, not the page that is open. See
       // ../backend.ts loadSandbox / soleSessionOfSandbox and ../address-cell.ts.
       const addressable =
-        sessionNamedByUrl(sandboxId, record) ??
+        exactSession ??
         (await soleSessionOfSandbox(record.externalId ?? sandboxId));
       const targetUrl = addressCellSession(
         previewUrl.replace(/\/$/, '') + remainingPath + queryString,

@@ -93,3 +93,28 @@ describe("a caller that names its session, on a box that holds many", () => {
     expect(ownRowForCaller(s1, s2, '')).toBe(s1);
   });
 });
+
+import { sessionFromReferer } from './address-cell';
+
+describe('the session the page is on, from the Referer', () => {
+  const sid = '14bc9c57-7700-4f2a-a1c4-8402971511b6';
+
+  test('a session page names its session — the old frontend sends this on every in-box call', () => {
+    expect(sessionFromReferer(`https://pi-js.kortix.com/projects/97a2a697-7389-4270-9665-71c24ab31d09/sessions/${sid}`)).toBe(sid);
+    expect(sessionFromReferer(`https://pi-js.kortix.com/projects/p/sessions/${sid}/`)).toBe(sid);
+    expect(sessionFromReferer(`https://pi-js.kortix.com/projects/p/sessions/${sid}?tab=files`)).toBe(sid);
+  });
+
+  test('anything else names nothing — the older rules decide', () => {
+    expect(sessionFromReferer('https://pi-js.kortix.com/projects/p')).toBeNull();
+    expect(sessionFromReferer('https://pi-js.kortix.com/')).toBeNull();
+    expect(sessionFromReferer('https://pi-js.kortix.com/projects/p/sessions/not-a-uuid')).toBeNull();
+    expect(sessionFromReferer('')).toBeNull();
+    expect(sessionFromReferer(null)).toBeNull();
+    expect(sessionFromReferer('::garbage')).toBeNull();
+  });
+
+  test('the id comes back normalised, so it compares with the row', () => {
+    expect(sessionFromReferer(`https://x.test/projects/p/sessions/${sid.toUpperCase()}`)).toBe(sid);
+  });
+});
