@@ -1,17 +1,37 @@
 // THE DEFAULT PROVIDER SET — the three APIs that cover almost every model
 // anyone actually points an agent at, and nothing else.
 //
-// Measured against the full catalogue: 2051 KB and ~116 ms first-cell cold
-// start, versus 2819 KB and ~127 ms for all 39 providers. That is 768 KB and
-// 11 ms — small enough that `all` is the default and this set is the opt-out,
-// not the other way round. Pick it when bundle size actually matters to you.
+// Re-measured 2026-09-09: 4074 KB against 4842 KB for all 39 providers. The
+// 768 KB gap is real; the absolute numbers that used to be here (2051 / 2819)
+// were two megabytes out of date, and so was the cold-start pair that went
+// with them — a 38% cut measured no faster at all. See build.mjs.
+//
+// `./test/all.sh` had only ever run against `all`, and this set could not run
+// a scripted turn at all — see the eager import below for what was wrong and
+// how it is now pinned.
 //
 // Note what this does NOT cost you: any OpenAI-compatible endpoint — OpenRouter,
 // Groq, DeepSeek, Together, Fireworks, Cerebras, xAI, Azure, a local gateway —
 // already works here by setting `base_url`. The slim set is three APIs, not
 // three vendors.
+// ONE API IMPORTED EAGERLY, and the eagerness is load-bearing.
+//
+// `createAssistantMessageEventStream()` comes from the pi-ai root, but the
+// class it builds is ASSIGNED inside esbuild's lazy initialiser for the
+// event-stream module, and the only callers of that initialiser are API
+// modules. Every entry below defers its module behind `load()`, so on a slim
+// bundle nothing had initialised it by the time the SCRIPTED model — which
+// needs no provider at all — asked for a stream.
+//
+// Measured 2026-09-09: a slim bundle answered a scripted prompt with 200 and
+// wrote NO assistant message, and its cell suite stopped at 21 of 25. The full
+// set only ever worked because one of its 39 providers got there first, which
+// is luck, not design. test/build-and-model.mjs runs a scripted turn on each
+// set now, so this cannot go quiet again.
+import * as openaiCompletions from "@earendil-works/pi-ai/api/openai-completions";
+
 export const PROVIDER_APIS = {
-  openai: { api: "openai-completions", baseUrl: "https://api.openai.com/v1", load: () => import("@earendil-works/pi-ai/api/openai-completions") },
+  openai: { api: "openai-completions", baseUrl: "https://api.openai.com/v1", load: async () => openaiCompletions },
   anthropic: { api: "anthropic-messages", baseUrl: "https://api.anthropic.com", load: () => import("@earendil-works/pi-ai/api/anthropic-messages") },
   google: { api: "google-generative-ai", baseUrl: "https://generativelanguage.googleapis.com", load: () => import("@earendil-works/pi-ai/api/google-generative-ai") },
 };

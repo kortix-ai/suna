@@ -11,7 +11,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=15
+// EXPECTED_PASSES=17
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -102,6 +102,50 @@ const MODEL = { id: "scripted", api: "anthropic-messages", provider: "scripted" 
     check("the two builds differ in size, so the choice is real",
       Math.abs(all.bundle.length - slim.bundle.length) > 100_000,
       `${slim.bundle.length} vs ${all.bundle.length}`);
+
+    // THE SCRIPTED MODEL MUST RUN IN EVERY SET, and under `all` it only does
+    // by luck.
+    //
+    // `createAssistantMessageEventStream()` comes from the pi-ai root, but the
+    // class it builds is ASSIGNED inside esbuild's lazy initialiser for the
+    // event-stream module, and the only callers of that initialiser are API
+    // modules. The scripted model needs the class and needs NO provider, so it
+    // depends entirely on some API module having been initialised first.
+    //
+    // Measured 2026-09-09 while shrinking the provider set to one API: that
+    // last caller became deferred and the fixture died with
+    // "AssistantMessageEventStream is not a constructor" — before any claim,
+    // in six suites at once, on a bundle that was otherwise correct. Nothing
+    // in the sweep named the dependency, so nothing could point at it.
+    //
+    // The first version of this claim read `mod.scriptedStream` and passed
+    // while testing nothing: the bundle exports AgentCell and default, and an
+    // undefined export is not a thrown constructor. It drives a real turn now.
+    for (const set of ["all", "slim"]) {
+      build(set);
+      let answered = null, err = null;
+      try {
+        const mod = await import(`${HERE}../dist/worker.js?scripted-${set}-${Date.now()}`);
+        const { makeCell, installWorkerGlobals } = await import("./cell-harness.mjs");
+        installWorkerGlobals();
+        const h = makeCell(mod.AgentCell, {});
+        const res = await h.fetch("/prompt?c=s", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            text: "go",
+            script: [{ text: "the fixture answered" }],
+          }),
+        });
+        if (res.status !== 200) throw new Error(`prompt answered ${res.status}`);
+        // The route reports counts, not content, so the ANSWER is read back
+        // from the transcript. A turn that threw writes no assistant message,
+        // which is the difference this claim exists to see.
+        const hist = await (await h.fetch("/history?c=s")).json();
+        answered = JSON.stringify(hist).includes("the fixture answered");
+      } catch (e) { err = String(e?.message ?? e); }
+      check(`a '${set}' bundle can run a scripted turn — no provider, no network`,
+        err === null && answered === true, `${set}: err=${err} answered=${answered}`);
+    }
 
     // A typo must not silently pick a set.
     const typo = build("aall");
