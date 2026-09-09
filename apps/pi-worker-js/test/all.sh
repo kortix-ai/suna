@@ -166,6 +166,7 @@ run_suite archive    node test/archive-logic.mjs
 run_suite meter      node test/meter-logic.mjs
 run_suite envplat    node test/execenv-platinum.mjs
 run_suite cellfs     node --experimental-sqlite ./test/cellfs-logic.mjs
+run_suite files      node --experimental-sqlite test/files-logic.mjs
 run_suite e2e        ./test/e2e.sh
 run_suite streaming  ./test/streaming.sh
 run_suite crash      ./test/crash.sh

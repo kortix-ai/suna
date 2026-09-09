@@ -95,7 +95,7 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
       JSON.stringify(back.keys));
     const model = await (await revived.fetch("/model?c=s")).json();
     check("so the rebuilt cell still runs its tools on its own filesystem",
-      model.tools?.backend === "cell" && model.tools?.cwd === "/work",
+      model.tools?.backend === "cell" && model.tools?.cwd === "/workspace",
       JSON.stringify(model.tools));
   }
 
@@ -583,7 +583,7 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     // touch a file (dev 2026-09-07).
     const model = await (await hs.fetch("/model?c=s")).json();
     check("a synced platform session runs its tools on the cell's own filesystem",
-      model.tools?.backend === "cell" && model.tools?.cwd === "/work", JSON.stringify(model.tools));
+      model.tools?.backend === "cell" && model.tools?.cwd === "/workspace", JSON.stringify(model.tools));
   }
 
   check("the worker answers /kortix/health with no session named", r.status === 200 && body.ok === true, JSON.stringify(body));
@@ -841,8 +841,8 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   // With a table and rows, the count is the rows — with no cellFs in sight,
   // which is exactly the state a rebuilt isolate is in.
   cell.sql.exec("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, body TEXT)");
-  cell.sql.exec("INSERT INTO files(path, body) VALUES ('/work/a.txt', 'a')");
-  cell.sql.exec("INSERT INTO files(path, body) VALUES ('/work/b.txt', 'b')");
+  cell.sql.exec("INSERT INTO files(path, body) VALUES ('/workspace/a.txt', 'a')");
+  cell.sql.exec("INSERT INTO files(path, body) VALUES ('/workspace/b.txt', 'b')");
   check("a rebuilt isolate counts the rows that outlived it, without cellFs",
     cell.cellFs === undefined && cell.fileCount() === 2, `cellFs=${cell.cellFs} count=${cell.fileCount()}`);
   const after = await (await h.fetch("/model?c=s")).json();

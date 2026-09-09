@@ -118,7 +118,7 @@ ck "the second answer arrives — the turn ledger really closed" \
 # wrote. This is the agent's actual job and it has never been driven through
 # the public API — only through the cell's own routes with a scripted model.
 NONCE="e2e-$(date +%s)-$$"
-mkprompt "Use the shell to run exactly: mkdir -p /work && printf '%s' '$NONCE' > /work/e2e.txt && echo WROTE. Then reply with only the word: wrote" /tmp/de2e.b3
+mkprompt "Use the shell to run exactly: mkdir -p /workspace && printf '%s' '$NONCE' > /workspace/e2e.txt && echo WROTE. Then reply with only the word: wrote" /tmp/de2e.b3
 TP3=$(ms)
 P3=$(curl -s -m 30 -o /tmp/de2e.p3 -w '%{http_code}' -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/prompts" "${AH[@]}" -d @/tmp/de2e.b3)
 ck "a tool-using prompt is accepted" "$([ "$P3" = 200 ] || [ "$P3" = 202 ] && echo 1 || echo 0)" "http $P3"
@@ -127,7 +127,7 @@ while [ $t -lt 150 ]; do A3=$(ans); printf '%s' "$A3" | grep -qi wrote && break;
 TA3=$(ms)
 ck "the agent ran the shell and said so" "$(printf '%s' "$A3" | grep -qi wrote && echo 1 || echo 0)" "got: $(printf '%s' "$A3" | head -c 70)"
 
-mkprompt "Use the shell to run exactly: cat /work/e2e.txt . Then reply with only what it printed." /tmp/de2e.b4
+mkprompt "Use the shell to run exactly: cat /workspace/e2e.txt . Then reply with only what it printed." /tmp/de2e.b4
 TP4=$(ms)
 curl -s -m 30 -o /dev/null -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/prompts" "${AH[@]}" -d @/tmp/de2e.b4
 t=0; A4=""

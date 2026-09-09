@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TWO SESSIONS IN ONE CELL SANDBOX DO NOT SHARE /work.
+# TWO SESSIONS IN ONE CELL SANDBOX DO NOT SHARE /workspace.
 #
 # celld gives each named isolate its own SQLite, and execenv.cell.js keeps the
 # agent's filesystem there — so isolation is structural. This proves it on the
@@ -52,19 +52,19 @@ def body(cmd, who):
         "TOOLS_BACKEND": "cell"}}
 # A'S FILE IS NAMED AFTER THE NONCE, and B never names it.
 #
-# The first version had A write /work/mine.txt and asserted that B's output did
+# The first version had A write /workspace/mine.txt and asserted that B's output did
 # not contain the string "mine.txt". B's shell said
-# `cat: /work/mine.txt: No such file or directory` — the isolation held, and the
+# `cat: /workspace/mine.txt: No such file or directory` — the isolation held, and the
 # test failed on the error message PROVING it held. A verdict that a correct
 # answer can break is not a verdict.
 #
 # Now the only place the nonce can appear in B's output is if B really saw A's
-# file: B lists /work and cats every .txt in it through a glob, so a miss
+# file: B lists /workspace and cats every .txt in it through a glob, so a miss
 # produces no filename at all.
 open(f"{tmp}/a.json", "w").write(json.dumps(body(
-    f"mkdir -p /work && printf '%s\\n' '{nonce}' > /work/{nonce}.txt && ls /work", "a")))
+    f"mkdir -p /workspace && printf '%s\\n' '{nonce}' > /workspace/{nonce}.txt && ls /workspace", "a")))
 open(f"{tmp}/b.json", "w").write(json.dumps(body(
-    "ls /work; echo ---; cat /work/*.txt 2>/dev/null; echo B-RAN-TO-THE-END", "b")))
+    "ls /workspace; echo ---; cat /workspace/*.txt 2>/dev/null; echo B-RAN-TO-THE-END", "b")))
 PY
 B=$(python3 -c "import json;print(json.dumps({'template':'pt-celld','runtime':'cell','worker':'pi-agent','name':'fsiso-'+__import__('os').environ.get('USER','ci'),'cpu':2,'ram_mb':4096,'expose':[{'port':8080,'public':True}]}))")
 ID=$(curl -s -m 300 "${H[@]}" -X POST "$API/v1/sandboxes?wait_for_state=running&wait_timeout_ms=240000" -d "$B" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')
@@ -95,7 +95,7 @@ except Exception: print(0)')
 #
 # This used to hand back the last three MESSAGES, so "B ran to the end" matched
 # the string inside B's own `echo B-RAN-TO-THE-END` argument, and an earlier
-# "B does not see mine.txt" matched `cat: /work/mine.txt: No such file` — the
+# "B does not see mine.txt" matched `cat: /workspace/mine.txt: No such file` — the
 # error that PROVED isolation held. Both verdicts were reading the question.
 #
 # A replayed result is not evidence either: it is the ledger answering, not the

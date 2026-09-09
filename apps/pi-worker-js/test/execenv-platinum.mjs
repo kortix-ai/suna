@@ -386,7 +386,7 @@ stub.kill();
     req.on("end", () => { res.writeHead(reply.status, { "content-type": "application/json" }); res.end(JSON.stringify(reply.body)); });
   });
   await new Promise((r) => api.listen(0, "127.0.0.1", r));
-  const sick = platinumExecutionEnv({ apiUrl: `http://127.0.0.1:${api.address().port}`, key: "k", sandboxId: "sbx", cwd: "/work" });
+  const sick = platinumExecutionEnv({ apiUrl: `http://127.0.0.1:${api.address().port}`, key: "k", sandboxId: "sbx", cwd: "/workspace" });
 
   reply = { status: 403, body: { error: "forbidden: this API key is scoped to another sandbox", code: "sandbox_scope" } };
   const refused = await sick.exec("echo hi", {});

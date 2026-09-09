@@ -15,7 +15,7 @@ const check = (name, ok, detail = "") => {
 };
 
 {
-  const ctx = { sessionId: "s1", agentName: "kortix", projectId: "p1", provider: "openrouter", modelId: "deepseek-v4-flash", cwd: "/work", createdAt: 1700 };
+  const ctx = { sessionId: "s1", agentName: "kortix", projectId: "p1", provider: "openrouter", modelId: "deepseek-v4-flash", cwd: "/workspace", createdAt: 1700 };
   for (const p of ["/agent", "/command", "/global/config", "/config", "/project/current", "/permission", "/question", "/lsp/diagnostics"]) {
     const a = bootAnswer("GET", p, ctx);
     check(`GET ${p} is answered 200 — the client's boot must not 404`, a?.status === 200, JSON.stringify(a));
@@ -30,7 +30,7 @@ const check = (name, ok, detail = "") => {
     cfg.model === "openrouter/deepseek-v4-flash" && cfg.model.split("/")[0] === "openrouter", JSON.stringify(cfg));
   const proj = bootAnswer("GET", "/project/current", ctx).body;
   check("the project names the workspace the cell's tools run in",
-    proj.id === "p1" && proj.worktree === "/work" && proj.time?.created === 1700, JSON.stringify(proj));
+    proj.id === "p1" && proj.worktree === "/workspace" && proj.time?.created === 1700, JSON.stringify(proj));
   check("permission, question are empty LISTS and diagnostics an OBJECT — the shapes the client iterates",
     Array.isArray(bootAnswer("GET", "/permission", ctx).body) && Array.isArray(bootAnswer("GET", "/question", ctx).body) &&
     !Array.isArray(bootAnswer("GET", "/lsp/diagnostics", ctx).body) && Array.isArray(bootAnswer("GET", "/command", ctx).body), "");

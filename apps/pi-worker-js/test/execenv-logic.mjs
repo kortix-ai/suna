@@ -28,7 +28,7 @@ const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`)
 
 // The opId prefix is the tool call id in the worker; here it only has to be
 // present, because a missing one is refused — the last claim in this file.
-const env = remoteExecutionEnv({ base: `http://127.0.0.1:${PORT}`, token: "env-token", sessionId: "s", cwd: "/work", opId: "call_env" });
+const env = remoteExecutionEnv({ base: `http://127.0.0.1:${PORT}`, token: "env-token", sessionId: "s", cwd: "/workspace", opId: "call_env" });
 const ctx = { env };
 const onDisk = (p) => readFile(`${process.env.WORK_ROOT}/s/${p}`, "utf8");
 
@@ -158,16 +158,16 @@ check("stderr reaches the tool too", JSON.stringify(bfail).includes("to-stderr")
 // edit after a canonicalPath fails.
 {
   await env.writeFile("abs/here.txt", "by relative path\n");
-  const viaAbs = await env.readTextFile("/work/abs/here.txt");
+  const viaAbs = await env.readTextFile("/workspace/abs/here.txt");
   check("an absolute path inside the workspace reads the same file as the relative one",
     viaAbs.ok && viaAbs.value.includes("by relative path"), JSON.stringify(viaAbs).slice(0, 120));
 
-  const w = await env.writeFile("/work/abs/written.txt", "by absolute path\n");
+  const w = await env.writeFile("/workspace/abs/written.txt", "by absolute path\n");
   const back = await env.readTextFile("abs/written.txt");
   check("and a write through an absolute path lands where the relative read finds it",
     w.ok && back.ok && back.value.includes("by absolute path"), JSON.stringify(back).slice(0, 120));
 
-  const info = await env.fileInfo("/work/abs/here.txt");
+  const info = await env.fileInfo("/workspace/abs/here.txt");
   check("fileInfo takes one too — canonicalPath's output goes straight back in",
     info.ok && info.value.kind === "file", JSON.stringify(info).slice(0, 120));
 
@@ -212,7 +212,7 @@ check("stderr reaches the tool too", JSON.stringify(bfail).includes("to-stderr")
   const { createServer } = await import("node:http");
   const broken = createServer((_q, s) => { s.writeHead(500, { "content-type": "text/plain" }); s.end("daemon exploded"); });
   await new Promise((r) => broken.listen(PORT + 40, "127.0.0.1", r));
-  const sick = remoteExecutionEnv({ base: `http://127.0.0.1:${PORT + 40}`, token: "env-token", sessionId: "s", cwd: "/work", opId: "call_sick" });
+  const sick = remoteExecutionEnv({ base: `http://127.0.0.1:${PORT + 40}`, token: "env-token", sessionId: "s", cwd: "/workspace", opId: "call_sick" });
 
   const readRes = await sick.readTextFile("anything");
   check("a 5xx from the daemon is a FileError, not a silent empty read",
@@ -229,7 +229,7 @@ check("stderr reaches the tool too", JSON.stringify(bfail).includes("to-stderr")
 // the first op of every turn shares an id and the daemon answers the later ones
 // from the earlier one's entry. Construction refuses rather than allowing it.
 let threw = "";
-try { remoteExecutionEnv({ base: `http://127.0.0.1:${PORT}`, token: "env-token", sessionId: "s", cwd: "/work" }); }
+try { remoteExecutionEnv({ base: `http://127.0.0.1:${PORT}`, token: "env-token", sessionId: "s", cwd: "/workspace" }); }
 catch (e) { threw = String(e?.message ?? e); }
 check("an env built without an op id prefix is refused, not silently session-scoped",
   /opId/.test(threw), threw || "constructed without complaint");

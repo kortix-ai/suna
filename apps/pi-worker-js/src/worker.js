@@ -44,7 +44,8 @@ globalThis.atob = (input) => {
 };
 
 import { Agent } from "@earendil-works/pi-agent-core";
-import { cellFs, cellShellNote } from "./execenv.cell.js";
+import { CELL_CWD, cellFs, cellShellNote } from "./execenv.cell.js";
+import { filesAnswer } from "./cell-files.js";
 import { executionEnvFor, piTools, piToolsCell, piToolsPlatinum } from "./pitools.js";
 import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
@@ -1827,7 +1828,7 @@ export class AgentCell {
           : (this.cellFs || e.TOOLS_BACKEND === "cell" || normalizeModelEnv(e).MODEL_BASE_URL || e.KORTIX_SESSION_ID)
             // `files` is what is DURABLE — rows in the cell's SQLite — not the
             // in-memory tree, which carries just-bash's 181-path skeleton.
-            ? { backend: "cell", cwd: "/work", files: this.fileCount() }
+            ? { backend: "cell", cwd: CELL_CWD, files: this.fileCount() }
             : { backend: "daemon", url: e.TOOL_DAEMON_URL },
         active: c ? { provider: c.model.provider, id: c.model.id, api: c.model.api, baseUrl: c.model.baseUrl } : "scripted",
         credential: { length: key.length, segments: key.split(".").length, accountIdClaim: claimOk },
@@ -2227,10 +2228,19 @@ export class AgentCell {
         projectId: e.KORTIX_PROJECT_ID,
         provider: resolved?.provider ?? e.MODEL_PROVIDER,
         modelId: resolved?.id ?? e.MODEL_ID,
-        cwd: "/work",
+        cwd: CELL_CWD,
         createdAt: this.sql.exec("SELECT MIN(ts) AS t FROM msgs").toArray()[0]?.t ?? Date.now(),
       });
       if (boot) return Response.json(boot.body, { status: boot.status });
+    }
+    // THE FILES PANEL AND THE FILE VIEWER read the daemon's /file and /find
+    // routes on this origin (cell-files.js). Over the cell's own tree — built
+    // here if no tool has run yet, so a fresh session's empty workspace lists
+    // as empty rather than "unknown route".
+    if (path === "/file" || path.startsWith("/file/") || path === "/find" || path.startsWith("/find/")) {
+      this.cellFs ??= cellFs(this.sql);
+      const answered = await filesAnswer(req, path, url, this.cellFs);
+      if (answered) return answered;
     }
     return Response.json({
       ok: false,

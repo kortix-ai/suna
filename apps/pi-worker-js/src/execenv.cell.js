@@ -15,9 +15,16 @@
 // compiling, docker, GPUs — still escalates to a real sandbox; that is the same
 // line agentOS draws, from the other side.
 import { Bash, InMemoryFs } from "just-bash/browser";
+import { guardedFetch, wgetCommand } from "./cell-net.js";
 import { ExecutionError, FileError, err, ok } from "@earendil-works/pi-agent-core";
 
-export const CELL_CWD = "/work";
+// THE WORKSPACE IS /workspace — the path the Kortix client addresses. The SDK
+// anchors every host path under it (packages/sdk core/files/client.ts) and
+// the daemon serves it, so a cell whose tree lived at /work had files the
+// Files panel could not name. A tree stored under the old root is moved on
+// restore; see cellFs().
+export const CELL_CWD = "/workspace";
+const LEGACY_CWD = "/work";
 const fail = (message, path, code = "unknown") => err(new FileError(code, String(message), path));
 const codeOf = (e) => /ENOENT|not found|no such/i.test(e?.message ?? "") ? "not_found" : /EISDIR|is a directory/i.test(e?.message ?? "") ? "is_directory" : /EEXIST/i.test(e?.message ?? "") ? "exists" : "unknown";
 const b64 = (u8) => btoa(String.fromCharCode(...u8));
@@ -31,11 +38,18 @@ export function cellFs(sql) {
   const boot = (async () => {
     await fs.mkdir(CELL_CWD, { recursive: true });
     for (const r of [...sql.exec("SELECT path, dir, mode, body FROM files ORDER BY path")]) {
-      if (r.dir) { await fs.mkdir(r.path, { recursive: true }); restored.dirs++; }
-      else { await fs.mkdir(r.path.slice(0, r.path.lastIndexOf("/")) || "/", { recursive: true }); await fs.writeFile(r.path, unb64(r.body ?? "")); restored.files++; }
+      // A row from before the move: the same file, under the workspace root.
+      // The old rows go at the next persist (not in the tree → deleted).
+      const path = r.path === LEGACY_CWD ? CELL_CWD : r.path.startsWith(LEGACY_CWD + "/") ? CELL_CWD + r.path.slice(LEGACY_CWD.length) : r.path;
+      if (r.dir) { await fs.mkdir(path, { recursive: true }); restored.dirs++; }
+      else { await fs.mkdir(path.slice(0, path.lastIndexOf("/")) || "/", { recursive: true }); await fs.writeFile(path, unb64(r.body ?? "")); restored.files++; }
     }
   })();
-  const bash = new Bash({ fs, cwd: CELL_CWD, env: { HOME: CELL_CWD, PWD: CELL_CWD } });
+  // Network: curl (just-bash's own, registered by the fetch) and wget, over
+  // the guarded fetch in cell-net.js. The shell's env carries no credential,
+  // so what the model can reach it reaches as an anonymous client.
+  const net = guardedFetch();
+  const bash = new Bash({ fs, cwd: CELL_CWD, env: { HOME: CELL_CWD, PWD: CELL_CWD }, fetch: net, customCommands: [wgetCommand(net)] });
   // Snapshot the whole tree. Rows not in the tree are gone; everything else is
   // upserted. One statement each, inside the one commit the request already pays.
   async function persist() {
@@ -78,17 +92,22 @@ export const CELL_COMMANDS = ["alias", "awk", "base64", "basename", "bash", "cat
 /** The commands a real box has that this shell does not — named, because a
  *  model that is not told will try them and burn a turn on exit 127. */
 export const CELL_MISSING = [
-  "git", "curl", "wget", "ssh", "node", "npm", "pnpm", "yarn", "python", "python3",
+  "git", "ssh", "node", "npm", "pnpm", "yarn", "python", "python3",
   "pip", "docker", "make", "gcc", "apt-get", "tar", "uname",
 ];
+
+/** Network commands, present since 2026-09-10 — named apart because the list
+ *  claim compares `ls /usr/bin`, where a fetch-registered command may not show. */
+export const CELL_NET_COMMANDS = ["curl", "wget"];
 
 export function cellShellNote() {
   return [
     "Your bash tool runs a POSIX shell over this session's own virtual filesystem.",
-    "It is NOT a Linux machine: there is no network, no package manager, and no language runtime.",
+    "It is NOT a Linux machine: there is no package manager and no language runtime.",
     `These do not exist — never call them and never propose a plan that needs them: ${CELL_MISSING.join(", ")}.`,
     "",
-    `The ${CELL_COMMANDS.length} commands you DO have: ${CELL_COMMANDS.join(", ")}.`,
+    `Network: ${CELL_NET_COMMANDS.join(" and ")} work over HTTP(S) (GET, POST, headers, -o files, -L redirects); internal and private addresses are refused.`,
+    `The ${CELL_COMMANDS.length} other commands you have: ${CELL_COMMANDS.join(", ")}.`,
     "",
     `Your working directory is ${CELL_CWD}, and it persists between turns: a file you write now is`,
     "still there in the next message. Use the write and read tools for file contents, grep/rg/find to",

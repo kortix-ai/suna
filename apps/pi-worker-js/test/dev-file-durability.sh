@@ -30,7 +30,7 @@ import json, sys
 nonce = sys.argv[1]
 print(json.dumps({"env": {"TOOLS_BACKEND": "cell", "SCRIPT": json.dumps([
   {"tool": "bash", "id": nonce + "-w",
-   "args": {"command": "mkdir -p /work && printf '%s\n' '" + nonce + "' > /work/" + nonce + ".txt && ls /work"}},
+   "args": {"command": "mkdir -p /workspace && printf '%s\n' '" + nonce + "' > /workspace/" + nonce + ".txt && ls /workspace"}},
   {"text": "written"}])}}))
 PY
 curl -s -m 30 -o /dev/null "$U/kortix/env?c=$C" -X POST -H 'content-type: application/json' -d @/tmp/fd.json
@@ -59,7 +59,7 @@ python3 - "$NONCE" > /tmp/fd2.json <<'PY'
 import json, sys
 nonce = sys.argv[1]
 print(json.dumps({"env": {"TOOLS_BACKEND": "cell", "SCRIPT": json.dumps([
-  {"tool": "bash", "id": nonce + "-r", "args": {"command": "cat /work/" + nonce + ".txt"}},
+  {"tool": "bash", "id": nonce + "-r", "args": {"command": "cat /workspace/" + nonce + ".txt"}},
   {"text": "read"}])}}))
 PY
 curl -s -m 30 -o /dev/null "$U/kortix/env?c=$C" -X POST -H 'content-type: application/json' -d @/tmp/fd2.json

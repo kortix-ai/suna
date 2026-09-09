@@ -48,7 +48,7 @@ import json, sys
 n = sys.argv[1]
 print(json.dumps({"env": {"TOOLS_BACKEND": "cell", "SCRIPT": json.dumps([
   {"tool": "bash", "id": n + "-w",
-   "args": {"command": "mkdir -p /work && printf '%s\n' '" + n + "' > /work/" + n + ".txt && ls /work"}},
+   "args": {"command": "mkdir -p /workspace && printf '%s\n' '" + n + "' > /workspace/" + n + ".txt && ls /workspace"}},
   {"text": "written"}])}}))
 PY
 curl -s -m 30 -o /dev/null "$UA/kortix/env?c=$C" -X POST -H 'content-type: application/json' -d @/tmp/bl.json
@@ -81,7 +81,7 @@ python3 - "$NONCE" > /tmp/bl2.json <<'PY'
 import json, sys
 n = sys.argv[1]
 print(json.dumps({"env": {"TOOLS_BACKEND": "cell", "SCRIPT": json.dumps([
-  {"tool": "bash", "id": n + "-r", "args": {"command": "cat /work/" + n + ".txt"}},
+  {"tool": "bash", "id": n + "-r", "args": {"command": "cat /workspace/" + n + ".txt"}},
   {"text": "read"}])}}))
 PY
 curl -s -m 30 -o /dev/null "$UB/kortix/env?c=$C" -X POST -H 'content-type: application/json' -d @/tmp/bl2.json

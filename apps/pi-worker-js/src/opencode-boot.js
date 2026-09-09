@@ -74,7 +74,7 @@ export function bootAnswer(method, path, ctx = {}) {
         status: 200,
         body: {
           id: String(ctx.projectId || sessionId || "cell"),
-          worktree: String(ctx.cwd || "/work"),
+          worktree: String(ctx.cwd || "/workspace"),
           time: { created: Number(ctx.createdAt) || 0 },
         },
       };
