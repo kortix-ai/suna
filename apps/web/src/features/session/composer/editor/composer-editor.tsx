@@ -116,7 +116,7 @@ export interface ComposerEditorProps {
   placeholder: string;
   disabled?: boolean;
   autoFocus?: boolean;
-  onSubmit: () => void;
+  onSubmit: (intent: ComposerSubmitIntent) => void;
   /**
    * Fires ONLY on the empty↔non-empty boundary — once when the first character
    * is typed, once when the last is deleted, never in between. This is the
@@ -252,10 +252,32 @@ export function createUpdateHandler(
 }
 
 /**
- * Enter submits, Shift+Enter inserts a newline — the composer's only custom
- * keymap behaviour. Exported (same reasoning as `trackEmptyBoundary`) so
- * it's directly testable without a DOM: it never touches `view`, only the
- * event and the two live callbacks it's given.
+ * What the user meant by pressing the key they pressed.
+ *
+ * `run` (Enter) — send it now. It NEVER interrupts: with a turn already
+ * running the server holds the prompt (`admitInboxPrompt` refuses with
+ * `turn_active`) and it goes out the moment that turn ends. "The host stops the
+ * turn, then sends" describes a build that was deleted — see `send-intent.ts`.
+ * `queue` (Cmd/Ctrl+Enter) — PARK it. The row is born held and waits in the
+ * composer's list until the user releases it; it never runs on its own.
+ *
+ * The intent is decided HERE, on the keypress, because this is the only place
+ * that can see which key was actually pressed. Everything downstream takes it
+ * as an argument instead of re-deriving it from whether the session happens to
+ * be busy — that derivation is why "send" and "queue" were indistinguishable,
+ * and why the composer could not offer the user a choice between them.
+ */
+export type ComposerSubmitIntent = 'run' | 'queue';
+
+/**
+ * Enter runs, Cmd/Ctrl+Enter queues, Shift+Enter inserts a newline — the
+ * composer's only custom keymap behaviour. Exported (same reasoning as
+ * `trackEmptyBoundary`) so it's directly testable without a DOM: it never
+ * touches `view`, only the event and the two live callbacks it's given.
+ *
+ * Shift wins over the modifiers: Shift+Cmd+Enter is a newline, not a queued
+ * submit. A newline is the non-destructive reading, and it is the one the
+ * user's fingers already expect from every other composer.
  *
  * `isDisabled()` is a getter, not a boolean, because `editable={false}`
  * alone does NOT stop this from firing (fix round 1, Important 1):
@@ -266,14 +288,14 @@ export function createUpdateHandler(
  * submitting.
  */
 export function createSubmitOnEnterHandler(
-  onSubmit: () => void,
+  onSubmit: (intent: ComposerSubmitIntent) => void,
   isDisabled: () => boolean,
 ): (view: EditorView, event: KeyboardEvent) => boolean {
   return (_view, event) => {
     if (isDisabled()) return false;
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      onSubmit();
+      onSubmit(event.metaKey || event.ctrlKey ? 'queue' : 'run');
       return true;
     }
     return false;
@@ -529,7 +551,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     const handleKeyDown = useMemo(
       () =>
         createSubmitOnEnterHandler(
-          () => onSubmitRef.current(),
+          (intent) => onSubmitRef.current(intent),
           () => disabledRef.current || mentionOwnsEnterRef.current || slashOwnsEnterRef.current,
         ),
       [],

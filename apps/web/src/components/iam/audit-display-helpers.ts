@@ -115,6 +115,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
     'Retried a queued session prompt',
   'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold':
     'Held or released the session prompt queue',
+  'POST /v1/projects/:projectId/sessions/:sessionId/prompts/reorder':
+    'Reordered the session prompt queue',
   // The park-and-restore pair (`r4.ts`): a parked session's `question` tool
   // survives past its sandbox (`lib/pending-questions.ts`); GET reads the one
   // still waiting on a human, POST answers it as a follow-up turn. Reads

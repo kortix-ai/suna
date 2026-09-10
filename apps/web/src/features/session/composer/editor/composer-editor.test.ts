@@ -208,11 +208,16 @@ describe('trackEmptyBoundary — fires ONLY on the empty<->non-empty boundary', 
  * above.
  */
 describe('createSubmitOnEnterHandler', () => {
-  function fakeEvent(key: string, shiftKey = false) {
+  function fakeEvent(
+    key: string,
+    modifiers: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean } = {},
+  ) {
     let prevented = false;
     const event = {
       key,
-      shiftKey,
+      shiftKey: modifiers.shiftKey ?? false,
+      metaKey: modifiers.metaKey ?? false,
+      ctrlKey: modifiers.ctrlKey ?? false,
       preventDefault: () => (prevented = true),
     } as unknown as KeyboardEvent;
     return { event, wasPrevented: () => prevented };
@@ -257,13 +262,89 @@ describe('createSubmitOnEnterHandler', () => {
       () => submitted++,
       () => false,
     );
-    const { event, wasPrevented } = fakeEvent('Enter', true);
+    const { event, wasPrevented } = fakeEvent('Enter', { shiftKey: true });
 
     const handled = handler(null as unknown as EditorView, event);
 
     expect(submitted).toBe(0);
     expect(wasPrevented()).toBe(false);
     expect(handled).toBe(false);
+  });
+
+  /**
+   * TWO INTENTS, ONE KEY AWAY.
+   *
+   * Enter means "get the agent working on this now" — when a turn is already
+   * running that is an INTERRUPT, and the host stops the turn before sending.
+   * Cmd/Ctrl+Enter means "put this in the queue" and never interrupts anything.
+   *
+   * The distinction lives here, on the keypress, because it is the only place
+   * that can see which key the user actually pressed. Everything downstream
+   * takes it as an argument rather than re-deriving it from whether the session
+   * happens to be busy — which is what made the two cases indistinguishable.
+   */
+  test('Enter carries the RUN intent', () => {
+    const intents: string[] = [];
+    const handler = createSubmitOnEnterHandler(
+      (intent) => intents.push(intent),
+      () => false,
+    );
+    const { event, wasPrevented } = fakeEvent('Enter');
+
+    expect(handler(null as unknown as EditorView, event)).toBe(true);
+    expect(intents).toEqual(['run']);
+    expect(wasPrevented()).toBe(true);
+  });
+
+  test('Cmd+Enter carries the QUEUE intent', () => {
+    const intents: string[] = [];
+    const handler = createSubmitOnEnterHandler(
+      (intent) => intents.push(intent),
+      () => false,
+    );
+    const { event, wasPrevented } = fakeEvent('Enter', { metaKey: true });
+
+    expect(handler(null as unknown as EditorView, event)).toBe(true);
+    expect(intents).toEqual(['queue']);
+    expect(wasPrevented()).toBe(true);
+  });
+
+  test('Ctrl+Enter carries the QUEUE intent too — the same key on a PC', () => {
+    const intents: string[] = [];
+    const handler = createSubmitOnEnterHandler(
+      (intent) => intents.push(intent),
+      () => false,
+    );
+    const { event } = fakeEvent('Enter', { ctrlKey: true });
+
+    expect(handler(null as unknown as EditorView, event)).toBe(true);
+    expect(intents).toEqual(['queue']);
+  });
+
+  /** Shift+Enter is a newline and stays one, with or without a modifier. */
+  test('Shift+Cmd+Enter is still a newline, never a submit', () => {
+    let submitted = 0;
+    const handler = createSubmitOnEnterHandler(
+      () => submitted++,
+      () => false,
+    );
+    const { event, wasPrevented } = fakeEvent('Enter', { shiftKey: true, metaKey: true });
+
+    expect(handler(null as unknown as EditorView, event)).toBe(false);
+    expect(submitted).toBe(0);
+    expect(wasPrevented()).toBe(false);
+  });
+
+  test('a disabled composer refuses the queue intent as well as the run one', () => {
+    let submitted = 0;
+    const handler = createSubmitOnEnterHandler(
+      () => submitted++,
+      () => true,
+    );
+    const { event } = fakeEvent('Enter', { metaKey: true });
+
+    expect(handler(null as unknown as EditorView, event)).toBe(false);
+    expect(submitted).toBe(0);
   });
 
   test('any other key is a no-op regardless of disabled state', () => {

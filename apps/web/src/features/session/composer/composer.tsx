@@ -71,6 +71,7 @@ import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, localizedSlashActions, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
 import { createSubmitLatch } from './submit-latch';
+import type { ComposerSubmitIntent } from './editor/composer-editor';
 import type { AttachedFile, TrackedMention } from './types';
 
 /** A draft captured out of the editor at Enter time — see `createSubmitLatch`. */
@@ -85,6 +86,14 @@ export interface SessionChatInputProps {
     text: string,
     files?: AttachedFile[],
     mentions?: TrackedMention[],
+    /**
+     * What the keypress meant. `run` (Enter) sends it, and it runs when the
+     * current turn ends — it never interrupts one. `queue` (Cmd/Ctrl+Enter)
+     * PARKS it in the composer's list, held until the user releases it.
+     * Defaults to `run` for the callers that are not a keypress (the send
+     * button, the question-answer path).
+     */
+    intent?: ComposerSubmitIntent,
   ) => void | Promise<void>;
   isBusy?: boolean;
   /**
@@ -219,6 +228,17 @@ export interface SessionChatInputProps {
    * So the holder waits to be told, rather than assuming.
    */
   onPrefillApplied?: (prefillId: number) => void;
+  /**
+   * ArrowUp on an EMPTY composer, with nothing attached — the shell gesture for
+   * "give me back the last thing I sent".
+   *
+   * The host owns what that means (it pulls the last parked row out of the
+   * queue and hands the text back through `prefill`), so this returns whether
+   * it took the keypress. `false` leaves ArrowUp to the editor, which is what
+   * an empty composer with an empty queue must keep: caret motion, and the
+   * browser's own scroll.
+   */
+  onEmptyArrowUp?: () => boolean;
   /**
    * A fresh (never-before-seen) value asks the composer to open its attach
    * (file-picker) flow — the empty Context card's "Add context" button.
@@ -427,6 +447,7 @@ function ComposerImpl({
   placeholder = 'Ask anything…',
   prefill = null,
   onPrefillApplied,
+  onEmptyArrowUp,
   attachRequestId = null,
   providers,
   threadContext,
@@ -665,6 +686,14 @@ function ComposerImpl({
     NO_COMMAND_CHIP,
   );
 
+  // Through a ref: the host re-creates this callback whenever the queue
+  // changes, and a dependency on it would tear down and re-add the keydown
+  // listener on every one of those renders.
+  const onEmptyArrowUpRef = useRef(onEmptyArrowUp);
+  useEffect(() => {
+    onEmptyArrowUpRef.current = onEmptyArrowUp;
+  }, [onEmptyArrowUp]);
+
   const cycleAgent = useCallback((): boolean => {
     if (primaryAgents.length <= 1 || !onAgentChange || agentSelectorLocked) return false;
     const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
@@ -683,10 +712,30 @@ function ComposerImpl({
       if (e.key === 'Tab' && !e.defaultPrevented) {
         if (cycleAgent()) e.preventDefault();
       }
+      // ARROW-UP RECALL — only on a composer with nothing in it at all.
+      //
+      // `defaultPrevented` first: an open mention/command menu steers itself
+      // with the arrow keys, and stealing the key there would swap the
+      // highlighted suggestion for the user's last queued message. Attachments
+      // count as content — a file staged against an empty line is a draft, and
+      // dropping a recalled prompt on top of it would silently attach the
+      // files to the wrong message.
+      if (
+        e.key === 'ArrowUp' &&
+        !e.defaultPrevented &&
+        !e.shiftKey &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        attachedFiles.length === 0 &&
+        editorRef.current?.isEmpty() === true
+      ) {
+        if (onEmptyArrowUpRef.current?.()) e.preventDefault();
+      }
     };
     editorElement.addEventListener('keydown', onKeyDown);
     return () => editorElement.removeEventListener('keydown', onKeyDown);
-  }, [editorElement, cycleAgent]);
+  }, [editorElement, cycleAgent, attachedFiles.length]);
 
   useEffect(() => {
     if (!editorElement) return;
@@ -1024,7 +1073,7 @@ function ComposerImpl({
   );
 
   const dispatchSubmission = useCallback(
-    async (stash?: StashedDraft) => {
+    async (stash?: StashedDraft, intent: ComposerSubmitIntent = 'run') => {
       // Ahead of the model check: with no agent to run it, the model this prompt
       // would have used is not the user's problem.
       if (agentUnavailable) {
@@ -1170,7 +1219,7 @@ function ComposerImpl({
       }
 
       try {
-        await onSend(trimmed, filesToSend, mentionsToSend);
+        await onSend(trimmed, filesToSend, mentionsToSend, intent);
         for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
         // AFTER the await, so a send that throws keeps its draft. Explicit,
         // NOT derived from `reset.clear`: the project-home composer passes
@@ -1251,12 +1300,12 @@ function ComposerImpl({
   useEffect(() => {
     dispatchSubmissionRef.current = dispatchSubmission;
   });
-  const submitLatchRef = useRef<(() => Promise<void>) | null>(null);
-  const handleSubmit = useCallback(() => {
+  const submitLatchRef = useRef<((intent: ComposerSubmitIntent) => Promise<void>) | null>(null);
+  const handleSubmit = useCallback((intent: ComposerSubmitIntent = 'run') => {
     // Lazy-created at the first submit (never during render, which the
     // compiler's ref rules forbid) and reused forever after.
-    submitLatchRef.current ??= createSubmitLatch<StashedDraft>(
-      (stash) => dispatchSubmissionRef.current(stash),
+    submitLatchRef.current ??= createSubmitLatch<StashedDraft, ComposerSubmitIntent>(
+      (stash, stashedIntent) => dispatchSubmissionRef.current(stash, stashedIntent),
       // Typed text is what marks a re-entrant submit as a distinct message
       // worth stashing; a double-fire arrives with the editor already
       // cleared. The stash takes the draft OUT of the editor right now — the
@@ -1276,7 +1325,7 @@ function ComposerImpl({
         return { content, doc, files };
       },
     );
-    return submitLatchRef.current();
+    return submitLatchRef.current(intent);
   }, []);
 
   const editorPlaceholder = resolveEditorPlaceholder({

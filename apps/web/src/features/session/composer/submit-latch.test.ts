@@ -163,3 +163,81 @@ describe('createSubmitLatch', () => {
     d.settle(2);
   });
 });
+
+/**
+ * THE INTENT RIDES WITH THE DRAFT.
+ *
+ * Enter runs the prompt (interrupting a live turn if there is one); Cmd+Enter
+ * queues it. A prompt typed during a slow send is STASHED and dispatched later
+ * — so the intent has to be stashed with it. Carrying only the latest intent,
+ * or re-deriving it at dispatch time from whether the session is busy, turns a
+ * deliberate Cmd+Enter into an interrupt one keystroke after the user chose not
+ * to interrupt.
+ */
+describe('createSubmitLatch carries the submit intent', () => {
+  test('a direct submit hands its intent to the dispatch', async () => {
+    const seen: unknown[] = [];
+    const submit = createSubmitLatch<string, string>(
+      async (draft, intent) => void seen.push([draft, intent]),
+      () => null,
+    );
+    await submit('queue');
+    expect(seen).toEqual([[undefined, 'queue']]);
+  });
+
+  test('each stashed draft keeps the intent it was typed with', async () => {
+    const seen: Array<[unknown, unknown]> = [];
+    let settle!: () => void;
+    const gate = new Promise<void>((resolve) => (settle = resolve));
+    let first = true;
+    let n = 0;
+    const submit = createSubmitLatch<string, string>(
+      async (draft, intent) => {
+        seen.push([draft, intent]);
+        if (first) {
+          first = false;
+          await gate;
+        }
+      },
+      () => `draft-${++n}`,
+    );
+
+    void submit('run'); // in flight, holds the latch
+    void submit('queue'); // stashed, must stay 'queue'
+    void submit('run'); // stashed, must stay 'run'
+    settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen).toEqual([
+      [undefined, 'run'],
+      ['draft-1', 'queue'],
+      ['draft-2', 'run'],
+    ]);
+  });
+
+  test('the stash capture is told which intent it is capturing', async () => {
+    const intents: unknown[] = [];
+    let settle!: () => void;
+    const gate = new Promise<void>((resolve) => (settle = resolve));
+    let first = true;
+    const submit = createSubmitLatch<string, string>(
+      async () => {
+        if (first) {
+          first = false;
+          await gate;
+        }
+      },
+      (intent) => {
+        intents.push(intent);
+        return 'draft';
+      },
+    );
+
+    void submit('run');
+    void submit('queue');
+    settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(intents).toEqual(['queue']);
+  });
+});

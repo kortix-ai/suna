@@ -37,8 +37,45 @@ export interface QueueProjection {
   /** Which of `queued` are on the wire: rendered, but not editable, not
    *  removable, not reorderable. */
   inFlightIds: string[];
-  /** The queue is held by a stop — see `holdSessionPrompts`. */
+  /** The queue is held by a stop or by a failed turn — see `holdSessionPrompts`. */
   held: boolean;
+}
+
+/**
+ * IS THIS ROW ALREADY ON SCREEN AS A MESSAGE?
+ *
+ * The one rule, for every reader. It used to be written out twice, with two
+ * different answers: this file matched all three ids, while
+ * `queuedSyntheticMessages` in `session-chat.tsx` — the reader that actually
+ * paints the bubbles — matched only `message_id` and `wire_message_id`. The
+ * case the third clause exists for therefore still drew a duplicate.
+ *
+ * ANY of the prompt's ids counts, because a prompt has three and which ones
+ * agree changes with time:
+ *
+ *  - `message_id` moves to the server's re-minted id the moment the drain
+ *    places the prompt — before the runtime echoes it, and before the store can
+ *    alias the echo back.
+ *  - `wire_message_id` is the id THIS tab painted its bubble under, which the
+ *    re-mint leaves behind.
+ *  - `client_message_id` is the only one that survives BOTH a re-mint and a
+ *    reload: the two wire ids can be re-minted out from under a stuck row, and
+ *    a hard refresh drops the store's in-memory echo alias. It is what stops
+ *    the "Queued" badge outliving a refresh with its reply already on screen.
+ *
+ * Effective only where the caller's id set carries the same ids — see
+ * `transcriptClaimedIds`.
+ */
+export function promptIsOnScreen(
+  prompt: Pick<SessionPrompt, 'message_id' | 'wire_message_id' | 'client_message_id'>,
+  transcriptMessageIds?: ReadonlySet<string>,
+): boolean {
+  if (!transcriptMessageIds) return false;
+  return (
+    (!!prompt.message_id && transcriptMessageIds.has(prompt.message_id)) ||
+    (!!prompt.wire_message_id && transcriptMessageIds.has(prompt.wire_message_id)) ||
+    (!!prompt.client_message_id && transcriptMessageIds.has(prompt.client_message_id))
+  );
 }
 
 export function projectQueueRows(input: {
@@ -80,7 +117,25 @@ export function projectQueueRows(input: {
           }
         : {}),
     };
-    if (prompt.reason === 'held') held = true;
+    // HELD BY THE STOP BUTTON, not by the user parking this one row.
+    //
+    // Cmd/Ctrl+Enter parks a prompt by holding it server-side — the same
+    // mechanism, because "not due until the user says" is what both mean. So a
+    // parked row also arrives as `reason: 'held'`, and reading that field alone
+    // lit the "Queue paused — Resume" banner and dimmed the whole list the
+    // first time anyone parked a prompt on an idle session.
+    //
+    // `stop_held` is the server saying which hold this is, and it is why the
+    // `queued_by_user` clause below is no longer the whole answer. That clause
+    // alone made a Stop INVISIBLE on a queue of nothing but parked rows — the
+    // feature's normal state: `paused` never lit, no Resume was offered, and
+    // the header went on promising "runs after this turn". Both directions
+    // matter, so both are tested: a parked row on its own is not a stop, and a
+    // stop is a stop even when every row is parked.
+    //
+    // The second clause still stands for a server older than `stop_held`.
+    if (prompt.stop_held === true) held = true;
+    else if (prompt.reason === 'held' && !prompt.queued_by_user) held = true;
     if (prompt.state === 'failed') {
       failed.push(row);
       continue;
@@ -91,27 +146,8 @@ export function projectQueueRows(input: {
     // runtime echoes it. The transcript wins; this list is for what is NOT in
     // it yet. A HELD row in the transcript is no exception any more: its
     // controls live in the bubble's own meta row (`QueuedPromptControls`).
-    // ANY of the prompt's ids counts: `message_id` moves to the server's
-    // re-minted id the moment the drain places the prompt — before the
-    // runtime echoes it and before the store can alias the echo back — while
-    // the bubble this tab painted still carries `wire_message_id`. Matching
-    // only `message_id` drew the row beside its own bubble for that window.
-    //
-    // `client_message_id` is the THIRD, and it is the only one that survives
-    // BOTH a re-mint and a reload: the two wire ids can be re-minted out from
-    // under a stuck row, and a hard refresh drops the store's in-memory
-    // `message_id`->bubble alias. When a wire-id divergence leaves the answer
-    // on screen under an id the row no longer reports, the stable client id is
-    // what still hides the row — so the "Queued" badge cannot survive a
-    // refresh with its reply already visible. Effective only where the
-    // transcript id set carries the client id.
-    if (
-      (prompt.message_id && input.transcriptMessageIds?.has(prompt.message_id)) ||
-      (prompt.wire_message_id && input.transcriptMessageIds?.has(prompt.wire_message_id)) ||
-      (prompt.client_message_id && input.transcriptMessageIds?.has(prompt.client_message_id))
-    ) {
-      continue;
-    }
+    // Which ids count, and why all three: `promptIsOnScreen`.
+    if (promptIsOnScreen(prompt, input.transcriptMessageIds)) continue;
     // A DELIVERING row is a queue row too. The server forwards a prompt typed
     // mid-turn within seconds, and it then reads `delivering` for the whole of
     // the turn in front of it — minutes, and the p99 turn is over an hour.
@@ -131,4 +167,28 @@ export function projectQueueRows(input: {
   }
 
   return { queued, failed, inFlightIds, held };
+}
+
+/**
+ * HOW MANY PROMPTS AN ERROR HALT HAS TO PROTECT — every lane, not one.
+ *
+ * When a turn ends in failure the client holds the inbox, so the next prompt
+ * cannot be answered by the same broken session. That gate used to count the
+ * PARKED rows only (`queued_by_user`), which left the other lane unguarded: a
+ * turn that errored with ordinary Enter-queued rows behind it held nothing, and
+ * they drained straight into the failure at the next boundary. Nothing on the
+ * server catches it either — `turnCompletionAllowsQueuePromotion` passes on
+ * `closed`, and an errored turn is closed.
+ *
+ * Both lanes are the same durable rows. Only where the user watches them wait
+ * differs, and that is not a reason to protect one of them and not the other.
+ *
+ * `failed` rows are excluded: a row that has given up is not going anywhere on
+ * its own and carries its own retry. Deliberately NOT `countLiveInboxPrompts`,
+ * which drops held rows — a parked row is exactly what the halt is protecting.
+ */
+export function countHaltableInboxPrompts(prompts: readonly SessionPrompt[]): number {
+  let live = 0;
+  for (const prompt of prompts) if (prompt.state !== 'failed') live += 1;
+  return live;
 }

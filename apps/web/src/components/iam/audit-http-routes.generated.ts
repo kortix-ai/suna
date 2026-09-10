@@ -519,6 +519,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|sessions|:sessionId|prompts|:promptId",
   "POST|v1|projects|:projectId|sessions|:sessionId|prompts|:promptId|retry",
   "POST|v1|projects|:projectId|sessions|:sessionId|prompts|hold",
+  "POST|v1|projects|:projectId|sessions|:sessionId|prompts|reorder",
   "GET|v1|projects|:projectId|sessions|:sessionId|public-shares",
   "POST|v1|projects|:projectId|sessions|:sessionId|public-shares",
   "DELETE|v1|projects|:projectId|sessions|:sessionId|public-shares|:shareId",

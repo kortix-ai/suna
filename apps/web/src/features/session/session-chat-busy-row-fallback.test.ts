@@ -27,6 +27,9 @@ function between(source: string, start: string, end: string): string {
  * recording that was ~11s on a new session's first prompt and ~1s on the
  * second: the session read as INACTIVE with the user's prompt in flight.
  */
+/** Collapse every run of whitespace, so an assertion survives a re-wrap. */
+const squash = (text: string) => text.replace(/\s+/g, ' ').trim();
+
 describe('the waiting row has a fallback when no turn owns it', () => {
   test('the fallback knows exactly when a turn is drawing the row itself', () => {
     expect(chat).toContain(
@@ -45,8 +48,15 @@ describe('the waiting row has a fallback when no turn owns it', () => {
 
   test('it never stacks with the boot stand-in, which draws its own row', () => {
     const row = between(chat, '{isBusy &&\n                      !someTurnDrawsBusyRow', '/>\n                      )}');
-    expect(row).toContain(
-      '!(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0)',
+    // WHITESPACE-INSENSITIVE on purpose. This asserted the exact one-line form
+    // of the condition and broke the day a formatter wrapped it across six
+    // lines — with the logic byte-identical. The invariant is which terms gate
+    // the row, not how they are laid out; pinning the layout only teaches the
+    // next reader to re-record the string.
+    expect(squash(row)).toContain(
+      squash(
+        '!( showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0 )',
+      ),
     );
     // The stand-in's own gate is unchanged — it is the one that decides
     // whether the boot row is on screen at all.

@@ -49,6 +49,23 @@ describe('restoreQueuedMessage', () => {
     expect(restoreQueuedMessage(removed(), () => 'msg_fresh').messageId).toBe('msg_fresh');
   });
 
+  test('restores a PARKED prompt as parked, not as an auto-dispatching one', () => {
+    // The row the user removed was born HELD with a 24h horizon and never
+    // dispatches on its own. Dropped here, the re-POST is an ordinary Enter
+    // row: `buildContinueSessionCommandValues` writes `result: {}` and
+    // `availableAt: now`, and the prompt the user parked so it would NOT run
+    // runs at the next turn boundary — under a button labelled "Undo".
+    expect(restoreQueuedMessage(removed({ queued_by_user: true }), () => 'msg_fresh')).toMatchObject(
+      { queuedByUser: true },
+    );
+  });
+
+  test('omits `queuedByUser` for a prompt sent with Enter', () => {
+    // Absence is what the server reads as "Enter". Sending `false` would be a
+    // second spelling of the same thing on a route whose flag is presence-only.
+    expect(restoreQueuedMessage(removed(), () => 'msg_fresh')).not.toHaveProperty('queuedByUser');
+  });
+
   test('omits `overrides` entirely when the prompt carried none', () => {
     // `undefined` and `{}` are not the same downstream: an empty object would
     // send "no agent, no model" rather than "resolve at delivery".

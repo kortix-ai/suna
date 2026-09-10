@@ -37,6 +37,13 @@ import type { CreateSessionPromptInput, RemovedSessionPrompt } from '@kortix/sdk
  * reported success. A re-queued prompt belongs at the END of the transcript,
  * which is where a fresh mint puts it, and which is where `handleSend` puts
  * every other message.
+ *
+ * `queuedByUser` is forwarded because PARKING IS A PROPERTY OF THE ROW, not of
+ * the text. A parked row is born held with a 24h horizon and never dispatches
+ * on its own; re-POSTed without the flag it is an ordinary Enter row and runs
+ * at the next turn boundary. The user parked a prompt precisely so it would
+ * not run, removed it, pressed Undo — and it ran (measured on this branch, the
+ * re-POST body carried no `queued_by_user`).
  */
 export function restoreQueuedMessage(
   removed: RemovedSessionPrompt,
@@ -47,6 +54,7 @@ export function restoreQueuedMessage(
     messageId: mintMessageId(),
     parts: removed.parts,
     ...(removed.overrides ? { overrides: removed.overrides } : {}),
+    ...(removed.queued_by_user ? { queuedByUser: true } : {}),
   };
 }
 

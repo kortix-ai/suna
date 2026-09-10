@@ -37,7 +37,11 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     // wire id server-side, so the key cannot be re-derived wrongly by a client.
     const retry = between(
       'const handleRetryQueuedMessage = useCallback(',
-      '// Associate stashed command info',
+      // The next declaration after the retry handler. It used to be the
+      // stashed-command effect; the queue's own handlers were moved between
+      // them, and an end anchor past those would sweep THEIR `clientMessageId`
+      // (`handleDuplicateQueuedMessage` mints a fresh one) into this slice.
+      '   * DUPLICATE A PARKED ROW',
     );
 
     expect(retry).toMatch(/promptInbox\s*\.retry\(id\)/);
@@ -73,8 +77,11 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     // The opposite failure: keying every send off one value would resurrect the
     // silent-drop bug this branch exists to fix. Only the queue names a
     // submission, and each enqueue mints its own key.
+    // The 4th argument is the submit INTENT (Enter runs, Cmd+Enter parks it in
+    // the composer's queue list) — never an identity. Only the queue names a
+    // submission.
     const composer = between(
-      'await handleSend(text, files, mentions);',
+      'await handleSend(text, files, mentions, undefined, intent);',
       'prefill={composerPrefill}',
     );
 

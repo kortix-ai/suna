@@ -218,13 +218,27 @@ describe('the turn card reads the same working answer', () => {
     expect(turn).toContain('getRetryMessage(sessionStatus)');
   });
 
-  test('"Send now" decides from the projection, not the raw slot', () => {
-    // Both failure directions were real: a stale-idle slot dispatched into a
-    // live turn (OpenCode answers that by aborting it — the "Interrupted"
-    // symptom), and a stale-busy slot issued a spurious Stop that held the
-    // whole inbox.
-    const sendNow = between(chat, 'const handleQueueSendNow = useCallback(', 'stop: async ()');
-    expect(sendNow).toContain('isRunning: () => serverHoldsOpenTurn(working)');
+  test('"Send immediately" reads NO turn state, because it never stops a turn', () => {
+    // This used to assert the handler read `serverHoldsOpenTurn(working)`, and
+    // that was right while "send now" ABORTED the running turn to jump the
+    // queue: both stale directions of the raw slot were real failures — a
+    // stale-idle slot dispatched into a live turn (OpenCode answers that by
+    // aborting it, the "Interrupted" symptom) and a stale-busy slot issued a
+    // spurious Stop that held the whole inbox.
+    //
+    // The premise is gone. "Send immediately" promotes the row to the front of
+    // the line and it goes out at the next turn boundary, like every other
+    // prompt; the stop-then-send helper was deleted. A handler that consults no
+    // turn state cannot be wrong about it in either direction — which is a
+    // stronger guarantee than reading the right source was.
+    const sendNow = between(
+      chat,
+      'const handleQueueSendNow = useCallback(',
+      '// ---- Triple-ESC to stop ----',
+    );
+    expect(sendNow).toContain('promptInbox\n        .retry(id)');
+    expect(sendNow).not.toContain('serverHoldsOpenTurn');
+    expect(sendNow).not.toContain('handleStop');
     expect(sendNow).not.toContain('useSessionStateStore.getState()');
   });
 

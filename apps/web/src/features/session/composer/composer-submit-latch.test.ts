@@ -49,8 +49,13 @@ describe('the composer submits through the latch', () => {
     // the instance survive every render; the handler itself is stable (`[]`)
     // because its only inputs are refs.
     const wiring = between('const submitLatchRef = useRef', 'const editorPlaceholder');
-    expect(wiring).toContain('submitLatchRef.current ??= createSubmitLatch<StashedDraft>(');
-    expect(wiring).toContain('return submitLatchRef.current();');
+    expect(wiring).toContain(
+      'submitLatchRef.current ??= createSubmitLatch<StashedDraft, ComposerSubmitIntent>(',
+    );
+    // The INTENT is threaded through the latch, not re-derived at dispatch
+    // time: a prompt stashed with Cmd+Enter must still queue when it finally
+    // goes out, even if the newest keypress was a plain Enter.
+    expect(wiring).toContain('return submitLatchRef.current(intent);');
     expect(wiring).toContain('}, []);');
   });
 
@@ -60,7 +65,9 @@ describe('the composer submits through the latch', () => {
     // creation would submit against stale attachedFiles/queue props.
     const wiring = between('const dispatchSubmissionRef = useRef', 'const editorPlaceholder');
     expect(wiring).toContain('dispatchSubmissionRef.current = dispatchSubmission;');
-    expect(wiring).toContain('(stash) => dispatchSubmissionRef.current(stash)');
+    expect(wiring).toContain(
+      '(stash, stashedIntent) => dispatchSubmissionRef.current(stash, stashedIntent)',
+    );
   });
 
   test('the stash discriminator is typed text in the live editor, and the stash clears the editor', () => {
@@ -70,7 +77,7 @@ describe('the composer submits through the latch', () => {
     // the hazard the latch exists to swallow. A stashed draft leaves the
     // editor at once, so the next Enter cannot merge into it.
     const wiring = between(
-      'submitLatchRef.current ??= createSubmitLatch<StashedDraft>(',
+      'submitLatchRef.current ??= createSubmitLatch<StashedDraft, ComposerSubmitIntent>(',
       'const editorPlaceholder',
     );
     expect(wiring).toContain('if (!editor || !content || !content.text.trim()) return null;');
