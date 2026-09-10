@@ -328,6 +328,9 @@ export interface ParsedManifest {
   revision?: string | null;
   /** Logical manifest files in winner-priority order. */
   candidatePaths?: string[];
+  /** Commit the manifest was read at, or null when unknown (synthesized, or
+   *  a string parse with no git context). Carried onto derived grants. */
+  commit?: string | null;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
@@ -364,6 +367,7 @@ export async function readManifest(
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
       forceRefresh: opts?.forceRefresh,
+      strictRef: opts?.rethrowReadErrors,
     });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
@@ -384,6 +388,7 @@ export async function readManifest(
     found.path,
     found.sha,
     found.candidatePaths,
+    found.commit,
   );
 }
 
@@ -463,6 +468,7 @@ export function parseManifestString(
   path: string = format === 'yaml' ? MANIFEST_FILENAME_YAML : MANIFEST_FILENAME,
   revision?: string | null,
   candidatePaths?: string[],
+  commit?: string | null,
 ): ParsedManifest {
   const parsed = parseManifestText(raw, format);
   const version =
@@ -489,6 +495,7 @@ export function parseManifestString(
   };
   if (revision !== undefined) manifest.revision = revision;
   if (candidatePaths !== undefined) manifest.candidatePaths = candidatePaths;
+  if (commit !== undefined) manifest.commit = commit;
   return manifest;
 }
 

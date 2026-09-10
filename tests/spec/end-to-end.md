@@ -716,6 +716,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CONN-14` `POST /connectors/projects/:id/connectors/auth-discovery {provider,spec|url|endpoint|baseUrl}` → admin (`project.connector.write`) loads the guarded direct source and returns normalized authentication candidates plus a supported recommendation; omitted auth on `POST …/connectors` applies that recommendation, while explicit `{auth:{type:"none"}}` skips discovery and remains a durable opt-out. Source credential literals are never returned.
 `CONN-15` Project admin enables `connectors_api_discover` through `PATCH /projects/:id/features`; `GET /connectors/projects/:id/discover/connectors[?q&cursor]` → browses the direct integrations.sh catalogue; `GET …/discover/connectors/detail?id=…` → resolves the trusted record's API/MCP/Postman/GraphQL/docs/CLI variants; upstream outage → 502; `NONMEMBER` → 403 before any upstream fetch.
 `CONN-19` `PUT /connectors/projects/:id/connectors/:slug/secret-binding {secret_identifier}` → project admin binds an active `broker`/`connector` project secret or clears the binding with `null`; malformed identifiers → 400; unknown connector → 404; stored credentials, user-owned authorization, platform authentication, and incompatible secrets → 409; `NONMEMBER` → 403.
+`CONN-27` Session grant provenance + channel guarantee + honest denials (INC-2026-09-08-CONNECTOR-GATEWAY). The fixture mints its credential through `POST /accounts/tokens`, then binds it to the fixture session without the server signing secret. A session-bound token's `agent_grant` is re-derived from the manifest on every gateway call and REPLACED only for a genuine manifest change: it carries `manifestRevision` (blob sha) + `manifestCommit`; a grant read from the same blob that differs from the stored one is confirmed by a second read before it replaces the token, a grant read at an ancestor commit never does, and an unreadable manifest serves the stored grant (last-known-good). The channel connector that created the session (`project_sessions.metadata.source`) is callable under ANY grant. `POST /connectors/projects/:id/call` → 403 `connector_not_assigned` names `agent`, `granted`, `manifest_revision`, `manifest_commit`, `hint`; a declared connector with no usable connection → 403 `connector_not_connected` (+`hint`), and `GET …/connectors` lists it as `needs_auth`; `POST /projects/:id/turn-stream {kind:step}` with no open channel turn → 200 `{ok:false, reason:"no_open_turn"}`. Ten calls after a mid-session `POST …/connectors` keep the manifest's grant.
 `CONN-OAUTH2` connection-scoped native OAuth2 routes → save and read a redacted provider-independent application; start Authorization Code with PKCE S256; read status; reject SSRF discovery, unavailable Device Authorization, unknown device sessions, and callback state replay. Connection creation follows the connector's authorization strategy: the default `project` strategy accepts only `owner_type: "project"`; any other owner_type → 409 `CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH`, and `/me` member connections require the `user` strategy.
 
 **Connector access has three gates.** The agent's `connectors` grant selects
@@ -742,6 +743,7 @@ supplied scope field without restarting the session.
 `GH-14` `POST /projects/create-repo` → PROJECT_CREATE; missing name → 400; no install → 409/503.
 `GH-15` `POST /projects/link-repository` → PROJECT_CREATE; missing repo → 400; no install → 400/409/502; bad token → 400.
 `GH-16` `GET /projects/github/repository-branches` → PROJECT_CREATE; returns the repository default plus every existing branch; missing installation → 409; wrong installation owner → 400.
+`GH-17` Real Git processes authenticate with session PATs. An owner session creates and deletes a shared branch. A member session with `kortix_cli: all` can push its own branch but cannot create another branch or delete the shared branch. HTTP ref read-back proves denied pushes leave the repository unchanged.
 `IAM-14` `GET …/iam/groups/:gid/project-grants` → 200; unknown → 404; NONMEMBER → 403.
 `IAM-15` `POST …/iam/members/:userId/effective:batch` → 200; non-array → 400.
 `IAM-16` `GET …/iam/members/:userId/project-access` → 200; NONMEMBER → 403.
@@ -993,3 +995,24 @@ These 378 route loads must return a document below `400`, retain the matching
 HTML language, avoid corrupt Unicode, render visible content, and include a
 catalog value for the selected locale. Authenticated routes must not redirect to
 `/auth`.
+
+## 31. Desktop UI parity
+
+Playwright journey `27-desktop-parity.spec.ts` signs in a real user and creates a
+manifest-backed project. It runs against web and the desktop frontend in the
+browser lane. `E2E_DESKTOP_NATIVE=1` runs the same journey in the Electron shell.
+
+The workspace selector and fullscreen settings back button must clear native
+window controls. Download app appears only on web. All six settings tabs and
+all eleven agent sections must select and render their panes without overlapping
+navigation rows. Connector navigation must load its route, receive a successful
+GET, and select the Connected filter. Light and dark settings retain row geometry.
+
+At 720 × 480, the sidebar opener must remain reachable and open the workspace
+selector. The Settings capability tab must scroll into view and load its route.
+Native zoom-in and reset shortcuts must change and restore the zoom factor;
+the workspace selector must remain clickable afterward.
+Native commands trust only the configured frontend origin in the main window's
+main frame. A second window at that same origin must receive an unauthorized
+sender error. Full document navigation within the configured frontend stays in
+the app, including when the frontend uses a custom host.

@@ -8,6 +8,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -218,11 +220,11 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
       setAvatarFile(null);
       setAvatarUrl(newAvatarUrl);
 
-      successToast(tHardcodedUi.raw('i18nComplete.text91a8ab20e938'));
+      successToast(t('profileUpdated'));
     } catch (error) {
       console.error('Error updating profile:', error);
       const message = error instanceof Error && error.message ? error.message : '';
-      errorToast(message || tHardcodedUi.raw('i18nComplete.text5c768dee3757'));
+      errorToast(message || t('profileUpdateFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -367,10 +369,10 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
               <ItemActions>
                 <Button asChild variant="outline" size="sm">
                   {/* The anchor navigates; `onClose` only shuts the dialog. */}
-                  <Link href={`/accounts/${accountId}`} onClick={onClose}>
+                  <HubLink to={hubTarget(accountId)} onClick={onClose}>
                     {t('accountSettings.button')}
                     <ArrowUpRight className="size-3.5" />
-                  </Link>
+                  </HubLink>
                 </Button>
               </ItemActions>
             </Item>

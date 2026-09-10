@@ -28,6 +28,7 @@ import {
   isAccountGraduatedSection,
   resolveOverlayTab,
 } from '@/features/workspace/settings/settings-tabs';
+import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import type { SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 
@@ -123,7 +124,9 @@ export function buildStandaloneCapabilityNav(state: {
       // which would bypass the store-based `openSettings()` call below and
       // break this adapter's "opens the overlay, not a route" contract.
       if (state.accountId && isAccountGraduatedSection(tab)) {
-        state.navigateTo(`/accounts/${state.accountId}?tab=${ACCOUNT_GRADUATED[tab]}`);
+        // A modal over the page the caller is already on, not a navigation:
+        // the account hub has no route (`stores/account-panel-store.ts`).
+        openAccountPanel(hubTarget(state.accountId, { tab: ACCOUNT_GRADUATED[tab] }));
         return;
       }
       // Live overlay tabs AND the retired config page's ids (`general`, `git`,

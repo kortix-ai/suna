@@ -7,10 +7,12 @@
 // shared access primitives and define no picker / role select / row / grant
 // modal of their own.
 //
-// Third job since the group detail moved INTO the account hub
-// (`?tab=groups&group=<id>`): the detail lives in
-// `components/iam/group-access-panel.tsx`, and the old standalone route is a
-// redirect that keeps bookmarks working.
+// Third job since the group detail moved INTO the account hub: the detail
+// lives in `components/iam/group-access-panel.tsx` and is addressed by the
+// hub's `group` param. The standalone `/accounts/[id]/groups/[groupId]` route
+// that used to redirect there was deleted on 2026-09-08 with the rest of the
+// account routes — the hub is a modal now, so there is no route to bookmark
+// and nothing left to redirect.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
@@ -18,8 +20,8 @@ import { join } from 'node:path';
 const pageSource = readFileSync(join(import.meta.dir, 'group-access-panel.tsx'), 'utf8');
 const flatPageSource = pageSource.replace(/\s+/g, ' ');
 const tabSource = readFileSync(join(import.meta.dir, 'groups-tab.tsx'), 'utf8');
-const legacyRouteSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/accounts/[id]/groups/[groupId]/page.tsx'),
+const hubSource = readFileSync(
+  join(import.meta.dir, '../../features/accounts/hub/account-hub-content.tsx'),
   'utf8',
 );
 
@@ -133,12 +135,12 @@ describe('the group detail renders inside the account hub, not on its own route'
     expect(tabSource).not.toContain('/groups/${');
   });
 
-  test('the old standalone route redirects so bookmarks keep working', () => {
-    expect(legacyRouteSource).toContain('router.replace');
-    expect(legacyRouteSource.replace(/\s+/g, ' ')).toContain(
-      '`/accounts/${accountId}?tab=groups&group=${encodeURIComponent(groupId)}`',
-    );
-    // Nothing but the redirect survives in that file.
-    expect(legacyRouteSource).not.toContain('AccessDetailShell');
+  // The hub is where a group detail lives, and it is named by the hub's own
+  // `group` param — not by a URL, because the hub has no route.
+  test('the hub opens a group detail through its own param, never a route', () => {
+    const flatHub = hubSource.replace(/\s+/g, ' ');
+    expect(flatHub).toContain("searchParams.get('group')");
+    expect(flatHub).toContain('selectedAccessGroupId');
+    expect(hubSource).not.toContain('/groups/${');
   });
 });

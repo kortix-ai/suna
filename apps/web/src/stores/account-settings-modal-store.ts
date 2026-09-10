@@ -1,22 +1,24 @@
 import type { SettingsTabId } from '@/lib/menu-registry';
-import { softNavigate } from '@/lib/navigation/router-bridge';
+import { hubTarget, openAccountPanel, type HubTarget } from '@/stores/account-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { create } from 'zustand';
 
 /**
- * Account-level settings live at `/accounts/[id]` — Overview, Billing,
- * Transactions, Members, etc. The legacy modal was removed; this store
- * preserves the `openAccountSettings(...)` call shape so existing call sites
- * (user menu, error handler, upgrade dialog, error banner) keep working. It
- * navigates to the account page with the requested tab in the URL.
+ * Account-level settings — Billing, Usage — live in the account hub modal,
+ * addressed by `?accountId=` on whatever page you are on
+ * (`stores/account-panel-store.ts`). The legacy modal was removed long ago and
+ * this store then navigated to `/accounts/[id]`; that route was deleted on
+ * 2026-09-08, so it opens the modal instead. The `openAccountSettings(...)`
+ * call shape is preserved for its existing callers — the user menu, the error
+ * handler, the upgrade dialog, the session error banner.
  *
  * `isOpen` / `defaultTab` are vestigial — kept so any straggling subscribers
- * don't blow up — but nothing renders off them anymore.
+ * don't blow up — but nothing renders off them.
  */
 
 export type AccountSettingsHighlight = 'credits' | null;
 
-/** Tabs that can be deep-linked on /accounts/[id]. */
+/** Account-scoped tabs a caller here can ask for. */
 export type AccountSettingsTabId = Extract<SettingsTabId, 'billing' | 'transactions'>;
 
 interface AccountSettingsModalState {
@@ -31,37 +33,32 @@ interface AccountSettingsModalState {
 }
 
 /**
- * The `/accounts/[id]` URL for a settings tab.
+ * The hub destination for an account settings tab.
  *
- * Exported so a control that already knows its destination at render time
- * renders a `<Link>` instead of a button — an anchor is prefetched, a button is
- * not. Pass `accountId` when the caller holds a reactive one; otherwise the
+ * Exported so a control that already knows where it is going renders a
+ * `HubLink` — a real anchor, with the chunk warmed on hover — instead of a
+ * button. Pass `accountId` when the caller holds a reactive one; otherwise the
  * current selection is read from the store.
  *
- * Falls back to the accounts picker when no account is selected. That branch is
- * live: `selectedAccountId` starts null in a fresh browser or a
- * storage-blocked context.
+ * With no account selected this targets the hub's account LIST, which is the
+ * honest destination: pick one first. That branch is live —
+ * `selectedAccountId` starts null in a fresh browser or a storage-blocked
+ * context.
+ *
+ * `highlight` is deliberately NOT carried onto the URL. It never was read from
+ * there: `billing-tab.tsx` reads it from `user-settings-modal-store`, and the
+ * `?highlight=` this used to append was dead the day it was written.
  */
-export function buildAccountSettingsHref(opts?: {
+export function accountSettingsTarget(opts?: {
   tab?: AccountSettingsTabId;
-  highlight?: AccountSettingsHighlight;
   accountId?: string | null;
-}): string {
+}): HubTarget {
   const accountId =
     opts?.accountId !== undefined
       ? opts.accountId
       : useCurrentAccountStore.getState().selectedAccountId;
-  if (!accountId) return '/accounts';
-  const params = new URLSearchParams({ tab: opts?.tab ?? 'billing' });
-  if (opts?.highlight) params.set('highlight', opts.highlight);
-  return `/accounts/${accountId}?${params.toString()}`;
-}
-
-function navigateToAccountTab(tab: AccountSettingsTabId, highlight: AccountSettingsHighlight) {
-  if (typeof window === 'undefined') return;
-  // A store is not a component, so it cannot hold a router. The bridge carries
-  // the live one — `window.location.href` here rebooted the whole SPA.
-  softNavigate(buildAccountSettingsHref({ tab, highlight }));
+  if (!accountId) return hubTarget(null);
+  return hubTarget(accountId, { tab: opts?.tab ?? 'billing' });
 }
 
 export const useAccountSettingsModalStore = create<AccountSettingsModalState>((set) => ({
@@ -70,9 +67,10 @@ export const useAccountSettingsModalStore = create<AccountSettingsModalState>((s
   highlight: null,
   openAccountSettings: (opts) => {
     const tab = opts?.tab ?? 'billing';
-    const highlight = opts?.highlight ?? null;
-    set({ isOpen: false, defaultTab: tab, highlight });
-    navigateToAccountTab(tab, highlight);
+    set({ isOpen: false, defaultTab: tab, highlight: opts?.highlight ?? null });
+    // Opens over whatever page the caller is on — an error toast fires from
+    // anywhere, and this must not move the person off their session.
+    openAccountPanel(accountSettingsTarget({ tab }));
   },
   closeAccountSettings: () => set({ isOpen: false, highlight: null }),
 }));

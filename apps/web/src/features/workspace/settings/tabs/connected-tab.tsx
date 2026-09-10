@@ -43,6 +43,8 @@
  * `ProviderConnect`. Do NOT re-add it to this account-scoped pane.
  */
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget, type HubTarget } from '@/stores/account-panel-store';
 import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -77,7 +79,9 @@ export interface ConnectedAccountsTabViewProps {
   onDisconnectGitHub?: () => void;
   isGitHubActionPending?: boolean;
   githubOtherInstallationsCount?: number;
-  githubManageAllHref?: string;
+  /** The account hub's Git pane — a modal target, not a URL: the hub has no
+   *  route (`stores/account-panel-store.ts`). */
+  githubManageAllTo?: HubTarget;
   githubAppSetupSlot?: ReactNode;
   copy?: ConnectedAccountsTabCopy;
 }
@@ -142,7 +146,7 @@ export function ConnectedAccountsTabView({
   onDisconnectGitHub = () => {},
   isGitHubActionPending = false,
   githubOtherInstallationsCount = 0,
-  githubManageAllHref,
+  githubManageAllTo,
   githubAppSetupSlot,
   copy = DEFAULT_CONNECTED_ACCOUNTS_COPY,
 }: ConnectedAccountsTabViewProps) {
@@ -209,13 +213,13 @@ export function ConnectedAccountsTabView({
           ) : null}
           {githubStatus === 'connected' &&
           githubOtherInstallationsCount > 0 &&
-          githubManageAllHref ? (
-            <a
-              href={githubManageAllHref}
+          githubManageAllTo ? (
+            <HubLink
+              to={githubManageAllTo}
               className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
             >
               {copy.moreInstallations(githubOtherInstallationsCount)}
-            </a>
+            </HubLink>
           ) : null}
         </section>
       ) : (
@@ -330,7 +334,7 @@ export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
       onDisconnectGitHub={handleDisconnectGitHub}
       isGitHubActionPending={disconnectGitHubMutation.isPending}
       githubOtherInstallationsCount={otherInstallationsCount}
-      githubManageAllHref={resolvedAccountId ? `/accounts/${resolvedAccountId}?tab=git` : undefined}
+      githubManageAllTo={resolvedAccountId ? hubTarget(resolvedAccountId, { tab: 'git' }) : undefined}
       githubAppSetupSlot={
         canManageAccount ? <GitHubAppSetupCard canManage={canManageAccount} /> : undefined
       }

@@ -381,9 +381,11 @@ test.describe("23 — Composio managed connector", () => {
     await expect(
       detail.getByRole("button", { name: "Reconnect", exact: true }),
     ).toBeVisible();
+    await detail.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(detail).not.toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Connected", exact: true }),
-    ).toBeVisible();
+      page.getByRole("tab", { name: "Connected", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
 
     const connections = await api<ConnectionList>(
       session.access_token,

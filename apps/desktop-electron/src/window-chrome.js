@@ -85,7 +85,6 @@ const DESKTOP_CHROME_JS = `
   var style = document.createElement('style');
   style.id = 'kortix-chrome-style';
   style.textContent =
-    '[role="tablist"],[data-sidebar="header"],[data-sidebar="sidebar"],' +
     '.kx-desktop-drag,.kx-desktop-chrome{-webkit-app-region:drag;}' +
     'button,a,input,textarea,select,option,label,summary,video,audio,iframe,' +
     '[role="button"],[role="tab"],[role="link"],[role="menuitem"],[role="textbox"],' +

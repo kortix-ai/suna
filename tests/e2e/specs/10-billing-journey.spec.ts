@@ -90,7 +90,7 @@ function expectStripeUrl(value: string | undefined, hosts: string[], pathPattern
 
 test.describe
   .serial('10 - Billing customer journey', () => {
-    test.skip(!enabled, 'The Stripe-backed billing journey runs only in strict staging QA.');
+    test.skip(!enabled, 'Billing UI is disabled in the default local profile.');
     test.setTimeout(300_000);
 
     let user: AuthUser;
@@ -124,15 +124,38 @@ test.describe
       if (user?.id) await deleteAuthUser(user.id, authOptions);
     });
 
+    test('the account hub opens one accessible billing dialog and stays open after Escape', async ({ page }) => {
+      await installBrowserSessionDirect(
+        page, session, `/new?accountId=${accountId}&accountTab=billing`, authOptions,
+      );
+      const subscribeButton = page.getByRole('button', { name: 'Subscribe to Team', exact: true });
+      await subscribeButton.click();
+      const dialog = page.getByRole('dialog', { name: /Subscribe to Kortix/ });
+      await expect(dialog).toHaveCount(1);
+      await expect(dialog.getByRole('button', { name: /^Subscribe —/ })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+      await subscribeButton.click();
+      await expect(dialog).toHaveCount(1);
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+    });
+
     test('an owner starts checkout, reads the active plan, buys credits, and opens billing management', async ({
       page,
     }) => {
-      const billingUrl = `/accounts/${accountId}?tab=billing`;
+      // The account hub is a modal over a page, not a route (2026-09-08), so
+      // billing needs a host. `/new` is the one stable `(app)` route a
+      // brand-new account with NO project can sit on: `/projects` auto-creates
+      // a first project and `router.replace`s into it, which would drop the
+      // query and never open the hub.
+      const billingUrl = `/new?accountId=${accountId}&accountTab=billing`;
       await installBrowserSessionDirect(page, session, billingUrl, authOptions);
       // The pane heading is "Plan", not "Billing". `?tab=billing` is still the
-      // route, and "Billing" is still the nav GROUP label, but the pane itself
+      // param, and "Billing" is still the nav GROUP label, but the pane itself
       // renders `PANE_META.billing.title` = 'Plan' as an `<h2>`
-      // (`app/(app)/accounts/[id]/page.tsx:224` and `:577`). "Billing" survives
+      // (`features/accounts/hub/account-hub-content.tsx`). "Billing" survives
       // only as a group label, which is not a heading — so the old locator
       // could never resolve and failed at 0 ms on every release run.
       await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();

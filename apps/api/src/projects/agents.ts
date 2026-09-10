@@ -131,6 +131,12 @@ export interface AgentParseError {
 export interface LoadedAgents {
   specs: AgentSpec[];
   errors: AgentParseError[];
+  /** Where the specs came from: the manifest's blob sha and the commit it was
+   *  read at. `null` revision/commit = synthesized (no manifest on disk) or a
+   *  read with no git context; absent = the manifest could not be read at all.
+   *  Grants derived from these specs carry the same provenance
+   *  (`AgentGrant.manifestRevision` / `manifestCommit`). */
+  manifest?: { revision: string | null; commit: string | null } | null;
   /**
    * The manifest's own top-level `default_agent` (v2; v1 has no such
    * field, so this is always `null` for a v1 manifest). Lets grant resolution
@@ -301,10 +307,14 @@ export async function loadProjectAgents(
         error: (err as Error).message || 'Failed to read manifest',
       }],
       defaultAgent: null,
+      manifest: null,
     };
   }
   if (!manifest) manifest = synthesizeBlankManifest({ manifestPath: project.manifestPath });
-  return extractAgents(manifest);
+  return {
+    ...extractAgents(manifest),
+    manifest: { revision: manifest.revision ?? null, commit: manifest.commit ?? null },
+  };
 }
 
 /**
