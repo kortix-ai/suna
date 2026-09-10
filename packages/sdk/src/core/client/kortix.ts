@@ -1111,6 +1111,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         list: () => P.listSessionPrompts(projectId, sessionId),
         remove: (promptId: string) => P.deleteSessionPrompt(projectId, sessionId, promptId),
         retry: (promptId: string) => P.retrySessionPrompt(projectId, sessionId, promptId),
+        /** Rewrite the send order of the parked prompts — the queue list's
+         *  drag. `promptIds` is the new order, top first. */
+        reorder: (promptIds: string[]) =>
+          P.reorderSessionPrompts(projectId, sessionId, promptIds),
         /** Hold (or release) the whole queue — what the Stop button writes. */
         hold: (held: boolean) => P.holdSessionPrompts(projectId, sessionId, held),
       },

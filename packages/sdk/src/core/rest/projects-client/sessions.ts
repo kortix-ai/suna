@@ -827,15 +827,41 @@ export interface SessionPrompt {
   wire_message_id?: string;
   state: SessionPromptState;
   /** Why the prompt is `waiting`: `older_prompt_pending` (its own queue is
-   *  ahead of it) or `held` (the user pressed Stop — only an explicit send or
-   *  send-now releases it). A running turn is NOT one of them: the control
-   *  plane forwards a prompt into a live turn, and OpenCode runs it in arrival
-   *  order. */
+   *  ahead of it), `turn_active` (a turn is running — the control plane refuses
+   *  to forward into it, so the prompt goes out when that turn ends), or `held`.
+   *  `held` covers BOTH the stop button and a row the user parked with
+   *  Cmd/Ctrl+Enter; `stop_held` is what separates them. */
   reason: string | null;
   /** Flattened text preview, capped server-side. */
   text: string;
   /** The sender tab's clock at Enter, when the producer supplied it. */
   client_sent_at_ms?: number | null;
+  /**
+   * The user pressed Cmd/Ctrl+Enter, not Enter.
+   *
+   * The row is PARKED. It waits in the composer's reorderable queue list
+   * rather than as the transcript's dimmed bubble, and it is born HELD with a
+   * 24h horizon: unlike an Enter row, which drains FIFO at the next turn
+   * boundary, a parked row never dispatches on its own. Only the user releases
+   * it — the row's "Send now". On the ROW rather than in the sending tab, so a
+   * reload, a second tab, or another device still shows the user's own
+   * arrangement. Absent from servers older than this field, which reads as
+   * Enter.
+   */
+  queued_by_user?: boolean;
+  /**
+   * The SESSION is stop-held — the user pressed Stop, or a turn failed, and
+   * nothing drains until a send or a "send now" releases it.
+   *
+   * `reason: 'held'` cannot answer this. Cmd/Ctrl+Enter parks a row by holding
+   * it, so a parked prompt on an idle session is `held` too; reading `held`
+   * alone reports a stopped queue the first time anyone parks a message, and
+   * excluding `queued_by_user` rows to fix that goes blind to a real Stop on a
+   * queue where every row is parked. This flag is set by the stop button and
+   * by a failed turn's error halt, and cleared by every release. Absent from
+   * servers older than this field.
+   */
+  stop_held?: boolean;
   attempts: number;
   last_error: string | null;
   /** This prompt's files, by NAME and TYPE only — never their bytes.
@@ -890,6 +916,13 @@ export interface CreateSessionPromptInput {
    * their POSTs finish in either order). Milliseconds since epoch.
    */
   clientSentAtMs?: number;
+  /**
+   * The user pressed Cmd/Ctrl+Enter — PARK this prompt: it goes in the
+   * composer's reorderable queue list instead of the transcript, and the server
+   * creates the row HELD so it never dispatches on its own. Only the user
+   * releases it. See `SessionPrompt.queued_by_user`.
+   */
+  queuedByUser?: boolean;
 }
 
 /** Put one prompt in the session's server-side inbox (`POST .../prompts`).
@@ -911,6 +944,7 @@ export async function createSessionPrompt(
         ...(typeof input.clientSentAtMs === 'number'
           ? { client_sent_at_ms: Math.trunc(input.clientSentAtMs) }
           : {}),
+        ...(input.queuedByUser ? { queued_by_user: true } : {}),
       },
     ),
   );
@@ -927,6 +961,8 @@ export async function listSessionPrompts(
   return unwrap(
     await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      // See the note on `deleteSessionPrompt`: a failed poll must not toast.
+      { showErrors: false },
     ),
   );
 }
@@ -948,6 +984,17 @@ export interface RemovedSessionPrompt {
   removed_message_ids?: string[];
   parts: SessionPromptPart[];
   overrides: SessionPromptOverrides | null;
+  /**
+   * The row was PARKED with Cmd/Ctrl+Enter.
+   *
+   * A parked row is born HELD with a 24h horizon and never dispatches on its
+   * own — only the user releases it. That is a property of the row, not of the
+   * text, so an undo that does not carry it re-creates an ordinary Enter row:
+   * the prompt the user set aside runs at the next turn boundary, under a
+   * button labelled "Undo". Absent on rows sent with Enter, and on servers
+   * older than this field.
+   */
+  queued_by_user?: boolean;
 }
 
 /**
@@ -959,6 +1006,16 @@ export interface RemovedSessionPrompt {
  * Returns the removed prompt, because the row is HARD-deleted: re-POSTing this
  * result with its original `client_message_id` is the only lossless undo.
  */
+// EVERY INBOX CALL RENDERS ITS OWN MESSAGE, so none of them wants the generic
+// one. `makeRequest` defaults `showErrors` on and calls the PLATFORM error sink
+// on every non-2xx, before any react-query callback runs; in `apps/web` that
+// sink is `handleApiError` with no context, which toasts the server's RAW
+// prose. A refused DELETE therefore produced TWO toasts — the transport's bare
+// "Not found" and the call site's "That prompt is no longer in the queue" —
+// which is two thirds of the three-toast screenshot reported 2026-09-07. The
+// mutations' own `onError: () => {}` could never suppress it: that silences
+// TanStack's sink, a different one. `getSessionOpenBundle` opts out the same
+// way, for the same reason.
 export async function deleteSessionPrompt(
   projectId: string,
   sessionId: string,
@@ -967,6 +1024,7 @@ export async function deleteSessionPrompt(
   const body = unwrap(
     await backendApi.delete<{ removed: RemovedSessionPrompt }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      { showErrors: false },
     ),
   );
   return body.removed;
@@ -990,6 +1048,36 @@ export async function retrySessionPrompt(
     await backendApi.post<SessionPrompt>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
       {},
+      // See the note on `deleteSessionPrompt`.
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * Rewrite the SEND ORDER of the prompts the user parked with Cmd/Ctrl+Enter.
+ *
+ * `promptIds` is the new order, top first. The server packs their send stamps
+ * into the span those rows already occupy, so the arrangement is local to this
+ * list — it can never jump the whole queue ahead of, or behind, a prompt sent
+ * from another device that the user was not looking at.
+ *
+ * Answers with the WHOLE list, on the server's clock, exactly like
+ * `GET .../prompts`: the caller replaces its snapshot rather than patching one
+ * and re-deriving an order the server has just rewritten.
+ */
+export async function reorderSessionPrompts(
+  projectId: string,
+  sessionId: string,
+  promptIds: string[],
+): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
+  return unwrap(
+    await backendApi.post<{ prompts: SessionPrompt[]; observed_at?: string }>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/reorder`,
+      { prompt_ids: promptIds },
+      // See the note on `deleteSessionPrompt`: the call site renders its own
+      // message, and a failed reorder simply leaves the order as it was.
+      { showErrors: false },
     ),
   );
 }
@@ -1016,6 +1104,10 @@ export async function holdSessionPrompts(
     await backendApi.post<{ prompts: SessionPrompt[] }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/hold`,
       { held },
+      // See the note on `deleteSessionPrompt`. `handleStop` surfaces its own,
+      // far more actionable warning for a failed hold ("the queue is NOT
+      // paused, press Stop again"), which the raw prose would sit beside.
+      { showErrors: false },
     ),
   );
 }
