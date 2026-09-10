@@ -2,6 +2,97 @@
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
   },
+  "spaces": {
+    "cancel": "Abbrechen",
+    "optional": "optional",
+    "none": "Keiner",
+    "noSpace": "Kein Bereich",
+    "create": {
+      "created": "{name} wurde erstellt",
+      "failed": "Der Bereich konnte nicht erstellt werden",
+      "title": "Neuer Bereich",
+      "description": "Ein benannter Bereich in diesem Projekt — mit eigenen Sitzungen, einem eigenen Standardagenten und eigenen geplanten Aufgaben.",
+      "nameLabel": "Name",
+      "namePlaceholder": "Marketing",
+      "descriptionLabel": "Beschreibung",
+      "descriptionPlaceholder": "Kampagnenarbeit.",
+      "agentLabel": "Agent",
+      "noDefaultAgent": "Kein Standardagent",
+      "agentHelp": "Dies ist ein Standard, keine Bindung — hier gestartete Sitzungen öffnen diesen Agenten, aber alle Personen benötigen weiterhin eigenen Zugriff auf ihn.",
+      "submit": "Bereich erstellen"
+    },
+    "move": {
+      "movedTo": "Nach {name} verschoben",
+      "movedOut": "Aus dem Bereich verschoben",
+      "failed": "Die Sitzung konnte nicht verschoben werden",
+      "title": "Verschieben nach"
+    },
+    "page": {
+      "offTitle": "Bereiche sind für dieses Projekt deaktiviert",
+      "offDescription": "Aktivieren Sie Bereiche unter Einstellungen → Feature Flags, um Sitzungen in einem benannten Vorhaben zu gruppieren.",
+      "backToProject": "Zurück zum Projekt",
+      "notFoundTitle": "Kein Bereich namens {slug}",
+      "notFoundDescription": "Er wurde möglicherweise aus der Projektkonfiguration entfernt oder Ihnen wurde kein Zugriff gewährt."
+    },
+    "toolbar": {
+      "sharedToast": "Alle Personen mit Zugriff auf diesen Bereich können seine Sitzungen lesen",
+      "privateToast": "Sitzungen sind nur für die Person sichtbar, die sie startet",
+      "visibilityFailed": "Die Sichtbarkeit der Sitzungen konnte nicht geändert werden",
+      "renamed": "In {name} umbenannt",
+      "renameFailed": "Der Bereich konnte nicht umbenannt werden",
+      "deleted": "{name} wurde gelöscht",
+      "deleteFailed": "Der Bereich konnte nicht gelöscht werden",
+      "nameAria": "Name des Bereichs",
+      "grantHint": "Diesen Bereich für Personen oder Gruppen freigeben",
+      "grantedHint": "Freigegeben für {count, plural, one {# Person oder Gruppe} other {# Personen und Gruppen}}",
+      "share": "Freigeben",
+      "actionsAria": "Aktionen für den Bereich",
+      "visibilityLabel": "Sitzungen hier sind lesbar für",
+      "privateOption": "Nur die Person, die sie gestartet hat",
+      "sharedOption": "Alle Personen mit Zugriff auf diesen Bereich",
+      "rename": "Umbenennen",
+      "delete": "Löschen",
+      "deleteTitle": "{name} löschen?",
+      "deleteDescription": "Der Block spaces.{slug} wird aus kortix.yaml entfernt und seine Trigger verlieren den Rückverweis. Die Sitzungen bleiben erhalten, aber Mitglieder mit ausschließlichem Zugriff auf diesen Bereich sehen sie nicht mehr."
+    },
+    "recents": {
+      "aria": "Letzte Sitzungen",
+      "title": "Zuletzt verwendet",
+      "empty": "Noch keine Sitzungen."
+    },
+    "selector": {
+      "selectAria": "Bereich auswählen",
+      "wholeProject": "Gesamtes Projekt",
+      "wholeProjectDescription": "Nicht in einem Bereich.",
+      "searchPlaceholder": "Bereiche durchsuchen",
+      "noMatches": "Keine Bereiche entsprechen „{query}“",
+      "new": "Neuer Bereich"
+    },
+    "sidebar": {
+      "title": "Bereiche",
+      "new": "Neuer Bereich",
+      "collapse": "{name} reduzieren",
+      "expand": "{name} erweitern",
+      "more": "{count} weitere…"
+    },
+    "schedule": {
+      "label": "Bereich",
+      "hint": "Ordnet diesen Trigger und jede von ihm gestartete Sitzung einem Bereich zu.",
+      "updated": "Bereich aktualisiert",
+      "updateFailed": "Der Bereich konnte nicht aktualisiert werden"
+    },
+    "people": {
+      "description": "Mitglieder und Gruppen mit Zugriff auf diesen Bereich. Eine Bereichsfreigabe ist keine Agentenfreigabe — sie benötigen auch eigenen Zugriff auf den Agenten.",
+      "empty": "Dieser Bereich wurde noch niemandem freigegeben. Projektmanager können ihn immer verwenden.",
+      "orphanedSuffix": "· Freigabe entspricht keinem Bereich mehr"
+    },
+    "access": {
+      "title": "Bereiche",
+      "all": "Alle Bereiche",
+      "onlyThese": "Nur diese…",
+      "allDescription": "Alle Bereiche, die heute in diesem Projekt vorhanden sind ({count}). Später hinzugefügte Bereiche benötigen eine neue Freigabe — ein Bereich ohne Freigabezeilen ist nur für die Managerstufe verfügbar."
+    }
+  },
   "developers": {
     "heroDescription": "Agenten, Skills, Tools, Konnektoren und Zeitpläne sind Dateien in einem Repository. Bearbeite sie in deiner IDE, führe sie lokal aus und stelle sie mit einem Befehl in der Cloud bereit. Open Source, selbst hostbar und unter deiner Kontrolle.",
     "agentBody": "Ein Agent ist Markdown: eine Persona, ihr Modell und ihre Tools. Skills sind Ordner, die der Agent bei Bedarf lädt. Bearbeite sie manuell oder beschreibe das Ziel und lasse deinen Coding-Agenten sie erstellen.",
@@ -17059,6 +17150,7 @@
       "textdc8d7c5c602b": "Quellledger",
       "textdc934fe30a94": "20%",
       "textdc937b598926": "Keine",
+      "text3f5f3b0e5bfc": "Kein Bereich",
       "textdc958f2a5781": "Schlüsselaktionen",
       "textdc98511e6b34": "Läuft als",
       "textdc99025834c1": "Kortix selbst hosten",

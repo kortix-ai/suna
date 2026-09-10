@@ -38,6 +38,7 @@ import {
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { listProjectSessions, type ProjectSession } from '@kortix/sdk';
@@ -54,6 +55,7 @@ import { useProjectSpaces } from './spaces-data';
 const NESTED_LIMIT = 6;
 
 export function SpacesSidebarGroup({ projectId }: { projectId: string }) {
+  const tSpaces = useI18nTranslations('spaces');
   const pathname = usePathname();
   const spacesFlag = useFeatureFlag(projectId, 'spaces');
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
@@ -106,15 +108,15 @@ export function SpacesSidebarGroup({ projectId }: { projectId: string }) {
     <SidebarGroup className="shrink-0 py-0">
       <div className="flex h-8 w-full shrink-0 flex-row items-center gap-1 px-2">
         <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm font-medium">
-          Spaces
+          {tSpaces('sidebar.title')}
         </span>
         {canCreate ? (
-          <Hint label="New space">
+          <Hint label={tSpaces('sidebar.new')}>
             <Button
               type="button"
               variant="ghost"
               size="icon-xs"
-              aria-label="New space"
+              aria-label={tSpaces('sidebar.new')}
               className="text-muted-foreground hover:text-foreground shrink-0 transition-none"
               onClick={() => setCreateOpen(true)}
             >
@@ -170,7 +172,11 @@ export function SpacesSidebarGroup({ projectId }: { projectId: string }) {
                     // header's `+` (a 24px `icon-xs` button inside `px-2`).
                     className="right-2.5"
                     showOnHover={!open}
-                    aria-label={open ? `Collapse ${space.name}` : `Expand ${space.name}`}
+                    aria-label={
+                      open
+                        ? tSpaces('sidebar.collapse', { name: space.name })
+                        : tSpaces('sidebar.expand', { name: space.name })
+                    }
                     aria-expanded={open}
                     onClick={() =>
                       setToggled((current) => ({ ...current, [space.slug]: !open }))
@@ -205,7 +211,7 @@ export function SpacesSidebarGroup({ projectId }: { projectId: string }) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton asChild size="sm" className="text-muted-foreground">
                           <HoverPrefetchLink href={href}>
-                            <span className="truncate">{rest} more…</span>
+                            <span className="truncate">{tSpaces('sidebar.more', { count: rest })}</span>
                           </HoverPrefetchLink>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>

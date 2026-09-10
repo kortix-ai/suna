@@ -150,6 +150,7 @@ export function ScheduleCreateModal({
   initialSpace?: string | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSpaces = useI18nTranslations('spaces');
   const [kind, setKind] = useState<TriggerKind | null>(null);
   const copy = kind ? KIND_COPY[kind] : null;
   const isCron = kind === 'cron';
@@ -443,15 +444,15 @@ export function ScheduleCreateModal({
 
               {spaces.length > 0 ? (
                 <Field
-                  label="Space"
-                  hint="Files this trigger and every session it starts under one space."
+                  label={tSpaces('schedule.label')}
+                  hint={tSpaces('schedule.hint')}
                 >
                   <Select value={space} onValueChange={setSpace}>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="None" />
+                      <SelectValue placeholder={tSpaces('none')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={NO_SPACE}>None</SelectItem>
+                      <SelectItem value={NO_SPACE}>{tSpaces('none')}</SelectItem>
                       {spaces.map((option) => (
                         <SelectItem key={option.slug} value={option.slug}>
                           {option.name}

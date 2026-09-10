@@ -2,6 +2,97 @@
   "useCases": {
     "headline": "驱动公司运转的循环"
   },
+  "spaces": {
+    "cancel": "取消",
+    "optional": "可选",
+    "none": "无",
+    "noSpace": "无空间",
+    "create": {
+      "created": "已创建 {name}",
+      "failed": "无法创建空间",
+      "title": "新建空间",
+      "description": "项目中的具名容器，拥有独立的会话、默认智能体和计划任务。",
+      "nameLabel": "名称",
+      "namePlaceholder": "市场营销",
+      "descriptionLabel": "描述",
+      "descriptionPlaceholder": "营销活动工作。",
+      "agentLabel": "智能体",
+      "noDefaultAgent": "无默认智能体",
+      "agentHelp": "这是默认选择，并非强制绑定。这里启动的会话会使用该智能体，但每位用户仍需单独获得该智能体的访问权限。",
+      "submit": "创建空间"
+    },
+    "move": {
+      "movedTo": "已移至 {name}",
+      "movedOut": "已移出空间",
+      "failed": "无法移动会话",
+      "title": "移动到"
+    },
+    "page": {
+      "offTitle": "此项目未启用空间",
+      "offDescription": "请在“设置 → 功能标志”中启用“空间”，以便按具名工作方向对会话分组。",
+      "backToProject": "返回项目",
+      "notFoundTitle": "找不到名为 {slug} 的空间",
+      "notFoundDescription": "该空间可能已从项目配置中移除，或者你没有访问权限。"
+    },
+    "toolbar": {
+      "sharedToast": "所有获准访问此空间的用户都可以读取其中的会话",
+      "privateToast": "会话仅对启动它们的用户可见",
+      "visibilityFailed": "无法更改会话可见性",
+      "renamed": "已重命名为 {name}",
+      "renameFailed": "无法重命名空间",
+      "deleted": "已删除 {name}",
+      "deleteFailed": "无法删除空间",
+      "nameAria": "空间名称",
+      "grantHint": "向用户或群组授予此空间",
+      "grantedHint": "已授予 {count, plural, one {# 个用户或群组} other {# 个用户或群组}}",
+      "share": "共享",
+      "actionsAria": "空间操作",
+      "visibilityLabel": "以下用户可以读取这里的会话",
+      "privateOption": "仅启动会话的用户",
+      "sharedOption": "所有获准访问此空间的用户",
+      "rename": "重命名",
+      "delete": "删除",
+      "deleteTitle": "删除 {name}？",
+      "deleteDescription": "将从 kortix.yaml 中移除 spaces.{slug} 块，其触发器也会失去反向引用。会话会保留，但仅获准访问此空间的成员将无法再看到这些会话。"
+    },
+    "recents": {
+      "aria": "最近的会话",
+      "title": "最近",
+      "empty": "暂无会话。"
+    },
+    "selector": {
+      "selectAria": "选择空间",
+      "wholeProject": "整个项目",
+      "wholeProjectDescription": "不属于任何空间。",
+      "searchPlaceholder": "搜索空间",
+      "noMatches": "没有与“{query}”匹配的空间",
+      "new": "新建空间"
+    },
+    "sidebar": {
+      "title": "空间",
+      "new": "新建空间",
+      "collapse": "折叠 {name}",
+      "expand": "展开 {name}",
+      "more": "另外 {count} 个…"
+    },
+    "schedule": {
+      "label": "空间",
+      "hint": "将此触发器及其启动的每个会话归入同一空间。",
+      "updated": "空间已更新",
+      "updateFailed": "无法更新空间"
+    },
+    "people": {
+      "description": "获准访问此空间的成员和群组。空间权限不等于智能体权限，他们还需要单独获得该智能体的访问权限。",
+      "empty": "尚未向任何人授予此空间。项目管理员始终可以使用它。",
+      "orphanedSuffix": "· 授权不再对应任何空间"
+    },
+    "access": {
+      "title": "空间",
+      "all": "所有空间",
+      "onlyThese": "仅这些…",
+      "allDescription": "此项目当前的所有空间（{count} 个）。之后添加的空间需要新的授权；没有授权记录的空间仅管理员层级可用。"
+    }
+  },
   "developers": {
     "heroDescription": "代理、技能、工具、连接器和计划全都是仓库中的文件。你可以在 IDE 中编辑它们，在本地运行，并用一条命令部署到云端。开源、可自行托管，并完全由你掌控。",
     "agentBody": "代理是一个 Markdown 文件，其中定义了角色、模型和工具。技能是代理按需加载的文件夹。你可以手动编辑，也可以描述目标，让编码代理完成编写。",
@@ -17059,6 +17150,7 @@
       "textdc8d7c5c602b": "源账本",
       "textdc934fe30a94": "20%",
       "textdc937b598926": "无",
+      "text3f5f3b0e5bfc": "无空间",
       "textdc958f2a5781": "密钥操作",
       "textdc98511e6b34": "运行身份",
       "textdc99025834c1": "自托管 Kortix",

@@ -2,6 +2,97 @@
   "useCases": {
     "headline": "Los ciclos que hacen funcionar una empresa"
   },
+  "spaces": {
+    "cancel": "Cancelar",
+    "optional": "opcional",
+    "none": "Ninguno",
+    "noSpace": "Sin espacio",
+    "create": {
+      "created": "Se creó {name}",
+      "failed": "No se pudo crear el espacio",
+      "title": "Nuevo espacio",
+      "description": "Un contenedor con nombre dentro de este proyecto — con sus propias sesiones, agente predeterminado y trabajo programado.",
+      "nameLabel": "Nombre",
+      "namePlaceholder": "Marketing",
+      "descriptionLabel": "Descripción",
+      "descriptionPlaceholder": "Trabajo de campaña.",
+      "agentLabel": "Agente",
+      "noDefaultAgent": "Sin agente predeterminado",
+      "agentHelp": "Es una opción predeterminada, no una vinculación — las sesiones iniciadas aquí se abren con este agente, pero cada persona aún necesita su propio acceso al agente.",
+      "submit": "Crear espacio"
+    },
+    "move": {
+      "movedTo": "Se movió a {name}",
+      "movedOut": "Se quitó del espacio",
+      "failed": "No se pudo mover la sesión",
+      "title": "Mover a"
+    },
+    "page": {
+      "offTitle": "Los Espacios están desactivados para este proyecto",
+      "offDescription": "Activa Espacios en Configuración → Indicadores de funciones para agrupar sesiones en una iniciativa con nombre.",
+      "backToProject": "Volver al proyecto",
+      "notFoundTitle": "No hay ningún espacio llamado {slug}",
+      "notFoundDescription": "Puede haberse eliminado de la configuración del proyecto o quizá no tengas acceso."
+    },
+    "toolbar": {
+      "sharedToast": "Todas las personas con acceso a este espacio pueden leer sus sesiones",
+      "privateToast": "Las sesiones son privadas para quien las inicia",
+      "visibilityFailed": "No se pudo cambiar la visibilidad de las sesiones",
+      "renamed": "Se cambió el nombre a {name}",
+      "renameFailed": "No se pudo cambiar el nombre",
+      "deleted": "Se eliminó {name}",
+      "deleteFailed": "No se pudo eliminar el espacio",
+      "nameAria": "Nombre del espacio",
+      "grantHint": "Conceder este espacio a personas o grupos",
+      "grantedHint": "Concedido a {count, plural, one {# persona o grupo} other {# personas y grupos}}",
+      "share": "Compartir",
+      "actionsAria": "Acciones del espacio",
+      "visibilityLabel": "Las sesiones pueden leerlas",
+      "privateOption": "Solo quien las inició",
+      "sharedOption": "Todas las personas con acceso a este espacio",
+      "rename": "Cambiar nombre",
+      "delete": "Eliminar",
+      "deleteTitle": "¿Eliminar {name}?",
+      "deleteDescription": "El bloque spaces.{slug} se elimina de kortix.yaml y sus activadores pierden la referencia inversa. Las sesiones se conservan, pero los miembros con acceso exclusivo a este espacio dejan de verlas."
+    },
+    "recents": {
+      "aria": "Sesiones recientes",
+      "title": "Recientes",
+      "empty": "Todavía no hay sesiones."
+    },
+    "selector": {
+      "selectAria": "Seleccionar espacio",
+      "wholeProject": "Todo el proyecto",
+      "wholeProjectDescription": "Fuera de un espacio.",
+      "searchPlaceholder": "Buscar espacios",
+      "noMatches": "Ningún espacio coincide con «{query}»",
+      "new": "Nuevo espacio"
+    },
+    "sidebar": {
+      "title": "Espacios",
+      "new": "Nuevo espacio",
+      "collapse": "Contraer {name}",
+      "expand": "Expandir {name}",
+      "more": "{count} más…"
+    },
+    "schedule": {
+      "label": "Espacio",
+      "hint": "Archiva este activador y cada sesión que inicia dentro de un espacio.",
+      "updated": "Espacio actualizado",
+      "updateFailed": "No se pudo actualizar el espacio"
+    },
+    "people": {
+      "description": "Miembros y grupos con acceso a este espacio. Conceder un espacio no concede su agente — también necesitan acceso propio al agente.",
+      "empty": "Este espacio aún no se ha concedido a nadie. Los administradores del proyecto siempre pueden usarlo.",
+      "orphanedSuffix": "· el acceso ya no coincide con un espacio"
+    },
+    "access": {
+      "title": "Espacios",
+      "all": "Todos los espacios",
+      "onlyThese": "Solo estos…",
+      "allDescription": "Todos los espacios que existen hoy en este proyecto ({count}). Los espacios añadidos después necesitan un nuevo permiso — un espacio sin filas de permisos está disponible solo para el nivel de administrador."
+    }
+  },
   "developers": {
     "heroDescription": "Agentes, habilidades, herramientas, conectores y programaciones son archivos en un repositorio. Edítalos en tu IDE, ejecútalos localmente y despliega en la nube con un comando. Código abierto, autoalojable y bajo tu control.",
     "agentBody": "Un agente es un archivo Markdown que define una persona, su modelo y sus herramientas. Las habilidades son carpetas que carga cuando las necesita. Edítalas manualmente o describe el objetivo y deja que tu agente de programación las escriba.",
@@ -17059,6 +17150,7 @@
       "textdc8d7c5c602b": "Libro mayor de origen",
       "textdc934fe30a94": "20%",
       "textdc937b598926": "Ninguno",
+      "text3f5f3b0e5bfc": "Sin espacio",
       "textdc958f2a5781": "Acciones de la clave",
       "textdc98511e6b34": "Se ejecuta como",
       "textdc99025834c1": "Aloja Kortix por tu cuenta",

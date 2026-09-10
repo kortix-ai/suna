@@ -16,18 +16,21 @@ import {
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { listProjectSessions, type ProjectSession } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
+import { useLocale, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 const RECENTS_LIMIT = 12;
 
-function formatDay(iso: string): string {
+function formatDay(iso: string, locale: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return '';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 export function SpaceRecents({ projectId, slug }: { projectId: string; slug: string }) {
+  const locale = useLocale();
+  const tSpaces = useI18nTranslations('spaces');
   const sessionsQuery = useQuery({
     queryKey: qk.project.sessions(projectId, 'visible'),
     queryFn: () => listProjectSessions(projectId),
@@ -50,8 +53,8 @@ export function SpaceRecents({ projectId, slug }: { projectId: string; slug: str
   return (
     // `px-4` keeps the list on the heading's and the composer's text rail
     // (see the heading's comment in welcome-body.tsx).
-    <section className="flex w-full flex-col px-4" aria-label="Recent sessions">
-      <h2 className="text-muted-foreground text-sm font-medium">Recents</h2>
+    <section className="flex w-full flex-col px-4" aria-label={tSpaces('recents.aria')}>
+      <h2 className="text-muted-foreground text-sm font-medium">{tSpaces('recents.title')}</h2>
       {sessionsQuery.isLoading && !sessionsQuery.data ? (
         <div className="mt-3 space-y-3" aria-hidden>
           {['w-2/3', 'w-1/2', 'w-3/5'].map((width) => (
@@ -59,7 +62,7 @@ export function SpaceRecents({ projectId, slug }: { projectId: string; slug: str
           ))}
         </div>
       ) : sessions.length === 0 ? (
-        <p className="text-muted-foreground/70 mt-2 text-sm">No sessions yet.</p>
+        <p className="text-muted-foreground/70 mt-2 text-sm">{tSpaces('recents.empty')}</p>
       ) : (
         <ul className="mt-1">
           {sessions.map((session) => (
@@ -75,7 +78,7 @@ export function SpaceRecents({ projectId, slug }: { projectId: string; slug: str
                   dateTime={sessionLastActivityAt(session)}
                   className="text-muted-foreground shrink-0 text-xs tabular-nums"
                 >
-                  {formatDay(sessionLastActivityAt(session))}
+                  {formatDay(sessionLastActivityAt(session), locale)}
                 </time>
               </HoverPrefetchLink>
             </li>

@@ -24,6 +24,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { updateProjectSession, type ProjectSession } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { FolderSimpleIcon } from '@phosphor-icons/react';
@@ -35,6 +36,7 @@ import { useProjectSpaces } from './spaces-data';
 const NO_SPACE = '__project__';
 
 export function MoveSessionMenu({ session }: { session: ProjectSession }) {
+  const tSpaces = useI18nTranslations('spaces');
   const projectId = session.project_id;
   const queryClient = useQueryClient();
   const spacesQuery = useProjectSpaces(projectId);
@@ -45,14 +47,14 @@ export function MoveSessionMenu({ session }: { session: ProjectSession }) {
       updateProjectSession(projectId, session.session_id, { space: slug }),
     onSuccess: (_result, slug) => {
       const name = spaces.find((s) => s.slug === slug)?.name;
-      successToast(name ? `Moved to ${name}` : 'Moved out of the space');
+      successToast(name ? tSpaces('move.movedTo', { name }) : tSpaces('move.movedOut'));
       // The row changes list: the sidebar's space folders and its
       // unfiled `Sessions` list read the same inventory entry, and each
       // space's `session_count` moved with it.
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
       queryClient.invalidateQueries({ queryKey: qk.project.spaces(projectId) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Could not move the session'),
+    onError: (error: Error) => errorToast(error.message || tSpaces('move.failed')),
   });
 
   // Nothing to move into, or no right to move it.
@@ -64,7 +66,7 @@ export function MoveSessionMenu({ session }: { session: ProjectSession }) {
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className="cursor-pointer">
         <FolderSimpleIcon />
-        Move to
+        {tSpaces('move.title')}
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent className="w-56">
         <DropdownMenuRadioGroup
@@ -75,7 +77,7 @@ export function MoveSessionMenu({ session }: { session: ProjectSession }) {
           }}
         >
           <DropdownMenuRadioItem value={NO_SPACE} disabled={move.isPending}>
-            No space
+            {tSpaces('noSpace')}
           </DropdownMenuRadioItem>
           {spaces.length > 0 ? <DropdownMenuSeparator /> : null}
           {spaces.map((space) => (

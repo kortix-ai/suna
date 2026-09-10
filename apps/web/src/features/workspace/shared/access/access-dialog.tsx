@@ -468,6 +468,7 @@ export function AccessDialog({
   onDone,
 }: AccessDialogProps) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSpaces = useI18nTranslations('spaces');
   const queryClient = useQueryClient();
   const roleScope = roleScopeFor(scope);
   const projectId = scope.kind === 'project' ? scope.projectId : undefined;
@@ -1308,7 +1309,7 @@ export function AccessDialog({
                 is the picker directly above, which is why both are offered. */}
             {showSpaces ? (
               <Field className="gap-1.5">
-                <FieldLabel>Spaces</FieldLabel>
+                <FieldLabel>{tSpaces('access.title')}</FieldLabel>
                 <Tabs
                   value={spaces.mode}
                   onValueChange={(next) =>
@@ -1318,13 +1319,15 @@ export function AccessDialog({
                   }
                 >
                   <TabsListCompact>
-                    <TabsTriggerCompact value="all">All spaces</TabsTriggerCompact>
-                    <TabsTriggerCompact value="subset">Only these…</TabsTriggerCompact>
+                    <TabsTriggerCompact value="all">{tSpaces('access.all')}</TabsTriggerCompact>
+                    <TabsTriggerCompact value="subset">
+                      {tSpaces('access.onlyThese')}
+                    </TabsTriggerCompact>
                   </TabsListCompact>
                 </Tabs>
                 {spaces.mode === 'all' ? (
                   <FieldDescription>
-                    {`Every space in this project today (${projectSpaces.length}). Spaces added later need a new grant — a space with no grant rows is the manager tier's only.`}
+                    {tSpaces('access.allDescription', { count: projectSpaces.length })}
                   </FieldDescription>
                 ) : (
                   <div className="border-border max-h-40 overflow-y-auto rounded-md border p-1">

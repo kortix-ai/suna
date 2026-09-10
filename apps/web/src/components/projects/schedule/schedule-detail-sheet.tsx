@@ -782,6 +782,7 @@ function AgentPanel({
   onMutated: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSpaces = useI18nTranslations('spaces');
   const agents = useVisibleAgents({ projectId });
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
@@ -818,10 +819,10 @@ function AgentPanel({
         withTriggerSpace({}, next === NO_SPACE ? null : next),
       ),
     onSuccess: () => {
-      successToast('Space updated');
+      successToast(tSpaces('schedule.updated'));
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not update the space'),
+    onError: (e: Error) => errorToast(e.message || tSpaces('schedule.updateFailed')),
   });
 
   const saveModel = useMutation({
@@ -847,7 +848,7 @@ function AgentPanel({
               value: trigger.model ?? "The agent's usual model",
             },
             ...(triggerSpace(trigger)
-              ? [{ label: 'Space', value: triggerSpace(trigger)! }]
+              ? [{ label: tSpaces('schedule.label'), value: triggerSpace(trigger)! }]
               : []),
           ]}
         />
@@ -880,17 +881,17 @@ function AgentPanel({
 
       {spaces.length > 0 ? (
         <div className="space-y-1.5">
-          <Label className="text-xs">Space</Label>
+          <Label className="text-xs">{tSpaces('schedule.label')}</Label>
           <Select
             value={currentSpace}
             onValueChange={(next) => saveSpace.mutate(next)}
             disabled={saveSpace.isPending}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="None" />
+              <SelectValue placeholder={tSpaces('none')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NO_SPACE}>None</SelectItem>
+              <SelectItem value={NO_SPACE}>{tSpaces('none')}</SelectItem>
               {spaces.map((option) => (
                 <SelectItem key={option.slug} value={option.slug}>
                   {option.name}

@@ -96,11 +96,10 @@ export function agentIdsHeldBy(
 /** The section's copy, per resource type. The two objects the IAM engine
  *  closes by default are granted the same way, so they get the same section
  *  with the sentence that names what is actually inherited. */
-/** The agent copy is localized (main's keys); the space copy is not
- *  yet — it stays English until its keys are generated. */
 function resourceCopy(
   resourceType: 'agent' | 'space',
   tI18nComplete: ReturnType<typeof useI18nTranslations>,
+  tSpaces: ReturnType<typeof useI18nTranslations>,
 ): { description: string; empty: string; rowSuffix: string } {
   if (resourceType === 'agent') {
     return {
@@ -110,10 +109,9 @@ function resourceCopy(
     };
   }
   return {
-    description:
-      'Members and groups granted this space. A space grant is not an agent grant — they need its agent in their own right too.',
-    empty: 'No one is granted this space yet. Project managers can always use it.',
-    rowSuffix: '· grant no longer matches a space',
+    description: tSpaces('people.description'),
+    empty: tSpaces('people.empty'),
+    rowSuffix: tSpaces('people.orphanedSuffix'),
   };
 }
 
@@ -164,7 +162,8 @@ export function AgentPeopleSection({
   resourceType?: 'agent' | 'space';
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const copy = resourceCopy(resourceType, tI18nComplete);
+  const tSpaces = useI18nTranslations('spaces');
+  const copy = resourceCopy(resourceType, tI18nComplete, tSpaces);
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);

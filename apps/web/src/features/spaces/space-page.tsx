@@ -47,6 +47,7 @@ import { ProjectHome } from '@/features/workspace/project-layout/project-home';
 import { useProjectHomeSend } from '@/features/workspace/project-layout/use-project-home-send';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
   deleteProjectSpace,
@@ -72,6 +73,8 @@ import { useMemo, useState } from 'react';
 import { SpaceRecents } from './space-recents';
 import { useInvalidateSpace } from './spaces-data';
 
+const SHARED_SESSIONS_MODE: SpaceSessionsMode = 'shared';
+
 /** The grants naming this space. Orphaned rows (the block was deleted)
  *  are kept — they are inert, and hiding them hides the thing to clean up. */
 export function grantsForSpace(
@@ -82,6 +85,7 @@ export function grantsForSpace(
 }
 
 export function SpacePage({ projectId, slug }: { projectId: string; slug: string }) {
+  const tSpaces = useI18nTranslations('spaces');
   const spacesFlag = useFeatureFlag(projectId, 'spaces');
   const query = useQuery({
     queryKey: qk.project.space(projectId, slug),
@@ -101,12 +105,12 @@ export function SpacePage({ projectId, slug }: { projectId: string; slug: string
           <EmptyState
             icon={FolderSimpleIcon}
             size="sm"
-            title="Spaces are off for this project"
-            description="Turn Spaces on in Settings → Feature flags to group sessions under a named effort."
+            title={tSpaces('page.offTitle')}
+            description={tSpaces('page.offDescription')}
             action={
               <Button asChild variant="outline" size="sm">
                 <HoverPrefetchLink href={`/projects/${projectId}`}>
-                  Back to the project
+                  {tSpaces('page.backToProject')}
                 </HoverPrefetchLink>
               </Button>
             }
@@ -128,11 +132,13 @@ export function SpacePage({ projectId, slug }: { projectId: string; slug: string
           <EmptyState
             icon={FolderSimpleIcon}
             size="sm"
-            title={`No space named ${slug}`}
-            description="It may have been removed from the project's configuration, or you may not be granted it."
+            title={tSpaces('page.notFoundTitle', { slug })}
+            description={tSpaces('page.notFoundDescription')}
             action={
               <Button asChild variant="outline" size="sm">
-                <HoverPrefetchLink href={`/projects/${projectId}`}>Back to the project</HoverPrefetchLink>
+                <HoverPrefetchLink href={`/projects/${projectId}`}>
+                  {tSpaces('page.backToProject')}
+                </HoverPrefetchLink>
               </Button>
             }
           />
@@ -232,6 +238,7 @@ function SpaceToolbar({
   space: Space;
   canManage: boolean;
 }) {
+  const tSpaces = useI18nTranslations('spaces');
   const router = useRouter();
   const queryClient = useQueryClient();
   const invalidate = useInvalidateSpace(projectId, space.slug);
@@ -266,31 +273,32 @@ function SpaceToolbar({
       updateProjectSpace(projectId, space.slug, { sessions }),
     onSuccess: async (updated) => {
       successToast(
-        updated.sessions === 'shared'
-          ? 'Everyone granted this space can read its sessions'
-          : 'Sessions here are private to whoever starts them',
+        updated.sessions === SHARED_SESSIONS_MODE
+          ? tSpaces('toolbar.sharedToast')
+          : tSpaces('toolbar.privateToast'),
       );
       await invalidate();
       // Visibility changed for rows already in the cache.
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Could not change session visibility'),
+    onError: (error: Error) =>
+      errorToast(error.message || tSpaces('toolbar.visibilityFailed')),
   });
 
   const rename = useMutation({
     mutationFn: (name: string) => updateProjectSpace(projectId, space.slug, { name }),
     onSuccess: async (updated) => {
-      successToast(`Renamed to ${updated.name}`);
+      successToast(tSpaces('toolbar.renamed', { name: updated.name }));
       setRenaming(false);
       await invalidate();
     },
-    onError: (error: Error) => errorToast(error.message || 'Could not rename it'),
+    onError: (error: Error) => errorToast(error.message || tSpaces('toolbar.renameFailed')),
   });
 
   const remove = useMutation({
     mutationFn: () => deleteProjectSpace(projectId, space.slug),
     onSuccess: async () => {
-      successToast(`${space.name} deleted`);
+      successToast(tSpaces('toolbar.deleted', { name: space.name }));
       setConfirmDelete(false);
       // Drop this space's own query BEFORE the list invalidation: the
       // single-item key nests under the list key, so invalidating the list
@@ -304,7 +312,7 @@ function SpaceToolbar({
       queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId) });
       router.push(`/projects/${projectId}`);
     },
-    onError: (error: Error) => errorToast(error.message || 'Could not delete it'),
+    onError: (error: Error) => errorToast(error.message || tSpaces('toolbar.deleteFailed')),
   });
 
   const commitRename = () => {
@@ -321,7 +329,7 @@ function SpaceToolbar({
     <div className="flex items-center gap-1">
       {renaming ? (
         <Input
-          aria-label="Space name"
+          aria-label={tSpaces('toolbar.nameAria')}
           value={draftName}
           autoFocus
           maxLength={64}
@@ -346,8 +354,8 @@ function SpaceToolbar({
         <Hint
           label={
             assigned.length === 0
-              ? 'Grant this space to people or groups'
-              : `Granted to ${assigned.length} ${assigned.length === 1 ? 'person or group' : 'people and groups'}`
+              ? tSpaces('toolbar.grantHint')
+              : tSpaces('toolbar.grantedHint', { count: assigned.length })
           }
         >
           <Button
@@ -357,7 +365,7 @@ function SpaceToolbar({
             onClick={() => setShareOpen(true)}
           >
             <ShareNetworkIcon className="size-4 shrink-0" />
-            Share
+            {tSpaces('toolbar.share')}
             {assigned.length > 0 ? (
               <span className="text-muted-foreground/70 tabular-nums">{assigned.length}</span>
             ) : null}
@@ -371,7 +379,7 @@ function SpaceToolbar({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Space actions"
+              aria-label={tSpaces('toolbar.actionsAria')}
               className="text-muted-foreground hover:text-foreground"
             >
               <DotsThreeIcon className="size-4" />
@@ -379,17 +387,17 @@ function SpaceToolbar({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
-              Sessions here are readable by
+              {tSpaces('toolbar.visibilityLabel')}
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={space.sessions}
               onValueChange={(next) => setMode.mutate(next as SpaceSessionsMode)}
             >
               <DropdownMenuRadioItem value="private" disabled={setMode.isPending}>
-                Only whoever started them
+                {tSpaces('toolbar.privateOption')}
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="shared" disabled={setMode.isPending}>
-                Everyone granted this space
+                {tSpaces('toolbar.sharedOption')}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
@@ -404,14 +412,14 @@ function SpaceToolbar({
                 setTimeout(() => setRenaming(true), 0);
               }}
             >
-              Rename
+              {tSpaces('toolbar.rename')}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onSelect={() => setTimeout(() => setConfirmDelete(true), 0)}
             >
               <TrashIcon />
-              Delete
+              {tSpaces('toolbar.delete')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -431,9 +439,9 @@ function SpaceToolbar({
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={`Delete ${space.name}?`}
-        description={`The spaces.${space.slug} block is removed from kortix.yaml and its triggers lose the back-reference. Its sessions are kept, but members granted only this space stop seeing them.`}
-        confirmLabel="Delete"
+        title={tSpaces('toolbar.deleteTitle', { name: space.name })}
+        description={tSpaces('toolbar.deleteDescription', { slug: space.slug })}
+        confirmLabel={tSpaces('toolbar.delete')}
         confirmVariant="destructive"
         isPending={remove.isPending}
         onConfirm={() => remove.mutate()}

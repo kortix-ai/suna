@@ -99,7 +99,8 @@ const NONE_SECTION_ORDER: Array<{ id: string; label: string }> = [{ id: 'all', l
 /** The tail bucket of `space` mode — always last, and always declared,
  *  so "the sessions in no space" is a section a person can hide like any
  *  other rather than a residue that appears only sometimes. */
-const SPACE_NONE_SECTION = { id: 'space:none', label: 'No space' };
+const SPACE_NONE_LABEL = 'No space';
+const SPACE_NONE_SECTION = { id: 'space:none', label: SPACE_NONE_LABEL };
 
 /** Section id for one space. Namespaced, because section ids share one
  *  persisted hidden/collapsed list with every other mode's ids and a slug
@@ -120,13 +121,18 @@ function spaceSectionId(slug: string): string {
  */
 function spaceSectionOrder(
   sessions: readonly ProjectSession[],
+  tI18nComplete: UiTranslator,
 ): Array<{ id: string; label: string }> {
   const slugs = [
     ...new Set(sessions.map((session) => session.space).filter((slug): slug is string => !!slug)),
   ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   return [
     ...slugs.map((slug) => ({ id: spaceSectionId(slug), label: slug })),
-    SPACE_NONE_SECTION,
+    ...localizeUiCatalog(
+      [SPACE_NONE_SECTION],
+      tI18nComplete,
+      PRODUCT_CATALOG_TRANSLATION_KEYS,
+    ),
   ];
 }
 
@@ -256,7 +262,7 @@ export function groupSessions(
         : mode === 'source'
           ? sourceSections
           : mode === 'space'
-            ? spaceSectionOrder(sessions)
+            ? spaceSectionOrder(sessions, tI18nComplete)
             : allSections;
 
   const buckets = new Map<string, ProjectSession[]>(declared.map((section) => [section.id, []]));

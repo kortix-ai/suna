@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import {
   CommandGroup,
   CommandInput,
@@ -55,6 +56,7 @@ export function SpaceSelector({
   onSelect: (slug: string | null) => void;
   canCreate: boolean;
 }) {
+  const tSpaces = useI18nTranslations('spaces');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -120,7 +122,7 @@ export function SpaceSelector({
             type="button"
             variant="outline"
             size="sm"
-            aria-label="Select space"
+            aria-label={tSpaces('selector.selectAria')}
             className="bg-background rounded-lg"
           >
             {current ? (
@@ -128,7 +130,9 @@ export function SpaceSelector({
             ) : (
               <SquaresFourIcon className="size-3.5 shrink-0" />
             )}
-            <span className="max-w-[12rem] truncate">{current?.name ?? 'Whole project'}</span>
+            <span className="max-w-[12rem] truncate">
+              {current?.name ?? tSpaces('selector.wholeProject')}
+            </span>
             <CaretDownIcon
               className={cn(
                 'size-3 transition-transform duration-200 ease-out',
@@ -149,7 +153,7 @@ export function SpaceSelector({
           <div className={showSearch ? undefined : 'sr-only'}>
             <CommandInput
               compact
-              placeholder="Search spaces"
+              placeholder={tSpaces('selector.searchPlaceholder')}
               value={search}
               onValueChange={setSearch}
             />
@@ -161,8 +165,8 @@ export function SpaceSelector({
                 row(
                   'whole-project',
                   <SquaresFourIcon className="size-4" />,
-                  'Whole project',
-                  'Not inside a space.',
+                  tSpaces('selector.wholeProject'),
+                  tSpaces('selector.wholeProjectDescription'),
                   selected === null,
                   () => onSelect(null),
                 )}
@@ -180,7 +184,7 @@ export function SpaceSelector({
 
             {filtered.length === 0 && query ? (
               <div className="text-muted-foreground/50 py-8 text-center text-xs">
-                No spaces match &ldquo;{search.trim()}&rdquo;
+                {tSpaces('selector.noMatches', { query: search.trim() })}
               </div>
             ) : null}
 
@@ -191,7 +195,7 @@ export function SpaceSelector({
                   {row(
                     'new-space',
                     <PlusIcon className="size-4" />,
-                    'New space',
+                    tSpaces('selector.new'),
                     null,
                     false,
                     () => setCreateOpen(true),
