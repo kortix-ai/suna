@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Composer attachment regressions must compose async lifecycle boundaries (2026-09-10)
+
+**When:** changing composer submission or attachment draft persistence. Hold the
+first Send ACK while the next upload remains pending, then assert its text and
+tile survive. Test mixed attachments through save, reload, readiness capture,
+and final Send assembly in one flow.
+*Near-miss:* Task 4 tested each helper alone, so review found no regression for
+the two boundary-spanning failures.
+*Enforcers:* `composer-submit-latch.test.ts` and `composer-draft.test.ts`.
+
 ### A self-authenticating route must populate the shared context the resolver reads (2026-09-09)
 
 **When:** adding a route that authenticates its own credential instead of running

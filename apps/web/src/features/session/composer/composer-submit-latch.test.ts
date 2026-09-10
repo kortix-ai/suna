@@ -115,6 +115,69 @@ describe('the composer submits through the latch', () => {
     expect(sent).toEqual([['ready-server']]);
   });
 
+  test('a pending second draft keeps its text and tile after the first ACK settles', async () => {
+    let releaseFirst!: () => void;
+    const firstAck = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const pendingFile: AttachedFile = {
+      kind: 'local',
+      uploadId: 'pending-local',
+      file: new File(['still uploading'], 'pending.txt', { type: 'text/plain' }),
+      localUrl: 'blob:pending',
+      isImage: false,
+    };
+    let editorText = 'second draft';
+    let visibleFiles: AttachedFile[] = [pendingFile];
+    const dispatched: Array<{ text: string; files: AttachedFile[] }> = [];
+    const controller = {
+      getReadyParts: (): SessionPromptPart[] => {
+        throw new Error('Attachment uploads are still in progress');
+      },
+      getSnapshot: (): PromptAttachmentSnapshot => ({
+        canSend: false,
+        attachments: [
+          {
+            id: 'pending-local',
+            file: pendingFile.kind === 'local' ? pendingFile.file : undefined,
+            filename: 'pending.txt',
+            mime: 'text/plain',
+            size: 15,
+            status: 'uploading',
+            receivedBytes: 4,
+          },
+        ],
+      }),
+    };
+    const submit = createSubmitLatch<{ text: string; files: AttachedFile[] }>(
+      async (stash) => {
+        if (!stash) return firstAck;
+        dispatched.push(stash);
+      },
+      () => {
+        if (!editorText.trim()) return null;
+        try {
+          captureAttachmentSubmission(visibleFiles, controller);
+        } catch {
+          return null;
+        }
+        const stash = { text: editorText, files: [...visibleFiles] };
+        editorText = '';
+        visibleFiles = [];
+        return stash;
+      },
+    );
+
+    const first = submit();
+    await submit();
+    releaseFirst();
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(dispatched).toEqual([]);
+    expect(editorText).toBe('second draft');
+    expect(visibleFiles).toEqual([pendingFile]);
+    expect(visibleFiles[0]?.kind === 'local' ? visibleFiles[0].file.name : '').toBe('pending.txt');
+  });
+
   test('handleSubmit goes through ONE latch instance, held in a ref', () => {
     // A latch rebuilt per render forgets it is in flight, which reopens the
     // same-tick double-fire window mid-send. The `??=` into a ref is what makes

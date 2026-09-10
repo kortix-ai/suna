@@ -74,7 +74,7 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     // silent-drop bug this branch exists to fix. Only the queue names a
     // submission, and each enqueue mints its own key.
     const composer = between(
-      'await handleSend(text, files, mentions);',
+      'await handleSend(text, files, mentions, attachmentParts);',
       'prefill={composerPrefill}',
     );
 

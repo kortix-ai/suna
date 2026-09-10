@@ -458,6 +458,11 @@ function ComposerImpl({
   parentClassName,
 }: SessionChatInputProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
+  const tComposerAttachmentsRef = useRef(tComposerAttachments);
+  useEffect(() => {
+    tComposerAttachmentsRef.current = tComposerAttachments;
+  }, [tComposerAttachments]);
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -529,10 +534,12 @@ function ComposerImpl({
         attachedFilesRef.current = next;
         setAttachedFiles(next);
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Could not restore attachments');
+        errorToast(
+          error instanceof Error ? error.message : tComposerAttachments('couldNotRestore'),
+        );
       }
     },
-    [restorePromptAttachment],
+    [restorePromptAttachment, tComposerAttachments],
   );
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
@@ -570,10 +577,10 @@ function ComposerImpl({
         attachedFilesRef.current = next;
         setAttachedFiles(next);
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Could not attach files');
+        errorToast(error instanceof Error ? error.message : tComposerAttachments('couldNotAttach'));
       }
     },
-    [addPromptAttachments],
+    [addPromptAttachments, tComposerAttachments],
   );
 
   useEffect(
@@ -671,11 +678,13 @@ function ComposerImpl({
       const uploadId = attachedFileUploadId(removed);
       if (uploadId) {
         void removePromptAttachment(uploadId).catch((error) => {
-          errorToast(error instanceof Error ? error.message : 'Could not remove attachment');
+          errorToast(
+            error instanceof Error ? error.message : tComposerAttachments('couldNotRemove'),
+          );
         });
       }
     },
-    [removePromptAttachment],
+    [removePromptAttachment, tComposerAttachments],
   );
 
   const retryAttachedFile = useCallback(
@@ -683,10 +692,10 @@ function ComposerImpl({
       try {
         retryPromptAttachment(id);
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Could not retry attachment');
+        errorToast(error instanceof Error ? error.message : tComposerAttachments('couldNotRetry'));
       }
     },
-    [retryPromptAttachment],
+    [retryPromptAttachment, tComposerAttachments],
   );
 
   useEffect(() => {
@@ -993,7 +1002,9 @@ function ComposerImpl({
         attachedFilesRef.current = next;
         setAttachedFiles(next);
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Could not restore attachments');
+        errorToast(
+          error instanceof Error ? error.message : tComposerAttachments('couldNotRestore'),
+        );
       }
     }
     editorRef.current?.focus();
@@ -1016,6 +1027,7 @@ function ComposerImpl({
     getPromptAttachmentSnapshot,
     restorePromptAttachment,
     removePromptAttachment,
+    tComposerAttachments,
   ]);
 
   useEffect(() => {
@@ -1295,7 +1307,7 @@ function ComposerImpl({
           try {
             return captureAttachmentSubmission(filesNow, promptAttachments);
           } catch (error) {
-            errorToast(error instanceof Error ? error.message : 'Attachments are not ready');
+            errorToast(error instanceof Error ? error.message : tComposerAttachments('notReady'));
             return null;
           }
         })();
@@ -1362,6 +1374,7 @@ function ComposerImpl({
       submitDisabled,
       clearOnSend,
       tI18nComplete,
+      tComposerAttachments,
       sessionWorking,
       isBusy,
       runtimeReady,
@@ -1413,7 +1426,11 @@ function ComposerImpl({
         try {
           attachmentSubmission = captureAttachmentSubmission(files, promptAttachmentsRef.current);
         } catch (error) {
-          errorToast(error instanceof Error ? error.message : 'Attachments are not ready');
+          errorToast(
+            error instanceof Error
+              ? error.message
+              : tComposerAttachmentsRef.current('notReady'),
+          );
           return null;
         }
         editor.clear();
@@ -1519,7 +1536,7 @@ function ComposerImpl({
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
                     {tHardcodedUi.raw('i18nComplete.text09b4cb469c91')}{' '}
-                    <span className="text-foreground/80 font-medium">
+                    <span className="text-foreground font-medium">
                       {threadContext.parentTitle}
                     </span>
                   </span>
@@ -1628,7 +1645,7 @@ function ComposerImpl({
         <div
           className={cn(
             'relative z-[1] flex w-full flex-col overflow-visible',
-            'transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
+            'transition-opacity duration-normal ease-[cubic-bezier(0.23,1,0.32,1)]',
             'motion-reduce:transition-none',
             isDragOver && 'opacity-30',
           )}

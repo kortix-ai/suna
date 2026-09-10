@@ -16,10 +16,28 @@ import type { PromptAttachmentItem } from '@kortix/sdk';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { useTranslations } from '@/i18n/use-translations';
 import { convertHeicBlobToJpeg, isHeicFile } from '@/lib/utils/heic-convert';
 
 import { AttachmentRemoveButton, AttachmentTile, isPreviewableImage } from '../attachment-tile';
 import type { AttachedFile } from './types';
+
+type AttachmentTileTranslator = (
+  key: 'uploadFailed' | 'retry' | 'retryNamed' | 'processing' | 'waiting' | 'uploading',
+  values?: { name?: string; progress?: number },
+) => string;
+
+/** Resolve every tile status and action from the active locale catalog. */
+export function attachmentTileCopy(t: AttachmentTileTranslator) {
+  return {
+    uploadFailed: t('uploadFailed'),
+    retry: t('retry'),
+    retryNamed: (name: string) => t('retryNamed', { name }),
+    processing: t('processing'),
+    waiting: t('waiting'),
+    uploading: (progress: number) => t('uploading', { progress }),
+  };
+}
 
 /** The two shapes of `AttachedFile` disagree on where the name lives. */
 function attachmentName(af: AttachedFile): string {
@@ -122,6 +140,8 @@ export function AttachmentTiles({
   onRemove: (index: number) => void;
   onRetry?: (id: string) => void;
 }) {
+  const t = useTranslations('hardcodedUi.composerAttachments');
+  const copy = attachmentTileCopy(t);
   if (files.length === 0) return null;
 
   return (
@@ -171,27 +191,29 @@ export function AttachmentTiles({
                 >
                   {upload.status === 'error' || upload.status === 'aborted' ? (
                     <>
-                      <span className="text-kortix-red min-w-0 flex-1 truncate">Upload failed</span>
+                      <span className="text-kortix-red min-w-0 flex-1 truncate">
+                        {copy.uploadFailed}
+                      </span>
                       {onRetry && upload.file && (
                         <Button
                           type="button"
                           variant="ghost"
                           size="xs"
                           className="h-auto px-1.5 py-0.5 text-xs"
-                          aria-label={`Retry ${name}`}
+                          aria-label={copy.retryNamed(name)}
                           onClick={() => onRetry(upload.id)}
                         >
-                          Retry
+                          {copy.retry}
                         </Button>
                       )}
                     </>
                   ) : (
                     <span className="text-muted-foreground tabular-nums">
                       {upload.status === 'processing'
-                        ? 'Processing'
+                        ? copy.processing
                         : upload.status === 'pending'
-                          ? 'Waiting'
-                          : `Uploading ${progress ?? 0}%`}
+                          ? copy.waiting
+                          : copy.uploading(progress ?? 0)}
                     </span>
                   )}
                 </div>

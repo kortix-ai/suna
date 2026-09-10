@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { createTranslator } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import deMessages from '../../../../translations/de.json';
+
 import { TILE_SURFACE } from '../attachment-tile';
-import { AttachmentTiles } from './attachment-tiles';
+import { AttachmentTiles, attachmentTileCopy } from './attachment-tiles';
 import type { AttachedFile } from './types';
 
 /**
@@ -173,6 +176,20 @@ describe('AttachmentTiles', () => {
     expect(markup).toContain('aria-label="Retry failed.pdf"');
     expect(markup).toContain('aria-label="Remove failed.pdf"');
     expect(markup).toContain('network unavailable');
+  });
+
+  test('renders attachment status and action labels in the active locale', () => {
+    const translator = createTranslator({
+      locale: 'de',
+      messages: deMessages,
+      namespace: 'hardcodedUi.composerAttachments',
+    });
+    const copy = attachmentTileCopy(translator);
+
+    expect(copy.uploadFailed).toBe('Upload fehlgeschlagen');
+    expect(copy.retry).toBe('Erneut versuchen');
+    expect(copy.retryNamed('fehler.pdf')).toBe('fehler.pdf erneut versuchen');
+    expect(copy.uploading(50)).toBe('Upload läuft: 50 %');
   });
 
   test('an attached SVG shows its name, not a rendered preview', () => {

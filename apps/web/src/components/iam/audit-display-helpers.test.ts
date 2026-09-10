@@ -111,6 +111,20 @@ describe('audit HTTP route registry', () => {
     expect(describeAuditAction(`GET /v1/git/${UID}/compiled-runtime`, testUiTranslator).title).toBe(
       'Downloaded compiled session runtime',
     );
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/attachments`, testUiTranslator).title,
+    ).toBe('Started attachment upload');
+    expect(
+      describeAuditAction(`PUT /v1/projects/${UID}/attachments/${UID2}/chunks/0`, testUiTranslator)
+        .title,
+    ).toBe('Uploaded attachment chunk');
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/attachments/${UID2}/complete`, testUiTranslator)
+        .title,
+    ).toBe('Completed attachment upload');
+    expect(
+      describeAuditAction(`DELETE /v1/projects/${UID}/attachments/${UID2}`, testUiTranslator).title,
+    ).toBe('Removed attachment upload');
   });
 
   test('preserves the compact raw route fallback for an unknown route', () => {

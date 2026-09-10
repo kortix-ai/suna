@@ -1,6 +1,9 @@
 import type { JSONContent } from '@tiptap/core';
 import { describe, expect, test } from 'bun:test';
 
+import type { PromptAttachmentSnapshot, SessionPromptPart } from '@kortix/sdk';
+import { stageFirstPromptAttachments } from '../../uploaded-file-refs';
+import { captureAttachmentSubmission } from '../attachment-submission';
 import type { AttachedFile } from '../types';
 import {
   DRAFT_ENVELOPE_VERSION,
@@ -244,6 +247,91 @@ describe('deserializeDraft', () => {
       })).map((file) => (file.kind === 'local' ? file.file.name : file.filename)),
     ).toEqual(['first.png', 'a.png']);
     expect(JSON.stringify(back)).not.toContain('blob:');
+  });
+
+  test('preserves mixed attachment order through save, reload, capture, and Send', async () => {
+    const firstAttachment = {
+      attachment_id: 'att-first',
+      filename: 'first.txt',
+      mime: 'text/plain',
+      size: 5,
+      expires_at: '2099-01-01T00:00:00.000Z',
+    };
+    const thirdAttachment = {
+      attachment_id: 'att-third',
+      filename: 'third.txt',
+      mime: 'text/plain',
+      size: 5,
+      expires_at: '2099-01-01T00:00:00.000Z',
+    };
+    const first: AttachedFile = {
+      kind: 'staged',
+      uploadId: 'before-reload-first',
+      attachment: firstAttachment,
+      filename: firstAttachment.filename,
+      mime: firstAttachment.mime,
+      isImage: false,
+    };
+    const third: AttachedFile = {
+      kind: 'local',
+      uploadId: 'before-reload-third',
+      file: new File(['third'], thirdAttachment.filename, { type: thirdAttachment.mime }),
+      localUrl: 'blob:third',
+      isImage: false,
+    };
+    const stored = serializeDraft({
+      doc: EMPTY_DOC,
+      documentIsEmpty: true,
+      files: [first, REMOTE_FILE, third],
+      attachments: [firstAttachment, thirdAttachment],
+      userId: USER,
+    });
+    const back = deserializeDraft(JSON.parse(JSON.stringify(stored)), USER);
+    if (!back) throw new Error('expected stored draft');
+    const restored = restoreDraftFileOrder(back, (attachment) => ({
+      kind: 'staged',
+      uploadId: `restored-${attachment.attachment_id}`,
+      attachment,
+      filename: attachment.filename,
+      mime: attachment.mime,
+      isImage: attachment.mime.startsWith('image/'),
+    }));
+    const readyParts: SessionPromptPart[] = [firstAttachment, thirdAttachment].map(
+      (attachment) => ({
+        type: 'file',
+        attachment_id: attachment.attachment_id,
+        filename: attachment.filename,
+        mime: attachment.mime,
+      }),
+    );
+    const snapshot: PromptAttachmentSnapshot = {
+      canSend: true,
+      attachments: [firstAttachment, thirdAttachment].map((attachment) => ({
+        id: `restored-${attachment.attachment_id}`,
+        filename: attachment.filename,
+        mime: attachment.mime,
+        size: attachment.size,
+        status: 'ready',
+        receivedBytes: attachment.size,
+        attachment,
+      })),
+    };
+    const captured = captureAttachmentSubmission(restored, {
+      getReadyParts: () => readyParts,
+      getSnapshot: () => snapshot,
+    });
+    const sent = await stageFirstPromptAttachments(restored, captured.parts);
+
+    expect(
+      restored.map((file) => (file.kind === 'local' ? file.file.name : file.filename)),
+    ).toEqual(['first.txt', 'a.png', 'third.txt']);
+    expect(captured.submittedIds).toEqual(['restored-att-first', 'restored-att-third']);
+    expect(sent.map((part) => part.filename)).toEqual(['first.txt', 'a.png', 'third.txt']);
+    expect(sent.map((part) => part.attachment_id ?? part.url)).toEqual([
+      'att-first',
+      REMOTE_FILE.kind === 'remote' ? REMOTE_FILE.url : '',
+      'att-third',
+    ]);
   });
 
   test('a stale envelope version is refused', () => {
