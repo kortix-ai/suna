@@ -49,6 +49,11 @@ interface TemplateCreateResult {
   slug: string;
 }
 
+interface ProviderCoverage {
+  provider: "daytona" | "platinum" | "e2b";
+  available: boolean;
+}
+
 async function openSandboxSection(page: Page, projectId: string) {
   // Sandbox templates is a Workspace row of the Mod+, Settings overlay again
   // (2026-09-02; `/projects/[id]/config` is gone). `/settings/<tab>` is the
@@ -134,6 +139,20 @@ test.describe("12 — Sandbox templates UI", () => {
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
+    const templates = await api<{
+      items: Array<{
+        slug: string;
+        provider_coverage?: ProviderCoverage[];
+      }>;
+    }>(session.access_token, "GET", `/projects/${projectId}/sandbox-templates`);
+    expect(templates.status).toBe(200);
+    const availableProviders =
+      templates.json?.items
+        .find((template) => template.slug === "default")
+        ?.provider_coverage?.filter((item) => item.available)
+        .map((item) => item.provider) ?? [];
+    expect(availableProviders.length).toBeGreaterThan(0);
+
     // Platform default row: "Default" name + "default" slug code chip.
     await expect(
       page.getByText("Default", { exact: true }).first(),
@@ -165,8 +184,14 @@ test.describe("12 — Sandbox templates UI", () => {
     const launchState = "Ready|Building|Failed|Not ready|Unavailable|Unknown";
     const providerState = (provider: string) =>
       new RegExp(`${provider}(?:[^A-Za-z]*Selected)?[^A-Za-z]*(?:${launchState})`);
-    await expect(platformRow).toContainText(providerState("Daytona"));
-    await expect(platformRow).toContainText(providerState("Platinum"));
+    const providerLabels = {
+      daytona: "Daytona",
+      platinum: "Platinum",
+      e2b: "E2B",
+    } as const;
+    for (const provider of availableProviders) {
+      await expect(platformRow).toContainText(providerState(providerLabels[provider]));
+    }
 
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });

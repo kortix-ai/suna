@@ -11,6 +11,8 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { storeSessionAttachments } from '../projects/lib/session-attachment-store';
 import {
   INBOX_ORDER_BACKOFF_MS,
   admitInboxPrompt,
@@ -34,6 +36,7 @@ import {
   type SessionLifecycleCommandRow,
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
+  findContinueSessionCommand,
   markCommandFailed,
   markCommandForwarded,
   promoteNextInboxRow,
@@ -96,6 +99,7 @@ async function setBox(status: 'active' | 'stopped', activeTurns: Record<string, 
 }
 
 async function cleanup() {
+  await db.execute(sql`DELETE FROM kortix.session_attachments WHERE session_id = ${SESSION_ID}`);
   await db
     .execute(
       sql`DELETE FROM kortix.session_lifecycle_commands WHERE session_id = ${SESSION_ID}`,
@@ -1143,5 +1147,55 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     expect(await sessionStatus()).toBe('failed');
     await db.execute(sql`
       UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = ${SESSION_ID}`);
+  });
+});
+
+
+describe('immutable attachment admission', () => {
+  const asset = (text: string) => {
+    const content = Buffer.from(text);
+    return { content, contentType: 'image/png', sha256: createHash('sha256').update(content).digest('hex') };
+  };
+  const input = (clientMessageId: string, attachment: ReturnType<typeof asset>) => ({
+    source: 'ui' as const, projectId: PROJECT_ID, accountId: ACCOUNT_ID,
+    sessionId: SESSION_ID, actorUserId: null, text: 'image', clientMessageId,
+    idempotencyKey: `prompt:${SESSION_ID}:${clientMessageId}`,
+    parts: [{ type: 'file' as const, mime: attachment.contentType, url: `kortix-attachment:sha256:${attachment.sha256}` }],
+    attachments: [attachment],
+  });
+  const assets = async () => {
+    const result = await db.execute(sql`SELECT sha256, content_type FROM kortix.session_attachments WHERE session_id = ${SESSION_ID}`);
+    return ((result as { rows?: unknown[] }).rows ?? result) as Array<{ sha256: string; content_type: string }>;
+  };
+
+  test('a duplicate admission does not store replacement bytes and lookup stays session scoped', async () => {
+    const original = asset('original');
+    const first = await enqueueContinueSessionCommand(input('asset-retry', original));
+    const retry = await enqueueContinueSessionCommand(input('asset-retry', asset('replacement')));
+    expect(retry.deduped).toBe(true);
+    expect(retry.row.payload).toEqual(first.row.payload);
+    expect(await assets()).toEqual([{ sha256: original.sha256, content_type: 'image/png' }]);
+    expect((await findContinueSessionCommand(SESSION_ID, 'asset-retry'))?.commandId).toBe(first.row.commandId);
+    expect(await findContinueSessionCommand(crypto.randomUUID(), 'asset-retry')).toBeNull();
+  });
+
+  test('two concurrent admissions commit one prompt and only its winning attachment', async () => {
+    const results = await Promise.all([
+      enqueueContinueSessionCommand(input('asset-race', asset('race one'))),
+      enqueueContinueSessionCommand(input('asset-race', asset('race two'))),
+    ]);
+    expect(results.filter(result => !result.deduped)).toHaveLength(1);
+    expect(results[0].row.commandId).toBe(results[1].row.commandId);
+    const stored = await assets();
+    expect(stored).toHaveLength(1);
+    expect(JSON.stringify(results[0].row.payload)).toContain(stored[0].sha256);
+  });
+
+  test('a MIME conflict rolls back the new prompt while preserving the original asset', async () => {
+    const original = asset('conflict');
+    await storeSessionAttachments(db, SESSION_ID, [original]);
+    await expect(enqueueContinueSessionCommand(input('asset-conflict', { ...original, contentType: 'image/jpeg' }))).rejects.toThrow(/immutable/);
+    expect(await findContinueSessionCommand(SESSION_ID, 'asset-conflict')).toBeNull();
+    expect(await assets()).toEqual([{ sha256: original.sha256, content_type: 'image/png' }]);
   });
 });

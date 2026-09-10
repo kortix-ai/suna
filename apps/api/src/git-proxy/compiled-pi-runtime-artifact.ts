@@ -1,3 +1,6 @@
+import { resolveCompiledAgentResources } from './compile-agent-resources';
+import { piModelLimits } from './pi-model-limits';
+import { resolvePiAgentModule } from "./resolve-pi-agent-module";
 /**
  * Build-and-cache for compiled pi runtime artifacts — the `engine: 'pi'`
  * sibling of ./compiled-runtime-artifact.ts, sharing its shape deliberately:
@@ -14,11 +17,25 @@ import { createHash } from "node:crypto";
 import { manifestCandidatePaths, parseManifestText } from "@kortix/manifest-schema";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveCompiledAgentConfigForSession } from "../projects/lib/compile-agent-config";
+import {
+  OpencodeAgentConfigSchema,
+  resolveCompiledAgentConfigForSession,
+  resolveSelectedAgentConfigForSession,
+} from "../projects/lib/compile-agent-config";
+import { resolveCompiledPiCommandsForSession } from "../projects/lib/compile-pi-commands";
+import {
+  filterPiSkillsForPermission,
+  type PiSkillPermissionConfig,
+  resolveCompiledPiSkillsForSession,
+} from "../projects/lib/compile-pi-skills";
 import { validateRef, validateSha } from "../projects/git-ref";
 import { refreshMirror, runGit, runGitCapture } from "../projects/git/mirror";
 import type { GitBackedProject } from "../projects/git/types";
 import { getPiWorkerBundle, type PiWorkerBundle } from "./pi-worker-bundle";
+import {
+  putStoredPiRuntimeArtifact,
+  readStoredPiRuntimeArtifact,
+} from "./pi-runtime-store";
 import {
   COMPILED_PI_RUNTIME_FORMAT,
   compilePiRuntime,
@@ -40,6 +57,8 @@ interface CachedPiRuntimeMetadata {
   ref: string;
   sourceSha: string;
   workerBundleSha256: string;
+  /** The ONE agent baked into this artifact. '' before per-agent bundling. */
+  agentName: string;
   sha256: string;
   size: number;
   manifest: CompiledPiRuntimeManifest;
@@ -47,6 +66,7 @@ interface CachedPiRuntimeMetadata {
 
 const builds = new Map<string, Promise<StoredCompiledPiRuntimeArtifact>>();
 const MANIFEST_MARKER = "// kortix-manifest-base64url:";
+const ARTIFACT_KEY_VERSION = "custom-pi-agent-v1";
 
 export class CompiledPiRuntimeSourceMovedError extends Error {
   constructor(expectedSha: string, actualSha: string) {
@@ -64,10 +84,11 @@ function artifactKey(
   ref: string,
   sourceSha: string,
   workerBundleSha256: string,
+  agentName: string,
 ): string {
   return createHash("sha256")
     .update(
-      `${COMPILED_PI_RUNTIME_FORMAT}\0${projectId}\0${ref}\0${sourceSha}\0${workerBundleSha256}`,
+      `${COMPILED_PI_RUNTIME_FORMAT}\0${ARTIFACT_KEY_VERSION}\0${projectId}\0${ref}\0${sourceSha}\0${workerBundleSha256}\0${agentName}`,
     )
     .digest("hex");
 }
@@ -86,6 +107,38 @@ function readEmbeddedManifest(source: Buffer): CompiledPiRuntimeManifest | null 
     ) as CompiledPiRuntimeManifest;
   } catch {
     return null;
+  }
+}
+
+function isValidCompiledPiAgent(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const { disable, ...config } = value as Record<string, unknown>;
+  if (disable !== undefined && typeof disable !== "boolean") return false;
+  return OpencodeAgentConfigSchema.safeParse(config).success;
+}
+
+function hasSelectedAgentConfig(
+  manifest: CompiledPiRuntimeManifest,
+  requestedAgentName: string,
+): boolean {
+  const selectedAgentName = requestedAgentName || manifest.default_agent || "";
+  if (
+    !selectedAgentName ||
+    manifest.default_agent !== selectedAgentName ||
+    !manifest.agent_config
+  ) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(manifest.agent_config) as {
+      model?: string;
+    agent?: Record<string, unknown>;
+    };
+    if (!parsed.agent || Object.keys(parsed.agent).length !== 1) return false;
+    const selectedAgent = parsed.agent[selectedAgentName];
+    return isValidCompiledPiAgent(selectedAgent);
+  } catch {
+    return false;
   }
 }
 
@@ -136,6 +189,7 @@ async function readCachedArtifact(
   ref: string,
   sourceSha: string,
   workerBundleSha256: string,
+  agentName: string,
 ): Promise<StoredCompiledPiRuntimeArtifact | null> {
   try {
     const metadata = JSON.parse(
@@ -151,9 +205,13 @@ async function readCachedArtifact(
       metadata.ref !== ref ||
       metadata.sourceSha !== sourceSha ||
       metadata.workerBundleSha256 !== workerBundleSha256 ||
+      // An artifact baked for another agent is a MISS, not a reusable hit: it
+      // carries that agent's prompt and model.
+      (metadata.agentName ?? "") !== agentName ||
       metadata.size !== runtime.size ||
       metadata.sha256 !== sha256 ||
       JSON.stringify(embeddedManifest) !== JSON.stringify(metadata.manifest) ||
+      !hasSelectedAgentConfig(metadata.manifest, agentName) ||
       runtime.size <= 0
     ) {
       return null;
@@ -171,6 +229,66 @@ async function readCachedArtifact(
   }
 }
 
+/**
+ * Write a shared-store artifact onto local disk so later boots on THIS replica
+ * take the fast path. Returns null when the bytes do not match their recorded
+ * digest — a corrupt row must send the caller to a clean recompile, not serve.
+ */
+async function hydrateFromStore(
+  record: { sha256: string; size: number; manifest: Record<string, unknown>; content: Buffer },
+  runtimePath: string,
+  metadataPath: string,
+  key: {
+    projectId: string;
+    ref: string;
+    sourceSha: string;
+    agentName: string;
+    workerBundleSha256: string;
+  },
+): Promise<StoredCompiledPiRuntimeArtifact | null> {
+  const digest = createHash("sha256").update(record.content).digest("hex");
+  if (digest !== record.sha256 || record.content.byteLength !== record.size) return null;
+  const manifest = record.manifest as unknown as CompiledPiRuntimeManifest;
+  const embeddedManifest = readEmbeddedManifest(record.content);
+  if (
+    JSON.stringify(embeddedManifest) !== JSON.stringify(manifest) ||
+    !hasSelectedAgentConfig(manifest, key.agentName)
+  ) {
+    return null;
+  }
+  const staged = `${runtimePath}.${crypto.randomUUID()}.tmp`;
+  try {
+    await mkdir(cacheRoot(), { recursive: true });
+    await writeFile(staged, record.content, { mode: 0o700 });
+    await rename(staged, runtimePath);
+    const metadata: CachedPiRuntimeMetadata = {
+      format: COMPILED_PI_RUNTIME_FORMAT,
+      projectId: key.projectId,
+      ref: key.ref,
+      sourceSha: key.sourceSha,
+      workerBundleSha256: key.workerBundleSha256,
+      agentName: key.agentName,
+      sha256: record.sha256,
+      size: record.size,
+      manifest,
+    };
+    await writeFile(metadataPath, `${JSON.stringify(metadata)}\n`, { mode: 0o600 });
+    return {
+      path: runtimePath,
+      sha256: record.sha256,
+      size: record.size,
+      sourceSha: key.sourceSha,
+      cacheHit: true,
+      manifest: metadata.manifest,
+    };
+  } catch (error) {
+    console.warn("[pi-runtime-store] could not hydrate local cache", error);
+    return null;
+  } finally {
+    await rm(staged, { force: true });
+  }
+}
+
 async function compileArtifact(
   project: GitBackedProject,
   ref: string,
@@ -178,17 +296,54 @@ async function compileArtifact(
   workerBundle: PiWorkerBundle,
   runtimePath: string,
   metadataPath: string,
+  agentName: string,
+  artifactKey: string,
 ): Promise<StoredCompiledPiRuntimeArtifact> {
   const mirror = await assertExactSource(project, ref, sourceSha);
-  const agentConfig = await resolveCompiledAgentConfigForSession(project, sourceSha);
-  const defaultAgent = await resolveDefaultAgentAtSha(mirror, project, sourceSha);
+  const projectDefaultAgent = await resolveDefaultAgentAtSha(
+    mirror,
+    project,
+    sourceSha,
+  );
+  const baked = agentName || projectDefaultAgent || "";
+  if (!baked) {
+    throw new Error("Pi runtime artifact requires a selected agent.");
+  }
+  const [agentConfig, commands, discoveredSkills] = await Promise.all([
+    resolveSelectedAgentConfigForSession(project, baked, sourceSha),
+    resolveCompiledPiCommandsForSession(project, sourceSha),
+    resolveCompiledPiSkillsForSession(project, sourceSha),
+  ]);
+  const parsedAgentConfig = JSON.parse(agentConfig) as {
+    model?: string;
+    agent?: Record<string, unknown>;
+  };
+  const selectedAgent = parsedAgentConfig.agent?.[baked];
+  if (!isValidCompiledPiAgent(selectedAgent)) {
+    throw new Error(
+      `Pi runtime artifact has no compiled config for selected agent "${baked}".`,
+    );
+  }
+  const skillPermission = (
+    selectedAgent as { permission?: PiSkillPermissionConfig }
+  ).permission;
+  const skills = filterPiSkillsForPermission(discoveredSkills, skillPermission);
+  const [agentModule, resources] = await Promise.all([
+    resolvePiAgentModule(project, sourceSha, baked),
+    resolveCompiledAgentResources(project, sourceSha, baked),
+  ]);
   const artifact = compilePiRuntime({
     projectId: project.projectId,
     ref,
     sourceSha,
     agentConfig,
-    defaultAgent,
+    modelLimits: piModelLimits(project.projectId, (selectedAgent as { model?: string }).model ?? parsedAgentConfig.model),
+    defaultAgent: baked,
+    commands,
+    skills,
     workerBundle: workerBundle.source,
+    agentModule,
+    resources,
   });
   const stagedPath = `${runtimePath}.${crypto.randomUUID()}.tmp`;
   try {
@@ -200,11 +355,26 @@ async function compileArtifact(
       ref,
       sourceSha,
       workerBundleSha256: workerBundle.sha256,
+      agentName,
       sha256: artifact.sha256,
       size: artifact.size,
       manifest: artifact.manifest,
     };
     await writeFile(metadataPath, `${JSON.stringify(metadata)}\n`, { mode: 0o600 });
+    // Publish to the shared store so no other replica — and no boot after the
+    // next deploy — has to reach git for this same (project, ref, sha, agent).
+    await putStoredPiRuntimeArtifact({
+      artifactKey,
+      projectId: project.projectId,
+      ref,
+      sourceSha,
+      agentName,
+      workerBundleSha256: workerBundle.sha256,
+      sha256: artifact.sha256,
+      size: artifact.size,
+      manifest: artifact.manifest as unknown as Record<string, unknown>,
+      content: Buffer.from(artifact.source),
+    });
     return {
       path: runtimePath,
       sha256: artifact.sha256,
@@ -218,15 +388,68 @@ async function compileArtifact(
   }
 }
 
+/**
+ * An agent name is part of a CACHE PATH and of the baked config, so it is
+ * validated the same way a ref is rather than trusted from a query string.
+ * Empty means "the project default", resolved at compile time.
+ */
+/**
+ * The agent a project boots by default, read from the manifest at `sourceSha`.
+ *
+ * Exists so the push-time PREBUILD and a session request key the cache the
+ * same way. The artifact is keyed per agent now, so a prebuild that baked
+ * "whatever the default is" under the empty name would warm an entry no
+ * session ever asks for, and every first boot would pay a full compile.
+ */
+export async function resolvePiDefaultAgentName(
+  project: GitBackedProject,
+  sourceSha: string,
+): Promise<string> {
+  const mirror = await refreshMirror(project);
+  return (await resolveDefaultAgentAtSha(mirror, project, sourceSha)) ?? "";
+}
+
+/**
+ * Every agent declared at `sourceSha`, so a push can prebuild one bundle each.
+ *
+ * The artifact is per-agent now, so prebuilding only the default left every
+ * OTHER agent compiling on its first session — the exact "compile on session
+ * start" this store exists to remove.
+ */
+export async function listPiAgentNames(
+  project: GitBackedProject,
+  sourceSha: string,
+): Promise<string[]> {
+  const serialized = await resolveCompiledAgentConfigForSession(project, sourceSha);
+  if (!serialized) return [];
+  try {
+    const parsed = JSON.parse(serialized) as { agent?: Record<string, unknown> };
+    return Object.keys(parsed?.agent ?? {});
+  } catch {
+    return [];
+  }
+}
+
+export function normalizePiAgentName(input: string | null | undefined): string {
+  const value = (input ?? "").trim();
+  if (!value) return "";
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(value)) {
+    throw new Error(`invalid agent name: ${value.slice(0, 64)}`);
+  }
+  return value;
+}
+
 export async function buildCompiledPiRuntimeArtifact(
   project: GitBackedProject,
   refInput: string,
   sourceShaInput: string,
+  agentInput?: string | null,
 ): Promise<StoredCompiledPiRuntimeArtifact> {
   const ref = validateRef(refInput);
   const sourceSha = validateSha(sourceShaInput);
+  const agentName = normalizePiAgentName(agentInput);
   const workerBundle = await getPiWorkerBundle();
-  const key = artifactKey(project.projectId, ref, sourceSha, workerBundle.sha256);
+  const key = artifactKey(project.projectId, ref, sourceSha, workerBundle.sha256, agentName);
   await mkdir(cacheRoot(), { recursive: true });
   const runtimePath = join(cacheRoot(), `${key}.pi-worker.mjs`);
   const metadataPath = join(cacheRoot(), `${key}.pi-runtime.json`);
@@ -237,8 +460,23 @@ export async function buildCompiledPiRuntimeArtifact(
     ref,
     sourceSha,
     workerBundle.sha256,
+    agentName,
   );
   if (cached) return cached;
+
+  // Local disk missed. Before recompiling — which needs git — ask the shared
+  // store. This is the whole point of it: a deploy wipes the container's cache,
+  // and a boot must not depend on the upstream being reachable.
+  const shared = await readStoredPiRuntimeArtifact(key);
+  if (shared) {
+    const hydrated = await hydrateFromStore(
+      shared,
+      runtimePath,
+      metadataPath,
+      { projectId: project.projectId, ref, sourceSha, agentName, workerBundleSha256: workerBundle.sha256 },
+    );
+    if (hydrated) return hydrated;
+  }
 
   const active = builds.get(key);
   if (active) return active;
@@ -249,6 +487,8 @@ export async function buildCompiledPiRuntimeArtifact(
     workerBundle,
     runtimePath,
     metadataPath,
+    agentName,
+    key,
   ).finally(() => {
     builds.delete(key);
   });

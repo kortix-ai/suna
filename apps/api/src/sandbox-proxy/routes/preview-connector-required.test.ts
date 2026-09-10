@@ -14,8 +14,8 @@
 // message silently dropped — a worse bug than the one being fixed.
 import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
+import * as realPreviewOwnership from '../../shared/preview-ownership';
 
 const ACTIVE_RECORD = {
   status: 'active',
@@ -88,7 +88,7 @@ mock.module('../../projects/lib/prompt-connector-preflight', () => ({
 
 let envSyncCalls = 0;
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {
+  syncSessionRuntimesEnvForPrompt: async () => {
     envSyncCalls += 1;
   },
 }));
@@ -328,7 +328,7 @@ test('a non-turn request is never gated', async () => {
   expect(preflightCalls).toEqual([]);
 });
 
-test('an unauthorized agent switch is refused WITHOUT revealing that agent\'s connectors', async () => {
+test("an unauthorized agent switch is refused WITHOUT revealing that agent's connectors", async () => {
   // The gate reads the requested agent's manifest, and its refusal carries that
   // agent's connector ids, names and strategies. A caller who may not run agent B
   // must not be able to enumerate them by naming B in a prompt — so the

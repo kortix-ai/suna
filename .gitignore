@@ -101,6 +101,14 @@ test/
 # any local per-clone leftovers out. Other vendored .kortix dirs stay ignored
 # further down.
 .kortix/
+# ...but a starter TEMPLATE's .kortix/ is product, not local state: it is the
+# scaffold every new project is built from. The rule above has no leading
+# slash, so it matches at ANY depth and silently swallowed the pi kit's
+# `.kortix/pi/agents/kortix.md` — `git add` reported nothing, the commit went
+# in without it, and the branch shipped a pi template that scaffolds a project
+# with no agent. templates/base predates the rule and stayed tracked, which is
+# why this surfaced only for the new template.
+!packages/starter/templates/*/.kortix/
 apps/kortix-v0/.local/
 apps/api/.kortix-data/
 apps/api/.sandbox-auth-token.json

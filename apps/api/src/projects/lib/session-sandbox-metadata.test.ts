@@ -1,16 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 
+import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
+  environmentSandboxSlugFromSessionMetadata,
+  piWorkerRuntimeIdentityFromSessionMetadata,
+  piWorkerSandboxProviderMatches,
   projectImageAllowedForSession,
   resolveSessionSandboxSlug,
   sandboxSlugFromSessionMetadata,
+  sanitizeCallerSessionMetadata,
+  sessionMetadataClaimsPiWorker,
   workspaceModeFromSessionMetadata,
 } from './session-sandbox-metadata';
 import {
   isRepositoryProjectAction,
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
-import { PROJECT_ACTIONS } from '../../iam/actions';
 
 describe('sandboxSlugFromSessionMetadata', () => {
   test('returns a persisted template slug', () => {
@@ -22,6 +27,86 @@ describe('sandboxSlugFromSessionMetadata', () => {
     expect(sandboxSlugFromSessionMetadata(null)).toBeUndefined();
     expect(sandboxSlugFromSessionMetadata({})).toBeUndefined();
     expect(sandboxSlugFromSessionMetadata({ sandbox_slug: '../escape' })).toBeUndefined();
+  });
+});
+
+describe('environmentSandboxSlugFromSessionMetadata', () => {
+  test('returns the compute template selected before the Pi worker replaces the runtime slug', () => {
+    expect(
+      environmentSandboxSlugFromSessionMetadata({ environment_sandbox_slug: 'gpu-large' }),
+    ).toBe('gpu-large');
+  });
+
+  test('rejects missing and invalid compute template slugs', () => {
+    expect(environmentSandboxSlugFromSessionMetadata(null)).toBeUndefined();
+    expect(environmentSandboxSlugFromSessionMetadata({})).toBeUndefined();
+    expect(
+      environmentSandboxSlugFromSessionMetadata({ environment_sandbox_slug: '../escape' }),
+    ).toBeUndefined();
+  });
+});
+
+describe('Pi worker runtime identity metadata', () => {
+  test('pins the v0 worker to its supported provider', () => {
+    expect(piWorkerSandboxProviderMatches('daytona')).toBe(true);
+    expect(piWorkerSandboxProviderMatches('platinum')).toBe(false);
+    expect(piWorkerSandboxProviderMatches('e2b')).toBe(false);
+  });
+
+  test('reads only a complete server-owned immutable identity', () => {
+    expect(
+      piWorkerRuntimeIdentityFromSessionMetadata({
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+      }),
+    ).toEqual({ ref: 'main', sha: 'a'.repeat(40) });
+
+    expect(
+      piWorkerRuntimeIdentityFromSessionMetadata({
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+      }),
+    ).toBeNull();
+    expect(
+      piWorkerRuntimeIdentityFromSessionMetadata({
+        sandbox_slug: 'default',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'a'.repeat(40),
+      }),
+    ).toBeNull();
+    expect(
+      piWorkerRuntimeIdentityFromSessionMetadata({
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'main',
+        pi_worker_sha: 'not-a-commit',
+      }),
+    ).toBeNull();
+    expect(sessionMetadataClaimsPiWorker({ sandbox_slug: 'pi-worker' })).toBe(true);
+    expect(sessionMetadataClaimsPiWorker({ pi_worker_boot: true })).toBe(true);
+    expect(
+      sessionMetadataClaimsPiWorker({ runtimeArtifact: { runtimeProfile: 'pi-worker' } }),
+    ).toBe(true);
+    expect(sessionMetadataClaimsPiWorker({ pi_worker_ref: 'main' })).toBe(true);
+    expect(sessionMetadataClaimsPiWorker({ sandbox_slug: 'default' })).toBe(false);
+  });
+
+  test('removes every server-owned Pi identity field from caller metadata', () => {
+    expect(
+      sanitizeCallerSessionMetadata({
+        source: 'internal:test',
+        sandbox_slug: 'pi-worker',
+        pi_worker_boot: true,
+        pi_worker_ref: 'forged-ref',
+        pi_worker_sha: 'b'.repeat(40),
+        environment_sandbox_slug: 'forged-template',
+        runtimeArtifact: { runtimeProfile: 'pi-worker' },
+      }),
+    ).toEqual({ source: 'internal:test' });
   });
 });
 

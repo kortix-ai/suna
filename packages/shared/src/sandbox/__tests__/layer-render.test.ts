@@ -23,6 +23,12 @@ import {
   AGENT_BROWSER_VERSION,
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
+  CLAUDE_CODE_SHA256_AMD64,
+  CLAUDE_CODE_SHA256_ARM64,
+  CLAUDE_CODE_VERSION,
+  CODEX_CLI_SHA256_AMD64,
+  CODEX_CLI_SHA256_ARM64,
+  CODEX_CLI_VERSION,
   OPENCODE_VERSION,
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
@@ -98,10 +104,14 @@ describe('runtime artifact integrity', () => {
       UV_SHA256_ARM64,
       BUN_SHA256_AMD64,
       BUN_SHA256_ARM64,
+      CODEX_CLI_SHA256_AMD64,
+      CODEX_CLI_SHA256_ARM64,
+      CLAUDE_CODE_SHA256_AMD64,
+      CLAUDE_CODE_SHA256_ARM64,
     ]) {
       expect(rendered).toContain(digest);
     }
-    expect(rendered.match(/sha256sum -c -/g)).toHaveLength(3);
+    expect(rendered.match(/sha256sum -c -/g)).toHaveLength(5);
   });
 
   test('does not execute remote installer scripts', () => {
@@ -141,6 +151,28 @@ describe('runtime artifact integrity', () => {
       'ln -sfn "$opencode_native" /usr/local/bin/opencode-kortix',
     );
     expect(rendered).toContain('/usr/local/bin/opencode-kortix --version');
+  });
+
+  test('installs checksum-verified Codex and Claude Code CLI artifacts', () => {
+    expect(rendered).toContain(
+      `https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_CLI_VERSION}-linux-\${cli_arch}.tgz`,
+    );
+    expect(rendered).toContain(
+      `https://registry.npmjs.org/@anthropic-ai/claude-code-linux-\${cli_arch}/-/claude-code-linux-\${cli_arch}-${CLAUDE_CODE_VERSION}.tgz`,
+    );
+    expect(rendered).not.toContain('pnpm add -g "@openai/codex');
+    expect(rendered).not.toContain('pnpm add -g --allow-build=@anthropic-ai/claude-code');
+    expect(rendered).toContain('codex-resources/bwrap');
+    expect(rendered).toContain('codex-path/rg');
+    expect(rendered).toContain(`test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"`);
+    expect(rendered).toContain(
+      `test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)"`,
+    );
+    expect(rendered).toContain('DISABLE_AUTOUPDATER=1');
+    expect(rendered).toContain('DISABLE_UPDATES=1');
+    expect(rendered.indexOf(`codex-${CODEX_CLI_VERSION}`)).toBeLessThan(
+      rendered.indexOf(`opencode-ai@${OPENCODE_VERSION}`),
+    );
   });
 });
 

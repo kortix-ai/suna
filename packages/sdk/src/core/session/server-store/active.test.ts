@@ -22,6 +22,7 @@ const {
   deriveSubdomainOpts,
   getActiveDbSandboxId,
   getActiveOpenCodeUrl,
+  getActiveWorkspaceUrl,
   getActiveSandboxId,
   getBackendPort,
 } = await import('./active');
@@ -38,10 +39,29 @@ afterEach(() => {
 });
 
 test('getActiveOpenCodeUrl prefers the current-runtime url when a session is active', () => {
-  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', billingEnabled: false });
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+    billingEnabled: false,
+  });
   setCurrentRuntime('http://backend.local/v1/p/sb-1/8000', 'sb-1');
 
   expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/sb-1/8000');
+});
+
+test('getActiveWorkspaceUrl never falls back to the Pi worker while its environment is pending', async () => {
+  const { setCurrentWorkspaceRuntime } = await import('../current-runtime');
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+    billingEnabled: true,
+  });
+  setCurrentRuntime('http://backend.local/v1/p/worker-1/8000', 'worker-1', null, 'environment');
+
+  expect(getActiveWorkspaceUrl()).toBe('');
+  setCurrentWorkspaceRuntime('http://backend.local/v1/p/environment-1/8000', 'environment-1');
+  expect(getActiveWorkspaceUrl()).toContain('/p/environment-1/8000');
+  expect(getActiveOpenCodeUrl()).toContain('/p/worker-1/8000');
 });
 
 test('getActiveOpenCodeUrl falls back to the default sandbox url in self-hosted local dev (no billing, no active session)', () => {
@@ -78,20 +98,32 @@ test('getActiveOpenCodeUrl returns empty string in a billing-enabled deployment 
 });
 
 test('getActiveOpenCodeUrl treats an unset billingEnabled as false (defaults to the self-hosted fallback)', () => {
-  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', sandboxId: 'sbx-1' });
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+    sandboxId: 'sbx-1',
+  });
 
   expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/sbx-1/8000');
 });
 
 test('getActiveSandboxId prefers the current-runtime sandbox id over the configured default', () => {
-  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', sandboxId: 'configured-default' });
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+    sandboxId: 'configured-default',
+  });
   setCurrentRuntime('http://backend.local/v1/p/sb-active/8000', 'sb-active');
 
   expect(getActiveSandboxId()).toBe('sb-active');
 });
 
 test('getActiveSandboxId falls back to the configured default sandbox id with no active session', () => {
-  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', sandboxId: 'configured-default' });
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+    sandboxId: 'configured-default',
+  });
 
   expect(getActiveSandboxId()).toBe('configured-default');
 });

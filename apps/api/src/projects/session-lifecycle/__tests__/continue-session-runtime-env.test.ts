@@ -61,6 +61,7 @@ mock.module('../../routes/shared', () => ({
 }));
 
 mock.module('../../../sandbox-proxy/backend', () => ({
+  invalidateSandbox: () => {},
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
   // Complete-module stand-ins: every export the (growing) import graph
   // reaches must exist, or the whole file dies with "Export named X not
@@ -73,7 +74,7 @@ mock.module('../../../platform/service-key', () => ({
 }));
 
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async (input: Record<string, unknown>) => {
+  syncSessionRuntimesEnvForPrompt: async (input: Record<string, unknown>) => {
     events.push('sync');
     expect(input).toMatchObject({
       projectId: PROJECT_ID,

@@ -163,7 +163,7 @@ describe('provider-neutral preview lifecycle', () => {
     // for new bytes in it, and Caddy does not watch it. Without an explicit
     // reload a reused sandbox keeps the config it booted with — which pins a
     // stale X-Forwarded-Host and kills every Server Action.
-    expect(script).toContain('exec -T preview-edge caddy reload --config /etc/caddy/Caddyfile');
+    expect(script).toContain('exec -T preview-edge caddy reload --config /dev/stdin --adapter caddyfile < "$STATE/Caddyfile.preview"');
     expect(script).not.toContain('https://pi.example.test/v1/health');
     // The stack is still CONFIGURED with the public origin — that is what ends
     // up in SITE_URL, the redirect allowlist and the frontend's own URLs.
@@ -334,6 +334,21 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).not.toContain('ecs-preview');
   });
 
+  it('repairs a reused branch sandbox when its offline package store is stale', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://pi.example.test',
+      runTests: false,
+    });
+
+    expect(script).toContain(
+      'pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile',
+    );
+  });
+
   it('falls back only after a Platinum infrastructure failure', async () => {
     const platinum = vi.fn().mockRejectedValue(new PreviewInfrastructureError('restore timeout'));
     const daytona = vi.fn().mockResolvedValue({ exitCode: 0, provider: 'daytona' });
@@ -372,5 +387,153 @@ describe('provider-neutral preview lifecycle', () => {
     ];
     const active = new Map([[10, 'a']]);
     expect(selectStalePreviewSandboxIds(sandboxes, active)).toEqual(['stale', 'closed']);
+  });
+});
+
+describe('unhealthy-container recovery', () => {
+  /**
+   * pi-worker environment, 2026-08-29: supabase-kong sat `Up 27 hours
+   * (unhealthy)` while still routing traffic, so nothing looked wrong from
+   * outside. `compose up -d` only recreates for a new image, env or port, so
+   * the unhealthy container was never touched; every dependent then failed
+   * `depends_on: service_healthy`, and FOUR consecutive deploys across two
+   * different commits died without the origin ever coming back.
+   */
+  const script = () =>
+    buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://x.example.test',
+      runTests: false,
+    });
+
+  it('restarts running-but-unhealthy containers BEFORE waiting on them', () => {
+    const s = script();
+    expect(s).toContain('docker ps --filter health=unhealthy');
+    expect(s).toContain('docker restart');
+    // Before the wait, not after: the retry loop reruns the same comparison
+    // and reaches the same no-op, so recovering on failure would never fire.
+    const stackLoop = s.indexOf('for stack_attempt in 1 2; do');
+    expect(s.indexOf('health=unhealthy')).toBeLessThan(stackLoop);
+    expect(stackLoop).toBeLessThan(s.indexOf('up -d --wait', stackLoop));
+  });
+
+  it('scopes the restart to this instance, never a co-tenant container', () => {
+    expect(script()).toContain('grep "^kortix-');
+  });
+
+  it('is a restart, never a recreate — volumes and data must survive', () => {
+    const s = script();
+    const recovery = s.slice(s.indexOf('unhealthy="'), s.indexOf('for stack_attempt in 1 2; do'));
+    expect(recovery).toContain('xargs -r docker restart');
+    expect(recovery).not.toContain('docker rm ');
+    expect(recovery).not.toContain('--force-recreate');
+  });
+});
+
+/**
+ * GitHub answers a preview sandbox's ref advertisement anonymously and then
+ * REFUSES the fetch that follows.
+ *
+ * Measured on pi.kortix.com's sandbox (Scaleway, 51.158.248.121) on 2026-09-02:
+ *   GET  /kortix-ai/suna.git/info/refs?service=git-upload-pack -> HTTP/2 200
+ *   POST /kortix-ai/suna.git/git-upload-pack                   -> HTTP/2 401
+ *                                       www-authenticate: Basic realm="GitHub"
+ * `git ls-remote` failed 10 times out of 10 while a plain curl of the GET
+ * returned 200 ten times out of ten. The repository is public; GitHub is
+ * throttling unauthenticated fetches from that datacenter range, and it does it
+ * on the expensive request only. So the bootstrap's `git fetch` died with
+ * "could not read Username for 'https://github.com'", the checkout phase exited
+ * 128, and pi.kortix.com sat on an old commit while every deploy went red.
+ *
+ * The runner already holds a usable token (`GH_TOKEN: ${{ github.token }}`); it
+ * was simply never handed to the sandbox. It must reach git WITHOUT being
+ * written into `.git/config` or a remote URL — the bootstrap script itself is
+ * mode 0755 in the sandbox, so anything embedded in it is world-readable.
+ */
+describe('preview checkout survives GitHub refusing anonymous fetches', () => {
+  const bootstrap = (extra: Record<string, unknown> = {}) =>
+    buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'refs/pull/6998/head',
+      sha: 'b'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://pi.kortix.com',
+      runTests: false,
+      ...extra,
+    });
+
+  it('authenticates the fetch through a credential helper, not a URL', () => {
+    const script = bootstrap();
+    const checkout = script.slice(script.indexOf('git -C "$ROOT" remote set-url'));
+    const fetchAt = checkout.indexOf('git -C "$ROOT" fetch');
+    const helperAt = checkout.indexOf('credential.helper');
+    expect(helperAt).toBeGreaterThan(-1);
+    // The helper must be configured BEFORE the fetch, or it cannot help.
+    expect(helperAt).toBeLessThan(fetchAt);
+  });
+
+  it('never puts the token in the remote URL', () => {
+    // A token in the URL lands in .git/config and in every error message git
+    // prints. The remote must stay a bare https URL.
+    const script = bootstrap();
+    expect(script).toContain("remote set-url origin 'https://github.com/kortix-ai/suna.git'");
+    expect(script).not.toMatch(/https:\/\/[^'"\s]*@github\.com/);
+  });
+
+  it('does not leak the token into .git/config when the snippet actually runs', async () => {
+    // The first version of this inlined the helper as
+    //   git config credential.helper "!f() { ...; echo "password=$(cat $F)"; }; f"
+    // The nested double quotes collapse, the OUTER shell expands $(cat ...) at
+    // config time, and git stores the literal token in .git/config. Text
+    // assertions could not see that — only running it could. Verified: it wrote
+    // `helper = "!f() { ...; echo password=<THE TOKEN>; }; f"`.
+    const { mkdtemp, writeFile, mkdir, readFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { spawnSync } = await import('node:child_process');
+
+    const dir = await mkdtemp(join(tmpdir(), 'kortix-cred-'));
+    const state = join(dir, 'state');
+    const root = join(dir, 'repo');
+    await mkdir(state, { recursive: true });
+    await mkdir(root, { recursive: true });
+    await writeFile(join(state, '.checkout-token'), 'SENTINEL_TOKEN_DO_NOT_LEAK');
+    spawnSync('git', ['-C', root, 'init', '-q']);
+
+    const script = bootstrap();
+    const start = script.indexOf('if [ -s "$STATE/.checkout-token" ]');
+    const end = script.indexOf('git -C "$ROOT" fetch', start);
+    const snippet = script.slice(start, end);
+    // The helper hardcodes the sandbox's absolute state path; point it at ours.
+    const runnable = snippet.replaceAll('/workspace/kortix-preview', state);
+    const run = spawnSync('bash', ['-c', runnable], { env: { ...process.env, STATE: state, ROOT: root } });
+    expect(run.status).toBe(0);
+
+    const config = await readFile(join(root, '.git', 'config'), 'utf8');
+    expect(config).not.toContain('SENTINEL_TOKEN_DO_NOT_LEAK');
+
+    // And the helper must actually answer git's "get" with the token.
+    const helper = spawnSync(join(state, '.checkout-credential-helper'), ['get'], { encoding: 'utf8' });
+    expect(helper.stdout).toContain('username=x-access-token');
+    expect(helper.stdout).toContain('password=SENTINEL_TOKEN_DO_NOT_LEAK');
+  });
+
+  it('never embeds the token in the script, which is mode 0755 in the sandbox', () => {
+    // The helper reads it from a 0600 file at call time instead.
+    const script = bootstrap();
+    expect(script).toContain('.checkout-token');
+    expect(script).not.toContain('ghp_');
+    expect(script).not.toContain('ghs_');
+  });
+
+  it('falls back to anonymous when no token file is present', () => {
+    // Not every environment hits the throttle, and a preview must not start
+    // REQUIRING a credential it never needed before.
+    const script = bootstrap();
+    const checkout = script.slice(script.indexOf('git -C "$ROOT" remote set-url'));
+    expect(checkout).toMatch(/if \[ -s .*\.checkout-token/);
   });
 });

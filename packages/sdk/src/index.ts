@@ -510,3 +510,5 @@ export {
   type KortixAppViewerSession,
   type KortixAppViewerOptions,
 } from './core/auth/app-viewer';
+
+export * from './core/pi/agent';

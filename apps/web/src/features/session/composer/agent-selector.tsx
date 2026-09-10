@@ -96,10 +96,13 @@ export function AgentSelector({
   // when the roster does not (yet) contain it: a session bound to `kortix`
   // must read "Kortix" while the roster query is still in flight, not whatever
   // happens to be first in someone else's list. The `primaryAgents[0]`
-  // fallback stays only for a truly unresolved selection (no name at all),
-  // matching the resolver's own first-accessible pre-selection.
+  // fallback stays only for an editable, truly unresolved selection (no name
+  // at all), matching the resolver's own first-accessible pre-selection. A
+  // fixed runtime with no bound name stays generic instead of claiming that
+  // the first visible roster entry is its compiled agent.
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent);
-  const displayedName = currentAgent?.name ?? selectedAgent ?? primaryAgents[0]?.name;
+  const displayedName =
+    currentAgent?.name ?? selectedAgent ?? (disabled ? undefined : primaryAgents[0]?.name);
   const displayName = displayedName ? capitalizeWords(displayedName) : 'Agent';
   const metaSelected = isMetaAgentName(displayedName);
 
@@ -205,6 +208,7 @@ export function AgentSelector({
           type="button"
           variant="ghost"
           size="sm"
+          disabled={disabled}
           aria-label={t('selectAgent')}
           className="text-foreground/70 rounded-lg"
         >

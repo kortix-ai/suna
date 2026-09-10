@@ -3,7 +3,7 @@ import { configureKortix } from "../../http/config";
 import { clearSessionFresh, markSessionFresh } from "../../http/fresh-sessions";
 import { clearSessionRuntime, getSessionRuntime,
 } from "../../session/session-runtime-registry";
-import { isSessionStartError,
+import { isPiWorkerRuntimeMetadata, isSessionStartError,
   projectSessionStartSeed,
   sessionStartKey, startProjectSession,
 } from "./session-sandbox";
@@ -59,6 +59,18 @@ function readySandbox(overrides: Partial<{ external_id: string | null }> = {}) {
     ...overrides,
   };
 }
+
+test("isPiWorkerRuntimeMetadata recognizes every server-owned Pi marker", () => {
+  expect(isPiWorkerRuntimeMetadata({ sandbox_slug: "pi-worker" })).toBe(true);
+  expect(isPiWorkerRuntimeMetadata({ pi_worker_boot: true })).toBe(true);
+  expect(isPiWorkerRuntimeMetadata({ runtimeArtifact: { runtimeProfile: "pi-worker" } })).toBe(
+    true,
+  );
+  expect(isPiWorkerRuntimeMetadata({ runtimeArtifact: { sandboxSlug: "pi-worker" } })).toBe(true);
+  expect(isPiWorkerRuntimeMetadata({ pi_worker_boot: false })).toBe(false);
+  expect(isPiWorkerRuntimeMetadata({ runtimeArtifact: null })).toBe(false);
+  expect(isPiWorkerRuntimeMetadata(null)).toBe(false);
+});
 
 test("projectSessionStartSeed turns a running inventory row into a ready cache seed", () => {
   const row = {
@@ -263,6 +275,27 @@ test("startProjectSession populates the shared session-runtime registry once sta
   expect(entry?.opencodeSessionId).toBe("ocs-ready-1");
   expect(entry?.sandboxId).toBe("ext-ready-1");
   expect(entry?.runtimeUrl).toBe("http://test.local/v1/p/ext-ready-1/8000");
+  expect(entry?.dataRuntimeKind).toBe("worker");
+});
+
+test("startProjectSession selects the external environment for a Pi /start payload", async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      stage: "ready",
+      agent_name: "default",
+      retriable: false,
+      sandbox: {
+        ...readySandbox({ external_id: "pi-worker-1" }),
+        metadata: { pi_worker_boot: true },
+      },
+      opencode_session_id: "ocs-pi-1",
+    },
+  };
+
+  await startProjectSession(PROJECT, SESSION);
+
+  expect(getSessionRuntime(PROJECT, SESSION)?.dataRuntimeKind).toBe("environment");
 });
 
 test("startProjectSession does NOT populate the registry when ready but sandbox has no external_id", async () => {

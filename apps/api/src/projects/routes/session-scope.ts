@@ -644,7 +644,7 @@ projectsApp.openapi(
     if (shapeError) {
       return c.json({ error: shapeError.message, code: shapeError.code }, 400);
     }
-    const stateError = canChangeSessionModel(visible.row.status);
+    const stateError = canChangeSessionModel(visible.row.status, visible.row.metadata);
     if (stateError) {
       return c.json({ error: stateError.message, code: stateError.code }, 409);
     }

@@ -106,3 +106,17 @@ describe('the .concurrent.ts template', () => {
     expect(parseLockTimeoutMs(value)).toBeGreaterThanOrEqual(600_000);
   });
 });
+
+describe('the .nontransaction.ts template', () => {
+  test('exposes the constraint-transition scaffold flag', () => {
+    expect(CREATE).toContain('--constraint-transition');
+    expect(CREATE).toContain('.nontransaction.ts');
+    expect(CREATE).toContain('constraint-transition:');
+  });
+
+  test('documents the enforced statement order', () => {
+    expect(CREATE).toContain('ADD NOT VALID');
+    expect(CREATE).toContain('VALIDATE');
+    expect(CREATE).toContain('DROP');
+  });
+});

@@ -20,6 +20,7 @@
 import { buildContinueSessionCommandValues } from './store';
 import { flattenPromptText, sanitizeInboxPromptParts } from './prompt-parts';
 import { mintWireMessageId } from '../wire-message-id';
+import { preparePiPromptAttachments, type StagedSessionAttachment } from './pi-prompt-attachments';
 
 export interface PendingPromptConversion {
   /** Insert values for `session_lifecycle_commands`, or null when the prompt
@@ -30,16 +31,19 @@ export interface PendingPromptConversion {
   /** A part-level refusal (size cap, malformed list). The caller maps it to a
    *  400 rather than silently dropping an attachment. */
   error: string | null;
+  attachments?: StagedSessionAttachment[];
 }
 
-export function convertPendingPromptToInboxRow(input: {
+export async function convertPendingPromptToInboxRow(input: {
   pendingPrompt: Record<string, unknown>;
   projectId: string;
   accountId: string;
   sessionId: string;
   actorUserId: string | null;
   nowMs?: number;
-}): PendingPromptConversion {
+  piWorker?: boolean;
+  signal?: AbortSignal;
+}): Promise<PendingPromptConversion> {
   const { pendingPrompt } = input;
   const { text: _text, parts: _parts, ...metadataPicks } = pendingPrompt;
 
@@ -51,6 +55,17 @@ export function convertPendingPromptToInboxRow(input: {
   }
   const sanitized = sanitizeInboxPromptParts(effectiveRaw);
   if ('error' in sanitized) return { rowValues: null, metadataPicks, error: sanitized.error };
+  let parts = sanitized.parts;
+  let attachments: StagedSessionAttachment[] | undefined;
+  if (input.piWorker) {
+    try {
+      const prepared = await preparePiPromptAttachments(parts, { signal: input.signal });
+      parts = prepared.parts;
+      attachments = prepared.attachments;
+    } catch (error) {
+      return { rowValues: null, metadataPicks, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
 
   const model = pendingPrompt.model as { providerID?: unknown; modelID?: unknown } | null;
   const overrides = {
@@ -69,7 +84,7 @@ export function convertPendingPromptToInboxRow(input: {
     accountId: input.accountId,
     sessionId: input.sessionId,
     actorUserId: input.actorUserId,
-    text: flattenPromptText(sanitized.parts),
+    text: flattenPromptText(parts),
     // One first prompt per session, and a create-retry dedupes into it.
     idempotencyKey: `prompt:${input.sessionId}:pending-first`,
     clientMessageId: `pending:${input.sessionId}`,
@@ -78,8 +93,8 @@ export function convertPendingPromptToInboxRow(input: {
     // migration's rows.
     wireMessageId: mintWireMessageId({ nowMs: input.nowMs ?? Date.now() }).id,
     remintOnDelivery: true,
-    parts: sanitized.parts,
+    parts,
     overrides,
   });
-  return { rowValues, metadataPicks, error: null };
+  return { rowValues, metadataPicks, error: null, ...(attachments ? { attachments } : {}) };
 }

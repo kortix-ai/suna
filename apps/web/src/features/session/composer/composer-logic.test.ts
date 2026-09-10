@@ -512,3 +512,40 @@ describe('shouldFocusEditorFromPadding', () => {
     expect(shouldFocusEditorFromPadding({ onWrapperItself: false, disabled: true })).toBe(false);
   });
 });
+
+describe('choice-only question placeholders', () => {
+  test('directs the member to the options when custom answers are disabled', () => {
+    expect(
+      resolveEditorPlaceholder({
+        lockForApproval: false,
+        lockForQuestion: true,
+        questionAcceptsCustom: false,
+        questionButtonLabel: null,
+        placeholder: 'Message',
+      }),
+    ).toBe('Choose an option above…');
+  });
+  test('describes confirmation without inviting an unsupported extra note', () => {
+    expect(
+      resolveEditorPlaceholder({
+        lockForApproval: false,
+        lockForQuestion: true,
+        questionAcceptsCustom: false,
+        questionButtonLabel: 'Submit',
+        placeholder: 'Message',
+      }),
+    ).toBe('Review your answers above…');
+  });
+});
+
+test('pending question submission keeps its functional placeholder', () => {
+  expect(
+    resolveEditorPlaceholder({
+      lockForApproval: false,
+      lockForQuestion: true,
+      questionPending: true,
+      questionAcceptsCustom: false,
+      placeholder: 'Message',
+    }),
+  ).toBe('Submitting…');
+});

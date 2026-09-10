@@ -160,6 +160,10 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     name: 'sdk',
     command: ['pnpm', '--filter', '@kortix/sdk', 'test'],
   };
+  const workerQuality: LocalTestLane = {
+    name: 'worker-quality',
+    command: ['bun', 'tests/bin/worker-quality.ts'],
+  };
   const runnerUnit: LocalTestLane = {
     name: 'flow-runner-unit',
     command: ['pnpm', '--dir', 'tests', 'test:unit'],
@@ -285,11 +289,15 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       ...packageQuality,
       // Full mode runs the SDK as a named lane. Keep package-only mode complete,
       // but do not execute the same SDK tests twice inside one full run.
-      env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
+      env: {
+        KORTIX_PACKAGE_SKIP_SDK_TESTS: '1',
+        KORTIX_PACKAGE_SKIP_WORKER_QUALITY: '1',
+      },
     };
     const lanes = [
       fullFlows,
       sdk,
+      workerQuality,
       runnerUnit,
       routeCoverage,
       worktreeUnit,
@@ -303,13 +311,13 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
       stages: [
-        [fullFlows, sdk, runnerUnit, routeCoverage, worktreeUnit],
+        [fullFlows, sdk, workerQuality, runnerUnit, routeCoverage, worktreeUnit],
         [fullBrowser],
         [fullPackageQuality],
       ],
     };
   }
-  const lanes = [flows, sdk, runnerUnit, routeCoverage, worktreeUnit];
+  const lanes = [flows, sdk, workerQuality, runnerUnit, routeCoverage, worktreeUnit];
   return {
     mode: 'core',
     lanes,

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { isPiWorkerRuntimeMetadata } from '@kortix/sdk';
 
 import {
   type RunningOpenCodeProxy,
@@ -16,20 +17,21 @@ import {
   type ResolvedSession,
   resolveRunningSessionId,
 } from './sessions-chat.ts';
+import { runPiTerminal } from './sessions-pi-terminal.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 const CONNECT_HELP = help`Usage: kortix sessions connect [<session-id>] [options] [-- <opencode attach args…>]
 
-Attach your local OpenCode TUI to the OpenCode server already running inside a
-Kortix session sandbox. The CLI opens a local loopback proxy, injects your
-Kortix auth token, then runs \`opencode attach\` against it.
+Connect to the selected session runtime. Pi sessions use the Kortix terminal
+with streamed text, questions, permissions, and /stop. OpenCode sessions use
+the local OpenCode TUI through an authenticated loopback proxy.
 
 With no session id on an interactive terminal, opens a picker: running
 sessions attach immediately, stopped ones are restarted and awaited, and
 "+ New session" provisions a fresh sandbox first.
 
-The \`opencode\` binary is managed for you: the CLI downloads the exact version
+For OpenCode sessions, the CLI downloads the exact \`opencode\` version
 the session's server runs (cached under ~/.kortix/opencode/<version>/) so the
 TUI and server never skew. Set KORTIX_OPENCODE_BIN to force your own binary.
 
@@ -96,6 +98,15 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   // (--project/--host still pin it) instead of surfacing a bare "Not found".
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions connect');
   if (!resolved) return 1;
+  if (isPiWorkerRuntimeMetadata(resolved.session.metadata)) {
+    if (portRaw !== undefined || attachArgs.length > 0) {
+      process.stderr.write(
+        `${status.err('--port and attach arguments are only supported for OpenCode sessions.')}\n`,
+      );
+      return 2;
+    }
+    return runPiTerminal(resolved);
+  }
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
 

@@ -20,7 +20,7 @@ export const fileListKeys = {
  * Hidden (dot) files are filtered out unless showHidden is enabled in the store.
  */
 export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
   const showHidden = useFilesStore((s) => s.showHidden);
 
   const query = useQuery<FileNode[]>({
@@ -61,7 +61,7 @@ export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
  */
 export function useInvalidateFileList() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return (dirPath?: string) => {
     if (dirPath) {

@@ -24,7 +24,13 @@ const sampleConfig: Record<string, unknown> = {
   }),
 };
 const files = [{ path: 'a' }, { path: 'b' }, { path: 'c' }];
-const ALL = { canFiles: true, canAgents: true, canSkills: true, canCommands: true, canCustomize: true };
+const ALL = {
+  canFiles: true,
+  canAgents: true,
+  canSkills: true,
+  canCommands: true,
+  canCustomize: true,
+};
 
 describe('applyDetailCapabilityFilter — /detail per-capability section gating', () => {
   test('all caps → nothing filtered', () => {
@@ -78,7 +84,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canCustomize: false });
     expect(out.config.manifest_version).toEqual({
       version: null,
-      latest_version: 2,
+      latest_version: 3,
       migration_offered: false,
       target_version: null,
       unknown_reason: 'restricted',
@@ -90,7 +96,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     const out = applyDetailCapabilityFilter(sampleConfig, files, ALL);
     expect(out.config.manifest_version).toEqual({
       version: 1,
-      latest_version: 2,
+      latest_version: 3,
       migration_offered: true,
       target_version: 2,
       unknown_reason: null,
@@ -100,7 +106,11 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
 
   test('member profile (all config reads, NO file.read) → config visible, file list hidden', () => {
     const out = applyDetailCapabilityFilter(sampleConfig, files, {
-      canFiles: false, canAgents: true, canSkills: true, canCommands: true, canCustomize: true,
+      canFiles: false,
+      canAgents: true,
+      canSkills: true,
+      canCommands: true,
+      canCustomize: true,
     });
     expect(out.files).toEqual([]);
     expect(out.file_count).toBe(0);

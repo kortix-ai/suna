@@ -4,8 +4,8 @@
  * SPLIT ON PURPOSE. Capture needs `resolveSessionOpencodeEndpoint`, which lives
  * in the session-lifecycle engine and pulls most of the control plane in behind
  * it. The transcript digest only READS the mirror and must not carry that
- * graph — `session-transcript.ts` therefore imports the sibling read module and
- * `routes/r4.ts` is the only importer of this one. (Concretely: without the
+ * graph — `session-transcript.ts` therefore imports the sibling read module.
+ * Turn-end relay and manual stop import this writer. (Concretely: without the
  * split, `unit-session-transcript.test.ts`'s `../shared/db` mock stopped
  * satisfying the engine's own imports and the whole file failed to load.)
  *
@@ -74,8 +74,8 @@ function timeField(info: Record<string, unknown>, key: 'created' | 'completed'):
 /**
  * Read the box once and upsert what it said into the mirror.
  *
- * NEVER THROWS. Every caller is a fire-and-forget hook on a relay the daemon
- * retries; a mirror write must not be able to fail a turn-end report.
+ * NEVER THROWS. Turn-end relay starts capture asynchronously. Manual stop waits
+ * for capture before power-off. Failure must not prevent either action.
  */
 export async function captureSessionTranscriptMirror(
   sessionId: string,

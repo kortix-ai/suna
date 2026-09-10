@@ -18364,7 +18364,11 @@
       "textb38cb5e18525": "esse ciclo e mostra seu trabalho. Tem vinte minutos?",
       "textff5bd8333c4e": "Você e qualquer pessoa que possa gerenciar este projeto",
       "text36d8691ae566": "Qualquer pessoa com a URL, além da sua equipe",
-      "text4fb2abecc0a6": "Qualquer pessoa com a senha, além da sua equipe"
+      "text4fb2abecc0a6": "Qualquer pessoa com a senha, além da sua equipe",
+      "text069bf3d7e248": "Não foi possível abrir o espaço de trabalho.",
+      "text1cd3cef84e36": "Não foi possível enviar a resposta. Tente novamente.",
+      "textb4c89a8de9da": "Falha ao atualizar as permissões da sessão.",
+      "text9deef600048b": "Carregando conversa"
     }
   },
   "projectOnboarding": {

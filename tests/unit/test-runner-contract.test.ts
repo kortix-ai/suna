@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(import.meta.dirname, '../..');
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 const testsPackage = JSON.parse(readFileSync(resolve(root, 'tests/package.json'), 'utf8'));
+const workerPackage = JSON.parse(
+  readFileSync(resolve(root, 'apps/kortix-worker/package.json'), 'utf8'),
+);
 
 describe('local test runner contract', () => {
   it('uses the one workspace lockfile', () => {
@@ -18,6 +21,18 @@ describe('local test runner contract', () => {
     expect(rootPackage.scripts['test:flows']).toBeUndefined();
     expect(rootPackage.scripts['test:browser']).toBeUndefined();
     expect(testsPackage.scripts.test).toContain('vitest run');
+  });
+
+  it('includes the worker in the workspace while retaining its standalone artifact gate', () => {
+    const workspace = readFileSync(resolve(root, 'pnpm-workspace.yaml'), 'utf8');
+    const lockfile = readFileSync(resolve(root, 'pnpm-lock.yaml'), 'utf8');
+
+    expect(workspace).not.toContain("'!apps/kortix-worker'");
+    expect(lockfile).toContain('\n  apps/kortix-worker:\n');
+    expect(existsSync(resolve(root, 'apps/kortix-worker/bun.lock'))).toBe(true);
+    expect(workerPackage.scripts.test).toBe('bun test');
+    expect(workerPackage.scripts.typecheck).toBe('tsc --noEmit');
+    expect(workerPackage.scripts.build).toBe('bash scripts/build.sh');
   });
 
   it('removes superseded cross-cutting workflows and runners', () => {
@@ -73,15 +88,40 @@ describe('local test runner contract', () => {
     expect(source).toContain("'--no-sort'");
     expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
     expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
-    expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
-    expect(source).toContain("await runWorkspaceTests(['@kortix/sandbox-agent-server'], 1)");
-    expect(source).not.toContain("['@kortix/cli', '@kortix/sandbox-agent-server']");
+    expect(source).toContain("runWorkspaceTests(['@kortix/cli', 'kortixd'], 1)");
+    expect(source).not.toContain("'@kortix/sandbox-agent-server'");
     expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
     expect(source).toContain('Promise.allSettled(tasks)');
     expect(source.match(/await runAll\(\[/g)).toHaveLength(5);
     expect(source).toContain("'!kortix-api'");
+    expect(source).toContain("'!@kortix/worker'");
     expect(source).toContain("'!@kortix/db'");
     expect(source).toContain("skipSdkTests ? ['!@kortix/sdk'] : []");
+    expect(source).toContain("process.env.KORTIX_PACKAGE_SKIP_WORKER_QUALITY === '1'");
+    expect(source).toContain("run(['bun', 'tests/bin/worker-quality.ts'])");
+  });
+
+  it('runs worker changes through the direct CI build and test gate', () => {
+    const workflow = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+    const workerFilter = workflow.slice(
+      workflow.indexOf('            sandbox_agent:'),
+      workflow.indexOf('            desktop:'),
+    );
+    const workerJob = workflow.slice(
+      workflow.indexOf('  sandbox-agent-build:'),
+      workflow.indexOf('  cli-binary-smoke:'),
+    );
+
+    expect(workerFilter).toContain("'apps/kortix-worker/**'");
+    expect(workerJob).toContain('working-directory: apps/kortix-worker');
+    expect(workerJob).toContain('bun run test');
+    expect(workerJob).toContain('bun run typecheck');
+    expect(workerJob).toContain('bun run build');
+    expect(workerJob).toContain('test -s apps/kortix-worker/dist/worker-runtime.mjs');
+    const testWorkflow = readFileSync(resolve(root, '.github/workflows/tests.yml'), 'utf8');
+    const testedBunVersion = testWorkflow.match(/bun-version: ([\d.]+)/)?.[1];
+    expect(testedBunVersion).toBeTruthy();
+    expect(workerJob).toContain(`bun-version: ${testedBunVersion}`);
   });
 
   it('runs isolated API test files through a bounded parallel worker pool', () => {
@@ -101,7 +141,7 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    expect(agentPackage.scripts.test).toBe('bun test --isolate');
     expect(dbPackage.scripts.test).toBe('bun test --parallel=2 --max-concurrency 2');
   });
 

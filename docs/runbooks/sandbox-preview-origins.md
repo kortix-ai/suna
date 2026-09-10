@@ -27,9 +27,12 @@ One wildcard certificate and one Worker cover all three managed environments
 because the environment is the first label segment. A deployment that declares
 no `KORTIX_PREVIEW_BASE_DOMAIN` keeps the path proxy, which always works.
 
-Both entry points are covered in every row: the session panel's authenticated
-preview, and a public share link (which carries `?public_share=<token>` and is
-exchanged for the same cookie).
+Public preview shares use the configured preview origin or the path proxy.
+Public file-share metadata requires an isolated preview domain. Without that
+domain, `GET /v1/p/public-share/:token` returns 503 with
+`File sharing requires an isolated preview domain`. It never returns a
+successful file link with a null URL. The direct file-download route remains
+available with its existing response restrictions.
 
 ## Why not a path prefix
 

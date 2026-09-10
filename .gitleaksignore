@@ -47,3 +47,11 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # ce4201bd7b that introduced the contiguous marker. Reviewed 2026-08-19.
 ce4201bd7b55ec8bdb4d1feb6c4d57530578931b:apps/web/src/features/workspace/customize/sections/view/secret-delivery.test.ts:private-key:197
 721fee087a61b4f99df9a56107d6fc37691b97dc:apps/api/src/projects/lib/legacy-runtime-bootstrap.test.ts:generic-api-key:262
+
+# Migration ledger repair — timestamped migration names, not credentials. The
+# generic-api-key rule matched these identifiers because the original variable
+# names contained "SECRET". HEAD uses neutral names; these entries cover the
+# historical commit scanned by the pull-request range. Reviewed 2026-09-04.
+acd6bcce90ed9573bbf1a36be6061936d744a2f6:packages/db/scripts/migration-ledger-repair.test.ts:generic-api-key:10
+acd6bcce90ed9573bbf1a36be6061936d744a2f6:packages/db/scripts/migration-ledger-repair.integration.test.ts:generic-api-key:101
+acd6bcce90ed9573bbf1a36be6061936d744a2f6:packages/db/scripts/migration-ledger-repair.integration.test.ts:generic-api-key:102

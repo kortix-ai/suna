@@ -17,14 +17,32 @@
  * `Result.err` rather than letting them escape.
  */
 
-import { makeTransport, type RpcTransport } from './rpc-transport.ts';
+import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
+import {
+  makeTransport,
+  RpcCancellationError,
+  RpcUnauthorizedBeforeExecutionError,
+  type RpcTransport,
+} from './rpc-transport.ts';
 
 type Ok<T> = { ok: true; value: T };
 type Err<E> = { ok: false; error: E };
 type Result<T, E> = Ok<T> | Err<E>;
 
-const ok = <T,>(value: T): Ok<T> => ({ ok: true, value });
-const err = <E,>(error: E): Err<E> => ({ ok: false, error });
+const ok = <T>(value: T): Ok<T> => ({ ok: true, value });
+const err = <E>(error: E): Err<E> => ({ ok: false, error });
+
+const REPLAY_SAFE_RPC_OPERATIONS: ReadonlySet<string> = new Set([
+  'absolutePath',
+  'joinPath',
+  'readTextFile',
+  'readTextLines',
+  'readBinaryFile',
+  'fileInfo',
+  'listDir',
+  'canonicalPath',
+  'exists',
+]);
 
 /** Mirrors pi's FileError shape without importing it, so this file stays dependency-light. */
 class FileErrorLike extends Error {
@@ -38,6 +56,43 @@ class FileErrorLike extends Error {
   }
 }
 
+/**
+ * OS errno -> pi's FileError code.
+ *
+ * The daemon's env-rpc is a thin fs proxy: it reports the real errno
+ * (`ENOENT`), and this client is the adapter that has to speak pi's
+ * vocabulary. Passing the errno through unmapped BROKE EVERY FILE CREATION.
+ * `withFileMutationQueue` canonicalises the target before any mutation and
+ * tolerates a path that does not exist yet — but only for code `not_found`;
+ * anything else it rethrows. So `write` on a new file died on its own
+ * pre-flight with "ENOENT: no such file or directory, lstat '/workspace/x'",
+ * and the agent fell back to `bash` heredocs, ten times in one turn, on
+ * pi.kortix.com.
+ *
+ * Mirrors pi's own mapping in `harness/env/nodejs.js` exactly — including its
+ * spellings `not_directory` / `is_directory` — because pi's tools compare
+ * against those strings.
+ */
+const FILE_ERROR_CODES: Record<string, string> = {
+  ABORT_ERR: 'aborted',
+  ENOENT: 'not_found',
+  EACCES: 'permission_denied',
+  EPERM: 'permission_denied',
+  ENOTDIR: 'not_directory',
+  EISDIR: 'is_directory',
+  EINVAL: 'invalid',
+};
+
+/** Codes pi already understands pass through; unknown errnos become 'unknown'. */
+export function toFileErrorCode(code: unknown): string {
+  if (typeof code !== 'string' || !code) return 'unknown';
+  const mapped = FILE_ERROR_CODES[code];
+  if (mapped) return mapped;
+  // Anything still shaped like an errno is one we have not mapped; do not hand
+  // pi a string it cannot match.
+  return /^E[A-Z]+$/.test(code) ? 'unknown' : code;
+}
+
 class ExecutionErrorLike extends Error {
   code: string;
   constructor(code: string, message: string) {
@@ -47,14 +102,14 @@ class ExecutionErrorLike extends Error {
   }
 }
 
-export type TransportKind = 'fetch' | 'keepalive' | 'ws';
+export type TransportKind = 'fetch' | 'keepalive' | 'ws' | 'auto';
 
 export interface KortixEnvOptions {
   /** Base URL of the environment's RPC endpoint. In production this is the Kortix sandbox proxy. */
   baseUrl: string;
   /** Working directory inside the environment. */
   cwd: string;
-  /** Bearer token for the environment. Optional for the local stub. */
+  /** Legacy direct-environment token. New sessions use signed headers. */
   token?: string;
   /** Extra headers sent with every RPC (provider preview tokens, tracing). */
   headers?: Record<string, string>;
@@ -64,6 +119,19 @@ export interface KortixEnvOptions {
   transport?: TransportKind;
 }
 
+/**
+ * pi hands `exec` a timeout in SECONDS; the daemon expects milliseconds.
+ *
+ * Anything that is not a positive finite number becomes `undefined` so the
+ * daemon falls back to its own default — passing 0 or NaN through would be
+ * read as "kill immediately".
+ */
+export function toExecTimeoutMs(timeoutSeconds: unknown): number | undefined {
+  if (typeof timeoutSeconds !== 'number') return undefined;
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) return undefined;
+  return Math.round(timeoutSeconds * 1000);
+}
+
 export class KortixExecutionEnv {
   readonly cwd: string;
   private readonly baseUrl: string;
@@ -71,6 +139,7 @@ export class KortixExecutionEnv {
   private readonly headers: Record<string, string>;
   private readonly transport: RpcTransport;
   private readonly timeoutMs: number;
+  private readonly abortSettlements = new Set<Promise<void>>();
 
   /** Every RPC that crossed the boundary. The proof harness reads this. */
   readonly calls: Array<{ op: string; args: unknown }> = [];
@@ -80,100 +149,258 @@ export class KortixExecutionEnv {
     this.cwd = opts.cwd;
     this.token = opts.token;
     this.headers = opts.headers ?? {};
-    // Default to keepalive: one pooled connection, handshake paid once per
-    // session rather than once per tool call. See the RPC-tax gate.
-    this.transport = makeTransport(opts.transport ?? 'keepalive', this.baseUrl, this.headers);
+    // Default: NEGOTIATE. Prefer the multiplexed socket (G0: 16.0ms p50 vs
+    // 19.2ms pooled keep-alive), fall back to keep-alive when the daemon has no
+    // `/rpc-ws` — which every sandbox baked before that endpoint existed does
+    // not, permanently. See NegotiatingTransport.
+    this.transport = makeTransport(opts.transport ?? 'auto', this.baseUrl, this.headers);
     this.timeoutMs = opts.timeoutMs ?? 120_000;
   }
 
   /**
    * The single boundary crossing. One persistent-friendly POST per operation.
    *
-   * NOTE for the real implementation: this is where the per-turn RPC tax lives.
-   * A 200-tool-call turn makes 200 of these. It must become one multiplexed
-   * connection before this ships — see the latency budget in the plan.
+   * This is where the per-turn RPC tax lives. The default transport negotiates
+   * one multiplexed WebSocket and falls back to pooled HTTP for older images.
    */
-  private async rpc<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
+  private rpc<T>(
+    op: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Result<T, any>> {
     this.calls.push({ op, args });
-    // One retry: a pooled keep-alive socket retired by the peer between calls
-    // is a transport artifact, not a tool failure. See the note in
-    // stub-environment.ts — the real fix is a multiplexed connection.
-    const first = await this.rpcOnce<T>(op, args);
-    if (first.ok) return first;
-    const msg = String((first.error as any)?.message ?? '');
-    if (/socket|ECONNRESET|closed|EPIPE/i.test(msg)) return this.rpcOnce<T>(op, args);
-    return first;
+    const operation = (async () => {
+      // One retry for reads: a pooled keep-alive socket retired by the peer
+      // between calls is a transport artifact, not a tool failure. Mutations
+      // cannot be replayed because the daemon may commit the side effect before
+      // the response disappears.
+      const first = await this.rpcOnce<T>(op, args, signal);
+      if (first.ok) return first;
+      const msg = String((first.error as any)?.message ?? '');
+      if (
+        !signal?.aborted &&
+        REPLAY_SAFE_RPC_OPERATIONS.has(op) &&
+        /socket|ECONNRESET|closed|EPIPE/i.test(msg)
+      ) {
+        return this.rpcOnce<T>(op, args, signal);
+      }
+      return first;
+    })();
+    if (signal) {
+      const trackAbort = () => {
+        const settlement = operation.then((result) => {
+          if (!result.ok && (result.error as { code?: unknown })?.code !== 'aborted') {
+            throw result.error;
+          }
+        });
+        this.abortSettlements.add(settlement);
+        void settlement.catch(() => {});
+      };
+      if (signal.aborted) trackAbort();
+      else signal.addEventListener('abort', trackAbort, { once: true });
+      void operation.then(
+        () => signal.removeEventListener('abort', trackAbort),
+        () => signal.removeEventListener('abort', trackAbort),
+      );
+    }
+    return operation;
   }
 
-  private async rpcOnce<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
-    const timer = new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error('rpc timeout')), this.timeoutMs).unref?.(),
-    );
+  private async rpcOnce<T>(
+    op: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Result<T, any>> {
+    const operationController = new AbortController();
+    let abortSource: 'caller' | 'timeout' | undefined;
+    const abortFromCaller = () => {
+      if (operationController.signal.aborted) return;
+      abortSource = 'caller';
+      operationController.abort(signal?.reason);
+    };
+    if (signal?.aborted) abortFromCaller();
+    else signal?.addEventListener('abort', abortFromCaller, { once: true });
+
+    let transportOperation: Promise<any>;
     try {
-      const body: any = await Promise.race([this.transport.call(op, args, this.cwd), timer]);
+      transportOperation = Promise.resolve(
+        this.transport.call(op, args, this.cwd, operationController.signal),
+      );
+    } catch (error) {
+      transportOperation = Promise.reject(error);
+    }
+
+    const trackAbort = () => {
+      const settlement = transportOperation.then(
+        () => undefined,
+        (error) => {
+          if (error instanceof RpcCancellationError) throw error;
+        },
+      );
+      this.abortSettlements.add(settlement);
+      void settlement.catch(() => {});
+    };
+    if (operationController.signal.aborted) trackAbort();
+    else operationController.signal.addEventListener('abort', trackAbort, { once: true });
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timer = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        if (operationController.signal.aborted) return;
+        const error = new Error('rpc timeout');
+        abortSource = 'timeout';
+        operationController.abort(error);
+        reject(error);
+      }, this.timeoutMs);
+      timeout.unref?.();
+    });
+    try {
+      const body: any = await Promise.race([transportOperation, timer]);
       if (body?.ok) return ok(body.value as T);
-      return err(new FileErrorLike(body?.error?.code ?? 'unknown', body?.error?.message ?? 'environment error', body?.error?.path));
+      return err(
+        new FileErrorLike(
+          toFileErrorCode(body?.error?.code),
+          body?.error?.message ?? 'environment error',
+          body?.error?.path,
+        ),
+      );
     } catch (e: any) {
       // Never throw. A dead environment is a Result, not an exception.
+      if (abortSource === 'caller' && !(e instanceof RpcCancellationError)) {
+        return err(new FileErrorLike('aborted', 'aborted'));
+      }
+      if (e instanceof RpcUnauthorizedBeforeExecutionError) {
+        return err(new FileErrorLike('rpc_unauthorized', e.message));
+      }
       return err(new FileErrorLike('unknown', String(e?.message ?? e)));
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      signal?.removeEventListener('abort', abortFromCaller);
+      operationController.signal.removeEventListener('abort', trackAbort);
     }
   }
 
   // ---- FileSystem ---------------------------------------------------------
-  absolutePath(path: string) { return this.rpc<string>('absolutePath', { path }); }
-  joinPath(parts: string[]) { return this.rpc<string>('joinPath', { parts }); }
-  readTextFile(path: string) { return this.rpc<string>('readTextFile', { path }); }
-  readTextLines(path: string, options?: { maxLines?: number }) {
-    return this.rpc<string[]>('readTextLines', { path, maxLines: options?.maxLines });
+  absolutePath(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<string>('absolutePath', { path }, abortSignal);
   }
-  async readBinaryFile(path: string): Promise<Result<Uint8Array, any>> {
-    const r = await this.rpc<string>('readBinaryFile', { path });
+  joinPath(parts: string[], abortSignal?: AbortSignal) {
+    return this.rpc<string>('joinPath', { parts }, abortSignal);
+  }
+  readTextFile(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<string>('readTextFile', { path }, abortSignal);
+  }
+  readTextLines(path: string, options?: { maxLines?: number; abortSignal?: AbortSignal }) {
+    return this.rpc<string[]>(
+      'readTextLines',
+      { path, maxLines: options?.maxLines },
+      options?.abortSignal,
+    );
+  }
+  async readBinaryFile(path: string, abortSignal?: AbortSignal): Promise<Result<Uint8Array, any>> {
+    const r = await this.rpc<string>('readBinaryFile', { path }, abortSignal);
     if (!r.ok) return r;
     return ok(Uint8Array.from(Buffer.from(r.value, 'base64')));
   }
-  writeFile(path: string, content: string | Uint8Array) {
+  writeFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal) {
     const isBin = typeof content !== 'string';
-    return this.rpc<void>('writeFile', {
-      path,
-      content: isBin ? Buffer.from(content as Uint8Array).toString('base64') : content,
-      encoding: isBin ? 'base64' : 'utf8',
-    });
+    return this.rpc<void>(
+      'writeFile',
+      {
+        path,
+        content: isBin ? Buffer.from(content as Uint8Array).toString('base64') : content,
+        encoding: isBin ? 'base64' : 'utf8',
+      },
+      abortSignal,
+    );
   }
-  appendFile(path: string, content: string | Uint8Array) {
+  appendFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal) {
     const isBin = typeof content !== 'string';
-    return this.rpc<void>('appendFile', {
-      path,
-      content: isBin ? Buffer.from(content as Uint8Array).toString('base64') : content,
-      encoding: isBin ? 'base64' : 'utf8',
-    });
+    return this.rpc<void>(
+      'appendFile',
+      {
+        path,
+        content: isBin ? Buffer.from(content as Uint8Array).toString('base64') : content,
+        encoding: isBin ? 'base64' : 'utf8',
+      },
+      abortSignal,
+    );
   }
-  renameFile(sourcePath: string, destinationPath: string) {
-    return this.rpc<void>('renameFile', { sourcePath, destinationPath });
+  renameFile(sourcePath: string, destinationPath: string, abortSignal?: AbortSignal) {
+    return this.rpc<void>('renameFile', { sourcePath, destinationPath }, abortSignal);
   }
-  fileInfo(path: string) { return this.rpc<any>('fileInfo', { path }); }
-  listDir(path: string) { return this.rpc<any[]>('listDir', { path }); }
-  canonicalPath(path: string) { return this.rpc<string>('canonicalPath', { path }); }
-  exists(path: string) { return this.rpc<boolean>('exists', { path }); }
-  createDir(path: string, options?: { recursive?: boolean }) {
-    return this.rpc<void>('createDir', { path, recursive: options?.recursive ?? true });
+  fileInfo(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<any>('fileInfo', { path }, abortSignal);
   }
-  remove(path: string, options?: { recursive?: boolean; force?: boolean }) {
-    return this.rpc<void>('remove', { path, recursive: !!options?.recursive, force: !!options?.force });
+  listDir(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<any[]>('listDir', { path }, abortSignal);
   }
-  createTempDir(prefix?: string) { return this.rpc<string>('createTempDir', { prefix: prefix ?? 'tmp-' }); }
-  createTempFile(options?: { prefix?: string; suffix?: string }) {
-    return this.rpc<string>('createTempFile', { prefix: options?.prefix ?? '', suffix: options?.suffix ?? '' });
+  canonicalPath(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<string>('canonicalPath', { path }, abortSignal);
+  }
+  exists(path: string, abortSignal?: AbortSignal) {
+    return this.rpc<boolean>('exists', { path }, abortSignal);
+  }
+  createDir(path: string, options?: { recursive?: boolean; abortSignal?: AbortSignal }) {
+    return this.rpc<void>(
+      'createDir',
+      { path, recursive: options?.recursive ?? true },
+      options?.abortSignal,
+    );
+  }
+  remove(
+    path: string,
+    options?: { recursive?: boolean; force?: boolean; abortSignal?: AbortSignal },
+  ) {
+    return this.rpc<void>(
+      'remove',
+      { path, recursive: !!options?.recursive, force: !!options?.force },
+      options?.abortSignal,
+    );
+  }
+  createTempDir(prefix?: string, abortSignal?: AbortSignal) {
+    return this.rpc<string>('createTempDir', { prefix: prefix ?? 'tmp-' }, abortSignal);
+  }
+  createTempFile(options?: { prefix?: string; suffix?: string; abortSignal?: AbortSignal }) {
+    return this.rpc<string>(
+      'createTempFile',
+      { prefix: options?.prefix ?? '', suffix: options?.suffix ?? '' },
+      options?.abortSignal,
+    );
   }
 
   // ---- Shell --------------------------------------------------------------
-  async exec(command: string, options?: any): Promise<Result<{ stdout: string; stderr: string; exitCode: number }, any>> {
-    const r = await this.rpc<{ stdout: string; stderr: string; exitCode: number }>('exec', {
-      command,
-      cwd: options?.cwd,
-      env: options?.env,
-      timeout: options?.timeout,
-    });
-    if (!r.ok) return err(new ExecutionErrorLike((r.error as any)?.code ?? 'unknown', String((r.error as any)?.message)));
+  async exec(
+    command: string,
+    options?: ShellExecOptions,
+  ): Promise<Result<{ stdout: string; stderr: string; exitCode: number }, any>> {
+    const r = await this.rpc<{ stdout: string; stderr: string; exitCode: number }>(
+      'exec',
+      {
+        command,
+        cwd: options?.cwd,
+        env: options?.env,
+        // SECONDS -> MILLISECONDS. The two sides of this call disagreed on the
+        // unit: pi's ExecutionEnvironment contract is "Timeout in seconds"
+        // (@earendil-works/pi-agent-core harness/types.d.ts:205) and the Kortix
+        // daemon reads the field as `timeoutMs` and SIGKILLs on it
+        // (kortix-sandbox-agent-server routes/env-rpc.ts `case 'exec'`).
+        // Forwarding it unconverted killed every model-supplied timeout ~1000x
+        // early: `bash({ command: 'pnpm install', timeout: 600 })` — ten minutes
+        // — died after 600ms with exit code 124, and the model was told the
+        // command had timed out. Undefined stays undefined so the daemon applies
+        // its own default rather than 0.
+        timeout: toExecTimeoutMs(options?.timeout),
+      },
+      options?.abortSignal,
+    );
+    if (!r.ok)
+      return err(
+        new ExecutionErrorLike(
+          (r.error as any)?.code ?? 'unknown',
+          String((r.error as any)?.message),
+        ),
+      );
     // Streaming callbacks are honoured after the fact for the spike; the real
     // implementation streams these over the multiplexed connection.
     if (options?.onStdout && r.value.stdout) options.onStdout(r.value.stdout);
@@ -181,5 +408,18 @@ export class KortixExecutionEnv {
     return r;
   }
 
-  async cleanup(): Promise<void> { /* nothing local to release — that is the point */ }
+  async waitForAbortSettled(): Promise<void> {
+    while (this.abortSettlements.size > 0) {
+      const settlements = [...this.abortSettlements];
+      try {
+        await Promise.all(settlements);
+      } finally {
+        for (const settlement of settlements) this.abortSettlements.delete(settlement);
+      }
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    await this.transport.close();
+  }
 }

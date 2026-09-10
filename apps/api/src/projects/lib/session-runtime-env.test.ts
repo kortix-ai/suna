@@ -361,6 +361,30 @@ describe('audit relay emission knobs', () => {
 });
 
 describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
+  // 2026-08-28: every pi session on pi.kortix.com answered with an EMPTY
+  // assistant turn and no error. The worker reads
+  // `KORTIX_MODEL_MODE ?? 'faux'`, this builder never set it, and the faux
+  // provider emits nothing — so the model, the credential and the entitlement
+  // all looked fine while nothing could ever reply.
+  test('boots the worker in real model mode, never the benchmark faux provider', () => {
+    const env = buildPiWorkerSessionEnvVars({
+      projectId: 'p',
+      sessionId: 's',
+      agentName: 'kortix',
+      apiUrl: 'https://api.example.test',
+    });
+    expect(env.KORTIX_MODEL_MODE).toBe('real');
+    // The worker appends `/sessions/<id>/log` to this base, so it must be the
+    // PROJECT root with no trailing slash — otherwise every append doubles the
+    // slash and 404s.
+    expect(env.KORTIX_STORE_URL).toBe('https://api.example.test/projects/p');
+    expect(env.KORTIX_STORE_URL).not.toMatch(/\/$/);
+    // No explicit session model: the compiled artifact's baked model is used,
+    // so KORTIX_MODEL must stay absent rather than fall back to the platform
+    // resolution, which would clobber the bake.
+    expect(env.KORTIX_MODEL).toBeUndefined();
+  });
+
   const input = {
     projectId: 'proj-1',
     sessionId: 'sess-1',
@@ -378,6 +402,11 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
       KORTIX_SERVICE_PORT: '8000',
       KORTIX_AGENT_NAME: 'dev',
       KORTIX_AGENT: 'dev',
+      // A session is always REAL. The worker's own default is the benchmark
+      // faux provider, which answers every prompt with an empty turn.
+      KORTIX_MODEL_MODE: 'real',
+      // P1.8: the durable transcript log the worker write-throughs to.
+      KORTIX_STORE_URL: 'https://api.kortix.test/v1/projects/proj-1',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_FRONTEND_URL: 'https://kortix.test',
       KORTIX_PROJECT_AUTO_CLONE: '0',
@@ -401,4 +430,11 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     expect(env).not.toHaveProperty('KORTIX_MODEL');
     expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
+});
+
+
+test('an explicit Pi model receives the limits resolved for that same model', () => {
+  const limits = { model: 'gpt-5.6-luna', context: 1050000, output: 128000 };
+  const env = buildPiWorkerSessionEnvVars({ projectId: 'p', sessionId: 's', agentName: 'build', apiUrl: 'https://api.example.test', opencodeModel: limits.model, modelLimits: limits });
+  expect(JSON.parse(env.KORTIX_MODEL_LIMITS!)).toEqual(limits);
 });

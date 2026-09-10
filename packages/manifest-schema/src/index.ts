@@ -15,6 +15,7 @@
  * no DB calls, just `(rawToml: string | object) → ManifestValidationResult`.
  */
 
+import type { ManifestIssue } from './issue';
 import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
@@ -28,6 +29,8 @@ import {
   type ConnectorProvider,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
+  KNOWN_SCHEMA_VERSION,
+  manifestUsesAgentMap,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
   DEPRECATED_KORTIX_CLI_ALIASES,
@@ -36,7 +39,9 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  PI_WORKER_SANDBOX_SLUG,
   RESERVED_SANDBOX_SLUG,
+  RESERVED_SANDBOX_TEMPLATE_SLUGS,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
@@ -44,6 +49,7 @@ import {
   SLUG_RE,
   TRIGGER_TYPES,
   parseDurationSeconds,
+  isReservedSandboxTemplateSlug,
 } from './constants';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
 // file — validateAgentMdFrontmatter and friends moved to ./index.v2.ts, which
@@ -99,6 +105,10 @@ export {
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
+  KNOWN_SCHEMA_VERSION,
+  manifestDefaultConfigDir,
+  manifestDefaultRuntime,
+  manifestUsesAgentMap,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
   DEPRECATED_KORTIX_CLI_ALIASES,
@@ -109,7 +119,9 @@ export {
   RESERVED_ENV_NAME_PREFIXES,
   RESERVED_ENV_NAMES,
   reservedEnvNameReason,
+  PI_WORKER_SANDBOX_SLUG,
   RESERVED_SANDBOX_SLUG,
+  RESERVED_SANDBOX_TEMPLATE_SLUGS,
   RESERVED_SLUG_PROVIDERS,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
@@ -118,6 +130,7 @@ export {
   DURATION_RE,
   formatDurationSeconds,
   parseDurationSeconds,
+  isReservedSandboxTemplateSlug,
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
@@ -163,7 +176,7 @@ export {
  * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
  * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
  */
-const KNOWN_SCHEMA_VERSION = 2;
+
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -178,20 +191,6 @@ function isEnabledValue(v: unknown): boolean {
     return ['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'].includes(v.trim().toLowerCase());
   }
   return false;
-}
-
-/** One diagnostic finding. */
-export interface ManifestIssue {
-  /** Dot-path to the offending value, e.g. `triggers[1].cron`. */
-  path: string;
-  /** Human-readable message. */
-  message: string;
-  /** `error` blocks push/merge; `warning` is advisory. */
-  severity: 'error' | 'warning';
-  /** Optional 1-indexed line within the original TOML text. */
-  line?: number;
-  /** Optional 1-indexed column. */
-  column?: number;
 }
 
 export interface ManifestValidationResult {
@@ -245,8 +244,8 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version === 2) {
-    validateManifestBodyV2(parsed, format, issues);
+  if (version !== undefined && manifestUsesAgentMap(version)) {
+    validateManifestBodyV2(parsed, format, issues, version);
   } else {
     validateManifestBodyV1(parsed, format, issues);
   }
@@ -291,6 +290,9 @@ function validateManifestBodyV2(
   parsed: Record<string, unknown>,
   format: ManifestFormat,
   issues: ManifestIssue[],
+  // The manifest's OWN version, not a literal 2 — v3 shares this body, and a
+  // hardcoded 2 made a v3 manifest report "not supported in kortix_version 2".
+  version: number,
 ): void {
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
@@ -298,11 +300,20 @@ function validateManifestBodyV2(
   validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);
-  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
+  validateConnectors(parsed.connectors, 'connectors', issues, version, format);
   validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
-  validateRuntimeV2(parsed.runtime, 'runtime', issues);
+  validateRuntimeV2(parsed.runtime, 'runtime', issues, version);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
+  if (version === 2 && isTable(parsed.agents)) {
+    for (const [name, agent] of Object.entries(parsed.agents)) {
+      if (isTable(agent) && agent.resources !== undefined) issues.push({
+        path: `agents.${name}.resources`,
+        message: 'Bundled resources require kortix_version 3. The OpenCode resource adapter is not available.',
+        severity: 'error',
+      });
+    }
+  }
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }
@@ -409,10 +420,10 @@ export function validateGrantList(
         issues.push({
           path: `${where}[${k}]`,
           message:
-            version === 2
-              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
+            manifestUsesAgentMap(version)
+              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version ${version} — remove it from the manifest.`
               : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: version === 2 ? 'error' : 'warning',
+          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
         });
       } else {
         issues.push({
@@ -512,11 +523,11 @@ function validateRoot(
   // v2's nested permission trees, per-value secret scoping, and approval lists
   // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
   // the migration path rather than silently misparsing.
-  if (version === 2 && format === 'toml') {
+  if (manifestUsesAgentMap(version) && format === 'toml') {
     issues.push({
       path: 'kortix_version',
       message:
-        'kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+        `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run \`kortix migrate\`.`,
       severity: 'error',
     });
     return version;
@@ -629,6 +640,12 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], f
         message: '`default` must be a non-empty template slug.',
         severity: 'error',
       });
+    } else if (want === PI_WORKER_SANDBOX_SLUG) {
+      issues.push({
+        path: `${path}.default`,
+        message: `\`default\` cannot select "${PI_WORKER_SANDBOX_SLUG}" because that runtime is server-owned.`,
+        severity: 'error',
+      });
     } else if (want !== RESERVED_SANDBOX_SLUG) {
       const slugs = Array.isArray(node.templates)
         ? node.templates
@@ -678,10 +695,13 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
         message: `"${slug}" is not a valid slug (lowercase letters, digits, dashes, underscores; max 128 chars).`,
         severity: 'error',
       });
-    } else if (slug === RESERVED_SANDBOX_SLUG) {
+    } else if (isReservedSandboxTemplateSlug(slug)) {
       issues.push({
         path: `${where}.slug`,
-        message: `slug "${RESERVED_SANDBOX_SLUG}" is reserved for the platform default — use any other slug.`,
+        message:
+          slug === RESERVED_SANDBOX_SLUG
+            ? `slug "${RESERVED_SANDBOX_SLUG}" is reserved for the platform default — use any other slug.`
+            : `slug "${PI_WORKER_SANDBOX_SLUG}" is reserved for the server-selected Pi runtime — use any other slug.`,
         severity: 'error',
       });
     } else if (seenSlugs.has(slug)) {
@@ -1215,7 +1235,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
+function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: number = 1, format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -1363,10 +1383,10 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         issues.push({
           path: `${where}.credential`,
           message:
-            version === 2
-              ? 'credential "per_user" is not supported in kortix_version 2 — connectors are always "shared"; remove this key.'
+            manifestUsesAgentMap(version)
+              ? `credential "per_user" is not supported in kortix_version ${version} — connectors are always "shared"; remove this key.`
               : 'credential "per_user" was removed — it is tolerated here for now and resolves to "shared", but should be removed from the manifest.',
-          severity: version === 2 ? 'error' : 'warning',
+          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
         });
       } else if (cm !== 'shared') {
         // The runtime (apps/api's connectors.ts `parseConnectorEntry`)
@@ -1383,7 +1403,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         issues.push({
           path: `${where}.credential`,
           message: `credential should be "shared" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
-          severity: version === 2 ? 'error' : 'warning',
+          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
         });
       }
     }
@@ -1414,10 +1434,10 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
       issues.push({
         path: `${where}.agent_scope`,
         message:
-          version === 2
-            ? 'agent_scope is not supported in kortix_version 2 — connector access is set on the agent (`connectors` grant); remove this key.'
+          manifestUsesAgentMap(version)
+            ? `agent_scope is not supported in kortix_version ${version} — connector access is set on the agent (\`connectors\` grant); remove this key.`
             : 'agent_scope is no longer used — connector access is set on the agent (`connectors` grant), not on the connector. This key is ignored at runtime; remove it from the manifest.',
-        severity: version === 2 ? 'error' : 'warning',
+        severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
       });
     }
     if ((provider === 'pipedream' || provider === 'composio') && entry.auth !== undefined) {
@@ -1687,9 +1707,15 @@ export {
   KORTIX_SCHEMA_BASE_URL,
   KORTIX_V1_JSON_SCHEMA,
   KORTIX_V2_JSON_SCHEMA,
+  KORTIX_V3_JSON_SCHEMA,
   KORTIX_JSON_SCHEMA,
   buildManifestV1Schema,
   buildManifestV2Schema,
   buildManifestSchema,
   manifestJsonSchema,
 } from './json-schema';
+
+export { validateAgentResources, validAgentResourceSource } from './agent-resources';
+export type { AgentResources } from './agent-resources';
+export { decodeCompiledAgentResources, MAX_AGENT_RESOURCE_BYTES, type CompiledAgentResource } from './compiled-agent-resources';
+export type { ManifestIssue } from './issue';

@@ -11,6 +11,7 @@
 // Same `mock.module` + `globalThis.fetch` pattern as the sibling
 // `sandbox-env-sync.refresh-models.test.ts` (runs isolated per file).
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { sessionEnvironments } from '@kortix/db';
 
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
@@ -40,15 +41,24 @@ mock.module('../../shared/db', () => ({
   hasDatabase: true,
   db: {
     select: (columns: Record<string, unknown>) => ({
-      from: () => ({
+      from: (table: unknown) => ({
         where: () => {
           const wantsSandboxes = 'externalId' in columns && 'sessionId' in columns;
           const wantsSession = 'createdBy' in columns;
-          const rows = wantsSandboxes ? sandboxRows : wantsSession ? [SESSION_ROW] : [PROJECT_ROW];
+          const rows =
+            table === sessionEnvironments
+              ? []
+              : wantsSandboxes
+                ? sandboxRows
+                : wantsSession
+                  ? [SESSION_ROW]
+                  : [PROJECT_ROW];
           return {
             limit: async () => rows,
-            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
-              Promise.resolve(rows).then(resolve, reject),
+            then: (
+              resolve: (value: typeof rows) => unknown,
+              reject?: (reason: unknown) => unknown,
+            ) => Promise.resolve(rows).then(resolve, reject),
           };
         },
       }),

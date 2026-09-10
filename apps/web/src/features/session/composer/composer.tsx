@@ -47,6 +47,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Close } from '@/features/icon/icons/close';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
+import { COMPOSER_TEXT_METRICS } from './composer-text-metrics';
 import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
@@ -68,8 +69,14 @@ import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
-import { controlToOpenFor, localizedSlashActions, type SlashAction } from './menus/slash-actions';
+import {
+  availableSlashActions,
+  controlToOpenFor,
+  localizedSlashActions,
+  type SlashAction,
+} from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
+import { runtimePromptFilesError } from './runtime-prompt-contract';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
@@ -154,6 +161,11 @@ export interface SessionChatInputProps {
    * list down; every other host omits it.
    */
   slashFiles?: SlashFile[];
+  /**
+   * Whether this runtime accepts attachments. The server validates supported
+   * file types before admitting the prompt.
+   */
+  attachmentsEnabled?: boolean;
   /**
    * `split` is where the chip sat in `args` — display only. Without it every
    * consumer rebuilds the sent message as `/name` + args, so a command typed
@@ -281,9 +293,11 @@ export interface SessionChatInputProps {
   onClearReply?: () => void;
   lockForQuestion?: boolean;
   lockForApproval?: boolean;
-  onCustomAnswer?: (text: string) => void;
+  onCustomAnswer?: (text: string) => boolean | void | Promise<boolean | void>;
   questionButtonLabel?: string | null;
   questionCanAct?: boolean;
+  questionAcceptsCustom?: boolean;
+  questionPending?: boolean;
   onQuestionAction?: () => void;
   escCount?: number;
   parentClassName?: string;
@@ -360,6 +374,7 @@ const EMPTY_COMMANDS: Command[] = [];
 const EMPTY_MODELS: FlatModel[] = [];
 const EMPTY_VARIANTS: string[] = [];
 const EMPTY_SLASH_FILES: SlashFile[] = [];
+const EMPTY_ATTACHED_FILES: AttachedFile[] = [];
 
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
@@ -405,6 +420,7 @@ function ComposerImpl({
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
   slashFiles = EMPTY_SLASH_FILES,
+  attachmentsEnabled = true,
   onCommand,
   models = EMPTY_MODELS,
   selectedModel = null,
@@ -444,6 +460,8 @@ function ComposerImpl({
   onCustomAnswer,
   questionButtonLabel = null,
   questionCanAct = true,
+  questionAcceptsCustom = true,
+  questionPending = false,
   onQuestionAction,
   escCount = 0,
   parentClassName,
@@ -454,12 +472,30 @@ function ComposerImpl({
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const effectiveAttachedFiles = attachmentsEnabled ? attachedFiles : EMPTY_ATTACHED_FILES;
   // Synchronous mirror of `attachedFiles`, for the one reader that cannot
   // wait for a React flush: the submit latch's stash (see `handleSubmit`).
   const attachedFilesRef = useRef<AttachedFile[]>([]);
   useEffect(() => {
-    attachedFilesRef.current = attachedFiles;
-  }, [attachedFiles]);
+    attachedFilesRef.current = effectiveAttachedFiles;
+  }, [effectiveAttachedFiles]);
+  useEffect(() => {
+    if (attachmentsEnabled || attachedFiles.length === 0) return;
+    const filesToClear = attachedFiles;
+    const timeout = window.setTimeout(() => {
+      for (const file of filesToClear) {
+        if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
+      }
+      attachedFilesRef.current = [];
+      setAttachedFiles((current) => (current === filesToClear ? [] : current));
+      const fileError = runtimePromptFilesError({
+        attachmentsEnabled,
+        attachmentCount: filesToClear.length,
+      });
+      if (fileError) errorToast(fileError);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [attachmentsEnabled, attachedFiles]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEmpty, setIsEmpty] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -489,18 +525,21 @@ function ComposerImpl({
    * was added by the person in this mount and outranks a stored list. Local
    * attachments were never storable, so nothing is restored for them.
    */
-  const handleDraftRestore = useCallback((draft: StoredDraft) => {
-    setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
-    if (draft.files.length > 0) {
-      setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
-    }
-  }, []);
+  const handleDraftRestore = useCallback(
+    (draft: StoredDraft) => {
+      setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
+      if (attachmentsEnabled && draft.files.length > 0) {
+        setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
+      }
+    },
+    [attachmentsEnabled],
+  );
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
     scope: draftScope,
     editorRef,
     editorReady: editorElement != null,
-    attachedFiles,
+    attachedFiles: effectiveAttachedFiles,
     hasPrefill: !!prefill,
     onRestore: handleDraftRestore,
   });
@@ -512,22 +551,27 @@ function ComposerImpl({
     [agents],
   );
 
-  const editorDisabled = disabled || lockForApproval;
+  const questionTextDisabled = lockForQuestion && (!questionAcceptsCustom || questionPending);
+  const editorDisabled = disabled || lockForApproval || questionTextDisabled;
   const inlineUnderbar = underbarPlacement === 'inline';
 
-  const appendAttachedFiles = useCallback((files: Iterable<File>) => {
-    const newFiles: AttachedFile[] = [];
-    for (const file of files) {
-      const localUrl = URL.createObjectURL(file);
-      newFiles.push({ kind: 'local', file, localUrl, isImage: isImageFile(file) });
-    }
-    if (newFiles.length === 0) return;
-    setAttachedFiles((prev) => [...prev, ...newFiles]);
-  }, []);
+  const appendAttachedFiles = useCallback(
+    (files: Iterable<File>) => {
+      if (!attachmentsEnabled) return;
+      const newFiles: AttachedFile[] = [];
+      for (const file of files) {
+        const localUrl = URL.createObjectURL(file);
+        newFiles.push({ kind: 'local', file, localUrl, isImage: isImageFile(file) });
+      }
+      if (newFiles.length === 0) return;
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
+    },
+    [attachmentsEnabled],
+  );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (disabled || lockForQuestion) {
+      if (!attachmentsEnabled || disabled || lockForQuestion) {
         e.target.value = '';
         return;
       }
@@ -536,21 +580,22 @@ function ComposerImpl({
       appendAttachedFiles(Array.from(files));
       e.target.value = '';
     },
-    [disabled, lockForQuestion, appendAttachedFiles],
+    [attachmentsEnabled, disabled, lockForQuestion, appendAttachedFiles],
   );
 
   const handleAttachClick = useCallback(() => {
+    if (!attachmentsEnabled) return;
     fileInputRef.current?.click();
-  }, []);
+  }, [attachmentsEnabled]);
 
   // "Add context" (Task 5): a fresh `attachRequestId` opens the same file
   // picker `handleAttachClick` opens for a manual click or the `/attach-file`
   // command — see `session-composer-prefill-store.ts` for the held/id-keyed
   // handoff this consumes.
   useEffect(() => {
-    if (attachRequestId == null) return;
+    if (!attachmentsEnabled || attachRequestId == null) return;
     handleAttachClick();
-  }, [attachRequestId, handleAttachClick]);
+  }, [attachmentsEnabled, attachRequestId, handleAttachClick]);
 
   const dragHasFiles = useCallback((e: React.DragEvent<HTMLElement>) => {
     return Array.from(e.dataTransfer?.types ?? []).includes('Files');
@@ -558,21 +603,33 @@ function ComposerImpl({
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent<HTMLElement>) => {
-      if (disabled || lockForQuestion || !dragHasFiles(e)) return;
+      if (!dragHasFiles(e)) return;
+      if (!attachmentsEnabled) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      if (disabled || lockForQuestion) return;
       e.preventDefault();
       dragDepthRef.current += 1;
       setIsDragOver(true);
     },
-    [disabled, lockForQuestion, dragHasFiles],
+    [attachmentsEnabled, disabled, lockForQuestion, dragHasFiles],
   );
 
   const handleDragOver = useCallback(
     (e: React.DragEvent<HTMLElement>) => {
-      if (disabled || lockForQuestion || !dragHasFiles(e)) return;
+      if (!dragHasFiles(e)) return;
+      if (!attachmentsEnabled) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      if (disabled || lockForQuestion) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     },
-    [disabled, lockForQuestion, dragHasFiles],
+    [attachmentsEnabled, disabled, lockForQuestion, dragHasFiles],
   );
 
   const handleDragLeave = useCallback(
@@ -589,15 +646,24 @@ function ComposerImpl({
 
   const handleDropFiles = useCallback(
     (e: React.DragEvent<HTMLElement>) => {
-      if (disabled || lockForQuestion || !dragHasFiles(e)) return;
+      if (!dragHasFiles(e)) return;
       e.preventDefault();
       dragDepthRef.current = 0;
       setIsDragOver(false);
+      const fileError = runtimePromptFilesError({
+        attachmentsEnabled,
+        attachmentCount: e.dataTransfer.files?.length ?? 0,
+      });
+      if (fileError) {
+        errorToast(fileError);
+        return;
+      }
+      if (disabled || lockForQuestion) return;
       const dropped = e.dataTransfer.files;
       if (!dropped || dropped.length === 0) return;
       appendAttachedFiles(Array.from(dropped));
     },
-    [appendAttachedFiles, disabled, lockForQuestion, dragHasFiles],
+    [appendAttachedFiles, attachmentsEnabled, disabled, lockForQuestion, dragHasFiles],
   );
 
   const removeAttachedFile = useCallback((index: number) => {
@@ -615,11 +681,19 @@ function ComposerImpl({
       const files = extractClipboardFiles(e.clipboardData);
       if (files.length === 0) return;
       e.preventDefault();
+      const fileError = runtimePromptFilesError({
+        attachmentsEnabled,
+        attachmentCount: files.length,
+      });
+      if (fileError) {
+        errorToast(fileError);
+        return;
+      }
       appendAttachedFiles(files);
     };
     editorElement.addEventListener('paste', onPasteCapture, true);
     return () => editorElement.removeEventListener('paste', onPasteCapture, true);
-  }, [editorElement, disabled, lockForQuestion, appendAttachedFiles]);
+  }, [editorElement, attachmentsEnabled, disabled, lockForQuestion, appendAttachedFiles]);
 
   /**
    * Whether the draft carries a `/` command chip — the other half of the
@@ -644,7 +718,7 @@ function ComposerImpl({
    * literally an external store here, and reading it in an effect would render
    * once with a stale answer and again with the real one.
    */
-  const hasAttachments = attachedFiles.length > 0;
+  const hasAttachments = effectiveAttachedFiles.length > 0;
   const subscribeToCommandChip = useCallback(
     (onChange: () => void) => {
       if (!editorElement || !hasAttachments) return NO_SUBSCRIPTION;
@@ -811,7 +885,7 @@ function ComposerImpl({
     !modelsLoading &&
     !entitlementsPending &&
     (!availableSelectedModel || !hasSelectableModels);
-  const canSubmit = !isEmpty || attachedFiles.length > 0;
+  const canSubmit = !questionTextDisabled && (!isEmpty || effectiveAttachedFiles.length > 0);
   /**
    * No agent may run this prompt. Refused here rather than at the server:
    * `lockForQuestion` is exempt because answering an open question is not a new
@@ -831,7 +905,7 @@ function ComposerImpl({
   const commandAttachmentPlan = planCommandAttachments(
     {
       isCommand: draftWillRunCommand(draftCommandChipLabel, commands),
-      attachmentCount: attachedFiles.length,
+      attachmentCount: effectiveAttachedFiles.length,
     },
     tI18nComplete,
   );
@@ -867,7 +941,7 @@ function ComposerImpl({
     } else {
       editorRef.current?.setContent(prefillText);
     }
-    if (prefillFiles?.length) {
+    if (attachmentsEnabled && prefillFiles?.length) {
       setAttachedFiles((current) =>
         prefillMode === 'merge'
           ? mergeFailedSubmissionFiles(current, prefillFiles)
@@ -884,7 +958,7 @@ function ComposerImpl({
     // re-run the effect whenever the caller re-created it, and a `merge` prefill
     // applied twice appends its text twice.
     onPrefillAppliedRef.current?.(prefillId as number);
-  }, [prefillId, prefillText, prefillFiles, prefillMode, editorElement]);
+  }, [attachmentsEnabled, prefillId, prefillText, prefillFiles, prefillMode, editorElement]);
 
   useEffect(() => {
     if (lockForQuestion) {
@@ -973,10 +1047,13 @@ function ComposerImpl({
     // Rows whose handler this host did not provide are dropped, not shown
     // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
     // highlights, offers "Use", and does nothing is worse than no row.
-    const available = localizedSlashActions(tI18nComplete).filter((action) => {
-      if (action.id === 'compact-session') return Boolean(onCompactClick);
-      if (action.id === 'show-context') return Boolean(onContextClick);
-      return true;
+    const available = availableSlashActions(localizedSlashActions(tI18nComplete), {
+      canSwitchAgent: Boolean(onAgentChange) && !agentSelectorLocked,
+      canSwitchModel: Boolean(onModelChange),
+      canSetReasoningEffort: Boolean(onVariantChange),
+      canAttachFiles: attachmentsEnabled,
+      canCompact: Boolean(onCompactClick),
+      canShowContext: Boolean(onContextClick),
     });
     return available.map((action) => {
       if (action.id === 'switch-agent' && selectedAgent) {
@@ -989,7 +1066,18 @@ function ComposerImpl({
       }
       return action;
     });
-  }, [selectedAgent, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
+  }, [
+    selectedAgent,
+    onAgentChange,
+    agentSelectorLocked,
+    onModelChange,
+    onVariantChange,
+    attachmentsEnabled,
+    onCompactClick,
+    onContextClick,
+    contextUsage,
+    tI18nComplete,
+  ]);
 
   const handleSelectAction = useCallback(
     (action: SlashAction) => {
@@ -1010,7 +1098,7 @@ function ComposerImpl({
           cycleAgent();
           return;
         case 'attach-file':
-          fileInputRef.current?.click();
+          handleAttachClick();
           return;
         case 'compact-session':
           onCompactClick?.();
@@ -1020,7 +1108,7 @@ function ComposerImpl({
           return;
       }
     },
-    [cycleAgent, onCompactClick, onContextClick],
+    [cycleAgent, handleAttachClick, onCompactClick, onContextClick],
   );
 
   const dispatchSubmission = useCallback(
@@ -1060,7 +1148,36 @@ function ComposerImpl({
       // submitted as captured; the live editor belongs to whatever the user
       // typed since.
       const draft = stash ? stash.content : editorRef.current?.getContent();
+      if (lockForQuestion) {
+        if (questionPending) return;
+        const trimmed = (draft?.text ?? '').trim();
+        if (trimmed && questionAcceptsCustom && onCustomAnswer) {
+          const accepted = await onCustomAnswer(trimmed);
+          if (
+            accepted !== false &&
+            !stash &&
+            editorRef.current?.getContent().text === draft?.text
+          ) {
+            editorRef.current?.clear();
+          }
+          return;
+        }
+        if (onQuestionAction) {
+          onQuestionAction();
+          return;
+        }
+        return;
+      }
+
       const filesNow = stash ? stash.files : attachedFiles;
+      const fileError = runtimePromptFilesError({
+        attachmentsEnabled,
+        attachmentCount: filesNow.length,
+      });
+      if (fileError) {
+        errorToast(fileError);
+        return;
+      }
       const plan = planDraftSubmission({
         commandName: draft?.commandName,
         text: draft?.text ?? '',
@@ -1139,20 +1256,6 @@ function ComposerImpl({
         return;
       }
 
-      if (lockForQuestion) {
-        const trimmed = (draft?.text ?? '').trim();
-        if (trimmed && onCustomAnswer) {
-          onCustomAnswer(trimmed);
-          if (!stash) editorRef.current?.clear();
-          return;
-        }
-        if (onQuestionAction) {
-          onQuestionAction();
-          return;
-        }
-        return;
-      }
-
       const content = draft ?? { text: '', mentions: [] };
       const trimmed = plan.text;
       if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
@@ -1215,6 +1318,17 @@ function ComposerImpl({
     },
     [
       agentUnavailable,
+      clearOnSend,
+      onSend,
+      isBusy,
+      sessionWorking,
+      runtimeReady,
+      disabled,
+      onCommand,
+      commands,
+      attachedFiles,
+      attachmentsEnabled,
+      lockForQuestion,
       modelUnavailable,
       lockForApproval,
       disabled,
@@ -1230,6 +1344,8 @@ function ComposerImpl({
       onCommand,
       clearSavedDraft,
       onCustomAnswer,
+      questionAcceptsCustom,
+      questionPending,
       onQuestionAction,
       onSend,
     ],
@@ -1283,6 +1399,8 @@ function ComposerImpl({
     lockForApproval,
     lockForQuestion,
     questionButtonLabel,
+    questionAcceptsCustom,
+    questionPending,
     placeholder,
   });
 
@@ -1489,7 +1607,7 @@ function ComposerImpl({
         >
           {/* Inline chips: thread context, todos, queue — unified spacing */}
 
-          <AttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
+          <AttachmentTiles files={effectiveAttachedFiles} onRemove={removeAttachedFile} />
 
           {/*
             The `/` command + attachments refusal. Directly under the tiles it
@@ -1520,7 +1638,7 @@ function ComposerImpl({
             className={cn(
               'flex min-w-0 flex-col px-2 pb-2',
               lockForApproval && 'composer-locked-approval',
-              attachedFiles.length > 0 && 'pt-3',
+              effectiveAttachedFiles.length > 0 && 'pt-3',
             )}
           >
             {/*
@@ -1556,6 +1674,17 @@ function ComposerImpl({
                 placeholder={editorPlaceholder}
                 active={animatePlaceholder}
               />
+              {questionTextDisabled && isEmpty && (
+                <div
+                  role="status"
+                  className={cn(
+                    'text-muted-foreground pointer-events-none absolute inset-x-1 top-0 text-sm',
+                    COMPOSER_TEXT_METRICS,
+                  )}
+                >
+                  {editorPlaceholder}
+                </div>
+              )}
               <Suspense fallback={<ComposerEditorFallback />}>
                 <ComposerEditorLazy
                   ref={setEditorRef}
@@ -1577,22 +1706,24 @@ function ComposerImpl({
               </Suspense>
             </div>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
-              )}
-              multiple
-              className="hidden"
-              onChange={handleFileSelect}
-            />
+            {attachmentsEnabled && (
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={tHardcodedUi.raw(
+                  'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
+                )}
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+            )}
             <ComposerToolbar
               leading={
                 inlineUnderbar ? (
                   <ComposerUnderbar
                     variant="inline"
-                    onAttachClick={handleAttachClick}
+                    onAttachClick={attachmentsEnabled ? handleAttachClick : undefined}
                     agents={primaryAgents}
                     selectedAgent={selectedAgent}
                     onAgentChange={onAgentChange}
@@ -1634,7 +1765,7 @@ function ComposerImpl({
               lockForQuestion={lockForQuestion}
               questionButtonLabel={questionButtonLabel}
               questionCanAct={questionCanAct}
-              hasText={!isEmpty}
+              hasText={!questionTextDisabled && !isEmpty}
               canSubmit={canSubmit}
               submitDisabled={submitDisabled || commandAttachmentPlan.kind === 'refuse'}
               disabled={disabled}
@@ -1665,7 +1796,7 @@ function ComposerImpl({
       */}
       {inlineUnderbar ? null : (
         <ComposerUnderbar
-          onAttachClick={handleAttachClick}
+          onAttachClick={attachmentsEnabled ? handleAttachClick : undefined}
           agents={primaryAgents}
           selectedAgent={selectedAgent}
           onAgentChange={onAgentChange}

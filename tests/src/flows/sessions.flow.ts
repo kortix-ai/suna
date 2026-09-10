@@ -1,10 +1,13 @@
+import { createHash } from 'node:crypto';
 /**
  * Sessions — create/list/get/delete + unified runtime start. Maps to spec §16 (SESS-*).
  * Session creation provisions a REAL Daytona sandbox (fire-and-forget), so these
  * assert the contract (201 provisioning, status transitions) without blocking on
  * a full boot. Gated on the `daytona` capability.
  */
+import { isDeepStrictEqual } from 'node:util';
 import { flow } from '../core/flow';
+import { createDatabaseSession } from '../fixtures/database-project';
 
 flow(
   'SESS-1',
@@ -16,6 +19,50 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedSeededProject();
+    await ctx.step('NONMEMBER cannot probe reserved Pi runtime fields → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          '/v1/projects/:projectId/sessions',
+          { sandbox_slug: 'pi-worker' },
+          { params: { projectId: p.id } },
+        );
+      r.status(403);
+    });
+    for (const [key, value] of [
+      ['pi_worker_boot', true],
+      ['sandbox_slug', 'pi-worker'],
+      ['pi_worker_ref', 'main'],
+      ['pi_worker_sha', 'a'.repeat(40)],
+      ['runtimeArtifact', { runtimeProfile: 'pi-worker', sandboxSlug: 'pi-worker' }],
+    ] as const) {
+      await ctx.step(`create session with server-managed metadata.${key} → 400`, async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/sessions',
+            { metadata: { [key]: value } },
+            { params: { projectId: p.id } },
+          );
+        r.status(400).body().has('$.error', `metadata key is server-managed: ${key}`);
+      });
+    }
+    await ctx.step(
+      'create session with explicit sandbox_slug pi-worker → 400 reserved',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/sessions',
+            { sandbox_slug: 'pi-worker' },
+            { params: { projectId: p.id } },
+          );
+        r.status(400)
+          .body()
+          .has('$.error', 'sandbox_slug "pi-worker" is reserved for the server-selected Pi runtime')
+          .has('$.code', 'PI_WORKER_RUNTIME_RESERVED');
+      },
+    );
     await ctx.step('create session → 201 provisioning', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -695,6 +742,83 @@ flow(
 );
 
 /**
+ * SESS-30 — the pi worker transcript is a control-plane log. This flow calls
+ * the real HTTP routes as a project owner. The local fixture writes the
+ * project and session directly to PostgreSQL, so this proves append
+ * idempotency, conflict detection, ordering, and stopped-runtime readability
+ * without a worker or sandbox. Session-scoped credential isolation stays
+ * pinned in the route test because the local profile cannot mint a worker
+ * runtime credential.
+ */
+flow(
+  'SESS-30',
+  {
+    domain: 'sessions',
+    routes: [
+      'POST /v1/projects/:projectId/sessions/:sessionId/log',
+      'GET /v1/projects/:projectId/sessions/:sessionId/log',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const session = await ctx.fixtures.session(project);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const marker = `ke2e-${crypto.randomUUID()}`;
+    const firstKey = crypto.randomUUID();
+    const first = { kind: 'name', name: `${marker}-first`, probe: marker };
+    const second = { kind: 'label', id: 'message-1', label: 'second', probe: marker };
+    const params = { projectId: project.id, sessionId: session.id };
+
+    await ctx.step('append one mutation and replay the same request → 204 twice', async () => {
+      const options = { params, headers: { 'Idempotency-Key': firstKey } };
+      const initial = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/log',
+        first,
+        options,
+      );
+      initial.status(204);
+      const retry = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/log',
+        first,
+        options,
+      );
+      retry.status(204);
+    });
+
+    await ctx.step('reuse the key for different content → 409', async () => {
+      const response = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/log',
+        { ...first, name: `${marker}-conflict` },
+        { params, headers: { 'Idempotency-Key': firstKey } },
+      );
+      response.status(409).body().has('$.error', 'idempotency key reused with different item');
+    });
+
+    await ctx.step('append a second mutation with a new key → 204', async () => {
+      const response = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/log',
+        second,
+        { params, headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      );
+      response.status(204);
+    });
+
+    await ctx.step('read from PostgreSQL returns each probe once, in append order', async () => {
+      const response = await owner.get('/v1/projects/:projectId/sessions/:sessionId/log', {
+        params,
+      });
+      response.status(200);
+      const items = response
+        .json<Array<Record<string, unknown>>>()
+        .filter((item) => item.probe === marker);
+      if (!isDeepStrictEqual(items, [first, second])) {
+        throw new Error(`unexpected durable transcript probe: ${JSON.stringify(items)}`);
+      }
+    });
+  },
+);
+
+/**
  * SESS-15 — per-session agent action audit log. Same visibility gate as
  * session detail (project read + the session must be visible to the caller —
  * projects/routes/project-audit.ts). Non-Enterprise accounts degrade to pending-only
@@ -758,35 +882,9 @@ flow(
 );
 
 /**
- * SESS-16 — anonymous session-share VIEWING: `GET /v1/public/session-shares/:shareId`
- * and `.../messages`, mounted at `apps/api/src/public-session-shares/index.ts`
- * (public/session-shares/index.ts, no auth middleware). Closes the backend
- * gap `(public)/share/[shareId]` (apps/web `ShareViewer.tsx`) had flagged
- * in-code since #4124: that page has no public-share token in its route and
- * the sandbox-proxy's own public-share family deliberately blocks port 8000
- * (`PUBLIC_SHARE_BLOCKED_PORTS` in shared/session-public-shares.ts), so it
- * could never serve a session's title/transcript to a logged-out visitor.
- *
- * `:shareId` here is the SESS-13 share's raw `share_id` (the uuid — the SAME
- * value the CRUD responses call `share.share_id`), NOT the `kps_...` public
- * token `/v1/p/public-share/:token` uses. The route derives the token
- * server-side (`publicShareToken(shareId)`) and resolves through the exact
- * same `resolvePublicShare()` SESS-13 covers, so it inherits identical
- * 404 (unknown) / 410 (revoked or expired) / 503 (sandbox not provisioned
- * yet) semantics — and ANY existing share for the session (created as a
- * `preview` or a `file`, the only kinds the CRUD supports today) unlocks the
- * transcript view too: a share token already proves the owner handed this
- * link to someone outside the account, and the read-only conversation is not
- * more sensitive than the live preview or workspace file that SAME token
- * already exposes.
- *
- * The metadata route (`GET /:shareId`) is DB-only (title/status/timestamps),
- * so it does not itself 503 on an inactive sandbox — only `resolvePublicShare`'s
- * own missing-`externalId` check can. The messages route additionally 503s
- * when the sandbox row exists but isn't `active`, and otherwise degrades to a
- * 200 `{available:false, reason}` digest (mirroring the authenticated
- * `/transcript` debug endpoint's behavior) for transient OpenCode-not-ready
- * states — a polling frontend should retry those, not treat them as fatal.
+ * SESS-16 verifies anonymous conversation metadata, transcript sanitization,
+ * and share revocation. Metadata does not require a running sandbox.
+ * Transcripts use the worker or a durable mirror when one exists.
  */
 flow(
   'SESS-16',
@@ -839,21 +937,16 @@ flow(
       r.status(400);
     });
 
-    await ctx.step(
-      'anon: view metadata for the real share → 200 (sandbox ready) or 503 (not yet) — never an auth error',
-      async () => {
-        const r = await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } });
-        r.status([200, 503]);
-        if (r.statusCode === 200) {
-          r.body()
-            .has('$.share.share_id', shareId)
-            .has('$.share.session_id', session.id)
-            .has('$.session.session_id', session.id)
-            .exists('$.session.status')
-            .exists('$.session.created_at');
-        }
-      },
-    );
+    await ctx.step('anon: view metadata for the real share → 200 without a running sandbox', async () => {
+      const r = await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } });
+      r.status(200);
+      r.body()
+        .has('$.share.share_id', shareId)
+        .has('$.share.session_id', session.id)
+        .has('$.session.session_id', session.id)
+        .exists('$.session.status')
+        .exists('$.session.created_at');
+    });
 
     await ctx.step(
       'anon: read the sanitized transcript for the real share → 200 (digest) or 503 (sandbox not up)',
@@ -1161,3 +1254,140 @@ flow(
     });
   },
 );
+
+
+flow(
+  'SESS-28',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'PUT /v1/projects/:projectId/sessions/:sessionId/model',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ metadata: { experimental: { llm_gateway: false } } });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const metadata = {
+      sandbox_slug: 'pi-worker',
+      pi_worker_boot: true,
+      pi_worker_ref: 'main',
+      pi_worker_sha: 'a'.repeat(40),
+      opencode_model: 'kortix/gpt-5.6-luna',
+    };
+    const piId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: ctx.P.OWNER.accountId!,
+      userId: ctx.P.OWNER.userId!,
+      metadata,
+    });
+    const params = { projectId: project.id, sessionId: piId };
+    await ctx.step('Anonymous and nonmember callers cannot change a Pi session model', async () => {
+      for (const [principal, status] of [[ctx.P.ANON, 401], [ctx.P.NONMEMBER, 403]] as const) {
+        const response = await ctx.client.as(principal).put(
+          '/v1/projects/:projectId/sessions/:sessionId/model',
+          { opencode_model: 'openai/gpt-4.1' },
+          { params },
+        );
+        response.status(status);
+      }
+    });
+    await ctx.step('A Pi model change returns 409 and preserves the complete stored metadata', async () => {
+      const before = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+      before.status(200);
+      const changed = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model',
+        { opencode_model: 'openai/gpt-4.1' }, { params });
+      changed.status(409).body().has('$.code', 'SESSION_MODEL_FIXED_AT_START');
+      const after = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+      after.status(200);
+      if (!isDeepStrictEqual(before.json<any>().metadata, after.json<any>().metadata)) {
+        throw new Error('Rejected Pi model change modified session metadata');
+      }
+    });
+    await ctx.step('A queued OpenCode session stores its next model and reports that it is not applied live', async () => {
+      const sessionId = await createDatabaseSession(ctx.env, {
+        projectId: project.id,
+        accountId: ctx.P.OWNER.accountId!,
+        userId: ctx.P.OWNER.userId!,
+      });
+      const params = { projectId: project.id, sessionId };
+      const changed = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model',
+        { opencode_model: 'openai/gpt-4.1' }, { params });
+      changed.status(200).body().has('$.opencode_model', 'openai/gpt-4.1').has('$.applied_live', false);
+      const saved = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+      saved.status(200).body().has('$.metadata.opencode_model', 'openai/gpt-4.1');
+    });
+  },
+);
+
+flow('SESS-29', {
+  domain: 'sessions',
+  routes: [
+    'PUT /v1/projects/:projectId/sessions/:sessionId/attachments/:sha256',
+    'GET /v1/projects/:projectId/sessions/:sessionId/attachments/:sha256',
+  ],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project();
+  const session = await ctx.fixtures.session(project);
+  const sibling = await ctx.fixtures.session(project);
+  const otherProject = await ctx.fixtures.project();
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const content = `immutable attachment \u0000 \u00ff ${crypto.randomUUID()}`;
+  const sha256 = createHash('sha256').update(content).digest('hex');
+  const route = '/v1/projects/:projectId/sessions/:sessionId/attachments/:sha256';
+  const params = { projectId: project.id, sessionId: session.id, sha256 };
+  const options = { params, raw: true, headers: { 'content-type': 'text/plain' } };
+  const before = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+  before.status(200);
+  const originalStatus = before.json<any>().status;
+
+  await ctx.step('upload and repeat identical content → 204 twice', async () => {
+    (await owner.put(route, content, options)).status(204);
+    (await owner.put(route, content, options)).status(204);
+  });
+  await ctx.step('read returns exact bytes, MIME and private immutable metadata', async () => {
+    const response = await owner.get(route, { params });
+    response.status(200);
+    if (response.text() !== content) throw new Error('attachment bytes changed');
+    if (response.header('content-type') !== 'text/plain') throw new Error('attachment MIME changed');
+    if (createHash('sha256').update(response.text()).digest('hex') !== sha256) throw new Error('attachment digest changed');
+    if (response.header('etag')?.replace(/^W\//, '') !== `"${sha256}"`) throw new Error('attachment ETag changed');
+    if (!response.header('cache-control')?.includes('private')) throw new Error('attachment is publicly cacheable');
+    if (response.header('x-content-type-options') !== 'nosniff') throw new Error('attachment can be MIME-sniffed');
+  });
+  await ctx.step('different bytes under the digest → 400; MIME replacement → 409; original remains readable', async () => {
+    (await owner.put(route, `${content}changed`, options)).status(400);
+    (await owner.put(route, content, { ...options, headers: { 'content-type': 'image/png' } })).status(409);
+    const response = await owner.get(route, { params });
+    response.status(200);
+    if (response.text() !== content || response.header('content-type') !== 'text/plain') throw new Error('conflict overwrote attachment');
+  });
+  await ctx.step('unknown digest, sibling session and mismatched project → 404', async () => {
+    for (const change of [{ sha256: '0'.repeat(64) }, { sessionId: sibling.id }, { projectId: otherProject.id }]) {
+      (await owner.get(route, { params: { ...params, ...change } })).status(404);
+    }
+    (await owner.put(route, content, { ...options, params: { ...params, projectId: otherProject.id } })).status(404);
+  });
+  await ctx.step('anonymous and nonmember callers cannot read or write attachment bytes', async () => {
+    for (const [principal, expected] of [[ctx.P.ANON, [401]], [ctx.P.NONMEMBER, [403, 404]]] as const) {
+      (await ctx.client.as(principal).get(route, { params })).status([...expected]);
+      (await ctx.client.as(principal).put(route, content, options)).status([...expected]);
+    }
+  });
+  await ctx.step('empty bytes and malformed digest or MIME → 400', async () => {
+    (await owner.put(route, '', options)).status(400);
+    (await owner.put(route, content, { ...options, params: { ...params, sha256: 'invalid' } })).status(400);
+    (await owner.get(route, { params: { ...params, sha256: 'invalid' } })).status(400);
+    (await owner.put(route, content, { ...options, headers: { 'content-type': 'text/plain; charset=utf-8' } })).status(400);
+  });
+  await ctx.step('attachment reads and writes preserve the session lifecycle status', async () => {
+    const after = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+    after.status(200).body().has('$.status', originalStatus);
+  });
+  await ctx.step('delete the session → attachment read and write both become 404', async () => {
+    (await owner.request('DELETE', '/v1/projects/:projectId/sessions/:sessionId', { params })).status(200);
+    (await owner.get(route, { params })).status(404);
+    (await owner.put(route, content, options)).status(404);
+  });
+});

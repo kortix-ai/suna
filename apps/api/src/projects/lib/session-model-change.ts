@@ -11,12 +11,15 @@
  * This module holds the pure parts so both paths agree on what a legal change is.
  */
 
+import { sessionMetadataClaimsPiWorker } from './session-sandbox-metadata';
+
 /** Terminal states — there is no live agent to re-point, and a cold boot would
  *  re-read the row anyway, so a change here is meaningless rather than harmful. */
 const UNCHANGEABLE_STATUSES = new Set(['failed', 'completed', 'stopped']);
 
 export type ModelChangeRejection =
   | { code: 'INVALID_SESSION_MODEL'; message: string }
+  | { code: 'SESSION_MODEL_FIXED_AT_START'; message: string }
   | { code: 'SESSION_NOT_RUNNING'; message: string };
 
 /**
@@ -74,7 +77,13 @@ export function validateNativeOpencodeModelRef(requested: string): ModelChangeRe
  * so writing it early is correct and needs no live push. A terminal session is
  * refused — nothing would consume the value.
  */
-export function canChangeSessionModel(status: string): ModelChangeRejection | null {
+export function canChangeSessionModel(status: string, metadata?: unknown): ModelChangeRejection | null {
+  if (sessionMetadataClaimsPiWorker(metadata)) {
+    return {
+      code: 'SESSION_MODEL_FIXED_AT_START',
+      message: 'The model is fixed for this session. Start a new session to use another model.',
+    };
+  }
   if (UNCHANGEABLE_STATUSES.has(status)) {
     return {
       code: 'SESSION_NOT_RUNNING',

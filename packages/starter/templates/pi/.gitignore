@@ -1,0 +1,9 @@
+# Local Kortix runtime state — never commit.
+.kortix/state/
+.kortix/pi/sessions/
+.kortix/pi/log/
+.kortix/pi/cache/
+node_modules/
+.env
+.env.local
+.DS_Store

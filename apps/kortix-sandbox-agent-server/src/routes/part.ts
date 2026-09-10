@@ -35,7 +35,7 @@ export function findAttachment(
 }
 
 function bytesResponse(bytes: Buffer, mime: string, etag: string): Response {
-  return new Response(bytes, {
+  return new Response(new Uint8Array(bytes), {
     status: 200,
     headers: {
       'Content-Type': mime,

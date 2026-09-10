@@ -18364,7 +18364,11 @@
       "textb38cb5e18525": "il ciclo e mostra il proprio lavoro. Ha venti minuti?",
       "textff5bd8333c4e": "Tu e chiunque possa gestire questo progetto",
       "text36d8691ae566": "Chiunque abbia l’URL, oltre al tuo team",
-      "text4fb2abecc0a6": "Chiunque abbia la password, oltre al tuo team"
+      "text4fb2abecc0a6": "Chiunque abbia la password, oltre al tuo team",
+      "text069bf3d7e248": "Impossibile aprire lo spazio di lavoro.",
+      "text1cd3cef84e36": "Impossibile inviare la risposta. Riprova.",
+      "textb4c89a8de9da": "Impossibile aggiornare le autorizzazioni della sessione.",
+      "text9deef600048b": "Caricamento della conversazione"
     }
   },
   "projectOnboarding": {

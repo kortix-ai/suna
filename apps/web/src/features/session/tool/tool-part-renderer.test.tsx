@@ -197,3 +197,35 @@ describe('every BasicTool with a body accepts defaultOpen and forceOpen', () => 
     expect(gapsFor('forceOpen')).toEqual([]);
   });
 });
+
+describe('tool result attachments', () => {
+  const file = {
+    type: 'file',
+    id: 'tool-image-1',
+    messageID: 'message-1',
+    sessionID: 's1',
+    mime: 'image/png',
+    filename: 'capture.png',
+    url: '/kortix/part/s1/message-1/tool-image-1',
+  };
+  test('renders a completed tool image through the shared attachment tiles', () => {
+    const part = {
+      ...UNREGISTERED,
+      state: { ...UNREGISTERED.state, status: 'completed', attachments: [file] },
+    } as ToolPart;
+    const html = renderPanel(part);
+    expect(html).toContain('capture.png');
+    expect(html).toContain('justify-start');
+    expect(html).not.toContain('data:image/png;base64');
+  });
+  test.each(['running', 'error'] as const)(
+    'does not present %s output as a completed attachment',
+    (status) => {
+      const part = {
+        ...UNREGISTERED,
+        state: { ...UNREGISTERED.state, status, error: 'Capture failed', attachments: [file] },
+      } as unknown as ToolPart;
+      expect(renderPanel(part)).not.toContain('capture.png');
+    },
+  );
+});

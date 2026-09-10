@@ -67,6 +67,18 @@ describe('sessionScopeRows', () => {
     expect(model.detail).toContain('next time this session starts');
   });
 
+  test('a Pi session presents its compiled model and agent as fixed', () => {
+    const compiledRows = rows({ compiledRuntime: true, agentName: 'support' });
+    const model = compiledRows.find((item) => item.key === 'model')!;
+    const agent = compiledRows.find((item) => item.key === 'agent')!;
+
+    expect(model.badge).toBe('Fixed at start');
+    expect(model.control).toBeNull();
+    expect(model.detail).toContain('compiled bundle');
+    expect(agent.badge).toBe('Fixed at start');
+    expect(agent.detail).not.toContain('picked in the composer');
+  });
+
   test('bound connections are listed by alias', () => {
     expect(
       row('connections', {
@@ -99,6 +111,13 @@ describe('sessionScopeRows', () => {
       expect(isFixedAtStart(key)).toBe(false);
     }
     expect(isFixedAtStart('runtime_context')).toBe(true);
+  });
+
+  test('the Pi runtime fixes model and agent without freezing scope', () => {
+    expect(isFixedAtStart('model', true)).toBe(true);
+    expect(isFixedAtStart('agent', true)).toBe(true);
+    expect(isFixedAtStart('secrets', true)).toBe(false);
+    expect(isFixedAtStart('connections', true)).toBe(false);
   });
 });
 

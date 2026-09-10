@@ -47,8 +47,10 @@ describe('session fast boot Git hint cache', () => {
     // goes through projectImageAllowedForSession. Both halves are pinned.
     expect(sessions).toContain('allowProjectImage: piWorkerBoot');
     expect(sessions).toContain(': projectImageAllowedForSession(agentName, workspaceMode)');
-    expect(actions).toContain('allowProjectImage: projectImageAllowedForSession(');
-    expect(shared).toContain('allowProjectImage: projectImageAllowedForSession(');
+    expect(actions).toContain('allowProjectImage:\n        !piWorkerIdentity &&');
+    expect(actions).toContain('projectImageAllowedForSession(');
+    expect(shared).toContain('allowProjectImage:\n      !piWorkerIdentity &&');
+    expect(shared).toContain('projectImageAllowedForSession(');
     expect(actions).toContain('restoreSessionBranch: true');
     expect(shared).toContain('restoreSessionBranch: true');
     expect(allocator).toContain('allowProjectImage: input.allowProjectImage');
@@ -75,32 +77,39 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
     // OpenCode compiled-boot artifacts are daemon-path-only.
     expect(source).toContain("!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off'");
     // The env fork must sit before the OpenCode builder in the same chain.
-    const fork = source.indexOf('const envPromise = piWorkerBoot');
-    const slim = source.indexOf('buildPiWorkerSessionEnvVars({', fork);
+    const fork = source.indexOf('const envPromise = piWorkerIdentity');
+    const slim = source.indexOf('buildPiWorkerSessionSandboxEnvVars({', fork);
     const full = source.indexOf('buildSessionSandboxEnvVars({', fork);
     expect(fork).toBeGreaterThan(-1);
     expect(slim).toBeGreaterThan(fork);
     expect(full).toBeGreaterThan(slim);
   });
 
-  test('the pi decision resolves runtime and tip in one parallel round trip', async () => {
+  test('the pi decision reads the runtime from the exact resolved commit', async () => {
     const source = await sessionsSource();
-    const decision = source.indexOf("resolveFeatureFlag(project.metadata, 'pi_worker')");
-    const parallel = source.indexOf('const [runtime, sha] = await Promise.all([', decision);
+    const decision = source.indexOf('let piWorkerIdentity:');
+    const resolveTip = source.indexOf(
+      'const sha = await resolveCommitSha(authedProject, ref)',
+      decision,
+    );
+    const readRuntime = source.indexOf(
+      'const runtime = await resolveManifestRuntimeForPiSession(authedProject, sha)',
+      resolveTip,
+    );
     expect(decision).toBeGreaterThan(-1);
-    expect(parallel).toBeGreaterThan(decision);
-    const block = source.slice(parallel, source.indexOf(']);', parallel));
-    expect(block).toContain('resolveManifestRuntime(authedProject, baseRef)');
-    expect(block).toContain('resolveCommitSha(authedProject, ref).catch(() => null)');
+    expect(resolveTip).toBeGreaterThan(decision);
+    expect(readRuntime).toBeGreaterThan(resolveTip);
+    const block = source.slice(decision, source.indexOf('\n  if (', decision));
+    expect(block).not.toContain('Promise.all');
   });
 });
 
 describe('pi worker env model override', () => {
   test('only an explicit session model overrides the baked agent model', async () => {
     const source = await sessionsSource();
-    const fork = source.indexOf('const envPromise = piWorkerBoot');
-    const slim = source.indexOf('buildPiWorkerSessionEnvVars({', fork);
-    const block = source.slice(slim, source.indexOf('apiUrl:', slim));
+    const fork = source.indexOf('const envPromise = piWorkerIdentity');
+    const slim = source.indexOf('buildPiWorkerSessionSandboxEnvVars({', fork);
+    const block = source.slice(slim, source.indexOf('runtimeRef:', slim));
     expect(block).toContain("opencodeModelSource === 'explicit'");
     // Env refs reach the worker verbatim, so the gateway prefix is stripped
     // server-side (the baked path de-prefixes inside the worker).

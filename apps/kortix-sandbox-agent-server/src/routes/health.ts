@@ -157,7 +157,8 @@ export function createHealthRouter(
 
   router.get('/', async (c) => {
     const repoInfo = await readRepoInfo(cfg.projectTarget).catch(() => null)
-    const opencodeState = opencode.getState()
+    const executionOnly = cfg.workload === 'environment'
+    const opencodeState = executionOnly ? 'disabled' : opencode.getState()
     const repoRequired = sessionWantsRepo(cfg.autoClone)
     // A repo on disk isn't ready until it's on the SESSION branch: the clone
     // path renames the repo into place BEFORE the branch checkout (which can
@@ -174,27 +175,28 @@ export function createHealthRouter(
     const initialSessionError = bootState.initialOpenCodeSessionError ?? null
     const auditRelayError = bootState.auditRelayError ?? null
     const runtimeReady =
-      repoReady &&
+      (executionOnly ? bootState.workspaceReady === true : repoReady) &&
       !bootState.repoMaterializationError &&
       !initialSessionError &&
       !auditRelayError &&
-      opencodeState === 'ok' &&
+      bootState.workspaceReady !== false &&
+      (executionOnly || opencodeState === 'ok') &&
       initialSessionReady
     const status = runtimeReady
       ? 'ok'
       : bootState.repoMaterializationError || initialSessionError || auditRelayError
         ? 'error'
-        : opencodeState
+        : executionOnly ? 'starting' : opencodeState
 
     const requestedTurnSession = c.req.query('turn_session_id')?.trim()
     const requestedTurnMessage = c.req.query('turn_message_id')?.trim()
     const observedTurn = resolveTurnObservationIdentity(
       requestedTurnSession,
       requestedTurnMessage,
-      readPinnedSessionId(),
+      executionOnly ? null : readPinnedSessionId(),
     )
     const turn =
-      c.req.query('turn') === '1'
+      !executionOnly && c.req.query('turn') === '1'
         ? await observeRequestedTurn(
             opencode.getInternalUrl(),
             process.env.KORTIX_WORKSPACE || '/workspace',
@@ -211,7 +213,8 @@ export function createHealthRouter(
       // monitor-box reconciler uses to detect a stale-agent box and recreate
       // it (a box whose env says KORTIX_WORKLOAD=monitor but whose daemon
       // booted the session path can never run monitors).
-      workload: process.env.KORTIX_WORKLOAD === 'monitor' ? 'monitor' : 'session',
+      workload: cfg.workload || 'session',
+      ...(executionOnly ? { environmentRuntimeVersion: 2 } : {}),
       opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       opencode_pid: opencode.getPid(),
@@ -220,7 +223,7 @@ export function createHealthRouter(
       // promotes it. The API's PTY proxy has to reach opencode directly (the
       // daemon cannot carry a WebSocket) and previously hardcoded 4096, which
       // becomes the dead half after one reload.
-      opencode_port: opencode.getActivePort(),
+      opencode_port: executionOnly ? null : opencode.getActivePort(),
       // Static web server (preview/static files). The bound port when up, else
       // null — surfaces "preview won't load because static-web never bound".
       static_web_port: staticWebPort,

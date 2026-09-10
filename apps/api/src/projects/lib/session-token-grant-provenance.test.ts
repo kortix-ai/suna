@@ -5,7 +5,7 @@
  * the one legitimate rewrite (a genuine manifest change).
  */
 import { beforeEach, expect, mock, test } from 'bun:test';
-import type { AgentGrant } from '@kortix/db';
+import { type AgentGrant, accountTokens, projectSessions } from '@kortix/db';
 import * as realSecretGrant from './secret-grant';
 
 const COMMIT_OLD = 'a'.repeat(40);
@@ -32,15 +32,17 @@ let ancestorAnswer = false;
 let ancestorCalls: string[][] = [];
 let selectCount = 0;
 let storedForTest: AgentGrant | null = storedGrant;
+let sessionMetadata: Record<string, unknown> = {};
 
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: () => ({
+      from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
             selectCount += 1;
-            if (selectCount === 1) return [{ agentGrant: storedForTest }];
+            if (table === accountTokens) return [{ agentGrant: storedForTest }];
+            if (table === projectSessions) return [{ agentName: 'kortix', metadata: sessionMetadata }];
             return [
               {
                 repoUrl: 'https://example.test/acme/repo.git',
@@ -100,6 +102,7 @@ beforeEach(() => {
   ancestorCalls = [];
   selectCount = 0;
   storedForTest = storedGrant;
+  sessionMetadata = {};
   resetGrantRefreshCooldownForTest();
 });
 
@@ -173,6 +176,23 @@ test('equal grants with new provenance are written once so the next comparison h
   const grant = await reconcileStoredSessionAgentGrant({ projectId: 'p1', sessionId: 's1' });
   expect(grant).toEqual(resolvedGrant);
   expect(writtenGrant).toEqual(resolvedGrant);
+});
+
+test('Pi applies its pinned manifest even when a stored grant points at a newer commit', async () => {
+  sessionMetadata = { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: 'main', pi_worker_sha: COMMIT_OLD };
+  resolvedGrant = denyAll({ manifestRevision: BLOB_OLD, manifestCommit: COMMIT_OLD });
+  ancestorAnswer = true;
+  const grant = await reconcileStoredSessionAgentGrant({ projectId: 'p1', sessionId: 's1' });
+  expect(grant).toEqual(resolvedGrant);
+  expect(writtenGrant).toEqual(resolvedGrant);
+  expect(ancestorCalls).toEqual([]);
+});
+
+test('Pi refuses an unreadable pinned manifest instead of retaining a stale token grant', async () => {
+  sessionMetadata = { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: 'main', pi_worker_sha: COMMIT_OLD };
+  resolveError = new Error('pinned manifest unavailable');
+  await expect(reconcileStoredSessionAgentGrant({ projectId: 'p1', sessionId: 's1' })).rejects.toThrow('pinned manifest unavailable');
+  expect(writtenGrant).toBeUndefined();
 });
 
 test('forced mirror refresh is bounded by the cooldown on the gateway path', async () => {

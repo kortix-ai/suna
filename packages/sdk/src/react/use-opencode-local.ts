@@ -11,6 +11,9 @@
  * - Variant persistence via useModelStore
  */
 
+import { resolveSessionDisplayModel } from './session-display-model';
+import { sessionReasoningStorageKey, sessionReasoningVariants } from './session-reasoning';
+import { sessionImageAttachmentsEnabled } from './session-image-attachments';
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { featureFlags } from '../core/http/feature-flags';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
@@ -32,6 +35,8 @@ export interface UseOpenCodeLocalOptions {
   agents?: Agent[];
   providers?: ProviderListResponse;
   config?: Config;
+  /** Pi displays its compiled config model instead of persisted or account preferences. */
+  runtime?: 'pi-worker' | 'opencode';
   /** Session ID — used to persist agent selection per-session in localStorage */
   sessionId?: string;
   /**
@@ -74,6 +79,7 @@ export interface OpenCodeLocalAgent {
 }
 
 export interface OpenCodeLocalModel {
+  imageAttachmentsSupported?: boolean;
   /** Current resolved model (ephemeral override -> agent.model -> fallback) */
   current: FlatModel | undefined;
   /** Current model as ModelKey — for DISPLAY in the picker (the resolved default). */
@@ -272,6 +278,7 @@ export function useOpenCodeLocal({
   agents: rawAgents,
   providers,
   config,
+  runtime,
   sessionId,
   boundAgentName,
   defaultAgentName,
@@ -504,6 +511,9 @@ export function useOpenCodeLocal({
   // roster can be empty (e.g. a project with no configured agents, or
   // `enableProjects` off) — the agent-keyed slots are simply skipped then.
   const currentModelKey = useMemo<ModelKey | undefined>(() => {
+    if (runtime === 'pi-worker') {
+      return resolveSessionDisplayModel(runtime, config?.model, undefined);
+    }
     const resolved =
       explicitModelKey ??
       getFirstValidModel(
@@ -520,6 +530,8 @@ export function useOpenCodeLocal({
     // seam every source funnels through. No-op off Bedrock.
     return healBedrockModelKey(resolved, flatModels);
   }, [
+    runtime,
+    config?.model,
     explicitModelKey,
     serverDefaultKey,
     currentAgent,
@@ -675,28 +687,27 @@ export function useOpenCodeLocal({
   );
 
   // ---- Variant management (matching SolidJS local.tsx:186-217) ----
+  const variantList = useMemo(
+    () => sessionReasoningVariants(runtime, config, currentModel?.variants),
+    [runtime, config, currentModel],
+  );
+  const variantStorageKey = useMemo(
+    () => sessionReasoningStorageKey(runtime, sessionId, currentModelKey),
+    [runtime, sessionId, currentModelKey],
+  );
   const variantCurrent = useMemo<string | undefined>(() => {
-    if (!currentModel) return undefined;
-    return modelStore.getVariant({
-      providerID: currentModel.providerID,
-      modelID: currentModel.modelID,
-    });
-  }, [currentModel, modelStore]);
-
-  const variantList = useMemo<string[]>(() => {
-    if (!currentModel?.variants) return [];
-    return Object.keys(currentModel.variants);
-  }, [currentModel]);
+    if (!variantStorageKey) return undefined;
+    const stored = modelStore.getVariant(variantStorageKey);
+    return runtime === 'pi-worker' && (!stored || !variantList.includes(stored)) ? undefined : stored;
+  }, [runtime, variantStorageKey, variantList, modelStore]);
 
   const setVariant = useCallback(
     (value: string | undefined) => {
-      if (!currentModel) return;
-      modelStore.setVariant(
-        { providerID: currentModel.providerID, modelID: currentModel.modelID },
-        value,
-      );
+      if (!variantStorageKey) return;
+      if (runtime === 'pi-worker' && value !== undefined && !variantList.includes(value)) return;
+      modelStore.setVariant(variantStorageKey, value);
     },
-    [currentModel, modelStore],
+    [runtime, variantStorageKey, variantList, modelStore],
   );
 
   const cycleVariant = useCallback(() => {
@@ -729,6 +740,7 @@ export function useOpenCodeLocal({
     },
     model: {
       current: currentModel,
+      imageAttachmentsSupported: sessionImageAttachmentsEnabled(runtime, config),
       currentKey: currentModelKey,
       // The concrete model to send. Callers should send this, not stale storage.
       sendKey: sendModelKey,

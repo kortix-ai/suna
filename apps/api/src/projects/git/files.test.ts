@@ -10,6 +10,7 @@ import { isRepoFileNotFoundError, RepoFileNotFoundError } from './files';
 // path-not-found GitOperationError, or throws a real git failure) and
 // `refreshMirror` short-circuits to a temp dir without touching the network.
 const mirrorModule = await import('./mirror');
+const runUnmockedGit = realRunGit;
 
 let runGitImpl: (...args: Parameters<typeof realRunGit>) => Promise<{ stdout: string; stderr: string }>;
 let repoPath = '';
@@ -20,7 +21,7 @@ mock.module('./mirror', () => ({
   refreshMirror: async () => repoPath,
 }));
 
-const { readRepoFile } = await import('./files');
+const { readManifestFromRepo, readRepoFile } = await import('./files');
 
 const project = {
   projectId: 'test-project',
@@ -32,7 +33,7 @@ const project = {
 
 beforeEach(async () => {
   repoPath = await mkdtemp(join(tmpdir(), 'kortix-readrepofile-test-'));
-  runGitImpl = realRunGit;
+  runGitImpl = runUnmockedGit;
 });
 
 afterEach(async () => {
@@ -209,6 +210,31 @@ describe('readRepoFile', () => {
     };
     await readRepoFile(project, 'file.txt');
     expect(capturedArgs).toEqual(['show', 'main:file.txt']);
+  });
+});
+
+describe('readManifestFromRepo', () => {
+  test('returns null only when git successfully reports that no candidate exists', async () => {
+    await runUnmockedGit(['init', '--initial-branch=main'], repoPath);
+    await runUnmockedGit([
+      '-c', 'user.name=Test', '-c', 'user.email=test@kortix.invalid',
+      'commit', '--allow-empty', '-m', 'empty repository',
+    ], repoPath);
+
+    await expect(
+      readManifestFromRepo(project, ['kortix.yaml', 'kortix.toml'], 'main', { strictRef: true }),
+    ).resolves.toBeNull();
+  });
+
+  test('strict authorization reads reject a real ls-tree failure', async () => {
+    await expect(
+      readManifestFromRepo(project, ['kortix.yaml'], 'main', { strictRef: true }),
+    ).rejects.toThrow('git ls-tree main failed (exit 128)');
+  });
+
+  test('non-strict discovery retains the missing-ref fallback for blank repositories', async () => {
+    await runUnmockedGit(['init', '--initial-branch=main'], repoPath);
+    await expect(readManifestFromRepo(project, ['kortix.yaml'], 'main')).resolves.toBeNull();
   });
 });
 

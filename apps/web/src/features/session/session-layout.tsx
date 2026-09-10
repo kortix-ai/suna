@@ -44,6 +44,7 @@ interface SessionLayoutProps {
   sessionId: string;
   projectId?: string;
   projectSessionId?: string;
+  sandboxIsPiWorker?: boolean;
   children: React.ReactNode;
   bootStage?: SessionStartStage | null;
   transient?: boolean;
@@ -53,6 +54,7 @@ export const SessionLayout = memo(function SessionLayout({
   sessionId,
   projectId,
   projectSessionId,
+  sandboxIsPiWorker = false,
   children,
   bootStage = null,
   transient = false,
@@ -149,6 +151,12 @@ export const SessionLayout = memo(function SessionLayout({
     enabled: !!projectId && !!projectSessionId,
     runtimeSessionId: sessionId,
   });
+  // The BROAD answer, `/turn` read included. Narrowing this to the runtime's
+  // own stream was tried and reverted: on a pi-worker session the runtime emits
+  // no status frames, so a genuinely running turn has only the `/turn` read
+  // behind it and this panel went blind to real work. A stale row biases this
+  // toward "still running", which is the harmless direction here — the ready
+  // chip arrives late rather than announcing a turn that has not finished.
   const isSessionBusy =
     projectId && projectSessionId
       ? working.state === 'working'
@@ -220,7 +228,7 @@ export const SessionLayout = memo(function SessionLayout({
   const prevSplitRef = useRef(panelSplit);
   const prevAspectRef = useRef(panelAspect);
 
-  const [wallpaperLayer, setWallpaperLayer] = useState<HTMLDivElement | null>(null);
+  const wallpaperLayer: HTMLDivElement | null = null;
 
   const shouldShowPanel = isSidePanelOpen;
 
@@ -502,6 +510,7 @@ export const SessionLayout = memo(function SessionLayout({
       isSessionBusy={isSessionBusy}
       projectId={projectId}
       projectSessionId={projectSessionId}
+      sandboxIsPiWorker={sandboxIsPiWorker}
     >
       {node}
     </SessionPanelProvider>

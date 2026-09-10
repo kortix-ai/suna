@@ -30,6 +30,7 @@ export const STALE_OPENCODE_BOOT_HARD_MS = 10 * 60 * 1000;
  * attempt on the same row.
  */
 const RUNTIME_BOOT_EPOCH_KEYS = [
+  'sessionRuntimeBootstrapAt',
   'runtimeWakeStartedAt',
   'providerRunningConfirmedAt',
   'initSucceededAt',
@@ -47,6 +48,8 @@ const RUNTIME_RESTART_CLEARED_KEYS = [
   'runtimeWakeRetryAfterAt',
   'runtimeWakeProgressAt',
   'stopReason',
+  'sessionRuntimeBootstrapFor',
+  'sessionRuntimeBootstrapAt',
 ] as const;
 
 function parseTimestampMs(value: unknown): number | null {

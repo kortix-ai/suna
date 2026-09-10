@@ -777,7 +777,9 @@ flow(
             until: (t) =>
               Boolean(t?.available) &&
               Array.isArray(t?.messages) &&
-              t.messages.some((m: any) => typeof m?.text === 'string' && m.text.includes(markerA)),
+              t.messages.some(
+                (m: any) => m?.role === 'assistant' && Boolean(m.completed) && m.text === markerA,
+              ),
             timeoutMs: 180_000,
             intervalMs: 4_000,
             description: `session A transcript containing its own marker`,
@@ -800,7 +802,9 @@ flow(
             until: (t) =>
               Boolean(t?.available) &&
               Array.isArray(t?.messages) &&
-              t.messages.some((m: any) => typeof m?.text === 'string' && m.text.includes(markerB)),
+              t.messages.some(
+                (m: any) => m?.role === 'assistant' && Boolean(m.completed) && m.text === markerB,
+              ),
             timeoutMs: 180_000,
             intervalMs: 4_000,
             description: `session B transcript containing its own marker`,

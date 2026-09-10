@@ -18,11 +18,7 @@
       "minLength": 1
     },
     "runtime": {
-      "type": "string",
-      "enum": [
-        "opencode",
-        "pi"
-      ]
+      "const": "opencode"
     },
     "agents": {
       "type": "object",
@@ -33,12 +29,22 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "resources": false,
           "enabled": {
             "type": "boolean"
           },
           "sandbox": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+            "allOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+              },
+              {
+                "not": {
+                  "const": "pi-worker"
+                }
+              }
+            ]
           },
           "connectors": {
             "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
@@ -268,7 +274,10 @@
                   },
                   {
                     "not": {
-                      "const": "default"
+                      "enum": [
+                        "default",
+                        "pi-worker"
+                      ]
                     }
                   }
                 ]
@@ -328,8 +337,17 @@
           }
         },
         "default": {
-          "type": "string",
-          "minLength": 1
+          "allOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+            },
+            {
+              "not": {
+                "const": "pi-worker"
+              }
+            }
+          ]
         }
       },
       "additionalProperties": true

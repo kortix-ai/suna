@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
 const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
+const skipWorkerQuality = process.env.KORTIX_PACKAGE_SKIP_WORKER_QUALITY === '1';
 
 async function run(
   command: string[],
@@ -141,6 +142,7 @@ async function runWorkspaceTests(
   );
 }
 
+if (!skipWorkerQuality) await run(['bun', 'tests/bin/worker-quality.ts']);
 await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
@@ -158,16 +160,13 @@ await runAll([
 ]);
 
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
-// removing idle CPU time between independent load classes. Keep the CLI and
-// agent server sequential. Concurrent isolated Bun workers can spin indefinitely.
+// removing idle CPU time between independent load classes. The API has three
+// workers. The CLI and isolated daemon suites run in sequence to bound child processes.
 await runAll([
   runWorkspaceTests(['kortix-api'], 1, {
     KORTIX_API_TEST_WORKERS: '3',
   }),
-  (async () => {
-    await runWorkspaceTests(['@kortix/cli'], 1);
-    await runWorkspaceTests(['@kortix/sandbox-agent-server'], 1);
-  })(),
+  runWorkspaceTests(['@kortix/cli', 'kortixd'], 1),
 ]);
 await runAll([
   (async () => {
@@ -182,7 +181,8 @@ await runAll([
       './apps/**',
       '!kortix-api',
       '!@kortix/cli',
-      '!@kortix/sandbox-agent-server',
+      '!kortixd',
+      '!@kortix/worker',
       '!@kortix/db',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
     ],

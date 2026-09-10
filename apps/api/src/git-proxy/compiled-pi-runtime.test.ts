@@ -58,6 +58,10 @@ describe('compilePiRuntime', () => {
       source_sha: 'a'.repeat(40),
       default_agent: 'kortix',
       agent_config: INPUT.agentConfig ?? null,
+      command_config: null,
+      command_config_etag: null,
+      skill_config: null,
+      skill_config_etag: null,
     });
     expect(first.size).toBe(Buffer.byteLength(first.source));
   });
@@ -129,4 +133,14 @@ describe('compilePiRuntime', () => {
     );
     expect(() => compilePiRuntime({ ...INPUT, projectId: ' ' })).toThrow(/projectId/);
   });
+});
+
+test('custom Pi source loads only inside its executable and manifest inspection has no project effects',async()=>{
+  const {compilePiAgentModule}=await import('./pi-agent-module');
+  const agentModule=await compilePiAgentModule({entry:'agents/custom.ts',files:{'agents/custom.ts':`console.log('CUSTOM_SOURCE_LOADED');export default ()=>({thinkingLevel:'low'});`}});
+  const {runtimePath,artifact}=await materialize({...INPUT,agentModule,workerBundle:`console.log(JSON.stringify(await globalThis.__KORTIX_PI_AGENT__({})));`});
+  const manifest=JSON.parse(execFileSync('node',[runtimePath,'--manifest'],{encoding:'utf8'}));
+  expect(manifest.agent_module).toEqual({entry:'agents/custom.ts',sha256:agentModule.sha256});
+  expect(artifact.manifest.agent_module).toEqual(manifest.agent_module);
+  expect(execFileSync('node',[runtimePath],{encoding:'utf8'}).trim().split('\n')).toEqual(['CUSTOM_SOURCE_LOADED','{"thinkingLevel":"low"}']);
 });

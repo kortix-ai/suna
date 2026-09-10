@@ -1,9 +1,10 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getClient } from '../core/runtime/client';
+import { getClientForUrl } from '../core/runtime/client';
 import type { Config } from '@opencode-ai/sdk/v2/client';
 import { useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
+import { useCurrentRuntime } from './use-current-runtime';
 
 export type { Config };
 
@@ -27,14 +28,16 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
 
 export function useOpenCodeConfig() {
   const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeUrl = useCurrentRuntime(state => state.url);
   return useQuery<Config>({
-    queryKey: configKeys.all,
+    queryKey: [...configKeys.all, runtimeUrl],
     queryFn: async () => {
-      const client = getClient();
+      if (!runtimeUrl) throw new Error('Session runtime is not ready');
+      const client = getClientForUrl(runtimeUrl);
       const result = await client.global.config.get();
       return unwrap(result);
     },
-    enabled: runtimeReady,
+    enabled: runtimeReady && !!runtimeUrl,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -42,10 +45,13 @@ export function useOpenCodeConfig() {
 
 export function useUpdateOpenCodeConfig() {
   const queryClient = useQueryClient();
+  const runtimeUrl = useCurrentRuntime(state => state.url);
+  const queryKey = [...configKeys.all, runtimeUrl];
 
   return useMutation({
     mutationFn: async (config: Partial<Config>) => {
-      const client = getClient();
+      if (!runtimeUrl) throw new Error('Session runtime is not ready');
+      const client = getClientForUrl(runtimeUrl);
       // The SDK's `update` param type wants a full `Config`, but the server
       // accepts (and this hook always sends) a partial merge patch.
       const result = await client.global.config.update({ config: config as Config });
@@ -53,11 +59,11 @@ export function useUpdateOpenCodeConfig() {
     },
     onMutate: async (config) => {
       // Cancel in-flight refetches so they don't overwrite optimistic update
-      await queryClient.cancelQueries({ queryKey: configKeys.all });
-      const previous = queryClient.getQueryData<Config>(configKeys.all);
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<Config>(queryKey);
       if (previous) {
         // Optimistically merge the draft into the cached config
-        queryClient.setQueryData<Config>(configKeys.all, {
+        queryClient.setQueryData<Config>(queryKey, {
           ...previous,
           ...config,
           permission: typeof config.permission !== 'undefined'
@@ -65,17 +71,17 @@ export function useUpdateOpenCodeConfig() {
             : previous.permission,
         } as Config);
       }
-      return { previous };
+      return { previous, queryKey };
     },
     onError: (_err, _config, context) => {
       // Roll back to previous cache on failure
       if (context?.previous) {
-        queryClient.setQueryData(configKeys.all, context.previous);
+        queryClient.setQueryData(context.queryKey, context.previous);
       }
     },
-    onSettled: () => {
+    onSettled: (_data, _error, _variables, context) => {
       // Refetch to get the authoritative server state — only if mounted
-      queryClient.refetchQueries({ queryKey: configKeys.all, type: 'active' });
+      if (context) queryClient.refetchQueries({ queryKey: context.queryKey, type: 'active' });
     },
   });
 }

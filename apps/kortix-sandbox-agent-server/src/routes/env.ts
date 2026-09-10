@@ -225,7 +225,7 @@ export function createEnvRouter(
         // store already has the requested revision. A sync replay must repair it.
         const agentEnvWritten = writeAgentEnvFile(projectEnv, { sh: opts.agentEnvFile })
         if (!agentEnvWritten) throw new Error('failed to write live agent env file')
-        if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
+        if (cfg.workload !== 'environment' && body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
           // reloadConfig, not restart: opencode re-reads its config file in
           // place via /global/dispose in ~51ms, against ~8s for a respawn
           // (measured on 1.17.11, dispose re-verified on the pinned 1.18.19).
@@ -279,9 +279,11 @@ export function createEnvRouter(
         // command list and config essentials this env change can move; a
         // client that read it a second ago must not keep the pre-change answer
         // until an SSE frame happens to hint at it.
-        invalidateRuntimeState('all', 'kortix-env-applied')
+        if (cfg.workload !== 'environment') {
+          invalidateRuntimeState('all', 'kortix-env-applied')
         // ...and the server-side copy is refreshed too (debounced, etag-gated).
-        scheduleRuntimeProjectionPush('kortix-env-applied')
+          scheduleRuntimeProjectionPush('kortix-env-applied')
+        }
 
         const applied = projectEnv.snapshot()
         const exported = Object.keys(applied.env).length
@@ -311,7 +313,7 @@ export function createEnvRouter(
           egress_shim_hosts: egressShim.hosts,
           opencode_env_changed: opencodeEnvChanged,
           opencode_env_names: opencodeEnvNames,
-          opencode: opencode.getState(),
+          opencode: cfg.workload === 'environment' ? 'disabled' : opencode.getState(),
           opencode_pid: opencode.getPid(),
           // 'disposed' | 'restarted' | 'kept-old' | null (no reload needed).
           // 'kept-old' is the verified swap declining a config that would not

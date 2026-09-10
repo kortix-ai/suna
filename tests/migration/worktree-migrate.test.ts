@@ -31,7 +31,7 @@ const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 
 function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'postgres']).ok;
 }
 
 const suite = dockerOk ? describe : describe.skip;

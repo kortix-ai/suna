@@ -1,5 +1,9 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
+import { homedir } from 'node:os'
+import { createExecutionOnlyRuntime } from './execution-only'
+import { prepareEnvironmentWorkspace } from './environment-workspace'
+import { prepareEnvironmentResources } from './environment-resources'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
 import { dispatchCli, isManagementSubcommand } from './cli'
@@ -138,6 +142,11 @@ async function main() {
   // opencode failure never takes it down. Reachable via /proxy/<staticPort>.
   const staticWeb = startStaticWebServer(cfg.staticPort)
   bootMark('static-web')
+
+  if (cfg.workload === 'environment') {
+    await runEnvironmentMode(cfg, bootTime, bootState, bootMark, staticWeb)
+    return
+  }
 
   // Warm snapshot seed capture. This boots a session-less runtime, warms
   // opencode, writes the capture pin, and later adopts the forked session env
@@ -1104,6 +1113,60 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
  * on default-branch HEAD instead of minting a session branch. A monitor watches
  * what is shipped, not what some session is working on.
  */
+async function runEnvironmentMode(
+  cfg: Config,
+  bootTime: number,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+  staticWeb: ReturnType<typeof startStaticWebServer>,
+): Promise<void> {
+  bootState.workspaceReady = false
+  bootState.initialOpenCodeSessionRequired = false
+  const projectEnv = createProjectEnvStore()
+  await startEgressShim()
+  writeAgentEnvFile(projectEnv)
+  const runtime = createExecutionOnlyRuntime()
+  const server = startProxy(cfg, runtime, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(runtime, server, staticWeb)
+  bootMark('proxy-up')
+  try {
+    await configureGlobalGitIdentity(cfg, homedir())
+    await configureGitCredentialHelper(cfg, homedir())
+    bootMark('git-identity')
+    await prepareEnvironmentWorkspace(cfg)
+    await prepareEnvironmentResources(cfg)
+    await configureRepoCredentialHelper(cfg, cfg.projectTarget)
+    scheduleHistoryBackfill(cfg, cfg.projectTarget)
+    bootMark('repo-materialized')
+    bootState.workspaceReady = true
+    bootMark('environment-ready')
+    scheduleRuntimeAssetsReconcile(cfg)
+    try {
+      const onBoot = await resolveSandboxOnBoot(cfg)
+      if (onBoot) {
+        const logPath = '/var/log/kortix-on-boot.log'
+        mkdirSync(dirname(logPath), { recursive: true })
+        const out = openSync(logPath, 'a')
+        const child = spawn('bash', ['-lc', onBoot], {
+          cwd: cfg.projectTarget,
+          env: process.env,
+          detached: true,
+          stdio: ['ignore', out, out],
+        })
+        closeSync(out)
+        child.on('error', (err) => logger.warn('[environment] on_boot failed', { error: err.message }))
+        child.unref()
+      }
+    } catch (err) {
+      logger.warn('[environment] on_boot setup failed', { error: (err as Error).message })
+    }
+  } catch (err) {
+    bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+    bootState.workspaceReady = false
+    logger.error('[environment] workspace setup failed', err)
+  }
+}
+
 async function runMonitorMode(
   cfg: Config,
   bootTime: number,

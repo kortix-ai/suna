@@ -18364,7 +18364,11 @@
       "textb38cb5e18525": "ce processus et montre son travail. Vous avez vingt minutes ?",
       "textff5bd8333c4e": "Vous et toute personne pouvant gérer ce projet",
       "text36d8691ae566": "Toute personne disposant du lien, ainsi que votre équipe",
-      "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe"
+      "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe",
+      "text069bf3d7e248": "Impossible d’ouvrir l’espace de travail.",
+      "text1cd3cef84e36": "Impossible d’envoyer la réponse. Réessayez.",
+      "textb4c89a8de9da": "Impossible de mettre à jour les autorisations de la session.",
+      "text9deef600048b": "Chargement de la conversation"
     }
   },
   "projectOnboarding": {

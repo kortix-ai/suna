@@ -2,6 +2,7 @@
  * Project triggers — manage-gated CRUD. Maps to spec §17 (TRG-1..5).
  * Trigger create commits the project manifest (a real git commit).
  */
+import { BodyAssert } from '../core/expect';
 import { flow } from '../core/flow';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
@@ -40,7 +41,10 @@ flow(
 
 flow(
   'TRG-2',
-  { domain: 'triggers', routes: ['POST /v1/projects/:projectId/triggers'] },
+  {
+    domain: 'triggers',
+    routes: ['POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers'],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.step('create a cron trigger with a pinned model → 201', async () => {
@@ -56,7 +60,20 @@ flow(
         },
         { params: { projectId: p.id } },
       );
-      r.status(201).body().has('triggers[0].model', 'anthropic/claude-sonnet-4-6');
+      r.status(201);
+      new BodyAssert(
+        r.json<{ triggers: Array<{ slug: string; model: string | null }> }>()
+          .triggers.find((trigger) => trigger.slug === 'nightly'),
+      ).has('slug', 'nightly').has('model', 'anthropic/claude-sonnet-4-6');
+    });
+    await ctx.step('read the created trigger by slug and verify its persisted model', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/triggers', { params: { projectId: p.id } });
+      r.status(200);
+      new BodyAssert(
+        r.json<{ triggers: Array<{ slug: string; model: string | null }> }>()
+          .triggers.find((trigger) => trigger.slug === 'nightly'),
+      ).has('slug', 'nightly').has('model', 'anthropic/claude-sonnet-4-6');
     });
     await ctx.step('duplicate slug → 409', async () => {
       const r = await ctx.client
@@ -79,7 +96,14 @@ flow(
 
 flow(
   'TRG-3',
-  { domain: 'triggers', routes: ['PATCH /v1/projects/:projectId/triggers/:slug'] },
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'GET /v1/projects/:projectId/triggers',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.client
@@ -115,7 +139,20 @@ flow(
           { model: 'openai/gpt-5' },
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
-      r.status(200).body().has('triggers[0].model', 'openai/gpt-5');
+      r.status(200);
+      new BodyAssert(
+        r.json<{ triggers: Array<{ slug: string; model: string | null; enabled: boolean }> }>()
+          .triggers.find((trigger) => trigger.slug === 'toggle-me'),
+      ).has('slug', 'toggle-me').has('model', 'openai/gpt-5').has('enabled', false);
+    });
+    await ctx.step('read the updated trigger by slug and verify model and disabled state', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/triggers', { params: { projectId: p.id } });
+      r.status(200);
+      new BodyAssert(
+        r.json<{ triggers: Array<{ slug: string; model: string | null; enabled: boolean }> }>()
+          .triggers.find((trigger) => trigger.slug === 'toggle-me'),
+      ).has('slug', 'toggle-me').has('model', 'openai/gpt-5').has('enabled', false);
     });
   },
 );

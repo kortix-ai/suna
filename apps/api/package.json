@@ -19,6 +19,7 @@
     "test:all": "bash scripts/test.sh && bash scripts/test.sh integration"
   },
   "dependencies": {
+    "esbuild": "0.28.1",
     "@aws-sdk/credential-provider-node": "3.972.62",
     "@composio/client": "0.1.0-alpha.76",
     "@composio/core": "0.17.0",

@@ -1387,6 +1387,10 @@ export function ensureLatestKortixAssets(configDir?: string): void {
  * request-latency path.
  */
 export function scheduleRuntimeAssetsReconcile(cfg: Config): void {
+  if (cfg.workload === 'environment') {
+    ensureLatestKortixAssets()
+    return
+  }
   void resolveOpencodeConfigDir(cfg)
     .then((configDir) => ensureLatestKortixAssets(configDir))
     // A config dir we cannot resolve costs the overlay re-injection, not the

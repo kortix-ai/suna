@@ -136,6 +136,7 @@ function appWithProbe() {
       sessionId: c.get('sessionId' as never),
     }),
   );
+  app.post('/v1/platform/boot-timeline', (c) => c.json({ ok: true }));
   app.get('/v1/skills/:name', (c) => c.json({ ok: true, name: c.req.param('name') }));
   app.get('/v1/skills/:name/file', (c) => c.json({ ok: true }));
   return app;
@@ -275,6 +276,15 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     // The handler's isSessionSandboxCredential needs both, equal.
     expect(body.sessionId).toBe(SANDBOX_A);
     expect(body.sandboxId).toBe(SANDBOX_A);
+  });
+
+  test('a session-bound project PAT reaches its boot-timeline sink', async () => {
+    const res = await appWithProbe().request('/v1/platform/boot-timeline', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_session_bound_a' },
+    });
+
+    expect(res.status).toBe(200);
   });
 
   test('a plain project PAT (no session binding) still cannot reach the sink', async () => {

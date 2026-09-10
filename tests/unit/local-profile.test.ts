@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { RegisteredFlow } from "../src/core/flow";
 import {
   localEnvironmentOverrides,
@@ -15,6 +15,7 @@ import {
   localMigrationPlan,
   localTopology,
   parseSupabaseEnvironment,
+  waitForLocalRestSchema,
 } from "../src/core/local-stack";
 import { runExitCode } from "../src/core/result";
 
@@ -195,6 +196,64 @@ describe("ke2e local profile", () => {
     expect(() => localMigrationPlan(localTopology("/repo", null), {})).toThrow(
       "local Supabase environment is missing DB_URL",
     );
+  });
+
+  it("waits for PostgREST recovery and both credit RPCs without calling either RPC", async () => {
+    const request = vi.fn()
+      .mockRejectedValueOnce(new TypeError("connection refused"))
+      .mockResolvedValueOnce(Response.json({ code: "PGRST002" }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ paths: { "/rpc/atomic_use_credits": {} } }))
+      .mockResolvedValueOnce(Response.json({ paths: {
+        "/rpc/atomic_use_credits": {},
+        "/rpc/atomic_add_credits": {},
+      } }));
+
+    await waitForLocalRestSchema({
+      API_URL: "http://127.0.0.1:54321",
+      SERVICE_ROLE_KEY: "local-test-key",
+    }, { request, intervalMs: 1, timeoutMs: 1_000 });
+
+    expect(request).toHaveBeenCalledTimes(4);
+    for (const [url, init] of request.mock.calls) {
+      expect(String(url)).toBe("http://127.0.0.1:54321/rest/v1/");
+      expect(init.method).toBe("GET");
+      expect(init.headers).toEqual({
+        apikey: "local-test-key",
+        authorization: "Bearer local-test-key",
+        accept: "application/openapi+json",
+        "accept-profile": "public",
+      });
+      expect(init.body).toBeUndefined();
+    }
+  });
+
+  it("fails startup with the schema error code when PostgREST cannot recover", async () => {
+    const request = vi.fn().mockImplementation(async () =>
+      Response.json({ code: "PGRST002", message: "private details" }, { status: 503 }));
+    vi.useFakeTimers();
+    try {
+      const failure = expect(waitForLocalRestSchema({
+        API_URL: "http://127.0.0.1:54321",
+        SERVICE_ROLE_KEY: "local-test-key",
+      }, { request, intervalMs: 25, timeoutMs: 100 })).rejects.toThrow(
+        "local PostgREST schema did not become ready within 100ms (HTTP 503, PGRST002)",
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await failure;
+      expect(request).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects missing credentials and remote schema probes before sending a request", async () => {
+    const request = vi.fn();
+    await expect(waitForLocalRestSchema({}, { request })).rejects.toThrow("local Supabase");
+    await expect(waitForLocalRestSchema({
+      API_URL: "https://example.com",
+      SERVICE_ROLE_KEY: "local-test-key",
+    }, { request })).rejects.toThrow("loopback HTTP");
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("reuses only an API that proves the deterministic local test profile", async () => {

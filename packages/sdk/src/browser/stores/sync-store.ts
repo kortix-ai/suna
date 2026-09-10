@@ -288,8 +288,22 @@ interface SyncState {
 		field: string,
 		delta: string,
 		eventID?: string,
+		emittedAt?: number,
 	) => void;
-	setStatus: (sessionID: string, status: SessionStatus, origin?: "wire" | "local") => void;
+	/**
+	 * `emittedAt` is when the RUNTIME produced the frame. A REPLAYED status —
+	 * the `since=` backlog every connect and page load asks for — carries an
+	 * old one, and stamping it with `Date.now()` made a stale `running` from a
+	 * finished turn read as a FRESH observation for `STREAM_OBSERVATION_MAX_MS`.
+	 * Omitted (a local fabrication) still stamps now, which is correct: the tab
+	 * really did decide that just then.
+	 */
+	setStatus: (
+		sessionID: string,
+		status: SessionStatus,
+		origin?: "wire" | "local",
+		emittedAt?: number,
+	) => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
 	setTodo: (sessionID: string, todos: Todo[]) => void;
 	/**
@@ -1300,7 +1314,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
 
-	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
+	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID, emittedAt) => {
 		trackId(deltaActiveParts, sessionID, partID);
 		let applied = false;
 		set((s) => {
@@ -1348,11 +1362,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		// producing output, so it refreshes the activity evidence used by
 		// `projectWorking`. Stamp only after a real apply: reconnect replays with
 		// an already-consumed event id are history, not current activity.
-		if (applied) get().noteSessionActivity(sessionID);
+		if (applied) get().noteSessionActivity(sessionID, emittedAt);
 	},
 
-	setStatus: (sessionID, status, origin = "wire") =>
+	setStatus: (sessionID, status, origin = "wire", emittedAt) =>
 		set((s) => {
+			const observedAt = emittedAt ?? Date.now();
 			// A value that did not change is not news. `useSessionWorking` stamps
 			// its stream observation from this object's IDENTITY, so an
 			// equal-valued rewrite that minted a new object re-started
@@ -1369,13 +1384,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				if ((s.sessionStatusOrigin[sessionID] ?? "wire") === origin) return s;
 				return {
 					sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
-					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
+					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: observedAt },
 				};
 			}
 			return {
 				sessionStatus: { ...s.sessionStatus, [sessionID]: status },
 				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
-				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: observedAt },
 			};
 		}),
 
@@ -2291,13 +2306,22 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	applyEvent: (event) => {
 		const store = get();
+		// When the RUNTIME emitted this frame. A replayed frame (the `since=`
+		// backlog a reconnect or a page load asks for) carries an OLD one, and
+		// activity stamped with `Date.now()` instead made that replay look like
+		// live output: `projectWorking` ranks activity first, so opening a
+		// finished session pinned the composer on Stop for the full
+		// `STREAM_OBSERVATION_MAX_MS` (45s). Absent (a fabricated or legacy
+		// frame) falls back to now, which is what every caller did before.
+		const frameAt = (event as { at?: unknown }).at;
+		const emittedAt = typeof frameAt === 'number' && frameAt > 0 ? frameAt : undefined;
 		switch (event.type) {
 			case "message.updated": {
 				{
 					const info = (event.properties as { info?: { sessionID?: string } })?.info;
 					const sid =
 						info?.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid);
+					if (sid) get().noteSessionActivity(sid, emittedAt);
 				}
 				const info = (event.properties as { info: Message }).info;
 				if (!info?.sessionID) return;
@@ -2496,7 +2520,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// `sessionActivityAt`. Stamp AFTER the message-id fallback: some
 				// producers omit sessionID from the part while still updating a
 				// known message, and that visible output is runtime activity too.
-				if (resolvedSessionID) get().noteSessionActivity(resolvedSessionID);
+				if (resolvedSessionID) get().noteSessionActivity(resolvedSessionID, emittedAt);
 
 				const existingMsgs = resolvedSessionID
 					? get().messages[resolvedSessionID]
@@ -2624,6 +2648,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					props.field,
 					props.delta,
 					event.id,
+					emittedAt,
 				);
 				if (props.field === "text") {
 					const updated = get().parts[props.messageID]?.find(
@@ -2650,12 +2675,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					status: SessionStatus;
 				};
 				if (props.sessionID && props.status)
-					store.setStatus(props.sessionID, props.status, syntheticEventOrigin(event));
+					store.setStatus(props.sessionID, props.status, syntheticEventOrigin(event), emittedAt);
 				return;
 			}
 		case "session.idle": {
 			const sessionID = (event.properties as { sessionID: string }).sessionID;
-			if (sessionID) store.setStatus(sessionID, { type: "idle" }, syntheticEventOrigin(event));
+			if (sessionID) store.setStatus(sessionID, { type: "idle" }, syntheticEventOrigin(event), emittedAt);
 			// Streaming finished for THIS session — clear only its own delta
 			// tracking so future message.part.updated snapshots for it are
 			// accepted normally. Never the whole map: another session may
@@ -2687,7 +2712,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// would re-stamp its arrival time and restart every freshness window
 			// that depends on it.
 			if (!isRetryableTurnError(error)) {
-				store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event));
+				store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event), emittedAt);
 			}
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.

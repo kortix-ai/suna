@@ -117,7 +117,7 @@ export async function deductCredits(
     p_amount: amount,
     p_description: description,
     p_ledger_type: ledgerType,
-    ...(idempotencyKey ? { p_idempotency_key: idempotencyKey } : {}),
+    p_idempotency_key: idempotencyKey || null,
   });
 
   if (error) {

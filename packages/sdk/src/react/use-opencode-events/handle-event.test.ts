@@ -68,6 +68,7 @@ mock.module('../../platform/ui', () => ({
 let singletonSessionGetImpl: () => Promise<{ data?: unknown }> = async () => ({ data: undefined });
 mock.module('../../core/runtime/client', () => ({
   getClient: () => ({ session: { get: () => singletonSessionGetImpl() } }),
+  getWorkspaceClient: () => ({ session: { get: () => singletonSessionGetImpl() } }),
 }));
 
 const { createEventHandler } = await import('./handle-event');

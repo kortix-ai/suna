@@ -30,6 +30,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import {
+  manifestUsesAgentMap,
   type AgentBlockV2,
   type ManifestIssue,
   SLUG_RE,
@@ -183,7 +184,7 @@ projectsApp.openapi(
     if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
     let block: (AgentBlockV2 & { opencode?: Record<string, unknown> }) | null = read.block;
-    if (read.schemaVersion === 2) {
+    if (manifestUsesAgentMap(read.schemaVersion)) {
       const mdPath = agentMarkdownPath(manifest.raw, agentName);
       const { frontmatter, body } = await readAgentMarkdown(
         loaded.row,
@@ -198,7 +199,7 @@ projectsApp.openapi(
     return c.json({
       agent: agentName,
       schema_version: read.schemaVersion,
-      editable: read.schemaVersion === 2,
+      editable: manifestUsesAgentMap(read.schemaVersion),
       default_agent: read.defaultAgent,
       block,
     });

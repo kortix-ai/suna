@@ -1,23 +1,23 @@
-import { stripInlineAttachmentBytes } from '../inline-attachments';
-import { timeUpstream } from '../../middleware/upstream-timing';
-import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { WIRE_MESSAGE_ID } from '../../projects/wire-message-id';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { config } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
+import { timeUpstream } from '../../middleware/upstream-timing';
+import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
   type PromptConnectorVerdict,
   missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
-import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import { syncSessionRuntimesEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
-import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
-import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
   extendSandboxDeadline,
@@ -26,19 +26,19 @@ import {
   isTurnStartRequest,
   previewGrantMs,
 } from '../../projects/sandbox-deadline';
+import {
+  abandonSandboxTurn,
+  acceptSandboxTurn,
+  beginSandboxTurn,
+  completeSandboxTurn,
+  extractTurnIdentity,
+} from '../../projects/sandbox-turn-lifecycle';
+import { recordSessionActivity } from '../../projects/session-activity';
 import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
-import { config } from '../../config';
-import { previewCorsHeaders } from '../preview-hosts';
-import { appCookieHeader } from '../preview-session';
-import {
-  PREVIEW_STATE_HEADER,
-  previewStatePage,
-  type PreviewState,
-} from '../preview-state-page';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
@@ -50,11 +50,7 @@ import {
   routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
-import {
-  recordSseStreamEnd,
-  shouldBypassIngressCache,
-  trackSseBytes,
-} from '../sse-stall';
+import { stripInlineAttachmentBytes } from '../inline-attachments';
 import {
   DEFAULT_AGENT_SENTINEL,
   type PrePromptEnvSyncDeps,
@@ -66,22 +62,15 @@ import {
   secretGrantErrorResponse,
   shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
-import {
-  EFFECTIVE_MESSAGE_ID_HEADER,
-  PROMPT_TRANSCRIPT_READ_LIMIT,
-  WIRE_ID_PLACED_HEADER,
-  isPromptWireIdRepairPath,
-  promptBodyMessageId,
-  promptTranscriptReadPath,
-  readNewestWireIdTime,
-  repairPromptWireId,
-} from '../prompt-wire-id-repair';
+import { previewCorsHeaders } from '../preview-hosts';
 import {
   PROXY_RETRY_BUDGET_MS,
   isLongTurnCompletionRequest,
   isUploadRequest,
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
+import { appCookieHeader } from '../preview-session';
+import { PREVIEW_STATE_HEADER, type PreviewState, previewStatePage } from '../preview-state-page';
 import {
   claimPromptDelivery,
   isNonIdempotentSessionWrite,
@@ -90,18 +79,25 @@ import {
   shouldClaimPromptDelivery,
 } from '../prompt-dedupe';
 import {
+  EFFECTIVE_MESSAGE_ID_HEADER,
+  PROMPT_TRANSCRIPT_READ_LIMIT,
+  WIRE_ID_PLACED_HEADER,
+  PROMPT_ADMISSION_HEADER,
+  DURABLE_MESSAGE_ADMISSION,
+  isPromptWireIdRepairPath,
+  promptBodyMessageId,
+  promptTranscriptReadPath,
+  readPromptTranscript,
+  repairPromptWireId,
+} from '../prompt-wire-id-repair';
+import {
   PROXY_HOP_HEADER,
   PROXY_UPSTREAM_STATUS_HEADER,
-  portFailureHop,
   type ProxyHop,
+  portFailureHop,
 } from '../proxy-hop';
 import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
-import {
-  abandonSandboxTurn,
-  acceptSandboxTurn,
-  beginSandboxTurn,
-  extractTurnIdentity,
-} from '../../projects/sandbox-turn-lifecycle';
+import { recordSseStreamEnd, shouldBypassIngressCache, trackSseBytes } from '../sse-stall';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -283,7 +279,8 @@ function isBrowserNavigation(incomingHeaders: Headers): boolean {
  * the headers do not say, which simply omits it from the page.
  */
 function previewReturnTo(incomingHeaders: Headers): string {
-  const forwarded = incomingHeaders.get('x-kortix-preview-host') || incomingHeaders.get('x-forwarded-host');
+  const forwarded =
+    incomingHeaders.get('x-kortix-preview-host') || incomingHeaders.get('x-forwarded-host');
   const host = forwarded || incomingHeaders.get('host') || '';
   if (!host) return '';
   const proto = incomingHeaders.get('x-forwarded-proto') || 'https';
@@ -349,9 +346,11 @@ export function portUnreachableResponse(opts: {
     // response, and both hop headers are set here too, so a fetch probe reads
     // exactly what it always did.
     const state: PreviewState =
-      code === 'sandbox_not_ready' || retry === true ? 'starting'
-      : upstreamStatus === null ? 'not-listening'
-      : 'unreachable';
+      code === 'sandbox_not_ready' || retry === true
+        ? 'starting'
+        : upstreamStatus === null
+          ? 'not-listening'
+          : 'unreachable';
     headers.set(PREVIEW_STATE_HEADER, state);
     return new Response(
       previewStatePage({
@@ -669,7 +668,7 @@ function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: stri
 // would cache the real ones for the whole process the first time any test
 // touched it.
 const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
-  syncEnv: syncSandboxEnvForPrompt,
+  syncEnv: syncSessionRuntimesEnvForPrompt,
   remintGrant: remintGrantForAgentSwitch,
   scheduleSnapshot: scheduleOpencodeSnapshotSync,
   generateTitle: generateSessionTitleFromFirstPrompt,
@@ -1027,6 +1026,12 @@ export async function forwardToSandbox(
   // prompt is silently lost.
   let promptDedupeKey: string | null = null;
   const idempotencyKey = incomingHeaders.get('idempotency-key');
+  let duplicatePrompt = false;
+  const canUseDurableMessageAdmission =
+    promptDelivery &&
+    isPromptWireIdRepairPath(remainingPath) &&
+    promptBodyMessageId(requestBody) !== null &&
+    !idempotencyKey?.trim();
   // Non-idempotent (never re-sent by us) and dedupe-claimed (a later lookalike
   // is short-circuited) are DIFFERENT guarantees — see
   // `shouldClaimPromptDelivery`. A command body has no client-unique field, so
@@ -1039,7 +1044,11 @@ export async function forwardToSandbox(
       body: requestBody,
     });
     if (!claimPromptDelivery(promptDedupeKey)) {
-      return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+      if (!canUseDurableMessageAdmission) {
+        return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+      }
+      duplicatePrompt = true;
+      promptDedupeKey = null;
     }
     // Stamped HERE, and only here: past the dedupe claim, so a re-sent prompt
     // cannot double-count, and outside the retry loop below, so a wake retry
@@ -1047,10 +1056,11 @@ export async function forwardToSandbox(
     // unlike the opencode_sessions snapshot scheduled further down, it needs no
     // sandbox round-trip, so a session stays correctly dated even when the box
     // is unreachable. See projects/session-activity.ts.
-    void recordSessionActivity({
-      sessionId: record.sessionId,
-      projectId: record.projectId,
-    });
+    if (!duplicatePrompt)
+      void recordSessionActivity({
+        sessionId: record.sessionId,
+        projectId: record.projectId,
+      });
   }
 
   // `deadline_at` is the idle-stop clock. This separate record is the durable
@@ -1086,10 +1096,14 @@ export async function forwardToSandbox(
       return 'unavailable';
     }
   };
-  const acceptTurnLifecycle = async (): Promise<void> => {
+  const acceptTurnLifecycle = async (
+    identity?: { opencodeSessionId: string; messageId: string },
+  ): Promise<void> => {
     if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
     try {
-      turnLifecycleAccepted = await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
+      turnLifecycleAccepted = identity
+        ? await acceptSandboxTurn({ externalId: sandboxId }, turnToken, identity)
+        : await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
     } catch (error) {
       // OpenCode already accepted this non-idempotent request. Do not convert a
       // post-delivery database outage into a failed send or delete the durable
@@ -1268,13 +1282,14 @@ export async function forwardToSandbox(
       // read keeps the client's id); runs after every refusal point and before
       // the ledger begins, so the identity recorded is the one delivered. Once
       // per request: a retry attempt keeps the placement the first computed.
+      // Durable runtimes own identity and conflicts. Read their capability from
+      // this same response; never infer it from an engine name or cached boot.
       if (
         promptDelivery &&
-        !sandboxAuthored &&
         effectiveMessageId === null &&
         isPromptWireIdRepairPath(remainingPath) &&
-        // The inbox drain already placed it — one fewer round-trip.
-        incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1' &&
+        (canUseDurableMessageAdmission ||
+          (!sandboxAuthored && incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1')) &&
         // No client id, nothing to place — OpenCode mints, and the read is
         // skipped entirely so a plain body pays nothing.
         promptBodyMessageId(requestBody) !== null
@@ -1282,13 +1297,28 @@ export async function forwardToSandbox(
         const readUrl =
           previewUrl.replace(/\/$/, '') +
           promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
-        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
-        ptl.mark('wire-id-read');
-        const placed = repairPromptWireId({
-          body: requestBody,
-          newestKnownTime,
-          nowMs: Date.now(),
+        const transcript = await readPromptTranscript({
+          url: readUrl,
+          headers: authHeaders,
         });
+        ptl.mark('wire-id-read');
+        const durableAdmission = canUseDurableMessageAdmission && transcript.durableMessageIds;
+        if (duplicatePrompt && !durableAdmission) {
+          return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+        }
+        const keepIdentity =
+          durableAdmission || sandboxAuthored || incomingHeaders.get(WIRE_ID_PLACED_HEADER) === '1';
+        const placed = keepIdentity
+          ? {
+              body: requestBody,
+              effectiveMessageId: promptBodyMessageId(requestBody),
+              outcome: 'kept' as const,
+            }
+          : repairPromptWireId({
+              body: requestBody,
+              newestKnownTime: transcript.newestKnownTime,
+              nowMs: Date.now(),
+            });
         if (placed.outcome === 'reminted') {
           console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
             sandboxId,
@@ -1576,13 +1606,51 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
+      const completedMessageId = upstream.headers.get('x-kortix-prompt-message-id');
+      const completedStatus = upstream.headers.get('x-kortix-prompt-completed');
+      const completionReceipt =
+        upstream.ok &&
+        turnLifecycleBegun &&
+        turnIdentity &&
+        record.sessionId &&
+        isPromptWireIdRepairPath(remainingPath) &&
+        upstream.headers.get(PROMPT_ADMISSION_HEADER) === DURABLE_MESSAGE_ADMISSION &&
+        completedMessageId &&
+        WIRE_MESSAGE_ID.test(completedMessageId) &&
+        (completedStatus === 'idle' || completedStatus === 'error') &&
+        (!turnIdentity.messageId || turnIdentity.messageId === completedMessageId)
+          ? {
+              status: completedStatus,
+              identity: {
+                opencodeSessionId: turnIdentity.opencodeSessionId,
+                messageId: completedMessageId,
+              },
+            } as const
+          : null;
       // A 2xx confirms acceptance. A 5xx on a non-replayable turn is ambiguous:
       // OpenCode may hold the message even though the response was lost. Both
       // cases must preserve the turn. A definitive 4xx abandons delivery.
       if (upstream.ok || (turnIdentity && upstream.status >= 500)) {
-        await acceptTurnLifecycle();
+        await acceptTurnLifecycle(completionReceipt?.identity);
       } else {
         await abandonTurnLifecycle();
+      }
+      if (completionReceipt && turnLifecycleAccepted) {
+        try {
+          await completeSandboxTurn(
+            record.sessionId!,
+            completionReceipt.status,
+            completionReceipt.identity,
+            null,
+            undefined,
+            { allowUnidentifiedFallback: false },
+          );
+        } catch (error) {
+          console.error(
+            `[turn-lifecycle] could not settle completed prompt ${completedMessageId}`,
+            error,
+          );
+        }
       }
       if (promptDelivery) {
         ptl.mark('turn-accept');
@@ -1638,10 +1706,7 @@ export async function forwardToSandbox(
         method === 'GET' && upstream.ok
           ? /^\/session\/([^/]+)\/message\/?$/.exec(remainingPath)
           : null;
-      if (
-        listMatch &&
-        (upstream.headers.get('content-type') ?? '').includes('application/json')
-      ) {
+      if (listMatch && (upstream.headers.get('content-type') ?? '').includes('application/json')) {
         const sessionID = decodeURIComponent(listMatch[1] ?? '');
         const text = await upstream.text();
         let body = text;

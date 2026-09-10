@@ -923,4 +923,26 @@ describe('projects API contract', () => {
     });
     expect(userPatch.status).toBe(403);
   });
+
+  test('reserves the pi-worker slug for the server-owned runtime after authorization', async () => {
+    const app = createApp();
+    setCurrentUser(OUTSIDER_ID, 'outsider@example.test');
+    const outsider = await app.request(`/v1/projects/${PROJECT_ID}/sandbox-templates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: 'pi-worker', image: 'ubuntu:22.04' }),
+    });
+    expect(outsider.status).toBe(403);
+
+    setCurrentUser(OWNER_ID, 'owner@example.test');
+    const owner = await app.request(`/v1/projects/${PROJECT_ID}/sandbox-templates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: 'pi-worker', image: 'ubuntu:22.04' }),
+    });
+    expect(owner.status).toBe(409);
+    expect(await owner.json()).toEqual({
+      error: 'slug "pi-worker" is reserved for the server-selected Pi runtime',
+    });
+  });
 });

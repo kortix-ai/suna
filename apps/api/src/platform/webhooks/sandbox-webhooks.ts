@@ -25,6 +25,10 @@ import {
   reconcileSandboxStoppedByExternalId,
   reconcileSandboxRemovedByExternalId,
 } from '../../projects/sandbox-reaper';
+import {
+  reconcileEnvironmentRemovedByExternalId,
+  reconcileEnvironmentStoppedByExternalId,
+} from '../services/session-environment-state-sync';
 
 export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';
 
@@ -33,7 +37,10 @@ export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';
  * directions matter for correctness — a `started`/`created`/transitional event
  * is acked as a no-op (our own resume/provision paths own the active direction).
  */
-export function classifyLifecycle(state: string | undefined | null, eventType: string): SandboxLifecycleOutcome {
+export function classifyLifecycle(
+  state: string | undefined | null,
+  eventType: string,
+): SandboxLifecycleOutcome {
   const s = (state ?? '').toLowerCase();
   const e = (eventType ?? '').toLowerCase();
   if (e.includes('delet') || e.includes('destroy')) return 'removed';
@@ -54,7 +61,11 @@ function safeEqual(a: string, b: string): boolean {
  * Plain HMAC-SHA-256 over the raw body (Platinum). Accepts the signature header
  * with or without a `sha256=` / `v1=` prefix, in hex.
  */
-export function verifyHmacSha256(rawBody: string, secret: string, headerValue: string | undefined): boolean {
+export function verifyHmacSha256(
+  rawBody: string,
+  secret: string,
+  headerValue: string | undefined,
+): boolean {
   if (!headerValue) return false;
   const expected = createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
   // A header may carry multiple comma/space-separated candidates (`v1=…,…`).
@@ -99,14 +110,16 @@ export async function applySandboxLifecycle(
     // this must be confirmed by a second observation before it parks the box
     // (incident 2026-08-17T20:40:03Z, session 0fc6897a). The reaper's poll
     // supplies that second observation within one pass.
-    const changed = await reconcileSandboxStoppedByExternalId(externalId, new Date(), {
+    const workerChanged = await reconcileSandboxStoppedByExternalId(externalId, new Date(), {
       confirmMidTurnStop: true,
     });
-    return { action: 'stopped', changed };
+    const environmentChanged = await reconcileEnvironmentStoppedByExternalId(externalId);
+    return { action: 'stopped', changed: workerChanged || environmentChanged };
   }
   if (outcome === 'removed') {
-    const changed = await reconcileSandboxRemovedByExternalId(externalId);
-    return { action: 'removed', changed };
+    const workerChanged = await reconcileSandboxRemovedByExternalId(externalId);
+    const environmentChanged = await reconcileEnvironmentRemovedByExternalId(externalId);
+    return { action: 'removed', changed: workerChanged || environmentChanged };
   }
   return { action: 'noop', changed: false };
 }
@@ -176,9 +189,11 @@ export async function handlePlatinumWebhook(
     return { status: 400, body: { error: 'invalid json' } };
   }
 
-  const externalId: string | undefined = event?.id ?? event?.sandbox_id ?? event?.data?.id ?? event?.sandboxId;
+  const externalId: string | undefined =
+    event?.id ?? event?.sandbox_id ?? event?.data?.id ?? event?.sandboxId;
   const eventType: string = event?.event ?? event?.type ?? '';
-  const newState: string | undefined = event?.state ?? event?.new_state ?? event?.newState ?? event?.data?.state;
+  const newState: string | undefined =
+    event?.state ?? event?.new_state ?? event?.newState ?? event?.data?.state;
   if (!externalId) return { status: 200, body: { ok: true, ignored: 'no sandbox id' } };
 
   const dedupId = `platinum:${event?.id ?? `${externalId}:${eventType}:${event?.timestamp ?? ''}`}`;

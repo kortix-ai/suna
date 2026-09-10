@@ -1511,6 +1511,13 @@ async function startSingletonWorkers() {
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+  // Shared-filesystem blobs are content-addressed and shared, so deleting a
+  // file cannot delete its bytes — only a scan can tell whether another path
+  // still holds the same content. Hourly, matching the grace period that keeps
+  // a write in flight from being collected. Imported lazily and by name only,
+  // for the reason the sweeper above documents.
+  const { startFilesystemBlobSweeper } = await import('./filesystems/blob-sweeper');
+  startFilesystemBlobSweeper();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -1527,6 +1534,8 @@ async function stopSingletonWorkers() {
   await stopAuditReconciliationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
+  const { stopFilesystemBlobSweeper } = await import('./filesystems/blob-sweeper');
+  stopFilesystemBlobSweeper();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the

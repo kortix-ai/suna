@@ -102,7 +102,7 @@ ensure_caddy_tolerant() {
   } > "$tmp"
   if docker exec -i "$EDGE" caddy validate --adapter caddyfile --config /dev/stdin < "$tmp" > /tmp/caddy-validate.log 2>&1; then
     cp "$tmp" "$CADDY"
-    if docker exec "$EDGE" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >> "$LOG" 2>&1; then
+    if docker exec -i "$EDGE" caddy reload --config /dev/stdin --adapter caddyfile < "$CADDY" >> "$LOG" 2>&1; then
       log "caddy: swap tolerance applied and reloaded"
     else
       log "caddy: reload FAILED after a valid config; file left in place"

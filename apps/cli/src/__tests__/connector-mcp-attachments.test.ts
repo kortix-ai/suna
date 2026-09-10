@@ -85,6 +85,18 @@ describe('Connector MCP attachment_files', () => {
 
     await expect(
       uploadAttachmentFiles([{ path: alias }], {} as ConnectorClient, { workspaceRoot: root }),
+    ).rejects.toThrow(/must not have hard links|must be inside \/workspace/);
+  });
+
+  test('rejects hard links when both names are inside generated-artifact directories', async () => {
+    const root = await fixture();
+    const report = join(root, 'output', 'report.txt');
+    const alias = join(root, 'artifacts', 'copy.txt');
+    await writeFile(report, 'report-bytes');
+    await link(report, alias);
+
+    await expect(
+      uploadAttachmentFiles([{ path: alias }], {} as ConnectorClient, { workspaceRoot: root }),
     ).rejects.toThrow('must not have hard links');
   });
 

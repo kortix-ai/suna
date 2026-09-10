@@ -55,7 +55,7 @@ describe('the live-env allowlist', () => {
     // falls back to a restart by itself, so this is never less correct.
     expect(ENV_ROUTE).toContain('await opencode.reloadConfig({ mustRespawn })')
     expect(ENV_ROUTE).toContain(
-      'if (body.refreshModels === true && (result.changed || opencodeEnvChanged))',
+      "if (cfg.workload !== 'environment' && body.refreshModels === true && (result.changed || opencodeEnvChanged))",
     )
   })
 })

@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   Client,
@@ -272,5 +274,63 @@ describe('edge response diagnostics (P3.3)', () => {
     expect(error.message).toContain('after 3/3 attempt(s)');
     expect(error.message).toContain('ECONNRESET');
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('service URLs with a path prefix', () => {
+  it('keeps the configured path prefix through auth and retry clones', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"status":"ok"}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await Client.forBaseUrl('https://preview.example/_gateway')
+      .withBearer('test-token', 'TEST')
+      .withTransientGatewayRetries(0)
+      .get('/health');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe('https://preview.example/_gateway/health');
+  });
+
+  it('does not add a prefix for a root service URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await Client.forBaseUrl('https://gateway.example/').get('/v1/models');
+
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe('https://gateway.example/v1/models');
+  });
+});
+
+describe('security probe paths', () => {
+  it('sends encoded dot segments exactly as written', async () => {
+    let receivedPath = '';
+    const server = createServer((request, response) => {
+      receivedPath = request.url ?? '';
+      response.writeHead(404, { 'content-type': 'text/plain' });
+      response.end('not found');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    try {
+      const { port } = server.address() as AddressInfo;
+      const response = await new Client(`http://127.0.0.1:${port}/v1`).get(
+        '/%2e%2e/%2e%2e/etc/passwd',
+        { pathAsIs: true },
+      );
+
+      expect(response.statusCode).toBe(404);
+      expect(receivedPath).toBe('/%2e%2e/%2e%2e/etc/passwd');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 });

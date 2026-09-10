@@ -15,6 +15,10 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
+import {
+  resolveRuntimePromptOverrides,
+  runtimePromptOverridesEnabled,
+} from '@/features/session/composer/runtime-prompt-contract';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
@@ -25,6 +29,7 @@ import {
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
+import { resolveProjectSessionRuntimeIdentity } from '@/features/session/session-compaction';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
@@ -85,6 +90,7 @@ import {
   clearSessionFresh,
   formatRuntimeError,
   getProjectDetail,
+  isPiWorkerRuntimeMetadata,
   isSessionFresh,
   listProjectSessions,
   sessionStartKey,
@@ -221,6 +227,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     initialOpenCodeSessionId,
   });
   const sandbox = session.sandbox;
+  const runtimePromptOverridesAllowed = runtimePromptOverridesEnabled({
+    hasProjectSession: true,
+    projectRuntimeIdentity: resolveProjectSessionRuntimeIdentity(currentProjectSession),
+    sandboxIsPiWorker: isPiWorkerRuntimeMetadata(sandbox?.metadata),
+  });
   const startStage = session.stage ?? 'provisioning';
   // The immutable agent this session was created with — known BEFORE the
   // sandbox is ready (the sessions-list row is usually already cached from the
@@ -274,11 +285,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (pendingPrompt) {
       void startSessionWithPrompt(projectId, sessionId, {
         parts: [{ type: 'text' as const, text: pendingPrompt.text }],
-        overrides: {
-          ...(pendingPrompt.agent ? { agent: pendingPrompt.agent } : {}),
-          ...(pendingPrompt.model ? { model: pendingPrompt.model } : {}),
-          ...(pendingPrompt.variant ? { variant: pendingPrompt.variant } : {}),
-        },
+        overrides: resolveRuntimePromptOverrides({
+          agentEnabled: runtimePromptOverridesAllowed,
+          modelEnabled: runtimePromptOverridesAllowed,
+          variantEnabled: runtimePromptOverridesAllowed,
+          overrideAgent: pendingPrompt.agent,
+          overrideModel: pendingPrompt.model,
+          overrideVariant: pendingPrompt.variant,
+        }),
       })
         .then(() => {
           clearStartStash(sessionId);
@@ -1396,6 +1410,7 @@ function ActiveSessionChat({
       sessionId={chatSessionId}
       projectId={projectId}
       projectSessionId={sessionId}
+      sandboxIsPiWorker={isPiWorkerRuntimeMetadata(sessionState.sandbox?.metadata)}
     >
       {/* A crash in the chat is a RESOLUTION of this layer, and the route has to
           hear about it. `onChatReady` is otherwise the only thing that lowers

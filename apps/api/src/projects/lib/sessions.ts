@@ -1,3 +1,4 @@
+import { piModelLimits } from '../../git-proxy/pi-model-limits';
 import { randomUUID } from 'node:crypto';
 import {
   projectSessionConnectorBindings,
@@ -51,6 +52,7 @@ import {
 } from '../agents';
 import { createRemoteSessionBranch , resolveCommitSha } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
+import { storeSessionAttachments } from './session-attachment-store';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { validateNativeOpencodeModelRef } from './session-model-change';
 import {
@@ -64,7 +66,7 @@ import {
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
   resolveCompiledAgentConfigForSession,
-  resolveManifestRuntime,
+  resolveManifestRuntimeForPiSession,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
@@ -100,8 +102,10 @@ import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
+  PI_WORKER_SANDBOX_PROVIDER,
   projectImageAllowedForSession,
   resolveSessionSandboxSlug,
+  sanitizeCallerSessionMetadata,
   workspaceModeAllowsFullRepository,
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
@@ -408,6 +412,31 @@ async function buildSessionChannelEnv(sessionId: string): Promise<Record<string,
     });
     return {};
   }
+}
+
+export async function buildPiWorkerSessionSandboxEnvVars(input: {
+  projectId: string;
+  sessionId: string;
+  agentName: string;
+  runtimeRef: string;
+  runtimeSha: string;
+  opencodeModel?: string | null;
+}): Promise<Record<string, string>> {
+  const runtimeContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
+  return {
+    ...buildPiWorkerSessionEnvVars({
+      modelLimits: piModelLimits(input.projectId, input.opencodeModel),
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      agentName: input.agentName,
+      opencodeModel: input.opencodeModel,
+      apiUrl: deriveKortixApiBase(),
+      frontendUrl: sandboxFrontendBaseUrl(),
+    }),
+    ...runtimeContextEnv,
+    KORTIX_PI_RUNTIME_REF: input.runtimeRef,
+    KORTIX_PI_RUNTIME_SHA: input.runtimeSha,
+  };
 }
 
 export async function buildSessionSandboxEnvVars(input: {
@@ -987,7 +1016,35 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  const loadedAgents = await loadProjectAgents(project, {
+  // Resolve the version and worker artifact from the same immutable commit.
+  // V3 selects Pi without a feature flag. V2 and legacy absence select OpenCode.
+  // An invalid or unreadable runtime decision fails before session persistence.
+  let piWorkerIdentity: { ref: string; sha: string } | null = null;
+  try {
+    const authedProject = await withProjectGitAuth(project);
+    const ref = (baseRef ?? '').trim() || project.defaultBranch;
+    const sha = await resolveCommitSha(authedProject, ref);
+    const runtime = await resolveManifestRuntimeForPiSession(authedProject, sha);
+    if (runtime === 'pi') {
+      piWorkerIdentity = { ref, sha };
+    }
+  } catch (err) {
+    console.warn(
+      `[sessions] pi worker resolution failed for ${projectId}; rejecting session create:`,
+      err instanceof Error ? err.message : err,
+    );
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'Pi runtime selection could not be resolved from the session Git commit',
+          code: 'PI_WORKER_RUNTIME_RESOLUTION_FAILED',
+        },
+      },
+    };
+  }
+
+  const loadedAgents = await loadProjectAgents(piWorkerIdentity ? { ...project, defaultBranch: piWorkerIdentity.sha } : project, {
     forceRefresh: true,
     rethrowReadErrors: true,
   });
@@ -999,11 +1056,9 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // The meta coordinator is a per-project experimental opt-in
-  // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
-  // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
-  // agent name.
-  const metaAgentEnabled = resolveFeatureFlag(project.metadata, 'meta_agent');
+  // The platform OpenCode coordinator applies only to legacy/v2 projects.
+  // Pi projects always use their declared agent selection.
+  const metaAgentEnabled = !piWorkerIdentity && resolveFeatureFlag(project.metadata, 'meta_agent');
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
@@ -1309,12 +1364,19 @@ export async function createProjectSession(input: {
       };
     }
   } else {
-    sandboxSlug = resolveSessionSandboxSlug({
+    const resolvedSandboxSlug = resolveSessionSandboxSlug({
       explicit: requestedSandboxSlug,
       agent: sandboxFromLoadedAgents(agentName, loadedAgents),
       project: projectDefaultSandboxSlug,
     });
+    // `pi-worker` is a server-owned runtime identity, not a selectable sandbox
+    // template. Ignore every ordinary precedence source that names it. The
+    // immutable feature + manifest decision below is the only branch allowed
+    // to restore this slug together with a resolved commit SHA.
+    sandboxSlug =
+      resolvedSandboxSlug === PI_WORKER_SANDBOX_SLUG ? DEFAULT_SANDBOX_SLUG : resolvedSandboxSlug;
   }
+  const environmentSandboxSlug = sandboxSlug;
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
   // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
   // of the global distribution weights — see resolveSessionProvider.
@@ -1351,47 +1413,53 @@ export async function createProjectSession(input: {
   // Validate the requested sandbox template up front so the user gets a clean
   // 400 instead of an async session-failed if they typed a slug that doesn't
   // exist. The platform default is always valid.
-  // Harness/worker split: with the project's pi_worker flag on AND the manifest
-  // declaring `runtime: pi`, the session boots the shared pi worker image and
-  // its compiled runtime artifact instead of the OpenCode stack. Both gates or
-  // nothing — the flag alone only compiles artifacts, the manifest alone is
-  // inert, and any resolution failure falls back to the OpenCode path.
-  let piWorkerBoot = false;
-  let piWorkerSha: string | null = null;
-  if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
-    try {
-      const authedProject = await withProjectGitAuth(project);
-      const ref = (baseRef ?? '').trim() || project.defaultBranch;
-      // One round trip, not two: the runtime read and the tip resolution are
-      // independent, and both sit on the POST /sessions critical path. A
-      // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
-      // a full sequential git hop.
-      const [runtime, sha] = await Promise.all([
-        resolveManifestRuntime(authedProject, baseRef),
-        resolveCommitSha(authedProject, ref).catch(() => null),
-      ]);
-      if (runtime === 'pi' && sha) {
-        piWorkerSha = sha;
-        piWorkerBoot = true;
-        sandboxSlug = PI_WORKER_SANDBOX_SLUG;
-      } else if (runtime === 'pi') {
-        console.warn(
-          `[sessions] pi manifest on ${projectId} but tip resolution for '${ref}' failed; booting OpenCode path`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[sessions] pi worker resolution failed for ${projectId}; booting OpenCode path:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
+  if (piWorkerIdentity) sandboxSlug = PI_WORKER_SANDBOX_SLUG;
+
+  // Pi v0 has no native-provider credential path. Its immutable worker image
+  // receives neither project secrets nor OpenCode's provider configuration;
+  // every real model request uses the session token against the Kortix LLM
+  // gateway. Reject an unusable Pi selection before the session row, billing
+  // hold, branch, or sandbox exists. Falling back to OpenCode here would run a
+  // different runtime than the repository declares.
+  if (piWorkerIdentity && !llmGatewayEnabled) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'Pi sessions require the Kortix LLM gateway',
+          code: 'PI_WORKER_LLM_GATEWAY_REQUIRED',
+        },
+      },
+    };
+  }
+  if (piWorkerIdentity && freeModelsOnly) {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error: 'This account cannot use the Kortix LLM gateway required by Pi sessions',
+          code: 'PI_WORKER_LLM_GATEWAY_ENTITLEMENT_REQUIRED',
+        },
+      },
+    };
   }
 
+  // Pi v0 is a Daytona runtime. Persist the provider we will actually
+  // provision so every later lifecycle operation targets the same backend.
+  // The requested/balanced provider is only a candidate until runtime
+  // selection completes.
+  const piWorkerBoot = piWorkerIdentity !== null;
+  const effectiveProviderName: SandboxProviderName = piWorkerBoot
+    ? PI_WORKER_SANDBOX_PROVIDER
+    : providerName;
+  const effectiveProviderLocked = piWorkerBoot || providerLocked;
+
+  const selectedTemplateSlug = piWorkerBoot ? environmentSandboxSlug : sandboxSlug;
   if (
     !platformMetaAgent &&
-    sandboxSlug &&
-    sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
-    sandboxSlug !== PI_WORKER_SANDBOX_SLUG
+    selectedTemplateSlug &&
+    selectedTemplateSlug !== DEFAULT_SANDBOX_SLUG &&
+    selectedTemplateSlug !== PI_WORKER_SANDBOX_SLUG
   ) {
     try {
       await resolveTemplate(
@@ -1402,7 +1470,7 @@ export async function createProjectSession(input: {
           manifestPath: project.manifestPath,
           gitAuthToken: null,
         },
-        sandboxSlug,
+        selectedTemplateSlug,
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1482,8 +1550,9 @@ export async function createProjectSession(input: {
   // the session row — see `convertPendingPromptToInboxRow` for the contract
   // (and why stored metadata keeps only the picks).
   const pendingPromptConversion = pendingPrompt
-    ? convertPendingPromptToInboxRow({
+    ? await convertPendingPromptToInboxRow({
         pendingPrompt,
+        piWorker: piWorkerBoot,
         projectId,
         accountId,
         sessionId,
@@ -1523,11 +1592,14 @@ export async function createProjectSession(input: {
     callerSessionId: input.callerSessionId,
     agentName,
     visibility,
-    sandboxProvider: providerName,
+    sandboxProvider: effectiveProviderName,
     connectorBindingCount: validatedConnectorBindings.bindings.length,
     secretAllowlistCount: secretsAllowlist?.length ?? 0,
   });
-  const requestMetadata = normalizeJsonObject(body.metadata);
+  const requestMetadata = sanitizeCallerSessionMetadata(normalizeJsonObject(body.metadata));
+  const sanitizedCallerMetadata = sanitizeCallerSessionMetadata(
+    normalizeJsonObject(input.metadata),
+  );
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
@@ -1541,13 +1613,18 @@ export async function createProjectSession(input: {
       : {}),
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
-    ...(input.metadata ?? {}),
+    ...sanitizedCallerMetadata,
     // Persist the coordinator→worker link. The sidebar badges child sessions
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
     workspace_mode: workspaceMode,
     sandbox_slug: sandboxSlug,
+    ...(piWorkerBoot ? { environment_sandbox_slug: environmentSandboxSlug } : {}),
+    pi_worker_boot: piWorkerBoot,
+    pi_worker_ref: piWorkerIdentity?.ref ?? null,
+    pi_worker_sha: piWorkerIdentity?.sha ?? null,
+    runtimeArtifact: null,
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
@@ -1569,7 +1646,7 @@ export async function createProjectSession(input: {
         projectId,
         branchName: sessionId,
         baseRef,
-        sandboxProvider: providerName,
+        sandboxProvider: effectiveProviderName,
         sandboxId: sessionId,
         // Do not set opencodeSessionId during wrapper-session creation.
         // Runtime root discovery persists it only after OpenCode creates its root.
@@ -1607,6 +1684,7 @@ export async function createProjectSession(input: {
           .returning({ sessionId: projectSessionRuntimeContexts.sessionId });
     }
       if (pendingPromptConversion?.rowValues) {
+        await storeSessionAttachments(tx, sessionId, pendingPromptConversion.attachments ?? []);
         // Same transaction as the session row: either the session exists WITH
         // its first prompt durable, or neither does. No conflict handling —
         // `sessionId` is fresh here, so the idempotency key cannot collide
@@ -1767,58 +1845,56 @@ export async function createProjectSession(input: {
       // and nothing clones. Measured on dev 2026-08-27, the full chain
       // (hint race + compiled config + secret grant + secrets snapshot) cost
       // 1.1–2.4 s of every cold pi boot.
-      const envPromise = piWorkerBoot
-        ? Promise.resolve(
-            buildPiWorkerSessionEnvVars({
-              projectId,
-              sessionId,
-              agentName,
-              // Only an EXPLICIT session model may override the baked agent
-              // model — the platform/project fallback resolution exists for
-              // the OpenCode path and must not clobber the artifact's own
-              // model (KORTIX_MODEL wins over the bake inside the worker).
-              // Stripped to the native ref: the worker's env path takes the
-              // value verbatim, unlike the baked path which de-prefixes.
-              opencodeModel:
-                opencodeModelSource === 'explicit' && opencodeModel
-                  ? opencodeModel.replace(/^kortix\//, '')
-                  : null,
-              apiUrl: deriveKortixApiBase(),
-              frontendUrl: sandboxFrontendBaseUrl(),
-            }),
-          ).then((envVars) => {
+      const envPromise = piWorkerIdentity
+        ? buildPiWorkerSessionSandboxEnvVars({
+            projectId,
+            sessionId,
+            agentName,
+            // Only an EXPLICIT session model may override the baked agent
+            // model — the platform/project fallback resolution exists for
+            // the OpenCode path and must not clobber the artifact's own
+            // model (KORTIX_MODEL wins over the bake inside the worker).
+            // Stripped to the native ref: the worker's env path takes the
+            // value verbatim, unlike the baked path which de-prefixes.
+            opencodeModel:
+              opencodeModelSource === 'explicit' && opencodeModel
+                ? opencodeModel.replace(/^kortix\//, '')
+                : null,
+            runtimeRef: piWorkerIdentity.ref,
+            runtimeSha: piWorkerIdentity.sha,
+          }).then((envVars) => {
             tl.mark('env-vars');
             return envVars;
           })
         : fastBootGitHintPromise
-        .then((fastBootGitHint) =>
-          buildSessionSandboxEnvVars({
-            accountId,
-            projectId,
-            sessionId,
-            userId,
-            repoUrl: project.repoUrl,
-            baseRef,
-            agentName,
-            opencodeModel,
-            llmGatewayEnabled,
-            platformMetaAgent,
-            freshSession: true,
-            baseSha: fastBootGitHint?.baseSha,
-            gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
-            gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
-            gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
-            gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
-            opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
-            defaultBranch: project.defaultBranch,
-            manifestPath: project.manifestPath,
-            workspaceMode,
-          }),
-        )
-        .then((envVars) => {
-          tl.mark('env-vars');
-          return envVars;
-        });
+            .then((fastBootGitHint) =>
+              buildSessionSandboxEnvVars({
+                accountId,
+                projectId,
+                sessionId,
+                userId,
+                repoUrl: project.repoUrl,
+                baseRef,
+                agentName,
+                opencodeModel,
+                llmGatewayEnabled,
+                platformMetaAgent,
+                freshSession: true,
+                baseSha: fastBootGitHint?.baseSha,
+                gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
+                gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
+                gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
+                gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
+                opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
+                defaultBranch: project.defaultBranch,
+                manifestPath: project.manifestPath,
+                workspaceMode,
+              }),
+            )
+            .then((envVars) => {
+              tl.mark('env-vars');
+              return envVars;
+            });
 
       const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
         await db
@@ -1880,26 +1956,24 @@ export async function createProjectSession(input: {
         // v0 pins the worker to Daytona: the entrypoint override in
         // ensurePiWorkerImage is only exercised there so far. Lift once the
         // other adapters' entrypoint handling is verified.
-        provider: piWorkerBoot ? 'daytona' : providerName,
-        providerLocked: piWorkerBoot ? true : providerLocked,
+        provider: effectiveProviderName,
+        providerLocked: effectiveProviderLocked,
         metadata: {
+          ...sanitizedCallerMetadata,
           session_id: sessionId,
           project_id: projectId,
-          ...(piWorkerBoot ? { pi_worker_boot: true } : {}),
-          ...(input.metadata ?? {}),
+          // These fields are the public SDK/runtime classifier. Write
+          // their server-owned values after caller metadata so no internal or
+          // queued create can forge the worker before initialization finishes.
+          sandbox_slug: sandboxSlug,
+          ...(piWorkerBoot ? { environment_sandbox_slug: environmentSandboxSlug } : {}),
+          pi_worker_boot: piWorkerBoot,
+          pi_worker_ref: piWorkerIdentity?.ref ?? null,
+          pi_worker_sha: piWorkerIdentity?.sha ?? null,
+          runtimeArtifact: null,
         },
         initialTurn,
-        extraEnvVars:
-          piWorkerBoot && piWorkerSha
-            ? {
-                ...extraEnvVars,
-                // The worker's entrypoint composes the artifact URL from these
-                // plus KORTIX_API_URL/KORTIX_PROJECT_ID/KORTIX_TOKEN it
-                // already receives.
-                KORTIX_PI_RUNTIME_REF: (baseRef ?? '').trim() || project.defaultBranch,
-                KORTIX_PI_RUNTIME_SHA: piWorkerSha,
-              }
-            : extraEnvVars,
+        extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {
           projectId,

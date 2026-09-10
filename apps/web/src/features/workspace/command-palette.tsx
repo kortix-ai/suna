@@ -41,6 +41,10 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { flattenModels } from '@/features/session/session-chat-input';
+import {
+  resolveProjectSessionCompactionId,
+  resolveProjectSessionRuntimeIdentity,
+} from '@/features/session/session-compaction';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
@@ -899,6 +903,12 @@ export function CommandPalette() {
   const currentProjectSession = projectSessionsList?.find(
     (session) => session.session_id === currentSessionId,
   );
+  const sessionConfigurationEnabled =
+    !!currentSessionId &&
+    (!projectId || resolveProjectSessionRuntimeIdentity(currentProjectSession) === 'opencode');
+  const compactSessionId = projectId
+    ? resolveProjectSessionCompactionId(currentProjectSession)
+    : currentSessionId;
 
   // The registry's `requiresFlag` gate. One primitive (`useFeatureFlag`, via
   // `useProjectFeatureFlags`) decides for every surface, so a palette entry can
@@ -1076,6 +1086,7 @@ export function CommandPalette() {
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
       if (item.requiresSession && !currentSessionId) continue;
+      if (item.id === 'compact-session' && !compactSessionId) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
@@ -1103,6 +1114,7 @@ export function CommandPalette() {
     return result;
   }, [
     billingEnabled,
+    compactSessionId,
     currentSessionId,
     projectId,
     selectedAccountId,
@@ -1242,7 +1254,7 @@ export function CommandPalette() {
     const q = query.trim().toLowerCase();
     const words = q.split(/\s+/).filter(Boolean);
     const items: { id: string; label: string; keywords: string; targetPage: PalettePage }[] = [];
-    if (currentSessionId) {
+    if (sessionConfigurationEnabled) {
       items.push({
         id: 'change-agent',
         label: tHardcodedUi.raw('i18nComplete.text6fb2caa0ee1c'),
@@ -1260,7 +1272,7 @@ export function CommandPalette() {
       const haystack = [item.label, item.keywords].join(' ').toLowerCase();
       return words.every((w) => haystack.includes(w));
     });
-  }, [hasQuery, query, currentSessionId, tHardcodedUi]);
+  }, [hasQuery, query, currentSessionId, sessionConfigurationEnabled, tHardcodedUi]);
 
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
@@ -1747,11 +1759,11 @@ export function CommandPalette() {
   );
 
   const handleCompactSession = useCallback(() => {
-    if (!currentSessionId) return;
+    if (!compactSessionId) return;
     reopenPaletteRef.current = true;
     close();
     setCompactOpen(true);
-  }, [currentSessionId, close]);
+  }, [compactSessionId, close]);
 
   const handleViewChanges = useCallback(() => {
     if (!currentSessionId) return;
@@ -2054,17 +2066,17 @@ export function CommandPalette() {
 
   const handleSelectAgent = useCallback(
     (agentName: string) => {
-      if (!currentSessionId) return;
+      if (!currentSessionId || !sessionConfigurationEnabled) return;
       modelStore.setSessionAgentName(currentSessionId, agentName);
       successToast(tHardcodedUi('i18nComplete.text8a85cfbe71eb', { value0: agentName }));
       close();
     },
-    [currentSessionId, modelStore, tHardcodedUi, close],
+    [currentSessionId, sessionConfigurationEnabled, tHardcodedUi, modelStore, close],
   );
 
   const handleSelectModel = useCallback(
     (providerID: string, modelID: string) => {
-      if (!currentAgent) return;
+      if (!currentAgent || !sessionConfigurationEnabled) return;
       // The SAME slot the composer reads/writes (use-opencode-local.ts):
       // scoped by provider mode + agent. The bare-agent-name slot is the
       // legacy shared fallback — writing there lets a pick made in gateway
@@ -2080,7 +2092,7 @@ export function CommandPalette() {
       );
       close();
     },
-    [currentAgent, modelStore, providers, allModels, tHardcodedUi, close],
+    [currentAgent, sessionConfigurationEnabled, tHardcodedUi, modelStore, providers, allModels, close],
   );
 
   const totalSearchResults = useMemo(() => {
@@ -2216,7 +2228,7 @@ export function CommandPalette() {
                         })}
                       </div>
 
-                      {currentSessionId && (
+                      {sessionConfigurationEnabled && (
                         <>
                           <CommandItem
                             value="suggestion change agent worker switch"
@@ -2258,7 +2270,6 @@ export function CommandPalette() {
                           </CommandItem>
                         </>
                       )}
-
                       {/* `currentSessionId`, not `projectId`. File search runs
                           against the SESSION's sandbox daemon
                           (`useWorkspaceSearch` -> `getActiveServerUrl()` ->
@@ -2581,7 +2592,7 @@ export function CommandPalette() {
               </>
             )}
 
-            {page === 'agents' && (
+            {page === 'agents' && sessionConfigurationEnabled && (
               <>
                 {primaryAgents.length > 0 && (
                   <CommandGroup heading="Agents" forceMount>
@@ -2681,7 +2692,7 @@ export function CommandPalette() {
               </>
             )}
 
-            {page === 'models' && (
+            {page === 'models' && sessionConfigurationEnabled && (
               <>
                 {groupedModels.map((group) => (
                   <CommandGroup
@@ -2967,22 +2978,23 @@ export function CommandPalette() {
         </CommandFooter>
       </CommandDialog>
 
+      {compactSessionId && (
+        <CompactModal
+          sessionId={compactSessionId}
+          open={compactOpen}
+          onOpenChange={handleOverlayClose(setCompactOpen)}
+          onCompactStart={() => {
+            reopenPaletteRef.current = false;
+          }}
+        />
+      )}
+
       {currentSessionId && (
-        <>
-          <CompactModal
-            sessionId={currentSessionId}
-            open={compactOpen}
-            onOpenChange={handleOverlayClose(setCompactOpen)}
-            onCompactStart={() => {
-              reopenPaletteRef.current = false;
-            }}
-          />
-          <DiffDialog
-            sessionId={currentSessionId}
-            open={diffOpen}
-            onOpenChange={handleOverlayClose(setDiffOpen)}
-          />
-        </>
+        <DiffDialog
+          sessionId={currentSessionId}
+          open={diffOpen}
+          onOpenChange={handleOverlayClose(setDiffOpen)}
+        />
       )}
 
       {/* The one consumer of `ProjectFilesContext` in this file — see

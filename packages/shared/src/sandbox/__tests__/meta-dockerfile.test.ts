@@ -17,6 +17,8 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('PNPM_VERSION=11.15.1');
     expect(dockerfile).toContain('pnpm runtime set node 22.23.1 --global');
     expect(dockerfile).toContain('opencode-ai@1.18.23');
+    expect(dockerfile).not.toContain('@openai/codex');
+    expect(dockerfile).not.toContain('@anthropic-ai/claude-code');
     expect(dockerfile).toContain(
       "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
     );

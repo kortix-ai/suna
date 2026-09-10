@@ -67,6 +67,11 @@ describe('isPrivateIp', () => {
     ['::ffff:127.0.0.1', true],
     ['::ffff:169.254.169.254', true],
     ['::ffff:8.8.8.8', false],
+    ['::ffff:7f00:1', true],
+    ['::ffff:a9fe:a9fe', true],
+    ['::ffff:808:808', false],
+    ['0:0:0:0:0:ffff:7f00:1', true],
+    ['0000:0000:0000:0000:0000:0000:0000:0001', true],
     ['not-an-ip', true], // non-IP → unsafe (defensive)
     ['', true],
   ];
@@ -182,4 +187,24 @@ describe('safeEgressFetch', () => {
     await safeEgressFetch('https://example.com/x', { signal: ac.signal });
     expect((fetchCalls[0].init?.signal as AbortSignal).aborted).toBe(false);
   });
+});
+
+
+test('literal IPv6 hosts are checked directly and mapped loopback cannot become public', async () => {
+  dnsResults['[::1]'] = [{ address: '93.184.216.34', family: 4 }];
+  for (const host of ['[::1]', '[fd00::1]', '[::ffff:127.0.0.1]', '[::ffff:7f00:1]']) {
+    await expect(safeEgressFetch(`https://${host}/image`)).rejects.toBeInstanceOf(UnsafeEgressError);
+  }
+  expect(fetchCalls).toHaveLength(0);
+  expect((await assertSafeEgressUrl('https://[2001:4860:4860::8888]/image')).hostname).toBe('[2001:4860:4860::8888]');
+});
+
+test('redirect response streams close before the destination is checked', async () => {
+  let cancelled = false;
+  dnsResults['images.example'] = [{ address: '93.184.216.34', family: 4 }];
+  globalThis.fetch = (async () => new Response(new ReadableStream({
+    cancel() { cancelled = true; },
+  }), { status: 302, headers: { location: 'https://127.0.0.1/private' } })) as unknown as typeof fetch;
+  await expect(safeEgressFetch('https://images.example/redirect')).rejects.toBeInstanceOf(UnsafeEgressError);
+  expect(cancelled).toBe(true);
 });

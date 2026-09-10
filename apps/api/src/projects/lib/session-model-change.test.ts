@@ -27,6 +27,17 @@ describe('validateModelChangeShape', () => {
 });
 
 describe('canChangeSessionModel', () => {
+  test.each([
+    { pi_worker_boot: true },
+    { sandbox_slug: 'pi-worker' },
+    { pi_worker_sha: 'a'.repeat(40) },
+    { runtimeArtifact: { runtimeProfile: 'pi-worker' } },
+  ])('refuses a model mutation for a fixed Pi identity %j', (metadata) => {
+    for (const status of ['running', 'provisioning', 'queued', 'branching', 'stopped']) {
+      expect(canChangeSessionModel(status, metadata)?.code).toBe('SESSION_MODEL_FIXED_AT_START');
+    }
+  });
+
   test('running and provisioning sessions may change', () => {
     // provisioning has no live agent yet, but the ROW is what its cold boot
     // reads — writing it early is correct, not premature.

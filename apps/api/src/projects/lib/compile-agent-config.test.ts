@@ -14,6 +14,7 @@ let readRepoFileCalls: string[] = [];
 // DEFAULT branch even for a session on another ref, so a feature-branch session
 // ran main's agents; recording the ref is what makes that visible.
 let refsRead: string[] = [];
+let manifestReadError: Error | null = null;
 // Paths the mocked git should fail on with a NON-not-found error, so the
 // transient-failure branch is reachable through the same seam as the fixtures.
 let transientFailurePaths = new Set<string>();
@@ -32,6 +33,7 @@ let transientFailurePaths = new Set<string>();
 mock.module('../git', () => ({
   readManifestFromRepo: async (_project: unknown, _candidates: unknown, ref: string) => {
     refsRead.push(ref);
+    if (manifestReadError) throw manifestReadError;
     return manifestFile;
   },
   readRepoFile: async (_project: unknown, path: string, ref: string) => {
@@ -60,8 +62,11 @@ const {
   OpencodeAgentConfigSchema,
   agentMarkdownPath,
   compileAgentConfig,
+  compileSelectedAgentConfig,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
+  resolveManifestRuntime,
+  resolveManifestRuntimeForPiSession,
 } = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -137,6 +142,58 @@ describe('agentMarkdownPath', () => {
     expect(agentMarkdownPath({ opencode: { config_dir: 'custom/dir' } }, 'support')).toBe(
       'custom/dir/agents/support.md',
     );
+  });
+});
+
+// kortix_version 3 is v2's body with two defaults flipped for the pi runtime.
+// Both flips are DEFAULTS, so the only way to be sure they took is to assert
+// the resolved value at each version rather than the presence of a key.
+describe('kortix_version 3 — the pi-native config directory', () => {
+  test('v3 agents live in .kortix/pi, not .kortix/opencode', () => {
+    expect(agentMarkdownPath({ kortix_version: 3 }, 'support')).toBe(
+      '.kortix/pi/agents/support.md',
+    );
+  });
+
+  test('v2 and v1 are unmoved', () => {
+    expect(agentMarkdownPath({ kortix_version: 2 }, 'support')).toBe(
+      '.kortix/opencode/agents/support.md',
+    );
+    expect(agentMarkdownPath({ kortix_version: 1 }, 'support')).toBe(
+      '.kortix/opencode/agents/support.md',
+    );
+  });
+
+  test('a `pi:` block names its own directory', () => {
+    expect(
+      agentMarkdownPath({ kortix_version: 3, pi: { config_dir: 'custom/dir' } }, 'support'),
+    ).toBe('custom/dir/agents/support.md');
+  });
+
+  test('`pi:` wins over `opencode:` when a v3 manifest sets both', () => {
+    expect(
+      agentMarkdownPath(
+        { kortix_version: 3, pi: { config_dir: 'from/pi' }, opencode: { config_dir: 'from/oc' } },
+        'support',
+      ),
+    ).toBe('from/pi/agents/support.md');
+  });
+
+  // A v3 project that still sets `opencode: config_dir` is making a deliberate
+  // statement about where its files are. Ignoring it in favour of the v3
+  // default would read a directory that does not exist and lose every agent.
+  test('a v3 manifest with only `opencode: config_dir` is still honoured', () => {
+    expect(
+      agentMarkdownPath({ kortix_version: 3, opencode: { config_dir: 'legacy/dir' } }, 'support'),
+    ).toBe('legacy/dir/agents/support.md');
+  });
+
+  test('a v3 manifest compiles through the same v2 path', () => {
+    const manifest = parseManifestText(
+      ['kortix_version: 3', 'default_agent: support', 'agents:', '  support: {}'].join('\n'),
+      'yaml',
+    );
+    expect(compileAgentConfig(manifest)).not.toBeNull();
   });
 });
 
@@ -558,6 +615,102 @@ agents:
   });
 });
 
+// This is the gate `sessions.ts` reads to decide whether a session boots the
+// pi worker image or the OpenCode stack, so "v3 means pi" has to hold HERE and
+// not merely in the constant that says so.
+describe('resolveManifestRuntime — the version decides when the manifest does not', () => {
+  const yaml = (body: string) => ({ path: 'kortix.yaml', content: body });
+
+  test('v3 with no runtime key resolves to pi', async () => {
+    manifestFile = yaml('kortix_version: 3\ndefault_agent: a\nagents:\n  a: {}\n');
+    expect(await resolveManifestRuntime(PROJECT)).toBe('pi');
+  });
+
+  test('v2 with no runtime key stays opencode', async () => {
+    manifestFile = yaml('kortix_version: 2\ndefault_agent: a\nagents:\n  a: {}\n');
+    expect(await resolveManifestRuntime(PROJECT)).toBe('opencode');
+  });
+
+  test('the tolerant resolver does not accept a runtime that contradicts the version', async () => {
+    manifestFile = yaml('kortix_version: 3\nruntime: opencode\ndefault_agent: a\nagents:\n  a: {}\n');
+    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
+    manifestFile = yaml('kortix_version: 2\nruntime: pi\ndefault_agent: a\nagents:\n  a: {}\n');
+    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
+  });
+
+  test('a v1 manifest is not a runtime declaration at all', async () => {
+    manifestFile = { path: 'kortix.toml', content: V1_FIXTURE_TOML };
+    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
+  });
+
+  test('no manifest resolves to null, so the caller keeps the OpenCode path', async () => {
+    manifestFile = null;
+    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
+  });
+});
+
+describe('resolveManifestRuntimeForPiSession', () => {
+  test.each([[2, 'pi', 'opencode'], [3, 'opencode', 'pi']] as const)(
+    'rejects version %s with runtime %s', async (version, runtime, expected) => {
+      manifestFile = {
+        path: 'kortix.yaml',
+        content: `kortix_version: ${version}\nruntime: ${runtime}\ndefault_agent: a\nagents:\n  a: {}\n`,
+      };
+      await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+        `kortix_version ${version} requires runtime "${expected}".`,
+      );
+    },
+  );
+
+  test('rejects unsupported future versions instead of silently selecting Pi', async () => {
+    manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 4\n' };
+    await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+      'Manifest must declare a valid kortix_version.',
+    );
+  });
+
+  test('preserves missing manifests and v1 manifests as deliberate OpenCode compatibility', async () => {
+    manifestFile = null;
+    expect(await resolveManifestRuntimeForPiSession(PROJECT)).toBeNull();
+
+    manifestFile = { path: 'kortix.toml', content: V1_FIXTURE_TOML };
+    expect(await resolveManifestRuntimeForPiSession(PROJECT)).toBeNull();
+  });
+
+  test.each(['[invalid]', 'null'])('throws on invalid explicit runtime %s', async (runtime) => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: `kortix_version: 3\nruntime: ${runtime}\nagents:\n  support: {}\n`,
+    };
+
+    await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+      'Manifest runtime must be "pi" or "opencode".',
+    );
+  });
+
+  test('throws when an existing manifest has no valid schema version', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: 'runtime: pi\nagents:\n  support: {}\n',
+    };
+
+    await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+      'Manifest must declare a valid kortix_version.',
+    );
+  });
+
+  test('propagates manifest read failures', async () => {
+    manifestReadError = new Error('git backend unavailable');
+    try {
+      await expect(resolveManifestRuntimeForPiSession(PROJECT)).rejects.toThrow(
+        'git backend unavailable',
+      );
+    } finally {
+      manifestReadError = null;
+    }
+  });
+});
+
 describe('resolveCompiledAgentConfigForSession — the ref it compiles from', () => {
   test("compiles from the SESSION's ref, not the project default", async () => {
     // The bug this covers: a session started on a feature branch compiled main's
@@ -692,5 +845,52 @@ describe('resolveSelectedAgentConfigForSession', () => {
     await expect(
       resolveSelectedAgentConfigForSession(PROJECT, 'missing', 'main'),
     ).rejects.toThrow('not declared');
+  });
+
+  test('fails closed when the selected governance block is malformed', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content:
+        'kortix_version: 3\ndefault_agent: support\nagents:\n  support: not-an-object\n',
+    };
+
+    await expect(resolveSelectedAgentConfigForSession(PROJECT, 'support')).rejects.toThrow(
+      'agents.support: must be a table/object.',
+    );
+  });
+});
+
+describe('an agent block that is only comments', () => {
+  // YAML parses `echo-probe:\n  # comment` as NULL. It is a legitimate
+  // declaration — the agent exists and grants nothing. It used to hit
+  // `block.enabled` and throw, and because the all-agents compile is
+  // all-or-nothing, ONE such agent took the whole project's config down:
+  // every session booted with no compiled agent config, and the per-agent
+  // prebuild fell back to the default agent alone (pi.kortix.com,
+  // 2026-08-29).
+  const manifest = [
+    'kortix_version: 2',
+    'default_agent: kortix',
+    'agents:',
+    '  kortix:',
+    '    skills: all',
+    '  echo-probe:',
+    '    # grants nothing',
+  ].join('\n');
+
+  test('compiles alongside its siblings instead of failing them all', () => {
+    const parsed = parseManifestText(manifest, 'yaml');
+    const compiled = compileAgentConfig(parsed, 'opencode', {}) as OpencodeConfig;
+    expect(Object.keys(compiled.agent).sort()).toEqual(['echo-probe', 'kortix']);
+  });
+
+  test('the single-agent path still rejects one that is NOT declared', () => {
+    const parsed = parseManifestText(manifest, 'yaml');
+    // Key presence, not truthiness: `echo-probe` is declared-but-null and must
+    // compile; `nope` is absent and must not.
+    expect(() => compileSelectedAgentConfig(parsed, 'echo-probe', 'opencode', {})).not.toThrow();
+    expect(() => compileSelectedAgentConfig(parsed, 'nope', 'opencode', {})).toThrow(
+      /not declared/,
+    );
   });
 });

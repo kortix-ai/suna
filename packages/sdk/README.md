@@ -58,6 +58,43 @@ await connectors.uploadAttachment(bytes, {
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
 
+`catalog`, `tools`, `search`, `describe`, and `call` accept an optional final
+`{ signal: AbortSignal }` argument. Search also accepts `limit` in that object.
+Cancellation stops the client request, including credential lookup and GET
+retry waits. It cannot undo an action already accepted by the remote service.
+Connector calls are not automatically retried.
+
+## Worker and environment routing
+
+A Pi session has two runtimes. The worker owns messages and events. The environment
+owns workspace files, project paths, Git operations, terminals, and preview ports.
+`session.files` resolves the environment through the control plane on demand.
+
+React hosts mount `useSessionWorkspace(projectId, sessionId)` when a workspace
+surface opens. Wait for `phase: 'ready'` before requesting files or project data.
+The SDK checks the environment's own daemon readiness before publishing its workspace
+URL. An allocated environment can still be preparing its checkout. Session-scoped
+file methods use the same readiness check.
+The SDK recognizes the server-owned Pi metadata on `/start`, including
+`pi_worker_boot` and `runtimeArtifact`. Hosts do not infer the runtime from its URL.
+
+The compatibility helper `getWorkspaceClient()` selects the active workspace.
+It throws `RuntimeNotReadyError` while a Pi environment is pending. It never
+sends workspace requests to the Pi worker. Project and Git query caches use the
+workspace identity, so replacing an environment cannot reuse another workspace's data.
+
+Pi workers use the agent and model compiled into their artifact. The React
+`useSession().sendParts()` path removes per-prompt model, agent, and
+directory overrides for Pi. It rejects non-text prompt parts before transport.
+OpenCode sessions retain their existing prompt options and attachment contract.
+`useSession().runCommand()` also omits model and agent selections for
+Pi; the command executes with the compiled session configuration. OpenCode
+commands retain their explicit overrides.
+Both React methods preserve a nonempty `variant`. Pi validates it against the
+compiled model. A command request overrides its compiled command variant;
+omitting both uses the agent default. Empty React options preserve the default.
+Hosts must also disable controls for choices their runtime cannot apply.
+
 ## No bundler, no framework
 
 The published package ships a browser IIFE bundle alongside its ESM `dist/` —
@@ -85,6 +122,7 @@ Three others exist, each for a reason that fits in one sentence:
 | ------------------------ | --------------------------- |
 | `@kortix/sdk/react`      | React is a peer dependency  |
 | `@kortix/sdk/server`     | imports `node:async_hooks`  |
+| `@kortix/sdk/pi` | `definePiAgent` and native Pi custom-agent types for the Pi worker preview | Compiles project hooks and tools without importing the backend client |
 | `@kortix/sdk/internal/*` | unsupported, outside semver |
 
 Install the optional peers before you use the React entry:
@@ -141,6 +179,8 @@ const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary sessio
 const s = kortix.session(pid, sid);
 const cost = await s.cost(); // reads finalized LLM + compute cost; no runtime start
 await s.send("Build me a widget"); // provisions/resumes if needed, then prompts
+const workspace = await s.ensureWorkspaceReady(); // lazily resolves files, PTYs, and ports
+await s.files.read("/workspace/package.json"); // uses the workspace runtime
 await s.rewind(userMessageId); // stages a reversible rollback on this session
 await s.restoreRewind(); // restores the removed path before the next prompt
 await s.previews();
@@ -156,6 +196,13 @@ await s.reloadConfigStream(
 const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
+
+`ensureReady()` resolves the control runtime that owns the model loop, messages,
+and event stream. A Pi session has a second, lazily-created workspace runtime
+that owns its repository, files, PTYs, and user ports. `ensureWorkspaceReady()`
+resolves that runtime. The `.files` methods call it automatically. Call it
+before `previewUrl()` or `proxyUrl()` when a Pi session has not used a workspace
+operation yet.
 
 ### Apps
 
@@ -185,11 +232,49 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
+Pi sessions use the compiled agent and model instead of injecting stored
+OpenCode defaults. `await s.send("Review the change", { variant: "high" })`
+selects reasoning for that prompt only. Pi validates the effort against the
+selected model. The worker persists the choice across queued delivery and
+question recovery. Omit `variant` to use the compiled default.
+The React model-selection hook reads Pi reasoning choices from the selected
+worker's config. It does not use the project catalog for this choice. Selections
+persist per session and model; clearing the choice restores the compiled default.
+Older workers without a capability projection expose no reasoning choices.
+
+Request validated JSON for one prompt with `format`. Read the result from
+`response.data.info.structured`. Check `info.error` before using the result.
+
+```ts
+const response = await s.send("Return the answer to 6 × 7", {
+  format: {
+    type: "json_schema",
+    schema: {
+      type: "object",
+      properties: { answer: { type: "integer" } },
+      required: ["answer"],
+      additionalProperties: false,
+    },
+    retryCount: 2,
+  },
+});
+```
+
+Pi preserves the schema, validation outcome, and result across worker restart.
+Invalid schemas return `400` before model execution. Validation defaults to two
+retries; exhaustion returns `StructuredOutputError`. The next prompt uses ordinary
+text unless it supplies another format. `{ type: "text" }` selects text explicitly.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
+
+Working state respects a pending Stop across status, content, and ledger reads.
+Sending another prompt releases that local Stop receipt. New output after the
+cancellation acknowledgement can report working again. An unanswered Stop loses
+its suppression after 15 seconds, so it cannot hide a running session indefinitely.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
@@ -220,7 +305,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`/`ensureWorkspaceReady`) · Pi `.environment` lifecycle · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
@@ -487,15 +572,16 @@ provider, resolved model, HTTP status, code, and bounded message.
 
 ## Entry points
 
-**There are three, plus one internal.** Everything framework-free lives at the
-root; the other two exist because each carries a dependency the root cannot.
-That is the whole map — learn it once.
+The root exports framework-free capabilities. React and server adapters have
+separate entry points. The Pi authoring entry point keeps compiled agent imports
+small.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
+| `@kortix/sdk/pi` | `definePiAgent` and native Pi custom-agent types for the Pi worker preview | Compiles project hooks and tools without importing the backend client |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
 
 The root really is canonical, and that is a test rather than a promise:
@@ -643,3 +729,67 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
 REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.
+
+`useSessionModelSelection({ runtime: 'pi-worker', config, ...options })` uses the
+compiled `config.model` for the displayed model and context window. Account and
+persisted model preferences do not override this immutable runtime identity.
+Omitting `runtime` retains OpenCode selection behavior.
+
+
+## Custom Pi agents (preview)
+
+`@kortix/sdk/pi` exports `definePiAgent`, `PiAgentFactory`, `PiAgentDefinition`,
+and `PiAgentContext`. It also exports `PiAgentState`, `PiStateValue`,
+`PiStateSnapshot`, `PiStateDefinition`, `PiStateNamespace`, and `PiStateConflictError`.
+`PiAgentResources` and `PiAgentResource` describe the optional `context.resources`
+reader. Declare `agents.<name>.resources.worker` in YAML v3, then use `readText`,
+`readJson`, or `readBinary` to read immutable bundled files without starting compute.
+The root exports these names too. This authoring API targets
+Pi-enabled worker sessions. It does not replace the session client or load Pi CLI
+TUI extensions.
+
+Store the default factory in `.kortix/pi/agents/<name>.ts` beside its Markdown
+prompt. Kortix compiles it at the session's Git SHA. Native Pi tools and hooks run
+in the worker. Use `context.env` for workspace files and commands in the remote
+execution environment.
+
+See [the configuration and lifecycle contract](../../docs/PI_CUSTOM_AGENTS.md),
+[reviewer example](examples/12-pi-reviewer.ts), and
+[operator example](examples/13-pi-operator.ts). The examples are typechecked by
+`pnpm --filter @kortix/sdk typecheck`.
+
+### Immutable session attachments
+
+`session.attachments.put(bytes, { contentType?, signal? })` stores a non-empty
+attachment of up to 8 MiB in PostgreSQL. It returns `{ sha256, contentType, size }`.
+`session.attachments.get(sha256, { signal? })` returns those fields plus `bytes`
+and verifies the content hash. Both methods work without starting a runtime.
+The API stores one immutable value per session and digest. Repeating an upload
+is idempotent. Changing its MIME type returns `409`. Working files remain in
+the environment filesystem.
+
+Pi accepts PNG, JPEG, GIF, and WebP images through immutable session references:
+
+```ts
+const image = await session.attachments.image(bytes, {
+  contentType: 'image/png', filename: 'screenshot.png',
+});
+await session.send('Describe this image.', { files: [image] });
+```
+
+`attachments.image` uploads bytes without starting either sandbox. `send` starts
+the Pi worker when needed. Each image is at most 8 MiB; one prompt accepts up to
+16 images and 16 MiB in total. The selected model must support images. Image
+bytes stay out of the worker journal and load again after worker replacement.
+Arbitrary remote URLs and local filesystem URLs are not valid Pi image inputs.
+
+The existing session composer enables image upload when the running worker
+advertises support. First-prompt creation screens remain gated. Documents use
+the existing environment upload path. Native tool-result images remain pending.
+
+Custom Pi callbacks use `context.state.open(name, {schemaVersion, initialValue, migrate?})`
+for durable session state. Namespace handles expose `read()` and atomic `update()`.
+Updates/migrations can retry and must contain no external side effects. State survives
+worker replacement; a schema downgrade is rejected. See the
+[stateful example](examples/14-pi-stateful.ts) and
+[limits and recovery contract](../../docs/PI_CUSTOM_AGENTS.md#durable-custom-state).

@@ -3,13 +3,14 @@ import { resolveBrowserWorkers } from '../playwright.config';
 import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
-  it('runs the REST flows, SDK, runner unit tests, and route coverage concurrently by default', () => {
+  it('runs the REST flows, SDK, worker quality, runner unit tests, and route coverage by default', () => {
     const plan = buildLocalTestPlan([]);
 
     expect(plan.mode).toBe('core');
     expect(plan.lanes.map((lane) => lane.name)).toEqual([
       'api-cli-flows',
       'sdk',
+      'worker-quality',
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
@@ -31,6 +32,7 @@ describe('local test runner', () => {
     expect(plan.lanes.map((lane) => lane.name)).toEqual([
       'api-cli-flows',
       'sdk',
+      'worker-quality',
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
@@ -40,10 +42,20 @@ describe('local test runner', () => {
     expect(plan.lanes.at(-1)).toEqual({
       name: 'package-quality',
       command: ['bun', 'tests/bin/package-quality.ts'],
-      env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
+      env: {
+        KORTIX_PACKAGE_SKIP_SDK_TESTS: '1',
+        KORTIX_PACKAGE_SKIP_WORKER_QUALITY: '1',
+      },
     });
     expect(plan.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
-      ['api-cli-flows', 'sdk', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      [
+        'api-cli-flows',
+        'sdk',
+        'worker-quality',
+        'flow-runner-unit',
+        'route-coverage',
+        'worktree-unit',
+      ],
       ['browser'],
       ['package-quality'],
     ]);

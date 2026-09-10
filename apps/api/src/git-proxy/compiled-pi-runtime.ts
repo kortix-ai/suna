@@ -1,3 +1,4 @@
+import type { CompiledAgentResource } from '@kortix/manifest-schema';
 /**
  * Pure compile step for the pi worker runtime artifact — the `engine: 'pi'`
  * sibling of ./compiled-runtime.ts (`engine: 'opencode'`).
@@ -20,6 +21,10 @@
  * apps/kortix-worker/src/main.ts reads before starting).
  */
 import { createHash } from 'node:crypto';
+import type { PiModelLimits } from './pi-model-limits';
+import type { PiAgentModule } from './pi-agent-module';
+import type { CompiledPiCommand } from '../projects/lib/compile-pi-commands';
+import type { CompiledPiSkill } from '../projects/lib/compile-pi-skills';
 
 export const COMPILED_PI_RUNTIME_FORMAT = 'kortix.compiled-pi-runtime.v1' as const;
 export const COMPILED_PI_RUNTIME_CONTENT_TYPE =
@@ -28,12 +33,19 @@ export const COMPILED_PI_RUNTIME_CONTENT_TYPE =
 export interface CompiledPiRuntimeManifest {
   format: typeof COMPILED_PI_RUNTIME_FORMAT;
   engine: 'pi';
+  model_limits?: PiModelLimits;
+  agent_resources?: CompiledAgentResource[];
   project_id: string;
   ref: string;
   source_sha: string;
   default_agent: string | null;
   agent_config: string | null;
   agent_config_etag: string | null;
+  command_config: string | null;
+  command_config_etag: string | null;
+  skill_config: string | null;
+  skill_config_etag: string | null;
+  agent_module?: { entry: string; sha256: string; dependency_lock_sha256?: string };
 }
 
 export interface CompiledPiRuntimeArtifact {
@@ -50,10 +62,17 @@ export interface CompilePiRuntimeInput {
   /** Server-compiled agent config JSON (compile-agent-config.ts), or null for
    *  a project whose manifest is not `kortix_version: 2`. */
   agentConfig?: string | null;
+  modelLimits?: PiModelLimits;
+  /** Project commands compiled from the same exact Git SHA as the agent. */
+  commands?: CompiledPiCommand[];
+  /** Approved skill Markdown compiled from the same exact Git SHA as the agent. */
+  skills?: CompiledPiSkill[];
   /** `default_agent` from the manifest at the compiled sha. */
   defaultAgent?: string | null;
   /** The generic worker runtime bundle (pi-worker-bundle.ts). */
   workerBundle: string;
+  agentModule?: PiAgentModule | null;
+  resources?: CompiledAgentResource[];
 }
 
 function validateInput(input: CompilePiRuntimeInput): void {
@@ -71,7 +90,7 @@ function etag(value: string | null): string | null {
   return createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
-function runtimeSource(manifest: CompiledPiRuntimeManifest, workerBundle: string): string {
+function runtimeSource(manifest: CompiledPiRuntimeManifest, workerBundle: string, agentModule?: PiAgentModule | null): string {
   const encodedManifest = Buffer.from(JSON.stringify(manifest)).toString('base64url');
   return `#!/usr/bin/env node
 // kortix-manifest-base64url:${encodedManifest}
@@ -104,8 +123,16 @@ Object.assign(process.env, compiledEnv);
 
 globalThis.__KORTIX_COMPILED__ = {
   manifest,
+  modelLimits: manifest.model_limits,
   agentConfig: manifest.agent_config ? JSON.parse(manifest.agent_config) : null,
+  commands: manifest.command_config ? JSON.parse(manifest.command_config) : [],
+  skills: manifest.skill_config ? JSON.parse(manifest.skill_config) : [],
 };
+
+${agentModule ? `import { createRequire as __kortixPiModuleRequire } from "node:module";
+(function(require, module, exports) {
+${agentModule.source}
+})(__kortixPiModuleRequire(import.meta.url), { exports: {} }, {});` : ''}
 
 ${workerBundle}
 `;
@@ -114,17 +141,30 @@ ${workerBundle}
 export function compilePiRuntime(input: CompilePiRuntimeInput): CompiledPiRuntimeArtifact {
   validateInput(input);
   const agentConfig = input.agentConfig ?? null;
+  const commandConfig = input.commands ? JSON.stringify(input.commands) : null;
+  const skillConfig = input.skills ? JSON.stringify(input.skills) : null;
   const manifest: CompiledPiRuntimeManifest = {
     format: COMPILED_PI_RUNTIME_FORMAT,
     engine: 'pi',
+    ...(input.resources?.length ? { agent_resources: input.resources } : {}),
+    ...(input.modelLimits ? { model_limits: input.modelLimits } : {}),
     project_id: input.projectId,
     ref: input.ref,
     source_sha: input.sourceSha,
     default_agent: input.defaultAgent ?? null,
     agent_config: agentConfig,
     agent_config_etag: etag(agentConfig),
+    command_config: commandConfig,
+    command_config_etag: etag(commandConfig),
+    skill_config: skillConfig,
+    skill_config_etag: etag(skillConfig),
+    ...(input.agentModule ? { agent_module: {
+      entry: input.agentModule.entry,
+      sha256: input.agentModule.sha256,
+      ...(input.agentModule.dependencyLockSha256 ? { dependency_lock_sha256: input.agentModule.dependencyLockSha256 } : {}),
+    }} : {}),
   };
-  const source = runtimeSource(manifest, input.workerBundle);
+  const source = runtimeSource(manifest, input.workerBundle, input.agentModule);
   return {
     source,
     sha256: createHash('sha256').update(source).digest('hex'),

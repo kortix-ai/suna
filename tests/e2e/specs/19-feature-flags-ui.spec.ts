@@ -206,6 +206,9 @@ test.describe("19 — Feature flags UI", () => {
         const row = flagRow(panel, page, flag.name);
         await expect(row).toHaveCount(1);
         await expect(row.getByText(flag.name, { exact: true })).toBeVisible();
+        if (flag.key === "pi_worker") {
+          await expect(row.getByText("YAML v3 always uses Pi", { exact: false })).toBeVisible();
+        }
         await expect(
           row.getByText(originLabel(flag), { exact: true }),
         ).toBeVisible();

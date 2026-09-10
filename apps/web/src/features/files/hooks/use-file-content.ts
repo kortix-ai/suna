@@ -25,7 +25,7 @@ export function useFileContent(
   filePath: string | null,
   options?: { enabled?: boolean; staleTime?: number },
 ) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
@@ -49,7 +49,7 @@ export function useFileContent(
  */
 export function useInvalidateFileContent() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return (filePath?: string) => {
     if (filePath) {

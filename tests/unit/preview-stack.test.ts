@@ -11,6 +11,13 @@ import {
 const SHA = 'a'.repeat(40);
 
 describe('ephemeral self-host preview stack', () => {
+  it('rejects sensitive paths before forwarding to either application', () => {
+    const caddy = buildPreviewCaddyfile('preview.example.test');
+    expect(caddy).toContain('@sensitive path /.env /.env.* /.git /.git/* /package.json /etc/passwd /v1/.env /v1/.env.*');
+    expect(caddy).toContain('handle @sensitive {\n    respond "Not found" 404\n  }');
+    expect(caddy.indexOf('handle @sensitive')).toBeLessThan(caddy.indexOf('handle @api'));
+  });
+
   it('routes every public surface through one origin', () => {
     const caddy = buildPreviewCaddyfile('preview.example.test');
     expect(caddy).toContain(':8080');
@@ -35,7 +42,15 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('reverse_proxy llm-gateway:8090');
     expect(caddy).toContain('handle_path /_tests/*');
     expect(caddy).toContain('root * /reports');
-    expect(caddy).toContain('handle_path /_mailpit/*');
+    // `handle`, NOT `handle_path`: stripping the prefix made Mailpit serve a
+    // page whose assets are root-absolute (`/dist/app.css`), which the frontend
+    // then answered — the UI rendered blank. The prefix must reach the upstream,
+    // and `MP_WEBROOT` (overlay) makes Mailpit emit matching asset paths.
+    expect(caddy).toContain('handle /_mailpit/*');
+    expect(caddy).not.toContain('handle_path /_mailpit/*');
+    // The bare path needs its own redirect: the matcher requires a segment
+    // after the prefix, so `/_mailpit` fell through to the frontend and 404'd.
+    expect(caddy).toContain('redir /_mailpit /_mailpit/ 308');
     expect(caddy).toContain('reverse_proxy mailpit:8025');
     expect(caddy).toContain('reverse_proxy frontend:3000');
   });
@@ -110,6 +125,8 @@ describe('ephemeral self-host preview stack', () => {
     const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
     expect(overlay).toContain('preview-edge:');
     expect(overlay).toContain('mailpit:');
+    // Without this Mailpit's UI is unusable behind the subpath.
+    expect(overlay).toContain('MP_WEBROOT: /_mailpit');
     expect(overlay).toContain('127.0.0.1:15432:5432');
     expect(overlay).toContain('/workspace/suna/tests/test-results:/reports:ro');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"');
@@ -195,6 +212,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    expect(configured.runtimeEnv).toContain('KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');

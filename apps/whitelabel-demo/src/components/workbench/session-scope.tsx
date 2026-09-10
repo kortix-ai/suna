@@ -20,6 +20,7 @@ import { ModelSwitcher } from '@/components/workbench/model-switcher';
 import type { CallSnippetId } from '@/lib/call-snippets';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
+import { isCompiledSessionRuntime } from '@/lib/session-runtime';
 import {
   isFixedAtStart,
   readScopeBindingIds,
@@ -98,6 +99,7 @@ export function SessionScope({
   // Read once, out here: the readability check above narrows `session.data`,
   // and that narrowing does not survive into the row callbacks below.
   const agentName = session.data.agent_name ?? null;
+  const compiledRuntime = isCompiledSessionRuntime(session.data.metadata);
   const connectionRows = scopeBarConnectors({
     choices: connectors.data?.connectors,
     boundConnections: readScopeBindingIds(scope.data.connector_bindings),
@@ -110,13 +112,14 @@ export function SessionScope({
         row.bound ? [[row.alias, row.bound]] : [],
       ),
     ),
+    compiledRuntime,
   });
 
   return (
     <div className="space-y-2">
       {rows.map((row) => {
         const Icon = ICONS[row.key];
-        const fixed = isFixedAtStart(row.key);
+        const fixed = isFixedAtStart(row.key, compiledRuntime);
         return (
           <div
             key={row.key}
@@ -152,7 +155,12 @@ export function SessionScope({
                 <div className="-ml-2 mt-1">
                   <CallSnippet
                     id={ROW_CALL[row.key]!}
-                    context={{ projectId, sessionId, agent: agentName }}
+                    context={{
+                      projectId,
+                      sessionId,
+                      agent: agentName,
+                      compiledRuntime,
+                    }}
                   />
                 </div>
               )}

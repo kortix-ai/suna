@@ -16,7 +16,7 @@ export const gitStatusKeys = {
  * Returns an array of files with uncommitted changes (added, modified, deleted).
  */
 export function useGitStatus(options?: { enabled?: boolean }) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
   const { data: health } = useServerHealth();
   const { data: project } = useCurrentProject({
     enabled: options?.enabled !== false,

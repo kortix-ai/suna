@@ -511,6 +511,24 @@ describe('ActivityBurst', () => {
     expect(markup).not.toContain('SCREAMSHEET');
   });
 
+  test('tool images remain visible without expanding a nested tool group', () => {
+    for (const name of ['capture_sample', 'read']) {
+      const image = tool('image', name, {
+        status: 'completed',
+        output: '',
+        input: { path: '/workspace/capture.png' },
+        time: { start: 1, end: 2 },
+        attachments: [
+          { type: 'file', mime: 'image/png', filename: 'capture.png', url: '/kortix/part/image' },
+        ],
+      });
+      const markup = renderBurst([image, done('next', name)], { working: true, isTrailing: true });
+      expect(markup).toContain('capture.png');
+      expect(markup).toContain('title="capture.png"');
+      expect(markup).toContain('justify-start');
+    }
+  });
+
   test('one call drops the summary line and IS its row', () => {
     // "Completed 1 step" over a single row is a door in front of a door: a line
     // naming no tool, no file and no command, guarding the one row that names

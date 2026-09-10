@@ -44,6 +44,7 @@ import { isSessionFresh } from '../core/http/fresh-sessions';
 import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
 import {
   type SessionStartResult,
+  isPiWorkerRuntimeMetadata,
   isSessionStartError,
   sessionStartKey,
   startProjectSession,
@@ -54,6 +55,7 @@ import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
 import { clearStartStash, readStartStash } from './session-start-stash';
+import { normalizeSessionPromptForRuntime } from './runtime-prompt-contract';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
@@ -627,14 +629,16 @@ export function buildSessionCommandInput(
   command: string,
   args: string,
   options: SessionCommandOptions = {},
+  runtime: 'pi-worker' | 'opencode' = 'opencode',
 ) {
+  const selection = runtime === 'pi-worker' ? { variant: options.variant } : options;
   return {
     sessionId,
     command,
     args,
-    ...(options.agent ? { agent: options.agent } : {}),
-    ...(options.model ? { model: formatModelString(options.model) } : {}),
-    ...(options.variant ? { variant: options.variant } : {}),
+    ...(selection.agent ? { agent: selection.agent } : {}),
+    ...(selection.model ? { model: formatModelString(selection.model) } : {}),
+    ...(selection.variant ? { variant: selection.variant } : {}),
   };
 }
 
@@ -934,13 +938,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   useEffect(() => {
     if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
     // Point the app's runtime at THIS session's box — no global "switch", just set
-    // the current runtime url. Every read (getClient, the SSE stream, files/
-    // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
-    // health effect below seeds connected+healthy with no client poll.
+    // the current control-runtime URL. Chat and the event stream resolve through
+    // it. Workspace surfaces resolve their environment independently.
     setCurrentRuntime(
       getSandboxUrlForExternalId(sandbox.external_id),
       sandbox.external_id,
       sandbox.sandbox_id,
+      isPiWorkerRuntimeMetadata(sandbox.metadata) ? 'environment' : 'worker',
     );
     setSwitchedSandboxId(sandbox.sandbox_id);
   }, [startReady, sandbox, switchedSandboxId]);
@@ -1005,8 +1009,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // other's. Nothing clears it on a server answer and nothing needs to — an
   // observation the server could make AFTER accepting the send outranks it —
   // so only the paths that know nothing is coming drop it.
-  const { noteSendReceipt, acceptSendReceipt, clearSendReceipt, noteAbortReceipt, settleAbortReceipt } =
-    useSessionWorkingStore.getState();
+  const {
+    noteSendReceipt,
+    acceptSendReceipt,
+    clearSendReceipt,
+    noteAbortReceipt,
+    settleAbortReceipt,
+  } = useSessionWorkingStore.getState();
 
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
@@ -1138,6 +1147,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     [permissionMap, ocSessionId, switched],
   );
   const runtimeActionReady = switched && !!rootSessionId;
+  const sessionRuntimeKind = isPiWorkerRuntimeMetadata(sandbox?.metadata)
+    ? ('pi-worker' as const)
+    : ('opencode' as const);
 
   // 7. Server-side capabilities + per-session picks (all pre-runtime — no sandbox).
   const models = useProjectModels(projectId);
@@ -1224,6 +1236,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       ...(variant ? { variant } : {}),
       ...(override?.directory ? { directory: override.directory } : {}),
     };
+    const normalized = normalizeSessionPromptForRuntime({
+      runtime: sessionRuntimeKind,
+      parts,
+      ...(Object.keys(opts).length ? { options: opts } : {}),
+    });
     // The prompt is going out, so the optimistic message stops being `pending`.
     // Hosts own the optimistic add (they build the message id themselves), so
     // this resolves it the same way `hydrate` correlates an echo: by the
@@ -1231,7 +1248,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // lands, `hydrate` refuses to supersede the message on an ordinal match —
     // which is what keeps it on screen for the whole of a slow upload instead
     // of being deleted by a rehydrate that only carries older turns.
-    markDispatchedForPartIds(ocSessionId, parts);
+    markDispatchedForPartIds(ocSessionId, normalized.parts);
 
     const receipt: SendReceipt = {
       messageId: sendReceiptId(ocSessionId, parts, override?.clientMessageId),
@@ -1241,8 +1258,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     try {
       await sendMutation.mutateAsync({
         sessionId: ocSessionId,
-        parts,
-        ...(Object.keys(opts).length ? { options: opts } : {}),
+        parts: normalized.parts,
+        ...(normalized.options ? { options: normalized.options } : {}),
         ...(override?.clientMessageId ? { clientMessageId: override.clientMessageId } : {}),
       });
       // The server has the prompt. From here — and NOT before — a `/turn` read
@@ -1293,7 +1310,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   ): Promise<void> => {
     if (!runtimeActionReady) return Promise.resolve();
     return commandMutation.mutateAsync(
-      buildSessionCommandInput(ocSessionId, command, args, options),
+      buildSessionCommandInput(ocSessionId, command, args, options, sessionRuntimeKind),
     );
   };
 
@@ -1456,9 +1473,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      * serializes `'default'` when no agent was bound; that is not a real
      * roster agent, so it surfaces as `null` here.
      */
-    agentName: startData?.agent_name && startData.agent_name !== 'default'
-      ? startData.agent_name
-      : null,
+    agentName:
+      startData?.agent_name && startData.agent_name !== 'default' ? startData.agent_name : null,
     /** The serialized session_sandboxes row from /start (status, metadata, ids), or null. */
     sandbox,
     /** True once the runtime is switched in and ready (equivalent to phase==='ready'). */

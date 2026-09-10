@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { FlatModel } from '../model-flatten';
 import { ComposerToolbar } from './composer-toolbar';
 
 /**
@@ -33,7 +34,18 @@ function render(
   toolbarSlot?: React.ReactNode,
   rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void },
   send?: { agentUnavailable?: boolean; canSubmit?: boolean; submitDisabled?: boolean },
+  runtimeControls?: { modelEditable: boolean; variantEditable: boolean },
 ): string {
+  const models: FlatModel[] = runtimeControls
+    ? [
+        {
+          providerID: 'anthropic',
+          providerName: 'Anthropic',
+          modelID: 'claude-sonnet-4-5',
+          modelName: 'Claude Sonnet 4.5',
+        },
+      ]
+    : [];
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
       <QueryClientProvider
@@ -41,11 +53,13 @@ function render(
       >
         <TooltipProvider>
           <ComposerToolbar
-            models={[]}
-            selectedModel={null}
-            modelRequired={false}
-            variants={[]}
-            selectedVariant={null}
+            models={models}
+            selectedModel={runtimeControls ? models[0] : null}
+            onModelChange={runtimeControls?.modelEditable ? noop : undefined}
+            modelRequired={runtimeControls?.modelEditable ?? false}
+            variants={runtimeControls ? ['low', 'high'] : []}
+            selectedVariant={runtimeControls ? 'high' : null}
+            onVariantChange={runtimeControls?.variantEditable ? noop : undefined}
             projectId={undefined}
             toolbarSlot={toolbarSlot}
             rewind={rewind}
@@ -68,6 +82,28 @@ function render(
     </NextIntlClientProvider>,
   );
 }
+
+describe('ComposerToolbar fixed runtime model', () => {
+  test('renders the reasoning selector when the host can apply a variant', () => {
+    const html = render(undefined, undefined, undefined, {
+      modelEditable: false,
+      variantEditable: true,
+    });
+
+    expect(html).toContain('aria-label="Thinking effort"');
+  });
+
+  test('renders neither selector when the compiled runtime owns the model', () => {
+    const html = render(undefined, undefined, undefined, {
+      modelEditable: false,
+      variantEditable: false,
+    });
+
+    expect(html).not.toContain('Claude Sonnet 4.5');
+    expect(html).not.toContain('aria-label="Thinking effort"');
+    expect(html).toContain('aria-label="Send message"');
+  });
+});
 
 describe('ComposerToolbar toolbarSlot', () => {
   test('renders the slot content', () => {

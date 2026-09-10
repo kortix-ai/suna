@@ -34,7 +34,7 @@
 // can leak mocks/cached module instances across files. See the same caveat
 // documented in ../../projects/sandbox-reaper.test.ts.
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes, type AgentGrant } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 import * as realAgents from '../../projects/agents';
@@ -69,7 +69,11 @@ let scenario: {
 let removedIds: string[] = [];
 let stoppedIds: string[] = [];
 let onRemoved: (() => void) | null = null;
-let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
+let computeSessionsOpened: Array<{
+  sandboxId: string;
+  accountId: string;
+  spec?: { cpuCores: number; memoryGb: number; diskGb: number; gpuCount: number };
+}> = [];
 let onComputeOpened: (() => void) | null = null;
 let recordedEvents: Array<{ outcome: string; marks?: Array<{ label: string }> }> = [];
 let identityConflict = false;
@@ -101,6 +105,10 @@ let activeRouting: {
   activeSnapshotName: string | null;
 } | null = null;
 let agentGrantError: Error | null = null;
+let resolvedAgentGrant: AgentGrant | null = null;
+let agentGrantNames: string[] = [];
+let gatewayEntitled = false;
+let projectGatewayEnabled = false;
 const testConfig = {
   ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
   KORTIX_URL: 'http://localhost:8008',
@@ -275,7 +283,14 @@ mock.module('./provider-balancer', () => ({
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensurePiWorkerImage: async () => undefined,
+  ensurePiWorkerImage: async () => ({
+    snapshotName: 'kortix-pi-worker-test',
+    slug: 'pi-worker',
+    contentHash: 'pi-hash-1',
+    isDefault: false,
+    built: false,
+    runtimeProfile: 'pi-worker',
+  }),
   ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     const queued = imageResolutionQueue.shift();
@@ -332,6 +347,7 @@ mock.module('../../billing/services/compute-metering', () => ({
     sandboxId: string;
     accountId: string;
     provider: string;
+    spec?: { cpuCores: number; memoryGb: number; diskGb: number; gpuCount: number };
   }) => {
     computeSessionsOpened.push(input);
     onComputeOpened?.();
@@ -357,7 +373,7 @@ mock.module('../../repositories/service-accounts', () => ({
 }));
 
 mock.module('../../shared/account-limits', () => ({
-  accountEntitledToLlmGateway: async (_accountId: string) => false,
+  accountEntitledToLlmGateway: async (_accountId: string) => gatewayEntitled,
 }));
 
 mock.module('../../projects/triggers', () => ({
@@ -370,14 +386,15 @@ mock.module('../../projects/lib/network-secret-boundary', () => ({
 
 mock.module('../../projects/agents', () => ({
   ...realAgents,
-  resolveAgentGrant: async (_agentName: string, _gitProject: unknown) => {
+  resolveAgentGrant: async (agentName: string, _gitProject: unknown) => {
+    agentGrantNames.push(agentName);
     if (agentGrantError) throw agentGrantError;
-    return null;
+    return resolvedAgentGrant;
   },
 }));
 
 mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (_metadata: unknown) => false,
+  projectLlmGatewayEnabled: (_metadata: unknown) => projectGatewayEnabled,
 }));
 
 mock.module('../../shared/session-failure-notifier', () => ({
@@ -429,6 +446,10 @@ beforeEach(() => {
   providerSyncCalls = [];
   activeRouting = null;
   agentGrantError = null;
+  resolvedAgentGrant = null;
+  agentGrantNames = [];
+  gatewayEntitled = false;
+  projectGatewayEnabled = false;
   testConfig.KORTIX_FAST_COLD_BOOT_ENABLED = false;
 });
 
@@ -459,29 +480,85 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateCalls).toBe(0);
   });
 
-  test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
-    await provisionSessionSandbox({
-      ...baseOpts(),
-      agentName: 'meta',
-      sandboxSlug: 'meta',
+  test('refuses a Pi provider allocation when the project LLM gateway is disabled', async () => {
+    await expect(
+      provisionSessionSandbox({
+        ...baseOpts(),
+        sandboxSlug: 'pi-worker',
+        metadata: { pi_worker_boot: true },
+      }),
+    ).rejects.toThrow('Pi worker requires an enabled and entitled Kortix LLM gateway');
+
+    expect(providerCreateCalls).toBe(0);
+  });
+
+  test('refuses a Pi provider allocation when the account lacks gateway entitlement', async () => {
+    projectGatewayEnabled = true;
+
+    await expect(
+      provisionSessionSandbox({
+        ...baseOpts(),
+        sandboxSlug: 'pi-worker',
+        metadata: { pi_worker_boot: true },
+      }),
+    ).rejects.toThrow('Pi worker requires an enabled and entitled Kortix LLM gateway');
+
+    expect(providerCreateCalls).toBe(0);
+  });
+
+  test('injects the gateway credential pair into an entitled Pi allocation', async () => {
+    projectGatewayEnabled = true;
+    gatewayEntitled = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
     });
 
-    expect(accountTokenCreateCalls).toHaveLength(1);
-    expect(accountTokenCreateCalls[0]).toMatchObject({
-      accountId: ACCOUNT_ID,
-      userId: USER_ID,
-      projectId: PROJECT_ID,
-      sessionId: SANDBOX_ID,
-      agentGrant: {
-        agent: 'meta',
-        kortixCli: 'all',
-        connectors: [],
-        env: [],
-      },
-      serviceAccountId: null,
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      sandboxSlug: 'pi-worker',
+      metadata: { pi_worker_boot: true },
     });
-    expect(serviceAccountCreateCalls).toHaveLength(0);
+    await opened;
+
+    expect(providerCreateCalls).toBe(1);
+    expect(providerCreateOpts[0]?.envVars).toMatchObject({
+      KORTIX_TOKEN: 'exec-tok-1',
+      KORTIX_LLM_BASE_URL: 'http://localhost:8008/v1/llm',
+    });
+    expect(computeSessionsOpened[0]?.spec).toEqual({
+      cpuCores: 1,
+      memoryGb: 2,
+      diskGb: 8,
+      gpuCount: 0,
+    });
   });
+
+  test.each([
+    { agent: 'meta', kortixCli: 'all', connectors: [], env: [] },
+    { agent: 'meta', kortixCli: [], connectors: [], env: [] },
+  ] satisfies AgentGrant[])(
+    'meta sessions preserve the resolved grant %j without a standing service-account ceiling',
+    async (grant) => {
+      resolvedAgentGrant = grant;
+      await provisionSessionSandbox({
+        ...baseOpts(),
+        agentName: 'meta',
+        sandboxSlug: 'meta',
+      });
+
+      expect(accountTokenCreateCalls).toHaveLength(1);
+      expect(agentGrantNames).toEqual(['meta']);
+      expect(accountTokenCreateCalls[0]).toMatchObject({
+        accountId: ACCOUNT_ID,
+        userId: USER_ID,
+        projectId: PROJECT_ID,
+        sessionId: SANDBOX_ID,
+        agentGrant: grant,
+        serviceAccountId: null,
+      });
+      expect(serviceAccountCreateCalls).toHaveLength(0);
+    },
+  );
 
   test('session starts request the OpenCode runtime image', async () => {
     const opened = waitFor((resolve) => {
@@ -992,7 +1069,7 @@ describe('pi worker pool claim (P1.8)', () => {
   test('a pi boot tries the parked pool before provider create, gated to daytona', async () => {
     const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
     const claim = source.indexOf('const pooledClaim =');
-    const create = source.indexOf('retrySandboxProvisionCreate(provider, providerCreateInput', claim);
+    const create = source.indexOf('retrySandboxProvisionCreate(', claim);
     const refill = source.indexOf('void maintainPiWorkerPool()', claim);
     const externalId = source.indexOf('bgExternalId = result.externalId', claim);
     expect(claim).toBeGreaterThan(-1);

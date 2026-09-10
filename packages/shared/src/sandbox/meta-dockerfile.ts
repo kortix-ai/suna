@@ -55,8 +55,8 @@ export const META_AGENT_GUIDE = [
  * Render the platform meta-agent image.
  *
  * This runtime contains the daemon, Kortix CLI, Git, and OpenCode. It excludes
- * project toolchains because the meta agent delegates project work to another
- * session.
+ * project toolchains, including Codex CLI and Claude Code, because the meta
+ * agent delegates project work to a full environment session.
  */
 export function buildMetaSandboxDockerfile(options: MetaSandboxDockerfileOptions): string {
   return `# syntax=docker/dockerfile:1.7

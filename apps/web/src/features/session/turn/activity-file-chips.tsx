@@ -61,7 +61,11 @@ const PATH_KEYS = ['filePath', 'path', 'file'] as const;
  * resolve to the one family here too.
  */
 export function isFileChipPart(part: Part): boolean {
-  return isToolPart(part) && FILE_CHIP_TOOLS.has(normalizeActivityToolName(part.tool));
+  return (
+    isToolPart(part) &&
+    FILE_CHIP_TOOLS.has(normalizeActivityToolName(part.tool)) &&
+    !(part.state.status === 'completed' && part.state.attachments?.length)
+  );
 }
 
 /**

@@ -32,6 +32,7 @@ describe('turnStreamKindNeedsConnectorWrite', () => {
     expect(turnStreamKindNeedsConnectorWrite('end')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('turn_end')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('turn_begin')).toBe(false);
+    expect(turnStreamKindNeedsConnectorWrite('turn_resume')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('turn_accepted')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('turn_abandoned')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('opencode_session')).toBe(false);

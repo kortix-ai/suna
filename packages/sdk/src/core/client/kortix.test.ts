@@ -1067,6 +1067,96 @@ test('per-call and handle prompt choices override persisted session defaults', a
   ).toHaveLength(1);
 });
 
+test('Pi sends use compiled defaults and forward explicit per-turn reasoning', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({ url, method: request?.method ?? init?.method ?? 'GET', body: bodyText ? JSON.parse(bodyText) : undefined });
+    if (url.includes('/sessions/SESS-PI-DEFAULTS/start')) {
+      return jsonResponse({ ...sessionStartPayload('sb-pi-defaults', 'ses_pi_defaults'),
+        sandbox: { external_id: 'sb-pi-defaults', metadata: { sandbox_slug: 'pi-worker' } },
+      });
+    }
+    if (url.endsWith('/projects/PROJ/sessions/SESS-PI-DEFAULTS')) {
+      return jsonResponse({ session_id: 'SESS-PI-DEFAULTS', agent_name: 'reviewer',
+        metadata: { sandbox_slug: 'pi-worker', opencode_model: 'kortix/stale-default' },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' })
+    .session('PROJ', 'SESS-PI-DEFAULTS');
+  await handle.send('compiled default');
+  await handle.send('use high reasoning', { variant: 'high' });
+  await handle.send('compiled default again');
+  const prompts = calls.filter(call => call.url.endsWith('/session/ses_pi_defaults/message') && call.method === 'POST');
+  expect(prompts.map(call => call.body)).toEqual([
+    { parts: [{ type: 'text', text: 'compiled default' }] },
+    { parts: [{ type: 'text', text: 'use high reasoning' }], variant: 'high' },
+    { parts: [{ type: 'text', text: 'compiled default again' }] },
+  ]);
+});
+
+test.each(['pi', 'opencode'])('send forwards per-call output formats through the %s session runtime', async engine => {
+  const sessionId = `SESS-FORMAT-${engine}`;
+  const nativeId = `ses_format_${engine}`;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    const body = await request.clone().text();
+    calls.push({ url: request.url, method: request.method, body: body ? JSON.parse(body) : undefined });
+    if (request.url.includes(`/sessions/${sessionId}/start`)) {
+      return jsonResponse({ ...sessionStartPayload(`sb-format-${engine}`, nativeId),
+        sandbox: { external_id: `sb-format-${engine}`, metadata: { sandbox_slug: engine === 'pi' ? 'pi-worker' : 'opencode' } },
+      });
+    }
+    if (request.url.endsWith(`/sessions/${sessionId}`)) return jsonResponse({ session_id: sessionId, metadata: { sandbox_slug: engine === 'pi' ? 'pi-worker' : 'opencode' } });
+    return jsonResponse({ info: { structured: { answer: 42 } } });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).session('PROJ', sessionId);
+  const format = { type: 'json_schema' as const, schema: { type: 'object', properties: { answer: { type: 'integer' } } }, retryCount: 1 };
+  expect((await handle.send('structured answer', { format })).data?.info.structured).toEqual({ answer: 42 });
+  await handle.send('explicit text', { format: { type: 'text' } });
+  await handle.send('default text');
+  const prompts = calls.filter(call => call.url.endsWith(`/session/${nativeId}/message`) && call.method === 'POST');
+  expect(prompts.map(call => (call.body as { format?: unknown }).format)).toEqual([format, { type: 'text' }, undefined]);
+});
+
+test('separate identical sends carry distinct submission keys and retain authentication', async () => {
+  const submissions: Array<{ key: string | null; authorization: string | null; body: unknown }> = [];
+  let rejectedToken = false;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    if (request.url.includes('/sessions/SESS-REPEAT/start')) {
+      return jsonResponse(sessionStartPayload('sb-repeat', 'ses_repeat'));
+    }
+    if (request.url.endsWith('/projects/PROJ/sessions/SESS-REPEAT')) {
+      return jsonResponse({ session_id: 'SESS-REPEAT', metadata: { sandbox_slug: 'pi-worker' } });
+    }
+    if (request.url.endsWith('/session/ses_repeat/message')) {
+      submissions.push({ key: request.headers.get('idempotency-key'),
+        authorization: request.headers.get('authorization'), body: await request.json() });
+      if (!rejectedToken) {
+        rejectedToken = true;
+        return jsonResponse({ error: 'expired token' }, 401);
+      }
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => rejectedToken ? 'fresh' : 'stale' })
+    .session('PROJ', 'SESS-REPEAT');
+  await handle.send('Run it again.');
+  await handle.send('Run it again.');
+  expect(submissions).toHaveLength(3);
+  expect(submissions[0]!.key).toMatch(/^[a-f0-9-]{36}$/);
+  expect(submissions[1]!.key).toBe(submissions[0]!.key);
+  expect(submissions[2]!.key).toMatch(/^[a-f0-9-]{36}$/);
+  expect(submissions[2]!.key).not.toBe(submissions[0]!.key);
+  expect(submissions.map(item => item.authorization)).toEqual(['Bearer stale', 'Bearer fresh', 'Bearer fresh']);
+  expect(submissions[1]!.body).toEqual(submissions[0]!.body);
+  expect(submissions[2]!.body).toEqual(submissions[0]!.body);
+});
+
 test('a failed persisted-default read is retried by the next send', async () => {
   let sessionReads = 0;
   globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
@@ -1428,6 +1518,57 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
   expect(mkdirCall?.url).toContain('/p/sb-files-auto/8000/file/mkdir');
 });
 
+test('pi session files use the environment while messages stay on the worker', async () => {
+  let healthPolls = 0;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const method = request?.method ?? init?.method ?? 'GET';
+    calls.push({ url, method });
+    if (url.includes('/sessions/FILES-PI/start')) {
+      return jsonResponse({
+        ...sessionStartPayload('worker-files-pi', 'ocs-files-pi'),
+        sandbox: { external_id: 'worker-files-pi', metadata: { pi_worker_boot: true } },
+      });
+    }
+    if (url.endsWith('/sessions/FILES-PI/environment/ensure')) {
+      return jsonResponse({
+        session_id: 'FILES-PI',
+        status: 'active',
+        external_id: 'environment-files-pi',
+        preview_url: 'https://environment.example',
+        preview_token: null,
+      });
+    }
+    if (url.endsWith('/p/environment-files-pi/8000/kortix/health')) {
+      healthPolls += 1;
+      return jsonResponse({ runtimeReady: healthPolls > 1 });
+    }
+    if (url.includes('/file?path=')) {
+      expect(healthPolls).toBe(2);
+      return jsonResponse([]);
+    }
+    if (url.endsWith('/sessions/FILES-PI')) {
+      return jsonResponse({ agent_name: 'agent', metadata: {} });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const session = k.session('PROJ', 'FILES-PI');
+
+  await session.files.list('/workspace');
+  expect(healthPolls).toBe(2);
+  expect(calls.some((call) => call.url.endsWith('/environment/ensure'))).toBe(true);
+  expect(calls.find((call) => call.url.includes('/file?path='))?.url).toContain(
+    '/p/environment-files-pi/8000/file',
+  );
+
+  calls.length = 0;
+  await session.send('continue');
+  expect(calls.some((call) => call.url.includes('/p/worker-files-pi/8000/session/'))).toBe(true);
+});
+
 // ── ensureReady() polls a slow cold-start to ready instead of throwing on the
 // first non-ready check (a backend waiting to send its first turn must not
 // give up while the sandbox is still provisioning/starting) ─────────────────
@@ -1596,4 +1737,37 @@ test('kortix.iam.can probes one leaf for one principal', async () => {
   });
   expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
   expect(last().url).toContain('action=project.write');
+});
+
+test.each(['pi', 'opencode'])('send forwards file parts once and does not inherit them on the next %s prompt', async engine => {
+  const sessionId = `SESS-IMAGES-${engine}`;
+  const nativeId = `ses_images_${engine}`;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    const body = await request.clone().text();
+    calls.push({ url: request.url, method: request.method, body: body ? JSON.parse(body) : undefined });
+    if (request.url.includes(`/sessions/${sessionId}/start`)) return jsonResponse({ ...sessionStartPayload(`sb-images-${engine}`, nativeId), sandbox: { external_id: `sb-images-${engine}`, metadata: { sandbox_slug: engine === 'pi' ? 'pi-worker' : 'opencode' } } });
+    if (request.url.endsWith(`/sessions/${sessionId}`)) return jsonResponse({ session_id: sessionId, metadata: { sandbox_slug: engine === 'pi' ? 'pi-worker' : 'opencode' } });
+    return jsonResponse({ info: { role: 'assistant' } });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).session('PROJ', sessionId);
+  const file = { type: 'file' as const, mime: 'image/png', filename: 'sample.png', url: engine === 'pi' ? `kortix-attachment:sha256:${'a'.repeat(64)}` : 'data:image/png;base64,AQID' };
+  await handle.send('Describe this image.', { files: [file] });
+  await handle.send('Recall it.');
+  const prompts = calls.filter(call => call.url.endsWith(`/session/${nativeId}/message`) && call.method === 'POST');
+  expect(prompts.map(call => (call.body as { parts: unknown }).parts)).toEqual([
+    [{ type: 'text', text: 'Describe this image.' }, file], [{ type: 'text', text: 'Recall it.' }],
+  ]);
+});
+
+
+test('project and token connector facades preserve cancellation options', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const options = {signal:controller.signal};
+  for (const connectors of [kortix.connectors, kortix.project('p1').connectors]) {
+    await expect(connectors.catalog(options)).rejects.toMatchObject({code:'ABORTED'});
+    await expect(connectors.tools(options)).rejects.toMatchObject({code:'ABORTED'});
+  }
+  expect(calls).toHaveLength(0);
 });

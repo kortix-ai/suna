@@ -1,5 +1,11 @@
 import { createInterface } from 'node:readline';
-import type { MessageWithParts, OpencodeClient, Part, SessionHandle } from '@kortix/sdk';
+import {
+  isPiWorkerRuntimeMetadata,
+  type MessageWithParts,
+  type OpencodeClient,
+  type Part,
+  type SessionHandle,
+} from '@kortix/sdk';
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
@@ -15,6 +21,7 @@ import {
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { queueSessionPrompt, type CreateSessionPromptResult } from './sessions-queue.ts';
+import { runPiTerminal } from './sessions-pi-terminal.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -266,6 +273,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   }
 
   // ── Interactive REPL ───────────────────────────────────────────────────────
+  if (isPiWorkerRuntimeMetadata(resolved.session.metadata)) return runPiTerminal(resolved, extra);
   process.stdout.write(
     `\n${C.dim}Chatting with ${C.reset}${C.bold}${resolved.session.name ?? resolved.session.session_id.split('-')[0]}${C.reset}` +
       ` ${C.faded}(${resolved.session.agent_name})${C.reset}\n` +
@@ -405,7 +413,8 @@ async function resolveChatSessionId(
         );
       }
       if (created.status !== 'running') {
-        if (!quiet) process.stdout.write(`  ${C.dim}Waiting for the sandbox to come up…${C.reset}\n`);
+        if (!quiet)
+          process.stdout.write(`  ${C.dim}Waiting for the sandbox to come up…${C.reset}\n`);
         const ready = await waitForRunning(ctx, created.session_id);
         if (!ready) return null;
       }
@@ -864,9 +873,7 @@ async function fetchSessionActivity(
       signal: AbortSignal.timeout(SESSION_ACTIVITY_PHASE_TIMEOUT_MS),
     } as Parameters<typeof handle.runtime.session.messages>[0] & { signal: AbortSignal };
     const msgs = await withKortixScope(auth, async () =>
-      unwrapRuntime(
-        await handle.runtime.session.messages(messageRequest),
-      ),
+      unwrapRuntime(await handle.runtime.session.messages(messageRequest)),
     );
     if (msgs.length === 0) return { working: false, summary: 'no messages yet' };
     return deriveActivity(msgs, s.status);

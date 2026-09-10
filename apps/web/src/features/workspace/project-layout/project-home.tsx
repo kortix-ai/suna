@@ -112,6 +112,13 @@ export function ProjectHome({
     enabled: !!projectId,
     ...contract('config'),
   });
+  // A Pi-enabled project can compile `runtime: pi` at session creation. The
+  // browser cannot inspect that moving manifest safely, so keep the first-turn
+  // model fixed whenever the server says the Pi path is eligible. OpenCode
+  // sessions expose their selectors after their runtime identity resolves.
+  const modelOverridesEnabled =
+    projectDetailQuery.data != null &&
+    projectDetailQuery.data.project.experimental?.pi_worker !== true;
   const accountId = projectDetailQuery.data?.project?.account_id;
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
@@ -233,6 +240,8 @@ export function ProjectHome({
             onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
             sandboxSlot={sandboxSlot}
+            modelOverridesEnabled={modelOverridesEnabled}
+            attachmentsEnabled={projectDetailQuery.data != null}
           />
         }
       />

@@ -1,5 +1,5 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
-import type { AgentGrant } from '@kortix/db';
+import { type AgentGrant, accountTokens, projectSessions } from '@kortix/db';
 import * as realSecretGrant from './secret-grant';
 
 const storedGrant: AgentGrant = {
@@ -15,7 +15,8 @@ const currentGrant: AgentGrant = {
   env: 'all',
 };
 
-let selectCount = 0;
+let session = { agentName: 'kortix', metadata: {} as Record<string, unknown> };
+let resolvedRef: string | undefined;
 let writtenGrant: AgentGrant | null | undefined;
 let resolvedAgent: string | undefined;
 let resolvedRequestedAgent: string | null | undefined;
@@ -24,11 +25,11 @@ let forceRefresh: boolean | undefined;
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: () => ({
+      from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
-            selectCount += 1;
-            if (selectCount === 1) return [{ agentGrant: storedGrant }];
+            if (table === accountTokens) return [{ agentGrant: storedGrant }];
+            if (table === projectSessions) return [session];
             return [
               {
                 repoUrl: 'https://example.test/acme/repo.git',
@@ -59,10 +60,12 @@ mock.module('./secret-grant', () => ({
     sessionAgent: string;
     requestedAgent?: string | null;
     forceRefresh?: boolean;
+    defaultBranch?: string;
   }) => {
     resolvedAgent = input.sessionAgent;
     resolvedRequestedAgent = input.requestedAgent;
     forceRefresh = input.forceRefresh;
+    resolvedRef = input.defaultBranch;
     return currentGrant;
   },
 }));
@@ -72,7 +75,8 @@ const { reconcileStoredSessionAgentGrant, remintGrantForAgentSwitch } = await im
 );
 
 beforeEach(() => {
-  selectCount = 0;
+  session = { agentName: 'kortix', metadata: {} };
+  resolvedRef = undefined;
   writtenGrant = undefined;
   resolvedAgent = undefined;
   resolvedRequestedAgent = undefined;
@@ -118,4 +122,34 @@ test('same-agent reconcile is SYNCHRONOUS on the prompt path — a narrowed mani
   expect(forceRefresh).toBe(true);
   expect(writtenGrant).toEqual(currentGrant);
   expect(decision).toEqual({ action: 'write', grant: currentGrant });
+});
+
+const piMetadata = { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: 'feature', pi_worker_sha: 'a'.repeat(40) };
+
+test('Pi connector reconciliation uses its session agent and pinned source despite a stale token', async () => {
+  session = { agentName: 'denied', metadata: piMetadata };
+  await reconcileStoredSessionAgentGrant({ projectId: 'project-1', sessionId: 'session-1' });
+  expect(resolvedAgent).toBe('denied');
+  expect(resolvedRequestedAgent).toBe('denied');
+  expect(resolvedRef).toBe(piMetadata.pi_worker_sha);
+});
+
+test('an unsupported Pi agent switch cannot reassign the worker token', async () => {
+  session = { agentName: 'denied', metadata: piMetadata };
+  await expect(remintGrantForAgentSwitch({ projectId: 'project-1', sessionId: 'session-1', sessionAgent: 'denied', requestedAgent: 'kortix' })).rejects.toThrow('Pi agent switching');
+  expect(writtenGrant).toBeUndefined();
+  expect(resolvedAgent).toBeUndefined();
+});
+
+test('a Pi session with an invalid pinned identity fails closed', async () => {
+  session = { agentName: 'denied', metadata: { ...piMetadata, pi_worker_sha: 'broken' } };
+  await expect(reconcileStoredSessionAgentGrant({ projectId: 'project-1', sessionId: 'session-1' })).rejects.toThrow('Pi runtime identity');
+  expect(writtenGrant).toBeUndefined();
+});
+
+test('OpenCode connector reconciliation retains the switched agent from its token', async () => {
+  session = { agentName: 'other', metadata: {} };
+  await reconcileStoredSessionAgentGrant({ projectId: 'project-1', sessionId: 'session-1' });
+  expect(resolvedAgent).toBe('kortix');
+  expect(resolvedRef).toBe('main');
 });

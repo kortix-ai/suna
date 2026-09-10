@@ -33,7 +33,9 @@ export interface FastSandboxDockerfileOptions {
  *
  * The image contains only bytes required before the first agent turn. Large
  * browser, document, TeX, and Python package floors install on first use through
- * the staged lazy-tool wrappers. The standard image remains the default.
+ * the staged lazy-tool wrappers. Codex CLI and Claude Code stay in the standard
+ * full environment because their native artifacts add more than 600 MB here.
+ * The standard image remains the default.
  */
 export function buildFastSandboxDockerfile(options: FastSandboxDockerfileOptions): string {
   return `# syntax=docker/dockerfile:1.7

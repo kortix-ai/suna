@@ -27,6 +27,12 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
+  CLAUDE_CODE_SHA256_AMD64,
+  CLAUDE_CODE_SHA256_ARM64,
+  CLAUDE_CODE_VERSION,
+  CODEX_CLI_SHA256_AMD64,
+  CODEX_CLI_SHA256_ARM64,
+  CODEX_CLI_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   PLAYWRIGHT_VERSION,
@@ -40,6 +46,7 @@ import {
   UV_SHA256_ARM64,
   UV_VERSION,
 } from '../runtime-versions';
+import { PI_WORKER_SANDBOX_SLUG } from '../pi-worker';
 
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
@@ -313,11 +320,12 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     'ENV DEBIAN_FRONTEND=noninteractive',
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\',
+    '        ca-certificates curl git gzip libatomic1 ripgrep sudo unzip tmux iproute2 iputils-arping util-linux \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
     '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
     '        texlive-latex-extra texlive-latex-recommended \\',
+    '    && rg --version \\',
     '    && rm -rf /var/lib/apt/lists/*',
     '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
@@ -383,7 +391,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // repository-controlled checksum. pnpm then owns the JavaScript runtime
     // floor: Node comes from `pnpm runtime`, while npm and global CLIs live in
     // pnpm's isolated global package store.
-    'ENV SHELL=/bin/bash',
+    'ENV SHELL=/bin/bash \\',
+    '    DISABLE_AUTOUPDATER=1 \\',
+    '    DISABLE_UPDATES=1',
     'RUN case "$(uname -m)" in \\',
     `      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\`,
     `      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=${PNPM_SHA256_ARM64} ;; \\`,
@@ -478,6 +488,35 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
     // detection line, not the launch verdict, so the gate is emulation-safe.
     "    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
+    '',
+    // Codex and Claude Code are tools inside the full environment, never
+    // alternate server-side harnesses. Pull exact, architecture-specific
+    // artifacts from their publishers' npm packages and verify repository-owned
+    // SHA-256 pins. Preserve Codex's complete vendor tree because bwrap, rg, and
+    // code-mode resources sit beside its main executable. The image-wide Claude
+    // update guards keep this pin stable after startup.
+    'RUN case "$(uname -m)" in \\',
+    `      x86_64) cli_arch=x64; codex_target=x86_64-unknown-linux-musl; codex_sha=${CODEX_CLI_SHA256_AMD64}; claude_sha=${CLAUDE_CODE_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) cli_arch=arm64; codex_target=aarch64-unknown-linux-musl; codex_sha=${CODEX_CLI_SHA256_ARM64}; claude_sha=${CLAUDE_CODE_SHA256_ARM64} ;; \\`,
+    '      *) echo "unsupported agent CLI architecture: $(uname -m)" >&2; exit 1 ;; \\',
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz \\',
+    `         "https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_CLI_VERSION}-linux-\${cli_arch}.tgz" \\`,
+    '    && echo "${codex_sha}  /tmp/codex.tgz" | sha256sum -c - \\',
+    '    && rm -rf /opt/kortix/codex \\',
+    '    && mkdir -p /opt/kortix/codex \\',
+    '    && tar -xzf /tmp/codex.tgz --strip-components=1 -C /opt/kortix/codex \\',
+    '    && ln -sfn "/opt/kortix/codex/vendor/${codex_target}/bin/codex" /home/kortix/.local/bin/codex \\',
+    '    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-resources/bwrap" \\',
+    '    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-path/rg" \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/claude-code.tgz \\',
+    `         "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-\${cli_arch}/-/claude-code-linux-\${cli_arch}-${CLAUDE_CODE_VERSION}.tgz" \\`,
+    '    && echo "${claude_sha}  /tmp/claude-code.tgz" | sha256sum -c - \\',
+    '    && tar -xzf /tmp/claude-code.tgz -O package/claude > /home/kortix/.local/bin/claude \\',
+    '    && chmod 0755 /home/kortix/.local/bin/claude \\',
+    '    && rm /tmp/codex.tgz /tmp/claude-code.tgz \\',
+    `    && test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}" \\`,
+    `    && test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)"`,
     '',
     `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
@@ -711,6 +750,11 @@ export interface SandboxTemplate {
 /** Reserved slug for the platform-provided default template. */
 export const DEFAULT_SANDBOX_SLUG = 'default';
 
+/** True for a sandbox slug owned by the platform instead of a project. */
+export function isReservedSandboxTemplateSlug(slug: string): boolean {
+  return slug === DEFAULT_SANDBOX_SLUG || slug === PI_WORKER_SANDBOX_SLUG;
+}
+
 /**
  * Build the canonical platform default template. Always available, identity
  * derived purely from the platform runtime fingerprint — every project on the
@@ -811,8 +855,8 @@ export function extractSandboxTemplates(
       const row = entry as Record<string, unknown>;
       const tpl = parseSandboxTemplate(row);
       if (!tpl) continue;
-      if (tpl.slug === DEFAULT_SANDBOX_SLUG) {
-        console.warn(`[sandbox-templates] slug "default" is reserved — skipping entry`);
+      if (isReservedSandboxTemplateSlug(tpl.slug)) {
+        console.warn(`[sandbox-templates] slug "${tpl.slug}" is reserved — skipping entry`);
         continue;
       }
       if (seenSlugs.has(tpl.slug)) {
@@ -840,7 +884,7 @@ export function extractSandboxDefault(
   if (!sandbox || typeof sandbox !== 'object' || Array.isArray(sandbox)) return null;
   const raw = (sandbox as Record<string, unknown>).default;
   const slug = typeof raw === 'string' ? raw.trim() : '';
-  if (!slug || slug === DEFAULT_SANDBOX_SLUG || !SLUG_RE.test(slug)) return null;
+  if (!slug || isReservedSandboxTemplateSlug(slug) || !SLUG_RE.test(slug)) return null;
   return slug;
 }
 

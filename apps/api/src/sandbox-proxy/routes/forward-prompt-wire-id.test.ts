@@ -10,9 +10,9 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mock } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
-import * as realKortixUserContext from '../../shared/kortix-user-context';
 import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../../projects/wire-message-id';
+import * as realKortixUserContext from '../../shared/kortix-user-context';
+import * as realPreviewOwnership from '../../shared/preview-ownership';
 
 const ACTIVE_RECORD = {
   status: 'active',
@@ -44,7 +44,7 @@ mock.module('../../projects/lib/prompt-connector-preflight', () => ({
   missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSessionRuntimesEnvForPrompt: async () => {},
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
@@ -59,7 +59,10 @@ const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 let begunTurns: Array<{ opencodeSessionId: string; messageId: string | null }> = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
-  beginSandboxTurn: async (_target: unknown, turn: { opencodeSessionId: string; messageId: string | null }) => {
+  beginSandboxTurn: async (
+    _target: unknown,
+    turn: { opencodeSessionId: string; messageId: string | null },
+  ) => {
     begunTurns.push({ opencodeSessionId: turn.opencodeSessionId, messageId: turn.messageId });
     return 'granted';
   },
@@ -90,8 +93,12 @@ let fetchLog: Array<{ url: string; method: string; body: string | null }> = [];
  *  records its body and answers 200. */
 function installFetch(transcript: unknown | 'unreachable') {
   fetchLog = [];
-  (globalThis as { fetch: unknown }).fetch = async (input: string | URL | Request, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+  (globalThis as { fetch: unknown }).fetch = async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const method = init?.method ?? 'GET';
     let body: string | null = null;
     if (init?.body instanceof ArrayBuffer) body = new TextDecoder().decode(init.body);
@@ -110,7 +117,8 @@ function installFetch(transcript: unknown | 'unreachable') {
 
 const NOW = Date.now();
 const headers = () => new Headers({ 'content-type': 'application/json' });
-const bodyOf = (obj: unknown) => new TextEncoder().encode(JSON.stringify(obj)).buffer as ArrayBuffer;
+const bodyOf = (obj: unknown) =>
+  new TextEncoder().encode(JSON.stringify(obj)).buffer as ArrayBuffer;
 const principal = {
   kind: 'principal' as const,
   userId: 'u1',
@@ -158,10 +166,14 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(wireIdTime(delivered.messageID)! > tip.time).toBe(true);
     expect(delivered.parts).toEqual([{ type: 'text', text: 'stop looping' }]);
     // The turn ledger was begun under the EFFECTIVE id, not the stale one.
-    expect(begunTurns).toEqual([{ opencodeSessionId: 'ses_child', messageId: delivered.messageID }]);
+    expect(begunTurns).toEqual([
+      { opencodeSessionId: 'ses_child', messageId: delivered.messageID },
+    ]);
     // And the sender can correlate.
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(delivered.messageID);
-    expect(res.headers.get('Access-Control-Expose-Headers')).toContain('X-Kortix-Effective-Message-Id');
+    expect(res.headers.get('Access-Control-Expose-Headers')).toContain(
+      'X-Kortix-Effective-Message-Id',
+    );
   });
 
   test('a well-placed client id is forwarded byte-for-byte and echoed unchanged', async () => {
@@ -170,7 +182,17 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     installFetch([{ info: { id: tip.id, role: 'assistant' } }]);
     const body = { messageID: client.id, parts: [{ type: 'text', text: 'ok' }] };
 
-    const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/message', '', headers(), bodyOf(body), 'http://app.local');
+    const res = await forwardToSandbox(
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/session/ses_1/message',
+      '',
+      headers(),
+      bodyOf(body),
+      'http://app.local',
+    );
 
     expect(res.status).toBe(200);
     expect(fetchLog[1].body).toBe(JSON.stringify(body));
@@ -180,7 +202,17 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
 
   test('a body with NO client id pays for no read at all — OpenCode mints', async () => {
     installFetch([]);
-    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', headers(), bodyOf({ parts: [{ type: 'text', text: 'hi' }] }), 'http://app.local');
+    await forwardToSandbox(
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/session/ses_1/prompt_async',
+      '',
+      headers(),
+      bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
+      'http://app.local',
+    );
     expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
   });
 
@@ -188,7 +220,17 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     const client = mintWireMessageId({ nowMs: NOW - 300_000 });
     installFetch('unreachable');
     const body = { messageID: client.id, parts: [{ type: 'text', text: 'hi' }] };
-    const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', headers(), bodyOf(body), 'http://app.local');
+    const res = await forwardToSandbox(
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/session/ses_1/prompt_async',
+      '',
+      headers(),
+      bodyOf(body),
+      'http://app.local',
+    );
     expect(res.status).toBe(200);
     expect(fetchLog[1].body).toBe(JSON.stringify(body));
     expect(begunTurns[0]?.messageId).toBe(client.id);
@@ -196,7 +238,17 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
 
   test('a /command carries no client id and is never read for placement', async () => {
     installFetch([]);
-    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/command', '', headers(), bodyOf({ command: 'compact', arguments: '' }), 'http://app.local');
+    await forwardToSandbox(
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/session/ses_1/command',
+      '',
+      headers(),
+      bodyOf({ command: 'compact', arguments: '' }),
+      'http://app.local',
+    );
     expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
   });
 });

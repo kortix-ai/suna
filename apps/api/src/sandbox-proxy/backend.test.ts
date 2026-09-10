@@ -42,7 +42,10 @@ mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: (provider: string) => ({
     ingressCacheTtlMs: provider === 'e2b' ? 0 : undefined,
-    async resolveIngress(_externalId: string, request: { port: number; transport?: string; path?: string }) {
+    async resolveIngress(
+      _externalId: string,
+      request: { port: number; transport?: string; path?: string },
+    ) {
       resolveCalls.push(request);
       const isPty = request.transport === 'websocket' && request.path?.includes('/pty/');
       const effectivePort = isPty ? 9999 : request.port;
@@ -60,6 +63,7 @@ mock.module('../platform/providers', () => ({
 const { resolveSandboxIngress } = await import('./backend');
 
 const BASE_RECORD = {
+  runtimeKind: 'worker' as const,
   sandboxId: 'sbx-1',
   agentName: null,
   sessionId: 'sess-1',
@@ -75,8 +79,16 @@ describe('resolveSandboxIngress cache key — http', () => {
   test('two different http paths on the same (sandbox, port) share one cache entry', async () => {
     resolveCalls = [];
     const record = { ...BASE_RECORD, externalId: 'ext-http-1' };
-    const first = await resolveSandboxIngress(record, { port: 8000, transport: 'http', path: '/foo' });
-    const second = await resolveSandboxIngress(record, { port: 8000, transport: 'http', path: '/bar' });
+    const first = await resolveSandboxIngress(record, {
+      port: 8000,
+      transport: 'http',
+      path: '/foo',
+    });
+    const second = await resolveSandboxIngress(record, {
+      port: 8000,
+      transport: 'http',
+      path: '/bar',
+    });
     expect(resolveCalls.length).toBe(1);
     expect(second).toEqual(first);
   });

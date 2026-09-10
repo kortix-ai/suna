@@ -1,7 +1,11 @@
 import { resolveCommitSha } from '../projects/git';
 import type { GitBackedProject } from '../projects/git/types';
+import { refreshMirror } from '../projects/git/mirror';
+import { resolveManifestRuntimeForPiSession } from '../projects/lib/compile-agent-config';
 import {
   buildCompiledPiRuntimeArtifact,
+  listPiAgentNames,
+  resolvePiDefaultAgentName,
   type StoredCompiledPiRuntimeArtifact,
 } from './compiled-pi-runtime-artifact';
 import {
@@ -49,6 +53,15 @@ export async function prebuildDefaultBranchArtifacts(
   runtimeRepoUrl: string,
   dependencies: CompiledPrebuildDependencies = defaults,
 ): Promise<CompiledBootArtifacts> {
+  // Same stale-tip trap as the pi prebuild below: `resolveCommitSha` refreshes
+  // the mirror WITHOUT force and the interval is 60 s, but this runs right
+  // after a push that has just touched the mirror — so the refresh no-ops and
+  // the tip resolves to the PRE-push commit. The push then prebuilds the wrong
+  // sha and the first session on the new one compiles on demand, which is the
+  // whole thing this prebuild exists to prevent. Proven on the pi path
+  // (2026-08-29): pushing a fourth agent prebuilt three artifacts for the
+  // pre-push sha and none for the pushed one.
+  await refreshMirror(project, true).catch(() => {});
   const sourceSha = await dependencies.resolveTip(project, project.defaultBranch);
   return prebuildCompiledBootArtifacts(
     project,
@@ -62,14 +75,78 @@ export async function prebuildDefaultBranchArtifacts(
 /**
  * Compile the pi worker runtime for the default branch tip. Same shape as
  * `prebuildDefaultBranchArtifacts` above, and deliberately a SEPARATE entry
- * point: the pi artifact is per-project opt-in (the `pi_worker` feature flag),
- * while the opencode artifacts follow the platform-wide
- * KORTIX_COMPILED_BOOT_MODE — the caller composes the two gates.
+ * point: YAML v3 selects Pi; OpenCode artifacts use the compiled boot switch.
  */
 export async function prebuildDefaultBranchPiRuntime(
   project: GitBackedProject,
   resolveTip: typeof resolveCommitSha = resolveCommitSha,
 ): Promise<StoredCompiledPiRuntimeArtifact> {
+  // FORCE the mirror forward first. `resolveCommitSha` refreshes without
+  // force, and `refreshIntervalMs()` is 60 s — but this runs immediately after
+  // a push, which has just touched the mirror, so the unforced refresh is a
+  // no-op and the tip resolves to the PREVIOUS commit. The push then prebuilt
+  // the wrong sha and the first session on the new one compiled on demand,
+  // which is the whole thing this prebuild exists to avoid. Caught on
+  // pi.kortix.com 2026-08-29: pushing `echo-probe` prebuilt 3 agents for the
+  // pre-push sha and none for the pushed one.
+  await refreshMirror(project, true).catch(() => {});
   const sourceSha = await resolveTip(project, project.defaultBranch);
-  return buildCompiledPiRuntimeArtifact(project, project.defaultBranch, sourceSha);
+  // Bake the DEFAULT agent by name. The artifact is keyed per agent, so
+  // prebuilding under the empty name would warm an entry no session asks for.
+  const defaultAgent = await resolvePiDefaultAgentName(project, sourceSha).catch(() => "");
+  const primary = await buildCompiledPiRuntimeArtifact(
+    project,
+    project.defaultBranch,
+    sourceSha,
+    defaultAgent,
+  );
+
+  // Then EVERY other declared agent, so none of them compiles on its first
+  // session. Sequential and best-effort on purpose: this runs inside a push,
+  // the default agent is already in hand, and one broken agent must not fail
+  // the push or the artifact the caller is waiting for.
+  const others = (await listPiAgentNames(project, sourceSha).catch(() => [])).filter(
+    (name) => name && name !== defaultAgent,
+  );
+  for (const agent of others) {
+    await buildCompiledPiRuntimeArtifact(project, project.defaultBranch, sourceSha, agent).catch(
+      (error) => {
+        console.warn(
+          `[compiled-boot] prebuild of agent ${agent} for ${project.projectId} failed`,
+          error,
+        );
+      },
+    );
+  }
+  return primary;
+}
+
+interface ManifestPrebuildDependencies {
+  refresh(project: GitBackedProject): Promise<unknown>;
+  resolveTip: typeof resolveCommitSha;
+  resolveRuntime: typeof resolveManifestRuntimeForPiSession;
+  pi(project: GitBackedProject, resolveTip: typeof resolveCommitSha): Promise<unknown>;
+  opencode(project: GitBackedProject, ref: string, sha: string, url: string): Promise<unknown>;
+}
+
+export async function prebuildManifestRuntime(
+  project: GitBackedProject,
+  runtimeRepoUrl: string,
+  opencodeEnabled: boolean,
+  dependencies: ManifestPrebuildDependencies = {
+    refresh: (project) => refreshMirror(project, true),
+    resolveTip: resolveCommitSha,
+    resolveRuntime: resolveManifestRuntimeForPiSession,
+    pi: prebuildDefaultBranchPiRuntime,
+    opencode: prebuildCompiledBootArtifacts,
+  },
+): Promise<void> {
+  await dependencies.refresh(project);
+  const sha = await dependencies.resolveTip(project, project.defaultBranch);
+  const runtime = await dependencies.resolveRuntime(project, sha);
+  if (runtime === 'pi') {
+    await dependencies.pi(project, async () => sha);
+  } else if (opencodeEnabled) {
+    await dependencies.opencode(project, project.defaultBranch, sha, runtimeRepoUrl);
+  }
 }

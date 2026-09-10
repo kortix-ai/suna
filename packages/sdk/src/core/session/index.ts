@@ -22,5 +22,6 @@ export * from './preview-probe';
 export * from './presentation';
 export * from './connection';
 export * from './working';
+export * from './working-indicator';
 export * from './compaction';
 export * from './wake-escalation';

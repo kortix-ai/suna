@@ -1,9 +1,10 @@
+import { selectWorkerModelLimits, type WorkerModelLimits } from './model-limits';
 /**
  * Bundle entrypoint for the compiled worker runtime.
  *
  * The API's compiled-boot pipeline prepends one line before this bundle:
  *
- *   globalThis.__KORTIX_COMPILED__ = { manifest, agentConfig }
+ *   globalThis.__KORTIX_COMPILED__ = { manifest, agentConfig, commands }
  *
  * where `manifest` identifies the exact (project, ref, sha) this artifact was
  * compiled from and `agentConfig` is the server-compiled agent map
@@ -16,9 +17,13 @@
  * things at session-start time (model override, session id, environment URL)
  * that a per-commit artifact cannot.
  */
-import { configFromEnv, startWorker, type WorkerConfig } from './worker.ts';
+import type { PermissionConfig } from './permission-policy.ts';
+import type { PiCommand } from './command-runtime.ts';
+import type { PiSkill } from './skill-runtime.ts';
+import { type WorkerConfig, configFromEnv, startWorker } from './worker.ts';
 
 interface CompiledPayload {
+  modelLimits?: WorkerModelLimits;
   manifest?: {
     project_id?: string;
     ref?: string;
@@ -27,14 +32,18 @@ interface CompiledPayload {
   };
   agentConfig?: {
     model?: string;
-    agent?: Record<string, { prompt?: string; model?: string; description?: string }>;
+    agent?: Record<
+      string,
+      { prompt?: string; model?: string; description?: string; permission?: PermissionConfig }
+    >;
   } | null;
+  commands?: PiCommand[];
+  skills?: PiSkill[];
 }
 
 function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
   const compiled = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
-    | CompiledPayload
-    | undefined;
+    CompiledPayload | undefined;
   if (!compiled) return cfg;
 
   const agents = compiled.agentConfig?.agent ?? {};
@@ -48,7 +57,12 @@ function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
   // kortix-sandbox-agent-server/src/opencode.ts wires apiKey = KORTIX_TOKEN).
   // Explicit KORTIX_API_KEY / KORTIX_MODEL_MODE always win.
   const gatewayBase = process.env.KORTIX_LLM_BASE_URL;
-  if (!process.env.KORTIX_API_KEY && !process.env.KORTIX_MODEL_MODE && gatewayBase && process.env.KORTIX_TOKEN) {
+  if (
+    !process.env.KORTIX_API_KEY &&
+    !process.env.KORTIX_MODEL_MODE &&
+    gatewayBase &&
+    process.env.KORTIX_TOKEN
+  ) {
     out.modelMode = 'real';
     out.gatewayUrl = gatewayBase;
     out.apiKey = process.env.KORTIX_TOKEN;
@@ -57,26 +71,26 @@ function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
   // The baked prompt applies only when the env did not set one — the env var
   // is a session-start override, the bake is the commit's truth.
   if (!process.env.KORTIX_SYSTEM_PROMPT && agent?.prompt) out.systemPrompt = agent.prompt;
-  // Agent model strings are opencode-shaped: "<providerID>/<modelID...>".
+  // Agent models can be short gateway aliases or "<providerID>/<modelID...>".
   const model = agent?.model ?? compiled.agentConfig?.model;
-  if (!process.env.KORTIX_MODEL && model?.includes('/')) {
+  if (!process.env.KORTIX_MODEL && model) {
     // Gateway model refs are kortix/<provider>/<model>; native ones are
     // <provider>/<model>. Behind the gateway the whole suffix is the model id.
     const native = model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
     const slash = native.indexOf('/');
-    if (out.gatewayUrl) {
+    if (out.gatewayUrl || slash < 0) {
       out.modelId = native;
     } else {
       out.providerId = native.slice(0, slash);
       out.modelId = native.slice(slash + 1);
     }
   }
+  out.modelLimits = selectWorkerModelLimits(out.modelId, cfg.modelLimits, compiled.modelLimits);
   return out;
 }
 
 const compiled = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
-  | CompiledPayload
-  | undefined;
+  CompiledPayload | undefined;
 console.log(
   JSON.stringify({
     msg: 'kortix-worker starting',
@@ -90,7 +104,30 @@ console.log(
   }),
 );
 
-startWorker(bakedOverlay(configFromEnv())).catch((err) => {
-  console.error(JSON.stringify({ msg: 'kortix-worker fatal', error: String(err?.message ?? err) }));
-  process.exit(1);
-});
+startWorker(bakedOverlay(configFromEnv()))
+  .then((worker) => {
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      const deadline = setTimeout(() => process.exit(1), 35000);
+      deadline.unref();
+      void worker.close().then(
+        () => process.exit(0),
+        (error) => {
+          console.error(
+            JSON.stringify({ msg: 'kortix-worker shutdown failed', error: String(error) }),
+          );
+          process.exit(1);
+        },
+      );
+    };
+    process.once('SIGTERM', stop);
+    process.once('SIGINT', stop);
+  })
+  .catch((err) => {
+    console.error(
+      JSON.stringify({ msg: 'kortix-worker fatal', error: String(err?.message ?? err) }),
+    );
+    process.exit(1);
+  });

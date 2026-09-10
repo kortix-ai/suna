@@ -157,6 +157,7 @@ export async function createDatabaseSession(
     accountId: string;
     userId: string;
     visibility?: "private" | "project" | "restricted";
+    agentName?: string;
     metadata?: Record<string, unknown>;
   },
   open: OpenProjectDb = openProjectDb,
@@ -173,6 +174,7 @@ export async function createDatabaseSession(
          branch_name,
          created_by,
          visibility,
+         agent_name,
          metadata
        )
        VALUES (
@@ -182,6 +184,7 @@ export async function createDatabaseSession(
          'session/' || $1,
          $4::uuid,
          $5::kortix.project_session_visibility,
+         COALESCE($7, 'default'),
          $6::jsonb
        )`,
       [
@@ -191,6 +194,7 @@ export async function createDatabaseSession(
         input.userId,
         input.visibility ?? "private",
         JSON.stringify(input.metadata ?? {}),
+        input.agentName ?? null,
       ],
     );
   } finally {

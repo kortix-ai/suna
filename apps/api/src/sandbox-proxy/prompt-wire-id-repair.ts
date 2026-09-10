@@ -28,7 +28,12 @@
  * actually exists.
  */
 
-import { WIRE_MESSAGE_ID, mintWireMessageId, newestWireIdTime, wireIdTime } from '../projects/wire-message-id';
+import {
+  WIRE_MESSAGE_ID,
+  mintWireMessageId,
+  newestWireIdTime,
+  wireIdTime,
+} from '../projects/wire-message-id';
 
 /** Newest-N messages read before a delivery. Small on purpose: this sits on the
  *  delivery path of every direct send, and only the tip decides placement. */
@@ -38,6 +43,8 @@ export const EFFECTIVE_MESSAGE_ID_HEADER = 'X-Kortix-Effective-Message-Id';
 /** Sent by the inbox drain when it already placed the id against the
  *  transcript; the proxy then skips its own read. Stripped from the forward. */
 export const WIRE_ID_PLACED_HEADER = 'X-Kortix-Wire-Id-Placed';
+export const PROMPT_ADMISSION_HEADER = 'x-kortix-prompt-admission';
+export const DURABLE_MESSAGE_ADMISSION = 'durable-message-id-v1';
 
 const PROMPT_PATH = /^(\/proxy\/\d+)?\/session\/([^/?#]+)\/(?:prompt_async|message)$/;
 
@@ -84,7 +91,11 @@ export function repairPromptWireId(input: {
   random?: () => number;
 }): PromptWireIdRepairResult {
   const body = input.body ?? new ArrayBuffer(0);
-  const none: PromptWireIdRepairResult = { body, effectiveMessageId: null, outcome: 'none' };
+  const none: PromptWireIdRepairResult = {
+    body,
+    effectiveMessageId: null,
+    outcome: 'none',
+  };
   if (!body.byteLength) return none;
   let parsed: Record<string, unknown>;
   try {
@@ -131,22 +142,35 @@ export async function readNewestWireIdTime(input: {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }): Promise<bigint | null> {
+  return (await readPromptTranscript(input)).newestKnownTime;
+}
+
+export async function readPromptTranscript(input: {
+  url: string;
+  headers: Record<string, string>;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}): Promise<{ newestKnownTime: bigint | null; durableMessageIds: boolean }> {
   const fetchImpl = input.fetchImpl ?? fetch;
+  const unavailable = { newestKnownTime: null, durableMessageIds: false };
   try {
     const res = await fetchImpl(input.url, {
       method: 'GET',
       headers: input.headers,
       signal: AbortSignal.timeout(input.timeoutMs ?? PROMPT_TRANSCRIPT_READ_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return unavailable;
     const messages = (await res.json().catch(() => null)) as Array<{
       info?: { id?: unknown };
     }> | null;
-    if (!Array.isArray(messages)) return null;
-    return newestWireIdTime(
-      messages.map((message) => (typeof message?.info?.id === 'string' ? message.info.id : null)),
-    );
+    if (!Array.isArray(messages)) return unavailable;
+    return {
+      newestKnownTime: newestWireIdTime(
+        messages.map((message) => (typeof message?.info?.id === 'string' ? message.info.id : null)),
+      ),
+      durableMessageIds: res.headers.get(PROMPT_ADMISSION_HEADER) === DURABLE_MESSAGE_ADMISSION,
+    };
   } catch {
-    return null;
+    return unavailable;
   }
 }

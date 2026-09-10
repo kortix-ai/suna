@@ -172,6 +172,7 @@ interface Subpath {
 }
 
 const SUBPATH_TIERS: Subpath[] = [
+  { name: './pi', file: 'core/pi/agent.ts', tier: 'isomorphic-core' },
   { name: './server', file: 'node/server.ts', tier: 'node-allowed' },
 
   // The ./internal/* stores — apps/web's zustand machinery, outside semver.

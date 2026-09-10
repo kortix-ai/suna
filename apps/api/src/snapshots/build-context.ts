@@ -348,6 +348,34 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
  */
 export const PI_WORKER_ENTRYPOINT = '/usr/local/bin/pi-worker-entrypoint';
 
+/**
+ * The node flags every worker boot runs under — the "lock the file system on
+ * the harness" item from the design huddle, enforced by node's permission
+ * model rather than by care.
+ *
+ * Under `--permission` the process may READ only what is listed here — its own
+ * artifact and `/proc/uptime` (the boot clock) — and nothing else: every other
+ * fs read, every fs write, every child process and every worker thread is
+ * `ERR_ACCESS_DENIED`. That holds for pi's built-in tools (which never touch
+ * this disk anyway, see kortix-env.ts) AND for a user-authored tool bundled
+ * into the artifact, which is the case the isolation test cannot cover: it
+ * can only prove that the tools we ship stay off the disk, not that arbitrary
+ * in-process code does. Network stays open — the worker is nothing but
+ * network: the model gateway, the environment RPC, the durable store.
+ *
+ * Both boot paths — the cold entrypoint and park.mjs's post-claim spawn —
+ * derive their argv from this ONE function, and pi-worker-lockdown.test.ts
+ * drives the real compiled bundle through a tool turn under exactly these
+ * flags, so a flag the bundle cannot live with fails there, not on a box.
+ */
+export function piWorkerNodeArgs(runtimeDir: string): string[] {
+  return [
+    '--permission',
+    `--allow-fs-read=${runtimeDir}/session-worker.mjs`,
+    '--allow-fs-read=/proc/uptime',
+  ];
+}
+
 const PI_WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # Boot a session on the compiled pi worker runtime.
 # Fails loudly: a worker that cannot fetch its exact artifact must not serve.
@@ -365,7 +393,9 @@ fi
 : "\${KORTIX_API_URL:?}" "\${KORTIX_TOKEN:?}" "\${KORTIX_PROJECT_ID:?}"
 : "\${KORTIX_PI_RUNTIME_REF:?}" "\${KORTIX_PI_RUNTIME_SHA:?}"
 node /opt/kortix/fetch-runtime.mjs
-exec node /opt/kortix/session-worker.mjs
+# Locked down (see piWorkerNodeArgs): reads limited to the artifact and the
+# boot clock; no other reads, no writes, no child processes.
+exec node ${piWorkerNodeArgs('/opt/kortix').join(' ')} /opt/kortix/session-worker.mjs
 `;
 
 const PI_WORKER_PARK_MJS = `// Parked pi worker box: idle until one session claims it.
@@ -374,10 +404,27 @@ const PI_WORKER_PARK_MJS = `// Parked pi worker box: idle until one session clai
 import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
+import { readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 
 const PORT = Number(process.env.PORT ?? 8000);
 const PARK_TOKEN = process.env.KORTIX_PI_PARK_TOKEN ?? '';
-const RUNTIME_DIR = process.env.KORTIX_PI_PARK_DIR ?? '/opt/kortix';
+// Resolved through realpath: the permission model compares the path node
+// actually opens, so a symlinked runtime dir (macOS's /var -> /private/var in
+// tests) would otherwise deny the worker its own entrypoint.
+const RUNTIME_DIR = realpathSync(process.env.KORTIX_PI_PARK_DIR ?? '/opt/kortix');
+// The claim, made durable.
+//
+// A claim arrives over HTTP and is spawned into a CHILD process, but the
+// container's own environment still carries KORTIX_PI_PARK=1 — so the first
+// stop/resume re-runs the entrypoint, which execs this script again with the
+// claim env gone. The box then answered {parked:true,runtimeReady:false}
+// forever and the session could never run another turn: its transcript
+// survived, nothing else did. Writing the claim here, and preferring it over
+// parking on every later boot, is what makes a resume come back as a worker.
+//
+// 0600: this file holds the session token, same as the process env already
+// does. It never leaves the box.
+const CLAIM_FILE = RUNTIME_DIR + '/claim.json';
 const REQUIRED = [
   'KORTIX_API_URL',
   'KORTIX_TOKEN',
@@ -420,10 +467,62 @@ async function boot(env) {
     console.error(JSON.stringify({ msg: 'claimed park boot FAILED at fetch', exit: fetchExit }));
     process.exit(1);
   }
-  const worker = spawn('node', [RUNTIME_DIR + '/session-worker.mjs'], { env: merged, stdio: 'inherit' });
+  // Same lockdown as the cold entrypoint (piWorkerNodeArgs in build-context.ts):
+  // a claimed box must not be the one boot path that runs the harness unconfined.
+  const worker = spawn(
+    'node',
+    [
+      '--permission',
+      '--allow-fs-read=' + RUNTIME_DIR + '/session-worker.mjs',
+      '--allow-fs-read=/proc/uptime',
+      RUNTIME_DIR + '/session-worker.mjs',
+    ],
+    { env: merged, stdio: 'inherit' },
+  );
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => worker.kill(sig));
   worker.on('exit', (code) => process.exit(code ?? 1));
 }
+
+function validClaimEnv(env) {
+  if (!env || typeof env !== 'object' || Array.isArray(env)) return false;
+  for (const [key, value] of Object.entries(env)) {
+    if (!/^KORTIX_[A-Z0-9_]*$/.test(key) || typeof value !== 'string') return false;
+  }
+  return REQUIRED.every((key) => Boolean(env[key]));
+}
+
+/** Atomic, so a crash mid-write cannot leave a half claim that parses. */
+function persistClaim(env) {
+  try {
+    const tmp = CLAIM_FILE + '.tmp';
+    writeFileSync(tmp, JSON.stringify(env), { mode: 0o600 });
+    renameSync(tmp, CLAIM_FILE);
+    return true;
+  } catch (error) {
+    console.error(JSON.stringify({ msg: 'claim persist FAILED', error: String(error?.message ?? error) }));
+    return false;
+  }
+}
+
+/** The claim from a previous life, or null. A corrupt file parks. */
+function loadClaim() {
+  try {
+    const env = JSON.parse(readFileSync(CLAIM_FILE, 'utf8'));
+    // Re-validated on the way in: a file that no longer satisfies the contract
+    // must not boot a worker with a half env.
+    return validClaimEnv(env) ? env : null;
+  } catch {
+    return null;
+  }
+}
+
+const resumed = loadClaim();
+if (resumed) {
+  // Already claimed in a previous life. Never listen — the port belongs to the
+  // worker, and a parked answer here is what stranded the session before.
+  console.log(JSON.stringify({ msg: 'park resume: booting the claimed session', keys: Object.keys(resumed).length }));
+  void boot(resumed);
+} else {
 
 const server = createServer(async (req, res) => {
   const path = String(req.url ?? '').split('?')[0];
@@ -462,6 +561,14 @@ const server = createServer(async (req, res) => {
       return;
     }
     claimed = true;
+    // Persist BEFORE answering: a claim the API believes succeeded must
+    // survive a restart, so the durable write is part of accepting it.
+    if (!persistClaim(env)) {
+      claimed = false;
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'could not persist claim' }));
+      return;
+    }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
     console.log(JSON.stringify({ msg: 'park claim accepted', keys: Object.keys(env).length }));
@@ -475,6 +582,8 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(JSON.stringify({ msg: 'pi worker parked', port: PORT }));
 });
+
+}
 `;
 
 const PI_WORKER_FETCH_MJS = `// Download this session's compiled pi runtime, verified before it may run.
@@ -517,8 +626,12 @@ process.exit(1);
 `;
 
 function buildPiWorkerDockerfile(): string {
-  return `FROM node:22-slim
-RUN useradd --create-home --shell /usr/sbin/nologin kortix \\
+  // alpine, not slim: the worker is pure JS (`@earendil-works/pi-*` + `ws`,
+  // no native modules, no child_process), so musl costs nothing and the base
+  // is ~40 MB smaller. `adduser` is busybox's, not shadow's — the Debian
+  // `useradd` flags do not exist here.
+  return `FROM node:22-alpine
+RUN adduser -D -s /sbin/nologin kortix \\
     && mkdir -p /opt/kortix && chown kortix:kortix /opt/kortix
 COPY pi-worker-entrypoint /usr/local/bin/pi-worker-entrypoint
 COPY fetch-runtime.mjs /opt/kortix/fetch-runtime.mjs
@@ -533,7 +646,7 @@ ENV NODE_ENV=production
 export function piWorkerImageFingerprint(): string {
   return createHash('sha256')
     .update(
-      `pi-worker-v1\0${buildPiWorkerDockerfile()}\0${PI_WORKER_ENTRYPOINT_SH}\0${PI_WORKER_FETCH_MJS}\0${PI_WORKER_PARK_MJS}`,
+      `pi-worker-v2\0${buildPiWorkerDockerfile()}\0${PI_WORKER_ENTRYPOINT_SH}\0${PI_WORKER_FETCH_MJS}\0${PI_WORKER_PARK_MJS}`,
     )
     .digest('hex');
 }

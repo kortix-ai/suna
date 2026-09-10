@@ -807,24 +807,38 @@ test.describe("26 — Settings localization", () => {
             .first()
             .click();
 
-          await expect(
-            wizard.getByRole("heading", {
-              name: copy.projectOnboarding.tools.title,
-              exact: true,
-            }),
-          ).toBeVisible();
-          await expect(
-            wizard.getByRole("textbox", {
-              name: copy.projectOnboarding.tools.searchPlaceholder,
-            }),
-          ).toBeVisible();
-          await wizard
-            .getByRole("button", {
-              name: copy.projectOnboarding.tools.continue,
-              exact: true,
-            })
-            .first()
-            .click();
+          const connectorsEnabled = await page.evaluate(() => {
+            const host = window as typeof window & {
+              __KORTIX_RUNTIME_CONFIG?: { CONNECTORS_ENABLED: boolean };
+              __RUNTIME_ENV?: { CONNECTORS_ENABLED: boolean };
+            };
+            return (host.__KORTIX_RUNTIME_CONFIG ?? host.__RUNTIME_ENV)?.CONNECTORS_ENABLED;
+          });
+          expect(typeof connectorsEnabled).toBe("boolean");
+          if (connectorsEnabled) {
+            await expect(
+              wizard.getByRole("heading", {
+                name: copy.projectOnboarding.tools.title,
+                exact: true,
+              }),
+            ).toBeVisible();
+            await expect(
+              wizard.getByRole("textbox", {
+                name: copy.projectOnboarding.tools.searchPlaceholder,
+              }),
+            ).toBeVisible();
+            await wizard
+              .getByRole("button", {
+                name: copy.projectOnboarding.tools.continue,
+                exact: true,
+              })
+              .first()
+              .click();
+          } else {
+            await expect(wizard.getByRole("heading", {
+              name: copy.projectOnboarding.tools.title, exact: true,
+            })).toHaveCount(0);
+          }
 
           await expect(
             wizard.getByRole("heading", {

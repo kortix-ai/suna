@@ -1,26 +1,8 @@
 /**
- * Anonymous, read-only "view this session's conversation" surface for a
- * public share token — the backend half of `/share/[shareId]` (apps/web).
- *
- * Every public share created via the SESS-13 CRUD (`preview` or `file`
- * resource type) already proves that the session's owner chose to hand this
- * token to someone outside the account. This module reuses that same proof
- * to unlock a SEPARATE, sanitized capability: read the session's title and a
- * compacted, text-only transcript — entirely server-to-sandbox, no new
- * client-side sandbox access, no dependency on which port/file the share
- * happens to also expose. `resolvePublicShare` (session-public-shares.ts)
- * remains the single 404/410/503 gate; this module only adds what happens
- * AFTER a token resolves.
- *
- * Sanitization mirrors `projects/lib/session-transcript.ts` (the
- * authenticated per-session transcript digest used by
- * `GET /projects/:id/sessions/:sid/transcript`): only message role, text,
- * tool NAME + status (no args/output), file NAME + mime (no content), and a
- * `reasoning_omitted` flag are ever returned — raw tool call arguments,
- * command output, and file contents never leave the sandbox. Kept as an
- * independent (small) implementation rather than importing that module's
- * private helpers, since this lives in a different ownership boundary
- * (anonymous/public surface vs. the authenticated project routes).
+ * Read-only public conversation views after public-share authorization.
+ * Active transcripts come from the worker. Stopped or unreachable workers use
+ * a matching durable mirror. Both sources use the same compact projection.
+ * Tool inputs/outputs, file contents/URLs, and reasoning text remain private.
  */
 
 import { eq } from 'drizzle-orm';
@@ -35,6 +17,7 @@ import {
   listSandboxOpencodeSessions,
   resolveRootSessionId,
 } from '../projects/opencode-mapping';
+import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
 import type { PublicShareRow } from './session-public-shares';
 
 const WORKSPACE_DIRECTORY = '/workspace';
@@ -112,6 +95,9 @@ export interface CompactPublicMessage {
 }
 
 export interface PublicSessionTranscript {
+  source?: 'live' | 'mirror';
+  captured_at?: string;
+  complete?: boolean;
   available: boolean;
   reason: string | null;
   opencode_session_id: string | null;
@@ -208,19 +194,50 @@ function unavailable(
  * for conditions the caller can't usefully retry past (sandbox not running).
  */
 export async function getPublicSessionMessages(
-  row: Pick<PublicShareRow, 'sessionId'> & { externalId: string; sandboxStatus: string | null },
+  row: Pick<PublicShareRow, 'sessionId'> & { externalId: string | null; sandboxStatus: string | null },
 ): Promise<PublicSessionMessagesResult> {
-  if (row.sandboxStatus !== 'active') {
-    return { ok: false, status: 503, error: 'Sandbox is not running' };
-  }
-
   const [sessionRow] = await db
     .select({ opencodeSessionId: projectSessions.opencodeSessionId })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, row.sessionId))
     .limit(1);
   const pinnedRootId = sessionRow?.opencodeSessionId ?? null;
+  let live: PublicSessionMessagesResult = { ok: false, status: 503, error: 'Sandbox is not running' };
+  if (row.externalId && row.sandboxStatus === 'active') {
+    try {
+      live = await getLivePublicSessionMessages({ ...row, externalId: row.externalId }, pinnedRootId);
+      if (live.ok && live.transcript.available) return live;
+    } catch (error) {
+      console.warn('[public-session-share-view] live transcript unavailable', error);
+      live = { ok: true, transcript: unavailable('Could not read the shared session right now.', pinnedRootId) };
+    }
+  }
+  try {
+    const mirror = await readSessionTranscriptMirror({ sessionId: row.sessionId, limit: MAX_MESSAGES });
+    if (mirror && (!pinnedRootId || mirror.opencode_session_id === pinnedRootId)) {
+      const messages = normalizeMessageList(mirror.messages).slice(-MAX_MESSAGES);
+      return {
+        ok: true,
+        transcript: {
+          available: true, reason: null, source: 'mirror',
+          captured_at: mirror.captured_at,
+          complete: mirror.head_complete && mirror.messages.length >= mirror.total,
+          opencode_session_id: mirror.opencode_session_id ?? pinnedRootId,
+          message_count: messages.length,
+          messages: messages.map(compactMessage),
+        },
+      };
+    }
+  } catch (error) {
+    console.warn('[public-session-share-view] durable transcript unavailable', error);
+  }
+  return live;
+}
 
+async function getLivePublicSessionMessages(
+  row: Pick<PublicShareRow, 'sessionId'> & { externalId: string; sandboxStatus: string | null },
+  pinnedRootId: string | null,
+): Promise<PublicSessionMessagesResult> {
   const listed = await listSandboxOpencodeSessions(row.externalId, undefined);
   if (!listed.ok) {
     return {

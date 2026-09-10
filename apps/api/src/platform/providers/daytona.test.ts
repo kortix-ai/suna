@@ -8,6 +8,9 @@
 // logs, until the process restarted. This proves getStatus() now gives up on
 // a hung upstream call within the configured bound instead of hanging.
 import { beforeEach, expect, mock, test } from 'bun:test';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 mock.module('../../config', () => ({
   config: {
@@ -56,6 +59,50 @@ beforeEach(() => {
   process.env.KORTIX_DAYTONA_CALL_TIMEOUT_MS = '1200';
   activityRefreshes = [];
   getDaytonaSandbox = () => new Promise<never>(() => {});
+});
+
+test.each(['starting', 'started'])('start joins a concurrent provider wake in state %s', async (state) => {
+  const conflict = Object.assign(new Error('Sandbox state change in progress'), { statusCode: 409 });
+  const starts: number[] = [];
+  const waits: number[] = [];
+  let reads = 0;
+  getDaytonaSandbox = async () => ++reads === 1
+    ? { start: async (timeout: number) => { starts.push(timeout); throw conflict; } }
+    : { state, waitUntilStarted: async (timeout: number) => { waits.push(timeout); } };
+  const { DaytonaProvider } = await import('./daytona');
+  await expect(new DaytonaProvider().start('sbx_concurrent')).resolves.toBeUndefined();
+  expect(starts).toEqual([1.2]);
+  expect(waits).toEqual(state === 'starting' ? [1.2] : []);
+  expect(reads).toBe(2);
+});
+
+test.each(['stopped', 'stopping', 'error'])('start rejects a conflict when state %s does not prove another wake', async (state) => {
+  const conflict = Object.assign(new Error('Sandbox state change in progress'), { statusCode: 409 });
+  let reads = 0;
+  getDaytonaSandbox = async () => ++reads === 1
+    ? { start: async () => { throw conflict; } }
+    : { state, waitUntilStarted: async () => { throw new Error('Must not wait'); } };
+  const { DaytonaProvider } = await import('./daytona');
+  await expect(new DaytonaProvider().start('sbx_conflict')).rejects.toBe(conflict);
+});
+
+test('start preserves non-conflict provider failures', async () => {
+  const failure = Object.assign(new Error('Disk quota reached'), { statusCode: 400 });
+  let reads = 0;
+  getDaytonaSandbox = async () => { reads++; return { start: async () => { throw failure; } }; };
+  const { DaytonaProvider } = await import('./daytona');
+  await expect(new DaytonaProvider().start('sbx_quota')).rejects.toBe(failure);
+  expect(reads).toBe(1);
+});
+
+test('start bounds a concurrent wake that never becomes ready', async () => {
+  const conflict = Object.assign(new Error('Sandbox state change in progress'), { statusCode: 409 });
+  let reads = 0;
+  getDaytonaSandbox = async () => ++reads === 1
+    ? { start: async () => { throw conflict; } }
+    : { state: 'starting', waitUntilStarted: () => new Promise<never>(() => {}) };
+  const { DaytonaProvider } = await import('./daytona');
+  await expect(new DaytonaProvider().start('sbx_waiting')).rejects.toThrow('timed out after 1200ms');
 });
 
 test('renewLifecycle refreshes provider activity for a running sandbox', async () => {
@@ -160,4 +207,109 @@ test('native auto-stop is a backstop that clears the longest measured turn', asy
   expect(daytonaLifecycle().autoStopInterval).toBe(720);
   expect(daytonaLifecycle(5).autoStopInterval).toBe(5);
   expect(daytonaLifecycle(0).autoStopInterval).toBe(1);
+});
+
+
+test('runtime bootstrap probes the configured port through the actual shell command', async () => {
+  const listener = Bun.serve({ port: 0, fetch: () => new Response('ready') });
+  const results: Array<{ exitCode: number; result: string }> = [];
+  getDaytonaSandbox = async () => ({
+    process: {
+      executeCommand: async (command: string) => {
+        const child = Bun.spawn(['/bin/sh', '-c', command], {
+          env: { ...process.env, KORTIX_SERVICE_PORT: String(listener.port) },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const [exitCode, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        const result = { exitCode, result: stdout + stderr };
+        results.push(result);
+        return result;
+      },
+    },
+  });
+  try {
+    const { DaytonaProvider } = await import('./daytona');
+    await new DaytonaProvider().ensureSessionRuntimeStarted('sbx_active');
+    expect(results).toEqual([{ exitCode: 0, result: 'already-listening\n' }]);
+  } finally {
+    listener.stop(true);
+  }
+});
+
+test('runtime bootstrap detaches a worker with the lock descriptor held through its lifetime', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'daytona-bootstrap-'));
+  const record = join(root, 'flock-args');
+  const refRecord = join(root, 'runtime-ref');
+  const launchRecord = join(root, 'launch-args');
+  await writeFile(join(root, 'node'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await writeFile(join(root, 'flock'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$BOOTSTRAP_RECORD"\nprintf "%s" "$KORTIX_PI_RUNTIME_REF" > "$BOOTSTRAP_REF_RECORD"\n', { mode: 0o755 });
+  await writeFile(join(root, 'setsid'), '#!/bin/sh\ntest -e /dev/fd/9 || exit 70\nprintf "%s\\n" "$@" > "$BOOTSTRAP_LAUNCH_RECORD"\n', { mode: 0o755 });
+  getDaytonaSandbox = async () => ({
+    process: {
+      executeCommand: async (command: string) => {
+        const child = Bun.spawn(['/bin/sh', '-c', command], {
+          env: { ...process.env, PATH: root + ':' + process.env.PATH, BOOTSTRAP_RECORD: record, BOOTSTRAP_REF_RECORD: refRecord, BOOTSTRAP_LAUNCH_RECORD: launchRecord, KORTIX_PI_RUNTIME_REF: 'main', KORTIX_PI_RUNTIME_SHA: 'a'.repeat(40) },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const [exitCode, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        return { exitCode, result: stdout + stderr };
+      },
+    },
+  });
+  try {
+    const { DaytonaProvider } = await import('./daytona');
+    await new DaytonaProvider().ensureSessionRuntimeStarted('sbx_stopped');
+    expect(await readFile(refRecord, 'utf8')).toBe('a'.repeat(40));
+    expect((await readFile(record, 'utf8')).split('\n')).toEqual([
+      '-n',
+      '9',
+      '',
+    ]);
+    for (let i = 0; i < 100 && !(await Bun.file(launchRecord).exists()); i++) await Bun.sleep(5);
+    expect(await readFile(launchRecord, 'utf8')).toBe('/usr/local/bin/pi-worker-entrypoint\n');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+test('runtime bootstrap reports a launch failure instead of treating it as lock contention', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'daytona-bootstrap-'));
+  await writeFile(join(root, 'node'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await writeFile(join(root, 'flock'), '#!/bin/sh\necho cannot-create-lock >&2\nexit 73\n', { mode: 0o755 });
+  getDaytonaSandbox = async () => ({
+    process: {
+      executeCommand: async (command: string) => {
+        const child = Bun.spawn(['/bin/sh', '-c', command], {
+          env: { ...process.env, PATH: root + ':' + process.env.PATH },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const [exitCode, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        return { exitCode, result: stdout + stderr };
+      },
+    },
+  });
+  try {
+    const { DaytonaProvider } = await import('./daytona');
+    await expect(new DaytonaProvider().ensureSessionRuntimeStarted('sbx_failed')).rejects.toThrow(
+      'exit 73: cannot-create-lock',
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

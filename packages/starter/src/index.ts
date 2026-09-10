@@ -47,6 +47,7 @@ export interface StarterFile {
 export const STARTER_TEMPLATE_IDS = [
   'minimal',
   'general-knowledge-worker',
+  'pi',
 ] as const;
 export type StarterTemplateId = (typeof STARTER_TEMPLATE_IDS)[number];
 export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge-worker';
@@ -90,6 +91,7 @@ const GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR = join(
   'templates',
   'general-knowledge-worker',
 );
+const PI_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'pi');
 const MARKETPLACE_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'marketplace');
 const MANAGED_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'managed');
 
@@ -165,7 +167,9 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
   // Later roots win (`byPath.set`), so the general-knowledge-worker layer may
   // override a base file of the same path.
   const roots: { name: string; dir: string }[] = [{ name: 'base', dir: BASE_TEMPLATE_DIR }];
-  if (resolvedVars.template !== 'minimal') {
+  if (resolvedVars.template === 'pi') {
+    roots.push({ name: 'pi', dir: PI_TEMPLATE_DIR });
+  } else if (resolvedVars.template !== 'minimal') {
     roots.push({
       name: 'general-knowledge-worker',
       dir: GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR,
@@ -176,6 +180,22 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
   for (const root of roots) {
     for (const raw of rawFilesForRoot(root.name, root.dir)) {
       byPath.set(raw.path, { path: raw.path, content: interpolate(raw.content, resolvedVars) });
+    }
+  }
+
+  // A pi project runs no OpenCode, and its manifest is `kortix_version: 3`, so
+  // its config dir resolves to `.kortix/pi`. Everything the base layer ships
+  // under `.kortix/opencode` — the agents, the pty plugin, opencode.jsonc, the
+  // tools — would be read by nothing: not the compiler (which reads
+  // `.kortix/pi/agents/*.md`) and not the runtime (a pi box never starts
+  // opencode). Scaffolding it anyway would hand every new pi project 25 files
+  // of config that look authoritative and are inert, and the first person to
+  // edit an agent would edit the wrong one. The base layer is still the right
+  // parent: README, .gitignore and `.kortix/memory` are runtime-agnostic and
+  // the pi layer overrides the first two.
+  if (resolvedVars.template === 'pi') {
+    for (const path of [...byPath.keys()]) {
+      if (path.startsWith('.kortix/opencode/')) byPath.delete(path);
     }
   }
 

@@ -39,7 +39,7 @@ export function useBinaryBlob(filePath: string | null): {
   isLoading: boolean;
   error: string | null;
 } {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
   const query = useQuery<Blob>({

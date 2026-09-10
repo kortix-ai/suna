@@ -21,6 +21,789 @@ linked, not inlined.
 
 ## Register
 
+### Establish an SSE subscription before triggering its test event (2026-09-10)
+
+**When:** testing a transient question, permission, or message event.
+**Incident:** the Pi core CI lane sent a prompt before `/global/event` connected. It missed `question.asked` while the standalone lane passed.
+**Rule:** await the stream response before the mutation. Await the observed event separately. Do not replace this ordering with a sleep or a larger timeout.
+**Enforcer:** the six event subscriptions in `turn-routes.test.ts` use an explicit connection barrier. Fifty repetitions each of question and permission flows pass.
+
+### Wait for PostgREST after local migrations (2026-09-10)
+
+**When:** starting REST or browser tests against a fresh local database.
+**Incident:** Pi `SESS-31` returned 402 with a balance of 2 because the credit RPC returned `PGRST002`. PostgREST started before the `kortix` schema existed and entered retry backoff.
+**Rule:** wait for the required REST schema after migrations. Do not interpret database migration completion as REST readiness or retry spending requests to hide the failure.
+**Enforcer:** `ensureLocalMigrations` checks public OpenAPI metadata for both credit RPCs with a 90-second deadline. `local-profile.test.ts` covers recovery, incomplete metadata, timeout, and loopback enforcement.
+
+### Verify shared-source imports without a workspace dependency tree (2026-09-10)
+
+**When:** a standalone runtime imports SDK or other workspace source.
+**Incident:** worker tests passed locally but CI could not resolve the SDK's OpenCode client dependency.
+**Rule:** reproduce the standalone install and resolve dependencies from the imported source's ancestry. Keep daemon and worker integration typechecks under their respective compiler settings.
+**Enforcer:** the sandbox-agent CI job links pinned dependencies, checks both compiler configurations, and builds both runtime artifacts. Shared package changes trigger the job.
+
+### Pi bootstrap must not depend on workspace Git access
+
+- Incident: the 2026-09-10 resource preview returned `403` for every bundle download
+  when an agent declared `workspace: runtime`. The repository gate blocked startup.
+- Rule: authorize a Pi bootstrap artifact separately from repository access. Bind
+  session credentials to their pinned source SHA and agent. Include the target and
+  SHA in authorization memo keys. Never reuse bootstrap authorization for Git.
+- Enforcement: `unit-git-proxy-authz.test.ts` covers sandbox keys and session PATs,
+  wrong releases, deleted identities, repository denial, and memo separation.
+
+### Wait for terminal acknowledgments before worker close returns (2026-09-10)
+
+**When:** closing a Pi worker with a terminal relay still in flight.
+**Near-miss:** crash-recovery tests observed a late `relayed` write after the replacement read its truncated log.
+**Rule:** stop new relays and await the active acknowledgment before close returns. Abort active agent work concurrently.
+**Enforcer:** `turn-end-relay.test.ts` blocks a real acknowledgment promise. Close must wait and must not relay the next turn.
+
+### Bind compiled artifact selection to the calling session agent (2026-09-10)
+
+**When:** accepting an agent name on an authenticated compiled-runtime download.
+**Near-miss:** the Pi route preferred an explicit query name over the session's assigned agent.
+**Rule:** a session token selects only its assigned agent. Reject mismatches and missing session identity before compilation.
+**Enforcer:** `pi-runtime-agent.test.ts` covers matching, omitted, mismatched, empty, missing-session, and owner selections.
+
+### Preserve custom SDK error identity across separately compiled bundles (2026-09-10)
+
+**When:** a custom Pi module imports an error type also used by the worker.
+**Near-miss:** the compiled state test could not catch a worker conflict with the module's separate constructor.
+**Rule:** define a stable cross-bundle identity for public errors. Verify it in the compiled artifact, not only a workspace import.
+**Enforcer:** `custom-pi-runtime.test.ts` exhausts a real HTTP conflict loop and catches `PiStateConflictError` inside compiled project code.
+
+### Do not poison unrelated persistence after a definitive state rejection (2026-09-10)
+
+**When:** extending the session log with conditional custom-state writes.
+**Near-miss:** a local test reproduced a 413 state rejection leaving the entire conversation log unwritable.
+**Rule:** separate definitive rejected mutations from uncertain commit outcomes. Keep conversation writes available after validation/quota rejection; fail closed when commit status is unknown.
+**Enforcer:** `agent-state.test.ts` requires a successful transcript append after a rejected state write; existing log reconciliation tests retain uncertain-outcome guards.
+
+### Bound attachment downloads by the remaining request deadline (2026-09-09)
+
+**When:** materializing external inputs before a durable write.
+**Incident:** preview `0e515ced49` used a 30-second image timeout under the API's 25-second request deadline. A slow image returned `503 request_deadline` before its own error.
+**Rule:** cap the download below the enclosing deadline, subtract time already spent, and reserve time for the response. Do not exempt ordinary prompt admission from the API deadline.
+**Enforcer:** `request-deadline.test.ts` checks remaining budgets. `pi-remote-prompt-attachments.test.ts` proves an exhausted budget returns 400 with zero fetches. The live fixture permits 60-second responses to expose the real boundary.
+
+
+### Normalize IPv6 before checking private egress ranges (2026-09-09)
+
+**When:** accepting external URLs or checking DNS answers for remote image ingestion.
+**Near-miss:** local image tests exposed bracketed literal hosts reaching DNS and hexadecimal IPv4-mapped addresses escaping the dotted IPv4 check. No live private endpoint was contacted.
+**Rule:** normalize IPv6, unwrap URL brackets, and classify mapped IPv4 addresses before connecting. Cancel redirect bodies before following a new destination.
+**Enforcer:** `unit-ssrf-guard.test.ts` covers literal, expanded, and mapped private addresses. `pi-remote-prompt-attachments.test.ts` proves rejected destinations cause zero fetches and redirect responses are not persisted.
+
+
+### Verify runtime selection with a fresh project and every old flag disabled (2026-09-09)
+
+**When:** making a manifest version select a runtime automatically.
+**Incident:** preview `ab9aa58479` selected Pi for YAML v3, but its artifact route returned `403 feature_disabled` on a fresh MCP test project. Existing flagged projects hid the failure.
+**Rule:** apply runtime selection through creation, compilation, download, and restart. Compile only the selected runtime on push. Verify fresh projects independently of migrated fixtures.
+**Enforcer:** `GH-18` pushes YAML v3 with `pi_worker: false`, checks exact artifact bytes, and preserves anonymous and source-SHA denial checks. `compiled-prebuild.test.ts` asserts Pi never invokes OpenCode compilation.
+
+### Reuse the policy-checked body for local Git pushes (2026-09-09)
+
+**When:** serving a local bare Git upstream after reading receive-pack commands.
+**Incident:** `GH-18` reproduced `500 Body already used`; the local path read the original request after the ref gate consumed it.
+**Rule:** pass the reconstructed authorized stream to every upstream implementation. Run successful-push hooks for local repositories too.
+**Enforcer:** `GH-18` uses a real authenticated Git clone and push against the local API before downloading the committed artifact.
+
+### Keep compiled source out of artifact-store error logs (2026-09-09)
+
+**When:** logging database failures while storing compiled agent artifacts.
+**Near-miss:** fixture teardown raced an asynchronous prebuild; the foreign-key error printed SQL parameters containing the synthetic agent bundle.
+**Rule:** log only a validated database error code. Database error objects can contain full agent source and configuration.
+**Enforcer:** `pi-runtime-store.test.ts` injects failed reads and writes with private source in the error and asserts code-only output.
+
+
+### Reject truncated summaries before replacing model context (2026-09-09)
+
+**When:** committing an agent conversation summary.
+**Incident:** a local Luna overflow fixture used a 4,096-token window. Pi's fixed safety reserve clamped summary output to one token; the accepted partial goal lost the completed tool and caused repeated calls. No environment was used.
+**Rule:** treat the provider's `length` stop reason as a compaction failure. Preserve the original transcript and completed tools. Set fixture windows above Pi's fixed reserve when measuring successful summarization.
+**Enforcer:** direct and overflow-path truncation tests plus HTTP tool-round failure tests in the worker suite. The real 16,384-token fault fixture completes with one tool call and exact restart history.
+
+### Mount one global billing dialog per authenticated app (2026-09-09)
+
+**When:** a global dialog can open from nested settings and account surfaces.
+**Incident:** preview `6363074d0f` displayed two upgrade dialogs after Subscribe. Their accessibility hiding made both headings absent from the accessibility tree.
+**Rule:** own the renderer above authenticated routes. Nested legacy hosts must defer to that owner; keep a fallback for public share pages.
+**Enforcer:** the live billing journey asserts one dialog and an accessible heading before submitting checkout.
+
+### Reload generated proxy configuration from host bytes (2026-09-09)
+
+**When:** refreshing Caddy inside a reused preview container.
+**Incident:** `78009fa891` wrote the new sensitive-path rule on the host, but the file bind mount retained an old inode. Reload reported success while `/.env` still reached Next.js.
+**Rule:** feed the current host file to `caddy reload --config /dev/stdin --adapter caddyfile`. A path inside a running container does not prove it sees the current host file.
+**Enforcer:** preview bootstrap and guard tests require stdin reload. Live SEC-J and SESS-29 pass after the same reload command; no edge restart is needed.
+
+### Return plain denials for sensitive preview paths (2026-09-09)
+
+**When:** a preview shares one origin between the API and frontend.
+**Incident:** SEC-J at `6363074d0f` matched a public translation's PEM header placeholder in a 1.45 MB HTML 404 for `/.env`; no encoded key block was present.
+**Rule:** reject sensitive paths at the preview edge before application routing. Inspect response status, content type, and matched material before classifying a disclosure. Keep sensitive response bodies out of logs.
+**Enforcer:** `preview-stack.test.ts` requires the denial route; the unchanged SEC-J flow verifies the public response.
+
+### Stop the core agent before optional custom shutdown hooks (2026-09-08)
+
+**When:** closing or replacing a Pi worker.
+**Incident:** structured-output recovery tests found that workers without a custom module did not abort the provider; queued work could start during close.
+**Rule:** abort and drain the core agent independently of optional hooks. Fence queued turns before every asynchronous model-start boundary.
+**Enforcer:** `worker-shutdown.test.ts` requires an aborted provider, a closed HTTP server, and zero additional provider calls for queued work.
+
+### Preserve formatter outcomes and retry budgets across tool replay (2026-09-08)
+
+**When:** translating Pi structured output into durable turns.
+**Incident:** new formatter recovery tests reproduced duplicated validation failures and lost completed results before journal completion.
+**Rule:** persist validated outcomes before turn completion. Count cached tool failures once. Preserve provider and cancellation errors when formatting never starts.
+**Enforcer:** `structured-output-routes.test.ts` exercises question replay, crash boundaries, retry exhaustion, Stop, and failed compaction through HTTP.
+
+### Persist streamed display parts independently of provider content (2026-09-08)
+
+**When:** translating Pi streams into the durable conversation transcript.
+**Incident:** preview `b5ddaa9` lost an empty Luna reasoning part during compaction and renumbered the following tool.
+**Rule:** retain emitted text/reasoning identities, content, and timing. Providers can omit streamed blocks from their final message. Reuse the same layout during tool replay.
+**Enforcer:** `streamed-part-restore.test.ts` compares exact restoration and resumed tool IDs. `turn-routes.test.ts` verifies HTTP compaction and worker replacement with omitted reasoning.
+
+### Scope bootstrap attempts to one wake, not one sandbox ID (2026-09-08)
+
+**When:** claiming a new resume of an existing sandbox.
+**Incident:** the Pi preview restored once, then skipped bootstrap after a second stop because its old attempt marker remained.
+**Rule:** clear bootstrap markers on each wake or explicit restart. Preserve automatic retry budgets; reset them only for an explicit restart.
+**Enforcer:** `session-runtime-bootstrap.test.ts` proves the same box earns a new attempt while its failure budget survives. Live repeated stop/resume checks compare the complete transcript.
+
+### Execute provider bootstrap commands through a real shell (2026-09-08)
+
+**When:** constructing a runtime restart command for a sandbox provider.
+**Incident:** Pi preview `0f6b0eac05` could not resume the original test session; `sh` rejected the bootstrap argument.
+**Rule:** quote each shell argument and export the probe port. Use writable lock/log paths, select `/bin/sh` explicitly, and report launch errors.
+**Enforcer:** `daytona.test.ts` executes the actual command through `/bin/sh`, checks an existing listener, and captures the detached launch arguments.
+
+### Verify the event route that the installed client actually opens (2026-09-07)
+
+**When:** adding a replacement conversation runtime.
+**Incident:** Pi preview clients repeatedly parked their SSE connection; the committed worker returned `404` for `/global/event`.
+**Rule:** serve the client's authenticated stream and envelope. Send idle heartbeats and bound each subscriber's buffered output.
+**Enforcer:** `global-event-liveness.test.ts` exercises the real prompt route, idle delivery, and independent subscriber limits.
+
+### Sign proxy requests with the target runtime's credential (2026-09-07)
+
+**When:** looking up an environment for files, terminals, or preview requests.
+**Incident:** Pi preview `0ea36cfd55` ran file tools successfully, but the browser received `503 sandbox proxy authentication rejected`.
+**Rule:** read `session_environments.config.serviceKey` for an environment. Never substitute its worker's credential.
+**Enforcer:** `backend-environment.test.ts` checks the selected config column, the distinct key, and absent or malformed keys.
+
+### Bake remote tool executables into every environment image (2026-09-07)
+
+**When:** a worker tool invokes an executable through environment RPC.
+**Incident:** Pi preview `0ea36cfd55` completed four workspace tools, but glob and grep returned exit `127`: `rg` was missing.
+**Rule:** install each required executable in the shared/custom layer and standalone image. Verify it during image build and invalidate the runtime layer cache.
+**Enforcer:** `workspace-search-floor.test.ts` requires ripgrep and `rg --version` in both image definitions.
+
+### Permission checks must inspect the complete compound operation (2026-09-04)
+
+**When:** deriving permission patterns from a shell command that contains multiple operations.
+**Near-miss:** the external-directory check inspected only the first command segment, so
+`echo ok; cat /tmp/secret.txt` bypassed an `external_directory: deny` policy.
+**Rule:** evaluate the complete raw command for secondary permission classes. Keep per-segment
+patterns only for the primary shell permission decision.
+**Enforcer:** `permission-broker.test.ts` denies an external path in the second command before
+the environment tool executes.
+
+### Optional compatibility flags must preserve upstream defaults (2026-09-04)
+
+**When:** implementing an OpenCode-compatible request or response with optional fields.
+**Near-miss:** Pi treated an omitted question `custom` flag as `false`, while OpenCode and the web
+client treat omission as `true`; valid free-form answers failed after the user submitted them.
+**Rule:** encode and test the upstream default for every optional compatibility field. Do not use
+JavaScript truthiness when omission and `false` have different meanings.
+**Enforcer:** `question-broker.test.ts` covers both omitted `custom` and explicit `custom: false`.
+
+### Persist one effective runtime identity before detached provisioning (2026-09-04)
+
+**When:** a specialized runtime overrides the caller's provider or boot artifact.
+**Near-miss:** Pi provisioned on Daytona while the session row stored Platinum; replacement then
+rebuilt it with OpenCode environment variables because the first boot's ref and SHA were not durable.
+**Rule:** persist one effective provider with the immutable boot ref and SHA, and use it for the
+response, row, audit, provision, restart, and cold-open. Reject incomplete identity; never downgrade.
+**Enforcer:** `e2e-project-session-contract.test.ts` pins both replacement paths and malformed rows.
+
+### Server-owned runtime classifiers must win every metadata merge (2026-09-04)
+
+**When:** accepting or forwarding session-creation metadata.
+**Incident:** fail-before tests returned `201` for forged `pi_worker_boot` and explicit `pi-worker`;
+the internal create path also retained forged `pi_worker_boot: true` and `runtimeArtifact`.
+**Rule:** deny reserved classifiers at public ingress, strip all three from internal caller metadata,
+then write authoritative `pi_worker_boot`, `sandbox_slug`, and `runtimeArtifact` after caller spreads.
+**Enforcer:** `e2e-project-session-contract.test.ts` and `SESS-1` cover nested forgery, explicit
+slug aliases, internal rows, and the legitimate feature-plus-immutable-manifest selection path.
+
+### Bootstrap every durable projection from one snapshot (2026-09-04)
+
+**When:** restoring the Pi transcript and turn journal in a multi-worker session.
+**Incident:** a completion committed between two startup reads, so the replacement combined an
+old transcript with a new journal envelope and exposed an assistant message without durable parts.
+**Rule:** read the append-only log once and build every startup projection from those exact items.
+Revalidate ownership after any later remote hydration before model or tool execution.
+**Enforcer:** `turn-routes.test.ts` blocks the former second read and commits across the boundary.
+
+### A legacy transcript repair requires the active turn lease (2026-09-04)
+
+**When:** rewinding an accepted legacy user entry before replay.
+**Incident:** startup called `moveLane` before acquiring ownership, so a simultaneous worker could
+mutate the shared transcript for a turn it did not own.
+**Rule:** acquire the journal owner first, attach its `_kortixTurnLease` to the repair, then reload
+durable state and revalidate the owner before entering the model.
+**Enforcer:** `turn-routes.test.ts` requires one lease-fenced `lane_move` during restart replay.
+
+### Lease loss invalidates the worker's live transcript cache (2026-09-04)
+
+**When:** a model run loses its owner lease after live assistant or tool events reached memory.
+**Incident:** durable append fencing rejected the losing worker's answer, but its old runtime
+surface still served that rejected answer after a replacement completed the turn.
+**Rule:** after every non-durable run exit, replace the live cache from durable Pi and journal state,
+then publish removal and replacement events so connected clients converge.
+**Enforcer:** `runtime-surface.test.ts` and the reclaim integration in `turn-routes.test.ts`.
+
+### A malformed append-reconciliation read must fail closed (2026-09-04)
+
+**When:** resolving an append after all request attempts lose or fail their responses.
+**Incident:** a successful non-array read caused a raw `TypeError` and left the log writable even
+though the append outcome was unknown.
+**Rule:** validate the snapshot shape, compare JSON-canonical wire content, return only on an exact
+match, report same-key/different-content as conflict, and poison every absent or malformed outcome.
+**Enforcer:** `session-store.test.ts` covers canonical success, conflict, absence, and malformed data.
+
+### A two-runtime lifecycle policy must drive production writes (2026-09-04)
+
+**When:** adding an auxiliary runtime whose lifecycle follows a session worker.
+**Incident:** the worker/environment state matrix existed only in tests, while `ensure` could
+provision compute for a parked worker and stop paths closed rows and meters after an unconfirmed
+provider failure.
+**Rule:** consume the shared state matrix in every ensure and reaper path. Do not report success,
+close metering, or mark the auxiliary runtime stopped until provider state confirms the stop.
+**Enforcer:** lifecycle ensure, teardown, route, reaper, and manual-stop tests cover every pair and
+provider failure outcome.
+
+### Bind internal credentials to their intended endpoint (2026-09-04)
+
+**When:** adapting an internal session token for model-provider authentication.
+**Incident:** the Pi worker treated `KORTIX_TOKEN` as an API key even without a gateway URL,
+which could send the control-plane credential directly to an external provider.
+**Rule:** use the session token for model calls only when the Kortix gateway URL is configured.
+**Enforcer:** `model-credential-required.test.ts` covers direct, gateway, and missing-key paths.
+
+### A command timeout must kill the complete process tree (2026-09-04)
+
+**When:** enforcing a timeout on a shell command that can fork child processes.
+**Incident:** env-rpc killed only the parent shell; a child kept the output pipes open and a
+200 ms timeout returned after 5 seconds.
+**Rule:** start each command in its own process group and signal the group on timeout.
+**Enforcer:** `env-rpc.test.ts` requires a forked five-second command to return within 1.5 seconds.
+
+### A runtime decision and its artifact must use one immutable Git SHA (2026-09-04)
+
+**When:** selecting a runtime and compiling its boot artifact from a moving Git ref.
+**Incident:** session creation read `runtime` and resolved the branch tip in parallel, so a push
+between those reads could select Pi from one commit and boot an artifact from another commit.
+**Rule:** resolve the ref once, then read the manifest and compile every artifact at that SHA.
+**Enforcer:** `sessions.fast-boot-git-hint.test.ts` requires the manifest read after SHA resolution.
+
+### A retryable POST needs a server-enforced idempotency key (2026-09-04)
+
+**When:** retrying an append after a timeout or transport failure can follow a committed write.
+**Incident:** the Pi transcript client could not distinguish a failed request from a lost response;
+retrying could duplicate a durable message, while not retrying could lose it.
+**Rule:** mint one UUID per logical append, reuse it across retries, and reject key/content conflicts.
+**Enforcer:** `session-store.test.ts`, `session-log-http.test.ts`, and the unique database index.
+
+### A standalone artifact lock requires an explicit root quality gate (2026-09-04)
+
+**When:** a workspace package builds its production artifact from a nested package-manager lockfile.
+**Incident:** `apps/kortix-worker` had 155 tests, but root and package lanes ran none of them;
+its real-bundle API suites also passed as skipped whenever `dist/` was absent.
+**Rule:** include the package in the workspace, then run its standalone install, test, typecheck,
+build, and required bundle proof explicitly from the artifact lock.
+**Enforcer:** `worker-quality.ts`, root lane contracts, and the worker-triggered CI build job.
+
+### A lost mutation response is not permission to replay the mutation (2026-09-04)
+
+**When:** retrying RPC after a socket close, reset, pipe failure, or timeout.
+**Incident:** `KortixExecutionEnv.rpc()` retried every socket-shaped failure, so an environment
+mutation that committed before its response dropped could execute twice despite the outer guard.
+**Rule:** retry only an explicit, fail-closed set of read operations. Unknown operations mutate.
+**Enforcer:** `kortix-env.test.ts` commits a side effect, drops the response, and requires one call.
+
+### An ExecutionEnv adapter must return the consumer's exact metadata shape (2026-09-04)
+
+**When:** bridging Pi filesystem operations to another process or runtime.
+**Incident:** env-rpc returned `{isFile,modifiedAt}` while Pi requires `{name,path,kind,mtimeMs}`;
+the real `edit` tool stopped after `fileInfo` and never read or wrote the target file.
+**Rule:** mirror Pi's contract, use `lstat` to preserve symlinks, and test through the real tool.
+**Enforcer:** `env-rpc-worker-integration.test.ts` runs scripted `edit` across worker and daemon.
+
+### A secret allowlist and its runtime collector must be one definition (2026-09-04)
+
+**When:** forwarding CI secrets into a generated preview or deployment runtime.
+**Incident:** `deploy-preview.yml` exported `MANAGED_GIT_GITHUB_TOKEN` and the preview
+allowlist accepted it, but `sandbox-preview.ts` copied a separate ten-key list that omitted it.
+Adding the Actions secret would still have left managed Git unavailable inside the API container.
+**Rule:** derive collection and forwarding from one allowlist. Never duplicate secret key names.
+**Enforcer:** `preview-stack.test.ts` iterates `PREVIEW_RUNTIME_SECRET_ALLOWLIST` and proves every
+listed value is trimmed, forwarded, and isolated from unlisted environment variables.
+
+### A byte-identical migration rename still requires ledger repair (2026-09-04)
+
+**When:** changing any applied migration filename, including a timestamp-only rebase.
+**Incident:** the `pi-worker` full local gate re-ran `secret_consumer_boundary` under its new
+name and failed on duplicate enum `42710`; the database recorded the byte-identical old name.
+**Rule:** add every old-to-new filename pair to the checksum-guarded repair and normalize the
+whole affected ledger suffix by database microsecond order. File-content equality is not identity.
+**Enforcer:** unit and PostgreSQL integration tests cover the secret-consumer rename and strict order.
+
+### Parse untrusted text with one forward scan, not a backtracking regular expression (2026-09-03)
+
+**When:** trimming URLs or extracting text from upstream HTML and other untrusted response bodies.
+**Incident:** the Pi PR introduced three high-severity CodeQL alerts; 30,000 trailing-slash
+candidates took 363 ms, and 10,000 unclosed HTML tags took 425 ms on a developer machine.
+**Rule:** use an index or cursor that advances monotonically. Add an adversarial-size regression test.
+**Enforcer:** CodeQL blocks polynomial regexes; the worker and SDK tests cap both cases at 100 ms.
+
+### Read deployed capability and environment facts from the target, not the runner label (2026-09-03)
+
+**When:** writing browser assertions for a deployed preview, staging, or production target.
+**Incident:** the Pi gate called its target `custom`, while `/v1/health` correctly reported
+`preview`; another test required Platinum even though the target exposed Daytona only.
+**Rule:** read the environment and available providers from target responses, then assert the UI
+renders that exact contract. Do not translate runner labels or hard-code optional providers.
+**Enforcer:** `18-apps-ui.spec.ts` reads health; `12-sandbox-templates.spec.ts` reads provider coverage.
+
+### Browser fixtures must not require host CLIs that the test image does not install (2026-09-03)
+
+**When:** adding database setup to a deployed Playwright journey.
+**Incident:** three Pi browser journeys stopped at `spawnSync psql ENOENT` before opening the UI.
+**Rule:** use the shared `pg` client with parameterized SQL. Do not spawn `psql` from browser fixtures.
+**Enforcer:** `test-runner-contract.test.ts` rejects `execFileSync('psql', ...)` in the fixture helpers.
+
+### Shell you GENERATE is expanded by the shell that writes it — transfer it base64, and prove the secret landed in one file (2026-09-02)
+
+**When:** emitting a shell snippet from a TS template literal
+(`buildPreviewBootstrapScript`), from a Python string, or through
+`docker exec sh -lc "..."` / a provider `exec` API. Anything containing `$1`,
+`$(...)`, `"` or `\n` is interpreted by the OUTER shell (or by TS) before the
+inner script ever exists.
+
+**Two failures in one afternoon, same root cause.** (1) An inline credential
+helper, `git config credential.helper "!f() { ...; echo "password=$(cat $F)"; }; f"`
+— the nested double quotes collapse, the outer shell runs `$(cat $F)` at CONFIG
+time, and git stores the literal token in `.git/config`. (2) The workaround for
+(1), written with `printf %s "...\n..."` through a provider exec: `%s` does not
+interpret `\n` so the helper became one line, `$1` expanded to empty (`[ "" = get ]`),
+and `$(cat ...)` expanded again — inlining the token a second time.
+
+**The rules:** (1) transfer generated scripts **base64-encoded**
+(`echo <b64> | base64 -d > file`) — the repo's own `encodedFileCommand` already
+does this; (2) a credential belongs in exactly ONE file, and the check is a
+`grep` for the token pattern across the config AND the helper, not just the one
+you were thinking about; (3) `bash -n` proves syntax, never semantics — both
+broken versions passed it. Only running the snippet and grepping the result
+caught either.
+
+**The enforcer that works:** a test that WRITES a sentinel token, executes the
+emitted snippet in a temp repo, and asserts the sentinel is absent from
+`.git/config` while the helper still answers `get` with it
+(`tests/unit/sandbox-preview.test.ts`). Text assertions on the generated script
+passed happily while the token leaked.
+
+
+### A second runtime per session inherits none of the first one's reconcilers, and a status column nobody writes is a permanent wedge (2026-09-02)
+
+**When:** giving a session a second box — a pi environment, or anything else
+that gets its own table instead of a `session_sandboxes` row. Every reconciler,
+sweep, meter and stop path in this repo keys on `session_sandboxes`, and a new
+table silently opts out of all of them at once. Grep for the table name across
+`billing/`, `reaping/` and `session-lifecycle/` before assuming a lifecycle is
+wired; `stopX`/`deleteX` existing and being CALLED from the manual paths proves
+only the manual paths.
+
+**The wedge:** `session_environments.status` had exactly one writer
+(`stopSessionEnvironment`, reachable only from the manual Stop and its route),
+while the box carried `autoStopInterval: 60`. So the provider powered boxes off
+and nothing wrote it down. `ensureSessionEnvironment` short-circuited on
+`status === 'active' && externalId`, and `claimEnvironmentWork` re-claims only
+`error`/`stopped`/stale `provisioning` — never `active`. A stopped box therefore
+served forever from a row that could not be re-claimed: every tool call failed
+and nothing in the system could repair it. **20 of 21 rows on pi.kortix.com read
+`active` with a box attached.**
+
+**The rules:** (1) any status column a PROVIDER can change behind your back must
+be verified against the provider before it is trusted, not just written on the
+paths you control; (2) `unknown` from an unreachable provider must not
+authorize a teardown — serving stale is the recoverable mistake (the same split
+`providers/status.ts` records as "the single most expensive bug in this
+subsystem"); (3) a new runtime table needs its billing join, its stop-path
+write, and its reaper entry added deliberately — `startComputeSession` defaulting
+`workloadType` to `'session'` for a non-session box makes the invariant sweep
+close its meter on the first pass. Measured: 21 environments, ONE compute row,
+88.5 s, $0.0049 total.
+
+*Scope:* found by a 55-agent audit — 49 candidate sites, 28 confirmed — recorded
+in `docs/PI_P24_SCOPE.md`. The wedge and the reaper tie-in are fixed; billing
+(needs a `workload_type` CHECK migration) and the automatic stop paths are not.
+*Enforcer:* `environment-liveness.test.ts` pins the decision, and
+`routes/session-environment.test.ts` pins that `ensure` actually calls it.
+Nothing yet asserts that a new runtime table appears in the billing sweep.
+
+
+### A `pull_request_target` deploy runs the DEFAULT BRANCH's scripts, so a fix to the deploy path is dark until it reaches main (2026-09-02)
+
+**When:** changing anything under `tests/src/core/sandbox-preview.ts`,
+`tests/bin/preview-stack.ts`, or the Caddy/compose templates a preview
+generates, and then testing it by pushing to the branch that owns the preview.
+`deploy-preview.yml` is `pull_request_target`; its build jobs check out
+`needs.authorize.outputs.sha` (your commit) but the **deploy job checks out
+`${{ github.event.repository.default_branch }}`**. So the images are yours and
+the deploy logic is main's. A push proves nothing about a deploy-script change,
+and the change cannot fail loudly — it simply never runs.
+
+**The incident:** a branch environment is REUSED, so nothing reclaims the images
+each deploy supersedes; ~3 GB of api/frontend/gateway layers accumulate on a
+50 GB disk. A prune was written on `pi-worker` weeks earlier and never took
+effect, because the deploy reads main. pi.kortix.com reached 100% / 0 avail:
+`supabase-db` crash-looped on `could not write lock file "postmaster.pid": No
+space left on device`, `supabase-kong` restarted, `preview-edge` and 12 other
+services stayed in `Created`, and the deploy's own health gate then refused to
+re-point the hostname — correctly — leaving a 502 for ~30 min. 22.2 GB pruned
+by hand restored it (100% -> 54%).
+
+**The second rule, from the same incident: never gate a cleanup behind the
+health it protects.** The prune ran only AFTER the new stack proved healthy,
+which is exactly the state a full disk prevents — the cleanup sat behind the
+failure it existed to prevent. Reclaim before the pull as well, gated on the
+disk actually being tight (`image prune -af` spares every image a container
+references, running or not).
+
+**Diagnostic:** `x-kortix-environment: pi` present on a Cloudflare 502 means the
+Worker is healthy and passing an upstream failure through; the sandbox origin
+answering `upstream-unreachable: Failed to connect` means nothing is listening
+on 8080. Then `df -h /` inside the box, not the deploy log.
+*Enforcer:* none. A check that a PR touching the preview deploy path is on
+main before it is trusted, or a disk-usage assertion in the deploy summary,
+is the TODO.
+
+
+### A persistent preview sandbox cannot fetch a PRIVATE repo, so the branch env silently freezes on an old commit (2026-09-02)
+
+**When:** relying on a persistent branch environment (`preview` label,
+`deploy-preview.yml`) to reflect what you just pushed.
+`tests/src/core/sandbox-preview.ts:97-99` does
+`git remote set-url origin https://github.com/<repo>.git` and then
+`git fetch --depth=1 origin <ref>` — with NO credential. That only works while
+the sandbox happens to hold one, and `kortix-ai/suna` is private: an anonymous
+`git ls-remote` inside the box answers
+`could not read Username for 'https://github.com'`. Verified in the live pi
+sandbox that it has no credential at all — no repo config, no
+`~/.gitconfig`, no `~/.git-credentials`, no `GIT_ASKPASS`.
+**The failure is SILENT in the worst way.** The deploy step is
+`continue-on-error: true`, so the job keeps going, "Point the stable hostname"
+never runs, and the environment keeps serving the LAST commit that fetched.
+`/v1/health` reports `status: ok` the whole time — it is healthy, just old. Five
+consecutive deploys failed this way before it was noticed, and two rounds of
+"live verification" in between were actually testing stale code and reported
+the OLD behaviour as the current one.
+**Rules:** (1) after any preview deploy, assert `/v1/health`'s `commit` EQUALS
+the SHA you pushed — a 200 proves the environment is alive, never that it is
+current, and this is the same class as the deploy-dev rule about a green
+`/health` not being deployment proof; (2) treat a `continue-on-error` deploy
+step as a step that WILL fail unnoticed — the run's conclusion is not the
+environment's state; (3) a persistent sandbox needs a durable credential, not
+whatever it was created with.
+**Diagnostic:** the deploy log shows `HEAD is now at <older sha>` followed by
+`fatal: could not read Username`, four retries, exit 128 — and the environment
+answers healthy on that older sha.
+*Incident:* pi.kortix.com frozen on `ef2163ba` while seven later commits sat
+pushed and undeployed. Unblocking needs `PREVIEW_MANAGED_GIT_GITHUB_TOKEN` (or
+any repo-scoped credential in the box), which requires repo admin.
+*Enforcer:* none. A post-deploy assertion that health's `commit` equals the
+pushed SHA would have caught it on the first failure instead of the fifth.
+
+### A CLI change does not reach agents until the SANDBOX IMAGE is rebuilt, and the preview never rebuilds it (2026-09-02)
+
+**When:** adding or changing a `kortix` CLI command that agents are meant to
+use. The agent path is `bash` → `kortix …` inside the session ENVIRONMENT, and
+that binary is COMPILED INTO the sandbox image
+(`apps/sandbox/Dockerfile:244`, `COPY --from=cli-builder /cli/kortix
+/usr/local/bin/kortix`). That image is built by `deploy-dev.yml` — on main.
+`deploy-preview.yml` builds only the gateway, API and frontend images, so a
+branch preview runs NEW api code against an OLD sandbox image.
+**Measured:** with `kortix fs` committed and the preview deployed, an agent on
+pi.kortix.com answered `/usr/local/bin/kortix` for `command -v kortix` and
+`FS_SUBCOMMAND_ABSENT` for `kortix fs --help`. The mechanism was fine; the
+binary was three commits stale.
+**Rules:** (1) a CLI change is verifiable on a preview only by running the CLI
+from the REPO against the preview's API (`KORTIX_API_URL` + `KORTIX_TOKEN` +
+`KORTIX_PROJECT_ID` env, which is exactly how the in-sandbox CLI
+authenticates) — the in-sandbox binary proves nothing until dev redeploys;
+(2) never conclude "agents can use it" from a green API test; probe the actual
+binary in a live box; (3) when a new CLI subcommand is the agent surface for a
+feature, say in the PR which deploy makes it real.
+**Diagnostic:** `command -v kortix` succeeds but the new subcommand prints
+usage/unknown — a stale image, not a broken command.
+*Near-miss:* would have shipped `kortix fs` believing agents could already call
+it. Caught by probing a live session instead of trusting the API tests.
+*Enforcer:* none. A check that the sandbox image's CLI version matches the
+deployed API commit would catch it.
+
+### `bun test` is not the SDK's gate — `bun run test` is, and the difference is 532 failures (2026-09-02)
+
+**When:** judging whether a change to `packages/sdk` is green. The package's own
+script is `find src -name '*.test.ts' | xargs -n1 -P4 bun test --isolate` — ONE
+FILE PER PROCESS. Running a bare `bun test` in that directory puts all 188 files
+in one process, where the suite's `mock.module` calls replace modules wholesale
+and take unrelated files down with them: measured 2230 pass / **532 fail**
+against 2770 pass / **0 fail** for the same tree under the real script. The
+failures name real-looking things (`backendApi.post is not a function`,
+`Failed to write file (502)`) and point at the victim, never the polluter.
+**Rules:** (1) use `bun run test`, never `bun test`, to judge this package;
+(2) a new suite here will pass alone and fail in a shared process — that is the
+pre-existing leak, not your code, and the way to tell is a git-stash baseline of
+the SAME command, both numbers written down; (3) when the two numbers differ by
+hundreds, suspect the runner before the diff.
+**The other half:** adding exports fails
+`public-surface`/`public-type-surface` by design. Those are a QUESTION — "did I
+mean to change the public API?" — not a test to re-record. Answer it by
+set-comparing old against new and confirming REMOVED is empty; additive is safe,
+a removal or rename is a breaking change needing an alias. Regenerate only then,
+with `UPDATE_SURFACE_SNAPSHOT=1` / `UPDATE_TYPE_SURFACE_SNAPSHOT=1`.
+*Near-miss:* the filesystems SDK surface looked like it had broken 542 tests;
+the real number was 2 (both snapshots), both additive, both expected.
+*Enforcer:* the package's `test` script already encodes the right invocation —
+the trap is only for someone who types `bun test` out of habit.
+
+### An OpenAPI `{param}` matches ONE path segment, so a route carrying a file path 404s on every real path (2026-09-02)
+
+**When:** putting anything slash-bearing into a typed route parameter — a file
+path, a ref name, a nested key. `@hono/zod-openapi`'s `{path}` compiles to a
+single-segment matcher, so
+`/{projectId}/filesystems/{name}/files/{path}` served `plan.md` and 404'd
+`notes/2026/plan.md` — which is most real paths. The HANDLER was correct; the
+pattern it hung off never matched, so the failure looked like "file not found"
+rather than "route not found", and every negative test still passed for the
+wrong reason.
+**What made it invisible locally:** 32 unit tests were green — the path
+normaliser, the blob store against real MinIO, the whole service layer — because
+none of them route. A green unit suite says the pieces work; it says nothing
+about whether a request can REACH them. The bug surfaced on the first real HTTP
+call to the deployed preview, on the third step of nine.
+**Rules:** (1) a path-shaped value travels as a QUERY parameter
+(`?path=`) unless the router is known to support wildcards — this API already
+established that with `/v1/projects/:id/files/content?path=`; (2) every new
+route family gets one real request against a deployed origin before it is
+called done, and the request must use a REALISTIC value (a nested path, not
+`a.txt`); (3) when a route 404s, check whether the pattern matched at all
+before debugging the handler.
+**Diagnostic:** sibling routes on the same prefix work (`create`, `list`,
+`delete` all 2xx) while one family 404s — that asymmetry is a routing shape
+problem, not a data problem.
+*Near-miss:* caught on the pi-worker preview before reaching main or a user.
+*Enforcer:* flows FS-1..FS-4 use `notes/2026/plan.md`, a genuinely nested path,
+so a segment-matching regression fails the suite rather than passing on a
+flat filename.
+
+### A bare directory pattern in .gitignore matches at EVERY depth, and a test that reads the working tree cannot see what was never committed (2026-09-02)
+
+**When:** adding product content under a directory name that also appears in
+`.gitignore` — starter templates, fixtures, scaffolds, vendored config. Root
+`.gitignore` carried `.kortix/` with no leading slash, written to drop the
+repo's own dogfood project. Git applies such a pattern at ANY depth, so it also
+matched `packages/starter/templates/pi/.kortix/` — the scaffold every new pi
+project is built from. `git add` reported nothing, the commit went in without
+the files, and the branch shipped a pi template of four files: a manifest
+declaring `default_agent: kortix` whose agent markdown did not exist, and no
+`.kortix/pi/` for `kortix init` to link into, so all six of its symlinks
+dangled. `templates/base/` predated the rule and stayed tracked, which is why
+only the NEW template was hit.
+**The reason it survived review:** `pi-template.test.ts` and
+`pi-starter-compiles.test.ts` both assert exactly the missing files
+(`map.has('.kortix/pi/agents/kortix.md')`, body > 200 chars) and both PASSED
+locally — they read the working tree, where the ignored files sat on disk. A
+green local suite says nothing about what is in the commit. Reproducing the
+committed state by moving the two files aside turned 12 pass into 3 fail.
+**Rules:** (1) anchor an ignore meant for the repo root with a leading slash
+(`/.kortix/`), or pair the broad rule with an explicit
+`!packages/**/templates/*/.kortix/` re-include; (2) after adding files under
+any name that appears in `.gitignore`, run `git status --ignored` or
+`git check-ignore -v <path>` before trusting a silent `git add`; (3) verify a
+packaging change from a FRESH CLONE, never from the working tree that authored
+it — `git ls-files <dir>` is the cheap version of that check.
+**Diagnostic:** product files present on disk, absent from `git ls-files`, and
+a scaffold whose file count is smaller than the template's directory listing.
+*Near-miss:* caught on the pi-worker branch before it reached main or any user;
+every `kortix init` on the pi template would have produced an agent-less project.
+*Enforcer:* the two tests above are correct and now run against committed
+content; the `!packages/starter/templates/*/.kortix/` re-include is what keeps
+them honest.
+
+### Two repairs for the same deploy race each other, and the loser's fix is silently undone (2026-09-01)
+
+**When:** any environment where a deploy REGENERATES config and more than one
+actor patches it back. On pi.kortix.com the deploy rewrites
+`docker-compose.preview.yml` from main's `tests/`, dropping the `kortix-api`
+git-cache volume. Two things restore state afterwards: `post-deploy.sh` (runs
+when the deploy run reports success) and the in-sandbox managed-git guard (runs
+150 s after it sees the token wiped). Both call the same
+`docker compose … up -d --force-recreate --no-deps kortix-api`. Whichever runs
+LAST decides the outcome — and the guard recreated against the still-stripped
+overlay at 18:19:43, giving the API an unmounted `/tmp/kortix`. Every project's
+git mirror, including pi-lab's bare upstream, disappeared from the container's
+view and `POST /projects/:id/sessions` answered **500 GitOperationError: '…/pi-lab.git'
+does not appear to be a git repository**. The data was never lost — the volume
+still held all 67 refs; only the mount was missing.
+**Rules:** (1) every actor that recreates a container must ASSERT the full
+desired config first, not assume a sibling script already did — the guard now
+re-appends the volume block before its own recreate; (2) a repair script is not
+a substitute for the config reaching `main`; (3) when a deploy regenerates
+config, enumerate everything that recreates containers on that box before
+declaring the environment fixed.
+**Diagnostic:** `docker inspect <api> --format '{{range .Mounts}}…'` returning
+EMPTY while `docker compose … config` shows the volume correctly — that gap means
+the RUNNING container predates the config, so read the container's `Created`
+timestamp against the repair logs.
+*Incident:* pi.kortix.com session-create broken ~18:19–18:26 UTC, found by a
+verification turn rather than by an alarm. No user traffic.
+*Enforcer:* the guard's own assertion (in-sandbox). The real fix is landing
+`tests/` on main so nothing has to be re-applied at all.
+
+### Env handed to a process over HTTP is not state the box owns; persist it or the first resume loses it (2026-09-01)
+
+**When:** any handoff where a long-lived box is told WHAT to be at runtime — the
+pi worker pool's park/claim, and anything else that boots generic and is
+specialised by a request. `park.mjs` received the claim env over HTTP and
+spawned the worker with it **in the child process only**, while the container's
+own environment still said `KORTIX_PI_PARK=1`. Stop/resume re-ran the
+entrypoint, which exec'd the park script again with the claim gone: port 8000
+answered `{parked:true,runtimeReady:false}` forever,
+`shouldBootstrapSessionRuntime` retried once, and the session could never run
+another turn. Its transcript survived; nothing else did.
+**Rules:** (1) persist the claim to the box's disk BEFORE acknowledging it, and
+prefer it over the generic path on every later boot — the acknowledgement is a
+promise the box must be able to keep; (2) a failed persist answers 500 and stays
+claimable rather than accepting a claim it cannot honour; (3) whenever a
+container has a "mode" env var, ask what re-running the entrypoint does — a
+resume is not a fresh create.
+**Diagnostic:** a session whose transcript loads but whose every turn hangs, on
+a box whose `/kortix/health` says `parked:true`. A cold-created box resumed
+fine, so it read as random until the pool was in the picture.
+*Near-miss:* pool is gated off everywhere (`KORTIX_PI_WORKER_POOL_TARGET=0`), so
+this never reached a user — it would have shipped with the pool.
+*Enforcer:* `pi-worker-park.test.ts` boots the real baked script, claims it,
+kills the box, and re-boots the SAME disk.
+
+### A test that SIGKILLs a child orphans its grandchildren, and a leaked listener poisons a fixed port range (2026-09-01)
+
+**When:** any test that spawns a process which itself spawns another (a
+supervisor, a park/handoff script, a dev server that forks). `child.kill()`
+reaches only the direct child; the grandchild is reparented to init and KEEPS
+its port bound. 42 had accumulated on one machine, each squatting a port in the
+helper's `18800 + random(500)` range, so a later boot drew a stranger's worker,
+got `{runtimeReady:true}` with no `parked` field, and the assertion failed on
+`parked === undefined` — 1 run in 6, at a rate that climbed with every run and
+therefore looked like a change-induced regression rather than a leak.
+**Rules:** (1) `spawn(..., { detached: true })` and kill the process GROUP
+(`process.kill(-pid, 'SIGKILL')`) — the group id survives reparenting, so it
+reaches the orphans; (2) never pick a test port from a fixed range — bind `0`,
+read the assigned port, close, use it; (3) a flake whose rate RISES across a
+session is accumulating state on the machine — count the processes before
+blaming the diff.
+**Diagnostic:** `lsof -nP -iTCP -sTCP:LISTEN` in the range, plus
+`ps -o pid,ppid,pgid,command` showing `ppid=1`.
+*Enforcer:* `killTree()` + `freePort()` in `pi-worker-park.test.ts`; 12/12 clean
+and 0 new leaks afterwards.
+
+### A fix on a path the client never calls is not a fix, and a test that uses the same wrong path certifies it (2026-09-01)
+
+**When:** adding or verifying a route on a runtime the SDK talks to. The pi
+worker served the Stop button's abort at `/kortix/opencode/session/:id/abort`.
+The SDK builds its OpenCode client with `baseUrl = <backend>/p/<externalId>/8000`
+(`getClientForUrl`, packages/sdk/src/core/runtime/client.ts), so
+`session.abort()` posts to `<base>/session/:id/abort` — the RAW root.
+`handleRawSessionList` was GET-only, so that POST fell through to the worker's
+catch-all 404: Stop did nothing, the UI painted "Interrupted" from its own
+optimistic receipt, and the agent generated to completion. The route had been
+added on 2026-08-29 to fix exactly this symptom — on the wrong path — and all
+five of its unit tests drove the prefixed path, so they passed while the
+product stayed broken.
+**Rules:** (1) verify a runtime route by calling the URL the CLIENT builds,
+not the one you wrote — read the client's `baseUrl` and concatenate; (2) when
+a surface answers on two prefixes, one of them is the product's; assert THAT
+one; (3) a bug reported as "the button does nothing" is a routing question
+before it is a logic question — curl both paths and compare status codes.
+*Incident:* pi.kortix.com, found by testing Stop by hand — raw 404 vs prefixed
+200 on one live session. Fixed in `58f5cdf4`; verified live, a 3000-word
+request stopped at 917 words mid-sentence.
+*Enforcer:* `runtime-surface.test.ts` -> "the RAW path the SDK calls" drives
+`handleRawSessionList` directly.
+
+
+### A request that provisions a machine can never satisfy the 25s deadline — return status and do the work out of band (2026-08-29)
+
+**When:** writing or reviewing any endpoint that creates/resumes a sandbox, VM,
+or other multi-second resource, especially one a poller calls.
+`POST /sessions/:id/environment/ensure` awaited a full Daytona provision inside
+the request; `middleware/request-deadline` kills every request at 25s, and the
+loser of the claim waited a further 120s (`CLAIM_WAIT_MS`). So the FIRST compute
+tool call of every pi session got 503 after 503 until the worker's 180s budget
+expired: `write` sat at `running` for three minutes and then failed, on a
+session that was otherwise healthy. The caller was ALREADY a poller
+(`LazyKortixEnv.attach` re-asks every 2s until `active`) — the blocking wait
+bought nothing and cost everything.
+**The rule:** claim, start the work detached, return the current status. And
+detaching costs one thing the request-bound version got free — **a claim whose
+owner dies must expire**: nothing else ever re-claims a `provisioning` row, so
+add a staleness window (`PROVISION_STALE_MS`) or one crash wedges that resource
+forever. Diagnostic: a 503 whose `duration` is exactly the deadline, repeating
+at the caller's poll interval.
+*Incident:* pi.kortix.com, every session, until #7024. No prod impact — pi is
+preview-only. *Enforcer:* `session-environment.test.ts` pins that `ensure` never
+awaits the work and that a stale claim is re-claimable.
+
+### An adapter that passes a foreign error vocabulary through breaks the consumer silently (2026-08-29)
+
+**When:** bridging one runtime's filesystem/exec contract to another's over
+HTTP (env-rpc, tool bridges, anything returning `{code, message}`).
+The daemon's env-rpc is a thin `fs` proxy and returns the real errno; the
+worker's `KortixExecutionEnv` handed it straight to pi as a `FileError.code`.
+pi's `withFileMutationQueue` canonicalises a mutation target first and tolerates
+a path that does not exist YET — but only for code `not_found`, rethrowing
+anything else. So `ENOENT` meant **`write` could never create a file**: every
+new file died on its own pre-flight lstat and the agent fell back to `bash`
+heredocs (10 in one turn, live), while the tool's own description promised
+"Creates the file if it doesn't exist".
+**The rule:** translate at the adapter, mirror the reference implementation
+verbatim (pi's `harness/env/nodejs.js`, its spellings `not_directory` /
+`is_directory` included), and map unmapped errnos to `unknown` rather than
+leaking a second raw code. A passthrough default is what hides this: the happy
+path works, only the CREATE path fails.
+*Incident:* pi.kortix.com, all file creation, until #7024.
+*Enforcer:* `kortix-env.test.ts`.
+
+### `docker image prune --filter until=24h` reclaims nothing on an environment that redeploys daily (2026-08-29)
+
+**When:** adding disk housekeeping to any long-lived, frequently-redeployed box.
+The persistent branch environment pulls ~3GB of images per deploy and never
+reclaimed them; it hit 100% and the stack stopped coming up. The first fix used
+`until=24h` to "keep today's generation as a rollback" — it reclaimed **0 B**,
+because that box deploys several times a day so every superseded image is
+younger than a day. Unfiltered (`docker image prune -af`) the same box went
+90% -> 46%, 20.35 GB, with all 12 services still running: a running container
+holds a reference to its own image, so only genuinely dead layers go.
+**The rule:** prune AFTER the new stack passes its health check, with no age
+filter, never fatal (`|| true`) — and verify the reclaim on the real box, because
+a prune that frees nothing looks exactly like a prune that works.
+*Enforcer:* `tests/unit/sandbox-preview.test.ts`.
+
 ### A self-authenticating route must populate the shared context the resolver reads (2026-09-09)
 
 **When:** adding a route that authenticates its own credential instead of running
@@ -1513,10 +2296,6 @@ fixture only proves the class you thought to seed.
 including a free-tier + `active` $0-subscription case modeled on the real prod
 row; `per-seat-pricing.test.ts` pins `resolveRenewalGrant` for per-seat,
 configured-grant and paid-by-amount branches.
-
-||||||| bd5aae39c4
-
-||||||| 0c247496b6
 
 ### A URL that carries a credential must never reach a log line (2026-08-20)
 
@@ -3305,8 +4084,6 @@ still blocked, and the own-session credential still allowed.
 
 *Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
 PR #6828.
-||||||| base
-
 ## Measure the amplification factor; never decode what you can forward
 
 2026-08-24. The gateway's ai-sdk transport decoded every `data:` image with
@@ -4197,6 +4974,34 @@ fix, no code change beyond two regex patterns. No data loss — messages sent at
 dead composer were always durable inbox rows; only the transcript READ
 dead-ended.
 
+## Separate runtime principals require a separate RPC credential
+
+Found 2026-09-03 on the `pi-worker` preview. Worker and environment PATs became
+distinct runtime principals. `LazyKortixEnv` still signed environment RPC with
+the worker PAT. The environment daemon still verified the signature with its
+own PAT. Every Bash and file call therefore returned `401`, which the worker
+rendered as a generic environment error. Unit tests used one shared token on
+both sides and could not detect the broken boundary.
+
+**Rules.**
+1. A credential that identifies one runtime must not authenticate a different
+   runtime's private endpoint.
+2. Cross-runtime RPC must use a purpose-bound secret that grants no control-plane
+   API access.
+3. An integration test for two runtime principals must use different PAT values.
+   A shared test token recreates the coupling that production removed.
+4. A global project-scope gate and the route handler must accept the same runtime
+   principal types. Handler support is unreachable when middleware denies first.
+
+*Automation:* `env-rpc-worker-integration.test.ts` uses distinct worker PAT,
+environment PAT, and RPC secret values across the real client and daemon router.
+`env-rpc.test.ts` rejects an environment PAT as an RPC signature.
+`project-audit-ingestion.test.ts` and `auth.test.ts` pin environment callbacks
+and the session-bound boot-timeline middleware allowance.
+
+*Incident:* The branch preview returned two environment tool errors before the
+fix. No production or dev deployment received this branch. The affected preview
+sessions were stopped after verification.
 ## OAuth loopback redirect URIs are protocol data, not perimeter SSRF attempts
 
 - **Incident (2026-08-28, v0.13.7 release QA):** flow `OAU-8` received an HTML
@@ -4397,6 +5202,43 @@ own config; no real secret was ever written to disk in plaintext.
   `next`. The override now reads `"next@>=15.0.0 <16.3.3": "16.3.3"` and
   `apps/whitelabel-demo` declares `next: 16.3.3` explicitly.
 
+## Renaming an applied migration requires a name-and-order ledger repair
+
+- **Incident (2026-09-03, `pi-worker` preview):** two Pi migrations initially
+  used timestamps before migrations already merged into `main`. Moving the Pi
+  files after the merged migrations fixed fresh and sequential migration gates.
+  The persistent preview database still recorded the old names and their old
+  `run_on` order. `node-pg-migrate` rejected startup before the API bound port
+  `8080`, and the preview hostname returned `502` during the failed cutover. A
+  first repair tried to interpolate the renamed rows between adjacent `run_on`
+  values. PostgreSQL preserved sub-millisecond precision, but the Node `Date`
+  conversion collapsed both bounds to the same millisecond and rejected the
+  second preview deployment.
+- **Rule:** never rename an applied migration without a checksum-guarded ledger
+  repair. The repair must update both `name` and `run_on` when the rename crosses
+  other applied migrations. A fresh database cannot prove this upgrade path.
+- **Enforcement:** `migration-ledger-repair.test.ts` pins both Pi name mappings.
+  `migration-ledger-repair.integration.test.ts` builds a historical ledger with
+  identical sub-millisecond timestamps, runs the locked repair, and requires
+  strict `node-pg-migrate` order to report no pending migrations. The repair
+  normalizes the affected ledger suffix inside PostgreSQL at microsecond
+  precision; it never round-trips ordering bounds through JavaScript.
+
+## A single-origin preview turns service base paths into part of the test contract
+
+- **Incident (2026-09-03, `pi-worker` preview):** `target-full` configured the
+  standalone gateway as `https://pi.kortix.com/_gateway`. The black-box client
+  reduced every configured URL to its origin, so gateway `/health` reached the
+  API `/health`, and gateway `/v1/*` calls reached API routes or 404 responses.
+  The same preview disabled its landing page while the browser lane required
+  the public `/` and `/pricing` contracts.
+- **Rule:** preserve a deployed service's configured path prefix when requests
+  use service-relative route templates. A preview runtime configuration must
+  expose every public surface that its strict target suite exercises.
+- **Enforcement:** `Client.forBaseUrl()` keeps the prefix through auth and retry
+  clones while retaining the original coverage key. `client-resilience.test.ts`
+  pins prefixed and root service URLs. `preview-stack.test.ts` requires preview
+  marketing pages to remain enabled.
 ## A column declared in schema.ts but absent from the migration ledger passes every drift gate (2026-09-03)
 
 *Incident (2026-09-03, ~16:30 UTC onward, every Kortix environment).* Every
@@ -4443,6 +5285,764 @@ the class.
 *Fix:* Platinum migration `0068_sandbox_idempotency_keys_expected.sql`
 (`ADD COLUMN IF NOT EXISTS "expected" jsonb`, expand-only) plus journal idx 68.
 *Enforcer:* none yet in Platinum — rule 1 is the CI lane to add there.
+
+## A persistent preview cannot assume its dependency store matches the new lockfile
+
+- **Incident (2026-09-04, `pi-worker` preview):** the branch preview reused its
+  persistent Platinum sandbox after the branch added the Pi worker package.
+  The new lockfile-specific warm template contained the dependency, but the
+  reusable sandbox did not switch templates. Its bootstrap ran only
+  `pnpm install --offline --frozen-lockfile`. pnpm returned
+  `ERR_PNPM_NO_OFFLINE_TARBALL` for `@earendil-works/pi-agent-core@0.84.3`.
+  The command failed before Docker started, so the new origin never served
+  `/v1/health` and the router kept the previous target.
+- **Rule:** an offline dependency install is an accelerator, not a correctness
+  boundary, in any sandbox that survives lockfile changes. Retry the same
+  frozen lockfile install with network access after an offline cache miss.
+  Never retry without `--frozen-lockfile`.
+- **Enforcement:** `buildPreviewBootstrapScript()` runs
+  `pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile`.
+  `sandbox-preview.test.ts` pins both commands in that order.
+
+
+## 2026-09-07 — Pi workspace readiness must follow the data runtime
+
+**Incident:** The Pi preview API returned `pi_worker_boot: true` on `/start`.
+The SDK checked only `sandbox_slug`, classified the worker as the workspace,
+and sent file-list requests to it. The browser received `404` even though the
+environment file route returned `200`. Opening a file output directly also
+skipped `useSessionWorkspace` and fetched before the environment URL existed.
+
+**Rule:** Recognize the server-owned runtime metadata at the SDK boundary.
+Workspace reads use the environment and wait for its readiness. Every file
+preview, including a rich renderer, resolves its session workspace before it
+requests bytes. Chat and events continue to use the worker.
+
+**Automation:** SDK runtime, session-start, project, file, and VCS tests assert
+the target URL and pending state. `file-preview-workspace.test.tsx` covers
+text and PDF readiness, successful attachment, and a retryable environment error.
+
+## 2026-09-07 — Compiled Pi sessions cannot apply composer model choices
+
+**Incident:** The Pi preview showed DeepSeek V4 Flash and an editable agent
+picker while its worker ran the compiled `gpt-5.6-luna` model. A stale UI choice
+looked effective even though the worker could not apply it.
+
+**Rule:** Derive available controls from the session runtime. Keep the agent
+fixed after Pi session creation. Omit unsupported model and reasoning choices
+from prompts, retries, and commands. Hide unsupported attachment and history
+actions, including their keyboard-menu entry points.
+
+**Automation:** Composer render tests cover fixed controls and absent attachment
+actions. Runtime prompt tests preserve OpenCode options and remove Pi overrides.
+The SDK rejects non-text Pi parts before transport. Verify the deployed composer
+with a real prompt after changing this contract.
+
+## 2026-09-07 — Seeded triggers make array-index assertions incorrect
+
+**Incident:** Preview flows TRG-2 and TRG-3 read `triggers[0].model`. Managed
+projects include the alphabetically earlier `harness-reflector` trigger. The
+model update succeeded on `toggle-me`, but the test asserted against the seed.
+The minimal local fixture had no seeded trigger, so the same tests passed locally.
+
+**Rule:** Select created resources by their stable key. Never assume a response
+list contains only the test-created resource. Prove persistence with another GET.
+
+**Automation:** TRG-2 and TRG-3 select their trigger by slug in both the mutation
+response and the read-back response. TRG-3 also asserts the disabled state remains
+unchanged by a model-only PATCH. The strict preview suite includes seeded projects.
+
+
+### Preserve wire identity through durable transcript restoration (2026-09-07)
+
+- Incident: the Pi preview returned 15 messages before stop and 32 after resume
+  plus one new two-message turn. The correct count was 17. Restoration minted
+  new message ids, so the API merged old and restored copies.
+- Rule: persist each wire message id and assistant parent id with the Pi message.
+  Restore those ids. Give legacy entries deterministic fallback ids. Repeated
+  text is valid conversation data and must never be used as a deduplication key.
+- Enforcement: `apps/kortix-worker/src/durable-wire-identity.test.ts` posts two
+  identical turns over HTTP, restarts twice, and asserts identical message ids,
+  part ids, parent links, and the merged count. The test failed before the fix.
+
+
+### Verify both lockfiles for worker dependency changes (2026-09-07)
+
+- Near-miss: preview run 34100612923 rejected the Pi worker image because its
+  package manifest added a type dependency but its standalone Bun lockfile did not.
+  The pnpm workspace tests passed. The previous deployment remained available.
+- Rule: worker dependency changes update `pnpm-lock.yaml` and
+  `apps/kortix-worker/bun.lock`. Verify `bun install --frozen-lockfile` in a
+  standalone directory containing only that worker manifest and Bun lockfile.
+- Enforcement: the API Dockerfile uses the standalone frozen Bun install.
+  The corrected lockfile passed that install locally with 103 packages.
+
+
+### Open a lazy workspace before probing its files (2026-09-07)
+
+- Incident: clicking `/workspace/kortix.yaml` in a text-only Pi session removed
+  its button. The file probe treated an absent workspace as a missing file.
+- Rule: an inline file control probes only when the SDK has a workspace URL.
+  Otherwise it opens the viewer with the original path. The viewer's existing
+  `useSessionWorkspace` hook provisions compute before its file read.
+- Verification: the live browser reproduced the inert path before the change.
+  The existing Markdown, availability, and viewer suites passed 37 tests.
+  The focused ESLint and full web typecheck both passed.
+
+
+### Gate native file routes on workspace readiness (2026-09-07)
+
+- Incident: Pi preview a800b78de9 woke compute from an inline file, then returned
+  file `404` before checkout finished. The same path returned `200` afterward.
+- Rule: apply checkout and workspace readiness gates before native file, search,
+  and presentation routes. Booting returns `503`; missing files return `404`
+  only after setup. File access does not depend on the OpenCode process.
+- Enforcement: `proxy-auth.test.ts` reproduces the premature `404`, then verifies
+  auth, checkout, setup, ready contents, and a genuinely missing file.
+
+
+### Prove workspace readiness before publishing its SDK address (2026-09-07)
+
+- Incident: a Pi environment was active before its checkout completed. File
+  previews cached a `404`; the same path existed after startup. A new API build
+  did not update the daemon already baked into every environment image.
+- Rule: React workspace views and session-scoped file methods must probe the
+  selected environment's `runtimeReady` field before exposing its address.
+- Enforcement: `workspace-readiness.test.ts` exercises real authenticated HTTP
+  across provisioning, startup, ready, transient failure, and boot failure.
+  `kortix.test.ts` rejects file reads made before the second readiness response.
+
+
+### Remove compression headers when forwarding decoded fetch bodies (2026-09-07)
+
+- Incident: preview SESS-24 completed one reply, then its second OpenCode session
+  failed with `ZlibError` from the local LLM proxy. A compressed SSE fixture
+  reproduced the same failure through a real HTTP server.
+- Rule: after fetch decompresses a response, do not forward its original
+  `Content-Encoding` or `Content-Length` with the decoded stream.
+- Enforcement: `llm-proxy.test.ts` passes a gzip SSE response through the proxy
+  and verifies the downstream event text and content type without double decoding.
+
+
+### Bake first-request fixes into new environment images (2026-09-07)
+
+- Incident: Pi file verification reached an older guest daemon after the API
+  deployed. Its replacement was staged, but the guest deferred self-update.
+- Rule: invalidate environment images for fixes required during the first turn
+  or checkout. The daemon's five-minute minimum update age is intentional and
+  cannot substitute for a current boot artifact.
+- Enforcement: runtime layer v46 includes the native readiness and LLM proxy
+  fixes. The existing runtime fingerprint and layer-render tests pass.
+
+
+### Capture completed messages before manual runtime shutdown (2026-09-07)
+
+- Incident: preview SESS-24 completed two assistant replies, then stopped one
+  runtime. Its durable transcript was empty because no turn-end capture ran.
+- Rule: after aborting a live turn, manual stop awaits transcript capture before
+  powering off. An unreachable runtime must still remain stoppable.
+- Enforcement: stop.test.ts holds the capture promise open and proves the
+  provider receives no stop until persistence finishes. SESS-24 reads the
+  completed reply from the durable mirror after a real provider stop.
+
+
+### Keep Pi tool registration, UI transport, and prompt guidance together (2026-09-07)
+
+- Incident: the test deployment returned text questions instead of question cards.
+  An older live worker also returned `404` for `/global/event`, while health
+  remained `200`. The starter prompt still claimed four tools and no skill loader.
+- Rule: a runtime capability includes its registered tool, compatible routes and
+  events, restored result metadata, and accurate model guidance. A healthy old
+  process is not proof that a new capability is installed.
+- Enforcement: question and permission HTTP tests exercise tool execution and
+  replies; global-event tests exercise streaming and parsed heartbeats; runtime
+  guidance and starter tests reject the old capability description. Browser
+  verification asserts partial renders, interactive payloads, and restored cards.
+
+
+### Publish idle only after durable turn reconciliation (2026-09-07)
+
+- Incident: the Pi lease-recovery test intermittently returned a stale assistant
+  response after the worker had already reported no turn in flight. A controlled
+  transcript-read barrier reproduced the same ordering failure.
+- Rule: keep the turn busy until durable reconciliation finishes. Remove stale
+  message projections before publishing `session.idle`. Pi's `agent_end` alone
+  does not prove that the Kortix turn has settled.
+- Enforcement: `apps/kortix-worker/src/turn-routes.test.ts` blocks reconciliation
+  after fencing a stale append. It asserts busy through HTTP and SSE, releases
+  the barrier, then asserts message removal precedes idle and stale text is absent.
+
+### Preserve durable prompt identity through compatibility proxies (2026-09-07)
+
+**When:** forwarding prompts to runtimes with durable admission.
+**Incident:** the Pi preview returned the proxy's `200` duplicate response instead of the worker's
+`204` retry or `409` conflict. Wire-ID repair could also turn a persisted retry into a new prompt.
+**Rule:** read the current runtime's explicit admission capability before forwarding a duplicate.
+Preserve its message ID. Keep legacy deduplication when capability evidence is absent or invalid.
+**Enforcer:** proxy delivery tests cover stable IDs, exact retries, conflicts, and legacy runtimes;
+`RUN-2` checks the same contract through the live proxy and reads back the original user message.
+
+### Keep RPC cancellation active until the response body finishes (2026-09-07)
+
+**When:** awaiting an environment RPC response.
+**Incident:** FetchTransport removed cancellation after receiving headers, so an incomplete JSON
+body ignored Stop. KeepAliveTransport accepted a `503` response whose JSON resembled success.
+**Rule:** cover body parsing with cancellation and reject unsuccessful HTTP status codes before
+interpreting an RPC result. Never replay an ambiguous mutation to recover its response.
+**Enforcer:** `rpc-response.test.ts` uses real HTTP servers to hold a partial body and return a
+misleading `503`; it requires acknowledged cancellation and explicit status rejection.
+
+### Preserve cancellation at the provider stream boundary (2026-09-07)
+
+**When:** adapting a provider stream after Stop aborts a turn.
+**Incident:** the live Pi worker killed the remote shell correctly, but its terminal message became
+`UnknownError`. The timing wrapper converted an iterator's `AbortError` into a generic failure.
+**Rule:** preserve abort exceptions and normalize provider error results against the turn's abort
+signal. Persist `stopReason: aborted` so the live and restored messages use `MessageAbortedError`.
+**Enforcer:** provider-stream tests and both cross-worker Stop routes cover the error frame,
+terminal result, message completion, and replacement-worker transcript.
+
+### Apply gateway routing to every resolved model (2026-09-07)
+
+**When:** resolving Pi provider models behind the Kortix LLM gateway.
+**Incident:** real HTTP regression tests selected a model present in Pi's catalog.
+It used the catalog's public endpoint instead of the configured gateway. Tests
+used dummy credentials and received provider authentication errors. The preview's
+uncatalogued model followed the separate fallback path and did not show the bug.
+**Rule:** set the configured gateway URL on every resolved model. Never rely on
+credential environment metadata to override a model endpoint. Apply compiled
+sampling settings to requests, rather than only reporting them in discovery.
+**Enforcer:** `generation-settings-routes.test.ts` checks actual HTTP destinations,
+credential headers, exact model references, explicit zero values, omitted defaults,
+and consecutive turns for OpenRouter and native Anthropic transports.
+
+### Wait for the final PostgreSQL server in migration fixtures (2026-09-07)
+
+**When:** starting the disposable PostgreSQL containers used by migration tests.
+**Incident:** the package gate's lifetime-rollup setup accepted the temporary
+Unix-socket server used by the image entrypoint. That server stopped before the
+next readiness check, which failed after 1.5 seconds. Inspection of the installed
+`postgres:16-alpine` entrypoint confirmed `listen_addresses=''` during initialization.
+**Rule:** check TCP readiness with `pg_isready -h 127.0.0.1` before applying migrations.
+A successful Unix-socket probe does not prove the final server is available.
+**Enforcer:** all four migration fixtures use TCP readiness; their full suite applies
+the migration history and verifies 26 contracts against disposable databases.
+
+### Apply Stop receipts to content and status evidence (2026-09-07)
+
+**When:** deriving shared session working state during cancellation and immediate resend.
+**Incident:** Pi preview delivered busy frames and incremental text after Stop, but
+the composer kept Send visible. The SDK accepted activity from the cancelled turn
+through its abort receipt. Its projection stayed working across the host's local
+Stop reset, so the next turn produced no working-state transition.
+**Rule:** apply the abort acknowledgement boundary to stream activity and busy
+frames as well as ledger reads. A new send clears the receipt. An unanswered Stop
+must still expire at the existing 15-second bound.
+**Enforcer:** `core/session/working.test.ts` covers the complete working → Stop →
+working sequence, late events, post-acknowledgement output, and timeout recovery.
+
+
+### 2026-09-07 — Enforce compiled agent step limits in the runtime
+
+The Pi migration exposed `steps` in discovery but ignored it during execution.
+An agent configured with two steps made four provider requests and executed
+three tool iterations. A visible configuration value is not proof that the
+runtime applies it.
+
+Reserve the final configured iteration for a text summary. Remove tools from
+that provider request, reject tool calls that ignore the restriction, and stop
+the loop at the limit. Reset the budget for each accepted prompt. Preserve the
+omitted-setting behavior.
+
+`apps/kortix-worker/src/agent-steps-routes.test.ts` verifies actual provider HTTP
+payloads, persisted todo side effects, repeated prompts, `steps: 1`, an omitted
+limit, and a provider that ignores the tool restriction. Three tests fail on
+the unbounded runtime and pass with the limit.
+
+
+### 2026-09-07 — Resolve authentication before rendering an admin denial
+
+The Pi preview browser gate failed while `/v1/user-roles` returned
+`{isAdmin: true, role: "super_admin"}`. The trace showed the refusal screen
+before `auth.getUser()` finished. A disabled TanStack query reports
+`isLoading: false`; that does not mean authentication has resolved.
+
+Include authentication loading in the admin gate's loading state. Start the
+role probe only after a user is known, and apply that condition after caller
+options so `enabled: true` cannot bypass it.
+
+`apps/web/src/hooks/admin/use-admin-role.test.ts` covers initial hydration, a
+resolved anonymous identity, the loading-to-admin transition, and caller
+enablement. `tests/e2e/specs/09-admin-console.spec.ts` remains the deployed
+browser assertion. Do not add a sleep or retry to hide the initial refusal.
+
+
+### 2026-09-07 — Fence readiness observations against lifecycle changes
+
+The Pi preview full API gate exposed an OpenCode restart that stayed in
+provisioning for 300 seconds. Its accepted restart ID disappeared. Real
+PostgreSQL tests reproduce the same loss when an earlier readiness observation
+writes its stale metadata after the restart claim. An earlier ready observation
+can also erase the new attempt's wake clocks.
+
+A readiness write must compare the observed status and complete JSONB metadata
+with the current row before it changes that row. A stale observation does
+nothing; the next poll reads current state. Do not compare a JavaScript Date
+with PostgreSQL's full-precision updated_at as the concurrency fence. A
+millisecond Date loses timestamp microseconds and can reject a current row.
+
+`apps/api/src/__tests__/integration-runtime-readiness-race.test.ts` executes the
+actual readiness writes against PostgreSQL. Nine tests fail before the fence
+and pass afterward. They preserve accepted restart claims, new wake clocks,
+concurrent turn metadata, and stopped status. The current-observation case
+verifies writes and clearing with a microsecond-precision database timestamp.
+
+
+### 2026-09-07 — Persist prompt instructions as part of admission identity
+
+The Pi worker rejected OpenCode's per-prompt `system` field. Compatibility
+requires more than accepting the field. A queued prompt must use its own
+instructions, and a retry must not change an already accepted prompt.
+
+Save the validated string with the admission options and user message. Append
+it to the compiled instructions only while that prompt executes. Restore the
+compiled instructions on completion and error. Include the string in retry
+conflict detection and apply it during accepted-only replay.
+
+`apps/kortix-worker/src/prompt-system-routes.test.ts` checks actual provider HTTP
+requests, omitted and empty strings, malformed inputs, and provider errors.
+The prompt-system cases in `turn-routes.test.ts` check queue isolation, retries,
+replacement, and accepted-only replay through the provider HTTP boundary.
+
+
+## 2026-09-07 — Do not return a successful file link with no serving origin
+
+- Incident: the Pi preview SESS-13 flow received 200 with `public_url: null`. Its deployment had no isolated preview domain.
+- Rule: file-share metadata returns 503 when its isolated origin is unavailable. Keep author-controlled file content off the API origin.
+- Enforcement: `unit-public-session-share.test.ts` asserts both missing-domain 503 and configured-domain HTTPS URLs. The existing SESS-13 HTTP flow rejects a null URL on 200.
+
+
+## 2026-09-07 — Auth transport failures must not revoke valid sessions
+
+- Incident: the Pi preview Apps journey cancelled `/auth/v1/user` during reload. AuthProvider called global sign-out for the transport error. The next validation returned `session_not_found`; Apps stayed on its loading frame.
+- Rule: clear a cached session only for a confirmed invalid credential or missing auth session. Preserve it through aborted requests, transport failures, rate limits, and unavailable auth services. Backend authorization still validates every request.
+- Enforcement: `auth-provider-bootstrap.test.ts` executes bootstrap with transient and invalid-session errors. The Apps browser journey aborts auth validation, verifies the token remains valid, and reloads the actual page.
+
+
+## 2026-09-07 — Settle each delivery of a completed durable prompt
+
+- Incident: Pi context-only retries returned 200 and 204 after the worker had already relayed completion. Each proxy retry created another active turn row. Reload kept Stop visible despite an idle runtime.
+- Rule: a durable completed response names its exact message and terminal status. Bind that identity before settling the delivery. Receipt-based settlement must never fall back to an unrelated unidentified prompt.
+- Enforcement: worker HTTP tests verify completed receipts for context, normal responses, and provider errors. Proxy tests verify receipt validation and acceptance order. Real PostgreSQL tests prove repeated completion leaves another unidentified prompt open.
+
+
+## 2026-09-07 — Wait for a superseded auth read before rejecting project access
+
+A Pi preview session reloaded into the project-unavailable screen while its saved
+transcript and `/auth/v1/user` remained valid. Auth initialization seeded the
+current token while a shared token read was pending. The epoch guard correctly
+rejected the old read, but the web SDK token callback returned that temporary
+null immediately. The project access query then cached a synthetic unauthorized
+response without making an HTTP request.
+
+The web SDK callback must retry token acquisition across hydration. Retrying is
+a read: it must not clear a token that the auth provider has just seeded. Keep
+the epoch guard, bound the retry count, and return no credentials after sign-out.
+
+Automation: `apps/web/src/lib/kortix-config-auth.test.ts` exercises concurrent
+reads during reseeding, an identity change, and bounded signed-out retries.
+
+
+## 2026-09-07 — Preserve short compiled model references at worker boot
+
+A compiled agent selected `gpt-5.6-luna`, but boot ignored model names without
+a slash. The provider received its first catalog model, `aion-labs/aion-2.0`.
+
+Apply short aliases as model IDs. Split a provider prefix only when one exists
+and no gateway is configured. Explicit session model overrides retain priority.
+
+Automation: `apps/kortix-worker/src/compiled-model-entry.test.ts` starts the real
+entry process and checks the actual gateway request. Short, Kortix-prefixed,
+provider-prefixed, and explicit override cases pass. The short case fails before
+the fix.
+
+
+## 2026-09-07 — Do not retry an auth submission while it is pending
+
+The preview signup test waited two seconds for `POST /auth`, then waited for
+Continue to re-enable. The trace shows the request starts 8.4 seconds after Enter
+and returns 200. The UI reaches the code screen, where Continue no longer exists.
+
+Register the request wait before submitting once. Use the browser action budget
+and assert the resulting code screen. A short observation timeout does not prove
+that a mutation failed or authorize another submission.
+
+Automation: the existing account-authentication browser journey checks the real
+POST, delivered email, new user, sign-out, and subsequent login.
+
+
+## 2026-09-07 — Capture live identities before replacing a legacy worker
+
+A read-only upgrade check found that the reported Pi session had ten native
+messages but no saved wire IDs. Replaying its log preserved text while changing
+all ten message IDs. Stopping the old process first would discard those IDs.
+
+Capture the full idle transcript before stopping a legacy worker. Bind each
+message and part identity to its native entry fingerprint. Store the complete
+checkpoint in one append, after verifying that the stopped source has not
+changed. Reject mismatched content, foreign sessions, duplicate IDs, conflicting
+checkpoints, and unsettled tools. Never reconstruct random live IDs by guessing.
+
+Automation: `legacy-wire-identity.test.ts` validates capture and replay failures.
+`legacy-wire-restore.test.ts` starts the real worker, preserves message and part
+IDs and creation times, sends another prompt, and verifies a second replacement.
+The reported session's saved log also replays locally with all ten identities
+and no native-log writes.
+
+
+## 2026-09-07 — Resume interactions only from a fenced tool boundary
+
+Persist the native tool batch and question checkpoint before publishing a blocking card.
+Persist its answer before acknowledging HTTP. Reuse completed tool results during recovery;
+never repeat their side effects. Commit a release fence before subsequent execution.
+Incident: Pi worker replacement discarded pending questions and required another prompt.
+Automation: `question-recovery-routes.test.ts` kills real worker processes, checks unchanged
+question IDs, single shell execution, saved answers, step limits, Stop, and another owner's queue.
+
+## Keep interactive requests until the server accepts the response
+
+Do not hide a question or discard its answer before the reply succeeds. Preserve the
+card and custom text after failure. A failed dismissal must not abort the turn.
+
+Incident: an HTTP 503 left the Pi question pending while the web composer removed
+its card and suppressed it for 15 seconds. The response handler swallowed the error.
+Automation: `question-submission.test.ts` checks acknowledgment, duplicate clicks,
+failure, and retry. Browser checks inject 503 into real session replies and assert
+that the same request remains answerable, custom text survives, and dismissal does
+not issue an abort before acceptance.
+
+
+## 2026-09-07 — Separate storage availability from turn ownership
+
+A failed session-log read does not prove that another worker owns the turn.
+Preserve an active interaction until the last confirmed owner lease expires.
+Enforce that deadline independently of network requests. Retry fenced durable
+reconciliation when storage returns, even when no new prompt arrives.
+
+Incident: a preview API deployment interrupted a pending Pi question after read
+retries exhausted. Its worker stayed alive, but the API turn remained active.
+Automation: `question-recovery-routes.test.ts` runs real worker HTTP routes through
+short and expired-lease storage outages. It checks stable question identity,
+no repeated side effects, automatic settlement, and a successful next prompt.
+`session-store.test.ts` distinguishes transient read failures from rejected reads
+and preserves the fail-closed barrier for uncertain writes.
+
+
+## 2026-09-07 — Persist permission continuations separately from grants
+
+A saved grant is not a recoverable blocked tool. Persist each authorization stage
+and its response before acknowledging it. Keep prior one-time responses scoped
+to the same native invocation. Commit an execution fence before running the tool.
+During recovery, restore the request even if an earlier grant write succeeded
+before the response checkpoint. Preserve completed tool results and repeat guards.
+
+Incident: worker replacement discarded pending permission requests. Durable
+“Always allow” grants alone could not restore the blocked continuation.
+Automation: `permission-recovery-routes.test.ts` kills real worker processes before
+approval, before HTTP acknowledgment, and after execution release. It checks
+primary/external-directory/doom-loop stages, saved responses, Stop, queue recovery,
+wire identity, and exact side-effect counts. Broker tests keep failed responses
+pending; checkpoint tests reject conflicting transitions and cross-tool reuse.
+
+
+## 2026-09-08 — Match runtime identity and permission rules at their actual scope
+
+Scope a native tool-call ID to its assistant message, not the whole user turn.
+A provider can reuse a call ID in a later response. Preserve a separate request
+and answer for that new invocation. Permission wildcard rules must match line
+breaks, normalize separators, and accept the bare command for a trailing ` *`.
+
+Incident: checkpoint replay rejected a later question whose provider reused an
+ID. A live permission recovery test also asked for bash approval despite an
+allow-all rule because the command contained a literal newline.
+Automation: checkpoint and child-process HTTP tests restore the second question
+with a distinct answer. `permission-wildcard.test.ts` covers multiline allow and
+deny rules, rule precedence, command arguments, separators, and literal regex text.
+
+
+## 2026-09-08 — Persist session permission updates and refresh grants across workers
+
+A permission switch must update the runtime before the UI claims persistence.
+Restore rules in journal order and refresh them before authorization. Scope saved
+grants to the last explicit permission update. A late approval cannot undo reset.
+Keep pending requests visible when the update fails, and acknowledge writes only
+after durable read-back.
+
+Incident: the Pi worker returned 404 for the SDK session permission update. The
+UI fell back to an approver that stopped working when its browser tab closed.
+An already-running second worker also missed grants saved by the first worker.
+Automation: session-permission-routes.test.ts exercises real worker HTTP routes
+for persistence, reset, validation, failed writes, concurrent workers, queued
+grants, and prompt controls. Permission-store tests race reset with approval.
+
+
+## 2026-09-08 — A failed permission update must not approve the pending tool
+
+Wait for the runtime acknowledgment before changing the local permission mode.
+Keep failed enable and reset actions retryable. Persist wire timestamps alongside
+native messages; reconstructing them from nearby events changes saved history.
+
+Incident: an injected 503 still enabled the old local approver and ran a command.
+Replacing the worker also changed tool timestamps in otherwise identical history.
+Automation: permission-mode-submission.test.ts covers failure, duplicate clicks,
+and retry. Live browser assertions check PATCH responses, approval requests, and
+file effects. Worker HTTP tests compare full pending and completed transcripts
+across process replacement.
+
+
+## 2026-09-08 — Claim runtime bootstrap before launching the process
+
+Claim one bootstrap attempt with a database compare-and-swap before the provider call.
+Write its fresh readiness clock and updatedAt in the same transaction. Stale probes
+cannot overwrite this state or park the new process against an expired clock.
+Clear the attempt marker on each wake and explicit restart. Fetch pinned source
+by its immutable SHA. Run bootstrap under an explicit shell with writable paths.
+
+Incident: the original Pi session used an older Daytona image without automatic
+process startup on resume. Launch quoting, restricted paths, a nologin shell, and
+a moved source ref first prevented startup. After those fixes, a stale readiness
+clock stopped the sandbox 685 milliseconds after bootstrap began.
+Automation: Daytona command tests cover shell, paths, source pinning, and errors.
+Bootstrap tests cover per-attempt markers and bounded readiness windows. Real
+PostgreSQL integration tests prove a single concurrent claim and reject stale
+readiness writes, stopped rows, and concurrent turn updates.
+
+
+## 2026-09-08 — Join a confirmed concurrent provider start
+
+An HTTP 409 from Daytona start can mean another caller already started the sandbox.
+Read the provider state again. Accept started, or wait for a confirmed starting
+state within the existing timeout. Preserve errors for stopped or terminal states
+and for non-conflict responses. Do not send another start request.
+
+Incident: an SSE reconnect and session resume both started the same stopped worker.
+One start returned 409, “Sandbox state change in progress.” The VM started, but
+the losing session wake recorded a failure and cooldown. A real provider test
+reproduced one rejection before the fix and two successful callers after it.
+Automation: Daytona provider tests cover concurrent starting/started states,
+stopped/stopping/error conflicts, unrelated errors, and bounded waiting.
+
+
+### 2026-09-08 — Environment recovery preserves the owned workspace
+
+**Near-miss:** Removing OpenCode from Pi environments reused the session checkout
+bootstrap. That bootstrap clears a checkout when an adoption marker is absent.
+An older environment can lack that marker while containing uncommitted work.
+
+**Rule:** First-time environment checkout and existing-environment recovery use
+separate paths. The control plane marks reuse explicitly. A daemon ownership
+marker binds later boots to the same session and workspace. Recovery never
+replaces files or changes the selected branch. Missing storage fails closed.
+Execution-only daemon upgrades use a separate compatible fallback; they cannot
+roll back to a daemon that starts OpenCode.
+
+**Enforcement:** `apps/kortix-sandbox-agent-server/src/__tests__/environment-workspace.test.ts`
+checks dirty files and a user-selected branch with an unreachable remote.
+`apps/api/src/platform/services/environment-runtime-bootstrap.test.ts` executes
+the provider bootstrap and checks digest rejection, file preservation, and retry.
+
+## 2026-09-08 — Preserve the installed commit when introducing Pi identity fields
+
+**Incident:** Preview `4fa2d4a06a` made `/environment/ensure` return `409` for older Pi sessions. These sessions predated the durable `pi_worker_ref` and `pi_worker_sha` fields.
+
+**Rule:** Recover legacy runtime identity from the installed, server-provisioned bundle before enforcing a new identity contract. Never resolve the current branch HEAD for an existing conversation. Reject mismatched projects and malformed explicit identities. Keep transcript and workspace state intact.
+
+**Enforcement:** `pi-worker-identity-recovery.test.ts` checks artifact parsing without code execution, immutable commit recovery, project isolation, and malformed-identity rejection. Environment ensure, cold allocation, and replacement restart share `ensurePiWorkerIdentity`.
+
+
+### Identify environment bootstrap downloads as a Kortix runtime client (2026-09-08)
+
+**When:** downloading daemon and entrypoint assets through a deployed API origin.
+**Incident:** Pi preview `092f25309c` returned Cloudflare `403 / error code: 1010` for Python's default user agent before the API authenticated the environment.
+**Rule:** send the explicit `kortix-environment-bootstrap/1` user agent with the environment credential. Keep digest verification and existing authorization gates.
+**Enforcer:** `environment-runtime-bootstrap.test.ts` rejects download requests without that user agent and checks upgrade, idempotency, and corrupt-artifact preservation.
+
+
+### Never match a provider init process as a workload supervisor (2026-09-08)
+
+**Incident:** Daytona PID 1 includes the Kortix entrypoint in its arguments. The Pi environment upgrade matched that argument and terminated the provider process before installing the workload marker.
+**Rule:** Exclude PID 1 from workload process control. Match the executable and its argument position, not an arbitrary argument containing an entrypoint path.
+**Enforcer:** `environment-runtime-bootstrap.test.ts` runs a provider process whose arguments contain the entrypoint. The upgrade must preserve that process, replace the daemon, and preserve workspace bytes.
+
+
+### Resolve custom Pi token grants through the manifest resolver (2026-09-08)
+
+**Near miss:** Runtime token minting treated every agent named `meta` as the platform coordinator. YAML v3 can declare a custom agent with that name.
+**Rule:** The shared grant resolver decides platform authority. Token minting does not infer authority from an agent name. Environment credentials and injected secrets resolve grants at the worker's immutable configuration commit.
+**Enforcer:** `session-runtime-token.test.ts` checks restricted custom `meta` grants for worker and environment tokens. `session-environment-race.test.ts` checks the immutable grant ref.
+
+
+### Keep gateway model limits bound to their wire model (2026-09-08)
+
+**Near-miss:** The Pi gateway fallback cloned the first OpenRouter catalogue entry.
+Luna inherited Aion's 131,072-token context instead of its own 1,050,000-token limit.
+Automatic compaction would therefore discard detailed model context too early.
+
+**Rule:** Resolve limits from the gateway catalogue for the exact selected model.
+Carry default limits in the compiled bundle and explicit override limits in the
+worker environment. Reject mismatched overrides. An unknown limit disables the
+automatic threshold; it never borrows a different model's capacity.
+
+**Enforcer:** `pi-model-limits.test.ts`, `model-limits.test.ts`, and
+`compiled-model-entry.test.ts` check alias normalization, defaults, overrides,
+unknown aliases, and real process health metadata.
+
+
+## Recover uncertain worker writes with the original fence before resuming — 2026-09-08
+
+A full Pi test run exposed a heartbeat append racing a 6.5-second storage outage.
+The worker permanently poisoned its log after retry exhaustion. Storage returned,
+but the question stayed busy and a new prompt could not progress.
+
+Retain every uncertain append's exact serialized item and idempotency key.
+Keep unrelated writes blocked until those items commit through the original
+fences. Do not reset the error and generate a new write identity. Reconcile
+before reopening the turn queue. Interrupt only a lease still owned by this
+worker; a replacement owner must not receive a stale worker's abort. Permanent
+rejections and conflicting fences remain closed to writes.
+
+Enforcers: `session-store.test.ts`, `turn-journal.test.ts`, and
+`question-recovery-routes.test.ts`. The HTTP process tests cover read/write and
+write-only outages, one execution of completed tools, terminal settlement, and
+the next prompt. Deferred-response tests prove recovery callers share one retry.
+
+## 2026-09-08 — refresh provider ingress and bootstrap Pi on resume
+
+A real Pi stop/resume benchmark failed after the VM reached running. Daytona
+rotated its preview token, but the API cached the old token for five minutes.
+The cached endpoint returned 401. A fresh endpoint returned 502 because no
+worker process had started. Waiting for the generic runtime timeout delayed
+bootstrap and exhausted the readiness budget.
+
+Clear cached ingress after a confirmed wake. A rejected session-list credential
+gets one fresh endpoint lookup and one authenticated retry. A second rejection
+remains closed. Start the Pi process after its runtime lease is active and its
+compute window reopens. The worker must not call the API using a stopped lease.
+
+Enforced by `projects/opencode-mapping-transport.test.ts` and the Pi/OpenCode
+resume cases in `__tests__/e2e-project-session-contract.test.ts`. The live resume
+benchmark records the native conversation ID and cleanup state independently.
+
+**Environment follow-up, 2026-09-10:** the bundled-resource restart test reproduced the same stale token through the environment proxy. Direct daemon health returned 200 while the proxy returned an authentication error until its five-minute cache expired. Environment cache entries now match the persisted provisioning claim and readiness status. Every API process reads that revision before reusing an HTTP or WebSocket ingress entry. `sandbox-proxy/backend-environment.test.ts` verifies rotation across claims and the provisioning-to-active transition without process-local invalidation.
+
+## 2026-09-08 — Publish recovered conversation state before reporting idle
+
+A worker outage test observed idle before the interrupted assistant appeared.
+Recovery committed the journal completion before refreshing the in-memory
+transcript. Status read the journal and exposed that interval to the browser.
+
+Keep recovery busy until its transcript projection finishes. A failed projection
+stays pending and must refresh successfully before status can report idle.
+Do not weaken the transcript assertion or delay the browser to hide the race.
+
+Enforced by the two expired-owner cases in `question-recovery-routes.test.ts`.
+The fixture blocks the first storage read after completion. Status must remain
+busy until that read is released. Both cases fail without the projection barrier.
+
+## 2026-09-08 — Preserve an unexpired owner through a heartbeat write outage
+
+A 4.2-second write-only outage cancelled a question with a 10-second owner lease.
+Exhausted heartbeat retries poisoned storage. The worker treated that failure as
+immediate lease loss, while a read outage correctly waited for the lease deadline.
+
+Retry only the exact pending heartbeat for this owner and turn. Commit a fresh
+heartbeat before renewing the local deadline. Never clear an uncertain transcript
+or tool mutation through heartbeat recovery. Keep the independent expiry timer.
+Permanent rejection and a conflicting owner remain terminal.
+
+Enforced by `session-store.test.ts`, `turn-journal.test.ts`, and both short-outage
+cases in `question-recovery-routes.test.ts`. The expired-owner cases remain active.
+
+## 2026-09-08 — Scope repeated-tool detection to one user prompt
+
+A real reasoning verification called one inspection tool per user prompt.
+The third prompt failed with `permission denied: doom_loop`. Restoring all prior
+tool calls made independent user requests count as one model loop.
+
+Clear repeated-call history before each new prompt. During interaction recovery,
+restore only calls after that prompt's user message. Preserve the current turn's
+completed calls so restarting cannot bypass the repeated-tool approval.
+
+Enforced by `custom-agent-routes.test.ts`, `tool-replay.test.ts`, and the two
+doom-loop recovery journeys in `permission-recovery-routes.test.ts`.
+
+## 2026-09-08 — Distinguish a new SDK send from its transport retries
+
+A live SDK journey sent the same prompt twice intentionally. The proxy returned
+200 for the second send but created no user message. Both calls omitted a
+submission identity, so content-hash deduplication treated them as one request.
+
+Generate one submission key per `session.send()` call. Preserve that key through
+authentication and transport retries. A separate call receives a different key,
+even when its body is identical. Never vary the prompt text to bypass the defect.
+
+Enforced by `packages/sdk/src/core/client/kortix.test.ts`. Two identical sends
+produce distinct keys; an authentication retry preserves the first key and uses
+the refreshed token. The live reasoning journey repeats its original prompt and
+asserts one new user message per call.
+
+## 2026-09-08 — Scope runtime config and reasoning choices to their owner
+
+Reasoning-control review found a global runtime config cache key. Navigating
+between workers could reuse a different session's model configuration forever.
+The project model catalog also cannot prove the pinned worker supports an effort.
+
+Key runtime config by URL and capture that URL before starting its read. Preserve
+the original cache key through mutation rollback. Derive Pi reasoning choices
+from the pinned worker's config. Store selections per session and model with a
+bounded session map. Never borrow another model's effort list while loading.
+
+Enforced by `use-opencode-config.test.ts`, `session-reasoning.test.ts`,
+`session-reasoning-hook.test.ts`, and the worker's runtime/config HTTP tests.
+
+## 2026-09-08 — Keep subprocess-based tests responsive to their deadlines
+
+Two full local runs stall in isolated Bun workers waiting on synchronous child
+processes. One stops in Pi artifact Git setup; another omits all eight navigation
+contract tests. The latter has an unreaped child, consumes a CPU core for six
+minutes, and never reaches its test timeout. The same files pass separately.
+
+Use awaited subprocess execution with a bounded process timeout in these tests.
+Preserve their commands, inputs, and assertions. Capture the stalled process
+before terminating only the owned worker. A focused pass does not make the
+interrupted full gate green; rerun the complete gate after the change.
+
+Applied in `compiled-pi-runtime-artifact.test.ts` and `nav-contract.test.ts`.
+
+
+## 2026-09-08 — Verify that tool-round compaction reduces context and preserves recovery
+
+Regression tests expose three failures: no compaction between tool rounds,
+a retained tool batch larger than the requested budget, and recovery discarding
+a summary plus completed tool results. Retained assistant usage can also trigger
+another full-context estimate after a successful summary.
+
+Check context before each next provider round. Summarize oversized retained
+batches with their file metadata. Count prior usage only in the display history.
+Recover completed tool batches in place. Rewind only incomplete batches before
+another provider request. Verify Stop, failed summaries, duplicate submissions,
+and replacement immediately after the summary commit.
+
+Enforced by `context-compaction.test.ts`, `tool-replay.test.ts`, and
+`turn-routes.test.ts` in the worker quality gate.
+
+### Revoke browser-role grants on API-owned Pi storage (2026-09-08)
+
+**When:** creating or changing a private table in the `kortix` schema.
+**Incident:** the Pi preview's log, runtime bundles, and three shared-filesystem tables inherited baseline grants. `anon` had SELECT; `authenticated` had INSERT/UPDATE. Their migrations enabled no RLS. The attachment review found this through `pg_class` and `has_table_privilege`, without reading user data.
+**Rule:** revoke all privileges from `anon` and `authenticated`. Enable RLS with no policies for API-only tables. Do not force RLS on the API owner. API authorization alone does not protect a schema exposed through PostgREST.
+**Enforcer:** `packages/db/scripts/pi-private-storage-access.integration.test.ts` tests all six Pi storage tables against real PostgreSQL roles. It proves browser-role denial, owner/service access, and denial after an accidental blanket grant. The additive `pi_private_storage_access` migration preserves existing rows.
+
 
 ## A persistent environment needs a self-healer on its own box, and a preview fix on a feature branch is inert (2026-09-04)
 
@@ -4563,6 +6163,25 @@ force fresh builds. *Enforcer:* `tests/unit/platinum-ci.test.ts` and
 `tests/unit/daytona-ci.test.ts` assert both new cache names and the exact image
 digest.
 
+## Worker recovery must bind before observing an owner lease (2026-09-09)
+
+The remote MCP preview reached a permission request, then failed to resume the
+same session. Two worker processes waited on its journal. Recovery required a
+60-second unchanged lease, but the API declared an unbound runtime unreachable
+after 30 seconds. The bootstrap flock also released when its shell backgrounded
+the entrypoint, allowing another launch before the port opened.
+
+**The rule.** Bind a single readiness listener before accessing the durable
+session. Report `runtimeReady: false` and reject runtime requests with `503`
+until initialization finishes. Competing listeners must fail before reading or
+claiming the journal. A detached launcher must retain its lock descriptor for
+the worker lifetime. Do not shorten a lease to disguise a readiness failure.
+
+**Enforcers:** `worker-startup.test.ts` checks boot health, blocked prompts,
+listener promotion, competing startup, and port release after failure.
+`daytona.test.ts` checks detached descriptor inheritance. Permission and question
+recovery tests retain their unchanged exactly-once assertions.
+
 ## A persistent sandbox does not inherit a replacement template runtime (2026-09-05)
 
 PR #7109 selected the ready Node `22.22.2` Platinum template. The workflow then
@@ -4582,6 +6201,72 @@ official SHA-256 before extraction. *Enforcer:*
 `tests/unit/sandbox-preview.test.ts` requires the repair before the first pnpm
 install and asserts the exact version and checksum.
 
+
+### Verify attachment bytes separately from proxy ETag strength (2026-09-08)
+
+**When:** testing immutable content through compression proxies.
+**Incident:** Pi preview run `34279668235` returned exact attachment bytes with a matching weak ETag after Cloudflare applied zstd. SESS-29 incorrectly reported a changed digest because it required a strong ETag.
+**Rule:** compute the returned content's digest. Compare ETag identity after its optional weak prefix. Do not infer corrupted bytes from changed ETag strength.
+**Enforcer:** `tests/src/flows/sessions.flow.ts`, SESS-29, checks both content SHA-256 and ETag identity.
+
+### Select an overloaded RPC with an explicit nullable discriminator (2026-09-09)
+
+**When:** calling the idempotency-aware credit admission function during mixed-schema development.
+**Incident:** SESS-31 received `402` with a positive balance. PostgREST returned `PGRST203` because both the idempotency and legacy thread/message overloads matched the omitted argument.
+**Rule:** send `p_idempotency_key: null` when no key exists. Its name selects the intended overload without changing idempotency semantics.
+**Enforcer:** `billing/services/credits-admission.test.ts`, the billing credit contract test, and live SESS-31. The two new omitted-key cases fail before the correction; the unchanged HTTP flow passes afterward. No schema mutation is needed.
+
+### A cancelled preview controller can leave its remote tests running (2026-09-09)
+
+**When:** replacing a persistent preview deployment after cancelling its controller.
+**Incident:** the older remote test process wrote `kortix-preview.exit` at 05:43:14 UTC. Run `34315723121` read that file during the next deployment and exited before its own tests started at 05:43:40. The new tests continued on the sandbox.
+**Rule:** establish that the previous remote process has ended before replacing this preview. A future controller must use per-run completion identities and terminate only its own remote process on cancellation.
+**Enforcement status:** manual process and timestamp verification for this checkpoint. Automated ownership fencing remains open. A shared exit file is not proof of the current run.
+
+### Build isolated runtime stages without checkout dependencies (2026-09-09)
+
+**When:** a runtime bundle imports another workspace package.
+**Incident:** preview `a4fb080893` passed local builds but failed the API Docker build. The isolated worker stage copied only the SDK Pi module; its new connector import could not resolve. The existing preview remained deployed.
+**Rule:** copy every required workspace package into the build stage and resolve its external imports through the locked runtime dependencies. A full checkout build does not verify an isolated stage.
+**Enforcer:** `apps/kortix-worker/src/isolated-build.test.ts` executes the actual stage's COPY and RUN instructions in an empty temporary tree. It fails on the missing SDK source and passes with the complete inputs. Linux preview image builds verify the same stage.
+### Join the session when resolving a runtime's agent (2026-09-09)
+
+**When:** selecting a session principal through Drizzle.
+**Incident:** a live Pi agent with `connectors: none` reached the synthetic MCP server. `loadSandbox` returned an unrelated session's `default` agent. Drizzle removed table qualifiers from the scalar SQL projection and emitted `where "session_id" = "session_id"`. The pre-prompt grant refresh then assigned the project default agent's connector grant.
+**Rule:** use an explicit relational join for the runtime-to-session lookup. Verify the result against PostgreSQL with at least two distinct agents. A mocked row cannot prove this identity boundary.
+**Enforcer:** `apps/api/src/__tests__/integration-preview-session-principal.test.ts` checks worker and environment resolution, including hostname case normalization. Both cases fail before the join and pass afterward with 40 assertions.
+
+
+### Restore control-plane authority before replaying a saved interaction (2026-09-09)
+
+**When:** replacing a worker with a durable pending question or permission.
+**Incident:** the Pi preview restored the permission and reported native busy status, but its control-plane turn ledger was empty. A delayed completion from the previous worker also matched an older ended attempt and could promote the queue.
+**Rule:** obtain an idempotent, owner-bound turn grant before provider or tool execution. A completion from an older owner cannot close the replacement attempt or trigger terminal side effects.
+**Enforcer:** `integration-pi-turn-recovery.test.ts` verifies the real PostgreSQL grant, history, concurrency, terminal fences, and stale completion. `turn-recovery-authority.test.ts` kills real worker processes and holds or rejects the API acknowledgment before saved approval execution.
+
+
+### Passive proxy recovery must not reverse a Pi worker stop (2026-09-09)
+
+**When:** a browser stream reconnects while the provider stop is in flight.
+**Incident:** the live Pi image test returned `stopped`, then cleanup found the worker running again. At 09:50:59 UTC, `/global/event` received Daytona's no-runner response. The legacy proxy called `ensureRunning` while manual stop completed. No user start or active turn existed.
+**Rule:** Pi worker state belongs to the session lifecycle. Passive proxy requests cannot start the provider, heal the worker/session to running, or mark the worker errored. A future worker recovery path must use the same lifecycle authority as explicit start.
+**Enforcer:** `integration-pi-passive-proxy-lifecycle.test.ts` checks real PostgreSQL state and a provider spy for active, stopped, errored, and incomplete Pi identities. OpenCode and environment alternatives remain covered. `wake-deadline-guard.test.ts` checks the Pi marker fence in the normal API gate.
+
+**Second wake path found in live verification:** at 10:19:20 UTC, browser `POST /log` entered `resumeStoppedSandboxByExternalId`. This helper classifies proxy mutations as wake intent. Pi now rejects that path using authoritative session metadata; explicit `/start` continues through `resumeStoppedSandbox`. Two real PostgreSQL cases fail before this additional guard and pass afterward. Live stop verification must include background writes as well as SSE reads.
+
+### Redact complete credentials before truncating provider errors (2026-09-09)
+
+**When:** converting an upstream MCP failure into a user-visible or audited error.
+**Near-miss:** a regression test with an 812-character synthetic credential exposed its prefix because the error message was truncated before exact-value redaction. A malformed string JSON-RPC error code also echoed the credential.
+**Rule:** redact the full message before normalization or truncation. Accept only integer JSON-RPC error codes. Do not return raw transport exceptions or HTTP failure bodies from protocol execution.
+**Enforcer:** `apps/api/src/connectors/mcp-protocol.test.ts` exercises long credentials, query-auth transport errors, and malformed error codes. `unit-connector-gateway.test.ts` verifies failed audit status and credential-free replies and records.
+
+### CLI message IDs must preserve the runtime clock (2026-09-09)
+
+**When:** submitting a durable prompt without reading the live transcript.
+**Near-miss:** the Pi parity audit found that the CLI retained the first twelve hex digits instead of the low six bytes. The resulting ID has the correct shape but the wrong ordering clock.
+**Rule:** preserve the low 48 clock bits. Callers without a current transcript must request placement at delivery. A regular-expression format check does not verify ordering.
+**Enforcer:** `apps/cli/src/commands/sessions-queue.test.ts` verifies exact clock bytes and wraparound. The real-process `sessions-parity.test.ts` asserts `remint_on_delivery`. The preview CLI proof delivers a queued prompt after existing assistant history.
 ## A per-call authorization grant re-derived from a git read must carry provenance, or one bad read is a session-wide outage (2026-09-08)
 
 INC-2026-09-08-CONNECTOR-GATEWAY, prod project `fda4e35e` (Kortix Company),
@@ -4626,3 +6311,7 @@ drift, stale commit, unreadable manifest, cooldown),
 `apps/api/src/connectors/principal-access.test.ts`, and flow `CONN-27`
 (a real session-bound token: hot reload with provenance, glitch repair,
 channel guarantee, honest denials, ten calls after a mid-session add).
+
+## Pi pinned manifests are authoritative, even at older commits (2026-09-10)
+
+A merge with the grant provenance guard treated an intentionally pinned Pi commit as a stale mirror read. This could retain a token grant from a newer, broader manifest. Skip the moving-branch ancestry guard for immutable Pi identities. Continue failing closed when the pinned manifest cannot be read. `session-token-grant-provenance.test.ts` verifies pinned narrowing and unreadable pinned manifests.

@@ -282,6 +282,43 @@ export interface CreateSessionPublicShareInput {
   expires_at?: string | null;
 }
 
+/** The auxiliary compute runtime owned by a Pi worker session. */
+export interface ProjectSessionEnvironment {
+  session_id: string;
+  status: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived';
+  external_id: string | null;
+  preview_url: string | null;
+  preview_token: string | null;
+}
+
+export async function getProjectSessionEnvironment(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<ProjectSessionEnvironment>(
+      `/projects/${projectId}/sessions/${sessionId}/environment`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function ensureProjectSessionEnvironment(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<ProjectSessionEnvironment>(
+      `/projects/${projectId}/sessions/${sessionId}/environment/ensure`,
+      {},
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function stopProjectSessionEnvironment(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<ProjectSessionEnvironment>(
+      `/projects/${projectId}/sessions/${sessionId}/environment/stop`,
+      {},
+    ),
+  );
+}
+
 export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<{ candidates: SessionPreviewCandidate[] }>(

@@ -29,6 +29,7 @@ import {
   allowAllPermissionsForSession,
   resetSessionPermissions,
   useRuntimeConfig,
+  useSessionPermissionMode,
   useRuntimePendingStore,
   useUpdateRuntimeConfig,
 } from '@kortix/sdk/react';
@@ -39,6 +40,7 @@ import {
 } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPermissionModeSubmission } from './permission-mode-submission';
 
 /** Full-text review is only worth an extra click for a detail that won't fit
  * on one line — short commands stay flat, no chevron. */
@@ -127,7 +129,7 @@ export function SessionPermissionPrompt({
   const projectId = params?.sessionId ? params.id : undefined;
   const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE];
 
-  const autoApprove = useRuntimePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
+  const autoApprove = useSessionPermissionMode(sessionId);
   const setAutoApproveAll = useRuntimePendingStore((s) => s.setAutoApproveAll);
 
   const { data: config } = useRuntimeConfig();
@@ -136,6 +138,13 @@ export function SessionPermissionPrompt({
   // Which button is loading: `${requestId}:once|always|reject`, 'session-all',
   // or `config:${type}` / 'config:*'.
   const [busy, setBusy] = useState<string | null>(null);
+  const submitPermissionMode = useMemo(
+    () => createPermissionModeSubmission(
+      (enabled) => setBusy(enabled === null ? null : enabled ? 'session-all' : 'session-off'),
+      (error) => errorToast(error instanceof Error ? error.message : tI18nComplete.raw('textb4c89a8de9da')),
+    ),
+    [tI18nComplete],
+  );
   // Request ids currently showing their full (untruncated) detail text.
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const toggleExpanded = useCallback((requestId: string) => {
@@ -162,35 +171,24 @@ export function SessionPermissionPrompt({
   );
 
   const allowAllForSession = useCallback(async () => {
-    setBusy('session-all');
-    try {
-      // Server-side grant first (survives the tab closing). Best-effort: if the
-      // runtime rejects the session ruleset, the client-side auto-approver
-      // below still delivers the behavior while this tab is open.
-      try {
+    await submitPermissionMode(
+      true,
+      async () => {
         await allowAllPermissionsForSession(sessionId);
-      } catch {
-        // fall through to the client-side backstop
-      }
-      setAutoApproveAll(sessionId, true);
-      // The ruleset only stops FUTURE asks — approve what's already pending.
-      await Promise.all(permissions.map((p) => onReply(p.id, 'once')));
-      successToast(tI18nComplete.raw('text672a76cd238a'));
-    } catch (e) {
-      errorToast(e instanceof Error ? e.message : tI18nComplete.raw('text292fd30cb1b5'));
-    } finally {
-      setBusy(null);
-    }
-  }, [setAutoApproveAll, sessionId, permissions, tI18nComplete, onReply]);
+        await Promise.all(permissions.map((p) => onReply(p.id, 'once')));
+      },
+      () => {
+        setAutoApproveAll(sessionId, true);
+        successToast(tI18nComplete.raw('text672a76cd238a'));
+      },
+    );
+  }, [sessionId, permissions, onReply, setAutoApproveAll, submitPermissionMode, tI18nComplete]);
 
   const turnOffAutoApprove = useCallback(async () => {
-    setAutoApproveAll(sessionId, false);
-    try {
-      await resetSessionPermissions(sessionId);
-    } catch {
-      // The flag is already off; a stale session ruleset just means fewer asks.
-    }
-  }, [sessionId, setAutoApproveAll]);
+    await submitPermissionMode(false, () => resetSessionPermissions(sessionId), () => {
+      setAutoApproveAll(sessionId, false);
+    });
+  }, [sessionId, setAutoApproveAll, submitPermissionMode]);
 
   /** Persist an allow into the project's opencode permission config (the same
    * surface Settings → Permissions edits), then release the pending asks it
@@ -235,7 +233,7 @@ export function SessionPermissionPrompt({
   // ask that still arrives (e.g. the runtime ignored the session ruleset).
   const autoRepliedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!autoApprove) return;
+    if (!autoApprove || busy === 'session-off' || busy === 'session-all') return;
     for (const p of permissions) {
       if (autoRepliedRef.current.has(p.id)) continue;
       autoRepliedRef.current.add(p.id);
@@ -244,7 +242,7 @@ export function SessionPermissionPrompt({
         autoRepliedRef.current.delete(p.id);
       });
     }
-  }, [autoApprove, permissions, onReply]);
+  }, [autoApprove, permissions, onReply, busy]);
 
   const uniqueTypes = useMemo(
     () => [...new Set(permissions.map((p) => p.permission))],
@@ -258,8 +256,8 @@ export function SessionPermissionPrompt({
         <span className="text-muted-foreground flex-1 text-xs">
           {tI18nComplete.raw('text60d3eb13fad7')}
         </span>
-        <Button size="xs" variant="ghost" onClick={() => void turnOffAutoApprove()}>
-          {tI18nComplete.raw('text06f0e210b27d')}
+        <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => void turnOffAutoApprove()}>
+          <PendingLabel pending={busy === 'session-off'}>{tI18nComplete.raw('text06f0e210b27d')}</PendingLabel>
         </Button>
       </div>
     );

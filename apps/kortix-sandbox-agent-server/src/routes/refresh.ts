@@ -90,7 +90,8 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         403,
       )
     }
-    const skipRestart = c.req.query('restart') === '0'
+    const executionOnly = cfg.workload === 'environment'
+    const skipRestart = executionOnly || c.req.query('restart') === '0'
     // `?config_dir=1` updates ONLY the opencode config directory from the base
     // ref. Separate from `base=1` on purpose: that one resets the session's
     // BRANCH and discards its commits, which is fine at create-time on a warm
@@ -113,7 +114,7 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
           : await refreshRepo(cfg)
         // After the repo op, so a successful pull is reflected before we compare
         // the config dir against base.
-        const configDir = syncConfigDir
+        const configDir = syncConfigDir && !executionOnly
           ? await syncOpencodeConfigDirToBase(cfg, await resolveOpencodeConfigDirRelative(cfg), baseSha)
           : undefined
         // Verified swap, not a kill-then-hope restart: boot the new opencode,
@@ -150,7 +151,7 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         // API's start budget expired on both boxes). main.ts schedules the
         // post-boot pass itself once `opencode-ready` is marked; this call is
         // for a box that is already up.
-        if (refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
+        if (executionOnly || refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
         return c.json({
           // The repo work succeeded either way; `reload.outcome` carries whether
           // the new config actually took. Reporting ok:false here would hide a
@@ -177,7 +178,7 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
                 },
               }
             : {}),
-          opencode: opencode.getState(),
+          opencode: executionOnly ? 'disabled' : opencode.getState(),
           opencode_pid: opencode.getPid(),
         })
       } catch (err) {

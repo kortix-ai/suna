@@ -24,6 +24,14 @@ import { handleBlockAction, handleMessageShortcut } from './interactivity';
 import { handleSlashCommand } from './commands';
 import type { SlackInteractionPayload, SlashResponse } from './types';
 
+function slackSignatureHeaders(c: {
+  req: { header(name: string): string | undefined };
+}): { timestamp: string; signature: string } | null {
+  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
+  const signature = c.req.header('x-slack-signature') ?? '';
+  return timestamp && signature ? { timestamp, signature } : null;
+}
+
 // ── Shared slash + interactivity processing ───────────────────────────────────
 // The canonical OAuth app and per-project (BYO) apps run the SAME logic — they
 // differ ONLY in which signing secret verifies the request. Each route does its
@@ -97,15 +105,15 @@ slackWebhookApp.openapi(
     },
   }),
   async (c: any) => {
+  const signatureHeaders = slackSignatureHeaders(c);
+  if (!signatureHeaders) return c.json({ error: 'Invalid signature' }, 401);
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
     return c.json({ error: 'OAuth mode not configured' }, 503);
   }
 
   const rawBody = await c.req.text();
-  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
-  const signature = c.req.header('x-slack-signature') ?? '';
-  if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
+  if (!verifySlackSignature(rawBody, signatureHeaders.timestamp, signatureHeaders.signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
 
@@ -177,14 +185,14 @@ slackWebhookApp.openapi(
     },
   }),
   async (c: any) => {
+  const signatureHeaders = slackSignatureHeaders(c);
+  if (!signatureHeaders) return c.json({ error: 'Invalid signature' }, 401);
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
     return c.json({ error: 'OAuth mode not configured' }, 503);
   }
   const rawBody = await c.req.text();
-  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
-  const signature = c.req.header('x-slack-signature') ?? '';
-  if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
+  if (!verifySlackSignature(rawBody, signatureHeaders.timestamp, signatureHeaders.signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
   runInteractivityBody(rawBody);
@@ -209,14 +217,14 @@ slackWebhookApp.openapi(
     },
   }),
   async (c: any) => {
+  const signatureHeaders = slackSignatureHeaders(c);
+  if (!signatureHeaders) return c.json({ error: 'Invalid signature' }, 401);
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
     return c.json({ response_type: 'ephemeral', text: 'OAuth mode not configured on this server.' }, 503);
   }
   const rawBody = await c.req.text();
-  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
-  const signature = c.req.header('x-slack-signature') ?? '';
-  if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
+  if (!verifySlackSignature(rawBody, signatureHeaders.timestamp, signatureHeaders.signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
 

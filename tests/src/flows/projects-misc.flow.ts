@@ -348,6 +348,14 @@ flow(
         );
       r.status(404);
     });
+    await ctx.step('a project owner cannot impersonate a Pi worker recovery lease', async () => {
+      const session = await ctx.fixtures.session(p);
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/turn-stream', {
+        session_id: session.id, kind: 'turn_resume', opencode_session_id: 'ses_pi_fixture',
+        turn_message_id: 'msg_fixture', turn_owner_id: crypto.randomUUID(),
+      }, { params: { projectId: p.id } });
+      r.status(403).body().has('$.error', 'turn_resume requires a worker token');
+    });
     await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)

@@ -91,6 +91,9 @@ publicShareApp.get('/:token', async (c) => {
         ? previewOriginFor(row.externalId, STATIC_FILE_SHARE_PORT)
         : null
     : null;
+  if (row.resourceType === 'file' && !previewOrigin) {
+    return c.json({ error: 'File sharing requires an isolated preview domain' }, 503);
+  }
   const publicUrl = previewOrigin
     ? row.resourceType === 'file'
       // A shared file is author-controlled content — HTML and SVG carry script.

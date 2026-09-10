@@ -102,6 +102,11 @@ export function buildPreviewCaddyfile(publicHost: string): string {
 :8080 {
   encode zstd gzip
 
+  @sensitive path /.env /.env.* /.git /.git/* /package.json /etc/passwd /v1/.env /v1/.env.*
+  handle @sensitive {
+    respond "Not found" 404
+  }
+
   # A deployed environment gives the API a host of its own, so EVERY path it
   # serves reaches it. A preview shares ONE origin with the frontend and splits
   # by prefix, so each API route mounted outside \`/v1\` has to be listed here or
@@ -132,12 +137,22 @@ export function buildPreviewCaddyfile(publicHost: string): string {
     file_server browse
   }
 
-  handle_path /_mailpit/* {
+  # NOT handle_path: that strips the prefix, and Mailpit then serves a page
+  # whose assets are absolute (\`/dist/app.css\`, \`/favicon.svg\`). Those
+  # requests fall through to the frontend, so the UI loaded as a BLANK PAGE —
+  # HTML with no CSS or JS (reported 2026-08-29). \`MP_WEBROOT\` below makes
+  # Mailpit emit \`/_mailpit/…\` asset paths instead, so the prefix has to
+  # survive to the upstream.
+  #
+  # The bare \`/_mailpit\` is redirected because the matcher needs a path
+  # segment after the prefix; without this it fell through to the frontend and
+  # 404'd, which is how most people first meet this route.
+  redir /_mailpit /_mailpit/ 308
+  handle /_mailpit/* {
     reverse_proxy mailpit:8025 {
       import swap_tolerant
     }
   }
-
   # Only reached when the retry budget above is exhausted — i.e. the upstream is
   # really gone, not merely restarting. A plain page beats the provider's raw
   # 502, and \`Retry-After\` tells a client this is transient.
@@ -194,6 +209,11 @@ export function buildPreviewComposeOverlay(
     restart: unless-stopped
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
+    environment:
+      # Mailpit is reached at \`<origin>/_mailpit/\`, and it builds asset URLs
+      # from this. Unset, it emits root-absolute \`/dist/app.css\` which the
+      # preview's Caddy sends to the frontend — the UI rendered blank.
+      MP_WEBROOT: /_mailpit
     restart: unless-stopped
   supabase-auth:
     environment:
@@ -294,7 +314,10 @@ export function applyPreviewEnvironment(
     CORS_ALLOWED_ORIGINS: origin,
     KORTIX_PUBLIC_APP_URL: origin,
     KORTIX_PUBLIC_AUTH_METHODS: 'magic,password',
-    KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
+    // target-full exercises the public landing and pricing contracts against
+    // this origin. Keep those pages enabled on previews even though the
+    // self-host CLI defaults the marketing site to disabled.
+    KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'false',
     KORTIX_RESTRICT_ACCOUNT_CREATION: 'false',
     KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'false',
     // Billing ON, with the Stripe SANDBOX (test-mode) keys below — the same

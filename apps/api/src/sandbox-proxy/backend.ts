@@ -20,29 +20,28 @@
  * own status mapping on top so the same resolver serves HTTP and WebSocket.
  */
 
-import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { config } from '../config';
+import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { type SQL, and, eq, gt, ne, sql } from 'drizzle-orm';
 import {
-  getProvider,
   type ProviderName,
   type ResolvedSandboxIngress,
   type SandboxIngressRequest,
   type SandboxIngressRoute,
+  getProvider,
 } from '../platform/providers';
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
+import { sessionMetadataClaimsPiWorker } from '../projects/lib/session-sandbox-metadata';
 import { db } from '../shared/db';
+import { KORTIX_USER_CONTEXT_HEADER, encodeKortixUserContext } from '../shared/kortix-user-context';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
-import {
-  encodeKortixUserContext,
-  KORTIX_USER_CONTEXT_HEADER,
-} from '../shared/kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SANDBOX_TOUCH_INTERVAL_MS = 60 * 1000;
 
 /** Everything the proxy needs to know about a sandbox, from one row fetch. */
 export interface SandboxRecord {
+  /** Which half of the split runtime this provider box implements. */
+  runtimeKind: 'worker' | 'environment';
   /** Internal session-sandbox uuid. */
   sandboxId: string;
   /** Provider-side id used in proxy URLs (`/v1/p/<externalId>/<port>`). */
@@ -59,6 +58,8 @@ export interface SandboxRecord {
   baseUrl: string;
   /** Sandbox INTERNAL_SERVICE_KEY — proxy authenticates upstream with this. */
   serviceKey: string | null;
+  /** Changes across environment claims and readiness transitions, shared by API replicas. */
+  ingressRevision?: string;
 }
 
 // ── Caches ───────────────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ export interface SandboxRecord {
 interface PreviewLinkEntry {
   ingress: ResolvedSandboxIngress;
   expiresAt: number;
+  revision?: string;
 }
 interface ServiceKeyEntry {
   key: string | null;
@@ -133,14 +135,22 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
     return cached.externalId;
   }
 
-  const [match] = await db
+  const [workerMatch] = await db
     .select({ externalId: sessionSandboxes.externalId })
     .from(sessionSandboxes)
     .where(sql`replace(lower(${sessionSandboxes.externalId}), '_', '-') = ${key}`)
     .orderBy(...preferredSandboxOrder())
     .limit(1);
 
-  const externalId = match?.externalId ?? null;
+  const [environmentMatch] = workerMatch
+    ? []
+    : await db
+        .select({ externalId: sessionEnvironments.externalId })
+        .from(sessionEnvironments)
+        .where(sql`replace(lower(${sessionEnvironments.externalId}), '_', '-') = ${key}`)
+        .limit(1);
+
+  const externalId = workerMatch?.externalId ?? environmentMatch?.externalId ?? null;
   hostLabelCache.set(key, { externalId, expiresAt: Date.now() + HOST_LABEL_MISS_TTL_MS });
   return externalId;
 }
@@ -155,12 +165,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     sandboxId: sessionSandboxes.sandboxId,
     externalId: sessionSandboxes.externalId,
     sessionId: sessionSandboxes.sessionId,
-    agentName: sql<string | null>`(
-      select ${projectSessions.agentName}
-      from ${projectSessions}
-      where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
-      limit 1
-    )`,
+    agentName: projectSessions.agentName,
     projectId: sessionSandboxes.projectId,
     accountId: sessionSandboxes.accountId,
     provider: sessionSandboxes.provider,
@@ -172,6 +177,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     const [match] = await db
       .select(columns)
       .from(sessionSandboxes)
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
       .where(condition)
       .orderBy(...preferredSandboxOrder())
       .limit(1);
@@ -185,13 +191,63 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     (await selectOne(eq(sessionSandboxes.externalId, externalId))) ??
     (await selectOne(sql`lower(${sessionSandboxes.externalId}) = lower(${externalId})`));
 
-  if (!row) return null;
+  if (!row) {
+    const environmentColumns = {
+      sandboxId: sql<string>`coalesce(${sessionEnvironments.environmentId}::text, ${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
+      externalId: sessionEnvironments.externalId,
+      sessionId: sessionEnvironments.sessionId,
+      agentName: projectSessions.agentName,
+      projectId: sessionEnvironments.projectId,
+      accountId: sessionEnvironments.accountId,
+      provider: sessionEnvironments.provider,
+      status: sessionEnvironments.status,
+      baseUrl: sessionEnvironments.baseUrl,
+      config: sessionEnvironments.config,
+      metadata: sessionEnvironments.metadata,
+    };
+    const selectEnvironment = async (condition: SQL) => {
+      const [match] = await db
+        .select(environmentColumns)
+        .from(sessionEnvironments)
+        .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionEnvironments.sessionId))
+        .where(condition)
+        .limit(1);
+      return match ?? null;
+    };
+    const environment =
+      (await selectEnvironment(eq(sessionEnvironments.externalId, externalId))) ??
+      (await selectEnvironment(
+        sql`lower(${sessionEnvironments.externalId}) = lower(${externalId})`,
+      ));
+    if (!environment) return null;
+
+    const config = (environment.config || {}) as Record<string, unknown>;
+    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+    const metadata = (environment.metadata ?? {}) as Record<string, unknown>;
+    const claim = typeof metadata.provisionAttemptId === 'string' ? metadata.provisionAttemptId : '';
+    setCachedServiceKey(externalId, serviceKey);
+    return {
+      runtimeKind: 'environment',
+      sandboxId: environment.sandboxId,
+      externalId: environment.externalId ?? externalId,
+      sessionId: environment.sessionId,
+      agentName: environment.agentName ?? null,
+      projectId: environment.projectId,
+      accountId: environment.accountId,
+      provider: environment.provider,
+      status: environment.status,
+      baseUrl: environment.baseUrl || '',
+      serviceKey,
+      ingressRevision: `${claim}:${environment.status}`,
+    };
+  }
 
   const config = (row.config || {}) as Record<string, unknown>;
   const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
   setCachedServiceKey(externalId, serviceKey);
 
   return {
+    runtimeKind: 'worker',
     sandboxId: row.sandboxId,
     externalId: row.externalId ?? externalId,
     sessionId: row.sessionId,
@@ -246,21 +302,25 @@ export async function resolveSandboxIngress(
   request: SandboxIngressRequest,
 ): Promise<ResolvedSandboxIngress> {
   const sandboxId = typeof sandboxRef === 'string' ? sandboxRef : sandboxRef.externalId;
+  const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
+  if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
   const key = previewLinkKey(sandboxId, request);
   const cached = previewLinkCache.get(key);
-  if (cached && Date.now() < cached.expiresAt) {
+  if (cached && cached.revision === record.ingressRevision && Date.now() < cached.expiresAt) {
     return cached.ingress;
   }
   previewLinkCache.delete(key);
 
-  const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
-  if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
   const provider = getProvider(record.provider as ProviderName);
   const ingress = await provider.resolveIngress(record.externalId, request);
 
   const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
   if (cacheTtlMs > 0) {
-    previewLinkCache.set(key, { ingress, expiresAt: Date.now() + cacheTtlMs });
+    previewLinkCache.set(key, {
+      ingress,
+      expiresAt: Date.now() + cacheTtlMs,
+      revision: record.ingressRevision,
+    });
   }
   return ingress;
 }
@@ -323,10 +383,18 @@ export async function wakeSandbox(externalId: string): Promise<void> {
     // rows. That leaves a box RUNNING, unreapable and unbilled: strictly worse
     // than the zombie this design deletes.
     const [live] = await db
-      .select({ deadlineAt: sessionSandboxes.deadlineAt })
+      .select({ deadlineAt: sessionSandboxes.deadlineAt, sessionMetadata: projectSessions.metadata })
       .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, record.sandboxId))
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+      .where(
+        record.runtimeKind === 'environment'
+          ? eq(sessionSandboxes.sessionId, record.sessionId)
+          : eq(sessionSandboxes.sandboxId, record.sandboxId),
+      )
       .limit(1);
+    if (record.runtimeKind === 'worker' && sessionMetadataClaimsPiWorker(live?.sessionMetadata)) {
+      return;
+    }
     if (!live || live.deadlineAt.getTime() <= Date.now()) {
       console.log(`[PREVIEW] Wake refused for expired sandbox ${externalId}`);
       return;
@@ -342,7 +410,17 @@ export async function wakeSandbox(externalId: string): Promise<void> {
         : ('unknown' as const);
     await provider.ensureRunning(externalId);
     console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
-    if (before === 'stopped') {
+    if (record.runtimeKind === 'environment') {
+      await db
+        .update(sessionEnvironments)
+        .set({ status: 'active', lastUsedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(sessionEnvironments.sessionId, record.sessionId),
+            eq(sessionEnvironments.externalId, externalId),
+          ),
+        );
+    } else if (before === 'stopped') {
       await recoverTurnsAfterRuntimeRestart({
         sandboxId: record.sandboxId,
         sessionId: record.sessionId,
@@ -379,17 +457,36 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
         sessionId: sessionSandboxes.sessionId,
         status: sessionSandboxes.status,
         metadata: sessionSandboxes.metadata,
+        sessionMetadata: projectSessions.metadata,
       })
       .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')))
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+      .where(
+        and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')),
+      )
       .orderBy(...preferredSandboxOrder())
       .limit(1);
-    if (!row) return;
+    if (!row) {
+      await db
+        .update(sessionEnvironments)
+        .set({ lastUsedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(sessionEnvironments.externalId, sandboxId),
+            eq(sessionEnvironments.status, 'active'),
+          ),
+        );
+      return;
+    }
 
     await db
       .update(sessionSandboxes)
       .set({ lastUsedAt: now, updatedAt: now })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+
+    // Only the session lifecycle can change a Pi worker's state. A delayed
+    // response or SSE reconnect cannot reverse an explicit stop.
+    if (sessionMetadataClaimsPiWorker(row.sessionMetadata)) return;
 
     // Passive proxy traffic (an open tab polling opencode, a background stream
     // reconnect) must NOT heal a deliberately-stopped box back to active —
@@ -404,10 +501,7 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
         .update(sessionSandboxes)
         .set({ status: 'active', lastUsedAt: now, updatedAt: now })
         .where(
-          and(
-            eq(sessionSandboxes.sandboxId, row.sandboxId),
-            gt(sessionSandboxes.deadlineAt, now),
-          ),
+          and(eq(sessionSandboxes.sandboxId, row.sandboxId), gt(sessionSandboxes.deadlineAt, now)),
         );
     }
 
@@ -428,17 +522,34 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
 export async function markSandboxErrored(externalId: string): Promise<void> {
   try {
     const [row] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status })
+      .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status, sessionMetadata: projectSessions.metadata })
       .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.externalId, externalId), ne(sessionSandboxes.status, 'archived')))
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+      .where(
+        and(eq(sessionSandboxes.externalId, externalId), ne(sessionSandboxes.status, 'archived')),
+      )
       .orderBy(...preferredSandboxOrder())
       .limit(1);
-    if (!row) return;
+    if (!row) {
+      await db
+        .update(sessionEnvironments)
+        .set({ status: 'error', updatedAt: new Date() })
+        .where(
+          and(
+            eq(sessionEnvironments.externalId, externalId),
+            ne(sessionEnvironments.status, 'archived'),
+          ),
+        );
+      return;
+    }
+    if (sessionMetadataClaimsPiWorker(row.sessionMetadata)) return;
     await db
       .update(sessionSandboxes)
       .set({ status: 'error', updatedAt: new Date() })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-    console.warn(`[PREVIEW] Auto-marked session sandbox ${row.sandboxId} (external: ${externalId}) as error after all retries failed`);
+    console.warn(
+      `[PREVIEW] Auto-marked session sandbox ${row.sandboxId} (external: ${externalId}) as error after all retries failed`,
+    );
   } catch (err) {
     console.warn('[PREVIEW] Failed to auto-mark sandbox as error:', err);
   }
