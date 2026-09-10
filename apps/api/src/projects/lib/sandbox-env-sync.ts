@@ -1,5 +1,6 @@
 import { cellRuntimeFromSandboxMetadata } from '../cell-runtime-detect';
 import { cellSessionEnv } from './cell-session-env';
+import { cellCompiledAgentConfig } from './cell-agent-config';
 import { cellEnvToken } from './cell-env-token';
 import { serviceKeyForSession } from '../../platform/service-key';
 import { envPushUrl } from './env-push-url';
@@ -678,12 +679,39 @@ export async function repairCellSessionEnv(args: {
       args.serviceKey,
     );
     mark('session-key');
+    // WHOSE AGENT AND WHOSE MODEL — the session ROW's, read here rather than
+    // taken from the caller: the fast delivery path holds a narrow row, and a
+    // cell's own environment is the create body of whichever session made the
+    // shared runner. One indexed read on a path that is already `void`-ed.
+    const [row] = await db
+      .select({
+        agentName: projectSessions.agentName,
+        baseRef: projectSessions.baseRef,
+        metadata: projectSessions.metadata,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, args.sessionId))
+      .limit(1);
+    const meta = (row?.metadata ?? {}) as Record<string, unknown>;
+    const model = typeof meta.opencode_model === 'string' ? meta.opencode_model : null;
+    mark('session-row');
+    // The project's agent, compiled — cached per (project, ref, agent), so
+    // this is a map lookup on every prompt but the first.
+    const compiledAgentConfig = await cellCompiledAgentConfig({
+      projectId: args.projectId,
+      agentName: row?.agentName,
+      baseRef: row?.baseRef,
+    });
+    mark('agent-config');
     const env = cellSessionEnv({
       sessionId: args.sessionId,
       projectId: args.projectId,
       apiUrl: `${(config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`,
       serviceKey: sessionKey,
       llmBaseUrl: args.llmBaseUrl,
+      agentName: row?.agentName,
+      model,
+      compiledAgentConfig,
     });
     mark('build-env');
     const res = await fetch(envPushUrl(args.previewUrl, args.sessionId), {

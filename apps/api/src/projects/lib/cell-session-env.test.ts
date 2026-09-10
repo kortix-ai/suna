@@ -43,3 +43,48 @@ describe('the env re-sent to a cell', () => {
       .toBe('https://api.example/v1');
   });
 });
+
+// ── The session's own agent, model and compiled config ──
+//
+// A cell is born with the create body's CELLD_VAR_*, and on a SHARED runner
+// that body belongs to whichever session created the box. Measured on dev
+// 2026-09-10: a live cell session held five keys and nothing about which agent
+// it was running, so its system prompt was the worker's built-in one whatever
+// the project declared, and its model was the first session's.
+test('the agent name is sent under both names the worker reads', () => {
+  const env = cellSessionEnv({
+    sessionId: 's1', projectId: 'p1', apiUrl: 'https://api.example.com/v1',
+    serviceKey: 'k', agentName: 'reviewer',
+  });
+  expect(env.KORTIX_AGENT_NAME).toBe('reviewer');
+  expect(env.KORTIX_AGENT).toBe('reviewer');
+});
+
+test('the session model is sent, so a shared runner does not impose the first session\'s', () => {
+  const env = cellSessionEnv({
+    sessionId: 's1', projectId: 'p1', apiUrl: 'https://api.example.com/v1',
+    serviceKey: 'k', model: 'kortix/anthropic/claude-opus-5',
+  });
+  expect(env.KORTIX_MODEL).toBe('kortix/anthropic/claude-opus-5');
+});
+
+test('the compiled agent config travels with its etag', () => {
+  const compiled = JSON.stringify({ agent: { reviewer: { prompt: 'Be exacting.' } } });
+  const env = cellSessionEnv({
+    sessionId: 's1', projectId: 'p1', apiUrl: 'https://api.example.com/v1',
+    serviceKey: 'k', compiledAgentConfig: compiled,
+  });
+  expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+  expect(env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toMatch(/^[0-9a-f]{16}$/);
+});
+
+test('absent is absent — a v1 project sends no agent keys at all, never an empty one', () => {
+  const env = cellSessionEnv({
+    sessionId: 's1', projectId: 'p1', apiUrl: 'https://api.example.com/v1',
+    serviceKey: 'k', agentName: '  ', model: null, compiledAgentConfig: '',
+  });
+  expect('KORTIX_AGENT_NAME' in env).toBe(false);
+  expect('KORTIX_MODEL' in env).toBe(false);
+  expect('KORTIX_COMPILED_AGENT_CONFIG' in env).toBe(false);
+  expect('KORTIX_COMPILED_AGENT_CONFIG_ETAG' in env).toBe(false);
+});

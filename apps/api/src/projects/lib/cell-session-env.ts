@@ -1,3 +1,5 @@
+import { agentConfigEtag } from './compile-agent-config';
+
 /**
  * THE CONFIGURATION A CELL NEEDS, RE-SENT ON EVERY PROMPT.
  *
@@ -40,6 +42,13 @@ export interface CellSessionEnvInput {
   serviceKey: string | null | undefined;
   /** The LLM gateway base, when this session is on the gateway. */
   llmBaseUrl?: string | null;
+  /** The session's agent — `project_sessions.agent_name`. */
+  agentName?: string | null;
+  /** The session's resolved model, `metadata.opencode_model` (`provider/id`). */
+  model?: string | null;
+  /** The compiled config for that agent — its prompt, model and permissions
+   *  (cell-agent-config.ts). */
+  compiledAgentConfig?: string | null;
 }
 
 /**
@@ -54,11 +63,31 @@ export function cellSessionEnv(input: CellSessionEnvInput): Record<string, strin
   const apiUrl = String(input.apiUrl ?? '').replace(/\/+$/, '');
   const token = input.serviceKey?.trim();
   const gateway = input.llmBaseUrl?.trim();
+  const agent = input.agentName?.trim();
+  const model = input.model?.trim();
+  const compiled = input.compiledAgentConfig?.trim();
   return {
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_PROJECT_ID: input.projectId,
     ...(apiUrl ? { KORTIX_API_URL: apiUrl } : {}),
     ...(token ? { KORTIX_TOKEN: token } : {}),
     ...(gateway ? { KORTIX_LLM_BASE_URL: gateway } : {}),
+    // WHOSE AGENT AND WHOSE MODEL. A cell is born with the create body's
+    // CELLD_VAR_*, and on a shared runner that body belongs to whichever
+    // session created the box — so every later session on it ran the FIRST
+    // session's agent name and model, and a restarted cell ran none at all.
+    // These are per-session and re-sent with the rest.
+    ...(agent ? { KORTIX_AGENT_NAME: agent, KORTIX_AGENT: agent } : {}),
+    ...(model ? { KORTIX_MODEL: model } : {}),
+    // The project's own agent: its `.md` body is the system prompt, its
+    // frontmatter the model. Absent for a v1 project, and absent is not empty
+    // — an empty string would tell the cell "this project has an agent with no
+    // prompt" and silence the built-in one.
+    ...(compiled
+      ? {
+          KORTIX_COMPILED_AGENT_CONFIG: compiled,
+          KORTIX_COMPILED_AGENT_CONFIG_ETAG: agentConfigEtag(compiled) ?? '',
+        }
+      : {}),
   };
 }
