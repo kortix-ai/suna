@@ -36,6 +36,8 @@ Electron unit tests run in the existing packages lane through
 - Click every changed control and check its route or request plus visible result.
 - Open and close the sidebar. Repeat navigation with the sidebar collapsed.
 - Open fullscreen settings. Verify Back to app and the final navigation row.
+- Open a full-screen frame with no sidebar, such as `/oauth/authorize` with no
+  `request_id`. Verify Back sits in the title-bar band and leaves the page.
 - Check light and dark themes at 1440 × 900 and 720 × 480 window sizes.
 - Check default zoom, zoom in, zoom out, and reset. Native controls do not zoom.
 - Use Tab, arrows, Enter, and Escape. Focus must remain visible and reachable.
@@ -75,6 +77,14 @@ The CSS variables in `apps/web/src/app/globals.css` mirror it. The focused
 `.kx-titlebar-tabs` marks only the top capability bar. Product tab lists keep
 the shared Tabs component's layout. `.kx-titlebar-spacer` reserves native chrome
 for fullscreen overlays. It cannot shrink inside a flex column.
+
+The shell has no browser toolbar. Every page must offer an exit. `AuthFrame`
+draws `DesktopBackButton` (`apps/web/src/components/desktop/desktop-back-button.tsx`)
+in the title-bar band for a signed-in user. `.kx-desktop-back` shows it only
+under `html[data-desktop='true']`, and that rule must stay unlayered. Every
+control in the band takes `TITLEBAR_CONTROL_CLASS`
+(`apps/web/src/components/desktop/titlebar-control.ts`). A new full-screen
+surface outside `AuthFrame` needs its own visible exit.
 
 Do not inject layout CSS from Electron. Do not mark all `[role="tablist"]` or
 `[data-sidebar="sidebar"]` elements as window drag regions. Reserve dragging for
