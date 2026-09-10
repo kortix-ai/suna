@@ -528,6 +528,12 @@ describe('GET .../prompts', () => {
         // The id the client painted under — the same while nothing re-minted.
         wire_message_id: WIRE_ID,
         client_sent_at_ms: null,
+        // Enter, not Cmd/Ctrl+Enter. Always present, never absent: a client
+        // must not have to tell "sent with Enter" from "old server".
+        queued_by_user: false,
+        // Not stop-held. Same rule — the flag that separates the session being
+        // stopped from one row being parked is always on the wire.
+        stop_held: false,
         state: 'queued',
         reason: null,
         text: 'say hi',
@@ -686,6 +692,34 @@ describe('DELETE .../prompts/:promptId', () => {
       },
     });
     expect(commandTable).toEqual([]);
+  });
+
+  test('a removed PARKED prompt hands back `queued_by_user`, so undo restores it parked', async () => {
+    // Parking is a property of the ROW: `buildContinueSessionCommandValues`
+    // reads `payload.queuedByUser` and gives the row `result: {held: true}`
+    // plus a 24h `availableAt`. Without the flag in this response the undo
+    // re-POSTs an ordinary Enter row — `result: {}`, `availableAt: now` — and
+    // the prompt the user parked so it would NOT run runs at the next turn
+    // boundary, under a button labelled "Undo".
+    commandTable = [
+      row({
+        result: { held: true },
+        payload: {
+          text: 'say hi',
+          clientMessageId: 'q_1',
+          wireMessageId: WIRE_ID,
+          queuedByUser: true,
+        },
+      }),
+    ];
+    const body = (await (await remove()).json()) as { removed: Record<string, unknown> };
+    expect(body.removed.queued_by_user).toBe(true);
+  });
+
+  test('a removed ENTER prompt omits `queued_by_user` — absence IS "sent with Enter"', async () => {
+    commandTable = [row()];
+    const body = (await (await remove()).json()) as { removed: Record<string, unknown> };
+    expect(body.removed).not.toHaveProperty('queued_by_user');
   });
 
   test('refuses to remove a prompt that is already on the wire', async () => {

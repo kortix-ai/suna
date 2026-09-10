@@ -102,7 +102,7 @@ import { setProjectModelOverrides } from '../../repositories/project-routing-pol
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { continueSession, drainSessionLifecycleQueue } from '../session-lifecycle';
-import { promoteNextInboxRow } from '../session-lifecycle/store';
+import { promoteAndKickNextInboxRow } from '../session-lifecycle/settled-drain-kick';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import {
@@ -2743,25 +2743,29 @@ projectsApp.openapi(
       if (!childSession) {
         void captureSessionTranscriptMirror(sessionId);
       }
-      // THE TURN ENDED — the session's next queued prompt is admissible NOW.
-      // Await the durable promotion before acknowledging the terminal relay.
-      // The targeted drain remains asynchronous and re-runs admission itself;
-      // a lost kick falls back to the scheduler tick.
-      // This is what makes the queue "send between every turn" without a
-      // clock: the daemon's idle relay is the trigger.
+      // THE TURN ENDED — the session's next queued prompt is admissible after
+      // INBOX_TURN_SETTLE_MS. Await the durable promotion before acknowledging
+      // the terminal relay; the drain it schedules stays asynchronous and
+      // re-runs admission itself. This is what makes the queue "send between
+      // every turn" without a clock: the daemon's idle relay is the trigger —
+      // a clock only sets how long the trigger waits before firing.
+      //
+      // `promoteAndKickNextInboxRow` also owns the delay on the kick: the
+      // promoted row is not claimable until the settle window elapses, and a
+      // lost kick costs ~1s (the scheduler's unconditional drain), not a
+      // minute — settled-drain-kick.ts cites the file:line for both numbers.
       let promotedPromptId: string | null = null;
       if (!childSession) {
         if (turnCompletionAllowsQueuePromotion(turnCompletion)) {
-          promotedPromptId = await promoteNextInboxRow(sessionId);
-          if (promotedPromptId) {
-            void drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId }).catch((error) =>
+          promotedPromptId = await promoteAndKickNextInboxRow(sessionId, {
+            drain: drainSessionLifecycleQueue,
+            onError: (error, promptId) =>
               console.warn('[turn-stream] targeted queue drain failed', {
                 sessionId,
-                promptId: promotedPromptId,
+                promptId,
                 error: error instanceof Error ? error.message : String(error),
               }),
-            );
-          }
+          });
         }
         console.info('[turn-stream] terminal turn settlement', {
           sessionId,

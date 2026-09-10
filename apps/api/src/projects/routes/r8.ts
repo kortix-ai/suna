@@ -47,6 +47,7 @@ import {
   enqueueContinueSessionCommand,
   holdInboxPrompts,
   listInboxPrompts,
+  reorderInboxPrompts,
   releaseInboxHold,
   restartSession,
   retryInboxPrompt,
@@ -416,8 +417,16 @@ projectsApp.openapi(
 //
 // Admission — "may this prompt be delivered NOW?" — is not decided here. It is
 // decided at drain time by `admitInboxPrompt`, on the ORDER of this session's
-// own rows, because that answer changes between the POST and the delivery. A
-// live turn does not hold a prompt back: OpenCode queues it by arrival.
+// own rows, because that answer changes between the POST and the delivery.
+//
+// A LIVE TURN DOES HOLD EVERY PROMPT BACK. This comment used to say the
+// opposite ("OpenCode queues it by arrival"), which described the mid-turn
+// forwarding that `4ee30a9c3b` REVERTED: OpenCode parents each step on the
+// newest user message and answers everything before it in that one step, so
+// two forwarded prompts shared a single answer and the earlier one was never
+// spoken (measured 2026-09-04). `admitInboxPrompt` now refuses with
+// `turn_active` until the turn ends — see its header. Anyone designing send
+// semantics from the old sentence built the wrong thing.
 
 const PROMPT_WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 const PROMPT_LIST_LIMIT = 200;
@@ -428,6 +437,11 @@ const SessionPromptSchema = z.object({
   message_id: z.string(),
   wire_message_id: z.string(),
   client_sent_at_ms: z.number().nullable(),
+  /** Cmd/Ctrl+Enter: the row is PARKED — it waits in the composer's
+   *  reorderable queue list rather than as a dimmed transcript bubble, AND it
+   *  is born held, so it never dispatches until the user releases it. Not
+   *  presentation only; see `buildContinueSessionCommandValues`. */
+  queued_by_user: z.boolean(),
   state: z.enum(['queued', 'delivering', 'waiting', 'failed']),
   reason: z.string().nullable(),
   text: z.string(),
@@ -447,6 +461,11 @@ const RemovedSessionPromptSchema = z.object({
   client_message_id: z.string(),
   removed_message_ids: z.array(z.string()).optional(),
   message_id: z.string(),
+  /** The row was PARKED (Cmd/Ctrl+Enter), so it was born held and never
+   *  auto-dispatches. Undo has to re-POST it with the same flag, or the
+   *  restored row runs at the next turn boundary — the one thing the user
+   *  parked it to prevent. Optional: absent on rows sent with Enter. */
+  queued_by_user: z.boolean().optional(),
   parts: z.array(z.any()),
   overrides: z.any().nullable(),
 });
@@ -469,6 +488,11 @@ function serializeRemovedPrompt(row: PromptRow) {
       payload.redeliveredMessageId,
       (row.result as Record<string, unknown> | null)?.forwarded_message_id,
     ].filter((id, i, all): id is string => typeof id === 'string' && !!id && all.indexOf(id) === i),
+    // WHETHER THE USER PARKED IT. A parked row is born held with a 24h
+    // horizon and never drains on its own; a re-POST without this flag is an
+    // ordinary Enter row that runs at the next turn boundary. Undo therefore
+    // has to carry it, or "Undo" resurrects the prompt AND runs it.
+    ...(payload.queuedByUser === true ? { queued_by_user: true } : {}),
     // The full body, untruncated, with every file/agent part — see the DELETE
     // handler for why the display shape cannot stand in for this.
     parts: parts.length > 0 ? parts : [{ type: 'text', text: payload.text ?? '' }],
@@ -619,6 +643,8 @@ projectsApp.openapi(
       Math.abs(Date.now() - body.client_sent_at_ms) < 10 * 60_000
         ? { clientSentAtMs: Math.trunc(body.client_sent_at_ms) }
         : {}),
+      // Cmd/Ctrl+Enter. Presentation only — see `QueuedContinueSessionPayload`.
+      ...(body.queued_by_user === true ? { queuedByUser: true } : {}),
       parts,
       overrides,
     });
@@ -854,6 +880,84 @@ projectsApp.openapi(
       requeued.idempotencyKey ? { idempotencyKey: requeued.idempotencyKey } : { limit: 1 },
     ).catch(() => undefined);
     return c.json(serializePrompt(requeued), 200);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/prompts/reorder',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/prompts/reorder',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } }, required: true },
+    },
+    responses: {
+      200: json(
+        z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
+        'Reordered',
+      ),
+      ...errors(400, 404),
+    },
+  }),
+  // THE QUEUE LIST IS AN ORDER THE USER COMPOSES.
+  //
+  // Rows parked with Cmd/Ctrl+Enter are shown above the composer in the order
+  // they will run, and dragging one edits that order. The inbox has exactly one
+  // ordering key (`inboxSentAtSql` — the payload's `clientSentAtMs`), so this
+  // rewrites that field and nothing else; the drain, the admission gate and
+  // every reader keep using the tuple they already use.
+  //
+  // Floor 'session', like send/remove/retry: arranging your own pending
+  // messages is running the session, not editing the project.
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const body = await c.req.json().catch(() => ({}));
+    const ids = Array.isArray(body?.prompt_ids) ? body.prompt_ids : null;
+    if (!ids || ids.length === 0 || !ids.every((id: unknown) => typeof id === 'string')) {
+      return c.json({ error: 'prompt_ids must be a non-empty array of prompt ids' }, 400);
+    }
+    if (ids.length > PROMPT_LIST_LIMIT) {
+      return c.json({ error: `prompt_ids may not exceed ${PROMPT_LIST_LIMIT} entries` }, 400);
+    }
+    if (!ids.every((id: string) => UUID_V4_REGEX.test(id))) {
+      return c.json({ error: 'Invalid prompt id' }, 400);
+    }
+    if (new Set(ids).size !== ids.length) {
+      return c.json({ error: 'prompt_ids must not repeat a prompt' }, 400);
+    }
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
+    );
+    const visible = await loadVisibleSession(
+      loaded,
+      sessionId,
+      callerKortixSessionId(c),
+      callerKortixSessionId(c),
+    );
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    await reorderInboxPrompts(sessionId, ids);
+
+    // The WHOLE list back, on the server's clock — the same shape `GET
+    // .../prompts` serves, so the caller replaces its snapshot instead of
+    // patching one and re-deriving an order the server has just rewritten.
+    const observedAt = new Date().toISOString();
+    const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
+    return c.json({ prompts: rows.map(serializePrompt), observed_at: observedAt });
   },
 );
 

@@ -80,6 +80,35 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
   };
 }
 
+/**
+ * How long a HELD prompt stays out of the drain's way.
+ *
+ * A hold is released by an action, never by this timer — the user sending
+ * anything new, or pressing "send now" on a row. The horizon exists only so a
+ * held row cannot outlive a browser that never comes back: a day later the
+ * queue drains rather than holding a prompt for ever.
+ *
+ * Defined here rather than in `inbox-rows.ts` (which re-exports it) only
+ * because that module imports from this one, and the park below needs the same
+ * number.
+ */
+export const INBOX_HOLD_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How far into the future a PARKED row is dated.
+ *
+ * A horizon, not a schedule. Nothing waits this long: a park ends when the user
+ * releases it. The date only keeps the row out of every "is it due?" read in
+ * the meantime, so a parked prompt cannot be resurrected by a reaper pass.
+ *
+ * DERIVED from `INBOX_HOLD_MS` rather than re-typed. It is the same horizon for
+ * the same reason — a held row must not outlive a browser that never comes back
+ * — and two independent 24h constants for one rule is how they drift, with the
+ * symptom being a parked prompt that starts running a few hours after a stopped
+ * one does. The alias exists only so the call site reads as what it means.
+ */
+export const PARKED_PROMPT_HOLD_MS = INBOX_HOLD_MS;
+
 /** One part of a prompt body, in OpenCode's own `/prompt_async` shape. */
 export interface PromptPartWire {
   type: 'text' | 'file' | 'agent';
@@ -173,6 +202,21 @@ export interface QueuedContinueSessionPayload {
   /** The sender tab's clock at Enter — the SEND order across surfaces whose
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
+  /**
+   * The user pressed Cmd/Ctrl+Enter, not Enter: PARK this prompt.
+   *
+   * It decides BOTH where the prompt waits and whether it waits at all. The
+   * composer's reorderable queue list rather than the transcript's dimmed
+   * bubble — and, because `buildContinueSessionCommandValues` reads this flag,
+   * the row is born `result: {held: true}` with a 24h `availableAt`. It never
+   * dispatches on its own: the drain steps over held rows and
+   * `releaseInboxHold` deliberately skips these, so only the user's "Send now"
+   * (`retryInboxPrompt`) puts it back in line.
+   *
+   * The flag lives on the row instead of in the sending tab so a reload, a
+   * second tab, or another device still shows the user's own arrangement.
+   */
+  queuedByUser?: boolean;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -204,6 +248,21 @@ export interface EnqueueContinueSessionCommandInput {
   /** The sender tab's clock at Enter — the SEND order across surfaces whose
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
+  /**
+   * The user pressed Cmd/Ctrl+Enter, not Enter: PARK this prompt.
+   *
+   * It decides BOTH where the prompt waits and whether it waits at all. The
+   * composer's reorderable queue list rather than the transcript's dimmed
+   * bubble — and, because `buildContinueSessionCommandValues` reads this flag,
+   * the row is born `result: {held: true}` with a 24h `availableAt`. It never
+   * dispatches on its own: the drain steps over held rows and
+   * `releaseInboxHold` deliberately skips these, so only the user's "Send now"
+   * (`retryInboxPrompt`) puts it back in line.
+   *
+   * The flag lives on the row instead of in the sending tab so a reload, a
+   * second tab, or another device still shows the user's own arrangement.
+   */
+  queuedByUser?: boolean;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -222,6 +281,9 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.wireMessageId ? { wireMessageId: input.wireMessageId } : {}),
     ...(input.remintOnDelivery ? { remintOnDelivery: true } : {}),
     ...(typeof input.clientSentAtMs === 'number' ? { clientSentAtMs: input.clientSentAtMs } : {}),
+    // Omitted when false, like every other optional above: absence means
+    // "sent with Enter", which is also what every pre-existing row means.
+    ...(input.queuedByUser ? { queuedByUser: true } : {}),
     ...(input.parts ? { parts: input.parts } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
   };
@@ -235,8 +297,30 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     sessionId: input.sessionId,
     idempotencyKey: input.idempotencyKey ?? null,
     payload: payload as unknown as Record<string, unknown>,
-    result: {},
-    availableAt: input.availableAt ?? now,
+    // A PARKED ROW IS BORN HELD.
+    //
+    // Cmd/Ctrl+Enter means "put this in the queue and leave it there" — it must
+    // NOT run when the turn ends, and it must not run on an idle session
+    // either. That is exactly what the per-row hold already expresses, so
+    // parking reuses it rather than inventing a second way to be not-due:
+    // `held` keeps the row out of `admitInboxPrompt`, and — critically —
+    // `hasOlderPendingPrompt` EXCLUDES held rows, so a parked row sitting at
+    // the head of the list does not block the auto rows behind it.
+    //
+    // The row is held; WHY it is held is read from `payload.queuedByUser`,
+    // which is already the one flag for this intent. No second key: `parked`
+    // is taken in this file for a prompt stranded by an unreachable runtime
+    // (`parkPromptForUnreachableRuntime`), and two meanings of one word in one
+    // module is how the next reader gets it wrong.
+    //
+    // The two holds are released by different things: a STOP hold is lifted by
+    // the next send (`releaseInboxHold`, which now skips these rows), and this
+    // one is lifted only by the user pointing at the row — "Send immediately" →
+    // `retryInboxPrompt`, which replaces `result` wholesale.
+    result: input.queuedByUser ? { held: true } : {},
+    availableAt: input.queuedByUser
+      ? new Date(now.getTime() + PARKED_PROMPT_HOLD_MS)
+      : (input.availableAt ?? now),
     updatedAt: now,
   };
 }
@@ -420,7 +504,33 @@ export async function requeueForAdmission(
 }
 
 /**
- * Make the session's NEXT queued inbox row due now.
+ * The pause between one turn ending and the next queued row going due.
+ *
+ * Not zero: the completed turn's UI (the closing assistant bubble, the
+ * composer clearing) has to land before the next prompt's does, or two turns
+ * back to back read as one machine-gun burst — the user cannot tell where one
+ * answer ends and the next question starts. ~400ms is enough for that paint
+ * to land without reintroducing the dead air `promoteNextInboxRow` exists to
+ * remove (see below); it is not a backoff and must not be tuned like one.
+ *
+ * Applies ONLY to the turn-end -> next-row promotion. A prompt sent to an
+ * idle session (no active turn) is admitted at `availableAt = now` from
+ * `buildContinueSessionCommandValues` and never passes through here, so the
+ * first message of a session is never delayed.
+ *
+ * NOT the whole user-visible pause. Two waits stack on the turn-end path:
+ * this 400ms settle, and then the 250ms burst-coalesce sleep
+ * `drainSessionLifecycleQueue` takes before claiming whenever it is kicked
+ * with an `idempotencyKey` (engine.ts). Both kick sites now wait out this
+ * constant before kicking (`settled-drain-kick.ts`), so turn end -> next row
+ * claimed is ~650ms in practice, not 400ms. Changing this number moves that
+ * total 1:1; whether ~650ms is the right pause is an open call for the owner,
+ * not something to retune in passing.
+ */
+export const INBOX_TURN_SETTLE_MS = 400;
+
+/**
+ * Make the session's NEXT queued inbox row due `INBOX_TURN_SETTLE_MS` from now.
  *
  * Called after the terminal relay or reaper proves the current turn ended.
  * Without it the next row waits out whatever `requeueForAdmission` backoff it
@@ -452,7 +562,10 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
   if (!next) return null;
   await db
     .update(sessionLifecycleCommands)
-    .set({ availableAt: new Date(), updatedAt: new Date() })
+    .set({
+      availableAt: new Date(Date.now() + INBOX_TURN_SETTLE_MS),
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(sessionLifecycleCommands.commandId, next.commandId),
