@@ -271,7 +271,7 @@
       "totalCredits": "利用可能なクレジット合計",
       "allCredits": "すべてのクレジット",
       "monthlyCredits": "月額クレジット",
-      "renewalIn": "{days} {days, plural, one {日} other {日}}後に更新",
+      "renewalIn": "{days} {days, plural, other {日}}後に更新",
       "noRenewal": "更新予定なし",
       "extraCredits": "追加クレジット",
       "nonExpiring": "期限なし",
@@ -1023,7 +1023,7 @@
     "credits": {
       "loadFailed": "このアカウントを読み込めませんでした。",
       "availableBalance": "利用可能残高",
-      "creditCount": "{count, plural, one {{formatted} クレジット} other {{formatted} クレジット}}",
+      "creditCount": "{count, plural, other {{formatted} クレジット}}",
       "owed": "未払い",
       "buckets": {
         "monthly": {
@@ -1042,7 +1042,7 @@
       "includedInPlan": "プランに含まれる内容",
       "usedThisPeriod": "この期間の使用量",
       "planCreditsSpent": "プランクレジットを使い切りました。これ以降は購入済みクレジットを使用します。",
-      "grantRemaining": "{count, plural, one {この期間の付与分は残り {formatted} クレジットです。} other {この期間の付与分は残り {formatted} クレジットです。}}",
+      "grantRemaining": "{count, plural, other {この期間の付与分は残り {formatted} クレジットです。}}",
       "dailyAmountEvery": "{hours} 時間ごとに +{credits} クレジット",
       "dailyAmount": "+{credits} クレジット",
       "countdown": {
@@ -1541,7 +1541,7 @@
     "providerRecovery": {
       "savedPrompt": "保存済みプロンプト",
       "noText": "テキストプロンプトは添付されていません。",
-      "attachments": "{count, plural, one {添付ファイル} other {添付ファイル}}",
+      "attachments": "{count, plural, other {添付ファイル}}",
       "reattach": "再読み込み後にこれらのファイルを再添付してください。",
       "unavailable": "保存済みプロンプトはありません。",
       "retrying": "再試行中…",
@@ -1551,10 +1551,10 @@
     },
     "connectorRequired": {
       "title": "続行するには{connectors}を接続",
-      "description": "{count, plural, one {{connectors}が必要ですが、まだ何も接続されていません。処理は実行されておらず、料金も発生していません。アカウントを接続すると、メッセージが再送信されます。} other {{connectors}が必要ですが、まだ何も接続されていません。処理は実行されておらず、料金も発生していません。アカウントを接続すると、メッセージが再送信されます。}}",
+      "description": "{count, plural, other {{connectors}が必要ですが、まだ何も接続されていません。処理は実行されておらず、料金も発生していません。アカウントを接続すると、メッセージが再送信されます。}}",
       "connectOne": "{connector}を接続",
       "connectMany": "アカウントを接続",
-      "privateDescription": "{count, plural, one {{connectors}は一度に1つのアカウントを認証するため、このセッションを実行するアカウントで接続する必要があります。} other {{connectors}は一度に1つのアカウントを認証するため、このセッションを実行するアカウントで接続する必要があります。}}"
+      "privateDescription": "{count, plural, other {{connectors}は一度に1つのアカウントを認証するため、このセッションを実行するアカウントで接続する必要があります。}}"
     },
     "composerMenus": {
       "noMatches": "一致する項目はありません",
@@ -1691,7 +1691,7 @@
   },
   "billing": {
     "plan": {
-      "teamSeats": "{count, plural, one {チーム · # 席} other {チーム · # 席}}",
+      "teamSeats": "{count, plural, other {チーム · # 席}}",
       "cancels": "{date} に解約",
       "cancelsAtPeriodEnd": "期間終了時に解約",
       "renews": "{date} に更新",
@@ -9369,7 +9369,7 @@
       "text00d60e31a4e6": "実行",
       "text00d8d3f11739": "mail",
       "text00dd9d632755": "ブランチを検索",
-      "text00e99be56ba9": "{count, plural, one {# 行を削除しました} other {# 行を削除しました}}",
+      "text00e99be56ba9": "{count, plural, other {# 行を削除しました}}",
       "text00f5aae9f9d3": "このエージェントが呼び出すことができる外部サービス。 1 つを必須にマークすると、解決されるまでセッションは開始されません。",
       "text00f8ca92de43": "エージェントに判断が必要なときは、処理を永遠に止める代わりに、ボタン付きのカードを投稿します。クリックが判定となり、同じスレッドでそこからセッションが再開されます。",
       "text00ff22485ed6": "接続する",
@@ -10773,7 +10773,7 @@
       "text2a6b24ad2872": "クレジット",
       "text2a728809f134": "SAML SSO用に作成した同じCustom Applicationを再利用できます。SCIMはその「Identity Management」タブにあります。",
       "text2a78025de6aa": "選択",
-      "text2a8f24e937b7": "{count, plural, one {#個のツールをカスタマイズ済み} other {#個のツールをカスタマイズ済み}}",
+      "text2a8f24e937b7": "{count, plural, other {#個のツールをカスタマイズ済み}}",
       "text2a91147eb974": "招待の有効期限",
       "text2a94ea8db704": "{value0} キーを入手する場所",
       "text2a9575e3e816": "確認",
@@ -12242,7 +12242,7 @@
       "text53f71e08be88": "Stripeサブスクリプション",
       "text53f76274b923": "このチャネル接続にはプラットフォーム設定がありません。",
       "text5405931307e3": "設定完了、サービスを開始中…",
-      "text540afa4c53ff": "{label}: {count, plural, one {# メンバー} other {# メンバー}}",
+      "text540afa4c53ff": "{label}: {count, plural, other {# メンバー}}",
       "text54266bfe04ff": "メンテナンス構成の更新に失敗しました",
       "text5427e0ef4eba": "権限：",
       "text542d24012988": "person@example.com",
@@ -13945,7 +13945,7 @@
       "text854a397472d0": "スライド{value0}を正常に編集しました",
       "text854e6dd9d777": "タイプは登録時に固定されます。変更するには新しいアプリを登録してください。",
       "text8552ade1b621": "セッションのチャンバー：{inside}とは何か、{outside}とは何か。",
-      "text8559d8fd97d1": "{count, plural, one {# シートが有効} other {# シートが有効}} · ${credit} の利用クレジットを入金しました。",
+      "text8559d8fd97d1": "{count, plural, other {# シートが有効}} · ${credit} の利用クレジットを入金しました。",
       "text8564edf2cd1f": "サーバー側で解決されるコネクター認証情報",
       "text857be0b1fee8": "既存事例",
       "text8585b95f4600": "GitHubのKortix",
@@ -14704,7 +14704,7 @@
       "text9a6a77d58095": "作業を担うもの — それぞれの指示、モデル、アクセス権。",
       "text9a6b697e6d4c": "OpenAIおよびAnthropic互換のドロップインエンドポイントです。上のセクションのゲートウェイキーを使用してください。",
       "text9a70da1bb740": "どのグループにも所属していません",
-      "text9a719be343e8": "{count, plural, one {#件の結果} other {#件の結果}}",
+      "text9a719be343e8": "{count, plural, other {#件の結果}}",
       "text9a72221a2747": "質問",
       "text9a788c263969": "新しい通知サービスにはどのデータベースを使うべきですか？",
       "text9a7b1baef5f5": "SAML2ウェブアプリ → 設定",

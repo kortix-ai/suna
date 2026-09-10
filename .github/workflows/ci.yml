@@ -163,6 +163,9 @@ jobs:
           pnpm --dir apps/web exec bun test src/sdk-boundary.test.ts
           pnpm --dir apps/web exec eslint src --quiet
 
+      - name: Lint translations
+        run: pnpm --dir apps/web run lint:i18n
+
       # Next.js 16.3 turns on Turbopack's FileSystem cache for `next build`
       # (`experimental.turbopackFileSystemCacheForBuild`, default true) and
       # writes it to apps/web/.next/cache/turbopack. A bare runner starts with
