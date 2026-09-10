@@ -104,6 +104,19 @@ export async function canAccessSandboxSession(input: {
         : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
     ]);
     const grants = grantsBySession.get(input.sessionId) ?? [];
+    lastRefusalContext = {
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      visibility: row.visibility,
+      origin: row.origin ?? null,
+      sessionOwnedByCaller: row.createdBy === subject.userId,
+      isTriggerSession: isTriggerCreatedSessionMetadata(row.metadata),
+      canManageProject: managerVerdict.allowed,
+      managerReason: 'reason' in managerVerdict ? String(managerVerdict.reason) : null,
+      sessionGrants: grants.length,
+      callerSessionId: input.callerSessionId,
+      boundCredentialSessionId: input.boundCredentialSessionId,
+    };
     allowed = isProjectSessionVisibleTo(
       row.visibility as 'private' | 'project' | 'restricted',
       row.createdBy,
@@ -119,7 +132,58 @@ export async function canAccessSandboxSession(input: {
     );
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
+  if (!allowed && lastRefusalContext) refusalContexts.set(key, lastRefusalContext);
   return allowed;
+}
+
+/**
+ * Why the last refusal for this exact caller/session pair said no.
+ *
+ * `canAccessSandboxSession` answers a bare boolean, and its refusal is thrown
+ * as a constant string — `Not authorized to access this session`. In prod that
+ * string appeared 6,970 times in 48 hours from server-side prompt delivery
+ * (`[session-lifecycle] prompt_async threw (will retry)`) with NOTHING to say
+ * which of six branches refused, and the delivery then retried into the same
+ * wall until it dead-lettered as `delivery outcome: pending`.
+ *
+ * Six branches can produce `false` here — the sibling-session gate, ownership,
+ * `project` visibility, a `restricted` grant miss, the trigger-session manager
+ * override, and the plain private default — and from outside they are
+ * indistinguishable. This records the inputs each verdict was made from so the
+ * refusal can name them once, at the throw site, instead of costing an
+ * investigation.
+ *
+ * Bounded and refusal-only: entries are written just for a denial, read once,
+ * and the map is capped, so it cannot grow with traffic.
+ */
+export interface SessionAccessRefusal {
+  sessionId: string;
+  projectId: string;
+  visibility: string;
+  origin: string | null;
+  sessionOwnedByCaller: boolean;
+  isTriggerSession: boolean;
+  canManageProject: boolean;
+  managerReason: string | null;
+  sessionGrants: number;
+  callerSessionId: string | null;
+  boundCredentialSessionId: string | null;
+}
+
+let lastRefusalContext: SessionAccessRefusal | null = null;
+const refusalContexts = new Map<string, SessionAccessRefusal>();
+const REFUSAL_CONTEXT_MAX = 500;
+
+export function takeSessionAccessRefusal(input: {
+  sessionId: string;
+  userId: string;
+  callerSessionId: string | null;
+  boundCredentialSessionId: string | null;
+}): SessionAccessRefusal | null {
+  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
+  const found = refusalContexts.get(key) ?? null;
+  if (refusalContexts.size > REFUSAL_CONTEXT_MAX) refusalContexts.clear();
+  return found;
 }
 
 type CacheEntry = {

@@ -94,3 +94,41 @@ describe('auditErrorSqlstate', () => {
     expect(auditErrorSqlstate(error)).toBeNull();
   });
 });
+
+describe('a database that went away is backpressure, not a broken batch', () => {
+  test('the shutdown SQLSTATEs are retryable', () => {
+    // PROD: `PostgresError: the database system is shutting down` — 21,102
+    // exceptions since 2026-07-04, 19,193 of them on 2026-08-14 alone. Each
+    // one answered 500 and dropped the batch, and a 500 is what makes the
+    // relay re-send on its flat retry and rebuild the convoy.
+    for (const code of ['57P01', '57P02', '57P03', '08000', '08003', '08006', '53300']) {
+      expect(isAuditContentionError(Object.assign(new Error('down'), { code }))).toBe(true);
+    }
+  });
+
+  test('driver-level connection codes count too', () => {
+    // postgres.js and Node do not use SQLSTATEs for these, and prod carries
+    // both: `write CONNECTION_CLOSED db.…supabase.co:5432` and
+    // `connect ECONNREFUSED 3.11.30.79:5432`.
+    for (const code of ['CONNECTION_CLOSED', 'CONNECTION_ENDED', 'ECONNREFUSED', 'ECONNRESET']) {
+      expect(isAuditContentionError(Object.assign(new Error('gone'), { code }))).toBe(true);
+    }
+  });
+
+  test('recognized through a Drizzle wrapper, the way prod raises it', () => {
+    const pg = Object.assign(new Error('the database system is shutting down'), { code: '57P03' });
+    const wrapper = Object.assign(new Error('Failed query: insert into "kortix"."audit_events"'), {
+      cause: pg,
+    });
+    expect(isAuditContentionError(wrapper)).toBe(true);
+    expect(auditErrorSqlstate(wrapper)).toBe('57P03');
+  });
+
+  test('an error about the DATA still pages', () => {
+    // Retrying a constraint violation or a bad value can never work, so these
+    // must keep their 500 and keep alerting.
+    for (const code of ['23505', '23502', '22P05', '22001', '42703']) {
+      expect(isAuditContentionError(Object.assign(new Error('bad row'), { code }))).toBe(false);
+    }
+  });
+});
