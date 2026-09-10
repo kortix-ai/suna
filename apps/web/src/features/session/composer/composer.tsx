@@ -1,6 +1,7 @@
 'use client';
 
 import { errorToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
@@ -11,7 +12,6 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
-import { useTranslations } from '@/i18n/use-translations';
 import type { RefObject } from 'react';
 import {
   lazy,
@@ -65,13 +65,12 @@ import {
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
 import { type ContextUsage, getContextUsage } from './context-ring';
-import type { ComposerEditorHandle } from './editor/composer-editor';
+import type { ComposerEditorHandle, ComposerSubmitIntent } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, localizedSlashActions, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
 import { createSubmitLatch } from './submit-latch';
-import type { ComposerSubmitIntent } from './editor/composer-editor';
 import type { AttachedFile, TrackedMention } from './types';
 
 /** A draft captured out of the editor at Enter time — see `createSubmitLatch`. */
@@ -1408,7 +1407,7 @@ function ComposerImpl({
             shell around it kept painting as an empty sliver.
           */}
           {showQueueStrip && (
-            <div className={COMPOSER_INPUT_SLOT_CLASS}>
+            <div className={cn(COMPOSER_INPUT_SLOT_CLASS, 'flex items-center gap-2 p-1.5')}>
               {threadContext && (
                 <button
                   onClick={threadContext.onBackToParent}

@@ -74,7 +74,6 @@ import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import {
   COMPOSER_INPUT_SLOT_CLASS,
-  COMPOSER_SHELL_CLASS,
   Composer as SessionChatInput,
 } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
@@ -5635,7 +5634,7 @@ export function SessionChat({
             header saying "last run failed" with two different ways out. */}
         {queuePausedByUser && heldQueueCount > 0 ? (
           <div className="flex w-full items-center justify-between gap-3 px-2">
-            <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs leading-none">
               <PauseIcon weight="fill" className="size-3 shrink-0" />
               <span className="truncate">
                 {tHardcodedUi('i18nComplete.text43ba7b95db1e', { count: heldQueueCount })}
@@ -5644,7 +5643,7 @@ export function SessionChat({
             <button
               type="button"
               onClick={() => void handleResumeQueue()}
-              className="text-muted-foreground hover:text-foreground flex shrink-0 cursor-pointer items-center gap-1 text-xs transition-colors active:scale-[0.96]"
+              className="text-muted-foreground hover:text-foreground flex shrink-0 cursor-pointer items-center gap-1 text-xs leading-none transition-colors active:scale-[0.96]"
             >
               <PlayIcon weight="fill" className="size-3 shrink-0" />
               {tHardcodedUi.raw('i18nComplete.textd640c7421da0')}
@@ -6559,40 +6558,6 @@ export function SessionChat({
           {/* Input — hidden in read-only mode (sub-session modal) */}
           {!readOnly && (
             <>
-              {/* QUEUE PAUSED BY A STOP HOLD — above the composer, not inside it.
-                  This used to render in `inputSlot`, the inset strip that hosts
-                  the approval/permission notices. That strip is `w-[96%]` with
-                  its own border and rounded top (`COMPOSER_INPUT_SLOT_CLASS`),
-                  so the banner sat narrower than the composer beneath it and
-                  inherited chrome meant for the notices it is not one of. It is
-                  a statement about the SESSION, not an input affordance, so it
-                  belongs above the whole control at the composer's own width.
-                  `COMPOSER_SHELL_CLASS` is that width — the same `mx-auto
-                  max-w-210 px-4` bounds the card uses, so the two edges line up.
-                  Self-hides when nothing is held. */}
-              {queuePausedByUser && heldQueueCount > 0 ? (
-                <div className={cn(COMPOSER_SHELL_CLASS, 'mb-1.5')}>
-                  {/* `px-2` keeps the caption off the composer card's rounded
-                      corner — the shell's own `px-4` aligns the OUTER edge, and
-                      the text wants a little more inset than the card does. */}
-                  <div className="flex w-full items-center justify-between gap-3 px-2">
-                    <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-                      <PauseIcon weight="fill" className="size-3 shrink-0" />
-                      <span className="truncate">
-                        {tHardcodedUi('i18nComplete.text43ba7b95db1e', { count: heldQueueCount })}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void handleResumeQueue()}
-                      className="text-muted-foreground hover:text-foreground flex shrink-0 cursor-pointer items-center gap-1 text-xs transition-colors active:scale-[0.96]"
-                    >
-                      <PlayIcon weight="fill" className="size-3 shrink-0" />
-                      {tHardcodedUi.raw('i18nComplete.textd640c7421da0')}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
               <SessionChatInput
                 // `undefined`, not `true`, once released: the composer's own
                 // viewport rule (>= 640px) still decides, so this never forces
