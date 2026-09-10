@@ -600,8 +600,12 @@ export class AgentCell {
       const script = next.script ? JSON.parse(next.script) : undefined;
       const { block } = await this.skills(sessionId);
       tMark("skills");
+      // A prompt echoed on accept is already a row; the agent is seeded
+      // without it because `agent.prompt(text)` adds it — twice would double
+      // the user's words in the model's context.
+      const echoed = !!next.message_id && this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE wire_id = ? AND role = 'user'", next.message_id).toArray()[0].n > 0;
       const agent = this.buildAgent(sessionId, script, withSkills(SYSTEM_PROMPT, block),
-        this.wireSessionId(next, sessionId));
+        this.wireSessionId(next, sessionId), echoed ? next.message_id : null);
       tMark("buildAgent");
       // TWO MARKS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
       //
@@ -632,7 +636,7 @@ export class AgentCell {
       // Where the transcript stood before this turn, so "did the model say
       // anything" is a question with an exact answer rather than a guess.
       const beforeMsgId = this.sql.exec("SELECT COALESCE(MAX(i), 0) AS i FROM msgs").toArray()[0].i;
-      this.saveMessage("user", { role: "user", content: [{ type: "text", text: next.text }] }, next.message_id ?? null);
+      if (!echoed) this.saveMessage("user", { role: "user", content: [{ type: "text", text: next.text }] }, next.message_id ?? null);
       await agent.prompt(next.text);
       const compacted = await this.compactIfNeeded(sessionId, streamFnOf(agent), agent.state.model, next.window || undefined);
       if (compacted) this.broadcast({ type: "compacted", ...compacted });
@@ -713,10 +717,11 @@ export class AgentCell {
     return dropped;
   }
 
-  loadMessages() {
+  loadMessages(excludeWireId = null) {
     // The WINDOW, not the archive. Everything before context_from has been
-    // summarised and stays on disk for /history and for audit.
-    return [...this.sql.exec("SELECT json FROM msgs WHERE i >= ? ORDER BY i", this.contextFrom())]
+    // summarised and stays on disk for /history and for audit. `excludeWireId`
+    // is the turn's own prompt, echoed on accept: pi adds it itself.
+    return [...this.sql.exec("SELECT json FROM msgs WHERE i >= ? AND (wire_id IS NULL OR wire_id != ?) ORDER BY i", this.contextFrom(), excludeWireId ?? "")]
       .map((r) => JSON.parse(r.json));
   }
 
@@ -905,7 +910,7 @@ export class AgentCell {
     return loaded;
   }
 
-  buildAgent(sessionId, script, systemPrompt = SYSTEM_PROMPT, wireSessionId = sessionId) {
+  buildAgent(sessionId, script, systemPrompt = SYSTEM_PROMPT, wireSessionId = sessionId, excludeWireId = null) {
     const configured = modelConfig(this.effectiveEnv());
     const streamFn = configured
       ? configured.streamFn
@@ -925,7 +930,7 @@ export class AgentCell {
         systemPrompt: note ? `${systemPrompt}\n\n${note}` : systemPrompt,
         model: configured?.model ?? SCRIPTED_MODEL,
         tools,
-        messages: this.loadMessages(),
+        messages: this.loadMessages(excludeWireId),
       },
     });
 
@@ -1655,10 +1660,27 @@ export class AgentCell {
           .join("\n")
           .trim() || String(body?.text ?? "").trim();
         if (!text) return Response.json({ error: "no text in prompt" }, { status: 400 });
+        // THE USER MESSAGE IS ECHOED NOW, NOT WHEN THE TURN STARTS. OpenCode
+        // answers a prompt with the user's own `message.updated` and its text
+        // part, and the Kortix client paints its bubble on Enter expecting
+        // exactly that echo to confirm it. This cell wrote the row and said
+        // nothing until the alarm ran the turn — measured in a real browser
+        // 2026-09-10 (scratchpad ui-jump.ts, session 97651ca9): 0.7 s after
+        // Enter the transcript lost the new turn (scrollHeight 914 → 709,
+        // scrollTop → 0) and got it back 0.9 s later when the turn began —
+        // the "jump" on every send. Row and frames go out on accept; the turn
+        // then finds its message already stored (see runTurn) and the agent is
+        // seeded without it, so the model still sees the prompt once.
+        const messageID = typeof body?.messageID === "string" && body.messageID ? body.messageID : this.mintWireMessageId();
         this.sql.exec(
           "INSERT INTO turns(text, script, window, status, created_at, message_id, session_id) VALUES (?, NULL, 0, 'pending', ?, ?, ?)",
-          text, Date.now(), typeof body?.messageID === "string" ? body.messageID : null, rootId,
+          text, Date.now(), messageID, rootId,
         );
+        this.saveMessage("user", { role: "user", content: [{ type: "text", text }] }, messageID);
+        this.wire?.publish([
+          { type: "message.updated", properties: { sessionID: rootId, info: { id: messageID, role: "user", sessionID: rootId, time: { created: Date.now() } } } },
+          { type: "message.part.updated", properties: { sessionID: rootId, part: { id: `${messageID}-p0`, messageID, sessionID: rootId, type: "text", text } } },
+        ]);
         await this.state.storage.setAlarm(Date.now() + 1);
         // 204, because that is what OpenCode answers and what the delivery loop
         // treats as accepted.

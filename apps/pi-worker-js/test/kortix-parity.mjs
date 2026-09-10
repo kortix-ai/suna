@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=125
+// EXPECTED_PASSES=129
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -151,6 +151,55 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
     });
     check("and a prompt with no text is a 400, not an empty turn",
       empty.status === 400, `status ${empty.status}`);
+  }
+
+  // THE USER MESSAGE IS ECHOED ON ACCEPT. OpenCode answers a prompt with the
+  // user's own message.updated + text part; the client's bubble waits for
+  // that echo. Measured in a real browser 2026-09-10: without it the new turn
+  // vanished 0.7 s after Enter and came back 0.9 s later — the jump on send.
+  {
+    const id = "msg_0880bec1f009AAAAAAAAAAAAAA";
+    const evRes = await h.fetch("/kortix/opencode/events?c=s&since=0");
+    const reader = evRes.body.getReader();
+    await reader.read(); // the opening (hello + connected)
+    const r = await h.fetch("/session/s/prompt_async?c=s", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageID: id, parts: [{ type: "text", text: "echo me" }] }),
+    });
+    const before = await (await h.fetch("/session/s/message?c=s")).json();
+    const mine = before.filter((m) => m.info.id === id);
+    check("the user message is in the transcript the moment the prompt is accepted — the client's id, once, its text as part -p0",
+      r.status === 204 && mine.length === 1 && mine[0].info.role === "user" && mine[0].parts[0]?.id === `${id}-p0` && mine[0].parts[0]?.text === "echo me",
+      JSON.stringify(mine).slice(0, 300));
+    let wire = "";
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && !/message\.part\.updated/.test(wire)) {
+      const chunk = await Promise.race([reader.read(), new Promise((res) => setTimeout(() => res({ value: null }), 300))]);
+      if (chunk?.value) wire += new TextDecoder().decode(chunk.value);
+    }
+    const iInfo = wire.indexOf(`"role":"user"`), iPart = wire.indexOf(`${id}-p0`);
+    check("and the wire carries the echo at once: message.updated (role user, the client's id) then message.part.updated with the text",
+      iInfo > 0 && wire.slice(0, iInfo).includes(id) && iPart > iInfo && wire.includes(`"text":"echo me"`), wire.slice(0, 600));
+    reader.cancel().catch(() => {});
+    // The turn then runs: one user row, not two, and the model was seeded
+    // without the echoed row — pi adds the prompt itself.
+    let after = before;
+    const until = Date.now() + 8000;
+    while (Date.now() < until) {
+      after = await (await h.fetch("/session/s/message?c=s")).json();
+      const k = after.findIndex((m) => m.info.id === id);
+      if (k >= 0 && after.slice(k + 1).some((m) => m.info.role === "assistant")) break;
+      await new Promise((res) => setTimeout(res, 100));
+    }
+    const users = after.filter((m) => m.info.role === "user" && m.parts.some((p) => p.text === "echo me"));
+    check("after the turn the prompt is ONE user message in the transcript, followed by the answer",
+      users.length === 1 && after.findIndex((m) => m.info.id === id) < after.length - 1 && after[after.length - 1].info.role === "assistant",
+      JSON.stringify(after.map((m) => [m.info.role, m.info.id])).slice(0, 300));
+    const cell = h.cell ?? h;
+    const seeded = cell.loadMessages(id).filter((m) => m.role === "user" && JSON.stringify(m).includes("echo me"));
+    const seededAll = cell.loadMessages().filter((m) => m.role === "user" && JSON.stringify(m).includes("echo me"));
+    check("loadMessages(excluding the turn's own prompt) leaves it out — the model sees the prompt once, from pi",
+      seeded.length === 0 && seededAll.length === 1, `excluded ${seeded.length}, all ${seededAll.length}`);
   }
 
   // THE TURN PROBE RELEASES THE NEXT PROMPT. A queued prompt is held while the
