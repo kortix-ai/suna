@@ -510,6 +510,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|sessions|:sessionId",
   "GET|v1|projects|:projectId|sessions|:sessionId",
   "PATCH|v1|projects|:projectId|sessions|:sessionId",
+  "POST|v1|projects|:projectId|sessions|:sessionId|agent-state",
   "GET|v1|projects|:projectId|sessions|:sessionId|attachments|:sha256",
   "PUT|v1|projects|:projectId|sessions|:sessionId|attachments|:sha256",
   "GET|v1|projects|:projectId|sessions|:sessionId|audit",

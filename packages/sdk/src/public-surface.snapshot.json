@@ -24,6 +24,7 @@
     "OPTIMISTIC_RECEIPT_MAX_MS",
     "PREVIEW_PROBE_TIMEOUT_MS",
     "PROVISION_IN_FLIGHT_CODE",
+    "PiStateConflictError",
     "PublicSessionShareError",
     "RequestTooLargeError",
     "RuntimeNotReadyError",
@@ -1378,6 +1379,7 @@
     "safeReturnTo"
   ],
   "./pi": [
+    "PiStateConflictError",
     "definePiAgent"
   ],
   "./internal/sync-store": [

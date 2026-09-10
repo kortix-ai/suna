@@ -21,6 +21,20 @@ linked, not inlined.
 
 ## Register
 
+### Preserve custom SDK error identity across separately compiled bundles (2026-09-10)
+
+**When:** a custom Pi module imports an error type also used by the worker.
+**Near-miss:** the compiled state test could not catch a worker conflict with the module's separate constructor.
+**Rule:** define a stable cross-bundle identity for public errors. Verify it in the compiled artifact, not only a workspace import.
+**Enforcer:** `custom-pi-runtime.test.ts` exhausts a real HTTP conflict loop and catches `PiStateConflictError` inside compiled project code.
+
+### Do not poison unrelated persistence after a definitive state rejection (2026-09-10)
+
+**When:** extending the session log with conditional custom-state writes.
+**Near-miss:** a local test reproduced a 413 state rejection leaving the entire conversation log unwritable.
+**Rule:** separate definitive rejected mutations from uncertain commit outcomes. Keep conversation writes available after validation/quota rejection; fail closed when commit status is unknown.
+**Enforcer:** `agent-state.test.ts` requires a successful transcript append after a rejected state write; existing log reconciliation tests retain uncertain-outcome guards.
+
 ### Bound attachment downloads by the remaining request deadline (2026-09-09)
 
 **When:** materializing external inputs before a durable write.

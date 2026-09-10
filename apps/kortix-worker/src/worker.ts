@@ -1057,7 +1057,19 @@ export async function buildHarness(cfg: WorkerConfig) {
     agentName: process.env.KORTIX_AGENT ?? ((globalThis as any).__KORTIX_COMPILED__?.manifest?.default_agent ?? 'build'),
     sessionId: cfg.sessionId ?? 'session-local',
     sourceSha: process.env.KORTIX_BASE_SHA ?? '',
-  }, (globalThis as any).__KORTIX_PI_AGENT__, (value, signal) => attachments.hydrateHookInput(value, signal));
+  }, (globalThis as any).__KORTIX_PI_AGENT__, (value, signal) => attachments.hydrateHookInput(value, signal), sessionLog ? {
+    read: () => journalLog.read(),
+    preflight: item => journalLog.preflight?.(item),
+    append: async item => {
+      const messageId = persistenceTurnIdentity?.();
+      if (messageId) {
+        if (!(await turnJournal.appendTranscriptMutation(messageId, item)))
+          throw new TurnOwnerLeaseLostError('custom state lost its durable turn owner');
+      } else {
+        await journalLog.append(item);
+      }
+    },
+  } : undefined);
 
   const customAfterToolCall = agent.afterToolCall;
   agent.afterToolCall = async (context, signal) => {

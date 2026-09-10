@@ -125,7 +125,7 @@ Workers without this capability projection keep the control hidden.
 
 Use exactly one of `<name>.ts`, `<name>.js`, or `<name>.mjs` beside its Markdown.
 Export a factory with `definePiAgent` from `@kortix/sdk/pi`. The factory receives
-`agentName`, `sessionId`, `sourceSha`, `env`, and a callback-scoped `signal`.
+`agentName`, `sessionId`, `sourceSha`, `env`, durable `state`, and a callback-scoped `signal`.
 
 ```ts
 import { definePiAgent } from '@kortix/sdk/pi';
@@ -219,6 +219,69 @@ Avoid blocking loops. Worker isolation and process termination remain necessary.
 - Recovery of pending approvals can replay turn and pre-tool hooks. Make hook
   side effects idempotent. The platform's tool-release checkpoint does not make
   arbitrary custom callbacks exactly-once.
+
+## Durable custom state
+
+`context.state` stores JSON in PostgreSQL through the session storage API. It
+requires no environment, local file, or Durable Object. State belongs to one
+session. Replacing its worker retains state; another session starts independently.
+Only active custom callbacks can read or change it. Retaining a namespace handle
+for the next tool or lifecycle callback is supported.
+
+```ts
+const counter = await context.state.open('counter', {
+  schemaVersion: 1,
+  initialValue: { count: 0 },
+});
+const saved = await counter.update(value => ({ count: value.count + 1 }));
+const current = await counter.read();
+```
+
+`open` initializes a missing namespace once. `read` returns a detached snapshot
+with `revision`, `schemaVersion`, and `value`. `update` commits a new revision
+before returning. Concurrent updates use compare-and-set in PostgreSQL; conflicts
+retry against current state, up to eight attempts. Update and migration callbacks
+must be pure: they can execute again. Do not call tools, send messages, or perform
+external writes inside them. This does not make arbitrary tool execution exactly-once.
+
+To change a state schema, supply an explicit migration. A failed migration leaves
+the stored value unchanged. Older code rejects a newer schema on read and update.
+The platform does not change a session's pinned code automatically.
+
+```ts
+const counter = await context.state.open('counter', {
+  schemaVersion: 2,
+  initialValue: { count: 0, label: 'Reports' },
+  migrate(previous) {
+    if (previous.schemaVersion !== 1 || typeof previous.value !== 'number') {
+      throw new Error('Unsupported counter state');
+    }
+    return { count: previous.value, label: 'Reports' };
+  },
+});
+```
+
+The migration example upgrades a version-one numeric value. Production migrations
+must validate the actual previous shape. Rollback requires code that understands
+the committed schema; schema downgrade is rejected. This is one namespace per
+transaction, not a transaction across namespaces or external side effects.
+
+Limits: 64 KiB per JSON value, 128 namespaces, and 4096 committed writes or 16 MiB
+of state history per session. Values allow finite JSON only, at most 64 levels
+and 20000 nodes. State history follows session retention and deletion; it is not
+a secret store or a file store. Namespace removal and history compaction are not
+yet exposed. Reset a value with `update` without resetting its revision.
+
+A turn state write uses the same ownership fence as its transcript. An expired
+owner cannot commit through that fence. Callback cancellation prevents new writes;
+it cannot undo a write already committed. A definitive validation/quota rejection
+leaves normal conversation storage writable. An uncertain storage outcome fails
+closed until recovery proves the result. An API without the `agent-state` route
+rejects state use; the worker never falls back to volatile memory.
+
+The [stateful example](../packages/sdk/examples/14-pi-stateful.ts) needs the
+`increment_counter` tool permission. Run it once, stop/resume the session, and
+run it again. The values must be 1 then 2. A new session must start at 1.
 
 ## Dependencies and compilation
 

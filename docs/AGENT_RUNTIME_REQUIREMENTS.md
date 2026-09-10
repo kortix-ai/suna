@@ -292,7 +292,7 @@ behavior needs an adapter or an explicit product decision, not a silent fallback
 | Private/Git packages, native addons, install scripts, runtime module loading | Explicit trusted build/runtime capability needed | Unsupported in current worker compiler; environment execution requires an adapter |
 | Pi coding-agent extensions and OpenCode plugins | Separate APIs; native hooks alone do not implement CLI/TUI extension compatibility | Not drop-in compatible |
 | Arbitrary replacement model loop or other harnesses | Must implement transport, checkpointing, cancellation, policy, and metering contracts | No general custom-entrypoint contract; explicit scope decision |
-| Durable extension state | Session namespace, atomic updates, schema version, migration and retention; no reliance on globals | Required gap |
+| Durable extension state | Session namespaces, atomic updates, forward schema migrations, and session retention | Implemented on branch; local verification recorded in PI_WORKER_VERIFICATION.md. Quotas apply; cross-namespace transactions and history compaction remain gaps |
 | Background jobs, child agents, coordinator behavior | Durable IDs, grants, quotas, cancellation, scheduling and recovery | Required gap |
 | Remote MCP | Existing connector grants; tool/resource/prompt operations | Preview; local stdio, subscriptions and complete discovery UI remain gaps |
 | Environment customization | Pinned image/setup, working files, tools, terminal, previews | Preview foundation; multiple environments, mounts, checkpoint policy and independent terminal leases remain gaps |

@@ -26,6 +26,7 @@ import { db } from '../../shared/db';
 import { authorizeSessionStorageCall as authorizeLogCall } from '../lib/session-storage-access';
 import { projectsApp } from '../lib/app';
 import { UUID_V4_REGEX } from '../lib/serializers';
+import { PI_STATE_STREAM } from '../../../../../packages/sdk/src/core/pi/state';
 
 /**
  * The wire shape is the WORKER's, not ours: it POSTs the bare mutation and
@@ -77,6 +78,8 @@ projectsApp.openapi(
     const gate = await authorizeLogCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     if (gate.kind === 'error') return gate.response;
     const item = c.req.valid('json') as Record<string, unknown>;
+    if (item.stream === PI_STATE_STREAM)
+      return c.json({ error: 'agent state writes require the agent-state endpoint' }, 400);
     const appendId = c.req.header('idempotency-key')?.trim() || null;
     if (appendId && !UUID_V4_REGEX.test(appendId)) {
       return c.json({ error: 'idempotency-key must be a UUID v4' }, 400);

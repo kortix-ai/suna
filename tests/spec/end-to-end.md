@@ -315,6 +315,17 @@ session authorization boundary.
 
 ---
 
+`SESS-32` Custom Pi state commits through `POST /projects/:id/sessions/:sid/agent-state`.
+A matching UUID-v4 idempotency key is required. Identical retries return 204 once.
+The server serializes state writes, compares revisions and rejects concurrent stale
+updates with 409 `PI_STATE_CONFLICT`. Schema versions cannot decrease. Unknown
+namespaces initialize at revision one. State uses JSON values up to 64 KiB each,
+128 namespaces, and 4096 writes or 16 MiB of history per session. The generic log
+append rejects this reserved stream. Reads use the session log without compute.
+Missing keys, invalid data, namespace traversal and oversized values fail before
+mutation. Project/session authorization, sibling isolation, unchanged lifecycle
+status and access revocation after deletion apply to state and log routes.
+
 ## 8. Sandbox lifecycle + snapshots
 
 `SNAP-1` `GET /projects/:id/snapshots` → `read` → list `kortix-snap-…` images per baseRef. **Session boot requires a `ready` snapshot of baseRef** (no shared fallback → session `failed` if none).

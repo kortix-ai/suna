@@ -33,6 +33,7 @@ import './routes/warm-sessions';
 import './routes/project-sessions';
 import './routes/session-environment';
 import './routes/session-log';
+import './routes/session-agent-state';
 import './routes/session-attachments';
 import './routes/session-transcripts';
 import './routes/session-open-bundle';

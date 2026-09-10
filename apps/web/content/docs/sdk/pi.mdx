@@ -100,3 +100,20 @@ oversize images are rejected. Signed query URLs can be used if the image host ac
 them without additional headers. Local uploads still use `s.attachments.image()`.
 The direct runtime method `s.send()` accepts the resulting private attachment
 references; URL ingestion uses the durable prompt admission methods above.
+
+## Persistent custom state
+
+Use `context.state.open('counter', {schemaVersion: 1, initialValue: {count: 0}})`
+inside a custom callback. The returned namespace provides `read()` and
+`update(value => ({count: value.count + 1}))`. Each returns a snapshot with
+`revision`, `schemaVersion`, and `value` after persistence succeeds.
+
+State lives in PostgreSQL and survives worker replacement without starting an
+environment. A new session has separate state. Updates and explicit `migrate`
+callbacks can retry, so they must contain no external side effects. Older code
+rejects newer state schemas. Current limits are 64 KiB per JSON value, 128
+namespaces, and 4096 writes or 16 MiB of state history per session. State follows
+session deletion; it does not provide file storage, jobs, or secret storage.
+
+This capability requires the matching Pi worker and API preview. Unsupported
+servers fail explicitly; there is no in-memory fallback.

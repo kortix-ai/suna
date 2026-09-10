@@ -5,6 +5,9 @@ import type {
   AgentTool,
   ExecutionEnv,
 } from '@earendil-works/pi-agent-core';
+import type { PiAgentState } from './state';
+export { PiStateConflictError } from './state';
+export type { PiAgentState, PiStateValue, PiStateSnapshot, PiStateDefinition, PiStateNamespace } from './state';
 
 /** Context for project code. Files and processes use the remote execution environment. */
 export interface PiAgentContext {
@@ -13,6 +16,7 @@ export interface PiAgentContext {
   readonly sourceSha: string;
   readonly env: ExecutionEnv;
   readonly signal: AbortSignal;
+  readonly state: PiAgentState;
 }
 
 /** Native Pi hooks run inside the compiled worker. Kortix owns transport and persistence. */

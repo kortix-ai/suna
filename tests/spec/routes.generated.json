@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 646,
+  "count": 647,
   "routes": [
     {
       "method": "GET",
@@ -2033,6 +2033,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/agent-state"
     },
     {
       "method": "GET",

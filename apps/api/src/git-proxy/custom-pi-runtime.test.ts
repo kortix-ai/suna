@@ -23,13 +23,15 @@ test('standalone Node artifacts load distinct custom agents, use environment RPC
   const provider = Bun.serve({
     port: 0,
     async fetch(request) {
-      const requestPath = new URL(request.url).pathname;
+      const requestPath = new URL(request.url).pathname.replace(/\/agent-state$/, '/log');
       if (requestPath.startsWith('/log/')) {
         expect(request.headers.get('authorization')).toBe('Bearer runtime-token');
         const items = logs.get(requestPath) ?? [];
         logs.set(requestPath, items);
         if (request.method === 'GET') return Response.json(items);
         const item = await request.json();
+        if (item.stream === 'kortix.pi.agent-state.v1' && item.record.namespace === 'conflict')
+          return Response.json({ code: 'PI_STATE_CONFLICT' }, { status: 409 });
         const key = requestPath + request.headers.get('idempotency-key');
         const encoded = JSON.stringify(item);
         if (keys.has(key))
@@ -108,16 +110,24 @@ test('standalone Node artifacts load distinct custom agents, use environment RPC
         entry: `agents/${name}.ts`,
         files: {
           [`agents/${name}.ts`]: `
-import {definePiAgent} from '@kortix/sdk/pi';
+import {definePiAgent,PiStateConflictError} from '@kortix/sdk/pi';
 import {Type} from 'typebox';
 export default definePiAgent(ctx=>({
- initialize(){console.log('INIT_${name} '+ctx.sourceSha);},
+ async initialize(){
+   const counter=await ctx.state.open('counter',{schemaVersion:1,initialValue:0});
+   console.log('STATE_${name} '+(await counter.read()).value);
+   console.log('INIT_${name} '+ctx.sourceSha);
+ },
  shutdown(){console.log('SHUTDOWN_${name}');},
  afterToolCall:async({result})=>({content:[...result.content,{type:'text',text:'HOOK_${name}'}]}),
  tools:[{name:'custom_${name}',label:'Custom',description:'Run custom proof',parameters:Type.Object({value:Type.String()}),
  execute:async(_id,{value})=>{
+   try {await ctx.state.open('conflict',{schemaVersion:1,initialValue:0});throw new Error('expected conflict');}
+   catch(error){if(!(error instanceof PiStateConflictError))throw new Error('cross-bundle state error lost its identity');}
+   const counter=await ctx.state.open('counter',{schemaVersion:1,initialValue:0});
+   const saved=await counter.update(n=>n+1);
    ${name === 'operator' ? `const result=await ctx.env.exec('ENV_'+value);if(!result.ok)throw result.error;const text=result.value.stdout;` : `const text='JS_'+value;`}
-   return {content:[{type:'text',text}],details:{agent:ctx.agentName}};
+   return {content:[{type:'text',text:text+' COUNT_'+saved.value}],details:{agent:ctx.agentName}};
  }}]
 }));`,
         },
@@ -195,6 +205,8 @@ export default definePiAgent(ctx=>({
           const result = (await response.json()) as any;
           expect(result.info.error).toBeUndefined();
           expect(result.parts.some((part: any) => part.text?.includes('HOOK_' + name))).toBe(true);
+          expect(result.parts.some((part: any) => part.text?.includes('COUNT_' + (replacement + 1)))).toBe(true);
+          expect(stdout).toContain('STATE_' + name + ' ' + replacement);
           expect(stdout.split('INIT_' + name).length - 1).toBe(1);
           expect(stdout).toContain('INIT_' + name + ' ' + 'a'.repeat(40));
           transcript = (await (

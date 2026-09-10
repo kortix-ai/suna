@@ -295,7 +295,8 @@ describe('TurnAdmissionJournal', () => {
     expect(replacement.state(admission.messageId)).toBe('completed');
   });
 
-  test('transcript append and reclaim contend on one lease CAS in either append order', async () => {
+  test('transcript and custom state appends contend with reclaim on one lease CAS', async () => {
+    for (const kind of ['entry', 'state'] as const) {
     for (const winner of ['transcript', 'reclaimed'] as const) {
       const transcriptGate = deferredGate();
       const reclaimGate = deferredGate();
@@ -308,7 +309,7 @@ describe('TurnAdmissionJournal', () => {
           item: SessionLogItem,
           options: { idempotencyKey?: string } = {},
         ): Promise<void> {
-          if (item.kind === 'entry' && item._kortixTurnLease && !transcriptKey) {
+          if (item._kortixTurnLease && !transcriptKey) {
             transcriptKey = options.idempotencyKey;
             transcriptReached.release();
             await transcriptGate.promise;
@@ -330,7 +331,10 @@ describe('TurnAdmissionJournal', () => {
       const replacement = await TurnAdmissionJournal.open(log);
       const observed = replacement.startedLease(admission.messageId);
       if (!observed) throw new Error('replacement did not observe the started lease');
-      const entry: StorageLogItem = {
+      const entry: SessionLogItem = kind === 'state' ? {
+        kind: 'journal', stream: 'kortix.pi.agent-state.v1',
+        record: { namespace: 'counter', revision: 1, schemaVersion: 1, value: 1 },
+      } : {
         kind: 'entry',
         lane: 'main',
         entry: {
@@ -358,9 +362,10 @@ describe('TurnAdmissionJournal', () => {
 
       const reopened = await TurnAdmissionJournal.open(log);
       expect(reopened.startedLease(admission.messageId)?.revision).toBe(2);
-      expect(log.items.filter((item) => item.kind === 'entry')).toHaveLength(
+      expect(log.items.filter((item) => item._kortixTurnLease)).toHaveLength(
         winner === 'transcript' ? 1 : 0,
       );
+    }
     }
   });
 

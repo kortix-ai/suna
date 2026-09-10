@@ -30,6 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { InMemorySessionStorage } from '@earendil-works/pi-agent-core';
 import { applyLegacyWireIdentities } from './legacy-wire-identity.ts';
+import { PI_STATE_STREAM, PiStateConflictError } from '../../../packages/sdk/src/core/pi/state';
 
 export interface SessionLogLeaseFence {
   stream: string;
@@ -134,6 +135,8 @@ export class SessionLogConflictError extends Error {
   }
 }
 
+class AgentStateWriteRejectedError extends Error {}
+
 /** Append-only log over HTTP. Stands in for the Kortix control plane. */
 export class RemoteSessionLog implements SessionLog {
   private failure: SessionLogUnavailableError | null = null;
@@ -234,7 +237,8 @@ export class RemoteSessionLog implements SessionLog {
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       try {
-        const res = await fetcher(`${this.baseUrl}/sessions/${this.sessionId}/log`, {
+        const endpoint = item.kind === 'journal' && item.stream === PI_STATE_STREAM ? 'agent-state' : 'log';
+        const res = await fetcher(`${this.baseUrl}/sessions/${this.sessionId}/${endpoint}`, {
           method: 'POST',
           headers,
           body,
@@ -244,14 +248,19 @@ export class RemoteSessionLog implements SessionLog {
         });
         if (res.ok) return;
         if (res.status === 409) {
+          const response = await res.json().catch(() => null) as { code?: string } | null;
+          if (response?.code === 'PI_STATE_CONFLICT') throw new PiStateConflictError();
           throw new SessionLogConflictError('session log idempotency key has conflicting content');
         }
         const error = new Error(`session log append failed: HTTP ${res.status}`);
         if (!retryableStatus(res.status)) {
+          if (endpoint === 'agent-state') throw new AgentStateWriteRejectedError(error.message);
           throw this.poison(error.message, error);
         }
         lastError = error;
       } catch (error) {
+        if (error instanceof AgentStateWriteRejectedError) throw error;
+        if (error instanceof PiStateConflictError) throw error;
         if (error instanceof SessionLogUnavailableError) throw error;
         if (error instanceof SessionLogConflictError) throw error;
         lastError = error;

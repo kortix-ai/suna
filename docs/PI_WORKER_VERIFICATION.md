@@ -1825,3 +1825,46 @@ Ask Pi to describe it, open its image viewer, then stop and resume the session.
 An expired source URL must not remove the accepted image. Retrying the same
 `clientMessageId` must return the original prompt. The SDK's direct `send()`
 method still uses references returned by `attachments.image()`.
+
+
+## 2026-09-10 — durable custom agent state
+
+The authoring API now exposes `context.state.open(namespace, definition)`.
+Namespaces provide detached reads, atomic updates and explicit forward schema
+migrations. PostgreSQL stores each accepted revision in the existing private
+session log. The conditional `agent-state` endpoint serializes writes with a
+session-row lock and rejects stale revisions. Generic log writes cannot bypass
+this check. No migration, Durable Object, environment startup, or OpenCode process
+is required.
+
+Turn writes retain the existing owner fence. Initialization and shutdown writes
+use the same conditional state endpoint. Callback scope and cancellation guard
+new operations. Failed migration/validation cannot change committed state.
+Definitive state rejections leave conversation persistence writable. Uncertain
+commit outcomes keep the existing fail-closed reconciliation behavior.
+
+Validation at this checkpoint:
+
+- New SDK and storage tests fail before implementation. Unknown-setting and
+  rejected-write regressions fail before their corrections.
+- `pnpm test`: all six lanes pass in 116.0 seconds; API/CLI flows **401/401**.
+- `pnpm --filter @kortix/worker test`: **831 pass, 0 fail**.
+- API and worker typechecks pass. SDK export snapshots add six public names;
+  no existing export is removed.
+- `pnpm test -- --id SESS-32`: **1/1**, real PostgreSQL and authenticated HTTP.
+  It verifies idempotency, concurrent 204/409, schema upgrade/downgrade, size and
+  namespace rejection, project/session isolation, unchanged compute status,
+  and revocation after deletion.
+- `bun test apps/api/src/git-proxy/custom-pi-runtime.test.ts`: **1 pass,
+  296 assertions**. Two compiled custom agents each restart under Node's
+  permission model. Their counters restore and advance from 1 to 2. The remote
+  operator uses environment RPC; the pure JavaScript agent does not. The test
+  also proves conflict-error identity across separately compiled modules.
+- The snapshot and installation checks validate the public SDK package rather
+  than relying only on workspace imports.
+
+Current limits and replay semantics are documented in `PI_CUSTOM_AGENTS.md`.
+`packages/sdk/examples/14-pi-stateful.ts` is executable authoring documentation.
+Production parity remains incomplete. Background jobs, child agents, general file
+artifacts, workspace checkpoints and drop-in Pi CLI extensions are not implemented
+by this state change. Preview deployment verification follows this local checkpoint.

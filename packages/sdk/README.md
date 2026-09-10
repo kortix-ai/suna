@@ -739,7 +739,9 @@ Omitting `runtime` retains OpenCode selection behavior.
 ## Custom Pi agents (preview)
 
 `@kortix/sdk/pi` exports `definePiAgent`, `PiAgentFactory`, `PiAgentDefinition`,
-and `PiAgentContext`. The root exports these names too. This authoring API targets
+and `PiAgentContext`. It also exports `PiAgentState`, `PiStateValue`,
+`PiStateSnapshot`, `PiStateDefinition`, `PiStateNamespace`, and `PiStateConflictError`.
+The root exports these names too. This authoring API targets
 Pi-enabled worker sessions. It does not replace the session client or load Pi CLI
 TUI extensions.
 
@@ -781,3 +783,10 @@ Arbitrary remote URLs and local filesystem URLs are not valid Pi image inputs.
 The existing session composer enables image upload when the running worker
 advertises support. First-prompt creation screens remain gated. Documents use
 the existing environment upload path. Native tool-result images remain pending.
+
+Custom Pi callbacks use `context.state.open(name, {schemaVersion, initialValue, migrate?})`
+for durable session state. Namespace handles expose `read()` and atomic `update()`.
+Updates/migrations can retry and must contain no external side effects. State survives
+worker replacement; a schema downgrade is rejected. See the
+[stateful example](examples/14-pi-stateful.ts) and
+[limits and recovery contract](../../docs/PI_CUSTOM_AGENTS.md#durable-custom-state).

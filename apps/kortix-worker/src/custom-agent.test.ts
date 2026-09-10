@@ -51,6 +51,25 @@ function agent() {
 }
 const identity = { agentName: 'reviewer', sessionId: 'session', sourceSha: 'a'.repeat(40) };
 
+test('custom state persists from callbacks and blocks detached calls after a callback or shutdown', async () => {
+  const a = agent();
+  const items: any[] = [];
+  let state: any;
+  let counter: any;
+  const custom = await installCustomAgent(a, { cwd: '/workspace' } as any, identity, ctx => {
+    state = ctx.state;
+    return {
+      initialize: async () => { counter = await state.open('counter', { schemaVersion: 1, initialValue: 0 }); },
+      beforeToolCall: async () => { await counter.update((n: number) => n + 1); return undefined; },
+      shutdown: async () => { await counter.update((n: number) => n + 1); },
+    };
+  }, undefined, { read: async () => structuredClone(items), append: async item => { items.push(structuredClone(item)); } });
+  await expect(counter.update((n: number) => n + 1)).rejects.toThrow(/active callback/);
+  await custom.close();
+  expect(items.map(item => item.record.value)).toEqual([0, 1]);
+  await expect(state.open('late', { schemaVersion: 1, initialValue: 0 })).rejects.toThrow(/active callback/);
+});
+
 test('custom lifecycle initializes once and receives native events for each turn before shutdown', async () => {
   const a = agent();
   const seen: string[] = [];
