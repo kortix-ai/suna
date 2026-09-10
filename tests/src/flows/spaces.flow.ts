@@ -22,6 +22,19 @@ import { createDatabaseSession } from '../fixtures/database-project';
 import { CliSandbox, throwIfCliInfraFailure, type CliResult } from '../fixtures/cli';
 import { commitFileToLocalRepository } from '../fixtures/local-git';
 
+type FlowContext = Parameters<Parameters<typeof flow>[2]>[0];
+
+async function enableSpaces(ctx: FlowContext, projectId: string): Promise<void> {
+  await ctx.step('OWNER enables the Spaces feature flag', async () => {
+    const response = await ctx.client.as(ctx.P.OWNER).patch(
+      '/v1/projects/:projectId/features',
+      { feature: 'spaces', enabled: true },
+      { params: { projectId } },
+    );
+    response.status(200);
+  });
+}
+
 // ─── SPACE-1 — CRUD + manifest commit ────────────────────────────────────────
 
 flow(
@@ -29,6 +42,7 @@ flow(
   {
     domain: 'spaces',
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'GET /v1/projects/:projectId/spaces',
       'POST /v1/projects/:projectId/spaces',
       'GET /v1/projects/:projectId/spaces/:slug',
@@ -40,6 +54,7 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
+    await enableSpaces(ctx, p.id);
 
     await ctx.step('OWNER creates "Marketing" → 201, slug derived, defaults', async () => {
       const r = await owner.post(
@@ -186,6 +201,7 @@ flow(
   {
     domain: 'spaces',
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'GET /v1/projects/:projectId/spaces',
       'POST /v1/projects/:projectId/spaces',
       'GET /v1/projects/:projectId/spaces/:slug',
@@ -200,6 +216,7 @@ flow(
     const team = await ctx.fixtures.team();
     const project = await team.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
+    await enableSpaces(ctx, project.id);
     const member = await team.addMember('member');
     if (!member.userId) throw new Error('SPACE-2 member fixture has no user id');
     await team.grantProjectRole(project.id, member.userId, 'member');
@@ -349,6 +366,7 @@ flow(
   {
     domain: 'spaces',
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/spaces',
       'POST /v1/projects/:projectId/resource-grants',
       'GET /v1/projects/:projectId/sessions',
@@ -358,6 +376,7 @@ flow(
     const team = await ctx.fixtures.team();
     const project = await team.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
+    await enableSpaces(ctx, project.id);
     const member1 = await team.addMember('member');
     const member2 = await team.addMember('member');
     if (!member1.userId || !member2.userId) throw new Error('SPACE-3 members have no user id');
@@ -490,6 +509,7 @@ flow(
   {
     domain: 'spaces',
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/spaces',
       'DELETE /v1/projects/:projectId/spaces/:slug',
       'GET /v1/projects/:projectId/triggers',
@@ -500,6 +520,7 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
+    await enableSpaces(ctx, p.id);
 
     await ctx.step('OWNER declares the "ops" space', async () => {
       const r = await owner.post(
@@ -611,6 +632,7 @@ flow(
     domain: 'spaces',
     routes: [
       'GET /v1/accounts/me',
+      'PATCH /v1/projects/:projectId/features',
       'GET /v1/projects/:projectId/spaces',
       'POST /v1/projects/:projectId/spaces',
       'GET /v1/projects/:projectId/spaces/:slug',
@@ -620,6 +642,7 @@ flow(
   },
   async (ctx) => {
     const project = await ctx.fixtures.project({ managedGit: true });
+    await enableSpaces(ctx, project.id);
     const sandbox = await authenticatedCli(ctx, 'spaces');
     try {
       await ctx.step('kortix spaces create "Marketing" --json → 201, slug derived', async () => {
@@ -701,6 +724,7 @@ flow(
   {
     domain: 'spaces',
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/spaces',
       'GET /v1/projects/:projectId/spaces/:slug',
       'GET /v1/projects/:projectId/detail',
@@ -713,6 +737,7 @@ flow(
     if (!p.repoUrl) throw new Error('SPACE-6 needs the local git repository of a managedGit project');
     const repoUrl = p.repoUrl;
     const owner = ctx.client.as(ctx.P.OWNER);
+    await enableSpaces(ctx, p.id);
 
     await ctx.step(
       'spaces.marketing declares agent "writer"; spaces.sales references it with { from: marketing }',
@@ -881,6 +906,7 @@ flow(
   {
     domain: 'spaces',
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/spaces',
       'POST /v1/projects/:projectId/resource-grants',
       'PATCH /v1/projects/:projectId/sessions/:sessionId',
@@ -891,6 +917,7 @@ flow(
     const team = await ctx.fixtures.team();
     const project = await team.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
+    await enableSpaces(ctx, project.id);
     const ownerId = ctx.P.OWNER.userId;
     if (!ownerId) throw new Error('SPACE-7 needs the owner user id');
     const member = await team.addMember('member');
