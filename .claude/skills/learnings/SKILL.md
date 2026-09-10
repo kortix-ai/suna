@@ -4798,3 +4798,21 @@ as evidence that a cron completed.
 **Enforcement.** Free-tier rotation keys each grant by account and month.
 BILL-13 still requires `200` and the rotation result fields. The final release
 gate passes all nine shards with zero excluded API flows.
+
+## SSM maintenance needs an explicit installer directory and completion proof (2026-09-10)
+
+**Incident.** The v0.13.13 self-host CLI update stopped with `HOME: unbound
+variable` in an SSM shell. Setting `KORTIX_HOME` to the existing installation
+directory allowed the update. The first wrapper then reported exit `0` without
+its final verification marker. It supplied the maintenance program through
+stdin; the exact point that omitted the remaining commands was not isolated.
+
+**Rule.** Do not assume SSM supplies an interactive shell's environment.
+Select the existing CLI installation with `KORTIX_HOME`. Execute maintenance
+from a file or `bash -c`, separately from child stdin. Require explicit
+completion markers and independent state checks after an update.
+
+**Enforcement.** The self-host runbook documents this execution pattern.
+Independent SSM verification matched the installed CLI's published checksum,
+all three released image digests, six healthy containers, and preserved
+instance settings. Both frontend replicas have a 1 GiB memory limit.
