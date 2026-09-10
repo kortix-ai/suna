@@ -95,3 +95,33 @@ export function ownRowForCaller<R extends { externalId?: string | null; sessionI
   return own;
 }
 
+/**
+ * The session a REQUEST PATH names — `/session/<id>/prompt_async`,
+ * `/session/<id>/message`, `/session/<id>/todo` — or null.
+ *
+ * A cell is chosen by the `c=` parameter; without one the box answers from its
+ * DEFAULT cell. The browser's base url is session-shaped so it is addressed,
+ * but the control plane delivers a prompt to the BOX
+ * (`awake.externalId` + `/session/<id>/prompt_async`), which is addressed only
+ * while `soleSessionOfSandbox` can name the one session on it. On a shared
+ * runner holding several, every prompt then ran in the same default cell:
+ * measured on dev 2026-09-10, session c8843f2c's two turns were answered
+ * inside session f04394e2's cell, whose transcript held all three
+ * conversations while c8843f2c's own held none.
+ *
+ * The path is the exact answer whenever it carries one — better than the sole
+ * session and better than the row the ordering preferred.
+ */
+export function sessionNamedByPath(path: string | null | undefined): string | null {
+  const match = /^\/session\/([^/?#]+)(?:[/?#]|$)/.exec(String(path ?? ''));
+  if (!match) return null;
+  let id: string;
+  try {
+    id = decodeURIComponent(match[1]);
+  } catch {
+    id = match[1];
+  }
+  id = id.trim();
+  // `/session/status` is a ROUTE, not a session (worker.js says so too).
+  return !id || id === 'status' ? null : id;
+}

@@ -1,5 +1,5 @@
 import { turnTargetFor } from '../../projects/turn-target';
-import { addressCellSession, ownRowForCaller, sessionNamedByUrl } from '../address-cell';
+import { addressCellSession, ownRowForCaller, sessionNamedByPath, sessionNamedByUrl } from '../address-cell';
 import { soleSessionOfSandbox } from '../backend';
 import { upstreamAnsweredFinally } from '../upstream-final';
 import { Hono } from 'hono';
@@ -1234,6 +1234,9 @@ export async function forwardToSandbox(
       // ../backend.ts loadSandbox / soleSessionOfSandbox and ../address-cell.ts.
       const addressable =
         exactSession ??
+        // The PATH names it on every `/session/<id>/…` route — which is how the
+        // control plane delivers a prompt to a box (see sessionNamedByPath).
+        sessionNamedByPath(remainingPath) ??
         (await soleSessionOfSandbox(record.externalId ?? sandboxId));
       if (!addressable) {
         // A shared box that stayed unaddressed: the deployed frontend's
@@ -1973,6 +1976,7 @@ export async function resolvePreviewWsUpstream(opts: {
     const addressable =
       sessionNamedByUrl(sandboxId, record) ??
       callerSessionId ??
+      sessionNamedByPath(remainingPath) ??
       (await soleSessionOfSandbox(record.externalId ?? sandboxId));
     const addressed = new URL(addressCellSession(upstreamUrl.toString(), addressable));
     upstreamUrl.search = addressed.search;

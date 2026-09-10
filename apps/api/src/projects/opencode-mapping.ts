@@ -155,15 +155,32 @@ export interface EnsureResult {
  *  immutable for the life of a sandbox. Null when it cannot be read, which
  *  means "discover", the answer given before this existed. */
 const runtimeCache = new Map<string, string>();
-async function sandboxRuntimeFor(externalId: string): Promise<string | null> {
+async function sandboxRuntimeFor(externalId: string, sessionId?: string): Promise<string | null> {
   const hit = runtimeCache.get(externalId);
   if (hit) return hit;
   try {
-    const [row] = await db
-      .select({ metadata: sessionSandboxes.metadata, provider: sessionSandboxes.provider })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.externalId, externalId))
-      .limit(1);
+    // THE SESSION'S OWN ROW FIRST. A shared cell runner has one row per
+    // session under the same `external_id`, and `limit(1)` there is whichever
+    // the ordering preferred — a row that carries none of the cell markers
+    // answers "not a cell", which sends this session to DISCOVERY, and
+    // discovery on a shared box reaches the default cell and pins ANOTHER
+    // session's root. Measured on dev 2026-09-10: session c025199e's row
+    // carried `opencode_session_id: f04394e2…`, and the transcript it served
+    // was that other session's.
+    const rows = sessionId
+      ? await db
+          .select({ metadata: sessionSandboxes.metadata, provider: sessionSandboxes.provider })
+          .from(sessionSandboxes)
+          .where(eq(sessionSandboxes.sessionId, sessionId))
+          .limit(1)
+      : [];
+    const [row] = rows.length
+      ? rows
+      : await db
+          .select({ metadata: sessionSandboxes.metadata, provider: sessionSandboxes.provider })
+          .from(sessionSandboxes)
+          .where(eq(sessionSandboxes.externalId, externalId))
+          .limit(1);
     // Every signal that survives, including the pooled-claim rewrite that
     // strips `pi_worker_boot` from exactly the sessions that share a box.
     // See cell-runtime-detect.ts.
@@ -191,7 +208,7 @@ export async function ensureOpencodeSessionPin(input: {
   // reaches the worker's default cell and every session pins the SAME root —
   // measured on dev 2026-09-08, three sessions with one prompt each all showing
   // the same ten user/assistant pairs. See opencode-root-pin.ts.
-  const cellPin = rootPinWithoutDiscovery(await sandboxRuntimeFor(externalId), sessionId);
+  const cellPin = rootPinWithoutDiscovery(await sandboxRuntimeFor(externalId, sessionId), sessionId);
   if (cellPin) {
     if (cellPin === currentPin) return { pin: cellPin, changed: false, reason: 'unchanged' };
     await db

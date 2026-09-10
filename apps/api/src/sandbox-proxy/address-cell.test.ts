@@ -1,6 +1,6 @@
 // A CELL CANNOT ANSWER A REQUEST THAT NAMES NO SESSION.
 import { describe, expect, test } from 'bun:test';
-import { addressCellSession } from './address-cell';
+import { addressCellSession, sessionNamedByPath } from './address-cell';
 
 const base = 'https://8080-abc.sbx-dev.example';
 
@@ -94,3 +94,29 @@ describe("a caller that names its session, on a box that holds many", () => {
   });
 });
 
+
+// ── The session a path names ──
+//
+// A cell is chosen by `c=`; without one the box answers from its default cell.
+// The control plane delivers a prompt to the BOX with `/session/<id>/…`, so on
+// a shared runner every prompt ran in one cell — measured on dev 2026-09-10,
+// session c8843f2c's turns were answered inside session f04394e2's cell.
+test('a /session/<id>/… path names the session, whatever follows it', () => {
+  expect(sessionNamedByPath('/session/abc/prompt_async')).toBe('abc');
+  expect(sessionNamedByPath('/session/abc/message')).toBe('abc');
+  expect(sessionNamedByPath('/session/abc')).toBe('abc');
+  expect(sessionNamedByPath('/session/abc?x=1')).toBe('abc');
+  expect(sessionNamedByPath('/session/a%2Fb/todo')).toBe('a/b');
+});
+
+test('`/session/status` is a route, not a session — the same trap the worker names', () => {
+  expect(sessionNamedByPath('/session/status')).toBeNull();
+});
+
+test('anything else names nothing, and nothing throws', () => {
+  expect(sessionNamedByPath('/kortix/health')).toBeNull();
+  expect(sessionNamedByPath('/sessions/abc')).toBeNull();
+  expect(sessionNamedByPath('')).toBeNull();
+  expect(sessionNamedByPath(null)).toBeNull();
+  expect(sessionNamedByPath('/session//message')).toBeNull();
+});
