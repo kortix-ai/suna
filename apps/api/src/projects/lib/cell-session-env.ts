@@ -53,6 +53,8 @@ export interface CellSessionEnvInput {
   baseRef?: string | null;
   /** This project's git origin THROUGH KORTIX, when the session may have a checkout. */
   repoUrl?: string | null;
+  /** The branch this session's work belongs on — `project_sessions.branch_name`. */
+  branchName?: string | null;
 }
 
 /**
@@ -72,6 +74,7 @@ export function cellSessionEnv(input: CellSessionEnvInput): Record<string, strin
   const compiled = input.compiledAgentConfig?.trim();
   const baseRef = input.baseRef?.trim();
   const repoUrl = input.repoUrl?.trim();
+  const branchName = input.branchName?.trim();
   return {
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_PROJECT_ID: input.projectId,
@@ -101,5 +104,9 @@ export function cellSessionEnv(input: CellSessionEnvInput): Record<string, strin
     // no skills, no AGENTS.md and a Files panel with nothing in it.
     ...(repoUrl ? { KORTIX_REPO_URL: repoUrl } : {}),
     ...(baseRef ? { KORTIX_BASE_REF: baseRef } : {}),
+    // The branch commit-push writes to. The git proxy authorizes a
+    // session-scoped token for THIS branch and no other (projects/lib/git.ts),
+    // so sending it is what makes the write half possible at all.
+    ...(branchName ? { KORTIX_BRANCH_NAME: branchName } : {}),
   };
 }

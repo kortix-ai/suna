@@ -688,6 +688,7 @@ export async function repairCellSessionEnv(args: {
       .select({
         agentName: projectSessions.agentName,
         baseRef: projectSessions.baseRef,
+        branchName: projectSessions.branchName,
         metadata: projectSessions.metadata,
       })
       .from(projectSessions)
@@ -714,6 +715,7 @@ export async function repairCellSessionEnv(args: {
       model,
       compiledAgentConfig,
       baseRef: row?.baseRef,
+      branchName: row?.branchName,
       // The same origin every Kortix client clones from — the API's own git
       // proxy, which takes the session token the cell already holds.
       repoUrl: proxyGitUrl(args.projectId),

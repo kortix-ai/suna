@@ -285,3 +285,125 @@ async function walkWorkdir(fs, dir) {
   await walk("");
   return out;
 }
+
+/**
+ * COMMIT THE SESSION'S WORK AND PUSH ITS BRANCH — the daemon's
+ * `POST /kortix/git/commit-push`, which the API forwards from
+ * `POST /v1/projects/:p/sessions/:s/commit-push` and the dashboard uses to
+ * open a change request without asking the agent to do it. A cell answered
+ * `unknown route`, so the whole Changes/Review path ended at the session's
+ * own workspace.
+ *
+ * Same answer shape as the daemon's (`committed`, `pushed`, `nothingToDo`,
+ * `branch`, `headSha`), because the caller is the same caller.
+ *
+ * The push goes through Kortix's git proxy with the session's token — a
+ * session-scoped credential the proxy accepts for WRITE on that session's own
+ * branch (apps/api projects/lib/git.ts), so nothing here holds host authority.
+ */
+export async function commitAndPush(input) {
+  const { cell, url, token, branch, message, name, email } = input;
+  const dir = input.dir ?? CELL_CWD;
+  if (!(await isCheckedOut(cell.fs, dir))) return { ok: false, error: "project repo is not materialized", status: 409 };
+  const target = String(branch ?? "").trim() || (await git.currentBranch({ fs: gitFs(cell.fs), dir }).catch(() => null));
+  if (!target) return { ok: false, error: "no branch checked out to push", status: 409 };
+  const fs = gitFs(cell.fs);
+  try {
+    const changes = await workingStatus(cell, dir);
+    let committed = false;
+    if (changes.length) {
+      for (const change of changes) {
+        if (change.status === "deleted") await git.remove({ fs, dir, filepath: change.path });
+        else await git.add({ fs, dir, filepath: change.path });
+      }
+      await git.commit({
+        fs, dir,
+        message: (String(message ?? "").trim() || "Update from session").slice(0, 500),
+        author: { name: name || "Kortix", email: email || "agent@kortix.ai" },
+      });
+      committed = true;
+      await cell.persist?.();
+    }
+    // The branch the session runs on, whatever the checkout called it: a
+    // shallow clone of the default branch is still where the work happened.
+    const headSha = await git.resolveRef({ fs, dir, ref: "HEAD" });
+    const current = await git.currentBranch({ fs, dir });
+    if (current !== target) await git.branch({ fs, dir, ref: target, checkout: true, force: true }).catch(() => null);
+    const pushed = await git.push({
+      fs, dir,
+      http: gitHttp(guardedFetchForGit()),
+      url,
+      ref: target,
+      remoteRef: `refs/heads/${target}`,
+      force: false,
+      onAuth: () => gitAuth(token),
+    });
+    const ok = pushed?.ok !== false && !pushed?.error;
+    return {
+      ok,
+      committed,
+      pushed: ok && committed,
+      nothingToDo: !committed,
+      branch: target,
+      headSha,
+      ...(ok ? {} : { error: String(pushed?.error ?? "push refused") }),
+    };
+  } catch (e) {
+    return { ok: false, error: String(e?.message ?? e), status: 500 };
+  }
+}
+
+/**
+ * A unified diff of the working tree against HEAD — the daemon forwards
+ * `/kortix/opencode/vcs-diff` to OpenCode's `/vcs/diff`, and a cell has to
+ * make it itself. Text only: a binary file is reported as changed without a
+ * body, which is what every diff viewer does with one.
+ */
+export async function workingDiff(cell, dir = CELL_CWD) {
+  const changes = await workingStatus(cell, dir);
+  if (!changes.length) return { files: [], patch: "" };
+  const fs = gitFs(cell.fs);
+  const files = [];
+  const parts = [];
+  for (const change of changes) {
+    const before = change.status === "added" ? "" : await readHeadFile(fs, dir, change.path);
+    const after = change.status === "deleted" ? "" : await readWorkFile(cell.fs, dir, change.path);
+    const patch = unifiedDiff(change.path, before, after);
+    files.push({ path: change.path, status: change.status, added: countLines(patch, "+"), removed: countLines(patch, "-") });
+    if (patch) parts.push(patch);
+  }
+  return { files, patch: parts.join("") };
+}
+
+async function readHeadFile(fs, dir, filepath) {
+  try {
+    const oid = await git.resolveRef({ fs, dir, ref: "HEAD" });
+    const { blob } = await git.readBlob({ fs, dir, oid, filepath });
+    return new TextDecoder().decode(blob);
+  } catch { return ""; }
+}
+
+async function readWorkFile(fs, dir, filepath) {
+  try { return await fs.readFile(`${dir}/${filepath}`, "utf8"); } catch { return ""; }
+}
+
+const countLines = (patch, sign) =>
+  patch.split("\n").filter((l) => l.startsWith(sign) && !l.startsWith(`${sign}${sign}${sign}`)).length;
+
+/**
+ * A whole-file unified diff: every line of the old side removed, every line of
+ * the new side added. Not a minimal diff — a cell has no diff algorithm and a
+ * wrong minimal diff is worse than an honest whole-file one, which every
+ * viewer renders correctly.
+ */
+export function unifiedDiff(path, before, after) {
+  if (before === after) return "";
+  const oldLines = before ? before.split("\n") : [];
+  const newLines = after ? after.split("\n") : [];
+  if (oldLines.at(-1) === "") oldLines.pop();
+  if (newLines.at(-1) === "") newLines.pop();
+  const head = `diff --git a/${path} b/${path}\n--- ${before ? `a/${path}` : "/dev/null"}\n+++ ${after ? `b/${path}` : "/dev/null"}\n`;
+  const hunk = `@@ -${oldLines.length ? 1 : 0},${oldLines.length} +${newLines.length ? 1 : 0},${newLines.length} @@\n`;
+  const body = [...oldLines.map((l) => `-${l}`), ...newLines.map((l) => `+${l}`)].join("\n");
+  return `${head}${hunk}${body}\n`;
+}

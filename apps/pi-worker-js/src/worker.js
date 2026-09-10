@@ -58,7 +58,8 @@ import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
 import { agentNameFrom, agentShape, bootAnswer } from "./opencode-boot.js";
 import { agentList, agentModelId, agentSystemPrompt, gatewayModelId, parseAgentConfig, selectAgent } from "./agent-config.js";
 import { globTool, readTodos, todoTools } from "./plantools.js";
-import { cloneProject, isCheckedOut, workingStatus } from "./cell-git.js";
+import { cloneProject, commitAndPush, isCheckedOut, workingDiff, workingStatus } from "./cell-git.js";
+import { actAnswer, logsAnswer, messagesPage, partAnswer, portsAnswer } from "./kortix-runtime.js";
 import { banner, cdTarget, feed, newEditor, prompt, ptyCreate, ptyGet, ptyList, ptyRemove, ptySetCwd, ptyUpdate } from "./cell-pty.js";
 import { transcriptMessages } from "./transcript-read.js";
 import { mintWireMessageId, newestWireIdTime } from "../../api/src/projects/wire-message-id.ts";
@@ -2264,6 +2265,127 @@ export class AgentCell {
     // THE DOCUMENT THE CONTROL PLANE READS ON EVERY SESSION OPEN — see
     // src/projection.js for the two rules that decide whether it is accepted
     // or stored and then refused.
+    // ── THE KORTIX-NATIVE SURFACE (kortix-runtime.js) ──────────────────
+    //
+    // A regular sandbox answers `/kortix/*` as well as OpenCode's own routes,
+    // and the control plane and dashboard prefer it. A cell answered four of
+    // them; the rest are here, in the daemon's own shapes.
+    {
+      const messages = path.match(/^\/kortix\/opencode\/messages\/([^/]+)$/);
+      if (messages && req.method === "GET") {
+        const rootId = decodeURIComponent(messages[1]);
+        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
+        const body = messagesPage({
+          sessionId: rootId,
+          messages: transcriptMessages(rows, rootId),
+          epoch: this.wire?.epoch ?? this.instance,
+          seq: this.wire?.seq ?? 0,
+          limit: url.searchParams.get("limit"),
+          before: url.searchParams.get("before"),
+          after: url.searchParams.get("after"),
+        });
+        return Response.json(body, { headers: { "X-Kortix-Transcript-Source": "cell" } });
+      }
+      const one = path.match(/^\/kortix\/opencode\/(session|todo)\/([^/]+)$/);
+      if (one && req.method === "GET") {
+        // The same answers the OpenCode routes give, under the native names.
+        const rootId = decodeURIComponent(one[2]);
+        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        if (one[1] === "todo") return Response.json(readTodos(this.sql));
+        const inner = await this.handle(new Request(new URL(`/session/${encodeURIComponent(rootId)}?c=${encodeURIComponent(sessionId)}`, url), { method: "GET" }));
+        return inner;
+      }
+      if ((path === "/kortix/opencode/config" || path === "/kortix/opencode/project-current") && req.method === "GET") {
+        const inner = path.endsWith("config") ? "/config" : "/project/current";
+        return this.handle(new Request(new URL(`${inner}?c=${encodeURIComponent(sessionId)}`, url), { method: "GET" }));
+      }
+      if (path === "/kortix/opencode/vcs-diff" && req.method === "GET") {
+        this.cellFs ??= cellFs(this.sql);
+        await this.ensureCheckout().catch(() => null);
+        return Response.json(await workingDiff(this.cellFs).catch(() => ({ files: [], patch: "" })));
+      }
+      if (path === "/kortix/opencode/act" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const answered = await actAnswer(body, {
+          sessionId,
+          seq: this.wire?.seq ?? 0,
+          stop: async () => {
+            const running = this.running;
+            if (!running) return false;
+            running.agent.abort();
+            return true;
+          },
+        });
+        return Response.json(answered.body, { status: answered.status });
+      }
+      if (path === "/kortix/ports" && req.method === "GET") return Response.json(portsAnswer());
+      if (path === "/kortix/logs" && req.method === "GET") {
+        const rows = [...this.sql.exec("SELECT i, status, error, text, created_at FROM turns ORDER BY i DESC LIMIT 50")]
+          .map((r) => `[turn ${r.i}] ${r.status}${r.error ? ` — ${String(r.error).slice(0, 200)}` : ""} :: ${String(r.text ?? "").slice(0, 120)}`);
+        return Response.json(logsAnswer(rows.reverse()));
+      }
+      if (path === "/kortix/diag" && req.method === "GET") {
+        // The daemon's diagnostic dump, in the terms a cell has: what it is,
+        // what it holds, and what it last did.
+        this.cellFs ??= cellFs(this.sql);
+        return Response.json({
+          runtime: "cell",
+          engine: "pi",
+          instance: this.instance,
+          sessionId,
+          epoch: this.wire?.epoch ?? this.instance,
+          seq: this.wire?.seq ?? 0,
+          messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n,
+          turns: this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n,
+          ops: this.sql.exec("SELECT COUNT(*) AS n FROM ops").toArray()[0].n,
+          files: this.cellFs.fileCount?.() ?? null,
+          checkedOut: await isCheckedOut(this.cellFs.fs).catch(() => false),
+          agent: this.agent().name,
+          agent_config_etag: this.agent().etag,
+          model: normalizeModelEnv(this.modelEnv()).MODEL_ID ?? null,
+          terminals: [...(this.terminals?.values() ?? [])].length,
+        });
+      }
+      const part = path.match(/^\/kortix\/part\/([^/]+)\/([^/]+)\/([^/]+)$/);
+      if (part && req.method === "GET") {
+        const rootId = decodeURIComponent(part[1]);
+        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
+        const answered = partAnswer(transcriptMessages(rows, rootId), decodeURIComponent(part[2]), decodeURIComponent(part[3]));
+        return Response.json(answered.body, { status: answered.status });
+      }
+      if (path === "/kortix/git/commit-push" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const e = this.effectiveEnv();
+        this.cellFs ??= cellFs(this.sql);
+        if (this.__commitPush) return Response.json({ error: "commit-push already running" }, { status: 409 });
+        this.__commitPush = commitAndPush({
+          cell: this.cellFs,
+          url: e.KORTIX_REPO_URL,
+          token: e.KORTIX_TOKEN,
+          branch: e.KORTIX_BRANCH_NAME,
+          message: typeof body?.message === "string" ? body.message : undefined,
+        }).finally(() => { this.__commitPush = null; });
+        const r = await this.__commitPush;
+        return r.ok
+          ? Response.json({ ok: true, committed: r.committed, pushed: r.pushed, nothingToDo: r.nothingToDo, branch: r.branch, headSha: r.headSha })
+          : Response.json({ error: "commit-push failed", message: r.error }, { status: r.status ?? 500 });
+      }
+      // The bare `/env` a daemon serves beside `/kortix/env`, and the dispose
+      // the client calls when it closes a session.
+      if (path === "/env" && req.method === "GET") {
+        return Response.json({ ok: true, sessionId, keys: Object.keys(this.sessionEnv ?? {}) });
+      }
+      if (path === "/global/dispose") return Response.json(true);
+      // A port proxy needs something listening, and nothing can be.
+      if (path === "/proxy" || path.startsWith("/proxy/")) {
+        return Response.json({ error: "no ports in a cell", detail: "a cell has no processes, so nothing can listen on a port" }, { status: 501 });
+      }
+      if (path === "/presentation" || path.startsWith("/presentation/")) {
+        return Response.json({ error: "no converter in a cell", detail: "the deck converter is a binary this runtime does not carry" }, { status: 501 });
+      }
+    }
     if (path === "/kortix/opencode/state") {
       const e = this.effectiveEnv();
       const c = modelConfig(e);
