@@ -49,6 +49,41 @@ At runtime you can also switch via the native **Kortix → Frontend URL** menu
 launches (stored in `userData/frontend_url`). `KORTIX_DESKTOP_USER_DATA=<dir>`
 runs against an isolated profile instead of the real one.
 
+### First launch: choose a Kortix instance
+
+A new profile asks which instance to connect to before any page loads
+(`assets/instance-setup.html`, policy in `src/instance-setup.js`):
+
+- **Kortix Cloud** — the URL baked in at build time (`kortix.com` for prod,
+  `dev.kortix.com` for dev builds). Nothing is written to `frontend_url`, so the
+  app keeps following the baked default.
+- **Self-hosted** — the URL the user types. A bare host gets `https://` (a bare
+  `localhost` gets `http://`), a `/` path becomes `/projects`, and query and
+  fragment are dropped. URLs with a username or password are rejected. The app
+  sends `HEAD` with no credentials and an 8 s timeout; any HTTP status counts as
+  reachable. A network error shows inline, with **Continue Anyway** for hosts
+  that are only reachable on a VPN. The URL is saved to `frontend_url`.
+
+Rules:
+
+- "New profile" = `userData` is missing or empty at process start. The shell
+  then writes `userData/instance_setup_pending` and removes it once the user
+  chooses. Quitting the chooser asks again on the next launch.
+- Existing installs have a non-empty `userData` and are never asked.
+- `KORTIX_DESKTOP_URL` or a saved `frontend_url` skips the chooser, so
+  `pnpm dev` and the native e2e journey never see it.
+
+The same window opens from **Frontend URL → Custom URL…**, and when the app
+origin fails to load (`did-fail-load` on the main frame): the title reads
+**Can't reach \<host\>**, with **Try Again** or a different instance. To see the
+first-launch chooser locally, launch without `KORTIX_DESKTOP_URL` on an empty
+profile:
+
+```bash
+pnpm --filter @kortix/desktop-electron run setup
+KORTIX_DESKTOP_USER_DATA="$(mktemp -d)" pnpm --filter @kortix/desktop-electron exec electron .
+```
+
 ### The dev/staging environment password (HTTP Basic)
 
 `dev.kortix.com` and `staging.kortix.com` sit behind one shared HTTP Basic

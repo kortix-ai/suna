@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+    <title>Kortix</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body {
+        margin: 0;
+        background: #141414;
+        color: rgba(255, 255, 255, 0.92);
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+        overflow: hidden;
+      }
+      form {
+        box-sizing: border-box;
+        padding: 24px 24px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      header {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 20px;
+      }
+      p { margin: 0; }
+      .sub { color: rgba(255, 255, 255, 0.6); }
+      fieldset {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      legend {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      .option {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .option:has(input[type="radio"]:checked) {
+        border-color: rgba(255, 255, 255, 0.4);
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .option-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .option-head input { margin: 0; accent-color: #ffffff; }
+      .option-text {
+        display: flex;
+        flex-direction: column;
+      }
+      .option-title { font-weight: 500; }
+      .option-detail {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.55);
+      }
+      input[type="text"] {
+        box-sizing: border-box;
+        width: 100%;
+        height: 30px;
+        padding: 0 9px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: #0a0a0a;
+        color: inherit;
+        font: inherit;
+        outline: none;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      input[type="text"]:focus { border-color: rgba(255, 255, 255, 0.45); }
+      #error {
+        min-height: 16px;
+        margin-top: -8px;
+        font-size: 12px;
+        color: #ff6b6b;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      .hint {
+        margin-top: -8px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.45);
+      }
+      .hint:empty { display: none; }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      button {
+        height: 30px;
+        padding: 0 14px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 500;
+        cursor: default;
+      }
+      button.primary {
+        min-width: 96px;
+        background: #ffffff;
+        border-color: #ffffff;
+        color: #0a0a0a;
+      }
+      button:disabled { opacity: 0.5; }
+      button:focus-visible,
+      input[type="radio"]:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.45); outline-offset: 1px; }
+    </style>
+  </head>
+  <body>
+    <form id="form" autocomplete="off" novalidate>
+      <header>
+        <h1 id="title">Connect to Kortix</h1>
+        <p class="sub" id="subtitle"></p>
+      </header>
+      <fieldset>
+        <legend>Kortix instance</legend>
+        <div class="option">
+          <label class="option-head">
+            <input type="radio" name="instance" value="default" id="opt-default" checked />
+            <span class="option-text">
+              <span class="option-title" id="default-title">Kortix Cloud</span>
+              <span class="option-detail" id="default-host">kortix.com</span>
+            </span>
+          </label>
+        </div>
+        <div class="option">
+          <label class="option-head">
+            <input type="radio" name="instance" value="custom" id="opt-custom" />
+            <span class="option-text">
+              <span class="option-title">Self-hosted</span>
+              <span class="option-detail">A Kortix instance your team runs</span>
+            </span>
+          </label>
+          <input
+            id="url"
+            type="text"
+            inputmode="url"
+            placeholder="https://kortix.your-company.com"
+            autocapitalize="off"
+            spellcheck="false"
+            aria-label="Self-hosted instance URL"
+          />
+        </div>
+      </fieldset>
+      <div id="error" role="alert" aria-live="assertive"></div>
+      <p class="hint" id="hint"></p>
+      <div class="actions">
+        <button type="button" id="secondary">Quit</button>
+        <button type="submit" class="primary" id="primary">Continue</button>
+      </div>
+    </form>
+    <script>
+      // Values arrive from the main process via preload (contextBridge); the
+      // page never sees Node. Every string is set with textContent — hosts and
+      // error text can come from the network and must never be parsed as HTML.
+      const api = window.kortixInstance;
+      const $ = (id) => document.getElementById(id);
+      const state = {
+        mode: 'setup',
+        current: { kind: 'default', url: '' },
+        busy: false,
+        // The URL whose reachability check failed; submitting it again saves it anyway.
+        unreachableUrl: null,
+      };
+
+      const selected = () => ($('opt-custom').checked ? 'custom' : 'default');
+      const typedUrl = () => $('url').value.trim();
+
+      function primaryLabel() {
+        if (state.busy) return 'Checking…';
+        if (selected() === 'custom' && state.unreachableUrl !== null && typedUrl() === state.unreachableUrl) {
+          return 'Continue Anyway';
+        }
+        const isCurrent =
+          selected() === state.current.kind && (selected() === 'default' || typedUrl() === state.current.url);
+        if (state.mode === 'unreachable' && isCurrent) return 'Try Again';
+        return 'Continue';
+      }
+
+      let reportedHeight = 0;
+      function render() {
+        $('primary').textContent = primaryLabel();
+        $('primary').disabled = state.busy || (selected() === 'custom' && !typedUrl());
+        for (const id of ['opt-default', 'opt-custom', 'url']) $(id).disabled = state.busy;
+        // The window fits the content; only a wrapped error line changes it.
+        const height = Math.ceil(document.documentElement.scrollHeight);
+        if (height !== reportedHeight) {
+          reportedHeight = height;
+          api.resize(height);
+        }
+      }
+
+      function setError(text) {
+        $('error').textContent = text || '';
+      }
+
+      api.onInit((init) => {
+        state.mode = init.mode;
+        state.current = init.current;
+        $('default-title').textContent = init.defaultInstance.title;
+        $('default-host').textContent = init.defaultInstance.host;
+        if (init.mode === 'setup') {
+          $('title').textContent = 'Connect to Kortix';
+          $('subtitle').textContent = 'Use Kortix Cloud, or connect to a Kortix instance your team hosts.';
+          $('hint').textContent = `You can change this later in ${init.menuPath}.`;
+          $('secondary').textContent = 'Quit';
+        } else if (init.mode === 'change') {
+          $('title').textContent = 'Change Kortix instance';
+          $('subtitle').textContent = 'Kortix reloads on the instance you choose.';
+          $('secondary').textContent = 'Cancel';
+        } else {
+          $('title').textContent = `Can’t reach ${init.host}`;
+          $('subtitle').textContent = 'Try again, or connect to a different instance.';
+          $('secondary').textContent = 'Quit';
+        }
+        if (init.current.kind === 'custom') {
+          $('opt-custom').checked = true;
+          $('url').value = init.current.url;
+        } else {
+          $('opt-default').checked = true;
+        }
+        setError(init.error);
+        render();
+        (selected() === 'custom' ? $('url') : $('opt-default')).focus();
+      });
+
+      for (const radio of [$('opt-default'), $('opt-custom')]) {
+        radio.addEventListener('change', () => {
+          setError('');
+          render();
+          if (selected() === 'custom') $('url').focus();
+        });
+      }
+
+      $('url').addEventListener('focus', () => {
+        if (selected() === 'custom') return;
+        $('opt-custom').checked = true;
+        setError('');
+        render();
+      });
+
+      $('url').addEventListener('input', () => {
+        if (typedUrl() !== state.unreachableUrl) state.unreachableUrl = null;
+        setError('');
+        render();
+      });
+
+      $('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (state.busy) return;
+        const kind = selected();
+        const url = typedUrl();
+        if (kind === 'custom' && !url) {
+          setError('Enter the URL of your Kortix instance.');
+          $('url').focus();
+          return;
+        }
+        const force = kind === 'custom' && url === state.unreachableUrl;
+        state.busy = kind === 'custom' && !force;
+        setError('');
+        render();
+        let result;
+        try {
+          result = await api.submit({ kind, url, force });
+        } catch (err) {
+          result = { ok: false, error: String((err && err.message) || err) };
+        }
+        state.busy = false;
+        if (result && result.ok) return; // the main process closes this window
+        if (result && result.unreachable) state.unreachableUrl = url;
+        setError(result && result.error);
+        render();
+        if (kind === 'custom') $('url').focus();
+      });
+
+      $('secondary').addEventListener('click', () => api.cancel({ quit: state.mode !== 'change' }));
+      window.addEventListener('keydown', (e) => {
+        // First launch has no app behind the chooser: Escape must not quit it.
+        if (e.key === 'Escape' && state.mode !== 'setup') api.cancel({ quit: false });
+      });
+    </script>
+  </body>
+</html>
