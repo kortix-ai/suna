@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import worker, { accessRefusal, consumedHeaders, presentedAccess, upstreamUrl, PASSTHROUGH_STRIPPED } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
+import worker, { accessRefusal, allowFraming, consumedHeaders, presentedAccess, upstreamUrl, withoutFrameAncestors, PASSTHROUGH_STRIPPED } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
 
 const TARGET = 'https://8080-01m1s178mtjdff5gst7jqvc735.eu-west.sbx-dev.platinum.dev';
 const workflow = readFileSync(
@@ -170,5 +170,58 @@ describe('exactly one party compresses — the agent\'s LLM stream is not gzippe
   it('the client\'s own accept-encoding never reaches the origin — it decides nothing here', async () => {
     const { upstream } = await roundTrip({ 'content-type': 'application/json' });
     expect(upstream.headers.get('accept-encoding')).toBe('identity');
+  });
+});
+
+describe("the origin's framing policy is Platinum's, and it is about the wrong name", () => {
+  // Platinum's edge adds `frame-ancestors https://platinum.dev …` to every
+  // sandbox response. Under this name the parent IS pi-js.kortix.com, so the
+  // session UI could not frame its own HTML preview — measured 2026-09-10.
+  const PLATINUM = 'frame-ancestors https://platinum.dev https://www.platinum.dev https://app.platinum.dev';
+
+  it('drops a policy that says nothing else', () => {
+    expect(withoutFrameAncestors(PLATINUM)).toBeNull();
+  });
+
+  it('keeps every other directive the origin set', () => {
+    expect(withoutFrameAncestors(`default-src 'self'; ${PLATINUM}; img-src *`)).toBe(
+      "default-src 'self'; img-src *",
+    );
+  });
+
+  it('leaves a policy with no frame-ancestors untouched, matching case-insensitively', () => {
+    const headers = new Headers({ 'content-security-policy': "default-src 'self'" });
+    allowFraming(headers);
+    expect(headers.get('content-security-policy')).toBe("default-src 'self'");
+    const upper = new Headers({ 'content-security-policy': 'FRAME-ANCESTORS https://platinum.dev' });
+    allowFraming(upper);
+    expect(upper.get('content-security-policy')).toBeNull();
+  });
+
+  it('also drops x-frame-options and the report-only twin — neither can name this origin', () => {
+    const headers = new Headers({
+      'x-frame-options': 'DENY',
+      'content-security-policy-report-only': `script-src 'self'; ${PLATINUM}`,
+    });
+    allowFraming(headers);
+    expect(headers.get('x-frame-options')).toBeNull();
+    expect(headers.get('content-security-policy-report-only')).toBe("script-src 'self'");
+  });
+
+  it('a proxied response reaches the browser framable', async () => {
+    const env = { TARGET_ORIGIN: 'https://8080-sbx.eu-west.sbx-dev.platinum.dev', OPEN_ACCESS: 'true' };
+    const original = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response('<html><body>page</body></html>', {
+        headers: { 'content-type': 'text/html', 'content-security-policy': PLATINUM, 'x-frame-options': 'SAMEORIGIN' },
+      });
+    try {
+      const response = await worker.fetch(new Request('https://pi-js.kortix.com/v1/p/s/3211/open?path=/workspace/x.html'), env);
+      expect(response.headers.get('content-security-policy')).toBeNull();
+      expect(response.headers.get('x-frame-options')).toBeNull();
+      expect(response.headers.get('x-kortix-environment')).toBe('pi-js');
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

@@ -43,6 +43,46 @@
 const STRIPPED = ['host', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade-insecure-requests'];
 /** Response headers that describe a body this Worker no longer passes through verbatim. */
 export const PASSTHROUGH_STRIPPED = ['content-encoding', 'content-length'];
+
+/**
+ * WHO MAY FRAME WHAT, decided for the wrong name.
+ *
+ * The origin behind this name is a Platinum sandbox, and Platinum's edge adds
+ * `Content-Security-Policy: frame-ancestors https://platinum.dev …` to every
+ * response from one (infra/caddy/Caddyfile, `security_headers_frameable`) —
+ * a true statement about framing a RAW sandbox preview, and a false one here,
+ * where the origin is a whole Kortix stack served as pi-js.kortix.com. The
+ * browser applies it to the page it names, so the session UI could not frame
+ * its own same-origin HTML preview: measured 2026-09-10, `Framing
+ * 'https://pi-js.kortix.com/' violates … frame-ancestors https://platinum.dev`,
+ * and the file viewer sat on "Starting preview server…" until it gave up.
+ *
+ * Only the frame-ancestors DIRECTIVE is dropped; every other directive the
+ * origin set survives, and a policy that had nothing else left is removed.
+ * Kortix's own sandbox proxy does exactly this to a preview's upstream headers
+ * (apps/api/src/sandbox-proxy/routes/preview.ts `clientResponseHeaders`) for
+ * the same reason, and `x-frame-options` — which cannot name an origin at all
+ * — goes with it.
+ */
+export function withoutFrameAncestors(policy) {
+  const kept = String(policy ?? '')
+    .split(';')
+    .map((directive) => directive.trim())
+    .filter((directive) => directive && !/^frame-ancestors(\s|$)/i.test(directive));
+  return kept.length ? kept.join('; ') : null;
+}
+
+/** Apply that to a response's headers, in place. */
+export function allowFraming(headers) {
+  headers.delete('x-frame-options');
+  for (const name of ['content-security-policy', 'content-security-policy-report-only']) {
+    const policy = headers.get(name);
+    if (!policy || !/frame-ancestors/i.test(policy)) continue;
+    const next = withoutFrameAncestors(policy);
+    if (next) headers.set(name, next);
+    else headers.delete(name);
+  }
+}
 /**
  * Never forwarded: the caller's own credential to THIS name — but ONLY when this
  * name asked for one. In ACCESS_TOKEN mode the bearer that opened the door is
@@ -193,6 +233,7 @@ export default {
     // has chosen an encoding for the client. Carrying either header forward
     // describes a body that no longer exists.
     for (const name of PASSTHROUGH_STRIPPED) output.headers.delete(name);
+    allowFraming(output.headers);
     output.headers.set('x-kortix-environment', 'pi-js');
     return output;
   },
