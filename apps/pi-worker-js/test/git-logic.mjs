@@ -3,7 +3,7 @@
 // and `/file/status` answered `[]` because there was no git. isomorphic-git
 // over the cell's in-memory tree, cloning through the Kortix git proxy with
 // the session's own token.
-// EXPECTED_PASSES=26
+// EXPECTED_PASSES=27
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -131,17 +131,29 @@ check("a modified, an added and a deleted file each report themselves — the Fi
   const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s3", TOOLS_BACKEND: "cell" });
   const c = h.cell ?? h;
   await (await h.fetch("/file?path=&c=s3")).json();
-  check("no AGENTS.md, no instructions", (await c.projectInstructions()) === "", "");
+  check("no AGENTS.md, no instructions", (await c.projectInstructions("s3")) === "", "");
   await c.cellFs.fs.writeFile(`${CELL_CWD}/AGENTS.md`, "# House rules\nAlways run the suite.\n");
-  const text = await c.projectInstructions();
+  const text = await c.projectInstructions("s3");
   check("AGENTS.md at the root of the checkout becomes the project's instructions, quoted",
     text.includes("Always run the suite.") && /AGENTS\.md/.test(text), JSON.stringify(text.slice(0, 90)));
   await c.cellFs.fs.rm(`${CELL_CWD}/AGENTS.md`, { force: true });
   await c.cellFs.fs.writeFile(`${CELL_CWD}/CLAUDE.md`, "Be brief.\n");
-  check("CLAUDE.md is read the same way when AGENTS.md is absent", (await c.projectInstructions()).includes("Be brief."), "");
+  check("CLAUDE.md is read the same way when AGENTS.md is absent", (await c.projectInstructions("s3")).includes("Be brief."), "");
   await c.cellFs.fs.writeFile(`${CELL_CWD}/CLAUDE.md`, "x".repeat(20000));
-  const big = await c.projectInstructions();
+  const big = await c.projectInstructions("s3");
   check("and a very long file is cut rather than spending the whole context", big.length < 17_000 && big.endsWith("…"), String(big.length));
+}
+
+// A DAEMON-BACKED SESSION IS NOT A CELL. Reading the instructions used to
+// create a cell filesystem whatever the backend, and `/model` then reported
+// "cell" for a session whose tools ran through the daemon.
+{
+  const h = makeCell(AgentCell, { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_TOKEN: "t" });
+  const c = h.cell ?? h;
+  await h.fetch("/?c=s4");
+  await c.projectInstructions("s4");
+  check("looking for the project's instructions never manufactures a cell filesystem",
+    !c.cellFs && (await (await h.fetch("/model?c=s4")).json()).tools.backend === "daemon", String(!!c.cellFs));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");

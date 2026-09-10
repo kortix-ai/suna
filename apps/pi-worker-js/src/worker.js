@@ -652,7 +652,7 @@ export class AgentCell {
       // before it is stale by definition.
       const { block } = await this.skills(sessionId, { reload: !this.skillsAfterCheckout });
       this.skillsAfterCheckout = true;
-      const instructions = await this.projectInstructions();
+      const instructions = await this.projectInstructions(sessionId);
       tMark("skills");
       // A prompt echoed on accept is already a row; the agent is seeded
       // without it because `agent.prompt(text)` adds it — twice would double
@@ -1348,13 +1348,17 @@ export class AgentCell {
    * Bounded: a repository can put anything in that file, and the context is
    * the session's to spend.
    */
-  async projectInstructions() {
+  async projectInstructions(sessionId) {
     try {
-      this.cellFs ??= cellFs(this.sql);
+      // OVER THE SESSION'S OWN WORKSPACE, whichever it is. Reading the cell's
+      // tree directly manufactured a cell filesystem on a daemon-backed
+      // session — nothing used it, and `/model` then reported the wrong
+      // backend (the cell suite caught it, 2026-09-10).
+      const env = executionEnvFor(this.effectiveEnv(), sessionId, "instructions", undefined, this.cellFs ?? null);
       for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-        const path = `${CELL_CWD}/${name}`;
-        if (!(await this.cellFs.fs.exists(path))) continue;
-        const body = String(await this.cellFs.fs.readFile(path, "utf8")).trim();
+        const read = await env.readTextFile(name);
+        if (!read?.ok) continue;
+        const body = String(read.value ?? "").trim();
         if (!body) continue;
         const kept = body.length > PROJECT_INSTRUCTIONS_MAX ? `${body.slice(0, PROJECT_INSTRUCTIONS_MAX)}\n…` : body;
         return `The project's own instructions, from ${name} in the workspace. Follow them:\n\n${kept}`;
