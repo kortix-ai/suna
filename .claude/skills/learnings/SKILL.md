@@ -4782,3 +4782,19 @@ raw error or connection URL.
 **Enforcement.** The corrected release diagnostic parses the encrypted profile
 in memory, captures both output streams, and suppresses connection details on
 failure. This remains a procedure requirement for ad hoc diagnostics.
+
+## Inspect a cron write before retrying a request deadline (2026-09-10)
+
+**Incident.** BILL-13 in release run `34524663210` received
+`503 request_deadline` after 55 seconds. A later isolated call returned `200`
+in 0.7 seconds with `{processed: 0, skipped: 0, errors: []}`. The failed
+shard then passed on retry. The exact cause of the first delay was not isolated.
+
+**Rule.** A request deadline does not establish that the underlying operation
+stopped. Inspect its idempotency and subsequent result before retrying a write.
+Retain the successful-response assertion; do not accept a deadline response
+as evidence that a cron completed.
+
+**Enforcement.** Free-tier rotation keys each grant by account and month.
+BILL-13 still requires `200` and the rotation result fields. The final release
+gate passes all nine shards with zero excluded API flows.
