@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import type { ProjectResourceItem } from './index';
 import {
   createProjectResourceGrant,
   deleteProjectResourceGrant,
@@ -69,6 +70,29 @@ test('createProjectResourceGrant forwards an explicit expiry (including null)', 
     principal_id: 'grp-1',
     expires_at: null,
   });
+});
+
+test('createProjectResourceGrant grants a space — the second closed object type', async () => {
+  await createProjectResourceGrant('P1', {
+    resourceType: 'space',
+    resourceId: 'marketing',
+    principalType: 'member',
+    principalId: 'user-1',
+  });
+  expect(last().body).toEqual({
+    resource_type: 'space',
+    resource_id: 'marketing',
+    principal_type: 'member',
+    principal_id: 'user-1',
+  });
+});
+
+test('listProjectResourceGrants surfaces the grantable spaces', async () => {
+  const result = await listProjectResourceGrants('P1');
+  // Optional (older API responses omit it) — assert the field is readable and
+  // typed as a resource list, not that the stub populated it.
+  const spaces: ProjectResourceItem[] = result.resources.spaces ?? [];
+  expect(spaces).toEqual([]);
 });
 
 test('deleteProjectResourceGrant deletes by grant id', async () => {

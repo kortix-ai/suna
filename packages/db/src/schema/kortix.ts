@@ -774,6 +774,11 @@ export const projectSessions = kortixSchema.table(
     sandboxUrl: text('sandbox_url'),
     opencodeSessionId: text('opencode_session_id'),
     agentName: text('agent_name').default('default').notNull(),
+    // The manifest `spaces.<slug>` this session lives in, or NULL for a
+    // plain project session. TEXT, not a FK: the space is declared in
+    // kortix.yaml (like an agent name), and the IAM object grant that governs
+    // who may see it keys on this same slug (`object_type = 'space'`).
+    space: text('space'),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
     // Session ownership + org-visibility (default private to the creator).
@@ -832,6 +837,15 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
+    // NOTE: `idx_project_sessions_project_space` (partial btree on
+    // (project_id, space) WHERE space IS NOT NULL — the
+    // `?space=` list filter and the space page's session count) is
+    // intentionally NOT declared here. It ships in
+    // 20260903191413522_subprojects_index.concurrent.ts (renamed to
+    // idx_project_sessions_project_space by 20260907..._spaces_rename.sql) so
+    // index creation stays
+    // on the CONCURRENTLY path; declaring it would make `db:generate` emit a
+    // conflicting plain CREATE INDEX. See MIGRATIONS.md.
     // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
     // origin_ref's live sessions, checked on every backend session create.
     // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in

@@ -163,6 +163,8 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+import { agentUsableIn, loadProjectSpaces, type SpaceSpec } from '../spaces';
+import { extractAgents, mergeSpaceAgents, type LoadedAgents } from '../agents';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
 import {
   abandonSandboxTurn,
@@ -197,7 +199,67 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_key',
   'sessionKey',
   'filter',
+  'space',
 ] as const;
+
+/**
+ * A trigger's `space` must name a DECLARED space in the same
+ * manifest, or `validateTriggerSpaceRefsV2` rejects the whole file on the
+ * next `kortix validate` / CR-merge gate. Checked against the manifest already
+ * in hand inside the mutation, so no extra read. Returns the 400 to return, or
+ * null when there is nothing to complain about.
+ */
+function undeclaredSpace(
+  declaredSpaces: ReadonlyMap<string, SpaceSpec>,
+  slug: string | null,
+): { ok: false; error: string; status: number; code: string } | null {
+  if (!slug) return null;
+  if (declaredSpaces.has(slug)) return null;
+  return {
+    ok: false,
+    error: `Space "${slug}" is not declared in this project's manifest`,
+    status: 400,
+    code: 'SPACE_NOT_DECLARED',
+  };
+}
+
+/** The space files and the full agent roster (root + owned) as of the
+ *  manifest revision in hand — the two things a trigger write validates
+ *  against. Reads the files, never the manifest again. */
+async function manifestRoster(
+  gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>,
+  manifest: ParsedManifest,
+): Promise<{ declaredSpaces: ReadonlyMap<string, SpaceSpec>; loadedAgents: LoadedAgents }> {
+  const spaces = await loadProjectSpaces(gitProject, { manifest });
+  return {
+    declaredSpaces: new Map(spaces.specs.map((s) => [s.slug, s])),
+    loadedAgents: mergeSpaceAgents(extractAgents(manifest), spaces.specs),
+  };
+}
+
+/**
+ * The usability rule for scheduled work (spec 2026-09-06 §2): a trigger may
+ * name an agent only where that agent is declared or referenced — global
+ * when the trigger has no space. A name declared nowhere stays the
+ * manifest validator's problem, exactly as before.
+ */
+function agentNotUsable(
+  loadedAgents: LoadedAgents,
+  declaredSpaces: ReadonlyMap<string, SpaceSpec>,
+  draft: { agent: string; space: string | null },
+): { ok: false; error: string; status: number; code: string } | null {
+  const agent = draft.agent;
+  if (!agent || !loadedAgents.specs.some((s) => s.name === agent)) return null;
+  const spec = draft.space ? (declaredSpaces.get(draft.space) ?? null) : null;
+  if (agentUsableIn(loadedAgents, spec, agent)) return null;
+  const owner = loadedAgents.specs.find((s) => s.name === agent)?.space;
+  return {
+    ok: false,
+    error: `Agent "${agent}" is not usable ${draft.space ? `in space "${draft.space}"` : 'at the project level'} — it is declared by space "${owner}" (spaces.${owner}.agents)`,
+    status: 400,
+    code: 'AGENT_NOT_IN_SPACE',
+  };
+}
 
 interface SlackAuthTest {
   ok: boolean;
@@ -1254,11 +1316,16 @@ projectsApp.openapi(
       }
     }
 
+    const gitProject = await withProjectGitAuth(loaded.row);
     let committedManifest: ParsedManifest | undefined;
     const result = await mutateManifestWithRetry(
       loaded.row,
       `trigger ${draft.slug} was being created`,
-      (manifest) => {
+      async (manifest) => {
+        // Spaces are `spaces.<slug>` blocks of the manifest; the declared
+        // set and the roster the usability rule needs come from the manifest
+        // revision being edited — no second read, no drift.
+        const { declaredSpaces, loadedAgents } = await manifestRoster(gitProject, manifest);
         if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
           return {
             ok: false,
@@ -1266,6 +1333,10 @@ projectsApp.openapi(
             status: 409,
           };
         }
+        const undeclared = undeclaredSpace(declaredSpaces, draft.space);
+        if (undeclared) return undeclared;
+        const notUsable = agentNotUsable(loadedAgents, declaredSpaces, draft);
+        if (notUsable) return notUsable;
         const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
         manifest.raw = next.raw;
         committedManifest = manifest;
@@ -1273,7 +1344,10 @@ projectsApp.openapi(
       },
     );
     if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 409 | 502);
+      return c.json(
+        { error: result.error, ...(result.code ? { code: result.code } : {}) },
+        result.status as 400 | 409 | 502,
+      );
     }
     if (!committedManifest) throw new Error('trigger create completed without a manifest');
     await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
@@ -1397,12 +1471,14 @@ projectsApp.openapi(
       );
       if (accessValidationError) return c.json({ error: accessValidationError }, 400);
     }
+    const gitProject = await withProjectGitAuth(loaded.row);
     let committedManifest: ParsedManifest | undefined;
     let effectivePinnedSessionId: string | null = null;
     const result = await mutateManifestWithRetry(
       loaded.row,
       `trigger ${slug} was being updated`,
       async (manifest) => {
+        const { declaredSpaces, loadedAgents } = await manifestRoster(gitProject, manifest);
         const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
         if (!current) return { ok: false, error: 'Not found', status: 404 };
         if (!touchesManifest) {
@@ -1432,6 +1508,11 @@ projectsApp.openapi(
           }
         }
         effectivePinnedSessionId = draft.pinnedSessionId;
+
+        const undeclared = undeclaredSpace(declaredSpaces, draft.space);
+        if (undeclared) return undeclared;
+        const notUsable = agentNotUsable(loadedAgents, declaredSpaces, draft);
+        if (notUsable) return notUsable;
 
         // A `pinned` trigger may only target a session that belongs to THIS project.
         if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {

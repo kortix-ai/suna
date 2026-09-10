@@ -2,6 +2,97 @@
   "useCases": {
     "headline": "The loops that run a company"
   },
+  "spaces": {
+    "cancel": "Cancel",
+    "optional": "optional",
+    "none": "None",
+    "noSpace": "No space",
+    "create": {
+      "created": "{name} created",
+      "failed": "Could not create the space",
+      "title": "New space",
+      "description": "A named container inside this project — its own sessions, its own default agent, and its own scheduled work.",
+      "nameLabel": "Name",
+      "namePlaceholder": "Marketing",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Campaign work.",
+      "agentLabel": "Agent",
+      "noDefaultAgent": "No default agent",
+      "agentHelp": "A default, not a binding — sessions started here open on it, and anyone using it still needs the agent in their own right.",
+      "submit": "Create space"
+    },
+    "move": {
+      "movedTo": "Moved to {name}",
+      "movedOut": "Moved out of the space",
+      "failed": "Could not move the session",
+      "title": "Move to"
+    },
+    "page": {
+      "offTitle": "Spaces are off for this project",
+      "offDescription": "Turn Spaces on in Settings → Feature flags to group sessions under a named effort.",
+      "backToProject": "Back to the project",
+      "notFoundTitle": "No space named {slug}",
+      "notFoundDescription": "It may have been removed from the project's configuration, or you may not be granted it."
+    },
+    "toolbar": {
+      "sharedToast": "Everyone granted this space can read its sessions",
+      "privateToast": "Sessions here are private to whoever starts them",
+      "visibilityFailed": "Could not change session visibility",
+      "renamed": "Renamed to {name}",
+      "renameFailed": "Could not rename it",
+      "deleted": "{name} deleted",
+      "deleteFailed": "Could not delete it",
+      "nameAria": "Space name",
+      "grantHint": "Grant this space to people or groups",
+      "grantedHint": "Granted to {count, plural, one {# person or group} other {# people and groups}}",
+      "share": "Share",
+      "actionsAria": "Space actions",
+      "visibilityLabel": "Sessions here are readable by",
+      "privateOption": "Only whoever started them",
+      "sharedOption": "Everyone granted this space",
+      "rename": "Rename",
+      "delete": "Delete",
+      "deleteTitle": "Delete {name}?",
+      "deleteDescription": "The spaces.{slug} block is removed from kortix.yaml and its triggers lose the back-reference. Its sessions are kept, but members granted only this space stop seeing them."
+    },
+    "recents": {
+      "aria": "Recent sessions",
+      "title": "Recents",
+      "empty": "No sessions yet."
+    },
+    "selector": {
+      "selectAria": "Select space",
+      "wholeProject": "Whole project",
+      "wholeProjectDescription": "Not inside a space.",
+      "searchPlaceholder": "Search spaces",
+      "noMatches": "No spaces match “{query}”",
+      "new": "New space"
+    },
+    "sidebar": {
+      "title": "Spaces",
+      "new": "New space",
+      "collapse": "Collapse {name}",
+      "expand": "Expand {name}",
+      "more": "{count} more…"
+    },
+    "schedule": {
+      "label": "Space",
+      "hint": "Files this trigger and every session it starts under one space.",
+      "updated": "Space updated",
+      "updateFailed": "Could not update the space"
+    },
+    "people": {
+      "description": "Members and groups granted this space. A space grant is not an agent grant — they need its agent in their own right too.",
+      "empty": "No one is granted this space yet. Project managers can always use it.",
+      "orphanedSuffix": "· grant no longer matches a space"
+    },
+    "access": {
+      "title": "Spaces",
+      "all": "All spaces",
+      "onlyThese": "Only these…",
+      "allDescription": "Every space in this project today ({count}). Spaces added later need a new grant — a space with no grant rows is the manager tier's only."
+    }
+  },
   "developers": {
     "heroDescription": "Agents, skills, tools, connectors, schedules — all just files in a repo. Edit them in your IDE, run them locally, ship to the cloud with one command. Open source, self-hostable, yours.",
     "agentBody": "An agent is Markdown — a persona, its model, and its tools. Skills are folders it loads on demand. Edit them by hand, or describe what you want and let your coding agent write them.",
@@ -822,6 +913,10 @@
         "pi_worker": {
           "name": "Pi Worker Runtime (compiled)",
           "description": "Run sessions with the experimental Pi worker runtime."
+        },
+        "spaces": {
+          "name": "Spaces",
+          "description": "Group sessions under a named effort inside the project, each with its own default agent and scheduled work."
         }
       }
     },
@@ -1319,6 +1414,7 @@
         "status": "Status",
         "activity": "Activity",
         "source": "Source",
+        "space": "Space",
         "none": "None"
       },
       "order": {
@@ -17054,6 +17150,7 @@
       "textdc8d7c5c602b": "Source ledger",
       "textdc934fe30a94": "20%",
       "textdc937b598926": "None",
+      "text3f5f3b0e5bfc": "No space",
       "textdc958f2a5781": "Key actions",
       "textdc98511e6b34": "Runs as",
       "textdc99025834c1": "Self-host Kortix",

@@ -1,0 +1,219 @@
+'use client';
+
+import { Button } from '@/components/ui/button';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import {
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandPopover,
+  CommandPopoverContent,
+  CommandPopoverTrigger,
+  CommandSeparator,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+import type { Space } from '@kortix/sdk';
+import {
+  CaretDownIcon,
+  CheckIcon,
+  FolderSimpleIcon,
+  PlusIcon,
+  SquaresFourIcon,
+} from '@phosphor-icons/react';
+import { useMemo, useState, type ReactNode } from 'react';
+
+import { CreateSpaceModal } from './create-space-modal';
+
+/** Same threshold as `AgentSelector`: under it the whole list is readable at
+ *  a glance and a search field is a row of chrome that saves nobody time. */
+const SEARCH_MIN_ITEMS = 7;
+
+/**
+ * Where a session from this composer starts: the whole project, or one of
+ * its spaces.
+ *
+ * Lives in the tray under the chat card (`Composer.traySlot`) as a pill that
+ * STATES the current target — "Whole project", or the space's name —
+ * and opens downward, the way Claude's "Project or folder" strip does (user,
+ * 2026-09-05). The list mirrors the sidebar's `Spaces` group: the same
+ * rows, the same folder glyph, and `New space` at the foot for anyone
+ * who may create one (the modal navigates to the new page, which preselects
+ * itself here).
+ */
+export function SpaceSelector({
+  projectId,
+  spaces,
+  selected,
+  onSelect,
+  canCreate,
+}: {
+  projectId: string;
+  /** Every space the caller may see — the sidebar's list. */
+  spaces: Space[];
+  /** The slug a send will carry, or `null` for the whole project. */
+  selected: string | null;
+  onSelect: (slug: string | null) => void;
+  canCreate: boolean;
+}) {
+  const tSpaces = useI18nTranslations('spaces');
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const current = spaces.find((s) => s.slug === selected) ?? null;
+  const query = search.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!query) return spaces;
+    return spaces.filter(
+      (s) =>
+        s.name.toLowerCase().includes(query) ||
+        s.slug.includes(query) ||
+        (s.description ?? '').toLowerCase().includes(query),
+    );
+  }, [spaces, query]);
+  // Keyed off the FULL list, never the filtered one — see `AgentSelector`.
+  const showSearch = spaces.length >= SEARCH_MIN_ITEMS;
+
+  const row = (
+    key: string,
+    icon: ReactNode,
+    title: string,
+    description: string | null,
+    isSelected: boolean,
+    onPick: () => void,
+  ) => (
+    <CommandItem
+      key={key}
+      // The name rides the value so cmdk's own matching (if it is on) agrees
+      // with the manual filter above instead of hiding what it shows.
+      value={`${key} ${title}`}
+      className={cn('items-start gap-2 py-2', isSelected && 'bg-primary/[0.06]')}
+      onSelect={() => {
+        onPick();
+        setOpen(false);
+      }}
+    >
+      <span className="text-muted-foreground mt-0.5 flex size-4 shrink-0 items-center justify-center">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-foreground truncate text-sm font-medium">{title}</div>
+        {description ? (
+          <p className="text-muted-foreground mt-0.5 truncate text-xs">{description}</p>
+        ) : null}
+      </div>
+      {isSelected ? <CheckIcon className="text-foreground mt-0.5 size-4 shrink-0" /> : null}
+    </CommandItem>
+  );
+
+  return (
+    <>
+      <CommandPopover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          // A closed picker forgets its query, so it never reopens filtered.
+          if (!next) setSearch('');
+        }}
+      >
+        <CommandPopoverTrigger>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label={tSpaces('selector.selectAria')}
+            className="bg-background rounded-lg"
+          >
+            {current ? (
+              <FolderSimpleIcon className="size-3.5 shrink-0" />
+            ) : (
+              <SquaresFourIcon className="size-3.5 shrink-0" />
+            )}
+            <span className="max-w-[12rem] truncate">
+              {current?.name ?? tSpaces('selector.wholeProject')}
+            </span>
+            <CaretDownIcon
+              className={cn(
+                'size-3 transition-transform duration-200 ease-out',
+                open && 'rotate-180',
+              )}
+            />
+          </Button>
+        </CommandPopoverTrigger>
+
+        <CommandPopoverContent
+          side="bottom"
+          align="start"
+          sideOffset={8}
+          className="w-[min(360px,calc(100vw-1.5rem))]"
+        >
+          {/* Mounted either way, hidden below the threshold: cmdk's arrow keys
+              live on this input — see the same note in `AgentSelector`. */}
+          <div className={showSearch ? undefined : 'sr-only'}>
+            <CommandInput
+              compact
+              placeholder={tSpaces('selector.searchPlaceholder')}
+              value={search}
+              onValueChange={setSearch}
+            />
+          </div>
+
+          <CommandList className="max-h-[320px]">
+            <CommandGroup forceMount>
+              {!query &&
+                row(
+                  'whole-project',
+                  <SquaresFourIcon className="size-4" />,
+                  tSpaces('selector.wholeProject'),
+                  tSpaces('selector.wholeProjectDescription'),
+                  selected === null,
+                  () => onSelect(null),
+                )}
+              {filtered.map((s) =>
+                row(
+                  `space-${s.slug}`,
+                  <FolderSimpleIcon className="size-4" />,
+                  s.name,
+                  s.description,
+                  selected === s.slug,
+                  () => onSelect(s.slug),
+                ),
+              )}
+            </CommandGroup>
+
+            {filtered.length === 0 && query ? (
+              <div className="text-muted-foreground/50 py-8 text-center text-xs">
+                {tSpaces('selector.noMatches', { query: search.trim() })}
+              </div>
+            ) : null}
+
+            {canCreate ? (
+              <>
+                <CommandSeparator />
+                <CommandGroup forceMount>
+                  {row(
+                    'new-space',
+                    <PlusIcon className="size-4" />,
+                    tSpaces('selector.new'),
+                    null,
+                    false,
+                    () => setCreateOpen(true),
+                  )}
+                </CommandGroup>
+              </>
+            ) : null}
+          </CommandList>
+        </CommandPopoverContent>
+      </CommandPopover>
+
+      {canCreate ? (
+        <CreateSpaceModal
+          projectId={projectId}
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+        />
+      ) : null}
+    </>
+  );
+}

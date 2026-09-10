@@ -41,6 +41,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  useProjectSpaces,
+  withTriggerSpace,
+} from '@/features/spaces/spaces-data';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
 import { createProjectTrigger, listProjectSessions, upsertProjectSecret } from '@kortix/sdk';
@@ -83,6 +94,10 @@ import {
 
 type Step = 'type' | 'what' | 'how';
 
+/** Sentinel for "no space" — `''` is not a legal Radix item value, and
+ *  the wire value for it is `null`, not the empty string. */
+const NO_SPACE = '__none__';
+
 /** A random signing key, hex-encoded. */
 function generateSigningKey(): string {
   if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
@@ -119,6 +134,7 @@ export function ScheduleCreateModal({
   onOpenChange,
   onCreated,
   initialAgent = null,
+  initialSpace = null,
 }: {
   projectId: string;
   open: boolean;
@@ -128,8 +144,13 @@ export function ScheduleCreateModal({
    *  this modal for "its" triggers, so the picker lands on that agent rather
    *  than asking a question the page already answered. Still changeable. */
   initialAgent?: string | null;
+  /** Pre-selects the space the trigger is filed under — the space
+   *  page opens this modal for "its" scheduled work, same reasoning as
+   *  `initialAgent`. */
+  initialSpace?: string | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSpaces = useI18nTranslations('spaces');
   const [kind, setKind] = useState<TriggerKind | null>(null);
   const copy = kind ? KIND_COPY[kind] : null;
   const isCron = kind === 'cron';
@@ -138,6 +159,7 @@ export function ScheduleCreateModal({
   const [name, setName] = useState('');
   const [instruction, setInstruction] = useState('');
   const [agentName, setAgentName] = useState<string | null>(initialAgent);
+  const [space, setSpace] = useState<string>(initialSpace ?? NO_SPACE);
   const [model, setModel] = useState<ModelKey | null>(null);
 
   const [cron, setCron] = useState('0 0 9 * * *');
@@ -162,6 +184,10 @@ export function ScheduleCreateModal({
   const [error, setError] = useState<string | null>(null);
 
   const agents = useVisibleAgents({ projectId });
+  // Only the spaces this caller is granted come back, so the picker can
+  // never offer one the trigger POST would then reject.
+  const spacesQuery = useProjectSpaces(projectId, open);
+  const spaces = spacesQuery.data?.spaces ?? [];
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const sessions = useQuery({
@@ -182,6 +208,7 @@ export function ScheduleCreateModal({
     // agent page's `initialAgent` away before the modal was ever opened — every
     // trigger created from an agent page landed on `default`.
     setAgentName(initialAgent);
+    setSpace(initialSpace ?? NO_SPACE);
     setModel(null);
     setCron('0 0 9 * * *');
     setRunAt(null);
@@ -196,7 +223,7 @@ export function ScheduleCreateModal({
     setStartActive(true);
     setSessionAccess({ mode: 'private', memberIds: [], groupIds: [] });
     setError(null);
-  }, [open, initialAgent]);
+  }, [open, initialAgent, initialSpace]);
 
   /** First-step problems, in the order a person would hit them. */
   function checkWhat(): string | null {
@@ -253,25 +280,34 @@ export function ScheduleCreateModal({
 
       const filter = rowsToConditions(conditions);
 
-      return createProjectTrigger(projectId, {
-        name: trimmedName,
-        slug,
-        type: triggerKind,
-        prompt_template: instruction.trim(),
-        enabled: startActive,
-        ...(agentName ? { agent: agentName } : {}),
-        ...(model ? { model: modelKeyToWire(model) } : {}),
-        session_access: sessionAccess,
-        ...(mode !== 'fresh' ? { session_mode: mode } : {}),
-        ...(mode === 'pinned' && pinnedSessionId ? { session_id: pinnedSessionId } : {}),
-        ...(mode === 'keyed' ? { session_key: sessionKey.trim() } : {}),
-        ...(!isCron && filter ? { filter } : {}),
-        ...(isCron
-          ? runAt
-            ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
-            : { cron: cron.trim(), timezone: timezone.trim() || 'UTC' }
-          : { secret_env: secretEnv }),
-      });
+      // `withTriggerSpace` is the SDK gap, not a raw body: the API takes
+      // `space` on POST /triggers but the published input type does not
+      // declare it yet. See `features/spaces/spaces-data.ts`.
+      return createProjectTrigger(
+        projectId,
+        withTriggerSpace(
+          {
+            name: trimmedName,
+            slug,
+            type: triggerKind,
+            prompt_template: instruction.trim(),
+            enabled: startActive,
+            ...(agentName ? { agent: agentName } : {}),
+            ...(model ? { model: modelKeyToWire(model) } : {}),
+            session_access: sessionAccess,
+            ...(mode !== 'fresh' ? { session_mode: mode } : {}),
+            ...(mode === 'pinned' && pinnedSessionId ? { session_id: pinnedSessionId } : {}),
+            ...(mode === 'keyed' ? { session_key: sessionKey.trim() } : {}),
+            ...(!isCron && filter ? { filter } : {}),
+            ...(isCron
+              ? runAt
+                ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
+                : { cron: cron.trim(), timezone: timezone.trim() || 'UTC' }
+              : { secret_env: secretEnv }),
+          },
+          space === NO_SPACE ? null : space,
+        ),
+      );
     },
     onSuccess: (listing) => {
       const created = listing.triggers
@@ -405,6 +441,27 @@ export function ScheduleCreateModal({
                   />
                 </div>
               </Field>
+
+              {spaces.length > 0 ? (
+                <Field
+                  label={tSpaces('schedule.label')}
+                  hint={tSpaces('schedule.hint')}
+                >
+                  <Select value={space} onValueChange={setSpace}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={tSpaces('none')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_SPACE}>{tSpaces('none')}</SelectItem>
+                      {spaces.map((option) => (
+                        <SelectItem key={option.slug} value={option.slug}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
 
               <Field
                 label={tI18nComplete.raw('text5e2c614c23f0')}

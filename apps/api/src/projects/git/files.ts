@@ -292,6 +292,34 @@ export async function getFileHistory(
   });
 }
 
+/**
+ * The blob SHA of `filePath` at `ref`, or null when absent — the
+ * compare-and-swap token a single-file rewrite passes back as
+ * `expectedFileRevision`, so two editors of one space file cannot
+ * silently overwrite each other.
+ */
+export async function readRepoFileRevision(
+  project: GitBackedProject,
+  filePath: string,
+  ref?: string,
+): Promise<string | null> {
+  const normalized = normalizeTreePath(filePath);
+  if (!normalized) return null;
+  const treeRef = validateRef(ref || project.defaultBranch);
+  const repoPath = await refreshMirror(project);
+  try {
+    const result = await runGit(
+      ['rev-parse', '--verify', `${treeRef}:${normalized}`],
+      repoPath,
+      false,
+    );
+    const sha = result.stdout.trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getFileAtRef(
   project: GitBackedProject,
   filePath: string,

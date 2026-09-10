@@ -184,6 +184,10 @@
             "type": "string",
             "minLength": 1
           },
+          "space": {
+            "type": "string",
+            "minLength": 1
+          },
           "enabled": {
             "oneOf": [
               {

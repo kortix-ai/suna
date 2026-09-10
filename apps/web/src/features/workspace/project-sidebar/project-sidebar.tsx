@@ -14,6 +14,8 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { SpacesSidebarGroup } from '@/features/spaces/spaces-sidebar-group';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
@@ -43,6 +45,8 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(na
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
+  // Spaces off ⇒ the Sessions list stops partitioning (see its render below).
+  const spacesEnabled = useFeatureFlag(projectId, 'spaces').enabled;
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const { state, setOpenMobile, toggleSidebar } = useSidebar();
@@ -231,8 +235,19 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             </SidebarMenu>
           </SidebarGroup>
 
+          {/* Between the nav group and the sessions: a space is a
+              container FOR sessions, so it sits directly above the list it
+              partitions. It renders nothing at all for a member with no
+              spaces and no `project.customize.write`. */}
+          <SpacesSidebarGroup projectId={projectId} />
+
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            <ProjectSessionList projectId={projectId} />
+            {/* `unfiledOnly` ONLY while Spaces is on. The two lists partition
+                the sessions between them, so with the group above gone every
+                session already filed in a space would be unreachable from the
+                sidebar — turning the feature off must hide the feature, never
+                someone's sessions. */}
+            <ProjectSessionList projectId={projectId} unfiledOnly={spacesEnabled} />
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">

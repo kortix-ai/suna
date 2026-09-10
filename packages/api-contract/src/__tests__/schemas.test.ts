@@ -120,6 +120,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       warm_sessions: false,
       secrets_egress: false,
       pi_worker: false,
+      spaces: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -142,6 +143,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     name: 'Fix the login bug',
     custom_name: null,
     agent_name: 'default',
+    space: null,
     status: 'running',
     error: null,
     metadata: { name: 'Fix the login bug' },
@@ -201,6 +203,7 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     session_id: null,
     session_key: null,
     filter: null,
+    space: null,
     last_fired_at: NOW,
     last_status: 'queued',
     last_error: null,
@@ -693,6 +696,7 @@ describe('envelopes', () => {
       'warm_sessions',
       'secrets_egress',
       'pi_worker',
+      'spaces',
     ]);
   });
 

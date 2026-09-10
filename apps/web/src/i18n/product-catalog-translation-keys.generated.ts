@@ -53,6 +53,7 @@ export const PRODUCT_CATALOG_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   Activity: 'text38da1505ca83',
   Source: 'text0e570ca6fabe',
   None: 'textdc937b598926',
+  'No space': 'text3f5f3b0e5bfc',
   'Last activity': 'text06475633ed3e',
   'Date created': 'textfa91f7628ea5',
   Name: 'textdcd1d5223f73',

@@ -106,7 +106,7 @@ export async function createDatabaseProject(
   } finally {
     await client.end();
   }
-  return { id: projectId, name: input.name };
+  return { id: projectId, name: input.name, repoUrl: input.repoUrl ?? null };
 }
 
 export async function setDatabaseEnterpriseDemo(
@@ -158,6 +158,11 @@ export async function createDatabaseSession(
     userId: string;
     visibility?: "private" | "project" | "restricted";
     metadata?: Record<string, unknown>;
+    /** `project_sessions.space` — the manifest slug this row joins, or
+     *  omit/null for an ordinary session. Lets a flow seed a row inside a
+     *  space without a real session-create call (the local profile
+     *  can't provision one — see spaces.flow.ts SPACE-3). */
+    space?: string | null;
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<string> {
@@ -173,7 +178,8 @@ export async function createDatabaseSession(
          branch_name,
          created_by,
          visibility,
-         metadata
+         metadata,
+         space
        )
        VALUES (
          $1,
@@ -182,7 +188,8 @@ export async function createDatabaseSession(
          'session/' || $1,
          $4::uuid,
          $5::kortix.project_session_visibility,
-         $6::jsonb
+         $6::jsonb,
+         $7::text
        )`,
       [
         sessionId,
@@ -191,6 +198,7 @@ export async function createDatabaseSession(
         input.userId,
         input.visibility ?? "private",
         JSON.stringify(input.metadata ?? {}),
+        input.space ?? null,
       ],
     );
   } finally {

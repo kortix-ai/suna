@@ -36,7 +36,8 @@ export type FeatureFlagKey =
   | 'monitors'
   | 'warm_sessions'
   | 'secrets_egress'
-  | 'pi_worker';
+  | 'pi_worker'
+  | 'spaces';
 
 /**
  * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
@@ -57,6 +58,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
+  'spaces',
 ] as const;
 
 /**
@@ -153,6 +155,10 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** The space whose `spaces.<slug>` block declares this agent, or null
+     *  for a global one. An owned agent runs only in its space and in the
+     *  ones that reference it (`agentsUsableIn`). Absent on older servers. */
+    space?: string | null;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).

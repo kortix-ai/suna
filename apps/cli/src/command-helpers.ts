@@ -530,14 +530,19 @@ export function surfaceApiError(err: unknown): number {
 }
 
 /** Find and pull out a flag value from argv (`--project foo` or
- *  `--project=foo`). Mutates the array — caller passes a sliced copy. */
+ *  `--project=foo`). Mutates the array — caller passes a sliced copy.
+ *  An explicit empty value (`--field ''` or `--field=`) is returned as `''`,
+ *  not treated as missing — several commands use it as a "clear this field"
+ *  convention distinct from omitting the flag entirely (`undefined`). Only a
+ *  genuinely absent value (end of argv, or the next token is another flag)
+ *  is an error. */
 export function takeFlagValue(argv: string[], names: string[]): string | undefined {
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     for (const n of names) {
       if (a === n) {
         const v = argv[i + 1];
-        if (!v || v.startsWith('-')) throw new Error(`${n} requires a value`);
+        if (v === undefined || v.startsWith('-')) throw new Error(`${n} requires a value`);
         argv.splice(i, 2);
         return v;
       }

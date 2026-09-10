@@ -125,6 +125,7 @@ Registry order — the same order **Settings → Experimental** shows.
 | `apps` | Apps | Stable | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
+| `spaces` | Spaces | Experimental | Off | `routes` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -159,6 +160,10 @@ refs). An explicit project choice always wins.
   into sessions. See [Triggers](/docs/connect/triggers).
 - **`warm_sessions`** — keep one sandbox booted while a project is open, so a
   new session starts without a cold boot.
+- **`spaces`** — group sessions under a named effort inside the project, each
+  with its own default agent, scheduled work, and grants. Declared in
+  `kortix.yaml` under `spaces:`. See
+  [the manifest reference](/docs/project/manifest).
 
 ## Side effects of a toggle
 

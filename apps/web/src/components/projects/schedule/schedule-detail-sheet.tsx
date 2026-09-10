@@ -45,6 +45,18 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  triggerSpace,
+  useProjectSpaces,
+  withTriggerSpace,
+} from '@/features/spaces/spaces-data';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { storedModelRefToKey } from '@/lib/llm-gateway';
@@ -754,6 +766,10 @@ function ConditionsPanel({
 
 /* ─── Which agent ───────────────────────────────────────────────────────── */
 
+/** Sentinel for "no space" — `''` is not a legal Radix item value, and
+ *  the wire value that CLEARS the back-reference is `null`. */
+const NO_SPACE = '__none__';
+
 function AgentPanel({
   projectId,
   trigger,
@@ -766,6 +782,7 @@ function AgentPanel({
   onMutated: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSpaces = useI18nTranslations('spaces');
   const agents = useVisibleAgents({ projectId });
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
@@ -784,6 +801,28 @@ function AgentPanel({
       onMutated();
     },
     onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('textc617ab4ba83d')),
+  });
+
+  // Only the spaces this caller is granted, so the picker can never
+  // offer one the trigger PATCH would reject.
+  const spacesQuery = useProjectSpaces(projectId);
+  const spaces = spacesQuery.data?.spaces ?? [];
+  const currentSpace = triggerSpace(trigger) ?? NO_SPACE;
+
+  const saveSpace = useMutation({
+    // `withTriggerSpace` is the SDK gap, not a raw body — see
+    // `features/spaces/spaces-data.ts`.
+    mutationFn: (next: string) =>
+      updateProjectTrigger(
+        projectId,
+        trigger.slug,
+        withTriggerSpace({}, next === NO_SPACE ? null : next),
+      ),
+    onSuccess: () => {
+      successToast(tSpaces('schedule.updated'));
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || tSpaces('schedule.updateFailed')),
   });
 
   const saveModel = useMutation({
@@ -808,6 +847,9 @@ function AgentPanel({
               label: tI18nComplete.raw('text5e2c614c23f0'),
               value: trigger.model ?? "The agent's usual model",
             },
+            ...(triggerSpace(trigger)
+              ? [{ label: tSpaces('schedule.label'), value: triggerSpace(trigger)! }]
+              : []),
           ]}
         />
       </PanelSection>
@@ -836,6 +878,29 @@ function AgentPanel({
           />
         </div>
       </div>
+
+      {spaces.length > 0 ? (
+        <div className="space-y-1.5">
+          <Label className="text-xs">{tSpaces('schedule.label')}</Label>
+          <Select
+            value={currentSpace}
+            onValueChange={(next) => saveSpace.mutate(next)}
+            disabled={saveSpace.isPending}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={tSpaces('none')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_SPACE}>{tSpaces('none')}</SelectItem>
+              {spaces.map((option) => (
+                <SelectItem key={option.slug} value={option.slug}>
+                  {option.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">

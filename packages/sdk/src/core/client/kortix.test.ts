@@ -448,6 +448,32 @@ test('project(id).access.resourceGrants covers list/create/remove', async () => 
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).spaces covers the whole CRUD surface', async () => {
+  const spaces = kortix.project('PID123').spaces;
+
+  await spaces.list();
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces');
+  expect(last().method).toBe('GET');
+
+  await spaces.get('marketing');
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces/marketing');
+  expect(last().method).toBe('GET');
+
+  await spaces.create({ name: 'Marketing' });
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ name: 'Marketing' });
+
+  await spaces.update('marketing', { sessions: 'shared' });
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces/marketing');
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ sessions: 'shared' });
+
+  await spaces.remove('marketing');
+  expect(last().url).toBe('http://test.local/projects/PID123/spaces/marketing');
+  expect(last().method).toBe('DELETE');
+});
+
 test('project(id).secrets covers provider OAuth start, poll, and removal', async () => {
   await kortix.project('PID123').secrets.startProviderOAuth('chatgpt');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt/start');

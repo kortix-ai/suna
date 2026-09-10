@@ -54,6 +54,7 @@ import {
   validateAgentsV2,
   validateDefaultAgentV2,
   validateRuntimeV2,
+  validateSpacesV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
 
@@ -146,7 +147,17 @@ export {
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
+  type AgentReferenceV2,
+  type SpaceV2,
+  type SpaceAgentsV2,
+  type SpaceSessionsModeV2,
+  SPACE_SESSIONS_MODES_V2,
+  isAgentReferenceV2,
+  spacePath,
   resolveGrantSet,
+  validateSpaceEntryV2,
+  validateSpacesV2,
+  validateTriggerSpaceRefsV2,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
@@ -305,6 +316,10 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
+  // Every space lives in this same file under `spaces:` (user, 2026-09-08),
+  // so the root validator holds the whole picture: each block's shape, the
+  // cross-space agent rules, and `triggers[].space`.
+  validateSpacesV2(parsed, issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */
@@ -1688,8 +1703,10 @@ export {
   KORTIX_V1_JSON_SCHEMA,
   KORTIX_V2_JSON_SCHEMA,
   KORTIX_JSON_SCHEMA,
+  KORTIX_SPACE_V2_JSON_SCHEMA,
   buildManifestV1Schema,
   buildManifestV2Schema,
   buildManifestSchema,
+  buildSpaceV2Schema,
   manifestJsonSchema,
 } from './json-schema';

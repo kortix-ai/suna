@@ -67,12 +67,15 @@ import {
   updateProjectGroupGrant,
   type AccountRole,
   type ProjectAgentResourceItem,
+  type ProjectResourceItem,
   type ProjectRole,
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { ArrowElbowDownRightIcon, KeyIcon, PlugIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
+
+import { SPACE_OBJECT_TYPE } from '@/features/spaces/spaces-data';
 
 import { endOfLocalDayIso, isoToDateInputValue, removeAccessCopy } from './access-shared';
 import {
@@ -113,6 +116,9 @@ export interface AccessDialogCurrent {
   role: RoleValue;
   /** `'all'` (no resource grants) or the agent ids currently granted. */
   agentIds?: string[] | 'all';
+  /** Same shape, for the second closed object type. `'all'` (or omitted)
+   *  means "no space grant rows exist for this principal". */
+  spaceIds?: string[] | 'all';
   expiresAt?: string | null;
   /**
    * The principal's EXISTING custom-role assignment id at this scope. Supply it
@@ -170,6 +176,13 @@ export interface AccessDialogProps {
    * Ignored in every other mode, which seeds from `current`.
    */
   initialAgentIds?: string[];
+  /**
+   * Grant mode only: open with the space picker already narrowed to
+   * these spaces. A space's own page grants access to THAT
+   * space, exactly as an agent's page does with `initialAgentIds`.
+   * Ignored in every other mode, which seeds from `current`.
+   */
+  initialSpaceIds?: string[];
   onDone?: (result: AccessDialogResult) => void;
 }
 
@@ -230,6 +243,13 @@ export function effectiveAgentIds(
 export interface AccessDraft {
   role: RoleValue;
   agents: AgentSelection;
+  /**
+   * The space selection. Optional so a caller that does not edit
+   * spaces (an account-scope draft, a test) is unchanged — an omitted
+   * selection reads as `ALL_SPACES`, which against an empty
+   * `current.spaceIds` diffs to nothing at all.
+   */
+  spaces?: AgentSelection;
   /** `<input type="date">` value, `''` for never. */
   expiresAt: string;
 }
@@ -240,6 +260,9 @@ export interface AccessDraftDiff {
   agentsAdded: string[];
   agentsRemoved: string[];
   agentsChanged: boolean;
+  spacesAdded: string[];
+  spacesRemoved: string[];
+  spacesChanged: boolean;
   /** false when nothing at all changed — Save is a no-op. */
   dirty: boolean;
 }
@@ -253,13 +276,22 @@ export function diffAccessDraft(current: AccessDialogCurrent, next: AccessDraft)
   const expiryChanged = isoToDateInputValue(current.expiresAt) !== next.expiresAt;
   const { add, remove } = diffAgentGrants(current.agentIds, next.agents);
   const agentsChanged = add.length > 0 || remove.length > 0;
+  // Object grants are one generic table keyed by object type, so a space
+  // diffs by exactly the same rules as an agent — `diffAgentGrants` is reused
+  // rather than copied.
+  const spaceDiff = diffAgentGrants(current.spaceIds, next.spaces ?? ALL_AGENTS);
+  const spacesChanged =
+    spaceDiff.add.length > 0 || spaceDiff.remove.length > 0;
   return {
     roleChanged,
     expiryChanged,
     agentsAdded: add,
     agentsRemoved: remove,
     agentsChanged,
-    dirty: roleChanged || expiryChanged || agentsChanged,
+    spacesAdded: spaceDiff.add,
+    spacesRemoved: spaceDiff.remove,
+    spacesChanged,
+    dirty: roleChanged || expiryChanged || agentsChanged || spacesChanged,
   };
 }
 
@@ -373,6 +405,7 @@ interface AccessDraftState {
   principals: PrincipalSelection;
   role: RoleValue;
   agents: AgentSelection;
+  spaces: AgentSelection;
   /** `<input type="date">` value. */
   expires: string;
   attachProjectId: string;
@@ -385,6 +418,7 @@ function initialDraftState(
   mode: AccessDialogMode,
   roleScope: 'account' | 'project' | null,
   initialAgentIds?: string[],
+  initialSpaceIds?: string[],
 ): AccessDraftState {
   const role: RoleValue =
     mode.kind === 'edit'
@@ -400,6 +434,12 @@ function initialDraftState(
         ? agentSelectionFromCurrent(mode.current.agentIds)
         : mode.kind === 'grant' && initialAgentIds && initialAgentIds.length > 0
           ? { mode: 'subset', ids: [...initialAgentIds] }
+          : ALL_AGENTS,
+    spaces:
+      mode.kind === 'edit'
+        ? agentSelectionFromCurrent(mode.current.spaceIds)
+        : mode.kind === 'grant' && initialSpaceIds && initialSpaceIds.length > 0
+          ? { mode: 'subset', ids: [...initialSpaceIds] }
           : ALL_AGENTS,
     expires: mode.kind === 'edit' ? isoToDateInputValue(mode.current.expiresAt) : '',
     attachProjectId: '',
@@ -424,9 +464,11 @@ export function AccessDialog({
   excludeUserIds,
   inheritedFrom,
   initialAgentIds,
+  initialSpaceIds,
   onDone,
 }: AccessDialogProps) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSpaces = useI18nTranslations('spaces');
   const queryClient = useQueryClient();
   const roleScope = roleScopeFor(scope);
   const projectId = scope.kind === 'project' ? scope.projectId : undefined;
@@ -438,18 +480,19 @@ export function AccessDialog({
   // reopen. Closing never re-seeds, so the exit animation plays over the
   // content the person was looking at.
   const [draft, setDraft] = useState<AccessDraftState>(() =>
-    initialDraftState(mode, roleScope, initialAgentIds),
+    initialDraftState(mode, roleScope, initialAgentIds, initialSpaceIds),
   );
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setDraft(initialDraftState(mode, roleScope, initialAgentIds));
+    if (open) setDraft(initialDraftState(mode, roleScope, initialAgentIds, initialSpaceIds));
   }
 
   const {
     principals,
     role,
     agents,
+    spaces,
     expires,
     attachProjectId,
     projectGrants,
@@ -460,6 +503,11 @@ export function AccessDialog({
   const setRole = (next: RoleValue) => setDraft((d) => ({ ...d, role: next }));
   const setAgents = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
     setDraft((d) => ({ ...d, agents: typeof next === 'function' ? next(d.agents) : next }));
+  const setSpaces = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
+    setDraft((d) => ({
+      ...d,
+      spaces: typeof next === 'function' ? next(d.spaces) : next,
+    }));
   const setExpires = (next: string) => setDraft((d) => ({ ...d, expires: next }));
   const setAttachProjectId = (next: string) => setDraft((d) => ({ ...d, attachProjectId: next }));
   const setProjectGrants = (next: ProjectGrantRow[]) =>
@@ -485,20 +533,30 @@ export function AccessDialog({
   // Not for a project admin: the manager tier uses every agent regardless of
   // grants (`objectUsable` in `apps/api/src/iam/authorize.ts`), so a picker
   // under that role would write rows that change nothing.
-  const showAgents =
+  const showResourcePickers =
     scope.kind === 'project' &&
     (mode.kind === 'grant' || mode.kind === 'edit') &&
     builtin !== 'manager';
+  const showAgents = showResourcePickers;
   const resourceGrantsQuery = useQuery({
     queryKey: qk.project.resourceGrants(projectId ?? ''),
     queryFn: () => listProjectResourceGrants(projectId as string),
-    enabled: open && showAgents && !!projectId,
+    enabled: open && showResourcePickers && !!projectId,
     ...contract('inventory'),
   });
   const projectAgents = useMemo<ProjectAgentResourceItem[]>(
     () => resourceGrantsQuery.data?.resources.agents ?? [],
     [resourceGrantsQuery.data],
   );
+  // The second closed object type (`object_policies.space = closed`), so
+  // it gets the same picker as agents and the same "All means one grant per
+  // one that exists today" rule. The section hides when the project declares
+  // none — an empty checklist under a heading is a question with no answers.
+  const projectSpaces = useMemo<ProjectResourceItem[]>(
+    () => resourceGrantsQuery.data?.resources.spaces ?? [],
+    [resourceGrantsQuery.data],
+  );
+  const showSpaces = showResourcePickers && projectSpaces.length > 0;
 
   const selectedAgentDeclares = useMemo(() => {
     if (agents.mode !== 'subset' || agents.ids.length === 0) return null;
@@ -622,6 +680,44 @@ export function AccessDialog({
     for (const row of rows) await revokeAssignment(accountId, row.assignment_id);
   }
 
+  /** Give one principal access to ONE space. Identical to `assignAgent`
+   *  but for the object type — the assignment table is generic over it, and a
+   *  space grant does NOT imply the space's agent (spec §2): the
+   *  person needs both, which is why this dialog offers both. */
+  function assignSpace(
+    principalType: 'member' | 'group',
+    principalId: string,
+    pid: string,
+    spaceId: string,
+    expiresIso: string | undefined,
+  ) {
+    return createAssignment(accountId, {
+      principal: { type: principalKind(principalType), id: principalId },
+      roleKey: OBJECT_ASSIGNMENT_ROLE_KEY,
+      scope: { type: 'project', id: pid },
+      object: { type: SPACE_OBJECT_TYPE, id: spaceId },
+      ...(expiresIso ? { expiresAt: expiresIso } : {}),
+    });
+  }
+
+  /** Take one space away — the `unassignAgent` read-back, by object type. */
+  async function unassignSpace(
+    principalType: 'member' | 'group',
+    principalId: string,
+    pid: string,
+    spaceId: string,
+  ) {
+    const rows = await listAssignments(accountId, {
+      principalType: principalKind(principalType),
+      principalId,
+      scopeType: 'project',
+      scopeId: pid,
+      objectType: SPACE_OBJECT_TYPE,
+      objectId: spaceId,
+    });
+    for (const row of rows) await revokeAssignment(accountId, row.assignment_id);
+  }
+
   /** Drop the principal's existing custom-role assignment at this scope.
    *  `current.assignmentId` is the row the roster handed us; without it, fall
    *  back to a filtered read so an older cached row cannot strand a grant. */
@@ -703,6 +799,11 @@ export function AccessDialog({
     const projectBuiltin = (builtin ?? 'member') as ProjectRole;
     const pid = scope.projectId;
     const agentIdsToGrant = effectiveAgentIds(projectBuiltin, roleId, agents, projectAgents);
+    // Same rule, same helper: spaces are closed by default too, so "All"
+    // for a plain member is one grant per space that exists today.
+    const spaceIdsToGrant = showSpaces
+      ? effectiveAgentIds(projectBuiltin, roleId, spaces, projectSpaces)
+      : [];
 
     for (const userId of principals.memberIds) {
       tasks.push({
@@ -713,6 +814,9 @@ export function AccessDialog({
           if (roleId) await assignCustomRole('member', userId, roleId, pid, expiresIso);
           for (const resourceId of agentIdsToGrant) {
             await assignAgent('member', userId, pid, resourceId, expiresIso);
+          }
+          for (const resourceId of spaceIdsToGrant) {
+            await assignSpace('member', userId, pid, resourceId, expiresIso);
           }
         },
       });
@@ -726,6 +830,9 @@ export function AccessDialog({
           if (roleId) await assignCustomRole('group', groupId, roleId, pid, expiresIso);
           for (const resourceId of agentIdsToGrant) {
             await assignAgent('group', groupId, pid, resourceId, expiresIso);
+          }
+          for (const resourceId of spaceIdsToGrant) {
+            await assignSpace('group', groupId, pid, resourceId, expiresIso);
           }
         },
       });
@@ -747,9 +854,14 @@ export function AccessDialog({
       agents.mode === 'all' && builtin !== 'manager' && !isCustom
         ? { mode: 'subset', ids: projectAgents.map((a) => a.id) }
         : agents;
+    const effectiveDraftSpaces: AgentSelection =
+      spaces.mode === 'all' && builtin !== 'manager' && !isCustom && showSpaces
+        ? { mode: 'subset', ids: projectSpaces.map((s) => s.id) }
+        : spaces;
     const diff = diffAccessDraft(current, {
       role,
       agents: effectiveDraftAgents,
+      spaces: effectiveDraftSpaces,
       expiresAt: expires,
     });
     if (!diff.dirty) return [];
@@ -810,6 +922,12 @@ export function AccessDialog({
           }
           for (const resourceId of diff.agentsRemoved) {
             await unassignAgent(principal.type, principal.id, pid, resourceId);
+          }
+          for (const resourceId of diff.spacesAdded) {
+            await assignSpace(principal.type, principal.id, pid, resourceId, expiresIso);
+          }
+          for (const resourceId of diff.spacesRemoved) {
+            await unassignSpace(principal.type, principal.id, pid, resourceId);
           }
         },
       },
@@ -985,7 +1103,7 @@ export function AccessDialog({
   // ── Submit gate ───────────────────────────────────────────────────────
   const editDiff =
     mode.kind === 'edit'
-      ? diffAccessDraft(mode.current, { role, agents, expiresAt: expires })
+      ? diffAccessDraft(mode.current, { role, agents, spaces, expiresAt: expires })
       : null;
   const canSubmit =
     !pending &&
@@ -1181,6 +1299,56 @@ export function AccessDialog({
                 {selectedAgentDeclares ? (
                   <BlastRadiusPreview declares={selectedAgentDeclares} />
                 ) : null}
+              </Field>
+            ) : null}
+
+            {/* 4b. Spaces (project scope) — the same control as Agents,
+                because they are the same thing to the authorization engine:
+                a closed object type granted by one assignment row. A grant
+                here does NOT hand over the space's default agent; that
+                is the picker directly above, which is why both are offered. */}
+            {showSpaces ? (
+              <Field className="gap-1.5">
+                <FieldLabel>{tSpaces('access.title')}</FieldLabel>
+                <Tabs
+                  value={spaces.mode}
+                  onValueChange={(next) =>
+                    setSpaces(
+                      next === 'all' ? ALL_AGENTS : { mode: 'subset', ids: spaces.ids },
+                    )
+                  }
+                >
+                  <TabsListCompact>
+                    <TabsTriggerCompact value="all">{tSpaces('access.all')}</TabsTriggerCompact>
+                    <TabsTriggerCompact value="subset">
+                      {tSpaces('access.onlyThese')}
+                    </TabsTriggerCompact>
+                  </TabsListCompact>
+                </Tabs>
+                {spaces.mode === 'all' ? (
+                  <FieldDescription>
+                    {tSpaces('access.allDescription', { count: projectSpaces.length })}
+                  </FieldDescription>
+                ) : (
+                  <div className="border-border max-h-40 overflow-y-auto rounded-md border p-1">
+                    {projectSpaces.map((space) => (
+                      <Checkbox
+                        key={space.id}
+                        label={space.name}
+                        checked={spaces.ids.includes(space.id)}
+                        disabled={pending}
+                        onCheckedChange={() =>
+                          setSpaces((prev) => ({
+                            mode: 'subset',
+                            ids: prev.ids.includes(space.id)
+                              ? prev.ids.filter((x) => x !== space.id)
+                              : [...prev.ids, space.id],
+                          }))
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
               </Field>
             ) : null}
 

@@ -229,9 +229,19 @@ export const qk = {
      * applies to the `'kx'` root (see the top doc comment): make the
      * collision unrepresentable, don't rely on another package's validation
      * staying strict.
+     *
+     * `space` is a third, OPTIONAL segment. `listProjectSessions(id,
+     * { space })` is a different server request, not a client-side filter
+     * of the unfiltered response, so it needs its own slot for the same reason
+     * `scope` does. It is appended only when passed, which keeps every key
+     * written before spaces existed byte-identical — no cache entry moves
+     * and no in-flight query is orphaned by the addition. `''` is a real
+     * filter value ("the sessions with no space") and gets its own key.
      */
-    sessions: (id: string, scope: 'visible' | 'project' = 'visible') =>
-      [...qk.project.sessionsScope(id), 'list', scope] as const,
+    sessions: (id: string, scope: 'visible' | 'project' = 'visible', space?: string) =>
+      space === undefined
+        ? ([...qk.project.sessionsScope(id), 'list', scope] as const)
+        : ([...qk.project.sessionsScope(id), 'list', scope, space] as const),
 
     /**
      * One session, by id. Nests directly under the scope-LESS
@@ -305,6 +315,17 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
+    /** `listProjectSpaces` — `GET /projects/:id/spaces`, the
+     *  manifest-defined containers the caller can access. A plain sibling of
+     *  `triggers`/`secrets` under `scope(id)`. */
+    spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
+    /** `getProjectSpace(id, slug)` — one space. Nests under the
+     *  listing (unlike `session` under `sessions`, there is no second list
+     *  scope that could claim ownership of it), so a create/rename/delete
+     *  invalidates the list and every detail entry with one prefix. */
+    space: (id: string, slug: string) =>
+      [...qk.project.spaces(id), slug] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

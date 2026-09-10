@@ -12,6 +12,7 @@ import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
+import { commitMultipleFilesToBranch } from '../git/branches';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import {
   createSession,
@@ -1078,6 +1079,10 @@ export async function fireGitTrigger(input: {
     body: {
       agent_name: spec.agent,
       initial_prompt: renderedPrompt,
+      // The fired session inherits the trigger's space. No per-fire access
+      // check: the trigger actor is manager tier by construction (spec §5.5),
+      // and `createProjectSession` still refuses an undeclared slug.
+      ...(spec.space ? { space: spec.space } : {}),
       // A trigger-level model pins this run's session to that model, taking
       // precedence over the agent/account/platform default chain. Omitted
       // (null) leaves resolution to that chain — see GitTriggerSpec.model.
@@ -1467,6 +1472,7 @@ export async function loadTriggersForResponse(
       session_id: spec.pinnedSessionId,
       session_key: spec.sessionKey,
       filter: spec.filter,
+      space: spec.space,
       session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
@@ -1510,6 +1516,8 @@ export interface TriggerDraft {
   sessionKey: string | null;
   /** Payload paths that must match for a delivery to fire. Null when unfiltered. */
   filter: Record<string, string> | null;
+  /** The `spaces.<slug>` this trigger belongs to. `null`/`''` clears it. */
+  space: string | null;
 }
 
 export function parseTriggerDraft(
@@ -1575,6 +1583,10 @@ export function parseTriggerDraft(
   }
   const sessionKey: string | null = sessionMode === 'keyed' ? (sessionKeyRaw ?? null) : null;
 
+  // `null` and `''` both clear it (normalizeString returns null for both), so a
+  // PATCH can take a trigger out of its space without a delete+recreate.
+  const space = normalizeString((body as any).space) ?? null;
+
   const filterRaw = (body as any).filter;
   let filter: Record<string, string> | null = null;
   if (filterRaw !== undefined && filterRaw !== null) {
@@ -1616,6 +1628,7 @@ export function parseTriggerDraft(
       pinnedSessionId,
       sessionKey,
       filter,
+      space,
     };
   }
 
@@ -1650,6 +1663,7 @@ export function parseTriggerDraft(
         pinnedSessionId,
         sessionKey,
         filter,
+        space,
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
@@ -1677,6 +1691,7 @@ export function parseTriggerDraft(
       pinnedSessionId,
       sessionKey,
       filter,
+      space,
     };
   }
 
@@ -1705,6 +1720,7 @@ export function parseTriggerDraft(
     pinnedSessionId,
     sessionKey,
     filter,
+    space,
   };
 }
 
@@ -1743,6 +1759,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     session_id: spec.pinnedSessionId,
     session_key: spec.sessionKey,
     filter: spec.filter,
+    space: spec.space,
   };
 }
 
@@ -1784,6 +1801,7 @@ export function draftToSpec(
     pinnedSessionId: draft.pinnedSessionId,
     sessionKey: draft.sessionKey,
     filter: draft.filter,
+    space: draft.space,
   };
 }
 
@@ -1857,6 +1875,60 @@ export function removeTriggerFromManifest(manifest: ParsedManifest, slug: string
     : [];
   const next = current.filter((entry) => !(typeof entry?.slug === 'string' && entry.slug === slug));
   return { ...manifest, raw: { ...manifest.raw, triggers: next } };
+}
+
+/**
+ * Commit a set of writes and deletions as ONE commit on the default branch —
+ * the multi-file sibling of `commitRepoFile`. Always the git-backed path
+ * (`commitMultipleFilesToBranch`), never the GitHub Contents API, which
+ * cannot write and delete atomically. A space delete is the first user:
+ * the file goes in one commit.
+ */
+export async function commitRepoChanges(
+  project: ManifestProject,
+  opts: {
+    files?: Array<{ path: string; content: string }>;
+    deletes?: string[];
+    message: string;
+  },
+): Promise<{ ok: true } | { error: string; status: number }> {
+  let gitProject: ProjectRow & {
+    gitAuthToken: string | null;
+    gitAuthHeaders?: Record<string, string>;
+  };
+  if (hasResolvedGitAuth(project)) {
+    gitProject = { ...project, gitAuthToken: project.gitAuthToken ?? null };
+  } else {
+    try {
+      gitProject = await withProjectGitAuth(project);
+    } catch (err) {
+      return {
+        error: `Git auth unavailable: ${(err as Error).message || String(err)}`,
+        status: 502,
+      };
+    }
+  }
+  const localRepository = process.env.KORTIX_LOCAL_DEV === '1' && isAbsolute(gitProject.repoUrl);
+  if (!gitProject.gitAuthToken && !localRepository) {
+    return { error: 'No git credentials available to write to the project repo', status: 502 };
+  }
+  try {
+    await commitMultipleFilesToBranch(gitProject, {
+      files: opts.files,
+      deletes: opts.deletes,
+      message: opts.message,
+      branch: project.defaultBranch,
+      authorName: 'Kortix',
+      authorEmail: 'noreply@kortix.ai',
+    });
+  } catch (err) {
+    return {
+      error: `Failed to commit: ${(err as Error).message || String(err)}`,
+      status: 502,
+    };
+  }
+  invalidateProjectMirror(project.projectId);
+  return { ok: true };
 }
 
 /**

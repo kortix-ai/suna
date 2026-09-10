@@ -24,6 +24,7 @@ function row(
     sandboxUrl: null,
     opencodeSessionId: null,
     agentName: 'default',
+    space: null,
     status: 'running',
     error: null,
     createdBy: VIEWER_ID,
@@ -429,5 +430,135 @@ describe('runtime status map tolerates a superset', () => {
 
     expect(selected.items).toHaveLength(1);
     expect(selected.items[0]!.runtimeStatus).toBeNull();
+  });
+});
+
+/**
+ * Spaces are IAM objects, closed by default. A session inside one is not
+ * "hidden but listed" — it is not a row at all for a viewer without the grant,
+ * in BOTH scopes, including for a project manager who was scoped out. The
+ * opposite direction is `sessions: shared`, where the space grant IS the
+ * read right for every session in it. See lib/space-access.ts.
+ */
+describe('selectSessionRowsForViewer — spaces', () => {
+  const base = {
+    scope: 'visible' as const,
+    canManageProject: false,
+    subject,
+    grantsBySession: new Map(),
+    callerSessionId: null,
+    boundCredentialSessionId: null,
+    runtimeStatusBySession: new Map(),
+  };
+
+  const plain = row('plain');
+  const mine = row('mine-in-marketing', { space: 'marketing' });
+  const theirs = row('theirs-in-marketing', { createdBy: OTHER_ID, space: 'marketing' });
+  const research = row('in-research', { space: 'research' });
+
+  test('a row in an ungranted space is dropped, plain rows survive', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [plain, mine, research],
+      accessibleSpaces: new Set(['marketing']),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain', 'mine-in-marketing']);
+  });
+
+  test('the drop applies to the manager `project` scope too', () => {
+    // Both rows are project-visible, so the ONLY thing separating them is the
+    // space grant — a manager scoped out of `research` loses that row.
+    const openMarketing = row('open-marketing', {
+      createdBy: OTHER_ID,
+      visibility: 'project',
+      space: 'marketing',
+    });
+    const openResearch = row('open-research', {
+      createdBy: OTHER_ID,
+      visibility: 'project',
+      space: 'research',
+    });
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      scope: 'project',
+      canManageProject: true,
+      rows: [plain, openMarketing, openResearch],
+      accessibleSpaces: new Set(['marketing']),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'plain',
+      'open-marketing',
+    ]);
+  });
+
+  test('omitting the accessible set drops every space row — fail closed', () => {
+    const selected = selectSessionRowsForViewer({ ...base, rows: [plain, mine, research] });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain']);
+  });
+
+  test('`sessions: private` keeps another owner’s session unreadable', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [theirs],
+      accessibleSpaces: new Set(['marketing']),
+    });
+    // Listed as a row for the grantee, but not accessible — the ordinary
+    // per-session model is untouched, so the `visible` scope filters it out.
+    expect(selected.items).toEqual([]);
+  });
+
+  test('`sessions: shared` opens every session in the space to a grantee', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [theirs],
+      accessibleSpaces: new Set(['marketing']),
+      sharedSpaces: new Set(['marketing']),
+    });
+    expect(selected.items.map((item) => [item.row.sessionId, item.canAccess])).toEqual([
+      ['theirs-in-marketing', true],
+    ]);
+  });
+
+  test('`sessions: shared` never widens a space the viewer was not granted', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [theirs],
+      accessibleSpaces: new Set(),
+      sharedSpaces: new Set(['marketing']),
+    });
+    expect(selected.items).toEqual([]);
+  });
+
+  test('?space=<slug> narrows to one space', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [plain, mine, research],
+      accessibleSpaces: new Set(['marketing', 'research']),
+      spaceFilter: 'research',
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['in-research']);
+  });
+
+  test('?space= (empty) narrows to the sessions in none', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [plain, mine, research],
+      accessibleSpaces: new Set(['marketing', 'research']),
+      spaceFilter: '',
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain']);
+  });
+
+  test('no filter parameter lists every accessible row', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [plain, mine, research],
+      accessibleSpaces: new Set(['marketing', 'research']),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'plain',
+      'mine-in-marketing',
+      'in-research',
+    ]);
   });
 });

@@ -9,18 +9,22 @@ import { getSessionDisplayTitle, sessionLastActivityAt } from './project-session
 
 /**
  * General session grouper behind the sidebar's `Grouping ›` / `Ordering ›`
- * filter menu. Four grouping modes, three ordering modes, all composable.
+ * filter menu. Five grouping modes, three ordering modes, all composable.
  *
  * `status` mode is the sidebar's original three-section split: membership is
  * decided by display status, and `needs-you` wins outright over every other
  * signal.
  *
- * `activity` and `source` modes do NOT give review state that same veto —
+ * `space` mode is the only one whose sections come from the data (one
+ * per space present, "No space" last) rather than from a declared
+ * constant — a space is a manifest entry, so there is no fixed list.
+ *
+ * `activity`, `source` and `space` modes do NOT give review state that same veto —
  * review-pending sessions group by their date or their source like any other
  * session, and the review state itself shows on the row's status dot.
  */
 
-export type SessionGroupMode = 'status' | 'activity' | 'source' | 'none';
+export type SessionGroupMode = 'status' | 'activity' | 'source' | 'space' | 'none';
 export type SessionOrderMode = 'activity' | 'created' | 'name';
 
 export const DEFAULT_SESSION_GROUP_MODE: SessionGroupMode = 'activity';
@@ -29,6 +33,7 @@ export const SESSION_GROUP_MODES: Array<{ value: SessionGroupMode; label: string
   { value: 'status', label: 'Status' },
   { value: 'activity', label: 'Activity' },
   { value: 'source', label: 'Source' },
+  { value: 'space', label: 'Space' },
   { value: 'none', label: 'None' },
 ];
 
@@ -90,6 +95,46 @@ const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
 ];
 
 const NONE_SECTION_ORDER: Array<{ id: string; label: string }> = [{ id: 'all', label: 'All' }];
+
+/** The tail bucket of `space` mode — always last, and always declared,
+ *  so "the sessions in no space" is a section a person can hide like any
+ *  other rather than a residue that appears only sometimes. */
+const SPACE_NONE_LABEL = 'No space';
+const SPACE_NONE_SECTION = { id: 'space:none', label: SPACE_NONE_LABEL };
+
+/** Section id for one space. Namespaced, because section ids share one
+ *  persisted hidden/collapsed list with every other mode's ids and a slug
+ *  called `recent` would otherwise collide with status mode's `Recent`. */
+function spaceSectionId(slug: string): string {
+  return `space:${slug}`;
+}
+
+/**
+ * `space` mode's declared section order: every space present in
+ * these sessions, by slug, then "No space".
+ *
+ * This is the one mode whose sections come from the DATA rather than from a
+ * constant — a space is a manifest entry, so there is no fixed list to
+ * declare. Sorting by slug is what keeps it deterministic anyway: the same
+ * sessions always produce the same section order, whatever order they arrive
+ * in.
+ */
+function spaceSectionOrder(
+  sessions: readonly ProjectSession[],
+  tI18nComplete: UiTranslator,
+): Array<{ id: string; label: string }> {
+  const slugs = [
+    ...new Set(sessions.map((session) => session.space).filter((slug): slug is string => !!slug)),
+  ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return [
+    ...slugs.map((slug) => ({ id: spaceSectionId(slug), label: slug })),
+    ...localizeUiCatalog(
+      [SPACE_NONE_SECTION],
+      tI18nComplete,
+      PRODUCT_CATALOG_TRANSLATION_KEYS,
+    ),
+  ];
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -216,7 +261,9 @@ export function groupSessions(
         ? activitySections
         : mode === 'source'
           ? sourceSections
-          : allSections;
+          : mode === 'space'
+            ? spaceSectionOrder(sessions, tI18nComplete)
+            : allSections;
 
   const buckets = new Map<string, ProjectSession[]>(declared.map((section) => [section.id, []]));
 
@@ -233,7 +280,11 @@ export function groupSessions(
             )
           : mode === 'source'
             ? sessionSource(session, tI18nComplete).kind
-            : 'all';
+            : mode === 'space'
+              ? (session.space
+                  ? spaceSectionId(session.space)
+                  : SPACE_NONE_SECTION.id)
+              : 'all';
     buckets.get(bucketId)?.push(session);
   }
 

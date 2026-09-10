@@ -84,6 +84,8 @@ describe('qk.project', () => {
       qk.project.appAccessSession(id, 'app_1'),
       qk.project.appDeployments(id, 'app_1'),
       qk.project.triggers(id),
+      qk.project.spaces(id),
+      qk.project.space(id, 'marketing'),
       qk.project.files(id),
       qk.project.fileSource(id, 'AGENTS.md'),
       qk.project.branches(id),
@@ -185,6 +187,49 @@ describe('qk.project', () => {
       expect(qk.project.sessions(id)).not.toEqual(qk.project.sessions(id, 'project') as never);
     });
 
+    // `listProjectSessions(id, { space })` is, like `scope`, a DIFFERENT
+    // server request — not a client-side filter of the unfiltered list — so it
+    // gets its own slot. The segment is appended ONLY when a space is
+    // passed, so every key that existed before spaces is byte-identical.
+    describe('the optional space segment', () => {
+      test('an omitted space leaves the key exactly as it was', () => {
+        expect(qk.project.sessions(id)).toEqual([
+          ...qk.project.sessionsScope(id),
+          'list',
+          'visible',
+        ] as never);
+        expect(qk.project.sessions(id, 'project')).toEqual([
+          ...qk.project.sessionsScope(id),
+          'list',
+          'project',
+        ] as never);
+      });
+
+      test('a space filter is a different key from the unfiltered list', () => {
+        expect(qk.project.sessions(id, 'visible', 'marketing')).not.toEqual(
+          qk.project.sessions(id) as never,
+        );
+      });
+
+      test('two spaces are different keys', () => {
+        expect(qk.project.sessions(id, 'visible', 'marketing')).not.toEqual(
+          qk.project.sessions(id, 'visible', 'research') as never,
+        );
+      });
+
+      test('the empty-string space ("no space") is its own key, not the unfiltered list', () => {
+        expect(qk.project.sessions(id, 'visible', '')).not.toEqual(
+          qk.project.sessions(id) as never,
+        );
+      });
+
+      test('a filtered list still sits under sessionsScope, so project invalidation reaches it', () => {
+        expect(
+          startsWith(qk.project.sessions(id, 'visible', 'marketing'), qk.project.sessionsScope(id)),
+        ).toBe(true);
+      });
+    });
+
     test('sessionsScope(id) is a strict prefix of BOTH scoped forms', () => {
       const prefix = qk.project.sessionsScope(id);
       expect(startsWith(qk.project.sessions(id), prefix)).toBe(true);
@@ -273,6 +318,30 @@ describe('qk.project', () => {
     expect(qk.project.triggers(id)).not.toEqual(qk.project.secrets(id) as never);
     expect(startsWith(qk.project.triggers(id), qk.project.secrets(id))).toBe(false);
     expect(startsWith(qk.project.secrets(id), qk.project.triggers(id))).toBe(false);
+  });
+
+  // A space is a manifest-defined container, addressed by slug. The
+  // detail key nests under the listing so deleting one space can
+  // invalidate both with a single prefix, and the listing itself is a plain
+  // sibling of `triggers`/`secrets` under `scope(id)`.
+  test('space(id, slug) nests under spaces(id) without colliding with it', () => {
+    expect(startsWith(qk.project.space(id, 'marketing'), qk.project.spaces(id))).toBe(
+      true,
+    );
+    expect(qk.project.space(id, 'marketing')).not.toEqual(
+      qk.project.spaces(id) as never,
+    );
+  });
+
+  test('two spaces are different keys', () => {
+    expect(qk.project.space(id, 'marketing')).not.toEqual(
+      qk.project.space(id, 'research') as never,
+    );
+  });
+
+  test('spaces(id) is a sibling of triggers(id), not a prefix relationship', () => {
+    expect(startsWith(qk.project.spaces(id), qk.project.triggers(id))).toBe(false);
+    expect(startsWith(qk.project.triggers(id), qk.project.spaces(id))).toBe(false);
   });
 
   test('App deployment history nests under its App inventory without colliding with it', () => {

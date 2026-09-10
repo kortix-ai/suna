@@ -9,6 +9,8 @@ import {
   parseManifestText,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
+import { mergeSpaceAgents } from '../agents';
+import { extractSpaces } from '../spaces';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
@@ -166,6 +168,7 @@ export function resolveConfigAgents(
         ...agent,
         source: 'opencode' as const,
         enabled: true,
+        space: null,
       })),
     };
   }
@@ -187,6 +190,7 @@ export function resolveConfigAgents(
           model: native?.model ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
+          space: spec.space,
           sandbox: spec.sandbox ?? null,
           // Surface the per-agent allowlists so the UI can show (read-only) what
           // secrets/connectors/CLI powers each declared agent is scoped to.
@@ -242,6 +246,21 @@ export async function loadProjectConfig(
           ],
         }
       : { specs: [], errors: [] };
+  // Spaces are the root manifest's own `spaces:` map, and v2-only. An
+  // unparseable or v1 manifest yields none, the same degradation the agent
+  // list already takes. No extra repo reads: the manifest is already in hand.
+  const loadedSpaces =
+    parsedManifest && manifestSchemaVersionFor(parsedManifest) >= 2
+      ? extractSpaces(manifestFilePath, parsedManifest.spaces)
+      : { specs: [], errors: [] };
+  const spaces = loadedSpaces.specs.map((spec) => ({
+    slug: spec.slug,
+    name: spec.name,
+    description: spec.description,
+    agent: spec.agent,
+    sessions: spec.sessions,
+    agents: spec.agents,
+  }));
   const opencodeDir = resolveOpencodeDir(manifest);
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
@@ -272,7 +291,12 @@ export async function loadProjectConfig(
       };
     }),
   );
-  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
+  const { agent_discovery, agents } = resolveConfigAgents(
+    nativeAgents,
+    // Owned agents join the roster here, carrying their space — the
+    // composer reads THIS list, so ownership reaches it without a second call.
+    mergeSpaceAgents(loadedAgents, loadedSpaces.specs),
+  );
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles
@@ -347,6 +371,7 @@ export async function loadProjectConfig(
     agents,
     skills,
     commands,
+    spaces,
   };
 }
 

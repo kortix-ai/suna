@@ -352,13 +352,12 @@ export async function buildOpencodeConfigContent(
   }
   const out: Record<string, unknown> = { ...base }
 
-  if (secretCapabilitiesInstructionPath) {
+  for (const path of [secretCapabilitiesInstructionPath]) {
+    if (!path) continue
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
       : []
-    out.instructions = instructions.includes(secretCapabilitiesInstructionPath)
-      ? instructions
-      : [...instructions, secretCapabilitiesInstructionPath]
+    out.instructions = instructions.includes(path) ? instructions : [...instructions, path]
   }
 
   // (5) Injected managed skills — append to whatever `skills.paths` the base

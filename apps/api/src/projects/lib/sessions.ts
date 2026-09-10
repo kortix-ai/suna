@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { SpaceSpec } from '../spaces';
 import {
   projectSessionConnectorBindings,
   projectSessionGrants,
@@ -455,6 +456,15 @@ export async function buildSessionSandboxEnvVars(input: {
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
   workspaceMode?: WorkspaceModeV2 | null;
+  /** The manifest space slug this session runs inside (spec §7).
+   *
+   *  ONLY the create path passes it — its `project_sessions` row may not exist
+   *  yet when this runs. Every other caller (restart, open, ensure-runtime,
+   *  env-sync, the platform session service) leaves it `undefined` and the
+   *  session's own row is read below, so a restarted space session keeps
+   *  its envelope without each of those call sites having to remember. Pass
+   *  `null` to force "no space". */
+  space?: string | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -465,6 +475,25 @@ export async function buildSessionSandboxEnvVars(input: {
   // sharing was retired — authorization is centralized on the running agent's
   // `secrets` grant, applied below by identifier).
   let agentGrantEnv: string[] | 'all' | undefined;
+
+  // Per-session policy, read by sessionId inside the builder so all call sites
+  // (create, restart, open/ensure, env-sync) are covered — no caller can forget
+  // them. Read BEFORE the git work below because the compiled config depends on
+  // this row's `space`.
+  const [sessionPolicyRow] = await db
+    .select({
+      secretsAllowlist: projectSessions.secretsAllowlist,
+      createdBy: projectSessions.createdBy,
+      space: projectSessions.space,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, input.sessionId))
+    .limit(1);
+
+  // `undefined` = "ask the row" (every caller but create); an explicit value
+  // wins because on create the row can still be racing this call.
+  const spaceSlug =
+    input.space !== undefined ? input.space : (sessionPolicyRow?.space ?? null);
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
   // config the sandbox receives sealed (see compile-agent-config.ts). `null`
@@ -484,16 +513,19 @@ export async function buildSessionSandboxEnvVars(input: {
       manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
+    const spaceOpts = { space: spaceSlug };
     compiledAgentConfig =
       !workspaceModeAllowsFullRepository(input.workspaceMode)
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
             input.agentName,
             input.baseRef,
+            spaceOpts,
           )
           : await resolveCompiledAgentConfigForSession(
               gitProject,
               input.baseRef,
+              spaceOpts,
             ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
@@ -518,19 +550,10 @@ export async function buildSessionSandboxEnvVars(input: {
     });
   }
 
-  // Per-session secret policy, read by sessionId inside the builder so all three
-  // call sites (create, restart, open/ensure) are covered — no caller can
-  // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
-  // so a backend-vouched session only receives the secrets the wrapper named
-  // (null → passthrough, byte-identical to pre-KaaB).
-  const [sessionPolicyRow] = await db
-    .select({
-      secretsAllowlist: projectSessions.secretsAllowlist,
-      createdBy: projectSessions.createdBy,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
-    .limit(1);
+  // `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list) so a
+  // backend-vouched session only receives the secrets the wrapper named
+  // (null → passthrough, byte-identical to pre-KaaB). The row itself is read
+  // above, before the git work that now depends on it.
   const grantEnvForSession = input.platformMetaAgent
     ? []
     : intersectSecretGrants(agentGrantEnv, sessionPolicyRow?.secretsAllowlist ?? null);
@@ -668,6 +691,7 @@ export async function buildSessionSandboxEnvVars(input: {
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
       gitDeltaBundleRemote: input.gitDeltaBundleRemote,
       opencodeConfigDir: input.opencodeConfigDir,
+      space: spaceSlug,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -987,10 +1011,68 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+  // The space join. Declaration is re-checked HERE, not only in the route,
+  // because the route is not the only caller: `fireGitTrigger` passes a
+  // `space` straight from the manifest, and a stale one must not persist a
+  // row pointing at a block that no longer exists. Authorization stays with the
+  // caller — a trigger fire is manager tier by construction (spec §5.5).
+  const space = normalizeString(body.space);
+  let spaceSpec: SpaceSpec | null = null;
+  if (space) {
+    const { loadProjectSpaces } = await import('../spaces');
+    const declared = await loadProjectSpaces(project);
+    const spec = declared.specs.find((s) => s.slug === space);
+    if (!spec) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `Space "${space}" is not declared in this project's manifest`,
+            code: 'SPACE_NOT_DECLARED',
+          },
+        },
+      };
+    }
+    // The space's `agent` is a DEFAULT: it fills in only when the caller
+    // named none. The agent gate in the create route already ran on the same
+    // resolution, so this cannot land on an agent that gate never approved.
+    if (!normalizeString(body.agent_name ?? body.agentName) && spec.agent) {
+      body.agent_name = spec.agent;
+    }
+    spaceSpec = spec;
+  }
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: true,
     rethrowReadErrors: true,
   });
+  // The usability rule (spec 2026-09-06 §2): an agent a space file owns
+  // runs only in that space and in the ones that reference it; a
+  // project-level session runs global agents only. Checked BEFORE the IAM
+  // gate so the refusal names the real problem ("not here", not "not
+  // granted"). A name declared nowhere stays AGENT_NOT_DECLARED's, as before.
+  {
+    const requested = normalizeString(body.agent_name ?? body.agentName);
+    if (
+      requested &&
+      !isMetaAgentName(requested) &&
+      loadedAgents.specs.some((spec) => spec.name === requested)
+    ) {
+      const { agentUsableIn, usableAgentNames } = await import('../spaces');
+      if (!agentUsableIn(loadedAgents, spaceSpec, requested)) {
+        const owner = loadedAgents.specs.find((spec) => spec.name === requested)?.space;
+        return {
+          error: {
+            status: 400,
+            body: {
+              error: `Agent "${requested}" is not usable ${space ? `in space "${space}"` : 'at the project level'} — it is declared by space "${owner}" (spaces.${owner}.agents). Reference it there with \`agents.${requested}: { from: ${owner} }\`, or pick one of: ${usableAgentNames(loadedAgents, spaceSpec).join(', ') || '(none)'}`,
+              code: 'AGENT_NOT_IN_SPACE',
+              usable_agents: usableAgentNames(loadedAgents, spaceSpec),
+            },
+          },
+        };
+      }
+    }
+  }
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.
@@ -1574,6 +1656,7 @@ export async function createProjectSession(input: {
         // Do not set opencodeSessionId during wrapper-session creation.
         // Runtime root discovery persists it only after OpenCode creates its root.
         agentName,
+        space,
         status: 'provisioning',
         // Sessions are private to their creator by default; share via the
         // session-header control (visibility = project | restricted).

@@ -50,6 +50,7 @@ import {
   type RuntimeV2,
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
+import { agentBlocksUsableIn, loadProjectSpacesAtRef } from '../spaces';
 import {
   isRepoFileNotFoundError,
   readManifestFromRepo,
@@ -87,6 +88,12 @@ export interface OpencodeConfig {
    *  is a no-op until one exists. Reserved so a future field has somewhere to
    *  land without another signature change. */
   small_model?: string;
+  /** OpenCode top-level `instructions` — extra context files inlined into every
+   *  turn ALONGSIDE the agent's own prompt. Today only the session's space
+   *  contributes here (its `context[]`); omitted when there is nothing to add.
+   *  Never confuse this with an agent's `prompt`, which REPLACES OpenCode's
+   *  default system prompt. */
+  instructions?: string[];
   agent: Record<string, OpencodeAgentConfig>;
 }
 
@@ -486,6 +493,8 @@ export async function resolveCompiledAgentConfigForSession(
    * Falls back to the default branch, which is what every caller got before.
    */
   baseRef?: string | null,
+  /** The session's `project_sessions.space`, when it runs inside one. */
+  opts?: { space?: string | null },
 ): Promise<string | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
@@ -494,9 +503,15 @@ export async function resolveCompiledAgentConfigForSession(
     if (!found) return null;
 
     const format = manifestFormatForPath(found.path);
-    const raw = parseManifestText(found.content, format);
-    if (manifestSchemaVersion(raw) !== 2) return null;
+    const rootRaw = parseManifestText(found.content, format);
+    if (manifestSchemaVersion(rootRaw) !== 2) return null;
 
+    // The agents a session inside a space may run: the root's, plus the
+    // ones its file owns or references (spec 2026-09-06 §2). A project-level
+    // session compiles the root's only. Read at the session's ref, like the
+    // manifest itself.
+    const blocks = await spaceAgentBlocksAtRef(project, found.path, ref, opts?.space);
+    const raw = withUsableAgents(rootRaw, blocks);
     const v2 = raw as unknown as ManifestV2;
     const agents =
       v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
@@ -542,6 +557,8 @@ export async function resolveSelectedAgentConfigForSession(
   project: GitBackedProject,
   agentName: string,
   baseRef?: string | null,
+  /** The session's `project_sessions.space`, when it runs inside one. */
+  opts?: { space?: string | null },
 ): Promise<string> {
   const ref = baseRef?.trim() || project.defaultBranch;
   const candidates = manifestCandidatePaths(project.manifestPath).map(
@@ -556,14 +573,16 @@ export async function resolveSelectedAgentConfigForSession(
   }
 
   const format = manifestFormatForPath(found.path);
-  const raw = parseManifestText(found.content, format);
-  if (manifestSchemaVersion(raw) !== 2) {
+  const rootRaw = parseManifestText(found.content, format);
+  if (manifestSchemaVersion(rootRaw) !== 2) {
     throw new CompileAgentConfigError(
       `Project ${project.projectId} must use kortix_version 2 for selected-agent compilation.`,
       agentName,
     );
   }
 
+  const blocks = await spaceAgentBlocksAtRef(project, found.path, ref, opts?.space);
+  const raw = withUsableAgents(rootRaw, blocks);
   const path = agentMarkdownPath(raw, agentName);
   const agentMdFiles: Record<string, string> = {};
   try {
@@ -573,4 +592,33 @@ export async function resolveSelectedAgentConfigForSession(
   }
 
   return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
+}
+
+/** The raw agent blocks usable inside the session's space at `ref`,
+ *  beyond the root's. A slug not declared at this ref contributes nothing, so
+ *  an out-of-date session row never breaks a compile. */
+async function spaceAgentBlocksAtRef(
+  project: GitBackedProject,
+  manifestPath: string,
+  ref: string,
+  slug: string | null | undefined,
+): Promise<Record<string, unknown>> {
+  if (!slug) return {};
+  const declared = await loadProjectSpacesAtRef(project, { manifestPath, ref });
+  return agentBlocksUsableIn(declared.specs, slug);
+}
+
+/** The root manifest with the space's usable agent blocks folded into
+ *  `agents:` — what the compiler sees. The root's own blocks win a name clash
+ *  (the set validator reports it; the compile must still not crash). Pure. */
+export function withUsableAgents(
+  root: Record<string, unknown>,
+  blocks: Record<string, unknown>,
+): Record<string, unknown> {
+  if (Object.keys(blocks).length === 0) return root;
+  const rootAgents =
+    root.agents && typeof root.agents === 'object' && !Array.isArray(root.agents)
+      ? (root.agents as Record<string, unknown>)
+      : {};
+  return { ...root, agents: { ...blocks, ...rootAgents } };
 }

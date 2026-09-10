@@ -1,0 +1,390 @@
+import { expect, test } from '@playwright/test';
+
+import { createApiJsonClient } from '../helpers/http';
+import { type ManifestProject, createManifestProject } from '../helpers/manifest-project';
+import {
+  createAuthUser,
+  deleteAuthUser,
+  installBrowserSessionDirect,
+  signIn,
+} from '../helpers/session-auth';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+
+const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
+const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
+const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+const password = 'E2eSpaces123!';
+const authOptions = { supabaseUrl, password };
+const api = createApiJsonClient(apiBase);
+
+interface AccountSummary {
+  account_id: string;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
+  account_role: string;
+}
+
+interface Space {
+  slug: string;
+  name: string;
+  sessions: 'private' | 'shared';
+}
+
+interface SpacesResponse {
+  spaces: Space[];
+}
+
+/**
+ * 27 — Spaces (spec §12.7, `docs/specs/2026-09-03-spaces.md`).
+ *
+ * Four browser-visible contracts, and nothing an API flow could assert on its
+ * own (those live in `tests/src/flows/spaces.flow.ts`):
+ *
+ *  1. The sidebar `+` creates a space and lands on its page.
+ *  2. That page is ONE column — heading, composer, recents — and the rail
+ *     of Instructions/Context/Triggers cards is gone (2026-09-07).
+ *  3. Changing session visibility PATCHes the space and the API agrees.
+ *  4. A send in the page's composer carries `space` in the create body.
+ *  5. A project member with no grant sees no sidebar entry and cannot open
+ *     the page.
+ *
+ * Spaces is behind the `spaces` feature flag, off by default, so setup turns
+ * it on for the project before the browser sees any of it.
+ *
+ * **Why (4) asserts the request, not a session.** The deterministic local
+ * profile has no sandbox provider, so `POST /projects/:id/sessions` cannot
+ * produce a bootable session — the composer's send is observed at the wire
+ * instead, which is exactly the contract this WP owns: the page's composer
+ * files its session under the space. The server-side gate on that field
+ * is `SPACE-2`'s job.
+ *
+ * The project comes from `createManifestProject` so its `kortix.yaml` is real
+ * and writable: creating a space COMMITS to the repo, and a repo the API
+ * cannot reach answers 502 rather than 201.
+ */
+test.describe('27 — Spaces', () => {
+  test('create from the sidebar, change its session visibility, and send into the space', async ({
+    page,
+  }) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(180_000);
+
+    const runId = Date.now().toString(36);
+    const email = `e2e-space-owner-${runId}@example.test`;
+    const owner = await createAuthUser(email, authOptions);
+    const session = await signIn(email, authOptions);
+
+    let accountId: string | null = null;
+    let projectId: string | null = null;
+    let project: ManifestProject | null = null;
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    try {
+      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+      const account = accounts.find(
+        (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+      );
+      if (!account) throw new Error('the seeded user owns no account');
+      accountId = account.account_id;
+
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
+        accountId,
+        userId: owner.id,
+        name: `Spaces UI ${runId}`,
+        databaseUrl: databaseUrl!,
+      });
+      projectId = project.id;
+
+      // Spaces is behind the `spaces` flag, off by default (2026-09-08).
+      // Enable it before the UI is driven: with it off the sidebar group,
+      // the composer tray and the space page are all absent by design, and
+      // every /spaces route answers 403 `feature_disabled`. `19-feature-flags-ui`
+      // owns proving the toggle itself; this spec needs the surface present.
+      await api(session.access_token, 'PATCH', `/projects/${projectId}/experimental`, {
+        feature: 'spaces',
+        enabled: true,
+      });
+
+      await installBrowserSessionDirect(page, session, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, accountId);
+      await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+      await dismissOnboarding(page);
+
+      // ── 1. Create from the sidebar `+` ────────────────────────────────
+      // The group renders for an owner even with nothing in it, because the
+      // owner holds `project.customize.write` — that is the whole reason the
+      // `+` is reachable before the first space exists.
+      await expect(page.getByText('Spaces', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'New space', exact: true }).click();
+
+      const createModal = page.getByRole('dialog', { name: 'New space', exact: true });
+      await expect(createModal).toBeVisible();
+      // The two optional fields carry an "optional" suffix inside their label,
+      // so the accessible name is "Description optional" — matched by prefix
+      // rather than exactly, which would silently never resolve.
+      await createModal.getByLabel(/^Name/).fill('Marketing');
+      await createModal.getByLabel(/^Description/).fill('Campaign work for this run.');
+      await createModal.getByRole('button', { name: 'Create space', exact: true }).click();
+
+      // The API derives the slug from the name (`slugify`), so the route is
+      // predictable and worth asserting: it is the grant key too.
+      await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/spaces/marketing$`), {
+        timeout: 30_000,
+      });
+
+      // ── 2. The hero and the three rows under the composer ─────────────
+      // The page is the project-home surface with the space's name in
+      // the greeting; what it owns sits under the composer as disclosure
+      // rows, each carrying a one-line summary while closed.
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Marketing');
+      await expect(page.getByText('Campaign work for this run.')).toBeVisible();
+      // The composer's own picker starts on this page's space — that is
+      // the choice the send in step 4 carries (`ProjectHome` owns it).
+      await expect(
+        page.getByRole('button', { name: 'Select space', exact: true }),
+      ).toContainText('Marketing');
+      // ONE COLUMN (user, 2026-09-07): heading, composer, recents. The panel
+      // that used to sit beside the composer — Instructions, Context,
+      // Triggers — went with the fields it edited, so its absence is the
+      // assertion now.
+      await expect(page.getByRole('button', { name: 'Instructions', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Context', exact: true })).toHaveCount(0);
+      await expect(page.getByText('Recents', { exact: true })).toBeVisible();
+
+      // The sidebar picked up the new row without a reload.
+      await expect(
+        page.locator(`a[href="/projects/${projectId}/spaces/marketing"]`).first(),
+      ).toBeVisible();
+
+      // The create landed as a `spaces.marketing` block of the root manifest
+      // (user, 2026-09-08) — read it back through the files API.
+      const file = await api<{ content: string }>(
+        session.access_token,
+        'GET',
+        `/projects/${projectId}/files/content?path=kortix.yaml`,
+      );
+      expect(file.content).toContain('spaces:');
+      expect(file.content).toContain('marketing:');
+      expect(file.content).toContain('name: Marketing');
+
+      // ── 3. Changing session visibility PATCHes ────────────────────────
+      // `instructions` was the edit this step used to make; it was dropped on
+      // 2026-09-07. `sessions: private | shared` is the field the page still
+      // edits, from the ⋯ menu, and it exercises the same contract: one PATCH,
+      // persisted, read back from the API rather than from the re-render.
+      const patchBodies: Record<string, unknown>[] = [];
+      page.on('request', (request) => {
+        if (
+          request.method() === 'PATCH' &&
+          request.url().endsWith(`/v1/projects/${projectId}/spaces/marketing`)
+        ) {
+          try {
+            patchBodies.push(JSON.parse(request.postData() ?? '{}'));
+          } catch {
+            patchBodies.push({});
+          }
+        }
+      });
+
+      await page.getByRole('button', { name: 'Space actions', exact: true }).click();
+      await page.getByRole('menuitemradio', { name: 'Everyone granted this space' }).click();
+
+      await expect.poll(() => patchBodies.length, { timeout: 15_000 }).toBeGreaterThan(0);
+      expect(patchBodies[0]).toEqual({ sessions: 'shared' });
+
+      // The API is the source of truth for persistence, not the re-render.
+      await expect
+        .poll(
+          async () => {
+            const listing = await api<SpacesResponse>(
+              session.access_token,
+              'GET',
+              `/projects/${projectId}/spaces`,
+            );
+            return listing.spaces.find((s) => s.slug === 'marketing')?.sessions ?? null;
+          },
+          { timeout: 20_000 },
+        )
+        .toBe('shared');
+
+      // ── 4. A send carries `space` in the create body ─────────────
+      // Session CREATE cannot boot in the local profile (no sandbox provider),
+      // so the assertion is the outgoing request — the page's own contract.
+      const createBodies: Record<string, unknown>[] = [];
+      page.on('request', (request) => {
+        if (
+          request.method() === 'POST' &&
+          request.url().endsWith(`/v1/projects/${projectId}/sessions`)
+        ) {
+          try {
+            createBodies.push(JSON.parse(request.postData() ?? '{}'));
+          } catch {
+            createBodies.push({});
+          }
+        }
+      });
+
+      // The real composer — `ProjectHome` mounts `ComposerChatInput`, whose
+      // editor is `role="textbox" aria-label="Message input"`
+      // (`composer/editor/composer-editor.tsx`). Same control spec 13 drives.
+      const composer = page.getByRole('textbox', { name: 'Message input' });
+      await expect(composer).toBeVisible({ timeout: 30_000 });
+      await composer.fill('Draft the launch note.');
+
+      // The composer refuses to send until a model is connected
+      // (`features/session/model-connection-gate.tsx`). The deterministic local
+      // profile has no LLM provider, so the gate is up there and no request can
+      // leave the page — measured 2026-09-04: send disabled, "No model
+      // connected" shown, 0 POSTs in 30s. On a stack with a provider (preview,
+      // dev) the gate is down and the create body is the assertion. Both
+      // branches prove the page mounts the REAL composer; only the second can
+      // prove the body, so the profile it ran in is recorded on the test.
+      const modelGate = page.getByText('No model connected', { exact: false });
+      if (await modelGate.isVisible().catch(() => false)) {
+        test.info().annotations.push({
+          type: 'profile',
+          description: 'no LLM provider: composer send gated, create body not asserted here',
+        });
+        await expect(page.getByRole('button', { name: 'Send message' })).toBeDisabled();
+      } else {
+        await page.getByRole('button', { name: 'Send message' }).click({ force: true });
+        await expect.poll(() => createBodies.length, { timeout: 30_000 }).toBeGreaterThan(0);
+        const [createBody] = createBodies;
+        expect(createBody?.space).toBe('marketing');
+        // The prompt rides the create as a durable inbox row, so it is on the
+        // same body — proving the composer wiring is the shared one, not a copy.
+        expect(createBody?.pending_prompt).toMatchObject({ text: 'Draft the launch note.' });
+      }
+
+      // ── 5. The project home carries the same picker, starting on the whole
+      //      project, and can be pointed at a space before a send ────
+      await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+      await dismissOnboarding(page);
+      const homePicker = page.getByRole('button', { name: 'Select space', exact: true });
+      await expect(homePicker).toContainText('Whole project');
+      await homePicker.click();
+      await page.getByRole('option', { name: /^Marketing/ }).click();
+      await expect(homePicker).toContainText('Marketing');
+      await homePicker.click();
+      await page.getByRole('option', { name: /^Whole project/ }).click();
+      await expect(homePicker).toContainText('Whole project');
+
+      expect(pageErrors).toEqual([]);
+    } finally {
+      if (project) await project.dispose().catch(() => {});
+      await deleteAuthUser(owner.id, authOptions).catch(() => {});
+    }
+  });
+
+  test('a project member with no grant sees no space in the sidebar', async ({ page }) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(180_000);
+
+    const runId = Date.now().toString(36);
+    const ownerEmail = `e2e-space-owner2-${runId}@example.test`;
+    const memberEmail = `e2e-space-member-${runId}@example.test`;
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    const member = await createAuthUser(memberEmail, authOptions);
+    const ownerSession = await signIn(ownerEmail, authOptions);
+
+    let accountId: string | null = null;
+    let projectId: string | null = null;
+    let project: ManifestProject | null = null;
+
+    try {
+      const accounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
+      const account = accounts.find(
+        (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+      );
+      if (!account) throw new Error('the seeded user owns no account');
+      accountId = account.account_id;
+
+      await api(
+        ownerSession.access_token,
+        'POST',
+        `/accounts/${accountId}/members`,
+        { email: memberEmail, role: 'member' },
+        201,
+      );
+
+      project = await createManifestProject({
+        api,
+        accessToken: ownerSession.access_token,
+        accountId,
+        userId: owner.id,
+        name: `Spaces authz ${runId}`,
+        databaseUrl: databaseUrl!,
+      });
+      projectId = project.id;
+
+      // Spaces is flag-gated and off by default (2026-09-08): without this the
+      // create below is 403 `feature_disabled`, and the member would see no
+      // space for the wrong reason.
+      await api(ownerSession.access_token, 'PATCH', `/projects/${projectId}/experimental`, {
+        feature: 'spaces',
+        enabled: true,
+      });
+
+      // Declared by the owner, granted to nobody. `object_policies.space`
+      // is `closed`, so the member's accessible set is empty — the manager
+      // tier sees it, the member tier does not.
+      await api<Space>(
+        ownerSession.access_token,
+        'POST',
+        `/projects/${projectId}/spaces`,
+        { name: 'Marketing' },
+        201,
+      );
+      // Project access, and only project access. This is the whole point: a
+      // member who can open the project still sees no space.
+      await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, {
+        role: 'member',
+      });
+
+      const memberSession = await signIn(memberEmail, authOptions);
+      await installBrowserSessionDirect(page, memberSession, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, accountId);
+      await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+      await dismissOnboarding(page);
+
+      // Wait for the sidebar to have painted SOMETHING of its own, so the
+      // absence below is an answered question rather than an unmounted panel.
+      await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(
+        page.locator(`a[href="/projects/${projectId}/spaces/marketing"]`),
+      ).toHaveCount(0);
+      // No group header, and no way to make one: the member holds neither a
+      // grant nor `project.customize.write`.
+      await expect(page.getByText('Spaces', { exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'New space', exact: true })).toHaveCount(
+        0,
+      );
+
+      // The page itself is a 404 for them, rendered as the not-found state
+      // rather than a blank screen.
+      await page.goto(`/projects/${projectId}/spaces/marketing`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await expect(page.getByText('No space named marketing')).toBeVisible({
+        timeout: 30_000,
+      });
+
+      // The API tells the same story, so the browser is not the only witness.
+      const listing = await api<SpacesResponse>(
+        memberSession.access_token,
+        'GET',
+        `/projects/${projectId}/spaces`,
+      );
+      expect(listing.spaces).toEqual([]);
+    } finally {
+      if (project) await project.dispose().catch(() => {});
+      await deleteAuthUser(member.id, authOptions).catch(() => {});
+      await deleteAuthUser(owner.id, authOptions).catch(() => {});
+    }
+  });
+});

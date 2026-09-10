@@ -12,8 +12,10 @@ import {
   sessionIsShared,
   sessionSource,
   spawnedBySessionId,
+  type SessionDisplayStatus,
 } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
+import { SpaceBadge } from '@/features/spaces/space-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -33,6 +35,7 @@ import { ChangeRequestDetailDialog } from '@/features/project-files/components/c
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { MoveSessionMenu } from '@/features/spaces/move-session-menu';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -96,6 +99,24 @@ import { useId, useMemo, useState, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
+  /**
+   * Narrow the list to one space. This is a different SERVER request
+   * (`GET /sessions?space=`), not a client-side filter, so it gets its
+   * own cache entry — see `qk.project.sessions(id, scope, space)`.
+   * Omitted in the sidebar, where the list is the whole project's.
+   *
+   * When set, the rows drop their space chip: every row would wear the
+   * same one, and a chip every row shares says nothing.
+   */
+  space?: string;
+  /**
+   * Show only sessions filed under NO space. The sidebar sets this: a
+   * space's sessions nest under its own folder in the `Spaces`
+   * group above (`spaces-sidebar-group.tsx`), so listing them here too
+   * would show every one twice. Client-side on purpose — both readers share
+   * one inventory query.
+   */
+  unfiledOnly?: boolean;
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
@@ -188,7 +209,14 @@ function ProjectSessionListSkeleton() {
   );
 }
 
-export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
+export function ProjectSessionList({
+  projectId,
+  space,
+  unfiledOnly = false,
+}: ProjectSessionListProps) {
+  // With Spaces off the rows still CARRY a space (the column is untouched),
+  // but a badge naming one would advertise a feature that is not there.
+  const spacesEnabled = useFeatureFlag(projectId, 'spaces').enabled;
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const { holdPeek } = useSidebar();
@@ -212,8 +240,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const [selectedChangeRequestId, setSelectedChangeRequestId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryKey: qk.project.sessions(projectId, 'visible', space),
+    queryFn: () =>
+      listProjectSessions(projectId, space === undefined ? undefined : { space }),
     refetchInterval: (query) =>
       projectSessionsRefetchInterval({
         sessions: query.state.data as ProjectSession[] | undefined,
@@ -285,7 +314,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
   // sorting twice per render bought nothing.
-  const sessions = useMemo(() => data ?? [], [data]);
+  const sessions = useMemo(() => {
+    const rows = data ?? [];
+    // `unfiledOnly` is the sidebar's "Sessions" group: the rows that belong to
+    // no space, because every space renders its own children beneath it.
+    return unfiledOnly ? rows.filter((session) => !session.space) : rows;
+  }, [data, unfiledOnly]);
   const changeRequestsBySession = useMemo(
     () => groupChangeRequestsBySession(changeRequestData?.change_requests ?? [], sessions),
     [changeRequestData?.change_requests, sessions],
@@ -406,6 +440,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               }
             }}
             displayTitle={getSessionDisplayTitle(session)}
+            showSpace={space === undefined && spacesEnabled}
             childCount={children.length}
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
             changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
@@ -744,6 +779,9 @@ interface ProjectSessionRowProps {
   onStop: (sessionId: string, label: string) => void;
   isStopping: boolean;
   childCount?: number;
+  /** False on a list already scoped to one space — see the list's own
+   *  `space` prop. */
+  showSpace?: boolean;
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
   changeRequests: readonly ChangeRequest[];
@@ -770,6 +808,7 @@ function ProjectSessionRow({
   onStop,
   isStopping,
   childCount = 0,
+  showSpace = true,
   reviewCount = 0,
   changeRequests,
   canShowHoverCard,
@@ -797,7 +836,9 @@ function ProjectSessionRow({
   // `gap-2`, so a plain chat session paid 8px of title width for nothing), and
   // the hover shift below only makes sense when there is something to shift.
   const showSpawnedBy = Boolean(spawnedBy) && !nested;
-  const hasIndicators = showSpawnedBy || Boolean(SourceIcon) || sessionIsShared(session);
+  const showSpaceBadge = showSpace && Boolean(session.space);
+  const hasIndicators =
+    showSpawnedBy || showSpaceBadge || Boolean(SourceIcon) || sessionIsShared(session);
   // `reviewCount` is not optional here, whatever the signature's default says.
   // Omitting it does not mean "unknown", it asserts "nothing is waiting", which
   // is how the row's dot and this row's own hover card came to disagree: the dot
@@ -927,6 +968,7 @@ function ProjectSessionRow({
             )}
             data-session-indicators="true"
           >
+            {showSpaceBadge && <SpaceBadge session={session} className="mr-1 max-w-20" />}
             {showSpawnedBy && spawnedBy && (
               <Hint
                 side="top"
@@ -1019,6 +1061,9 @@ function ProjectSessionRow({
                 ? 'Share'
                 : tI18nComplete.raw('textadc01d813da0')}
             </DropdownMenuItem>
+            {/* Between Share and the lifecycle block: filing a session is an
+                access decision, not a lifecycle one. */}
+            <MoveSessionMenu session={session} />
             <DropdownMenuItem
               className="cursor-pointer"
               disabled={isRestarting}
@@ -1088,7 +1133,34 @@ function ProjectSubsessionRow({
   );
 }
 
-function SessionStatusDot({
+/** Per-display-status paint. Green appears in exactly two rows — the two that
+ *  mean live or actionable. `done` is muted on purpose: it is the change that
+ *  drains the green out of a long list and makes the rest mean something.
+ *
+ *  `glyph` is what separates the two muted states. Both used to be rings that
+ *  differed only by a dash pattern, and at 16px that is not a difference a user
+ *  can see. Per spec §4 `done` is a check and `stopped` is a plain hollow ring.
+ *  The check stays muted — a check is not a licence to go green. */
+const STATUS_DOT_STYLE: Record<
+  SessionDisplayStatus,
+  { color: string; glyph: 'ring' | 'check'; fill: boolean }
+> = {
+  'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  // `starting` renders <Loading /> instead and never reads glyph/fill.
+  starting: { color: 'var(--kortix-yellow)', glyph: 'ring', fill: false },
+  running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  done: { color: 'var(--muted-foreground)', glyph: 'check', fill: false },
+  stopped: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
+  failed: { color: 'var(--kortix-red)', glyph: 'ring', fill: true },
+  // `legacy` renders <ClockCounterClockwiseIcon /> instead and never reads
+  // glyph/fill — a dormant migrated chat is neither done nor merely stopped;
+  // the history glyph says "restorable" without spending any color.
+  legacy: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
+};
+
+/** The one status glyph a session row wears — exported so the sidebar's
+ *  nested space rows draw exactly this, not a lookalike. */
+export function SessionStatusDot({
   session,
   reviewCount = 0,
 }: {

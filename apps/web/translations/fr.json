@@ -2,6 +2,97 @@
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"
   },
+  "spaces": {
+    "cancel": "Annuler",
+    "optional": "facultatif",
+    "none": "Aucun",
+    "noSpace": "Aucun espace",
+    "create": {
+      "created": "{name} a été créé",
+      "failed": "Impossible de créer l’espace",
+      "title": "Nouvel espace",
+      "description": "Un conteneur nommé dans ce projet — avec ses propres sessions, son agent par défaut et son travail planifié.",
+      "nameLabel": "Nom",
+      "namePlaceholder": "Marketing",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Travail de campagne.",
+      "agentLabel": "Agent",
+      "noDefaultAgent": "Aucun agent par défaut",
+      "agentHelp": "Il s’agit d’un choix par défaut, pas d’une liaison — les sessions démarrées ici s’ouvrent sur cet agent, mais chaque personne doit toujours disposer de son propre accès à l’agent.",
+      "submit": "Créer l’espace"
+    },
+    "move": {
+      "movedTo": "Déplacée vers {name}",
+      "movedOut": "Retirée de l’espace",
+      "failed": "Impossible de déplacer la session",
+      "title": "Déplacer vers"
+    },
+    "page": {
+      "offTitle": "Les Espaces sont désactivés pour ce projet",
+      "offDescription": "Activez les Espaces dans Paramètres → Fonctionnalités pour regrouper les sessions sous une initiative nommée.",
+      "backToProject": "Retour au projet",
+      "notFoundTitle": "Aucun espace nommé {slug}",
+      "notFoundDescription": "Il a peut-être été retiré de la configuration du projet, ou l’accès ne vous a pas été accordé."
+    },
+    "toolbar": {
+      "sharedToast": "Toutes les personnes ayant accès à cet espace peuvent lire ses sessions",
+      "privateToast": "Les sessions sont privées pour la personne qui les démarre",
+      "visibilityFailed": "Impossible de modifier la visibilité des sessions",
+      "renamed": "Renommé en {name}",
+      "renameFailed": "Impossible de renommer l’espace",
+      "deleted": "{name} a été supprimé",
+      "deleteFailed": "Impossible de supprimer l’espace",
+      "nameAria": "Nom de l’espace",
+      "grantHint": "Accorder cet espace à des personnes ou groupes",
+      "grantedHint": "Accordé à {count, plural, one {# personne ou groupe} other {# personnes et groupes}}",
+      "share": "Partager",
+      "actionsAria": "Actions de l’espace",
+      "visibilityLabel": "Les sessions sont lisibles par",
+      "privateOption": "Uniquement la personne qui les a démarrées",
+      "sharedOption": "Toutes les personnes ayant accès à cet espace",
+      "rename": "Renommer",
+      "delete": "Supprimer",
+      "deleteTitle": "Supprimer {name} ?",
+      "deleteDescription": "Le bloc spaces.{slug} est supprimé de kortix.yaml et ses déclencheurs perdent la référence inverse. Les sessions sont conservées, mais les membres qui avaient uniquement accès à cet espace ne les voient plus."
+    },
+    "recents": {
+      "aria": "Sessions récentes",
+      "title": "Récentes",
+      "empty": "Aucune session pour le moment."
+    },
+    "selector": {
+      "selectAria": "Sélectionner un espace",
+      "wholeProject": "Projet entier",
+      "wholeProjectDescription": "En dehors d’un espace.",
+      "searchPlaceholder": "Rechercher des espaces",
+      "noMatches": "Aucun espace ne correspond à « {query} »",
+      "new": "Nouvel espace"
+    },
+    "sidebar": {
+      "title": "Espaces",
+      "new": "Nouvel espace",
+      "collapse": "Réduire {name}",
+      "expand": "Développer {name}",
+      "more": "{count} de plus…"
+    },
+    "schedule": {
+      "label": "Espace",
+      "hint": "Classe ce déclencheur et chaque session qu’il démarre dans un même espace.",
+      "updated": "Espace mis à jour",
+      "updateFailed": "Impossible de mettre à jour l’espace"
+    },
+    "people": {
+      "description": "Membres et groupes ayant accès à cet espace. Un accès à l’espace n’accorde pas l’accès à l’agent — ils doivent aussi disposer de leur propre accès à cet agent.",
+      "empty": "Cet espace n’est encore accordé à personne. Les gestionnaires du projet peuvent toujours l’utiliser.",
+      "orphanedSuffix": "· l’accès ne correspond plus à un espace"
+    },
+    "access": {
+      "title": "Espaces",
+      "all": "Tous les espaces",
+      "onlyThese": "Uniquement ceux-ci…",
+      "allDescription": "Tous les espaces présents aujourd’hui dans ce projet ({count}). Les espaces ajoutés plus tard nécessitent un nouvel accès — un espace sans ligne d’accès est réservé au niveau gestionnaire."
+    }
+  },
   "developers": {
     "heroDescription": "Agents, compétences, outils, connecteurs et planifications sont de simples fichiers dans un dépôt. Modifiez-les dans votre IDE, exécutez-les en local et déployez-les dans le cloud avec une commande. Open source, auto-hébergeable et sous votre contrôle.",
     "agentBody": "Un agent est un fichier Markdown qui définit un persona, son modèle et ses outils. Les compétences sont des dossiers chargés à la demande. Modifiez-les manuellement ou décrivez votre objectif et laissez votre agent de programmation les rédiger.",
@@ -996,6 +1087,10 @@
         "pi_worker": {
           "name": "Environnement du worker Pi (compilé)",
           "description": "Exécutez les sessions avec l’environnement expérimental du worker Pi."
+        },
+        "spaces": {
+          "name": "Espaces",
+          "description": "Regroupez les sessions sous une initiative nommée dans le projet, chacune avec son propre agent par défaut et son travail planifié."
         }
       }
     },
@@ -1319,6 +1414,7 @@
         "status": "État",
         "activity": "Activité",
         "source": "Source",
+        "space": "Espace",
         "none": "Aucun"
       },
       "order": {
@@ -17054,6 +17150,7 @@
       "textdc8d7c5c602b": "Registre source",
       "textdc934fe30a94": "20%",
       "textdc937b598926": "Aucun",
+      "text3f5f3b0e5bfc": "Aucun espace",
       "textdc958f2a5781": "Actions sur la clé",
       "textdc98511e6b34": "S’exécute comme",
       "textdc99025834c1": "Auto-héberger Kortix",

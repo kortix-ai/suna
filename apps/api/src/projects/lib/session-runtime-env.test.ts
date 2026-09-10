@@ -402,3 +402,18 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
 });
+
+describe('buildSessionRuntimeEnv — space', () => {
+  test('emits no key for a plain session', () => {
+    const env = buildSessionRuntimeEnv(BASE_INPUT);
+    expect(env).not.toHaveProperty('KORTIX_SPACE');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, space: null })).toEqual(env);
+  });
+
+  test('emits the slug, and nothing derived from it', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, space: 'marketing' });
+    expect(env.KORTIX_SPACE).toBe('marketing');
+    // The JSON envelope (instructions + context files) was removed 2026-09-07.
+    expect(env).not.toHaveProperty('KORTIX_SPACE_CONTEXT');
+  });
+});

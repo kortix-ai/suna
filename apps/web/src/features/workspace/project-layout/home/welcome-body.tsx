@@ -4,6 +4,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 
 import { IdentityConfetti } from '@/components/ui/identity-confetti';
+import { cn } from '@/lib/utils';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { useProjectIcon, useProjectName } from '@kortix/sdk/react';
 import {
@@ -53,16 +54,33 @@ import {
  * `EntityAvatar` does). #7079 had gated letter-only workspaces out; Marko put
  * the press back for all of them on 2026-09-03.
  */
+export interface ProjectHomeHero {
+  /** The name the greeting sentence is built around, in place of the project's. */
+  name: string;
+  /** One muted line under the heading. */
+  description?: string | null;
+}
+
 export function ProjectHomeWelcomeBody({
   projectId,
   composer,
   onPickSuggestion,
+  hero,
+  below,
 }: {
   projectId: string;
   /** The composer input rendered in the hero position, directly under the heading. */
   composer?: ReactNode;
   /** When provided, starter-prompt chips render directly below the composer. */
   onPickSuggestion?: (text: string) => void;
+  /**
+   * A surface that is not the project itself (a space) wears the SAME
+   * greeting with its own name in the slot — the shape stays recognisable,
+   * only the noun changes. No confetti: the pressable name is the project's.
+   */
+  hero?: ProjectHomeHero;
+  /** Rendered under the ask group, in the column's `gap-10` rhythm. */
+  below?: ReactNode;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // One source for the project name — see `useProjectName`'s doc comment.
@@ -85,7 +103,7 @@ export function ProjectHomeWelcomeBody({
   // while the rest is muted, so the fallback has to read as a NAME in that
   // slot — "this project" is a description wearing a name's highlight, and it
   // stretches the line for a case where we know the least.
-  const displayName = name.trim() || 'it';
+  const displayName = hero ? hero.name.trim() || 'it' : name.trim() || 'it';
   // Variant 0 on the server and through hydration; the stored visit count
   // picks the real one before first paint. See `home-greeting.ts`.
   const [greeting, setGreeting] = useState(HOME_GREETINGS[0]);
@@ -115,8 +133,20 @@ export function ProjectHomeWelcomeBody({
         short container scrolls the column rather than compressing it.
         `gap-10` separates the ask group from whatever a host puts beneath it.
       */}
+      {/*
+        `m-auto` WITH content under the composer too (user, 2026-09-08: "make
+        chat input centrally position like it is on the single project page").
+        This reverses the 2026-09-06 top-pin, which left a space's lower half
+        as empty ballast — the same complaint the project home's own `m-auto`
+        exists to answer. A space's Recents list does move the composer as it
+        grows, which is the cost that buys it; once the column outgrows the
+        container the auto margins resolve to zero and it scrolls from the
+        top, so a long history lands back on the old top-pinned frame anyway.
+      */}
       <div className="m-auto flex w-full max-w-3xl shrink-0 flex-col gap-10 py-8 sm:px-4">
-        <div className="flex w-full flex-col gap-6">
+        <div
+          className="flex w-full flex-col gap-6"
+        >
           {/*
               `w-full` with no `max-w`: the line runs the full column and breaks
               where the column ends, which is the composer's own right edge.
@@ -133,7 +163,11 @@ export function ProjectHomeWelcomeBody({
               centred block, and this one is ragged-right by design; pretty just
               keeps the last line off a single orphan word.
             */}
-          <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl">
+          <h1
+            className={cn(
+              'text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl',
+            )}
+          >
             {greeting.before}{' '}
             {/*
                 A real <button>, not a <span> with an onClick: this is the only
@@ -154,6 +188,9 @@ export function ProjectHomeWelcomeBody({
                 noise on every load for a control nobody needs to find. The
                 pointer cursor and the tooltip are the whole invitation.
               */}
+            {hero ? (
+              <span className="text-foreground">{displayName}</span>
+            ) : (
             <button
               type="button"
               title={tI18nComplete.raw('texteff2ec3d9dcd')}
@@ -175,6 +212,7 @@ export function ProjectHomeWelcomeBody({
             >
               {displayName}
             </button>
+            )}
             {spaceBefore(greeting.after) ? ' ' : ''}
             {greeting.after}
           </h1>
@@ -193,8 +231,17 @@ export function ProjectHomeWelcomeBody({
             />
           ) : null}
 
+          {hero?.description ? (
+            <p
+              className="text-muted-foreground w-full px-4 text-base text-pretty"
+            >
+              {hero.description}
+            </p>
+          ) : null}
+
           {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
         </div>
+        {below}
 
         {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
             have the chat input there & that's it"). The "Get started" setup

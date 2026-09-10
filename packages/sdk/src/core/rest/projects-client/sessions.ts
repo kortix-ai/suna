@@ -44,6 +44,9 @@ export interface ProjectSession {
    */
   custom_name: string | null;
   agent_name: string | null;
+  /** Slug of the space this session belongs to; null = none. Set at
+   *  create and never moved. See `listProjectSpaces`. */
+  space?: string | null;
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
@@ -127,6 +130,13 @@ export interface PendingSessionPrompt {
 export interface CreateProjectSessionInput {
   base_ref?: string;
   agent_name?: string;
+  /**
+   * Start the session inside a declared space. The caller must be granted
+   * it (`403 space_not_accessible`) and it must exist in the manifest
+   * (`400 SPACE_NOT_DECLARED`). When `agent_name` is omitted the
+   * space's own `agent` becomes the requested agent.
+   */
+  space?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
@@ -203,10 +213,19 @@ export interface ProjectOpenCodeSession {
  */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: {
+    scope?: 'visible' | 'project';
+    /**
+     * Narrow to one space. `''` is a real filter — the rows that carry no
+     * space — so it is sent as `?space=`, not dropped as falsy.
+     * Omit the key entirely for "every space".
+     */
+    space?: string;
+  },
 ) {
   const params = new URLSearchParams();
   if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  if (options?.space !== undefined) params.set('space', options.space);
   const query = params.size > 0 ? `?${params}` : '';
   return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
@@ -1020,12 +1039,24 @@ export async function holdSessionPrompts(
   );
 }
 
+/**
+ * Rename a session, edit its metadata, or MOVE it between spaces.
+ *
+ * `space: '<slug>'` files the session under that space;
+ * `space: null` moves it back to the project level. The move is
+ * owner-governed like sharing is — everyone granted a `shared` space
+ * reads every session in it — and the server refuses a space the caller
+ * is not granted (`403 space_not_accessible`), one that is not declared
+ * (`400 SPACE_NOT_DECLARED`), and one where the session's own agent
+ * cannot run (`400 AGENT_NOT_IN_SPACE`).
+ */
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,
   input: {
     name?: string;
     metadata?: Record<string, unknown>;
+    space?: string | null;
   },
 ) {
   return unwrap(

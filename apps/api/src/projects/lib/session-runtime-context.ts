@@ -3,6 +3,7 @@ import { projectSessionRuntimeContexts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import { SPACE_ENV_NAME } from './session-runtime-env';
 
 /** The only environment variable a public runtime_context request can create. */
 export const SESSION_RUNTIME_CONTEXT_ENV_NAME = 'KORTIX_SESSION_CONTEXT';
@@ -14,6 +15,10 @@ export const SESSION_RUNTIME_CONTEXT_ENV_NAME = 'KORTIX_SESSION_CONTEXT';
 const SERVER_OWNED_ENV_NAMES = [
   SESSION_RUNTIME_CONTEXT_ENV_NAME,
   SECRET_CAPABILITIES_ENV_NAME,
+  // The space a session runs inside is an AUTHORIZATION fact (§5): a
+  // channel/trigger caller must not be able to move a session into a
+  // space, or out of one, by supplying these in `extraEnvVars`.
+  SPACE_ENV_NAME,
 ] as const;
 
 export function parseSessionRuntimeContext(

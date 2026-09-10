@@ -42,6 +42,10 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source: 'opencode' | 'kortix.yaml';
     enabled?: boolean;
+    /** The space whose `spaces.<slug>` block declares this agent, or null
+     *  for a global one. An owned agent runs only in its space and in the
+     *  ones that reference it. */
+    space?: string | null;
     sandbox?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
@@ -55,6 +59,17 @@ export interface ProjectConfigSummary {
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
+  /** The project's `spaces:` blocks, access-filtered for the reader
+   *  by `filterConfigResourcesForUser`. */
+  spaces: Array<{
+    slug: string;
+    name: string;
+    description: string | null;
+    agent: string | null;
+    sessions: 'private' | 'shared';
+    /** Agents usable here beyond the globals — owned or referenced, file order. */
+    agents: string[];
+  }>;
 }
 
 export interface RepoGrepMatch {

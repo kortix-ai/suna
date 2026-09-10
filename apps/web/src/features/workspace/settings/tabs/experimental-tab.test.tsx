@@ -1,5 +1,8 @@
-import type { FeatureFlagView } from '@kortix/sdk';
+import { locales } from '@/i18n/config';
+import { FEATURE_FLAG_KEYS, type FeatureFlagView } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { createTranslator, NextIntlClientProvider } from 'next-intl';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DEFAULT_EXPERIMENTAL_COPY, ExperimentalTabView, filterFeatures } from './experimental-tab';
@@ -274,4 +277,50 @@ describe('filterFeatures', () => {
   test('no match returns empty rather than falling back to everything', () => {
     expect(filterFeatures(all, 'zzz')).toEqual([]);
   });
+});
+
+describe('feature flag translations — real catalogs', () => {
+  for (const locale of locales) {
+    test(`${locale}: every flag has translated copy and Spaces renders with its localized switch name`, () => {
+      const messages = JSON.parse(
+        readFileSync(
+          new URL(`../../../../../translations/${locale}.json`, import.meta.url),
+          'utf8',
+        ),
+      );
+      const t = createTranslator({
+        locale,
+        messages,
+        namespace: 'settings.featureFlags',
+        onError(error) {
+          throw error;
+        },
+      });
+      // The catalog parity audit cannot catch a flag absent from ALL locales.
+      // Check against the public contract, not another translation catalog.
+      for (const key of FEATURE_FLAG_KEYS) {
+        for (const field of ['name', 'description']) {
+          const path = `flags.${key}.${field}`;
+          expect(t.has(path)).toBe(true);
+          expect(t(path).trim().length).toBeGreaterThan(0);
+        }
+      }
+      const spaces: FeatureFlagView = {
+        ...experimentalFeature,
+        key: 'spaces',
+        name: t('flags.spaces.name'),
+        description: t('flags.spaces.description'),
+      };
+      const out = renderToStaticMarkup(
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <ExperimentalTabView features={[spaces]} />
+        </NextIntlClientProvider>,
+      );
+      expect(out).toContain(`id="feature-flag-spaces"`);
+      expect(out).toContain('aria-labelledby="feature-flag-spaces"');
+      expect(out).toContain(renderToStaticMarkup(<span>{spaces.name}</span>).slice(6, -7));
+      expect(out).toContain(renderToStaticMarkup(<span>{spaces.description}</span>).slice(6, -7));
+      expect(out).not.toContain('settings.featureFlags.flags.spaces');
+    });
+  }
 });

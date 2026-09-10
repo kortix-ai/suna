@@ -570,6 +570,19 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
       },
 
+      /** Named containers inside the project — the manifest is the source of
+       *  truth; writes commit its `spaces.<slug>` block. Grant one with
+       *  `access.resourceGrants.create({ resourceType: 'space' })`. */
+      spaces: {
+        list: () => P.listProjectSpaces(projectId),
+        get: (slug: string) => P.getProjectSpace(projectId, slug),
+        create: (input: Parameters<typeof P.createProjectSpace>[1]) =>
+          P.createProjectSpace(projectId, input),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectSpace>>) =>
+          P.updateProjectSpace(projectId, ...a),
+        remove: (slug: string) => P.deleteProjectSpace(projectId, slug),
+      },
+
       connectors: {
         ...connectorDataPlane(projectId),
         list: () => P.listConnectors(projectId),

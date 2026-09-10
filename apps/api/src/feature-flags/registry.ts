@@ -17,8 +17,8 @@
  * Per-project state is DB-only (projects.metadata) — never in kortix.yaml.
  * The `experimental` metadata key is a stable storage detail; do not rename it.
  *
- * To add a flag, the key goes in SIX places. Typecheck forces only one of them
- * (the SDK union), so do not rely on a clean build:
+ * To add a flag, the key goes in SEVEN places. Typecheck forces only one of
+ * them (the SDK union), so do not rely on a clean build:
  *
  *   1. `FeatureFlagMapSchema` — packages/api-contract/src/index.ts
  *   2. TWO sites in packages/api-contract/src/__tests__/schemas.test.ts: a
@@ -31,11 +31,19 @@
  *   6. One `useFeatureFlag` call + one map entry in
  *      apps/web/src/lib/use-project-feature-flags.ts (and move the trailing
  *      `isLoading:` to the newly-last hook)
+ *   7. `settings.featureFlags.flags.<key>.name` + `.description` in ALL NINE
+ *      apps/web/translations/*.json. `experimental-tab.tsx` renders the row
+ *      with ``t(`flags.${feature.key}.name`)`` — the name and description
+ *      BELOW are never shown to a user, they are for this file's readers.
+ *      Miss it and Settings → Feature flags prints the raw key as the
+ *      flag's title. `experimental-tab.test.tsx` checks every SDK flag key
+ *      against every locale and renders the localized Spaces row. Catalog
+ *      parity alone cannot catch a key missing from all nine languages.
  *
  * Then gate its routes with `requireFeatureFlag` (enforcement: 'routes'), or
  * its runtime behavior on `resolveFeatureFlag` (enforcement: 'behavioral').
  *
- * FOUR separate tests guard those six sites, each in its own package, so each
+ * FOUR separate tests guard sites 1-6, each in its own package, so each
  * one fails only when that package's suite runs — they surface one CI round at
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
@@ -289,6 +297,20 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => true,
     // Explicit opt-in per project. Off ⇒ no artifact is compiled on push and
     // the download route answers 403.
+    platformDefault: () => false,
+    enforcement: 'routes',
+  },
+  {
+    key: 'spaces',
+    name: 'Spaces',
+    description:
+      'Named containers inside a project: group sessions under one effort, give each its own default agent and scheduled work, declare agents usable only inside it, and grant it to people like an agent. Declared in kortix.yaml under `spaces:`. The shape and the surface are still in flux.',
+    stability: 'experimental',
+    // Pure manifest + DB + web surface — the routes ship with the app, so no
+    // operator env gates it. Same posture as review_center.
+    available: () => true,
+    // Explicit opt-in, and the point of the flag: Spaces stay dark until we
+    // decide we want them (user, 2026-09-08).
     platformDefault: () => false,
     enforcement: 'routes',
   },

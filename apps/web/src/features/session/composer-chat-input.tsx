@@ -56,6 +56,7 @@ export function ComposerChatInput({
   prefill,
   inputSlot,
   toolbarSlot,
+  traySlot,
   underbarPlacement,
   slashMenuPlacement,
   cardClassName,
@@ -64,6 +65,7 @@ export function ComposerChatInput({
   clearOnSend,
   onAgentSelectionChange,
   sandboxSlot,
+  space,
   draftScope,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
@@ -94,6 +96,7 @@ export function ComposerChatInput({
   } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
+  traySlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
   slashMenuPlacement?: SessionChatInputProps['slashMenuPlacement'];
   /** Extra classes for the input card (e.g. the project-home radius override). */
@@ -106,6 +109,12 @@ export function ComposerChatInput({
   onAgentSelectionChange?: (agentName: string | null) => void;
   /** Pre-create sandbox-template chooser, rendered inside the overrides panel. */
   sandboxSlot?: SessionOverrideSlot;
+  /**
+   * Where the session starts, for the agent roster (spec 2026-09-06 §2):
+   * the space's usable agents, `null` for the whole project, or
+   * `undefined` when the host does not know (the roster is left as served).
+   */
+  space?: { agents: readonly string[] } | null;
   /** Persist the unsent draft under this scope — see `composer/draft/`. */
   draftScope?: DraftScope | null;
 }) {
@@ -115,6 +124,7 @@ export function ComposerChatInput({
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
   const local = useSessionModelSelection({
+    space,
     agents,
     providers,
     config,
@@ -222,6 +232,7 @@ export function ComposerChatInput({
       prefill={prefill}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
+      traySlot={traySlot}
       underbarPlacement={underbarPlacement}
       slashMenuPlacement={slashMenuPlacement}
       cardClassName={cardClassName}

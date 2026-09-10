@@ -236,3 +236,9 @@ test('listPermissions is a background read — a 403 never reaches the global er
   await listPermissions('acc-1').catch(() => undefined);
   expect(reportedErrors).toBe(0);
 });
+
+// A space is an IAM object like an agent: the assignment object type
+// must admit it or hosts cast (`'space' as AssignmentObjectType`).
+import type { AssignmentObjectType as _ObjectTypeWithSpace } from './assignments';
+const _spaceObjectType: _ObjectTypeWithSpace = 'space';
+void _spaceObjectType;

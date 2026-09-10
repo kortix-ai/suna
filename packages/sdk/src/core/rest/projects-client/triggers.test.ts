@@ -239,3 +239,15 @@ test('the public trigger access type rejects unknown modes', () => {
 
   expect([access, badAccess]).toHaveLength(2);
 });
+
+// Spaces: a trigger may belong to a `spaces.<slug>`; the field is
+// typed on the row and both inputs so hosts never widen the type themselves.
+import type {
+  CreateProjectTriggerInput as _CreateWithSpace,
+  ProjectTrigger as _TriggerWithSpace,
+  UpdateProjectTriggerInput as _UpdateWithSpace,
+} from './triggers';
+const _spaceOnRow: _TriggerWithSpace['space'] = 'marketing';
+const _spaceOnCreate: _CreateWithSpace['space'] = null;
+const _spaceOnUpdate: _UpdateWithSpace['space'] = undefined;
+void [_spaceOnRow, _spaceOnCreate, _spaceOnUpdate];

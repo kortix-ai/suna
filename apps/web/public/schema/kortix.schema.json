@@ -207,6 +207,10 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "space": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "enabled": {
                   "oneOf": [
                     {
@@ -1133,6 +1137,237 @@
               "additionalProperties": false
             }
           },
+          "spaces": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string",
+                  "deprecated": true
+                },
+                "context": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "not": {
+                      "pattern": "^/|(^|/)\\.\\.($|/)"
+                    }
+                  },
+                  "deprecated": true
+                },
+                "agent": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sessions": {
+                  "type": "string",
+                  "enum": [
+                    "private",
+                    "shared"
+                  ]
+                },
+                "agents": {
+                  "type": "object",
+                  "propertyNames": {
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                  },
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "sandbox": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                          },
+                          "connectors": {
+                            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                            "oneOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "all",
+                                  "none"
+                                ]
+                              }
+                            ]
+                          },
+                          "connectors_required": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "description": "Connector slugs that must resolve before the session starts."
+                          },
+                          "connectors_personal": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "deprecated": true,
+                            "description": "Deprecated input alias for connectors_required."
+                          },
+                          "secrets": {
+                            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                            "oneOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "all",
+                                  "none"
+                                ]
+                              }
+                            ]
+                          },
+                          "skills": {
+                            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                            "oneOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "all",
+                                  "none"
+                                ]
+                              }
+                            ]
+                          },
+                          "kortix_cli": {
+                            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                            "oneOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "project.read",
+                                    "project.write",
+                                    "project.delete",
+                                    "project.session.read",
+                                    "project.session.start",
+                                    "project.session.stop",
+                                    "project.session.bindings.write",
+                                    "project.members.read",
+                                    "project.members.manage",
+                                    "project.trigger.read",
+                                    "project.trigger.create",
+                                    "project.trigger.update",
+                                    "project.trigger.delete",
+                                    "project.trigger.fire",
+                                    "project.gateway.logs.read",
+                                    "project.gateway.spend.read",
+                                    "project.gateway.budget.set",
+                                    "project.gateway.keys.manage",
+                                    "project.agent.read",
+                                    "project.agent.write",
+                                    "project.skill.read",
+                                    "project.skill.write",
+                                    "project.command.read",
+                                    "project.command.write",
+                                    "project.file.read",
+                                    "project.file.write",
+                                    "project.customize.read",
+                                    "project.customize.write",
+                                    "project.gitops.read",
+                                    "project.gitops.push",
+                                    "project.gitops.merge",
+                                    "project.gitops.ref.any",
+                                    "project.gitops.ref.delete",
+                                    "project.secret.read",
+                                    "project.secret.write",
+                                    "project.connector.read",
+                                    "project.connector.connections.manage",
+                                    "project.connector.write",
+                                    "project.app.read",
+                                    "project.app.write",
+                                    "project.app.deploy",
+                                    "project.review.read",
+                                    "project.review.submit",
+                                    "project.review.act",
+                                    "project.credentials.issue",
+                                    "project.cr.open",
+                                    "project.cr.merge",
+                                    "*"
+                                  ]
+                                }
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "all",
+                                  "none"
+                                ]
+                              }
+                            ]
+                          },
+                          "workspace": {
+                            "type": "string",
+                            "enum": [
+                              "runtime",
+                              "read",
+                              "branch"
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "from"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "kortix_version": false
+              },
+              "additionalProperties": false
+            }
+          },
           "project": {
             "type": "object",
             "properties": {
@@ -1303,6 +1538,10 @@
                   "minLength": 1
                 },
                 "agent_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "space": {
                   "type": "string",
                   "minLength": 1
                 },

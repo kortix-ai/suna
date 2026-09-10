@@ -62,3 +62,28 @@ async function git(args: string[]): Promise<void> {
     });
   });
 }
+
+/**
+ * Commit one file onto `main` of a local bare repository through a throwaway
+ * clone — the flow-side way to put a manifest (or any file) in a
+ * project when no API route writes it.
+ */
+export async function commitFileToLocalRepository(
+  repoUrl: string,
+  filePath: string,
+  content: string,
+  message: string,
+): Promise<void> {
+  const work = await mkdtemp(join(tmpdir(), "ke2e-git-commit-"));
+  try {
+    await git(["clone", "--quiet", repoUrl, work]);
+    await git(["-C", work, "config", "user.name", "Kortix Local E2E"]);
+    await git(["-C", work, "config", "user.email", "local-e2e@kortix.test"]);
+    await writeFile(join(work, filePath), content);
+    await git(["-C", work, "add", filePath]);
+    await git(["-C", work, "commit", "--quiet", "-m", message]);
+    await git(["-C", work, "push", "--quiet", "origin", "main"]);
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+}

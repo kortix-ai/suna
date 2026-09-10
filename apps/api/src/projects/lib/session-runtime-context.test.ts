@@ -54,3 +54,17 @@ describe('session runtime context boundaries', () => {
     ).toEqual({});
   });
 });
+
+describe('space env is server-owned', () => {
+  test('trusted internal extras cannot forge, move, or erase a space binding', () => {
+    // Forging one for a session the server put in no space.
+    expect(mergeSessionSandboxEnv({}, { KORTIX_SPACE: 'marketing' })).toEqual({});
+    // Moving a session into a different space.
+    expect(
+      mergeSessionSandboxEnv(
+        { KORTIX_SPACE: 'marketing' },
+        { KORTIX_SPACE: 'finance' },
+      ),
+    ).toEqual({ KORTIX_SPACE: 'marketing' });
+  });
+});

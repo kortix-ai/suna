@@ -97,6 +97,9 @@ describe('diffAccessDraft — Save fires ONLY changed fields', () => {
       agentsAdded: [],
       agentsRemoved: [],
       agentsChanged: false,
+      spacesAdded: [],
+      spacesRemoved: [],
+      spacesChanged: false,
       dirty: false,
     });
   });
@@ -374,5 +377,91 @@ describe('the dialog writes assignments, not policies', () => {
     expect(dialogSource).toContain(
       "const expirySupported = scope.kind !== 'group' && mode.kind !== 'bulk-group';",
     );
+  });
+});
+
+describe('diffAccessDraft — spaces diff by the SAME rules as agents', () => {
+  const current: AccessDialogCurrent = {
+    role: builtinRole('member'),
+    agentIds: ['agent-a'],
+    spaceIds: ['marketing'],
+    expiresAt: null,
+  };
+  const unchanged = {
+    role: builtinRole('member'),
+    agents: { mode: 'subset' as const, ids: ['agent-a'] },
+    expiresAt: '',
+  };
+
+  test('an omitted space selection touches nothing when none are held', () => {
+    // Every caller that does not edit spaces (account scope, the older
+    // tests above) must keep diffing to exactly what it always did.
+    const diff = diffAccessDraft(
+      { role: builtinRole('member'), agentIds: ['agent-a'], expiresAt: null },
+      unchanged,
+    );
+    expect(diff.spacesAdded).toEqual([]);
+    expect(diff.spacesRemoved).toEqual([]);
+    expect(diff.spacesChanged).toBe(false);
+    expect(diff.dirty).toBe(false);
+  });
+
+  test('adding one space is dirty on its own, with the role untouched', () => {
+    const diff = diffAccessDraft(current, {
+      ...unchanged,
+      spaces: { mode: 'subset', ids: ['marketing', 'research'] },
+    });
+    expect(diff.spacesAdded).toEqual(['research']);
+    expect(diff.spacesRemoved).toEqual([]);
+    expect(diff.spacesChanged).toBe(true);
+    expect(diff.roleChanged).toBe(false);
+    expect(diff.agentsChanged).toBe(false);
+    expect(diff.dirty).toBe(true);
+  });
+
+  test('switching back to "all" removes every space grant that exists', () => {
+    const diff = diffAccessDraft(current, { ...unchanged, spaces: ALL_AGENTS });
+    expect(diff.spacesRemoved).toEqual(['marketing']);
+    expect(diff.spacesAdded).toEqual([]);
+    expect(diff.dirty).toBe(true);
+  });
+
+  test('the same subset is not a change', () => {
+    const diff = diffAccessDraft(current, {
+      ...unchanged,
+      spaces: { mode: 'subset', ids: ['marketing'] },
+    });
+    expect(diff.spacesChanged).toBe(false);
+    expect(diff.dirty).toBe(false);
+  });
+
+  test('agents and spaces move independently in one save', () => {
+    const diff = diffAccessDraft(current, {
+      role: builtinRole('member'),
+      agents: { mode: 'subset', ids: ['agent-b'] },
+      spaces: { mode: 'subset', ids: ['research'] },
+      expiresAt: '',
+    });
+    expect(diff.agentsAdded).toEqual(['agent-b']);
+    expect(diff.agentsRemoved).toEqual(['agent-a']);
+    expect(diff.spacesAdded).toEqual(['research']);
+    expect(diff.spacesRemoved).toEqual(['marketing']);
+  });
+});
+
+describe('agentSelectionFromCurrent seeds a space picker too', () => {
+  test('the initialSpaceIds seed is the same subset shape agents use', () => {
+    // `initialDraftState` builds `{mode:'subset', ids:[...]}` from the prop and
+    // `agentSelectionFromCurrent` from `current.spaceIds`; both feed the
+    // one `diffAgentGrants`, which is what makes the two object types behave
+    // identically without a second code path.
+    expect(agentSelectionFromCurrent(['marketing'])).toEqual({
+      mode: 'subset',
+      ids: ['marketing'],
+    });
+    expect(diffAgentGrants('all', agentSelectionFromCurrent(['marketing']))).toEqual({
+      add: ['marketing'],
+      remove: [],
+    });
   });
 });

@@ -175,6 +175,18 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 ### 13. Triggers / scheduled tasks  🟡
 `projects-client/triggers.ts` ✅ (client) ; `useProjectTriggers` now in `@kortix/sdk/react` ✅ (list + create/update/remove/fire, invalidation-wired); the web app's own `hooks/scheduled-tasks` hook hasn't migrated onto it yet.
 
+### 13a. Spaces (project-scoped)  ✅ (client + facade) / 🟡 (hooks)
+Named containers inside a project — sessions, standing instructions, context paths, a default agent, and scheduled work, granted like an agent. `projects-client/spaces.ts` ✅; facade `project(id).spaces.{list,get,create,update,remove,addContext,removeContext}` ✅. No dedicated React hook yet — key with `qk.project.spaces(id)` / `qk.project.space(id, slug)`.
+| op | REST |
+| --- | --- |
+| `list` | `GET /projects/:id/spaces` |
+| `get` | `GET /projects/:id/spaces/:slug` |
+| `create` | `POST /projects/:id/spaces` |
+| `update` | `PATCH /projects/:id/spaces/:slug` |
+| `remove` | `DELETE /projects/:id/spaces/:slug` |
+| `addContext` | `POST /projects/:id/spaces/:slug/context` |
+| `removeContext` | `DELETE /projects/:id/spaces/:slug/context?path=` |
+
 ### 13b. Marketplace / registry install (project-scoped)  ✅
 Installing/updating/removing a catalog item onto a project's default branch (a commit, not a runtime call) — distinct from browsing the catalog itself (client fns in `projects-client/marketplace-catalog.ts`, now also wrapped on the facade as top-level `kortix.marketplace.*` — see §13c). `projects-client/marketplace.ts` ✅; facade `project(id).marketplace.{list,install,updates,update,updateAll,remove}` and the identical `project(id).registry.{...}` alias ✅:
 | op | REST |

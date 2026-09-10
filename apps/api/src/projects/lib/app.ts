@@ -9,6 +9,8 @@ import {
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
   TriggerSchema as ContractTriggerSchema,
+  SpaceSchema as ContractSpaceSchema,
+  SpacesResponseSchema as ContractSpacesResponseSchema,
   WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
 } from '@kortix/api-contract';
@@ -47,6 +49,11 @@ export const ChangeRequestSchema = z.object({}).passthrough().openapi('ChangeReq
 export const SecretSchema = ContractSecretSchema.openapi('Secret');
 
 export const TriggerSchema = ContractTriggerSchema.openapi('Trigger');
+
+export const SpaceSchema = ContractSpaceSchema.openapi('Space');
+
+export const SpacesResponseSchema =
+  ContractSpacesResponseSchema.openapi('SpacesResponse');
 
 export const SnapshotSchema = z.object({}).passthrough().openapi('Snapshot');
 

@@ -39,15 +39,15 @@ import { invalidateIamCacheForProjectResources } from './cache-invalidation';
  *  comment above and CREATABLE_RESOURCE_GRANT_TYPES below. agent/skill ids come
  *  from the git config; secret ids are the secret NAME (uppercased key) from the
  *  project_secrets table. */
-export const RESOURCE_GRANT_TYPES = ['agent', 'skill', 'secret'] as const;
+export const RESOURCE_GRANT_TYPES = ['agent', 'skill', 'secret', 'space'] as const;
 export type ResourceType = (typeof RESOURCE_GRANT_TYPES)[number];
 
 /** The resource kinds a NEW member/department-scoped grant may be created for.
- *  Only `agent` — skills and secrets are governed by the manager role (edit) +
- *  agent inheritance (use), not a direct member-scoped grant. Existing
- *  skill/secret grant rows still read, list and revoke normally; this only gates
- *  the CREATE path. */
-export const CREATABLE_RESOURCE_GRANT_TYPES = ['agent'] as const;
+ *  `agent` and `space` — the two closed-by-default object types. Skills
+ *  and secrets are governed by the manager role (edit) + agent inheritance
+ *  (use), not a direct member-scoped grant. Existing skill/secret grant rows
+ *  still read, list and revoke normally; this only gates the CREATE path. */
+export const CREATABLE_RESOURCE_GRANT_TYPES = ['agent', 'space'] as const;
 export type CreatableResourceType = (typeof CREATABLE_RESOURCE_GRANT_TYPES)[number];
 export function isCreatableResourceType(v: string): v is CreatableResourceType {
   return (CREATABLE_RESOURCE_GRANT_TYPES as readonly string[]).includes(v);
@@ -65,11 +65,12 @@ export type PrincipalType = 'member' | 'group';
  * round-trip on the hot path once warm.
  */
 export async function hasAnyResourceGrants(projectId: string): Promise<boolean> {
-  const [agents, skills] = await Promise.all([
+  const [agents, skills, spaces] = await Promise.all([
     loadObjectGrants(projectId, 'agent'),
     loadObjectGrants(projectId, 'skill'),
+    loadObjectGrants(projectId, 'space'),
   ]);
-  return agents.size > 0 || skills.size > 0;
+  return agents.size > 0 || skills.size > 0 || spaces.size > 0;
 }
 
 /**

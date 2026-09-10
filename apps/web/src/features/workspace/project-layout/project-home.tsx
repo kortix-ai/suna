@@ -3,27 +3,36 @@
 import { useQuery } from '@tanstack/react-query';
 import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import type { AttachedFile } from '@/features/session/session-chat-input';
+import { useSidebar } from '@/components/ui/sidebar';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
+import { cn } from '@/lib/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { SpaceSelector } from '@/features/spaces/space-selector';
+import { useProjectSpaces } from '@/features/spaces/spaces-data';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
+  type SandboxTemplate,
+  type Space,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
-  type SandboxTemplate,
 } from '@kortix/sdk';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { MetaRuntimeIndicator } from './home/meta-runtime-indicator';
 import { SandboxPicker } from './home/sandbox-picker';
-import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
+import {
+  type ProjectHomeHero,
+  ProjectHomeWallpaper,
+  ProjectHomeWelcomeBody,
+} from './home/welcome-body';
 
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
@@ -32,6 +41,10 @@ export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
+  /** Where the session starts: a space slug, or `null` for the whole project. */
+  space?: string | null;
+  /** That space's own `agent` — the boot agent when the composer picked none. */
+  space_agent?: string | null;
 }
 
 /**
@@ -49,6 +62,11 @@ export function ProjectHome({
   projectId,
   onSend,
   busy,
+  hero,
+  below,
+  breadcrumb,
+  toolbar,
+  space,
 }: {
   projectId: string;
   onSend: (
@@ -57,12 +75,48 @@ export function ProjectHome({
     options?: ProjectHomeSendOptions,
   ) => void;
   busy: boolean;
+  /** See `ProjectHomeWelcomeBody` — a space wears this surface with its own name. */
+  hero?: ProjectHomeHero;
+  /** Rendered under the composer, inside the hero column. */
+  below?: ReactNode;
+  /** Floated over the top-left corner, beside the sidebar toggle. */
+  breadcrumb?: ReactNode;
+  /** Floated over the top-right corner, ahead of the access-requests bell. */
+  toolbar?: ReactNode;
+  /** The space this page IS (a space page) — the picker's default. */
+  space?: Space | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const sidebarCollapsed = useSidebar().state === 'collapsed';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
+
+  // Where a send starts. The page's own space is the default; a pick on
+  // the composer overrides it. The pick remembers which page it was made on,
+  // so moving between space pages never carries a stale choice across.
+  const pageSpace = space?.slug ?? null;
+  const [spacePick, setSpacePick] = useState<{
+    page: string | null;
+    slug: string | null;
+  } | null>(null);
+  const activeSpace =
+    spacePick?.page === pageSpace ? spacePick.slug : pageSpace;
+  // The SAME query the sidebar group reads — never a second request.
+  const spacesQuery = useProjectSpaces(projectId);
+  const spaces = useMemo(() => {
+    const list = spacesQuery.data?.spaces ?? [];
+    // The page's own row must exist before the list lands, or the trigger
+    // would read "Space" on a page that is already inside one.
+    return space && !list.some((s) => s.slug === space.slug)
+      ? [space, ...list]
+      : list;
+  }, [spacesQuery.data, space]);
+  const activeSpaceSpec = spaces.find((s) => s.slug === activeSpace) ?? null;
+  const activeSpaceAgent = activeSpaceSpec?.agent ?? null;
+  const canCreateSpace =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
 
   // The sandbox TEMPLATE catalog, not live sandbox health (that is
   // `useSandboxHealth`, its own key and its own polling). Changed only by this
@@ -124,6 +178,8 @@ export function ProjectHome({
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       onSend(text, files, {
         ...options,
+        space: activeSpace,
+        space_agent: activeSpaceAgent,
         ...(metaSelected
           ? { sandbox_slug: META_SANDBOX_SLUG }
           : selectedSlug
@@ -131,7 +187,7 @@ export function ProjectHome({
             : {}),
       });
     },
-    [metaSelected, selectedSlug, onSend],
+    [metaSelected, selectedSlug, onSend, activeSpace, activeSpaceAgent],
   );
 
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
@@ -195,11 +251,35 @@ export function ProjectHome({
     <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
-      <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />
+      {breadcrumb ? (
+        // `left-12` clears the floating sidebar toggle (`top-2 left-2`, 32px)
+        // while the sidebar is collapsed; expanded, the toggle is gone and the
+        // breadcrumb takes its place on the rail.
+        <div
+          className={cn(
+            'absolute top-3.5 z-20 flex min-w-0 items-center',
+            sidebarCollapsed ? 'left-12' : 'left-4',
+          )}
+        >
+          {breadcrumb}
+        </div>
+      ) : null}
+      {/* One top-right cluster: the host's toolbar, then the bell — both are
+          `static` inside it so neither has to know about the other. */}
+      <div className="absolute top-3 right-4 z-20 flex items-center gap-1">
+        {toolbar}
+        <AccessRequestsBell
+          count={pendingAccessCount}
+          to={accessRequestsTo}
+          className="static top-auto right-auto"
+        />
+      </div>
 
       <ProjectHomeWelcomeBody
         projectId={projectId}
         onPickSuggestion={applySuggestion}
+        hero={hero}
+        below={below}
         composer={
           <ComposerChatInput
             onSend={handleSend}
@@ -233,6 +313,24 @@ export function ProjectHome({
             onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
             sandboxSlot={sandboxSlot}
+            // The roster follows the pick: a space's own agents appear
+            // only while it is chosen; the whole project offers globals only.
+            space={activeSpaceSpec ? { agents: activeSpaceSpec.agents ?? [] } : null}
+            // The tray under the card: where the session starts (user,
+            // 2026-09-05 — "under the main chat box, like Claude's project or
+            // folder strip"). Absent until the project has a space to
+            // offer — a picker over nothing can only say "Whole project".
+            traySlot={
+              spaces.length > 0 ? (
+                <SpaceSelector
+                  projectId={projectId}
+                  spaces={spaces}
+                  selected={activeSpace}
+                  onSelect={(slug) => setSpacePick({ page: pageSpace, slug })}
+                  canCreate={canCreateSpace}
+                />
+              ) : null
+            }
           />
         }
       />

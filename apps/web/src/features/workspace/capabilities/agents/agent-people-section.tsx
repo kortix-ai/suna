@@ -52,6 +52,7 @@ import {
   type ProjectAccessResponse,
   type ProjectResourceGrant,
   type ProjectRole,
+  type ResourceGrantType,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { PencilSimpleIcon, PlusIcon, UsersIcon } from '@phosphor-icons/react';
@@ -59,32 +60,59 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 /** The grants that name `agentName`. Orphaned rows (agent renamed) are kept —
- *  they are inert, and hiding them would hide the thing to clean up. */
+ *  they are inert, and hiding them would hide the thing to clean up.
+ *  `resourceType` defaults to `'agent'`, so every existing caller is unchanged;
+ *  a space page passes `'space'` and gets the identical fold. */
 export function grantsForAgent(
   grants: readonly ProjectResourceGrant[],
   agentName: string,
+  resourceType: ResourceGrantType = 'agent',
 ): ProjectResourceGrant[] {
-  return grants.filter((g) => g.resource_type === 'agent' && g.resource_id === agentName);
+  return grants.filter((g) => g.resource_type === resourceType && g.resource_id === agentName);
 }
 
-/** Every agent a principal holds — the edit dialog's `agentIds` seed. */
+/** Every object of one type a principal holds — the edit dialog's `agentIds` /
+ *  `spaceIds` seed. */
 export function agentIdsHeldBy(
   grants: readonly ProjectResourceGrant[],
   principalType: 'member' | 'group',
   principalId: string,
+  resourceType: ResourceGrantType = 'agent',
 ): string[] {
   return [
     ...new Set(
       grants
         .filter(
           (g) =>
-            g.resource_type === 'agent' &&
+            g.resource_type === resourceType &&
             g.principal_type === principalType &&
             g.principal_id === principalId,
         )
         .map((g) => g.resource_id),
     ),
   ];
+}
+
+/** The section's copy, per resource type. The two objects the IAM engine
+ *  closes by default are granted the same way, so they get the same section
+ *  with the sentence that names what is actually inherited. */
+function resourceCopy(
+  resourceType: 'agent' | 'space',
+  tI18nComplete: ReturnType<typeof useI18nTranslations>,
+  tSpaces: ReturnType<typeof useI18nTranslations>,
+): { description: string; empty: string; rowSuffix: string } {
+  if (resourceType === 'agent') {
+    return {
+      description: tI18nComplete.raw('text96feb5be077d'),
+      empty: tI18nComplete.raw('text011c4e48df01'),
+      rowSuffix: tI18nComplete.raw('textc795f93da2e5'),
+    };
+  }
+  return {
+    description: tSpaces('people.description'),
+    empty: tSpaces('people.empty'),
+    rowSuffix: tSpaces('people.orphanedSuffix'),
+  };
 }
 
 // The live `/access` contract carries a custom-role binding per member and a
@@ -124,11 +152,18 @@ interface EditTarget {
 export function AgentPeopleSection({
   projectId,
   agentName,
+  resourceType = 'agent',
 }: {
   projectId: string;
+  /** The grant key: an agent name, or a space slug. */
   agentName: string;
+  /** Which closed object type this section grants. Defaults to `'agent'`, so
+   *  the agent page's two call sites are unchanged. */
+  resourceType?: 'agent' | 'space';
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSpaces = useI18nTranslations('spaces');
+  const copy = resourceCopy(resourceType, tI18nComplete, tSpaces);
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
@@ -160,12 +195,25 @@ export function AgentPeopleSection({
   const projectName = detailQuery.data?.project?.name ?? '';
 
   const grants = useMemo(() => grantsQuery.data?.grants ?? [], [grantsQuery.data]);
-  const assigned = useMemo(() => grantsForAgent(grants, agentName), [grants, agentName]);
+  const assigned = useMemo(
+    () => grantsForAgent(grants, agentName, resourceType),
+    [grants, agentName, resourceType],
+  );
 
   if (!canManage) return null;
 
   const openEdit = (grant: ProjectResourceGrant) => {
-    const agentIds = agentIdsHeldBy(grants, grant.principal_type, grant.principal_id);
+    // BOTH object types are seeded, whichever page this section is on: the
+    // dialog's diff writes only what changed, and a `current` missing the
+    // other type would leave that picker showing "All" while the principal
+    // actually holds a subset.
+    const agentIds = agentIdsHeldBy(grants, grant.principal_type, grant.principal_id, 'agent');
+    const spaceIds = agentIdsHeldBy(
+      grants,
+      grant.principal_type,
+      grant.principal_id,
+      'space',
+    );
     if (grant.principal_type === 'member') {
       const member = accessQuery.data?.members.find((m) => m.user_id === grant.principal_id);
       const policy = projectPolicy(member?.custom_role_policies);
@@ -183,6 +231,7 @@ export function AgentPeopleSection({
               ? builtinRole(member.project_role)
               : ROLE_NONE,
           agentIds: agentIds.length > 0 ? agentIds : 'all',
+          spaceIds: spaceIds.length > 0 ? spaceIds : 'all',
           expiresAt: policy ? policy.expires_at : (member?.expires_at ?? null),
         },
         inheritedFrom: (member?.group_sources ?? []).map((g) => g.group_name),
@@ -204,6 +253,7 @@ export function AgentPeopleSection({
               ? builtinRole(group.built_in_role)
               : ROLE_NONE,
           agentIds: agentIds.length > 0 ? agentIds : 'all',
+          spaceIds: spaceIds.length > 0 ? spaceIds : 'all',
           expiresAt: policy ? policy.expires_at : null,
         },
       });
@@ -212,10 +262,7 @@ export function AgentPeopleSection({
   };
 
   return (
-    <EditorSection
-      title={tI18nComplete.raw('text82d9af69e1a1')}
-      description={tI18nComplete.raw('text96feb5be077d')}
-    >
+    <EditorSection title={tI18nComplete.raw('text82d9af69e1a1')} description={copy.description}>
       <div className="space-y-3 py-3.5">
         {grantsQuery.isLoading ? (
           <div className="space-y-2">
@@ -223,9 +270,7 @@ export function AgentPeopleSection({
             <Skeleton className="h-11 w-full rounded-md" />
           </div>
         ) : assigned.length === 0 ? (
-          <p className="text-muted-foreground text-xs text-pretty">
-            {tI18nComplete.raw('text011c4e48df01')}
-          </p>
+          <p className="text-muted-foreground text-xs text-pretty">{copy.empty}</p>
         ) : (
           <ul className="space-y-2">
             {assigned.map((g) => {
@@ -254,7 +299,7 @@ export function AgentPeopleSection({
                             value0: new Date(g.expires_at).toLocaleDateString(),
                           })
                         : ''}
-                      {g.orphaned ? tI18nComplete.raw('textc795f93da2e5') : ''}
+                      {g.orphaned ? copy.rowSuffix : ''}
                     </span>
                   </span>
                   <Button
@@ -293,7 +338,9 @@ export function AgentPeopleSection({
           accountId={accountId}
           scope={{ kind: 'project', projectId, projectName }}
           mode={{ kind: 'grant' }}
-          initialAgentIds={[agentName]}
+          {...(resourceType === 'space'
+            ? { initialSpaceIds: [agentName] }
+            : { initialAgentIds: [agentName] })}
         />
       ) : null}
 

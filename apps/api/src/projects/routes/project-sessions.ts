@@ -12,6 +12,8 @@ import {
   sharingChangeKeepsEditorAccess,
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
+import { featureDisabledBody, requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -36,6 +38,15 @@ import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
+import { assertSpaceAccessible, spaceViewerAccess } from '../lib/space-access';
+import { loadProjectAgents } from '../agents';
+import {
+  agentUsableIn,
+  loadProjectSpaces,
+  usableAgentNames,
+  type SpaceSpec,
+} from '../spaces';
+import { withProjectGitAuth } from '../lib/git';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'deletedAt',
@@ -113,6 +124,41 @@ projectsApp.openapi(
           PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
         )
       : false;
+  // Per-SPACE scoping. Runs BEFORE the agent gate for two reasons: an
+  // undeclared or ungranted space must be refused whatever agent was
+  // asked for, and a granted one supplies the agent when the caller named none
+  // — so the ordinary agent gate below runs on the agent that will actually
+  // start. Declaration is re-checked in `createProjectSession` for the callers
+  // that never pass through here (trigger fires).
+  const requestedSpace = normalizeString(body.space);
+  if (requestedSpace) {
+    // The flag has no back door: with Spaces off, filing a session into one is
+    // refused here, not just hidden in the UI and blocked on /spaces.
+    const spacesGate = requireFeatureFlag(c, loaded.row.metadata, 'spaces');
+    if (spacesGate) return spacesGate;
+    const declared = await loadProjectSpaces(await withProjectGitAuth(loaded.row));
+    const spec = declared.specs.find((s) => s.slug === requestedSpace);
+    if (!spec) {
+      return c.json(
+        {
+          error: `Space "${requestedSpace}" is not declared in this project's manifest`,
+          code: 'SPACE_NOT_DECLARED',
+        },
+        400,
+      );
+    }
+    // Throws the 403 `space_not_accessible` with `accessible_spaces`.
+    await assertSpaceAccessible(
+      c,
+      loaded,
+      projectId,
+      requestedSpace,
+      declared.specs.map((s) => s.slug),
+    );
+    if (!normalizeString(body.agent_name ?? body.agentName) && spec.agent) {
+      body.agent_name = spec.agent;
+    }
+  }
   // Per-RESOURCE scoping: a member/department can only launch agents they're
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
@@ -237,6 +283,9 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         query: z.object({
           scope: z.enum(['visible', 'project']).optional(),
+          // `?space=<slug>` narrows to one space; `?space=`
+          // (empty) narrows to the sessions that belong to none.
+          space: z.string().optional(),
         }),
       },
     responses: {
@@ -250,6 +299,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
+  const spaceFilter = c.req.valid('query').space as string | undefined;
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -262,6 +312,8 @@ projectsApp.openapi(
     effectiveRole: loaded.effectiveRole,
     scope,
     boundCredentialSessionId: callerKortixSessionId(c),
+    spaceFilter,
+    loadSpaceAccess: (slugs) => spaceViewerAccess(c, loaded, projectId, slugs),
     probeManageCapability: () =>
       projectCapabilityAllowed(
         c,
@@ -463,7 +515,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(SessionSchema, 'The updated session'),
-        ...errors(400, 404),
+        ...errors(400, 403, 404),
     },
   }),
   async (c) => {
@@ -491,7 +543,7 @@ projectsApp.openapi(
     return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
 
-  const allowedFields = ['name', 'metadata'];
+  const allowedFields = ['name', 'metadata', 'space'];
   const unknownField = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unknownField) {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
@@ -535,6 +587,83 @@ projectsApp.openapi(
   const existing = visible.row;
 
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
+
+  // MOVE — `space: "<slug>"` files the session under that space,
+  // `null`/`""` moves it back to the project level. The row is the only thing
+  // that changes: every server-side gate (the list fold, the compile, the
+  // env) reads `project_sessions.space`, so the move is complete the
+  // moment it commits. A sandbox that is already running keeps the
+  // KORTIX_SPACE it booted with until its next start — the in-sandbox
+  // CLI's `sessions new` inheritance is the only thing that reads it there.
+  if (hasOwn(body, 'space')) {
+    const target = normalizeString(body.space);
+    // Moving INTO a space needs the flag; moving OUT (`null`) never does.
+    // Turning Spaces off must not strand a session that is already filed in
+    // one — un-filing it is the way back, so it stays open.
+    //
+    // Spelled out rather than via `requireFeatureFlag` because this handler is
+    // typed by its OpenAPI route config, which will not accept that helper's
+    // bare `Response`. Same predicate, same body, same 403.
+    if (target && !resolveFeatureFlag(loaded.row.metadata, 'spaces')) {
+      return c.json(featureDisabledBody('spaces'), 403);
+    }
+    if (target !== (existing.space ?? null)) {
+      // A move changes WHO CAN READ the session: everyone granted a `shared`
+      // space reads every session in it (spec §2). That is the sharing
+      // decision, so it takes the sharing gate — owner-governed, not
+      // manager-tier, for the same reason PUT /sharing is.
+      if (!visible.canManageSharing) {
+        return c.json({ error: SESSION_SHARING_OWNER_ONLY_ERROR }, 403);
+      }
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const declared = await loadProjectSpaces(gitProject);
+      let spec: SpaceSpec | null = null;
+      if (target) {
+        spec = declared.specs.find((s) => s.slug === target) ?? null;
+        if (!spec) {
+          return c.json(
+            {
+              error: `Space "${target}" is not declared in this project's manifest`,
+              code: 'SPACE_NOT_DECLARED',
+            },
+            400,
+          );
+        }
+        // Throws the 403 `space_not_accessible` with the usable set: a
+        // caller cannot file a session into a space they do not hold.
+        await assertSpaceAccessible(
+          c,
+          loaded,
+          projectId,
+          target,
+          declared.specs.map((s) => s.slug),
+        );
+      }
+      // The session's agent has to be usable where it lands (spec 2026-09-06
+      // §2): an agent a space file owns runs only there and in the
+      // spaces that reference it. Refused up front rather than left to
+      // fail at the session's next start.
+      const agentName = normalizeString(existing.agentName);
+      if (agentName) {
+        const agents = await loadProjectAgents(gitProject);
+        if (
+          agents.specs.some((a) => a.name === agentName) &&
+          !agentUsableIn(agents, spec, agentName)
+        ) {
+          const owner = agents.specs.find((a) => a.name === agentName)?.space;
+          return c.json(
+            {
+              error: `This session runs "${agentName}", which is not usable ${target ? `in space "${target}"` : 'at the project level'} — it is declared by space "${owner}" (spaces.${owner}.agents). Reference it there with \`agents.${agentName}: { from: ${owner} }\`, or move the session somewhere it runs.`,
+              code: 'AGENT_NOT_IN_SPACE',
+              usable_agents: usableAgentNames(agents, spec),
+            },
+            400,
+          );
+        }
+      }
+      updates.space = target;
+    }
+  }
 
   // A user-set name is the AUTHORITATIVE display name. It lives in
   // metadata.custom_name — a separate key from metadata.name (the server-side

@@ -2,6 +2,10 @@ import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { agentConfigEtag } from './compile-agent-config';
 import { workspaceModeAllowsFullRepository } from './session-sandbox-metadata';
 
+/** The space slug a session runs inside. Absent for a plain session.
+ *  Server-owned: see `SERVER_OWNED_ENV_NAMES` in `session-runtime-context.ts`. */
+export const SPACE_ENV_NAME = 'KORTIX_SPACE';
+
 export interface SessionRuntimeEnvInput {
   projectId: string;
   sessionId: string;
@@ -42,6 +46,10 @@ export interface SessionRuntimeEnvInput {
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
   compiledAgentConfig?: string | null;
+  /** The manifest space this session runs inside. Emits KORTIX_SPACE;
+   *  omitted/`null` for a plain session, whose sandbox env is then
+   *  byte-for-byte unchanged. */
+  space?: string | null;
 }
 
 /**
@@ -143,6 +151,11 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // The API adopts/persists that root; it must not create a competing one.
     KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
     ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
+    // The space this session belongs to. One slug, nothing derived: the
+    // in-sandbox CLI inherits it (`kortix sessions new`), and nothing else in
+    // the box needs it. The 2026-09-07 simplification removed the JSON
+    // envelope that used to carry instructions and context files.
+    ...(input.space ? { [SPACE_ENV_NAME]: input.space } : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (connector MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call

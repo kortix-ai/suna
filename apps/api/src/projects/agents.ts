@@ -89,8 +89,13 @@ export type GrantSet = string[] | 'all';
 export interface AgentSpec {
   /** Agent name — unique per project. Matches projectSessions.agentName + the `.md` filename. */
   name: string;
-  /** e.g. `kortix.yaml#agents.<name>` (or the project's actual manifest filename) for UI / error reporting. */
+  /** e.g. `kortix.yaml#agents.<name>` — the same file for a global agent and for an
+   *  agent a space owns) for UI / error reporting. */
   path: string;
+  /** The space that DECLARES this agent (`spaces.<slug>.agents`), or null for
+   *  a global agent from the root manifest. An owned agent is usable only in
+   *  its space and in the ones that reference it (spec 2026-09-06 §2). */
+  space: string | null;
   /** When false the overlay is skipped (the agent still runs from its `.md`, with default-deny scope). */
   enabled: boolean;
   /** Which connectors (by slug) this agent may use. `[]` = none (default). */
@@ -311,10 +316,47 @@ export async function loadProjectAgents(
     };
   }
   if (!manifest) manifest = synthesizeBlankManifest({ manifestPath: project.manifestPath });
-  return {
+  const root: LoadedAgents = {
     ...extractAgents(manifest),
     manifest: { revision: manifest.revision ?? null, commit: manifest.commit ?? null },
   };
+  // Space-owned agents join the roster from the same manifest read.
+  // Preserve its provenance when merging the two rosters.
+  const { loadProjectSpaces } = await import('./spaces');
+  const spaces = await loadProjectSpaces(project, { manifest });
+  return mergeSpaceAgents(root, spaces.specs);
+}
+
+/**
+ * Fold space-owned agents into the root's roster. An agent
+ * name is unique across the whole project — a name declared twice (root and
+ * a space, or two spaces) is an error naming both places, and the second
+ * declaration is dropped so the first keeps working. Pure.
+ */
+export function mergeSpaceAgents(
+  root: LoadedAgents,
+  spaces: readonly { ownedAgents: readonly AgentSpec[] }[],
+): LoadedAgents {
+  const specs = [...root.specs];
+  const errors = [...root.errors];
+  const declaredAt = new Map(root.specs.map((spec) => [spec.name, spec.path]));
+  for (const space of spaces) {
+    for (const agent of space.ownedAgents) {
+      const previous = declaredAt.get(agent.name);
+      if (previous) {
+        errors.push({
+          name: agent.name,
+          path: agent.path,
+          error: `Duplicate agent name "${agent.name}" — also declared at ${previous}; agent names must be unique across the project`,
+        });
+        continue;
+      }
+      declaredAt.set(agent.name, agent.path);
+      specs.push(agent);
+    }
+  }
+  specs.sort((a, b) => a.name.localeCompare(b.name));
+  return { ...root, specs, errors };
 }
 
 /**
@@ -690,6 +732,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
     spec: {
       name,
       path: `${filename}#agents.${name}`,
+      space: null,
       enabled,
       connectors: connectorsParsed.value,
       kortixCli: kortixParsed.value,
@@ -790,6 +833,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
     spec: {
       name,
       path: `${filename}#agents.${name}`,
+      space: null,
       enabled,
       connectors: toGrantSet(connectorsResolved),
       connectorsRequired,

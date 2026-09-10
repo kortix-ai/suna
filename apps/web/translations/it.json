@@ -2,6 +2,97 @@
   "useCases": {
     "headline": "I processi che fanno funzionare un'azienda"
   },
+  "spaces": {
+    "cancel": "Annulla",
+    "optional": "facoltativo",
+    "none": "Nessuno",
+    "noSpace": "Nessuno spazio",
+    "create": {
+      "created": "{name} è stato creato",
+      "failed": "Impossibile creare lo spazio",
+      "title": "Nuovo spazio",
+      "description": "Un contenitore con nome all’interno del progetto — con sessioni, agente predefinito e attività pianificate propri.",
+      "nameLabel": "Nome",
+      "namePlaceholder": "Marketing",
+      "descriptionLabel": "Descrizione",
+      "descriptionPlaceholder": "Lavoro sulla campagna.",
+      "agentLabel": "Agente",
+      "noDefaultAgent": "Nessun agente predefinito",
+      "agentHelp": "È una scelta predefinita, non un vincolo — le sessioni avviate qui si aprono con questo agente, ma ogni persona deve comunque avere accesso autonomo all’agente.",
+      "submit": "Crea spazio"
+    },
+    "move": {
+      "movedTo": "Spostata in {name}",
+      "movedOut": "Rimossa dallo spazio",
+      "failed": "Impossibile spostare la sessione",
+      "title": "Sposta in"
+    },
+    "page": {
+      "offTitle": "Gli Spazi sono disattivati per questo progetto",
+      "offDescription": "Attiva Spazi in Impostazioni → Flag funzionalità per raggruppare le sessioni in un’iniziativa con nome.",
+      "backToProject": "Torna al progetto",
+      "notFoundTitle": "Nessuno spazio chiamato {slug}",
+      "notFoundDescription": "Potrebbe essere stato rimosso dalla configurazione del progetto oppure potresti non avere l’accesso."
+    },
+    "toolbar": {
+      "sharedToast": "Tutte le persone con accesso a questo spazio possono leggerne le sessioni",
+      "privateToast": "Le sessioni sono private per chi le avvia",
+      "visibilityFailed": "Impossibile modificare la visibilità delle sessioni",
+      "renamed": "Rinominato in {name}",
+      "renameFailed": "Impossibile rinominare lo spazio",
+      "deleted": "{name} è stato eliminato",
+      "deleteFailed": "Impossibile eliminare lo spazio",
+      "nameAria": "Nome dello spazio",
+      "grantHint": "Concedi questo spazio a persone o gruppi",
+      "grantedHint": "Concesso a {count, plural, one {# persona o gruppo} other {# persone e gruppi}}",
+      "share": "Condividi",
+      "actionsAria": "Azioni dello spazio",
+      "visibilityLabel": "Le sessioni qui possono essere lette da",
+      "privateOption": "Solo chi le ha avviate",
+      "sharedOption": "Tutte le persone con accesso a questo spazio",
+      "rename": "Rinomina",
+      "delete": "Elimina",
+      "deleteTitle": "Eliminare {name}?",
+      "deleteDescription": "Il blocco spaces.{slug} viene rimosso da kortix.yaml e i relativi trigger perdono il riferimento inverso. Le sessioni vengono conservate, ma i membri con accesso esclusivo a questo spazio non le vedranno più."
+    },
+    "recents": {
+      "aria": "Sessioni recenti",
+      "title": "Recenti",
+      "empty": "Nessuna sessione."
+    },
+    "selector": {
+      "selectAria": "Seleziona spazio",
+      "wholeProject": "Intero progetto",
+      "wholeProjectDescription": "Non appartiene a uno spazio.",
+      "searchPlaceholder": "Cerca spazi",
+      "noMatches": "Nessuno spazio corrisponde a «{query}»",
+      "new": "Nuovo spazio"
+    },
+    "sidebar": {
+      "title": "Spazi",
+      "new": "Nuovo spazio",
+      "collapse": "Comprimi {name}",
+      "expand": "Espandi {name}",
+      "more": "Altri {count}…"
+    },
+    "schedule": {
+      "label": "Spazio",
+      "hint": "Archivia questo trigger e ogni sessione che avvia in un unico spazio.",
+      "updated": "Spazio aggiornato",
+      "updateFailed": "Impossibile aggiornare lo spazio"
+    },
+    "people": {
+      "description": "Membri e gruppi con accesso a questo spazio. L’accesso allo spazio non concede l’accesso all’agente — serve anche un accesso autonomo al relativo agente.",
+      "empty": "Questo spazio non è ancora stato concesso a nessuno. I responsabili del progetto possono sempre usarlo.",
+      "orphanedSuffix": "· l’accesso non corrisponde più a uno spazio"
+    },
+    "access": {
+      "title": "Spazi",
+      "all": "Tutti gli spazi",
+      "onlyThese": "Solo questi…",
+      "allDescription": "Tutti gli spazi presenti oggi in questo progetto ({count}). Gli spazi aggiunti in seguito richiedono una nuova concessione — uno spazio senza righe di concessione è riservato al livello responsabile."
+    }
+  },
   "developers": {
     "heroDescription": "Agenti, skill, strumenti, connettori e pianificazioni sono tutti file in un repository. Modificali nel tuo IDE, eseguili in locale e distribuiscili nel cloud con un solo comando. Open source, self-hosted e sotto il tuo controllo.",
     "agentBody": "Un agente è un file Markdown: una persona, il suo modello e i suoi strumenti. Le skill sono cartelle che carica quando servono. Modificale a mano oppure descrivi ciò che vuoi e lascia che il tuo agente di coding le scriva.",
@@ -996,6 +1087,10 @@
         "pi_worker": {
           "name": "Runtime worker Pi (compilato)",
           "description": "Esegui sessioni con il runtime sperimentale del worker Pi."
+        },
+        "spaces": {
+          "name": "Spazi",
+          "description": "Raggruppa le sessioni in un'iniziativa denominata nel progetto, ciascuna con il proprio agente predefinito e le attività pianificate."
         }
       }
     },
@@ -1319,6 +1414,7 @@
         "status": "Stato",
         "activity": "Attività",
         "source": "Origine",
+        "space": "Spazio",
         "none": "Nessuno"
       },
       "order": {
@@ -17054,6 +17150,7 @@
       "textdc8d7c5c602b": "Registro sorgente",
       "textdc934fe30a94": "20%",
       "textdc937b598926": "Nessuno",
+      "text3f5f3b0e5bfc": "Nessuno spazio",
       "textdc958f2a5781": "Azioni chiave",
       "textdc98511e6b34": "Viene eseguito come",
       "textdc99025834c1": "Self-host di Kortix",

@@ -340,6 +340,9 @@ function triggerSchema(): JsonSchemaFragment {
       // left to the imperative validator.
       agent: { type: 'string', minLength: 1 },
       agent_name: { type: 'string', minLength: 1 },
+      // Cross-field: must name a declared `spaces.<slug>` — dynamic, left
+      // to the imperative validator (`validateTriggerSpaceRefsV2`).
+      space: { type: 'string', minLength: 1 },
       enabled: enabledValueSchema(),
       session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
       session_key: { type: 'string' },
@@ -659,6 +662,71 @@ function appsV2Schema(): JsonSchemaFragment {
   };
 }
 
+/** `agents.<name>: { from: <space> }` — an agent borrowed from the
+ *  space that owns it. No other key in this version. Whether the target
+ *  exists and owns that agent is cross-file, left to `validateSpacesV2`. */
+function agentReferenceV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    properties: { from: NON_EMPTY_STRING },
+    required: ['from'],
+    additionalProperties: false,
+  };
+}
+
+/** One `spaces.<slug>` block of `kortix.yaml` — a default agent, its session
+ *  visibility, and the agents it owns or borrows. Identity is the MAP KEY,
+ *  so there is no `slug` key and no `kortix_version` (the root manifest's
+ *  version applies). `agent` is cross-space (must be usable here) and left
+ *  to the imperative validator. */
+export function buildSpaceV2Schema(): JsonSchemaFragment {
+  return {
+    $schema: DRAFT,
+    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix-space.v2.schema.json`,
+    title: 'Kortix space (kortix.yaml `spaces.<slug>`)',
+    description:
+      'One space of a kortix_version 2 project — an entry of the root manifest’s `spaces:` ' +
+      'map, where the key is its slug and its whole identity. `agents` declares the agents it ' +
+      'OWNS (the same governance-only block the root manifest uses; they are usable only inside ' +
+      'this space and in the ones that reference them) or BORROWS from another space with ' +
+      '`{ from: <slug> }`. See docs/specs/2026-09-06-space-files-and-scoped-agents.md.',
+    ...spaceV2EntrySchema(),
+  };
+}
+
+/** The space block itself, with no `$schema`/`$id` envelope — what the root
+ *  manifest's `spaces:` map holds under each slug. */
+function spaceV2EntrySchema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    properties: {
+      name: { type: 'string' },
+      description: { type: 'string' },
+      // Dropped 2026-09-07 — declared only so an editor keeps validating an
+      // older file instead of failing it on `additionalProperties: false`.
+      // The imperative validator warns and the loader ignores them.
+      instructions: { type: 'string', deprecated: true },
+      context: { type: 'array', items: relativePathSchema(), deprecated: true },
+      agent: NON_EMPTY_STRING,
+      // Literal, not the `SPACE_SESSIONS_MODES_V2` const: importing from
+      // `./index.v2` here would reopen the index.ts ⇄ json-schema.ts cycle
+      // this module's top-level `KORTIX_*_JSON_SCHEMA` eager builds cannot
+      // survive (see `constants.ts`'s header).
+      sessions: { type: 'string', enum: ['private', 'shared'] },
+      agents: {
+        type: 'object',
+        propertyNames: { pattern: SLUG_RE.source },
+        additionalProperties: {
+          oneOf: [agentBlockV2Schema(), agentReferenceV2Schema()],
+        },
+      },
+      // The root manifest's version applies — never repeated here.
+      kortix_version: false,
+    },
+    additionalProperties: false,
+  };
+}
+
 /** Sections shared byte-for-byte between v1 and v2 (spec §2.7: "every v1
  *  top-level section keeps its v1 shape" except `agents`/`channels`). */
 function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
@@ -726,6 +794,14 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
         propertyNames: { pattern: SLUG_RE.source },
         additionalProperties: agentBlockV2Schema(),
       },
+      // Every space lives here, keyed by slug (user, 2026-09-08: "keep
+      // everything in one file"). The per-entry shape is the same fragment
+      // published standalone as `kortix-space.v2.schema.json`.
+      spaces: {
+        type: 'object',
+        propertyNames: { pattern: SLUG_RE.source },
+        additionalProperties: spaceV2EntrySchema(),
+      },
       ...sharedSectionProperties(2),
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,
@@ -780,12 +856,17 @@ export function buildManifestSchema(): JsonSchemaFragment {
 export const KORTIX_V1_JSON_SCHEMA: JsonSchemaFragment = buildManifestV1Schema();
 export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema();
 export const KORTIX_JSON_SCHEMA: JsonSchemaFragment = buildManifestSchema();
+export const KORTIX_SPACE_V2_JSON_SCHEMA: JsonSchemaFragment = buildSpaceV2Schema();
 
 /** The one accessor every caller should use — "always return the correct,
  *  fully-valid schema for a given kortix_version." Pass no argument (or
- *  `'combined'`) for the single URL that dispatches on `kortix_version`. */
-export function manifestJsonSchema(version: 1 | 2 | 'combined' = 'combined'): JsonSchemaFragment {
+ *  `'combined'`) for the single URL that dispatches on `kortix_version`;
+ *  `'space'` for one `kortix-<slug>.yaml` (v2 only). */
+export function manifestJsonSchema(
+  version: 1 | 2 | 'combined' | 'space' = 'combined',
+): JsonSchemaFragment {
   if (version === 1) return KORTIX_V1_JSON_SCHEMA;
   if (version === 2) return KORTIX_V2_JSON_SCHEMA;
+  if (version === 'space') return KORTIX_SPACE_V2_JSON_SCHEMA;
   return KORTIX_JSON_SCHEMA;
 }

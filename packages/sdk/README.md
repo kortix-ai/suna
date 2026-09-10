@@ -219,7 +219,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.spaces` (named containers: list/get/create/update/remove + `addContext`/`removeContext`) · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
@@ -229,6 +229,73 @@ multi-tenant server-wrapper pattern, headless transcript rendering, cost
 pass-through / re-billing, and session files + project secrets. Each file's
 header comment states the env vars and the exact `bun run examples/….ts`
 invocation.
+
+### Spaces
+
+A **space** is a named container inside a project. It groups sessions,
+gives the agent standing instructions and reference files, owns the scheduled
+work that names it, may declare agents of its own, and is granted to members or
+groups exactly like an agent. Each one is a `spaces.<slug>` block of the root
+manifest, and that block is the source of truth, so every write below commits
+to `kortix.yaml`. A `Space` carries `path` (the manifest it is declared in) and
+`agents` (the agents usable inside it beyond the globals: the ones its block
+owns or references); `agentsUsableIn(roster, space)` narrows any roster
+whose entries carry `space` to what a session there may run.
+
+```ts
+const project = kortix.project(projectId);
+
+const { spaces, errors } = await project.spaces.list();
+
+const marketing = await project.spaces.create({
+  name: "Marketing",              // slug defaults to slugify(name)
+  description: "Campaign work.",
+  instructions: "Always write in British English.",
+  context: ["docs/brand.md"],     // repo-relative paths (a file, or a `dir/`)
+  agent: "writer",                // a DEFAULT agent, not a binding
+  sessions: "private",            // "shared" = every session readable by everyone granted it
+});
+
+// Partial merge; `null` clears an optional field, the slug is immutable.
+await project.spaces.update(marketing.slug, { sessions: "shared" });
+
+// Commit a text file into `.kortix/spaces/<slug>/` and append it to `context`.
+await project.spaces.addContext(marketing.slug, {
+  path: "voice.md",
+  content: "# Voice\nDry, precise.\n",
+});
+// Drop the entry from `context` only — the repo file stays.
+await project.spaces.removeContext(marketing.slug, "docs/brand.md");
+
+await project.spaces.remove(marketing.slug);
+```
+
+Sessions carry the slug at create time and are never moved between spaces:
+
+```ts
+await project.sessions.create({ space: "marketing" });
+await project.sessions.list({ space: "marketing" });
+await project.sessions.list({ space: "" });   // the sessions with NO space
+```
+
+A space is a closed IAM object: a member with no grant row sees no
+spaces at all, and `sessions.create({ space })` returns `403
+space_not_accessible` for them. Grant one through the generic
+resource-grant surface — a space grant does **not** imply the grant for
+its default agent:
+
+```ts
+await project.access.resourceGrants.create({
+  resourceType: "space",
+  resourceId: "marketing",
+  principalType: "member",
+  principalId: userId,
+});
+```
+
+React callers key these with `qk.project.spaces(id)`,
+`qk.project.space(id, slug)`, and `qk.project.sessions(id, scope,
+space)`.
 
 Wrapper backends can attach bounded, non-secret scalar context when creating a
 session. It is persisted across cold recovery/replacement restart and exposed

@@ -25,6 +25,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     sandboxUrl: null,
     opencodeSessionId: null,
     agentName: 'default',
+    space: null,
     status: 'queued',
     error: null,
     createdBy: 'user-1',

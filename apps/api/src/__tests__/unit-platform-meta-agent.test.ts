@@ -23,6 +23,7 @@ describe('platform meta agent', () => {
       ],
       commands: [],
       skills: [],
+      spaces: [],
       is_kortix_repo: true,
       signals: {},
       manifest_raw: null,

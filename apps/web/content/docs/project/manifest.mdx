@@ -86,6 +86,7 @@ triggers:
   - slug: daily-digest
     type: cron
     agent: kortix
+    space: marketing
     cron: '0 0 9 * * 1-5'
     timezone: America/Los_Angeles
     prompt: |
@@ -224,12 +225,68 @@ triggers:
 | `prompt`       | yes                   | —                     | Non-empty. Supports templating.                                                                       |
 | `name`         | no                    | slug                  | Human label.                                                                                          |
 | `agent`        | no                    | `default_agent`       | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`.      |
+| `space`   | no                    | none                   | Must name a key in `spaces:`. The fired session joins that space; unset means none.          |
 | `enabled`      | no                    | `true`                | `false` skips the entry.                                                                              |
 | `model`        | no                    | resolves at fire time | Wire form `provider/model`. Pins the fired session to that model. See [Models](/docs/project/models). |
 | `session_mode` | no                    | `fresh`               | `fresh`, `reuse`, `pinned`, or `keyed`.                                                               |
 | `session_id`   | required for `pinned` | —                     | Exact session to re-prompt.                                                                           |
 
 Cron triggers need exactly one of `cron` (a 6-field expression) or `run_at` (a one-off ISO-8601 timestamp), plus `timezone` as an IANA name. Webhook triggers need `secret_env`, the name of a secret that uses `broker` delivery with the `connector` consumer. Monitor triggers need `run` (a repo-relative command) and `mode` (`poll` or `stream`), and reject every cron and webhook field. Full field reference, credential setup, payload templating, endpoints, and session strategy: see [Triggers](/docs/connect/triggers).
+
+## Spaces — `spaces:`
+
+**Behind a feature flag.** Spaces are gated by the **`spaces`** flag, off by
+default — turn it on per project in Settings → Feature flags. While it is off,
+every `/projects/:id/spaces` route answers `403 feature_disabled`, filing a
+session into a space is refused, and the surface is hidden; the `spaces:` block
+in the manifest is simply not read. See
+[Feature flags](/docs/feature-flags).
+
+A space is a named container inside the project: it groups sessions under one effort, owns the triggers that name it, may declare agents of its own, and is an IAM object granted like an agent. Every space is **one block of `kortix.yaml`**, under the `spaces:` map and keyed by its slug.
+
+```yaml
+# kortix.yaml
+spaces:
+  marketing:
+    name: Marketing
+    description: Campaign work.
+    agent: writer              # default for sessions started here; must be usable here
+    sessions: private
+    agents:
+      writer:                  # owned by marketing — usable here and where referenced
+        connectors: [slack]
+        secrets: [BRAND_API_KEY]
+      researcher:
+        from: research         # borrowed from spaces.research, which owns it
+  research:
+    agents:
+      researcher: {}
+```
+
+| Field          | Type       | Default   | Notes                                                                                                    |
+| -------------- | ---------- | --------- | -------------------------------------------------------------------------------------------------------- |
+| _(map key)_    | —          | —         | The slug: `[a-z0-9][a-z0-9_-]{0,127}`. It is the space's whole identity.                                  |
+| `name`         | string     | slug      | Display label.                                                                                           |
+| `description`  | string     | —         | One-liner shown in the picker and the space page.                                                   |
+| `agent`        | string     | —         | Default for sessions started here, not a binding. Must be usable here (global, owned, or referenced).    |
+| `sessions`     | string     | `private` | `private` or `shared` (see below).                                                                       |
+| `agents`       | map        | —         | Agents this space **owns**, in the same block shape as the root's `agents:`, or **references** as `{ from: <slug> }`. |
+
+A space block carries no `kortix_version`; the root's version applies and must be `2`. A `kortix.toml` (v1) project has no spaces. A bare `marketing:` with nothing under it is a valid space with every default. `instructions:` and `context:` were removed on 2026-09-07: a block that still carries either keeps parsing, `kortix validate` warns, and the next write through the API or the app drops the key.
+
+**Global and space-owned agents.** An agent declared in the root `agents:` map is global and usable everywhere. An agent declared in `spaces.<slug>.agents` is owned by that space and usable only in sessions inside it — and in any other space that references it with `agents.<name>: { from: <slug> }`. A reference imports use, not governance: it names an agent the target space owns (never a global one, never another reference) and carries no other key. Agent names are plain and unique across the root and every space; `kortix validate` reports a duplicate naming both. `default_agent` and a trigger without a space must name a global agent; a trigger with `space: <slug>` may name what is usable there. A session that names an agent where it is not usable is refused with `400 AGENT_NOT_IN_SPACE` and the list of agents that are (`usable_agents`). The composer offers the same set: the project home lists global agents, and picking a space adds its own.
+
+Create/edit/delete need `project.customize.write` (the manifest-editing leaf, manager tier). Every write through the API or the app is one commit on `kortix.yaml`; deleting a space detaches the triggers naming it and removes its block in that same commit.
+
+**Access model.** A space is a closed object, exactly like an agent: the manager tier (owner, admin, project manager, service account, super-admin) sees every space; a member sees only the ones with a grant row naming them or one of their groups — zero grant rows means zero spaces. Grant one through the generic resource-grant surface (`POST /projects/:id/resource-grants {resource_type:'space', resource_id:<slug>, principal_type, principal_id}`), the same endpoint that grants agents. A space grant does not grant its agents; the person needs those in their own right. Deleting a space leaves its grant rows orphaned, flagged rather than silently reinterpreted.
+
+**`sessions:` visibility.** `private` (default) keeps the ordinary per-session model — a session is visible to its creator unless separately shared. `shared` makes every session inside the space readable by everyone granted the space, regardless of that session's own visibility; lifecycle rights (stop/restart/delete) are unchanged. `GET /projects/:id/sessions?space=<slug>` filters the list to one space; `?space=` (empty) filters to sessions with none.
+
+**Starting a session inside one.** In the web app, the chat box on the project home carries a space picker in the strip under it, and a space's own page preselects it. From code or the CLI: `sessions.create({ space })`, or `kortix sessions new --space <slug>`.
+
+**What the sandbox receives.** A session started inside a space gets `KORTIX_SPACE=<slug>`, and nothing derived from it. The compiled agent config for the session holds the global agents plus the ones usable in that space. A session spawned from inside a space session inherits the same space unless it passes its own `--space`.
+
+**Moving a session.** `PATCH /projects/:id/sessions/:sessionId {"space": "<slug>"}` files an existing session under a space; `{"space": null}` moves it back to the project level. In the app it is `Move to` in the session's `⋯` menu, in the sidebar and on the session page. The move is owner-governed like sharing — a `shared` space makes its sessions readable by everyone granted it — so it needs `can_manage_sharing`, the target space must be declared and granted to the caller, and the session's own agent must be usable there (`400 AGENT_NOT_IN_SPACE` otherwise). A sandbox that is already running keeps the `KORTIX_SPACE` it booted with until its next start.
 
 ## `connectors:`
 
@@ -340,5 +397,5 @@ is project-owned or member-owned.
 Dashboard edits are a read-modify-write on the same file. To keep diffs clean across UI and in-session edits:
 
 1. Keep `kortix_version` as the first key.
-2. Inside a trigger entry, order fields `slug`, `name`, `type`, `agent`, `enabled`, then type-specific fields, then `prompt` last.
+2. Inside a trigger entry, order fields `slug`, `name`, `type`, `agent`, `space` (when set), `enabled`, then type-specific fields, then `prompt` last.
 3. If you add a webhook trigger before its secret is set, list the secret name in `env.optional`. Leave the trigger `enabled: false` until the value is in.

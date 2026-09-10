@@ -47,6 +47,35 @@ describe('buildNewSessionCreateInput', () => {
     expect(buildNewSessionCreateInput({ agent: '' })).toBeUndefined();
   });
 
+  it('files the session under a space, and that alone needs overrides', () => {
+    // A space start carries no agent and no sandbox of its own — the
+    // builder must still return a body, or the create would drop the slug and
+    // the session would be filed under nothing.
+    expect(buildNewSessionCreateInput({ space: 'marketing' })).toEqual({
+      space: 'marketing',
+    });
+  });
+
+  it('carries the space alongside the agent and the sandbox', () => {
+    expect(
+      buildNewSessionCreateInput({
+        agent: 'writer',
+        sandbox_slug: 'node22',
+        space: 'marketing',
+      }),
+    ).toEqual({
+      space: 'marketing',
+      agent_name: 'writer',
+      sandbox_slug: 'node22',
+    });
+  });
+
+  it('ignores an empty-string space (never binds space="")', () => {
+    // `''` is a REAL filter on the sessions LIST ("rows with no space"),
+    // so it must not leak into a create body and be read as a slug.
+    expect(buildNewSessionCreateInput({ space: '' })).toBeUndefined();
+  });
+
   it('binds the complete committed connector selection at creation', () => {
     expect(
       buildNewSessionCreateInput({

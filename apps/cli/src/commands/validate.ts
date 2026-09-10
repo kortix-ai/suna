@@ -100,6 +100,7 @@ function lintSandboxDockerfiles(
 }
 
 /** One line per agent: its assigned connectors + Kortix-CLI powers. */
+
 function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
   if (!Array.isArray(agents) || agents.length === 0) return '';
@@ -175,7 +176,11 @@ export function runValidate(argv: string[]): number {
   }
 
   const result = validateManifest(raw, manifestFormatForPath(filePath));
-
+  // Spaces live in the root manifest's own `spaces:` map (user, 2026-09-08),
+  // so `validateManifest` above already covered every one of them: each
+  // block's shape, unique agent names, `from` references, default agents and
+  // trigger back-references. This used to read every sibling
+  // `kortix-<slug>.yaml` off disk and run a second set validator over them.
   // Manifest issues first, then the Dockerfile lint — one merged report, one
   // exit code. A Dockerfile `error` fails `validate` exactly like a schema
   // error does, which is the whole point: `ship` and the CR-merge gate then

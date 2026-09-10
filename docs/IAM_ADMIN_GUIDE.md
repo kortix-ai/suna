@@ -569,6 +569,36 @@ hard-lock an agent regardless of who runs it.
    billing-bot"). Assigning a human to an agent is a real access decision — treat it
    like one.
 
+### Assigning spaces to people (the second closed object)
+
+A **space** (`kortix.yaml` → `spaces.<slug>`) is a named container of
+sessions, standing instructions, and scheduled work inside a project. It is
+the **second** object type — after agents — that Kortix enforces as closed by
+default: a space with zero grant rows is usable by the manager tier
+only (owner/admin/project manager/service account/super-admin); a `member`
+sees it, reads it, or lists sessions inside it **only** once a grant names
+them or one of their groups.
+
+- **Grant surface** — the same generic endpoint that grants agents:
+  `POST /projects/:id/resource-grants {resource_type:'space',
+  resource_id:<slug>, principal_type:'member'|'group', principal_id}`
+  (`project.members.manage` required). `GET .../resource-grants` returns
+  `resources.spaces` (the grantable catalog) alongside the grant rows.
+- **Orphaned grants** — deleting a space does not delete its grant
+  rows; they stay, flagged `orphaned: true` in the GET response, exactly
+  like a grant on a renamed/deleted agent. Re-point or remove them by hand.
+- **`sessions: shared`** — independent of the grant model. A space's
+  manifest field controls whether sessions INSIDE it are visible only to
+  their own creator (`private`, default) or to everyone already granted the
+  space (`shared`) — lifecycle rights (stop/restart/delete) don't
+  change either way. Granting the space is what lets a member see it
+  at all; `sessions: shared` decides whether they see every session in it
+  or only their own.
+- **Not a binding** — a space's `agent:` field is a default for
+  sessions started there, not an inherited grant. Assigning someone a
+  space does not also assign them that agent; grant both explicitly
+  when a person needs to use the agent elsewhere too.
+
 ### Service accounts & tokens
 
 | Credential | Prefix | Purpose | Powers |

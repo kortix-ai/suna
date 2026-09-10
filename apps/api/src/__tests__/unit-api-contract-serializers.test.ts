@@ -53,6 +53,7 @@ function sessionRow(
     sandboxUrl: null,
     opencodeSessionId: 'ses_abc',
     agentName: 'default',
+    space: null,
     status: 'running',
     error: null,
     createdBy: USER_ID,
