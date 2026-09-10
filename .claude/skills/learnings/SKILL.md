@@ -4766,3 +4766,19 @@ before connecting, and deletes the minted token by `token_id`. Preview test
 configuration no longer exports the signing secret; its unit test rejects
 that export. The flow allows five minutes for managed Git writes and ten
 sequential manifest reads; all existing assertions remain required.
+
+## Database diagnostics must suppress connection strings in errors (2026-09-10)
+
+**Near-miss.** A release diagnostic put a PostgreSQL URL in `PGDATABASE`.
+The installed `psql` treated it as a database name and printed a truncated
+credential-bearing URL in the local tool transcript. No public test artifact
+received this diagnostic output.
+
+**Rule.** Parse connection URLs into separate `PGHOST`, `PGPORT`, `PGUSER`,
+`PGPASSWORD`, and `PGDATABASE` environment variables. Keep the password in
+memory. Capture connection errors and report a sanitized failure, never the
+raw error or connection URL.
+
+**Enforcement.** The corrected release diagnostic parses the encrypted profile
+in memory, captures both output streams, and suppresses connection details on
+failure. This remains a procedure requirement for ad hoc diagnostics.
