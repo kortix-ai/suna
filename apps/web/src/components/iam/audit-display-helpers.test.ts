@@ -1,6 +1,8 @@
 import { testUiTranslator } from '@/i18n/test-translator';
+import { createTranslator } from 'next-intl';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import deMessages from '../../../translations/de.json';
 import {
   AUDIT_HTTP_ROUTES,
   describeAuditAction,
@@ -10,6 +12,11 @@ import {
 
 const UID = '8fb490fe-4765-480e-9e83-08b4b41a3f06';
 const UID2 = '47dd83e0-c532-4643-a0c1-112abab26d5e';
+const deUiTranslator = createTranslator({
+  locale: 'de',
+  messages: deMessages,
+  namespace: 'hardcodedUi.i18nComplete',
+});
 
 interface RouteManifest {
   routes: Array<{ method: string; path: string }>;
@@ -125,6 +132,12 @@ describe('audit HTTP route registry', () => {
     expect(
       describeAuditAction(`DELETE /v1/projects/${UID}/attachments/${UID2}`, testUiTranslator).title,
     ).toBe('Removed attachment upload');
+    expect(
+      describeAuditAction(
+        `GET /v1/projects/${UID}/runtime/prompt-attachments/${UID2}`,
+        deUiTranslator,
+      ).title,
+    ).toBe('Laufzeit-Anhangsbeschreibung aufgelöst');
   });
 
   test('preserves the compact raw route fallback for an unknown route', () => {

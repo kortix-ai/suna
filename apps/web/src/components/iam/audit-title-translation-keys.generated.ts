@@ -120,6 +120,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Required MFA for the account': 'textbcdbec03e086',
   'Resolved approval': 'text8f39bed6c5fc',
   'Resolved gateway models': 'text2319beb05e69',
+  'Resolved runtime attachment descriptor': 'text3aab5b3be2b9',
   'Retried a queued session prompt': 'text094af2a71a42',
   'Revoked SCIM token': 'textaba314822529',
   'Revoked SCIM user invitation': 'text56185876d445',

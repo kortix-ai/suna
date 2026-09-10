@@ -1,12 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, type Stats } from "node:fs";
+import { lstat, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import {
   LOCAL_AUTH_EMAIL_HOOK_SECRET,
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
-  localWebUrl,
   type LocalSupabaseEnvironment,
   type LocalWorktreeConfig,
+  localWebUrl,
 } from "./local-profile";
 
 interface WorktreeMarker extends LocalWorktreeConfig {
@@ -332,6 +333,51 @@ export async function localWebHealthy(webUrl: string): Promise<boolean> {
   }
 }
 
+export async function prepareLocalWebDevCache(
+  root: string,
+  launch: "owned" | "reuse",
+): Promise<void> {
+  if (launch === "reuse") return;
+
+  const resolvedRoot = resolve(root);
+  const nextDir = resolve(resolvedRoot, "apps/web/.next");
+  const devDir = resolve(nextDir, "dev");
+  if (
+    relative(resolvedRoot, nextDir) !== join("apps", "web", ".next") ||
+    relative(nextDir, devDir) !== "dev"
+  ) {
+    throw new Error("refusing to clear an invalid Next development cache path");
+  }
+
+  let nextStat: Stats;
+  try {
+    nextStat = await lstat(nextDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (nextStat.isSymbolicLink() || !nextStat.isDirectory()) {
+    throw new Error("refusing to clear a symlinked Next cache");
+  }
+
+  const [realRoot, realNext] = await Promise.all([realpath(resolvedRoot), realpath(nextDir)]);
+  if (realNext !== join(realRoot, "apps", "web", ".next")) {
+    throw new Error("refusing to clear a Next cache outside the worktree");
+  }
+
+  let devStat: Stats;
+  try {
+    devStat = await lstat(devDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (devStat.isSymbolicLink() || !devStat.isDirectory()) {
+    throw new Error("refusing to clear a symlinked Next cache");
+  }
+  await rm(devDir, { recursive: true, force: true });
+}
+
 export async function ensureLocalWeb(
   topology: LocalTopology,
   options: { autoStart: boolean; supabase: LocalSupabaseEnvironment },
@@ -339,6 +385,7 @@ export async function ensureLocalWeb(
   const webPort = topology.marker?.ports.web ?? 3000;
   const webUrl = localWebUrl(webPort);
   if (await localWebHealthy(webUrl)) {
+    await prepareLocalWebDevCache(topology.root, "reuse");
     return { started: false, stop: async () => {} };
   }
   if (!options.autoStart) {
@@ -349,6 +396,7 @@ export async function ensureLocalWeb(
   if (!API_URL || !ANON_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
+  await prepareLocalWebDevCache(topology.root, "owned");
   const web = Bun.spawn(
     ["pnpm", "--filter", "Kortix-Computer-Frontend", "dev"],
     {

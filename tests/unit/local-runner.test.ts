@@ -1,6 +1,11 @@
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
 import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
+import { prepareLocalWebDevCache } from '../src/core/local-stack';
 
 describe('local test runner', () => {
   it('runs the REST flows, SDK, runner unit tests, and route coverage concurrently by default', () => {
@@ -300,5 +305,50 @@ describe('local test runner', () => {
 
     expect(attempts).toBe(3);
     expect(sleeps).toEqual([250, 250]);
+  });
+
+  it('clears only an owned web launch cache and preserves reuse plus sibling state', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'kortix-local-web-cache-'));
+    const root = join(fixture, 'owned');
+    const devCache = join(root, 'apps/web/.next/dev');
+    const siblingCache = join(fixture, 'sibling/apps/web/.next/dev');
+    const retainedCache = join(root, 'apps/web/.next/cache');
+    try {
+      await mkdir(devCache, { recursive: true });
+      await mkdir(siblingCache, { recursive: true });
+      await mkdir(retainedCache, { recursive: true });
+      await writeFile(join(devCache, 'stale.css'), 'old');
+      await writeFile(join(siblingCache, 'sentinel'), 'sibling');
+      await writeFile(join(retainedCache, 'sentinel'), 'retained');
+
+      await prepareLocalWebDevCache(root, 'reuse');
+      expect(await readFile(join(devCache, 'stale.css'), 'utf8')).toBe('old');
+
+      await prepareLocalWebDevCache(root, 'owned');
+      expect(existsSync(devCache)).toBe(false);
+      expect(await readFile(join(siblingCache, 'sentinel'), 'utf8')).toBe('sibling');
+      expect(await readFile(join(retainedCache, 'sentinel'), 'utf8')).toBe('retained');
+    } finally {
+      await rm(fixture, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an owned cleanup through a symlinked .next parent', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'kortix-local-web-cache-link-'));
+    const root = join(fixture, 'owned');
+    const externalNext = join(fixture, 'external-next');
+    try {
+      await mkdir(join(root, 'apps/web'), { recursive: true });
+      await mkdir(join(externalNext, 'dev'), { recursive: true });
+      await writeFile(join(externalNext, 'dev/sentinel'), 'external');
+      await symlink(externalNext, join(root, 'apps/web/.next'));
+
+      await expect(prepareLocalWebDevCache(root, 'owned')).rejects.toThrow(
+        'refusing to clear a symlinked Next cache',
+      );
+      expect(await readFile(join(externalNext, 'dev/sentinel'), 'utf8')).toBe('external');
+    } finally {
+      await rm(fixture, { recursive: true, force: true });
+    }
   });
 });

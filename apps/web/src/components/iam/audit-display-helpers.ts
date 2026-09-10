@@ -134,6 +134,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/attachments/:attachmentId/complete': 'Completed attachment upload',
   'GET /v1/projects/:projectId/attachments/:attachmentId': 'Viewed file content',
   'DELETE /v1/projects/:projectId/attachments/:attachmentId': 'Removed attachment upload',
+  'GET /v1/projects/:projectId/runtime/prompt-attachments/:attachmentId':
+    'Resolved runtime attachment descriptor',
   'POST /v1/projects/:projectId/sessions/warm': 'Warmed session sandbox',
   'POST /v1/projects/:projectId/sessions/warm/claim': 'Claimed warm session sandbox',
   'GET /v1/projects/:projectId/files/content': 'Viewed file content',

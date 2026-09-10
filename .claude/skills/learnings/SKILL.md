@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Deterministic browser launches invalidate revision-local Next output (2026-09-10)
+
+**When:** starting an owned deterministic web server. Remove only that
+worktree's `.next/dev` after the reuse check and before launch. Reject symlinked
+cache roots. Never clear a healthy reused server's cache or sibling worktrees.
+*Near-miss:* journey 27 loaded current desktop JavaScript with pre-merge CSS, so
+the native-only Download action remained visible.
+*Enforcers:* `local-runner.test.ts` and native `27-desktop-parity.spec.ts`.
+
 ### Composer attachment regressions must compose async lifecycle boundaries (2026-09-10)
 
 **When:** changing composer submission or attachment draft persistence. Hold the

@@ -459,10 +459,11 @@ function ComposerImpl({
 }: SessionChatInputProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
-  const tComposerAttachmentsRef = useRef(tComposerAttachments);
+  const attachmentNotReady = tComposerAttachments('notReady');
+  const attachmentNotReadyRef = useRef(attachmentNotReady);
   useEffect(() => {
-    tComposerAttachmentsRef.current = tComposerAttachments;
-  }, [tComposerAttachments]);
+    attachmentNotReadyRef.current = attachmentNotReady;
+  }, [attachmentNotReady]);
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -1429,7 +1430,7 @@ function ComposerImpl({
           errorToast(
             error instanceof Error
               ? error.message
-              : tComposerAttachmentsRef.current('notReady'),
+              : attachmentNotReadyRef.current,
           );
           return null;
         }
