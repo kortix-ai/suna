@@ -233,7 +233,7 @@ async function main() {
   page.on('response', (rs) => { const u = rs.url(); if (/\/3211\//.test(u)) previewCalls.push({ url: u.replace(/^.*\/3211/, '').slice(0, 60), status: rs.status() }); });
   const composer4 = page.locator('[contenteditable="true"], textarea, [role="textbox"]').last();
   await composer4.click();
-  await page.keyboard.type(`Use your write tool to create page.html containing exactly <html><body><h1>${htmlWord}</h1></body></html> and then reply with the single word finished`, { delay: 5 });
+  await page.keyboard.type(`Use your write tool to create page.html: a complete HTML page whose body holds one h1 element with the text ${htmlWord} and nothing else. Then reply with the single word finished`, { delay: 5 });
   await page.keyboard.press('Enter');
   let finishedSeen = true;
   await page.getByText('finished', { exact: true }).first().waitFor({ timeout: 90000 }).catch(() => { finishedSeen = false; });
@@ -266,6 +266,30 @@ async function main() {
   }
   ck('an .html file opens in the viewer as a framed page (the preview server answered)', framed, JSON.stringify(previewCalls).slice(0, 400));
   ck('the preview health probe and /open answered 200', previewCalls.some((c) => /health/.test(c.url) && c.status === 200) && previewCalls.some((c) => /open/.test(c.url) && c.status === 200), JSON.stringify(previewCalls).slice(0, 400));
+  // THE TERMINAL TAB. `/kortix/pty` — list, create, and one socket carrying
+  // raw text. Every route was `unknown route` on a cell (2026-09-10), so the
+  // tab could only say "connecting".
+  const ptyCalls = [];
+  page.on('response', (rs) => { if (/\/kortix\/pty/.test(rs.url())) ptyCalls.push({ url: rs.url().replace(/^.*\/8080/, ''), status: rs.status() }); });
+  const termBtn = page.getByRole('button', { name: /^Terminal$/ }).first();
+  const shellWord = `shell${Math.floor(Math.random() * 1e5)}`;
+  let terminalText = '';
+  if (await termBtn.isVisible().catch(() => false)) {
+    await termBtn.click();
+    await page.locator('.xterm-rows, .xterm-screen').first().waitFor({ timeout: 45000 }).catch(() => {});
+    await page.waitForTimeout(3000);
+    await page.locator('.xterm-helper-textarea, .xterm').first().click({ timeout: 10000 }).catch(() => {});
+    await page.keyboard.type(`echo ${shellWord}`, { delay: 20 });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(4000);
+    terminalText = await page.locator('.xterm-rows').first().innerText().catch(() => '');
+  } else {
+    console.log('  (no Terminal button in the header)');
+  }
+  ck('the Terminal tab opens a shell in the cell', /just-bash|\$/.test(terminalText), `${JSON.stringify(terminalText.slice(0, 200))} calls=${JSON.stringify(ptyCalls).slice(0, 200)}`);
+  ck('and a command typed into it runs there', terminalText.includes(shellWord) && terminalText.split(shellWord).length > 2, JSON.stringify(terminalText.slice(-200)));
+  ck('the pty routes answered (no 404/503)', ptyCalls.length > 0 && ptyCalls.every((c) => c.status !== 404 && c.status !== 503), JSON.stringify(ptyCalls).slice(0, 300));
+
   await browser.close();
   console.log(`\n  real browser: ${pass} passed, ${fail} failed   session=${sid}`);
   process.exit(fail ? 1 : 0);

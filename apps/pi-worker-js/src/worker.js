@@ -44,7 +44,7 @@ globalThis.atob = (input) => {
 };
 
 import { Agent } from "@earendil-works/pi-agent-core";
-import { CELL_CWD, cellFs, cellShellNote } from "./execenv.cell.js";
+import { CELL_CWD, cellExecutionEnv, cellFs, cellShellNote } from "./execenv.cell.js";
 import { filesAnswer } from "./cell-files.js";
 import { STATIC_PREFIX, staticAnswer } from "./cell-static.js";
 import { executionEnvFor, piTools, piToolsCell, piToolsPlatinum } from "./pitools.js";
@@ -58,6 +58,7 @@ import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
 import { agentNameFrom, agentShape, bootAnswer } from "./opencode-boot.js";
 import { agentList, agentModelId, agentSystemPrompt, gatewayModelId, parseAgentConfig, selectAgent } from "./agent-config.js";
 import { globTool, readTodos, todoTools } from "./plantools.js";
+import { banner, cdTarget, feed, newEditor, prompt, ptyCreate, ptyGet, ptyList, ptyRemove, ptySetCwd, ptyUpdate } from "./cell-pty.js";
 import { transcriptMessages } from "./transcript-read.js";
 import { mintWireMessageId, newestWireIdTime } from "../../api/src/projects/wire-message-id.ts";
 import { runtimeStateDoc, projectionEtag } from "./projection.js";
@@ -1099,6 +1100,11 @@ export class AgentCell {
   // isolate while keeping the socket: it re-creates the object and calls these.
   async webSocketMessage(ws, message) {
     this.init();
+    // A terminal socket is raw text, never JSON — feed it to the line editor.
+    // After an eviction the map is empty and the TAG is what is left, so the
+    // editor is rebuilt from the terminal's stored directory.
+    const term = this.terminals?.get(ws) ?? this.adoptTerminal(ws);
+    if (term) return this.terminalInput(ws, term, message);
     // Re-adopt a socket the runtime did not hand back.
     //
     // This does NOT rescue a socket that predates an eviction on celld 0.3.0,
@@ -1189,6 +1195,73 @@ export class AgentCell {
       this.__agent = { config, ...picked, etag: typeof e.KORTIX_COMPILED_AGENT_CONFIG_ETAG === "string" && e.KORTIX_COMPILED_AGENT_CONFIG_ETAG ? e.KORTIX_COMPILED_AGENT_CONFIG_ETAG : null };
     }
     return this.__agent;
+  }
+
+  /** A terminal socket this isolate has not seen, recognised by its tag. */
+  adoptTerminal(ws) {
+    const tags = this.state.getTags?.(ws) ?? [];
+    const tag = tags.find((t) => typeof t === "string" && t.startsWith("pty:"));
+    if (!tag) return null;
+    const ptyId = tag.slice("pty:".length);
+    const record = ptyGet(this.sql, ptyId);
+    if (!record) return null;
+    const term = { ptyId, editor: newEditor(record.cwd), abort: null };
+    this.terminals ??= new Map();
+    this.terminals.set(ws, term);
+    return term;
+  }
+
+  /**
+   * ONE LINE OF A TERMINAL SESSION: echo it, and when it is complete run it
+   * through the same shell the agent uses and write the output back.
+   *
+   * `cd` is handled apart because every exec is its own process tree — the
+   * shell forgets a directory change the moment it returns, so the new
+   * directory is LEARNED (`cd x && pwd`) and kept on the terminal's record.
+   */
+  async terminalInput(ws, term, message) {
+    const r = feed(term.editor, message);
+    term.editor = r.state;
+    if (r.echo) { try { ws.send(r.echo); } catch { /* the client left */ } }
+    if (r.interrupt) { try { term.abort?.abort(); } catch { /* already done */ } }
+    if (r.close) { try { ws.close(1000, "pty exited"); } catch { /* already gone */ } this.terminals?.delete(ws); return; }
+    if (r.line === null) return;
+    const line = r.line.trim();
+    if (!line) { try { ws.send(prompt(term.editor.cwd)); } catch { /* gone */ } return; }
+    if (line === "exit" || line === "logout") {
+      try { ws.send("exit\r\n"); ws.close(1000, "pty exited"); } catch { /* gone */ }
+      this.terminals?.delete(ws);
+      return;
+    }
+    this.cellFs ??= cellFs(this.sql);
+    const env = cellExecutionEnv(this.cellFs, term.editor.cwd);
+    const cd = cdTarget(line);
+    const command = cd === null ? line : `cd ${cd === "~" ? "/workspace" : cd} && pwd`;
+    term.editor.busy = true;
+    const ctl = new AbortController();
+    term.abort = ctl;
+    let out;
+    try {
+      out = await env.exec(command, { cwd: term.editor.cwd, timeout: 120, abortSignal: ctl.signal });
+    } catch (e) {
+      out = { ok: false, error: { message: String(e?.message ?? e) } };
+    }
+    term.editor.busy = false;
+    term.abort = null;
+    // \n is a line feed, not a carriage return: a terminal needs both or every
+    // line starts where the last one ended.
+    const crlf = (t) => String(t ?? "").replace(/\r?\n/g, "\r\n");
+    if (!out.ok) {
+      try { ws.send(crlf(`${out.error?.message ?? "command failed"}\n`)); } catch { /* gone */ }
+    } else if (cd !== null && out.value.exitCode === 0) {
+      const next = String(out.value.stdout ?? "").trim() || term.editor.cwd;
+      term.editor.cwd = next;
+      ptySetCwd(this.sql, term.ptyId, next);
+    } else {
+      const body = `${out.value.stdout ?? ""}${out.value.stderr ?? ""}`;
+      if (body) { try { ws.send(crlf(body.endsWith("\n") ? body : `${body}\n`)); } catch { /* gone */ } }
+    }
+    try { ws.send(prompt(term.editor.cwd)); } catch { /* gone */ }
   }
 
   /** The system prompt before skills and the shell note: the project's, or the cell's. */
@@ -1358,6 +1431,42 @@ export class AgentCell {
       ?? this.state.id?.toString?.()
       ?? "default";
 
+    // THE TERMINAL TAB'S SOCKET, which is not the session watcher's. It
+    // carries raw text (xterm's keystrokes out, bytes back) for ONE terminal,
+    // so it is accepted here, before the JSON protocol below, and remembered
+    // by its id. See cell-pty.js.
+    {
+      // `/connect` is the suffix the client's socket URL carries
+      // (packages/sdk core/runtime/pty.ts); a bare id is accepted too, which
+      // is what a probe reaches for. Matching only the bare form sent the
+      // browser's terminal into the session-watcher socket, where it was
+      // answered with a JSON `hello` and swallowed every keystroke —
+      // measured in a real browser 2026-09-10.
+      const m = url.pathname.match(/\/kortix\/pty\/([^/]+?)(?:\/connect)?$/);
+      if (m && req.headers.get("upgrade") === "websocket") {
+        const ptyId = decodeURIComponent(m[1]);
+        this.cellFs ??= cellFs(this.sql);
+        const record = ptyGet(this.sql, ptyId);
+        const pair = new WebSocketPair();
+        // TAGGED, AND ACCEPTED BY THE RUNTIME. `accept()` delivers messages to
+        // the socket's own listener and never to `webSocketMessage`, so a
+        // terminal accepted that way showed its banner and then swallowed every
+        // keystroke — measured live 2026-09-10. The tag is also how a rebuilt
+        // isolate knows which terminal a socket belongs to.
+        if (typeof this.state.acceptWebSocket === "function") this.state.acceptWebSocket(pair[1], [`pty:${ptyId}`, sessionId]);
+        else pair[1].accept?.();
+        if (!record) {
+          // The client reads this reason and replaces the terminal rather than
+          // reconnecting forever (features/session/pty-connection.ts).
+          try { pair[1].close(1000, "pty not found"); } catch { /* already gone */ }
+          return new Response(null, { status: 101, webSocket: pair[0] });
+        }
+        this.terminals ??= new Map();
+        this.terminals.set(pair[1], { ptyId, editor: newEditor(record.cwd), abort: null });
+        try { pair[1].send(banner(record.cwd)); } catch { /* the client left */ }
+        return new Response(null, { status: 101, webSocket: pair[0] });
+      }
+    }
     if (req.headers.get("upgrade") === "websocket") {
       const pair = new WebSocketPair();
       // acceptWebSocket, NOT accept(): the first hands the socket to the runtime
@@ -2324,6 +2433,30 @@ export class AgentCell {
       this.cellFs ??= cellFs(this.sql);
       const answered = await filesAnswer(req, path, url, this.cellFs);
       if (answered) return answered;
+    }
+    // THE TERMINAL TAB'S REST: list, create, rename, remove. One shell per
+    // record; the socket above carries its bytes (cell-pty.js).
+    {
+      const one = url.pathname.match(/\/kortix\/pty\/([^/]+)$/);
+      if (path === "/kortix/pty" || path.startsWith("/kortix/pty/")) {
+        if (path === "/kortix/pty" && req.method === "GET") return Response.json(ptyList(this.sql));
+        if (path === "/kortix/pty" && req.method === "POST") {
+          const body = await req.json().catch(() => ({}));
+          return Response.json(ptyCreate(this.sql, body ?? {}));
+        }
+        if (one && req.method === "PATCH") {
+          const body = await req.json().catch(() => ({}));
+          const updated = ptyUpdate(this.sql, decodeURIComponent(one[1]), body ?? {});
+          return updated ? Response.json(updated) : Response.json({ error: "pty not found" }, { status: 404 });
+        }
+        if (one && req.method === "DELETE") {
+          const gone = ptyRemove(this.sql, decodeURIComponent(one[1]));
+          for (const [ws, t] of this.terminals ?? []) {
+            if (t.ptyId === decodeURIComponent(one[1])) { try { ws.close(1000, "pty exited"); } catch { /* gone */ } this.terminals.delete(ws); }
+          }
+          return gone ? Response.json(true) : Response.json({ error: "pty not found" }, { status: 404 });
+        }
+      }
     }
     // THE PREVIEW SERVER (the daemon's port 3211), under /static — the proxy
     // sends a cell's 3211 here. cell-static.js.

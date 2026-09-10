@@ -1963,6 +1963,20 @@ export async function resolvePreviewWsUpstream(opts: {
   });
 
   const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+  // NAME THE SESSION, as the HTTP path does. A cell runner holds every session
+  // of a project, and a socket that names none is served by whichever row the
+  // ordering preferred — so the Terminal tab of session B would attach to
+  // session A's shell. `sandbox_id` IS the session id, so a session-shaped URL
+  // is exact; a box-shaped one falls back to the sole-session rule. See
+  // ../address-cell.ts and the same block above the HTTP forward.
+  {
+    const addressable =
+      sessionNamedByUrl(sandboxId, record) ??
+      callerSessionId ??
+      (await soleSessionOfSandbox(record.externalId ?? sandboxId));
+    const addressed = new URL(addressCellSession(upstreamUrl.toString(), addressable));
+    upstreamUrl.search = addressed.search;
+  }
   if (ingress.websocket?.userContextQueryParam) {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
     if (signedContext) {
