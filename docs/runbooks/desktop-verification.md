@@ -42,6 +42,26 @@ Electron unit tests run in the existing packages lane through
 - Scroll long lists. Check empty, loading, error, and disabled states where relevant.
 - Repeat on the PR preview with Electron's Frontend URL set to the preview origin.
 
+### Instance chooser (first launch, Custom URL…, load failure)
+
+The native journey sets `KORTIX_DESKTOP_URL`, which skips the chooser. Check it
+by hand on an empty profile without that variable:
+
+```sh
+KORTIX_DESKTOP_USER_DATA="$(mktemp -d)" pnpm --filter @kortix/desktop-electron exec electron .
+```
+
+- The chooser opens before any page loads. Quit, relaunch on the same profile:
+  it opens again.
+- Kortix Cloud loads the baked default. No `frontend_url` file exists after.
+- Self-hosted with a reachable URL saves `frontend_url` and loads it. An
+  unreachable URL shows the error and **Continue Anyway**.
+- Relaunch on the same profile: no chooser.
+- Point `frontend_url` at a dead port and relaunch: **Can't reach \<host\>**
+  opens over the window. **Try Again** and **Quit** work.
+- A profile from an older build (non-empty, no `instance_setup_pending`) never
+  shows the chooser.
+
 Browser automation does not replace a native visual check of the traffic lights
 or OS dragging. Verify them in Electron. After an explicitly approved merge,
 verify the deployed SHA and repeat the affected interaction against dev.
