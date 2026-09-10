@@ -6,6 +6,7 @@ import {
   CHEVRON_PX,
   TURN_TOP_OFFSET,
   chevronVisible,
+  chooseAnchorIndex,
   classifyScrollKey,
   isAtEnd,
   isEditableTarget,
@@ -24,6 +25,32 @@ describe('roomUnderNewestTurn — FACT 1, the room is one value streaming or idl
   });
   test('a transcript with no turn yet reserves the whole viewport', () => {
     expect(roomUnderNewestTurn(800, null)).toBe(800);
+  });
+});
+
+describe('chooseAnchorIndex — the anchor never retreats', () => {
+  const t = (id: string, pending = false) => ({ id, pending });
+  test('the newest non-pending turn, when nothing was anchored yet', () => {
+    expect(chooseAnchorIndex([t('a'), t('b')], null)).toBe(1);
+    expect(chooseAnchorIndex([t('a'), t('b', true)], null)).toBe(0);
+  });
+  test('all pending: the newest', () => {
+    expect(chooseAnchorIndex([t('a', true), t('b', true)], null)).toBe(1);
+    expect(chooseAnchorIndex([], null)).toBe(-1);
+  });
+  test('a pending mark landing on the turn already anchored does not move the anchor back (the send jump)', () => {
+    // +49 ms: b painted, anchored. ~+800 ms: the inbox poll marks b pending.
+    expect(chooseAnchorIndex([t('a'), t('b')], null)).toBe(1);
+    expect(chooseAnchorIndex([t('a'), t('b', true)], 'b')).toBe(1);
+  });
+  test('but a turn queued mid-turn — pending from its first paint — is never chosen over the streaming one', () => {
+    expect(chooseAnchorIndex([t('a'), t('b', true)], 'a')).toBe(0);
+  });
+  test('the anchor still moves forward when a newer turn is reached', () => {
+    expect(chooseAnchorIndex([t('a'), t('b'), t('c')], 'b')).toBe(2);
+  });
+  test('a removed anchor (queued bubble taken back) falls to the newest non-pending turn', () => {
+    expect(chooseAnchorIndex([t('a')], 'b')).toBe(0);
   });
 });
 

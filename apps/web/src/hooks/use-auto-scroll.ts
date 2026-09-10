@@ -51,6 +51,42 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * state on the hot path. The one piece of state is the chevron.
  */
 
+/**
+ * Which turn the room is measured from.
+ *
+ * The newest turn the agent has reached: a prompt queued mid-turn
+ * (`data-turn-pending`, dimmed) is not it, or the answer still streaming above
+ * it would be pushed out of view. With one exception, measured in a real
+ * browser on the pi-js stack 2026-09-10 (scratchpad ui-jump.ts, session
+ * 7061f417): after a send while idle the new turn was the anchor at +49 ms,
+ * then the inbox poll listed the prompt `delivering`, the turn was marked
+ * pending, the anchor RETREATED to the previous turn (room 999 → 709 px,
+ * scrollTop → 0) and came forward again at +1.7 s when the answer opened —
+ * the jump on every send. A pending mark that appears on a turn that is
+ * ALREADY the anchor is that transient, not a queue: the anchor never moves
+ * back to an older turn while the turn it is on is still on screen. It still
+ * moves forward the moment a newer turn is reached, and a queued bubble that
+ * was pending from its first paint is never chosen.
+ */
+export function chooseAnchorIndex(
+  turns: ReadonlyArray<{ id: string; pending: boolean }>,
+  lastAnchorId: string | null,
+): number {
+  let chosen = -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (!turns[i].pending) {
+      chosen = i;
+      break;
+    }
+  }
+  if (chosen < 0 && turns.length > 0) chosen = turns.length - 1;
+  if (lastAnchorId !== null) {
+    const last = turns.findIndex((t) => t.id === lastAnchorId);
+    if (last > chosen) return last;
+  }
+  return chosen;
+}
+
 /** Distance (px) between the newest turn's top and the viewport's top once
  *  the viewport is at the end and the room is not at its floor. */
 export const TURN_TOP_OFFSET = 24;
@@ -279,14 +315,14 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
     const spacer = spacerElRef.current;
     if (!el || !content || !spacer) return { room: 0, anchorChanged: false };
     const turns = content.querySelectorAll<HTMLElement>('[data-turn-id]');
-    let anchor: HTMLElement | null = null;
-    for (let i = turns.length - 1; i >= 0; i--) {
-      if (!turns[i].querySelector('[data-turn-pending]')) {
-        anchor = turns[i];
-        break;
-      }
-    }
-    if (!anchor && turns.length > 0) anchor = turns[turns.length - 1];
+    const anchorIndex = chooseAnchorIndex(
+      Array.from(turns, (t) => ({
+        id: t.getAttribute('data-turn-id') ?? '',
+        pending: !!t.querySelector('[data-turn-pending]'),
+      })),
+      lastAnchorIdRef.current,
+    );
+    const anchor: HTMLElement | null = anchorIndex >= 0 ? turns[anchorIndex] : null;
     // The end of the CONTENT is the spacer's own top edge — the spacer lives
     // inside the content box, so measuring to the box's bottom would include
     // the room itself and feed back (room grows → span grows → room shrinks →
