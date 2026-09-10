@@ -136,6 +136,12 @@ export interface AgentParseError {
 export interface LoadedAgents {
   specs: AgentSpec[];
   errors: AgentParseError[];
+  /** Where the specs came from: the manifest's blob sha and the commit it was
+   *  read at. `null` revision/commit = synthesized (no manifest on disk) or a
+   *  read with no git context; absent = the manifest could not be read at all.
+   *  Grants derived from these specs carry the same provenance
+   *  (`AgentGrant.manifestRevision` / `manifestCommit`). */
+  manifest?: { revision: string | null; commit: string | null } | null;
   /**
    * The manifest's own top-level `default_agent` (v2; v1 has no such
    * field, so this is always `null` for a v1 manifest). Lets grant resolution
@@ -306,23 +312,25 @@ export async function loadProjectAgents(
         error: (err as Error).message || 'Failed to read manifest',
       }],
       defaultAgent: null,
+      manifest: null,
     };
   }
-  const root = extractAgents(
-    manifest ?? synthesizeBlankManifest({ manifestPath: project.manifestPath }),
-  );
-  // The agents each space file declares join the roster, carrying their
-  // owner. Same read (`manifest` is handed over, not re-read); a v1 or absent
-  // manifest lists no files at all.
+  if (!manifest) manifest = synthesizeBlankManifest({ manifestPath: project.manifestPath });
+  const root: LoadedAgents = {
+    ...extractAgents(manifest),
+    manifest: { revision: manifest.revision ?? null, commit: manifest.commit ?? null },
+  };
+  // Space-owned agents join the roster from the same manifest read.
+  // Preserve its provenance when merging the two rosters.
   const { loadProjectSpaces } = await import('./spaces');
   const spaces = await loadProjectSpaces(project, { manifest });
   return mergeSpaceAgents(root, spaces.specs);
 }
 
 /**
- * Fold the agents owned by space files into the root's roster. An agent
+ * Fold space-owned agents into the root's roster. An agent
  * name is unique across the whole project — a name declared twice (root and
- * a file, or two files) is an error naming both places, and the second
+ * a space, or two spaces) is an error naming both places, and the second
  * declaration is dropped so the first keeps working. Pure.
  */
 export function mergeSpaceAgents(
@@ -348,7 +356,7 @@ export function mergeSpaceAgents(
     }
   }
   specs.sort((a, b) => a.name.localeCompare(b.name));
-  return { specs, errors, defaultAgent: root.defaultAgent };
+  return { ...root, specs, errors };
 }
 
 /**

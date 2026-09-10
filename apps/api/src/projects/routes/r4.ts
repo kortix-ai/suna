@@ -53,10 +53,10 @@ import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
 import {
-  relayTurnAnswer,
+  relayTurnAnswerDetailed,
   relayTurnEnd,
   relayTurnQuestion,
-  relayTurnStep,
+  relayTurnStepDetailed,
 } from '../../channels/turn-relay';
 import { config } from '../../config';
 import {
@@ -2880,7 +2880,22 @@ projectsApp.openapi(
           ),
         );
       }
-      const ok = await relayTurnEnd(sessionId, status, errorInfo);
+      // An end whose identity does not match the ledger's active turn is a
+      // replay of some OTHER turn (a runtime waking for a follow-up re-emits
+      // the previous turn's idle). Relaying it closed and deleted the Slack
+      // turn row of the run that had just started
+      // (INC-2026-09-08-CONNECTOR-GATEWAY, S2/S3). The ledger already refused
+      // to close its own turn for this; the channel relay now agrees.
+      const relayEnd = turnCompletion.outcome !== 'identity_mismatch';
+      if (!relayEnd) {
+        console.warn('[turn-stream] turn-end relay skipped — identity mismatch with the active turn', {
+          sessionId,
+          status,
+          turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+          activeTurnCount: turnCompletion.activeTurnCount,
+        });
+      }
+      const ok = relayEnd ? await relayTurnEnd(sessionId, status, errorInfo) : false;
       return c.json({
         ok,
         turn_completion: {
@@ -2927,15 +2942,19 @@ projectsApp.openapi(
       : undefined;
     const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
 
-    const ok =
+    // `reason` is what makes `ok: false` actionable in the sandbox: `slack
+    // step` and `slack send` print it, so an agent can tell "no Slack turn is
+    // open for this run" from "Slack refused the post" and act on it instead
+    // of assuming its progress was delivered.
+    const relayed =
       body.kind === 'answer'
-        ? await relayTurnAnswer(sessionId, text, blocks)
-        : await relayTurnStep(sessionId, text, {
+        ? await relayTurnAnswerDetailed(sessionId, text, blocks)
+        : await relayTurnStepDetailed(sessionId, text, {
             detail,
             outputForPrev,
             sourcesForPrev,
           });
-    return c.json({ ok });
+    return c.json(relayed.ok ? { ok: true } : { ok: false, reason: relayed.reason });
   },
 );
 

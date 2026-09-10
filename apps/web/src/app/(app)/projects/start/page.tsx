@@ -1,8 +1,8 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
@@ -212,7 +212,7 @@ export default function ProjectStartPage() {
     );
   }
 
-  return <ProjectStartSkeleton />;
+  return <ProjectStartLoadingFrame />;
 }
 
 /**
@@ -285,35 +285,17 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
 }
 
 /**
- * The first frame. Shaped like the project page it is about to become — header
- * bar, title, composer — so the swap to `/projects/<id>` reads as the page
- * filling in rather than as a second navigation.
+ * The first frame.
+ *
+ * This used to be a skeleton of the project page — header bar, title, composer,
+ * chips. It was a guess: this route never renders that page, it resolves a
+ * project id and replaces the URL with `/projects/<id>`, so the skeleton only
+ * ever flashed a layout the user was not about to receive.
+ *
+ * `ProjectPendingScreen` is shared with `loading.tsx` above and with
+ * `ProjectAccessBoundary` on the far side of the redirect, so the whole
+ * open-a-project path paints one frame instead of three different ones.
  */
-function ProjectStartSkeleton() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <div className="flex min-h-screen flex-col" aria-busy="true" aria-live="polite">
-      <span className="sr-only">{tI18nComplete.raw('text9498be620d80')}</span>
-      <div className="w-full border-b">
-        <div className="kx-app-header px-mobile mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 py-4 sm:gap-3">
-          <Skeleton className="h-5 w-32 rounded-md" />
-          <Skeleton className="h-8 w-20 rounded-full" />
-        </div>
-      </div>
-      <main className="bg-background px-mobile flex flex-1 items-center py-10 sm:py-12">
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-          <div className="space-y-3">
-            <Skeleton className="mx-auto h-9 w-64 rounded-md" />
-            <Skeleton className="mx-auto h-5 w-96 max-w-full rounded-md" />
-          </div>
-          <Skeleton className="h-32 w-full rounded-lg" />
-          <div className="flex flex-wrap justify-center gap-2">
-            <Skeleton className="h-8 w-28 rounded-full" />
-            <Skeleton className="h-8 w-36 rounded-full" />
-            <Skeleton className="h-8 w-24 rounded-full" />
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+function ProjectStartLoadingFrame() {
+  return <ProjectPendingScreen />;
 }

@@ -36,6 +36,17 @@ const chrome = require_(join(repoRoot, 'apps/desktop-electron/src/window-chrome.
 
 const css = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8');
 
+test('desktop chrome never resizes or drags generic product tab lists', () => {
+  const desktopRules = css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('}')
+    .filter((rule) => rule.includes('html[data-desktop'));
+  for (const rule of desktopRules) {
+    expect(rule).not.toContain("[role='tablist']");
+    expect(rule).not.toContain('[role="tablist"]');
+  }
+});
+
 /** The variable block on the bare `html[data-desktop-platform='macos']` rule. */
 function macVarBlock(): string {
   const match = css.match(/html\[data-desktop-platform='macos'\]\s*\{([^}]*)\}/);

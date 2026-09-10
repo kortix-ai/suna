@@ -20,7 +20,7 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 
-let manifestFile: { path: string; content: string } | null = null;
+let manifestFile: { path: string; content: string; sha?: string; commit?: string } | null = null;
 
 // `./git` is a heavily-imported barrel (session-lifecycle, github, etc. pull
 // other exports off it) — spread the REAL module and override only
@@ -48,6 +48,34 @@ const fakeProject = () => ({
   defaultBranch: 'main',
   manifestPath: 'kortix.toml',
   gitAuthToken: null,
+});
+
+describe('loadProjectAgents — space roster provenance', () => {
+  test('retains the manifest revision and commit when merging space-owned agents', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      sha: 'manifest-blob-sha',
+      commit: 'manifest-commit-sha',
+      content: `kortix_version: 2
+agents:
+  kortix: {}
+spaces:
+  marketing:
+    agents:
+      writer: {}
+`,
+    };
+    const loaded = await loadProjectAgents(fakeProject());
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.specs.map((agent) => [agent.name, agent.space])).toEqual([
+      ['kortix', null],
+      ['writer', 'marketing'],
+    ]);
+    expect(loaded.manifest).toEqual({
+      revision: 'manifest-blob-sha',
+      commit: 'manifest-commit-sha',
+    });
+  });
 });
 
 describe('loadProjectAgents — blank managed project (no manifest committed yet)', () => {

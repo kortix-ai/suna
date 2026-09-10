@@ -28,13 +28,13 @@ import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/pr
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
   SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
@@ -120,7 +120,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     >
       <SidebarHeader
         className="space-y-2"
-        style={{ paddingTop: "max(calc(var(--spacing) * 2), env(safe-area-inset-top, 0px))" }}
+        style={{
+          paddingTop:
+            'max(calc(var(--spacing) * 2), env(safe-area-inset-top, 0px), var(--kx-titlebar-inset, 0px))',
+        }}
       >
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
             single layout. Three controls on one 240px row, all 32px tall: the
