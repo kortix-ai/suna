@@ -21,7 +21,7 @@
 //      outcome — done, error, never a stranded 'running' — after.
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-agent-core";
 import { remoteExecutionEnv } from "./execenv.js";
-import { cellExecutionEnv } from "./execenv.cell.js";
+import { CELL_CWD, cellExecutionEnv } from "./execenv.cell.js";
 import { platinumExecutionEnv } from "./execenv.platinum.js";
 import { grepTool, listTool } from "./fstools.js";
 
@@ -215,7 +215,18 @@ function adapt(tool, envFor, log, inflight) {
 // sandbox's own words, "can't cd to /home/user/".
 export const workspaceCwd = (env) => env.PT_WORKSPACE_CWD || "/home/user";
 
-export function executionEnvFor(env, sessionId, opId, onOp) {
+/**
+ * The ExecutionEnv for work that is NOT a tool call — loading skills, reading
+ * the project's instructions. `cell` is the cell's own filesystem when it has
+ * one, and it must win: a cell session's skills live in ITS workspace, and
+ * reading them over the daemon asked a service that does not exist on the
+ * platform for a directory that does not exist either — measured live
+ * 2026-09-10, `/skills` reported `fetch: error sending request for url
+ * (http://host.docker.internal:7070/fs)` for `/work/.kortix/opencode/skills`
+ * while the session's checkout sat in /workspace.
+ */
+export function executionEnvFor(env, sessionId, opId, onOp, cell) {
+  if (cell) return cellExecutionEnv(cell);
   if (env.PT_API_URL && env.PT_SANDBOX_KEY && env.PT_WORKSPACE_ID) {
     return platinumExecutionEnv({
       apiUrl: env.PT_API_URL,
@@ -228,7 +239,7 @@ export function executionEnvFor(env, sessionId, opId, onOp) {
     base: env.TOOL_DAEMON_URL,
     token: env.TOOL_DAEMON_TOKEN,
     sessionId,
-    cwd: "/work",
+    cwd: CELL_CWD,
     opId,
     onOp,
   });

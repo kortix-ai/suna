@@ -12,8 +12,16 @@
 // long the skills themselves are.
 import { formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "@earendil-works/pi-agent-core";
 
-/** Where skills live, relative to the workspace root unless absolute. */
-export const DEFAULT_SKILLS_DIR = ".pi/skills";
+/**
+ * Where skills live, relative to the workspace root unless absolute.
+ *
+ * BOTH conventions, because a cell now has a checkout of a KORTIX project: a
+ * Kortix project keeps its skills under `.kortix/opencode/skills`
+ * (apps/api projects/git/config.ts reads exactly that path), while pi's own
+ * are `.pi/skills`. Looking in one place meant a project full of skills
+ * appeared to have none.
+ */
+export const DEFAULT_SKILLS_DIR = ".kortix/opencode/skills,.pi/skills";
 
 export function skillDirs(env) {
   return String(env.SKILLS_DIR ?? DEFAULT_SKILLS_DIR)

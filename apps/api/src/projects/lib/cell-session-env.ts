@@ -49,6 +49,10 @@ export interface CellSessionEnvInput {
   /** The compiled config for that agent — its prompt, model and permissions
    *  (cell-agent-config.ts). */
   compiledAgentConfig?: string | null;
+  /** The ref this session runs on — `project_sessions.base_ref`. */
+  baseRef?: string | null;
+  /** This project's git origin THROUGH KORTIX, when the session may have a checkout. */
+  repoUrl?: string | null;
 }
 
 /**
@@ -66,6 +70,8 @@ export function cellSessionEnv(input: CellSessionEnvInput): Record<string, strin
   const agent = input.agentName?.trim();
   const model = input.model?.trim();
   const compiled = input.compiledAgentConfig?.trim();
+  const baseRef = input.baseRef?.trim();
+  const repoUrl = input.repoUrl?.trim();
   return {
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_PROJECT_ID: input.projectId,
@@ -89,5 +95,11 @@ export function cellSessionEnv(input: CellSessionEnvInput): Record<string, strin
           KORTIX_COMPILED_AGENT_CONFIG_ETAG: agentConfigEtag(compiled) ?? '',
         }
       : {}),
+    // THE PROJECT'S FILES. A cell clones through the Kortix git proxy with the
+    // token above — no host credential, no new authority. Absent means "no
+    // checkout", which is what every cell had until now: an empty workspace,
+    // no skills, no AGENTS.md and a Files panel with nothing in it.
+    ...(repoUrl ? { KORTIX_REPO_URL: repoUrl } : {}),
+    ...(baseRef ? { KORTIX_BASE_REF: baseRef } : {}),
   };
 }

@@ -41,6 +41,7 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.84.4",
     "@earendil-works/pi-ai": "0.84.4",
+    "isomorphic-git": "^1.41.9",
     "just-bash": "3.4.2",
     "typebox": "1.3.7"
   },

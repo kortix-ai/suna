@@ -1,6 +1,7 @@
 import { cellRuntimeFromSandboxMetadata } from '../cell-runtime-detect';
 import { cellSessionEnv } from './cell-session-env';
 import { cellCompiledAgentConfig } from './cell-agent-config';
+import { proxyGitUrl } from './sessions';
 import { cellEnvToken } from './cell-env-token';
 import { serviceKeyForSession } from '../../platform/service-key';
 import { envPushUrl } from './env-push-url';
@@ -712,6 +713,10 @@ export async function repairCellSessionEnv(args: {
       agentName: row?.agentName,
       model,
       compiledAgentConfig,
+      baseRef: row?.baseRef,
+      // The same origin every Kortix client clones from — the API's own git
+      // proxy, which takes the session token the cell already holds.
+      repoUrl: proxyGitUrl(args.projectId),
     });
     mark('build-env');
     const res = await fetch(envPushUrl(args.previewUrl, args.sessionId), {

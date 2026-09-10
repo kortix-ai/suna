@@ -58,6 +58,7 @@ import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
 import { agentNameFrom, agentShape, bootAnswer } from "./opencode-boot.js";
 import { agentList, agentModelId, agentSystemPrompt, gatewayModelId, parseAgentConfig, selectAgent } from "./agent-config.js";
 import { globTool, readTodos, todoTools } from "./plantools.js";
+import { cloneProject, isCheckedOut, workingStatus } from "./cell-git.js";
 import { banner, cdTarget, feed, newEditor, prompt, ptyCreate, ptyGet, ptyList, ptyRemove, ptySetCwd, ptyUpdate } from "./cell-pty.js";
 import { transcriptMessages } from "./transcript-read.js";
 import { mintWireMessageId, newestWireIdTime } from "../../api/src/projects/wire-message-id.ts";
@@ -75,6 +76,9 @@ const SYSTEM_PROMPT =
 // archived messages are dropped — the record is bounded, and says so, rather
 // than growing until the cell's storage becomes the problem.
 const ARCHIVE_MAX_BYTES = 8 * 1024 * 1024;
+
+/** How much of AGENTS.md joins the system prompt. Enough for instructions, not a book. */
+const PROJECT_INSTRUCTIONS_MAX = 16_000;
 
 // Paths that do not bill. Observability and liveness: a monitor polling these
 // must not move a customer's invoice.
@@ -116,6 +120,22 @@ function planTools(sql, owner) {
   ];
 }
 
+/**
+ * Does this session's work happen on the CELL'S OWN filesystem?
+ *
+ * The tools decided this and nothing else could ask, so `/skills` loaded over
+ * a daemon that does not exist on the platform while the session's checkout
+ * sat in the cell — measured live 2026-09-10: `fetch: error sending request
+ * for url (http://host.docker.internal:7070/fs)`. One predicate, two callers.
+ */
+export function usesCellFilesystem(env = {}) {
+  const wantsPlatinum = env.PT_API_URL && env.PT_SANDBOX_KEY && env.PT_WORKSPACE_ID;
+  if (wantsPlatinum) return false;
+  if (env.TOOLS_BACKEND === "cell") return true;
+  const platform = Boolean(normalizeModelEnv(env).MODEL_BASE_URL) || Boolean(env.KORTIX_SESSION_ID);
+  return platform && !env.TOOL_DAEMON_URL_FORCE;
+}
+
 function toolsFor(env, sessionId, sql, owner) {
   const wantsPlatinum = env.PT_API_URL && env.PT_SANDBOX_KEY && env.PT_WORKSPACE_ID;
   // A PLATFORM SESSION WITH NO WORKSPACE GETS THE CELL'S OWN FILESYSTEM.
@@ -130,7 +150,7 @@ function toolsFor(env, sessionId, sql, owner) {
   // Explicit TOOLS_BACKEND=cell asks for it anywhere; a bench with a daemon is
   // unchanged.
   const platform = Boolean(normalizeModelEnv(env).MODEL_BASE_URL) || Boolean(env.KORTIX_SESSION_ID);
-  if (!wantsPlatinum && owner && (env.TOOLS_BACKEND === "cell" || (platform && !env.TOOL_DAEMON_URL_FORCE))) {
+  if (!wantsPlatinum && owner && usesCellFilesystem(env)) {
     owner.cellFs ??= cellFs(sql);
     // Every changed path goes out as OpenCode's `file.edited`, so the Files
     // panel, git status and an open viewer re-read (execenv.cell.js).
@@ -624,13 +644,21 @@ export class AgentCell {
     this.broadcast({ type: "turn_started", turn: next.i, text: String(next.text).slice(0, 120) });
     try {
       const script = next.script ? JSON.parse(next.script) : undefined;
-      const { block } = await this.skills(sessionId);
+      // The checkout first: skills, AGENTS.md and every file the model may
+      // read live in it. Bounded and best-effort — see ensureCheckout.
+      await this.ensureCheckout().catch(() => null);
+      tMark("checkout");
+      // The checkout may have just ARRIVED, so a skills answer cached from
+      // before it is stale by definition.
+      const { block } = await this.skills(sessionId, { reload: !this.skillsAfterCheckout });
+      this.skillsAfterCheckout = true;
+      const instructions = await this.projectInstructions();
       tMark("skills");
       // A prompt echoed on accept is already a row; the agent is seeded
       // without it because `agent.prompt(text)` adds it — twice would double
       // the user's words in the model's context.
       const echoed = !!next.message_id && this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE wire_id = ? AND role = 'user'", next.message_id).toArray()[0].n > 0;
-      const agent = this.buildAgent(sessionId, script, withSkills(this.systemPrompt(), block),
+      const agent = this.buildAgent(sessionId, script, withSkills(withSkills(this.systemPrompt(), instructions), block),
         this.wireSessionId(next, sessionId), echoed ? next.message_id : null);
       tMark("buildAgent");
       // TWO MARKS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
@@ -928,9 +956,13 @@ export class AgentCell {
     // that other path.
     this.skillsCache ??= new Map();
     if (this.skillsCache.has(sessionId) && !reload) return this.skillsCache.get(sessionId);
+    // OVER THE CELL'S OWN TREE when there is one — that is where the
+    // checkout, and therefore the project's skills, actually are.
+    if (usesCellFilesystem(this.effectiveEnv())) this.cellFs ??= cellFs(this.sql);
+    const cell = this.cellFs ?? null;
     const loaded = await loadWorkspaceSkills(
       this.effectiveEnv(),
-      (opId) => executionEnvFor(this.effectiveEnv(), sessionId, opId),
+      (opId) => executionEnvFor(this.effectiveEnv(), sessionId, opId, undefined, cell),
     );
     this.skillsCache.set(sessionId, loaded);
     return loaded;
@@ -1197,6 +1229,42 @@ export class AgentCell {
     return this.__agent;
   }
 
+  /**
+   * THE PROJECT'S FILES, ONCE PER CELL.
+   *
+   * The workspace starts empty; the control plane hands down the project's
+   * git origin and this session's ref with the rest of the env
+   * (cell-session-env.ts), and the clone uses the session's own token — the
+   * one it already holds for the model gateway. Idempotent and single-flight
+   * (cell-git.js), so every caller can just ask: the first turn, and the Files
+   * panel's first list, both do.
+   *
+   * Never fatal. A project with no repo, a token the proxy refuses, a repo too
+   * big for the isolate — each leaves the session exactly as it was before
+   * this existed: an empty workspace that still answers.
+   */
+  async ensureCheckout() {
+    const e = this.effectiveEnv();
+    const url = typeof e.KORTIX_REPO_URL === "string" ? e.KORTIX_REPO_URL.trim() : "";
+    if (!url) return { ok: false, reason: "no repo url" };
+    this.cellFs ??= cellFs(this.sql);
+    if (await isCheckedOut(this.cellFs.fs)) return { ok: true, cloned: false, reason: "already checked out" };
+    const started = Date.now();
+    const r = await cloneProject({
+      cell: this.cellFs,
+      url,
+      ref: typeof e.KORTIX_BASE_REF === "string" && e.KORTIX_BASE_REF.trim() ? e.KORTIX_BASE_REF.trim() : undefined,
+      token: e.KORTIX_TOKEN,
+    });
+    this.broadcast({ type: "checkout", ...r, ms: Date.now() - started });
+    if (r.ok && r.cloned) {
+      // The Files panel re-reads on `file.edited`; a checkout is the largest
+      // change a workspace ever sees.
+      this.wire?.publish([{ type: "file.edited", properties: { file: CELL_CWD } }]);
+    }
+    return r;
+  }
+
   /** A terminal socket this isolate has not seen, recognised by its tag. */
   adoptTerminal(ws) {
     const tags = this.state.getTags?.(ws) ?? [];
@@ -1267,6 +1335,32 @@ export class AgentCell {
   /** The system prompt before skills and the shell note: the project's, or the cell's. */
   systemPrompt() {
     return agentSystemPrompt(this.agent().agent, SYSTEM_PROMPT);
+  }
+
+  /**
+   * THE PROJECT'S OWN INSTRUCTIONS. `AGENTS.md` at the root of a checkout is
+   * the file every OpenCode-shaped agent is told to follow — Kortix's platform
+   * agent's whole prompt is "Follow /workspace/AGENTS.md". A cell had no
+   * checkout, so it never had one to read; now that it does, the file joins
+   * the system prompt as what it is: the project's instructions, quoted, not
+   * paraphrased.
+   *
+   * Bounded: a repository can put anything in that file, and the context is
+   * the session's to spend.
+   */
+  async projectInstructions() {
+    try {
+      this.cellFs ??= cellFs(this.sql);
+      for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+        const path = `${CELL_CWD}/${name}`;
+        if (!(await this.cellFs.fs.exists(path))) continue;
+        const body = String(await this.cellFs.fs.readFile(path, "utf8")).trim();
+        if (!body) continue;
+        const kept = body.length > PROJECT_INSTRUCTIONS_MAX ? `${body.slice(0, PROJECT_INSTRUCTIONS_MAX)}\n…` : body;
+        return `The project's own instructions, from ${name} in the workspace. Follow them:\n\n${kept}`;
+      }
+    } catch { /* a workspace that cannot be read has no instructions */ }
+    return "";
   }
 
   /** Bump a meter. One statement, so a concurrent request cannot lose a count. */
@@ -2431,6 +2525,13 @@ export class AgentCell {
     // as empty rather than "unknown route".
     if (path === "/file" || path.startsWith("/file/") || path === "/find" || path.startsWith("/find/")) {
       this.cellFs ??= cellFs(this.sql);
+      // The panel is often the FIRST thing a user opens, before any prompt —
+      // so the checkout happens here too, not only at turn start.
+      await this.ensureCheckout().catch(() => null);
+      // `/file/status` is git's answer once there is a checkout (cell-git.js).
+      if (path === "/file/status" && req.method === "GET") {
+        return Response.json(await workingStatus(this.cellFs).catch(() => []));
+      }
       const answered = await filesAnswer(req, path, url, this.cellFs);
       if (answered) return answered;
     }

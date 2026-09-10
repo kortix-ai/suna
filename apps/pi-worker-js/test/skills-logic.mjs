@@ -155,11 +155,16 @@ await new Promise((r) => server.close(r));
     off.skills.length === 0 && off.dirs.length === 0, JSON.stringify(off).slice(0, 100));
   check("and NO execution env is built for it — every turn would otherwise pay for a lookup that cannot find anything",
     built === 0, `${built} env(s) built`);
-  // The default is NOT off: an env with nothing set still looks in .pi/skills,
-  // so the branch above is a deliberate switch rather than the common path.
-  check("while the default configuration does look for skills",
-    (await loadWorkspaceSkills({}, factory)).dirs.length === 1 && built === 1,
-    `${built} env(s) built`);
+  // The default is NOT off: an env with nothing set looks in BOTH conventions
+  // — a Kortix project keeps its skills in `.kortix/opencode/skills` and pi's
+  // own are `.pi/skills` — so the branch above is a deliberate switch rather
+  // than the common path. Looking in one place made a project full of skills
+  // appear to have none (2026-09-10, once a cell had a checkout).
+  const byDefault = await loadWorkspaceSkills({}, factory);
+  check("while the default configuration looks in both skill directories",
+    byDefault.dirs.length === 2 && byDefault.dirs.some((d) => d.includes(".kortix/opencode/skills"))
+      && byDefault.dirs.some((d) => d.includes(".pi/skills")) && built === 1,
+    `${built} env(s) built, dirs ${JSON.stringify(byDefault.dirs)}`);
 
   // A directory that is ALREADY absolute needs no resolving. The answer is the
   // same either way — absolutePath hands an absolute path back unchanged — so

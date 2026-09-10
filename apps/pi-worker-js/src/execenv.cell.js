@@ -27,7 +27,11 @@ export const CELL_CWD = "/workspace";
 const LEGACY_CWD = "/work";
 const fail = (message, path, code = "unknown") => err(new FileError(code, String(message), path));
 const codeOf = (e) => /ENOENT|not found|no such/i.test(e?.message ?? "") ? "not_found" : /EISDIR|is a directory/i.test(e?.message ?? "") ? "is_directory" : /EEXIST/i.test(e?.message ?? "") ? "exists" : "unknown";
-const b64 = (u8) => btoa(String.fromCharCode(...u8));
+// CHUNKED, because a spread is an argument list. `String.fromCharCode(...u8)`
+// is fine for a note the agent typed and dies on a git packfile: cloning a
+// project into a cell hit "Maximum call stack size exceeded" in persist()
+// before a single file reached storage (2026-09-10).
+const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 /** One per cell instance: the tree restored from SQLite, and a shell over it. */
