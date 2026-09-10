@@ -46,6 +46,7 @@ globalThis.atob = (input) => {
 import { Agent } from "@earendil-works/pi-agent-core";
 import { CELL_CWD, cellFs, cellShellNote } from "./execenv.cell.js";
 import { filesAnswer } from "./cell-files.js";
+import { STATIC_PREFIX, staticAnswer } from "./cell-static.js";
 import { executionEnvFor, piTools, piToolsCell, piToolsPlatinum } from "./pitools.js";
 import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
@@ -113,6 +114,9 @@ function toolsFor(env, sessionId, sql, owner) {
   const platform = Boolean(normalizeModelEnv(env).MODEL_BASE_URL) || Boolean(env.KORTIX_SESSION_ID);
   if (!wantsPlatinum && owner && (env.TOOLS_BACKEND === "cell" || (platform && !env.TOOL_DAEMON_URL_FORCE))) {
     owner.cellFs ??= cellFs(sql);
+    // Every changed path goes out as OpenCode's `file.edited`, so the Files
+    // panel, git status and an open viewer re-read (execenv.cell.js).
+    owner.cellFs.onChange = (paths) => owner.wire?.publish(paths.slice(0, 50).map((file) => ({ type: "file.edited", properties: { file } })));
     return piToolsCell(env, sessionId, sql, owner.cellFs);
   }
   // The daemon backend now runs pi's OWN tools over an ExecutionEnv — bash,
@@ -2262,6 +2266,13 @@ export class AgentCell {
     if (path === "/file" || path.startsWith("/file/") || path === "/find" || path.startsWith("/find/")) {
       this.cellFs ??= cellFs(this.sql);
       const answered = await filesAnswer(req, path, url, this.cellFs);
+      if (answered) return answered;
+    }
+    // THE PREVIEW SERVER (the daemon's port 3211), under /static — the proxy
+    // sends a cell's 3211 here. cell-static.js.
+    if (path === STATIC_PREFIX || path.startsWith(STATIC_PREFIX + "/")) {
+      this.cellFs ??= cellFs(this.sql);
+      const answered = await staticAnswer(req, path, url, this.cellFs);
       if (answered) return answered;
     }
     return Response.json({

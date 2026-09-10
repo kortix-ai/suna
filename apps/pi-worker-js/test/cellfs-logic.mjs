@@ -1,6 +1,6 @@
 // THE CELL'S OWN FILESYSTEM AND SHELL. In-process, no Docker, no daemon, no
 // microVM: the tree lives in the cell's SQLite and the shell is just-bash.
-// EXPECTED_PASSES=32
+// EXPECTED_PASSES=35
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -122,6 +122,21 @@ check("a removal is persisted too — deleted rows do not come back", r.ok && ro
     check("curl refuses a file: URL — nothing read, non-zero exit", fsch.exitCode !== 0 && fsch.stdout === "", JSON.stringify(fsch).slice(0, 160));
     const rd = await cell.bash.exec("curl -sL -o /dev/null -w '%{http_code}' http://github.com/", { cwd: "/" });
     check("curl -L follows a redirect hop by hop (http://github.com → https)", rd.exitCode === 0 && rd.stdout.trim() === "200", JSON.stringify(rd).slice(0, 200));
+  }
+  // THE TREE ANNOUNCES ITS CHANGES: a tool write names its path, a shell
+  // command names what it touched, a no-op names nothing.
+  {
+    const seen = [];
+    cell.onChange = (paths) => seen.push(...paths);
+    await env.writeFile("announce/a.txt", "1");
+    check("a tool write announces the written path", seen.includes(`${CELL_CWD_EXPECTED}/announce/a.txt`), JSON.stringify(seen));
+    seen.length = 0;
+    await env.exec("echo hi > announce/b.txt && mkdir -p announce/d && rm announce/a.txt", { cwd: CELL_CWD_EXPECTED });
+    check("a shell command announces what it created, made and removed", seen.includes(`${CELL_CWD_EXPECTED}/announce/b.txt`) && seen.includes(`${CELL_CWD_EXPECTED}/announce/d`) && seen.includes(`${CELL_CWD_EXPECTED}/announce/a.txt`), JSON.stringify(seen));
+    seen.length = 0;
+    await env.exec("ls announce", { cwd: CELL_CWD_EXPECTED });
+    check("a read-only command announces nothing", seen.length === 0, JSON.stringify(seen));
+    cell.onChange = null;
   }
   check("every command the note calls missing really is missing",
     present.length === 0, `these actually exist: ${JSON.stringify(present)}`);

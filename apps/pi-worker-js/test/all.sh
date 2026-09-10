@@ -167,6 +167,7 @@ run_suite meter      node test/meter-logic.mjs
 run_suite envplat    node test/execenv-platinum.mjs
 run_suite cellfs     node --experimental-sqlite ./test/cellfs-logic.mjs
 run_suite files      node --experimental-sqlite test/files-logic.mjs
+run_suite static     node --experimental-sqlite test/static-logic.mjs
 run_suite e2e        ./test/e2e.sh
 run_suite streaming  ./test/streaming.sh
 run_suite crash      ./test/crash.sh
@@ -185,6 +186,7 @@ run_suite session-e2e ./test/dev-session-e2e.sh
 # without one it SKIPs and says so. Last, because it owns the node's lifecycle.
 run_suite dev-e2e    ./test/dev-e2e.sh
 run_suite browser-e2e ./test/dev-browser-e2e.sh
+run_suite ui-e2e     ./test/dev-ui-e2e.sh
 run_suite fs-iso     ./test/cell-fs-isolation.sh
 # THE WORKER IN A REAL CELL ON DEV, folder-scoped. Needs the dev bucket's S3
 # credentials in PT_S3_* on top of the token; SKIPs by name without them.

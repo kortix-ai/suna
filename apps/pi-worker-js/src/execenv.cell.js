@@ -67,7 +67,28 @@ export function cellFs(sql) {
         p, st.isDirectory ? 1 : 0, st.mode ?? 0o644, Math.floor(+st.mtime || Date.now()), body);
     }
   }
-  return { fs, bash, persist, ready: boot, restored };
+  // WHAT CHANGED, for whoever paints the tree. The Files panel re-reads its
+  // list on a `file.edited` frame (packages/sdk react handle-event.ts) and
+  // otherwise shows what it read when it opened — measured 2026-09-10: a file
+  // the agent wrote while the panel was open did not appear until the panel
+  // was closed and reopened. A snapshot (path → size:mtime) before and after
+  // a mutation names the paths that differ; the worker publishes them.
+  const cell = { fs, bash, persist, ready: boot, restored, onChange: null };
+  cell.snapshot = async () => {
+    const out = new Map();
+    for (const p of fs.getAllPaths().filter((p) => p.startsWith(CELL_CWD + "/") || p.startsWith("/tmp/"))) {
+      try { const st = await fs.stat(p); out.set(p, st.isDirectory ? "d" : `${st.size}:${+st.mtime || 0}`); } catch { /* raced away */ }
+    }
+    return out;
+  };
+  cell.changedSince = (before, after) => {
+    const changed = [];
+    for (const [p, v] of after) if (before.get(p) !== v) changed.push(p);
+    for (const p of before.keys()) if (!after.has(p)) changed.push(p);
+    return changed;
+  };
+  cell.notify = (paths) => { if (paths.length && typeof cell.onChange === "function") { try { cell.onChange(paths); } catch { /* a listener must not break a write */ } } };
+  return cell;
 }
 
 /** pi's ExecutionEnv over the cell's own tree. Same shapes as the Platinum backend. */
@@ -119,7 +140,7 @@ export function cellShellNote() {
 export function cellExecutionEnv(cell, cwd = CELL_CWD) {
   const { fs, bash, persist, ready } = cell;
   const abs = (p) => (p.startsWith("/") ? p : `${cwd}/${p}`).replace(/\/+/g, "/");
-  const mutate = async (fn) => { await ready; const r = await fn(); await persist(); return r; };
+  const mutate = async (fn) => { await ready; const before = await cell.snapshot(); const r = await fn(); await persist(); cell.notify(cell.changedSince(before, await cell.snapshot())); return r; };
   const stat = async (p) => { const s = await fs.stat(abs(p)); return { name: abs(p).split("/").pop(), path: abs(p), kind: s.isDirectory ? "directory" : "file", size: s.size ?? 0, mtimeMs: +s.mtime || 0 }; };
   return {
     cwd, idempotent: true,
@@ -146,6 +167,7 @@ export function cellExecutionEnv(cell, cwd = CELL_CWD) {
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), seconds * 1000);
       try {
+        const before = await cell.snapshot();
         const r = await bash.exec(command, { cwd: options.cwd ?? cwd, env: options.env, signal: ctl.signal });
         // just-bash does not throw on abort: it returns exit 124 with
         // "bash: execution aborted" on stderr. Read the signal, not the shape,
@@ -154,6 +176,7 @@ export function cellExecutionEnv(cell, cwd = CELL_CWD) {
         if (r.stdout && options.onStdout) options.onStdout(r.stdout);
         if (r.stderr && options.onStderr) options.onStderr(r.stderr);
         await persist();
+        cell.notify(cell.changedSince(before, await cell.snapshot()));
         return ok({ stdout: r.stdout, stderr: r.stderr, exitCode: r.exitCode });
       } catch (e) {
         if (ctl.signal.aborted) return err(new ExecutionError("timeout", `timeout:${seconds}`));
