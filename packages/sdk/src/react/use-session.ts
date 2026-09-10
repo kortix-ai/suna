@@ -50,6 +50,7 @@ import {
 } from '../core/rest/projects-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
+import { resetSessionSyncControllersForRuntime } from '../browser/session-sync/session-sync-registry';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
@@ -927,27 +928,28 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // 2. Point the SDK's runtime at this session's sandbox once ready. Track WHICH
   // sandbox we switched to (not a bare bool) so navigating between sessions (this
   // hook instance is reused) re-gates instead of binding the new session to the
-  // previous sandbox. One active session at a time is the supported model, so the
-  // whole chat path (SSE, sync, send) rides this single global switch — there is no
-  // separate per-session client to keep in sync.
+  // previous sandbox. The active runtime routes the host's current controls.
+  // Transcript controllers capture their own URL and cannot follow this switch.
   const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
+  const [switchedExternalId, setSwitchedExternalId] = useState<string | null>(null);
   useEffect(() => {
-    if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
-    // Point the app's runtime at THIS session's box — no global "switch", just set
-    // the current runtime url. Every read (getClient, the SSE stream, files/
-    // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
-    // health effect below seeds connected+healthy with no client poll.
+    if (!startReady || !sandbox?.external_id ||
+        (switchedSandboxId === sandbox.sandbox_id && switchedExternalId === sandbox.external_id)) return;
+    // Retire detached controllers before publishing this session's runtime.
+    // `stage==='ready'` is server-proven; the health effect seeds readiness.
+    resetSessionSyncControllersForRuntime(sandbox.external_id, getSandboxUrlForExternalId(sandbox.external_id));
     setCurrentRuntime(
       getSandboxUrlForExternalId(sandbox.external_id),
       sandbox.external_id,
       sandbox.sandbox_id,
     );
     setSwitchedSandboxId(sandbox.sandbox_id);
-  }, [startReady, sandbox, switchedSandboxId]);
+    setSwitchedExternalId(sandbox.external_id);
+  }, [startReady, sandbox, switchedSandboxId, switchedExternalId]);
   // Clear the current runtime when this session view unmounts.
   useEffect(() => () => setCurrentRuntime(null), []);
 
-  const switched = startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
+  const switched = startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id && switchedExternalId === sandbox.external_id;
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -1015,6 +1017,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // result instead of whatever it happens to return for that starved call.
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
+    runtimeScope: sandbox?.external_id ?? undefined,
+    runtimeUrl: sandbox?.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : undefined,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification

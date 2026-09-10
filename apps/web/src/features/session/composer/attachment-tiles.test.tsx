@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { createTranslator } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import deMessages from '../../../../translations/de.json';
+
 import { TILE_SURFACE } from '../attachment-tile';
-import { AttachmentTiles } from './attachment-tiles';
+import { AttachmentTiles, attachmentTileCopy } from './attachment-tiles';
 import type { AttachedFile } from './types';
 
 /**
@@ -29,12 +32,166 @@ const localDoc = (name: string): AttachedFile => ({
   isImage: false,
 });
 
+const restoredImage: AttachedFile = {
+  kind: 'staged',
+  uploadId: 'restored-image',
+  attachment: {
+    attachment_id: 'server-image',
+    filename: 'restored.png',
+    mime: 'image/png',
+    size: 8,
+    expires_at: '2099-01-01T00:00:00.000Z',
+  },
+  filename: 'restored.png',
+  mime: 'image/png',
+  isImage: true,
+};
+
 /** Every `class="..."` attribute value in a markup string. */
 function classAttrs(html: string): string[] {
   return [...html.matchAll(/class="([^"]*)"/g)].map((m) => m[1]);
 }
 
 describe('AttachmentTiles', () => {
+  test('a ready restored image without a thumbnail renders its name without a spinner', () => {
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[restoredImage]}
+        uploads={[
+          {
+            id: 'restored-image',
+            filename: 'restored.png',
+            mime: 'image/png',
+            size: 8,
+            status: 'ready',
+            receivedBytes: 8,
+            attachment: restoredImage.kind === 'staged' ? restoredImage.attachment : undefined,
+          },
+        ]}
+        onRemove={() => {}}
+      />,
+    );
+    expect(markup).toContain('restored.png');
+    expect(markup).not.toContain('animate-spinner-orbit');
+  });
+
+  test('restored image fallback reflects processing and error state', () => {
+    const item = {
+      id: 'restored-image',
+      filename: 'restored.png',
+      mime: 'image/png',
+      size: 8,
+      receivedBytes: 8,
+    } as const;
+    const processing = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[restoredImage]}
+        uploads={[{ ...item, status: 'processing' }]}
+        onRemove={() => {}}
+      />,
+    );
+    expect(processing).toContain('Processing');
+    expect(processing).toContain('animate-spinner-orbit');
+
+    const error = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[restoredImage]}
+        uploads={[{ ...item, status: 'error', error: new Error('expired') }]}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(error).toContain('Upload failed');
+    expect(error).not.toContain('animate-spinner-orbit');
+  });
+  test('shows acknowledged upload progress and processing without replacing the file tile', () => {
+    const file = { ...localDoc('notes.txt'), uploadId: 'local-1' };
+    if (file.kind !== 'local') throw new Error('expected local file');
+    const uploading = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[file]}
+        uploads={[
+          {
+            id: 'local-1',
+            file: file.file,
+            filename: 'notes.txt',
+            mime: 'application/pdf',
+            size: 10,
+            status: 'uploading',
+            receivedBytes: 5,
+          },
+        ]}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(uploading).toContain('Uploading 50%');
+    expect(uploading).toContain('tabular-nums');
+    expect(uploading).toContain('notes.txt');
+
+    const processing = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[file]}
+        uploads={[
+          {
+            id: 'local-1',
+            file: file.file,
+            filename: 'notes.txt',
+            mime: 'application/pdf',
+            size: 10,
+            status: 'processing',
+            receivedBytes: 10,
+          },
+        ]}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(processing).toContain('Processing');
+  });
+
+  test('shows an upload error with retry and remove actions', () => {
+    const file = { ...localDoc('failed.pdf'), uploadId: 'local-failed' };
+    if (file.kind !== 'local') throw new Error('expected local file');
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[file]}
+        uploads={[
+          {
+            id: 'local-failed',
+            file: file.file,
+            filename: 'failed.pdf',
+            mime: 'application/pdf',
+            size: 5,
+            status: 'error',
+            receivedBytes: 0,
+            error: new Error('network unavailable'),
+          },
+        ]}
+        onRemove={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(markup).toContain('Upload failed');
+    expect(markup).toContain('aria-label="Retry failed.pdf"');
+    expect(markup).toContain('aria-label="Remove failed.pdf"');
+    expect(markup).toContain('network unavailable');
+  });
+
+  test('renders attachment status and action labels in the active locale', () => {
+    const translator = createTranslator({
+      locale: 'de',
+      messages: deMessages,
+      namespace: 'hardcodedUi.composerAttachments',
+    });
+    const copy = attachmentTileCopy(translator);
+
+    expect(copy.uploadFailed).toBe('Upload fehlgeschlagen');
+    expect(copy.retry).toBe('Erneut versuchen');
+    expect(copy.retryNamed('fehler.pdf')).toBe('fehler.pdf erneut versuchen');
+    expect(copy.uploading(50)).toBe('Upload läuft: 50 %');
+  });
+
   test('an attached SVG shows its name, not a rendered preview', () => {
     const svg: AttachedFile = {
       kind: 'local',

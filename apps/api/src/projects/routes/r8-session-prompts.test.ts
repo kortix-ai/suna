@@ -73,6 +73,8 @@ const afterReadDelay = <T>(value: () => T): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(value()), dbReadDelayMs));
 
 const databaseMock = {
+  transaction: async <T>(callback: (tx: typeof databaseMock) => Promise<T>): Promise<T> =>
+    callback(databaseMock),
   select: () => ({
     from: (table: unknown) => ({
       where: (predicate: unknown) => {
@@ -581,6 +583,11 @@ describe('GET .../prompts', () => {
     const body = await list();
     expect((await list()).prompts[0].runtime_retries).toBe(0);
     expect(body.prompts[0].reason).toBeNull();
+  });
+
+  test('a stale runtime reason survives the public prompt projection', async () => {
+    commandTable = [row({ status: 'queued', result: { delivery_blocked: 'runtime_stale', runtime_retries: 1 } })];
+    expect((await list()).prompts[0]).toMatchObject({ state: 'queued', reason: 'runtime_stale', runtime_retries: 1 });
   });
 
   test('a dead-lettered row reads `failed` and carries its error', async () => {

@@ -1,6 +1,6 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { getClient } from '../../core/runtime/client';
-import { SandboxNotReadyError, isSandboxNotReadyError } from '../../core/http/opencode-errors';
+import { getClient, getClientForUrl, RuntimeNotReadyError } from '../../core/runtime/client';
+import { SandboxNotReadyError, SessionNotFoundOnRuntimeError, isSandboxNotReadyError } from '../../core/http/opencode-errors';
 import {
   SessionSyncController,
   type SessionSyncPage,
@@ -8,7 +8,7 @@ import {
   type SessionSyncTelemetryEvent,
   loadCompleteSessionHistory,
 } from '../../core/session-sync/session-sync-controller';
-import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
+import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from '../../core/session/current-runtime';
 import { useSyncStore } from '../stores/sync-store';
 
 interface MessagesResponse {
@@ -44,10 +44,11 @@ type SessionPrefetchSource = string | typeof ACTIVE_SESSION_PREFETCH_SOURCE;
 interface RegistryEntry {
   sessionId: string;
   runtimeScope: string;
+  readonly runtimeUrl: string | null;
   controller: SessionSyncController;
   consumers: number;
   lastUsedAt: number;
-  client?: SessionMessageClient;
+  readonly client?: SessionMessageClient;
   prefetchedSource?: SessionPrefetchSource;
 }
 
@@ -171,6 +172,15 @@ export async function readSessionMessagePage(
     result.error !== undefined || (typeof status === 'number' && status >= 400);
   if (failed) {
     const message = messagePageErrorText(result, status);
+    if (status === 404) {
+      // Only the runtime's structured error identifies a missing tuple.
+      // A proxy can answer HTML or "not running" while the same tuple wakes.
+      if (result.error && typeof result.error === 'object' &&
+          'name' in result.error && result.error.name === 'NotFoundError') {
+        throw new SessionNotFoundOnRuntimeError(message);
+      }
+      throw new SandboxNotReadyError(message);
+    }
     if (
       status === 503 ||
       isSandboxNotReadyError(result.error) ||
@@ -201,15 +211,16 @@ function reportTelemetry(sessionId: string, event: SessionSyncTelemetryEvent): v
   console.debug('[session-sync]', { sessionId, ...event });
 }
 
-function resolveClient(key: string): SessionMessageClient {
-  return controllers.get(key)?.client ?? getClient();
-}
-
-function createController(sessionId: string, key: string): SessionSyncController {
+function createController(
+  sessionId: string,
+  runtimeScope: string,
+  runtimeUrl: string | null,
+  client?: SessionMessageClient,
+): SessionSyncController {
   return new SessionSyncController({
     sessionId,
     loadPage: (request, signal) =>
-      readSessionMessagePage(resolveClient(key), sessionId, request, signal),
+      readSessionMessagePage(client ?? getClientForUrl(runtimeUrl!), sessionId, request, signal),
     // No `loadStatus` / `setStatus`. The liveness poll reconciles the
     // transcript tail and claims nothing about whether the session is working:
     // `GET .../turn` answers that, and `setBusy` is already driven from that
@@ -217,11 +228,11 @@ function createController(sessionId: string, key: string): SessionSyncController
     // published export of `@kortix/sdk/react` — but this controller no longer
     // calls it.
     hydrate: (messages) => {
-      useSyncStore.getState().hydrate(sessionId, messages);
+      useSyncStore.getState().hydrate(sessionId, messages, { runtimeScope });
     },
     markLoaded: () => {
       const state = useSyncStore.getState();
-      if (!(sessionId in state.messages)) state.hydrate(sessionId, []);
+      if (!(sessionId in state.messages)) state.hydrate(sessionId, [], { runtimeScope });
     },
     onTelemetry: (event) => reportTelemetry(sessionId, event),
   });
@@ -244,22 +255,28 @@ function getOrCreateRegistryEntry(
   client?: SessionMessageClient,
   initialConsumers = 0,
   runtimeScope?: string,
+  explicitRuntimeUrl?: string,
 ): RegistryEntry {
   const key = controllerKey(sessionId, runtimeScope);
+  const scope = runtimeScopeKey(runtimeScope);
+  const runtimeUrl = explicitRuntimeUrl ?? (scope === runtimeScopeKey() ? getCurrentRuntimeUrl() : null);
   const existing = controllers.get(key);
-  if (existing) {
-    existing.client = client;
+  if (existing && (!runtimeUrl || existing.runtimeUrl === runtimeUrl)) {
     existing.lastUsedAt = Date.now();
     return existing;
   }
+  if (!runtimeUrl && !client) throw new RuntimeNotReadyError();
+  existing?.controller.destroy();
   const entry: RegistryEntry = {
     sessionId,
-    runtimeScope: runtimeScopeKey(runtimeScope),
-    controller: createController(sessionId, key),
+    runtimeScope: scope,
+    runtimeUrl,
+    controller: createController(sessionId, scope, runtimeUrl, client),
     client,
     consumers: initialConsumers,
     lastUsedAt: Date.now(),
   };
+  entry.controller.setPaused(initialConsumers === 0);
   controllers.set(key, entry);
   return entry;
 }
@@ -268,9 +285,10 @@ export function getSessionSyncController(
   sessionId: string,
   client?: SessionMessageClient,
   runtimeScope?: string,
+  runtimeUrl?: string,
 ): SessionSyncController {
   const key = controllerKey(sessionId, runtimeScope);
-  const entry = getOrCreateRegistryEntry(sessionId, client, 0, runtimeScope);
+  const entry = getOrCreateRegistryEntry(sessionId, client, 0, runtimeScope, runtimeUrl);
   evictInactiveControllers(key);
   return entry.controller;
 }
@@ -279,8 +297,10 @@ export async function prefetchSessionSyncOnce(
   sessionId: string,
   source: SessionPrefetchSource,
   client?: SessionMessageClient,
+  explicitRuntimeScope?: string,
+  runtimeUrl?: string,
 ): Promise<boolean> {
-  const runtimeScope = source === ACTIVE_SESSION_PREFETCH_SOURCE ? runtimeScopeKey() : source;
+  const runtimeScope = explicitRuntimeScope ?? (source === ACTIVE_SESSION_PREFETCH_SOURCE ? runtimeScopeKey() : source);
   const key = controllerKey(sessionId, runtimeScope);
   const existing = controllers.get(key);
   const entry = getOrCreateRegistryEntry(
@@ -288,6 +308,7 @@ export async function prefetchSessionSyncOnce(
     existing?.consumers ? undefined : client,
     0,
     runtimeScope,
+    runtimeUrl,
   );
   evictInactiveControllers(key);
   if (entry.prefetchedSource === source) return true;
@@ -306,24 +327,34 @@ export function clearActiveSessionPrefetches(): void {
   }
 }
 
-export function retainSessionSyncController(sessionId: string, runtimeScope?: string): () => void {
+export function retainSessionSyncController(
+  sessionId: string,
+  runtimeScope?: string,
+  runtimeUrl?: string,
+): () => void {
   const key = controllerKey(sessionId, runtimeScope);
   let entry = controllers.get(key);
   if (entry) {
-    entry.client = undefined;
     entry.consumers += 1;
     entry.lastUsedAt = Date.now();
   } else {
-    entry = getOrCreateRegistryEntry(sessionId, undefined, 1, runtimeScope);
+    entry = getOrCreateRegistryEntry(sessionId, undefined, 1, runtimeScope, runtimeUrl);
   }
   evictInactiveControllers();
   const controller = entry.controller;
+  controller.setPaused(false);
+  let released = false;
   return () => {
+    if (released) return;
+    released = true;
     const current = controllers.get(key);
     if (!current || current.controller !== controller) return;
     current.consumers = Math.max(0, current.consumers - 1);
     current.lastUsedAt = Date.now();
-    if (current.consumers === 0) controller.setBusy(false);
+    if (current.consumers === 0) {
+      controller.setPaused(true);
+      controller.setBusy(false);
+    }
     evictInactiveControllers();
   };
 }
@@ -332,8 +363,9 @@ export function reconcileSessionTail(
   sessionId: string,
   reason: SessionSyncReason,
   runtimeScope?: string,
+  runtimeUrl?: string,
 ): Promise<void> {
-  return getSessionSyncController(sessionId, undefined, runtimeScope).reconcile(reason);
+  return getSessionSyncController(sessionId, undefined, runtimeScope, runtimeUrl).reconcile(reason);
 }
 
 /**
@@ -365,11 +397,12 @@ export async function loadSessionRuntimeStatus(
   return result.data[sessionId] ?? ({ type: 'idle' } as SessionStatus);
 }
 
-export function loadSessionTranscriptMessages(
+export async function loadSessionTranscriptMessages(
   sessionId: string,
 ): Promise<SessionSyncPage['messages']> {
+  const client = getClient();
   return loadCompleteSessionHistory((request) =>
-    readSessionMessagePage(getClient(), sessionId, request),
+    readSessionMessagePage(client, sessionId, request),
   );
 }
 
@@ -388,9 +421,19 @@ const TRANSCRIPT_EVENT_TYPES = new Set([
 export function noteSessionSyncEvent(event: {
   type?: string;
   properties?: unknown;
-}): void {
+}, runtimeScope?: string): void {
   if (!event.properties || typeof event.properties !== 'object') return;
   const properties = event.properties as Record<string, unknown>;
+  if (event.type === 'session.deleted') {
+    const deletedId = (properties.info as { id?: string } | undefined)?.id;
+    if (!deletedId) return;
+    const entry = findExistingSessionEntry(deletedId, runtimeScope);
+    if (entry) {
+      entry.controller.destroy();
+      controllers.delete(controllerKey(deletedId, entry.runtimeScope));
+    }
+    return;
+  }
   const info = properties.info as { sessionID?: string; role?: string } | undefined;
   const part = properties.part as { sessionID?: string } | undefined;
   const sessionId =
@@ -410,12 +453,25 @@ export function noteSessionSyncEvent(event: {
   // working?" is answered by `projectWorking` over the server's turn authority
   // — not by inferring a phase from which frame arrived when.
   if (!TRANSCRIPT_EVENT_TYPES.has(event.type ?? '')) return;
-  findExistingSessionEntry(sessionId)?.controller.noteActivity();
+  findExistingSessionEntry(sessionId, runtimeScope)?.controller.noteActivity();
 }
 
 export function resetSessionSyncControllers(): void {
   for (const entry of controllers.values()) entry.controller.destroy();
   controllers.clear();
+}
+
+/** Retire detached controllers before the host binds its next runtime. */
+export function resetSessionSyncControllersForRuntime(
+  keepRuntimeScope: string,
+  keepRuntimeUrl?: string,
+): void {
+  for (const [key, entry] of controllers) {
+    if (entry.consumers > 0) continue;
+    if (entry.runtimeScope === keepRuntimeScope && (!keepRuntimeUrl || entry.runtimeUrl === keepRuntimeUrl)) continue;
+    entry.controller.destroy();
+    controllers.delete(key);
+  }
 }
 
 /** Retire controllers for one wire id after a different sandbox claims it. */

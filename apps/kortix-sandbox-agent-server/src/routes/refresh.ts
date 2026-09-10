@@ -29,6 +29,7 @@ export function refreshMayConvergeRuntime(opencodeState: string): boolean {
 export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
   const router = new Hono()
   let refreshInFlight: Promise<Response> | null = null
+  let swapRequested = false
 
   router.post('/', async (c) => {
     if (!cfg.sandboxToken) {
@@ -48,7 +49,9 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
       }
     }
 
+    // A coalesced refresh must retain the stale caller's idle-swap request.
     if (refreshInFlight) {
+      swapRequested ||= c.req.query('swap') === '1'
       return c.json({ error: 'refresh already running' }, 409)
     }
 
@@ -106,7 +109,9 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
       return c.json({ error: 'invalid base_sha' }, 400)
     }
 
+    swapRequested = c.req.query('swap') === '1'
     refreshInFlight = (async () => {
+      let refreshCompleted = false
       try {
         const repo = syncBase
           ? await syncWorkspaceToBase(cfg, baseSha)
@@ -134,23 +139,7 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         const reload = skipRestart
           ? null
           : await opencode.reloadVerified({ forceFail: c.req.query('verify_fail') === '1' })
-        // Converge the sandbox's `kortix` CLI + managed-skill overlay on this
-        // API. This route is what the platform already calls on warm reuse and
-        // reload, and (since this change) after a restart and a resume — the
-        // three moments a long-lived box comes back up without re-running its
-        // image build. Detached on purpose: the route's callers await its
-        // latency, and a ~100 MB download must never enter that budget. The
-        // reconcile is single-flighted, so a burst of refreshes runs one pass.
-        //
-        // NEVER while OpenCode is still booting. The API calls this route from
-        // the session-open path (env-sync) — on a resume that is BEFORE the
-        // runtime is ready — and a pass that finds a stale pin installs the
-        // new OpenCode and restarts it underneath the boot in progress
-        // (Essentia 2026-08-25 17:23: install at +9 s, spawn at +13 s, the
-        // API's start budget expired on both boxes). main.ts schedules the
-        // post-boot pass itself once `opencode-ready` is marked; this call is
-        // for a box that is already up.
-        if (refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
+        refreshCompleted = true
         return c.json({
           // The repo work succeeded either way; `reload.outcome` carries whether
           // the new config actually took. Reporting ok:false here would hide a
@@ -188,7 +177,17 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
           : 500
         return c.json({ error: 'refresh failed', message }, status)
       } finally {
+        // Explicit stale-daemon recovery is independent of repository refresh.
+        // Keep coalesced swap requests even when a pull cannot fast-forward.
+        // Ordinary convergence still requires a successful refresh. Reconcile
+        // stays detached and single-flighted; its idle-swap guards remain intact.
+        // Never converge during OpenCode boot (Essentia 2026-08-25): main.ts
+        // schedules the post-boot pass once `opencode-ready` is marked.
+        if ((refreshCompleted || swapRequested) && refreshMayConvergeRuntime(opencode.getState())) {
+          scheduleRuntimeAssetsReconcile(cfg, { swap: swapRequested })
+        }
         refreshInFlight = null
+        swapRequested = false
       }
     })()
 

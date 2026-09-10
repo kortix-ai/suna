@@ -21,6 +21,7 @@ import {
   shouldHydrateFromMirror,
 } from '../browser/session-sync/server-transcript-mirror';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
+import type { SessionSyncSnapshot } from '../core/session-sync/session-sync-controller';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -45,12 +46,19 @@ type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'pat
 const EMPTY_DIFFS: FileDiff[] = [];
 const EMPTY_TODOS: Todo[] = [];
 const IDLE_STATUS = { type: 'idle' } as SessionStatus;
+const IDLE_SYNC: SessionSyncSnapshot = { freshness: 'idle', hasOlder: false, isLoadingOlder: false };
+const idleSnapshot = () => IDLE_SYNC;
+const idleSubscribe = () => () => {};
+const idleLoadOlder = () => Promise.resolve();
 
 /**
  * Returns the current session tail and explicit history-loading state.
  * Network synchronization lives in the framework-free SessionSyncController.
  */
 interface UseSessionSyncOptions {
+  /** Explicit runtime identity from this session's /start result. */
+  runtimeScope?: string;
+  runtimeUrl?: string;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
    * This prevents equal OpenCode ids in different sandboxes from sharing data.
@@ -139,17 +147,22 @@ export function livenessBusy(input: {
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
   const { kortixSessionScope, networkEnabled = true, working, serverHoldsTurn } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
-  const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
+  const currentRuntimeScope = useCurrentRuntime((state) => state.sandboxId);
+  const currentRuntimeUrl = useCurrentRuntime((state) => state.url);
+  const runtimeScope = options.runtimeScope ?? (networkEnabled ? currentRuntimeScope : null) ?? 'none';
+  const runtimeUrl = options.runtimeUrl ?? (networkEnabled ? currentRuntimeUrl : null);
   const cacheOwnerScope = resolveSessionCacheOwnerScope(runtimeScope, kortixSessionScope);
   const currentOwner = getSessionCacheOwnership(sessionId);
   const cacheBelongsToAnotherRuntime =
     !!sessionId && sessionCacheOwnerScopesConflict(currentOwner, cacheOwnerScope);
   const readableSessionId = cacheBelongsToAnotherRuntime ? '' : sessionId;
-  const controller = getSessionSyncController(sessionId, undefined, runtimeScope);
+  const controller = networkEnabled && runtimeUrl && runtimeScope !== 'none' && canQueryOpenCodeSession(sessionId)
+    ? getSessionSyncController(sessionId, undefined, runtimeScope, runtimeUrl)
+    : null;
   const sync = useSyncExternalStore(
-    controller.subscribe,
-    controller.getSnapshot,
-    controller.getSnapshot,
+    controller?.subscribe ?? idleSubscribe,
+    controller?.getSnapshot ?? idleSnapshot,
+    controller?.getSnapshot ?? idleSnapshot,
   );
 
   // Reference-count the mounted consumers of this session's transcript so the
@@ -169,14 +182,16 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   useEffect(() => {
     if (!canQueryOpenCodeSession(sessionId) || !cacheOwnerScope) return;
     const claim = claimSessionCacheOwnership(sessionId, cacheOwnerScope);
-    if (!sessionCacheOwnerScopesConflict(claim.previousOwnerScope, cacheOwnerScope)) {
-      return;
+    if (sessionCacheOwnerScopesConflict(claim.previousOwnerScope, cacheOwnerScope)) {
+      resetSessionSyncControllersForSession(
+        sessionId,
+        runtimeScope === 'none' ? undefined : runtimeScope,
+      );
+      useSyncStore.getState().clearSession(sessionId);
     }
-    resetSessionSyncControllersForSession(
-      sessionId,
-      runtimeScope === 'none' ? undefined : runtimeScope,
-    );
-    useSyncStore.getState().clearSession(sessionId);
+    // Mirror messages can arrive before /start resolves. Claim their runtime
+    // once known, while preserving their stable Kortix cache owner.
+    if (runtimeScope !== 'none') useSyncStore.getState().claimSessionRuntime(sessionId, runtimeScope);
   }, [cacheOwnerScope, runtimeScope, sessionId]);
 
   // FIRST PAINT FROM THE SERVER'S MIRROR — deliberately NOT gated on
@@ -221,10 +236,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       ) {
         return;
       }
-      state.hydrate(sessionId, mirrorMessagesForHydrate(envelope), { source: 'cache' });
+      state.hydrate(sessionId, mirrorMessagesForHydrate(envelope), {
+        source: 'cache', runtimeScope: runtimeScope === 'none' ? undefined : runtimeScope,
+      });
     });
     return () => abort.abort();
-  }, [kortixSessionScope, sessionId]);
+  }, [kortixSessionScope, runtimeScope, sessionId]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.
@@ -261,14 +278,14 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // and the controller retries with backoff until it lands, so readiness
   // becomes a byproduct of asking for what we wanted anyway.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId) || runtimeScope === 'none') return;
+    if (!controller || !networkEnabled || !canQueryOpenCodeSession(sessionId) || runtimeScope === 'none') return;
     resetSessionSyncControllersForSession(sessionId, runtimeScope);
-    const release = retainSessionSyncController(sessionId, runtimeScope);
+    const release = retainSessionSyncController(sessionId, runtimeScope, runtimeUrl ?? undefined);
     // The ONLY thing that fills the transcript. One bounded tail, so events
     // produced while this route was inactive are not skipped.
     void controller.reconcile('initial');
     return release;
-  }, [controller, networkEnabled, runtimeScope, sessionId]);
+  }, [controller, networkEnabled, runtimeScope, runtimeUrl, sessionId]);
 
   // A transcript the live stream rebuilt after an eviction starts
   // mid-conversation, and nothing else will correct it: the mount already ran,
@@ -281,7 +298,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // component is already mounted. `hydrate` clears the mark, so the successful
   // read is what disarms this.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    if (!controller || !networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
     let repairing = false;
     const check = (state: SyncStoreShape) => {
       if (repairing) return;
@@ -309,7 +326,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // shows on return was assembled from a stream nobody was watching. One
   // bounded tail read settles it.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    if (!controller || !networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
     return onTabVisible(() => {
       void controller.reconcile('visible');
     });
@@ -352,7 +369,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
 
   useEffect(() => {
-    controller.setBusy(
+    controller?.setBusy(
       livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
     );
   }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
@@ -362,7 +379,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // page reload or a full sandbox restart — it just asks the controller to
   // reconcile again, which is the same read the mount and the poll do.
   const retryTranscript = useCallback(() => {
-    void controller.reconcile('manual');
+    void controller?.reconcile('manual');
   }, [controller]);
 
   return {
@@ -374,7 +391,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     isLoading,
     hasOlder: sync.hasOlder,
     isLoadingOlder: sync.isLoadingOlder,
-    loadOlder: controller.loadOlder,
+    loadOlder: controller?.loadOlder ?? idleLoadOlder,
     diffs: diffs ?? EMPTY_DIFFS,
     todos: todos ?? EMPTY_TODOS,
   };

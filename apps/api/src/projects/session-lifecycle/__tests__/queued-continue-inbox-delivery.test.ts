@@ -17,7 +17,7 @@
 // Same mocking caveat as the sibling engine.ts test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
 import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
@@ -67,7 +67,7 @@ let forwardedCalls: Array<{ commandId: string; sessionId: string; wireMessageId:
 let failedCalls: Array<{
   commandId: string;
   message: string;
-  options?: { retryable?: boolean };
+  options?: { retryable?: boolean; attempts?: number; sessionId?: string | null };
 }> = [];
 let payloadPatches: Array<Record<string, unknown>> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
@@ -75,6 +75,15 @@ let openDelayBySession: Record<string, Promise<void> | undefined> = {};
 let events: string[] = [];
 let runtimeWrites: Array<{ targetPath: string; filename: string; mime: string }> = [];
 let runtimeWriteError: Error | null = null;
+const { RuntimeStaleDaemonError, writeRuntimePromptFile } = await import('../runtime-prompt-file');
+type RuntimeFileForward = NonNullable<Parameters<typeof writeRuntimePromptFile>[1]>;
+let mixedVersionForward: RuntimeFileForward | null = null;
+let mixedVersionRefresh: (() => Promise<void>) | null = null;
+let pendingRefreshes: Promise<void>[] = [];
+let runtimeParks: Array<{ commandId: string; reason?: string }> = [];
+let runtimeParkBudget = 4;
+let runtimeRefreshes: Array<{ sessionId: string; context: string }> = [];
+let respectRuntimeDue = false;
 let legacyPendingFirst: {
   commandId: string;
   deliveredMessageIds: string[];
@@ -126,6 +135,14 @@ mock.module('../../../shared/db', () => ({
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
+            if (
+              table === sessionLifecycleCommands &&
+              projection &&
+              'payload' in projection &&
+              mixedVersionForward
+            ) {
+              return claimed.map((row) => ({ payload: row.payload }));
+            }
             // The aggregate `readDeliveredWireIdFloor` runs: always one row,
             // with a null when the session has never delivered anything.
             // Keyed on the PROJECTION, not the table: the admission gate reads
@@ -151,7 +168,26 @@ mock.module('../../../shared/db', () => ({
     update: () => ({
       set: (values: Record<string, unknown>) => {
         payloadPatches.push(values);
-        return { where: async () => {} };
+        return {
+          where: () => ({
+            then: (resolve: (value: undefined) => void) => resolve(undefined),
+            returning: async () => {
+              const row = claimed[0]!;
+              // Database boundary for the real runtime park below. The store
+              // supplies the schedule, retry count, blocked reason and hold.
+              const result = values.result as Record<string, unknown>;
+              row.status = values.status as typeof row.status;
+              row.availableAt = values.availableAt as Date;
+              row.result = result;
+              row.attempts = Math.max(row.attempts - 1, 0);
+              row.payload = {
+                ...row.payload,
+                runtimeUnreachableRetries: result.runtime_retries,
+              };
+              return [{ commandId: row.commandId }];
+            },
+          }),
+        };
       },
     }),
   },
@@ -268,6 +304,9 @@ mock.module('../actor', () => ({
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
+const { parkPromptForUnreachableRuntime: parkRuntimePrompt } = await import('../store');
+const { refreshSandboxRuntimeAssets } = await import('../../lib/sandbox-runtime-refresh');
+
 mock.module('../store', () => ({
   promoteNextInboxRow: async (sessionId: string) => {
     promotionCalls.push(sessionId);
@@ -308,6 +347,18 @@ mock.module('../store', () => ({
   },
   claimDueLifecycleCommands: async (input: { idempotencyKey?: string }) => {
     claimInputs.push(input);
+    if (respectRuntimeDue) {
+      return claimed
+        .filter((row) => row.availableAt.getTime() <= Date.now())
+        .filter(
+          (row) => !mixedVersionForward || (row.status === 'queued' && row.result?.held !== true),
+        )
+        .map((row) => {
+          row.attempts += 1;
+          if (mixedVersionForward) row.status = 'running';
+          return row;
+        });
+    }
     return input.idempotencyKey ? (targetedClaims.get(input.idempotencyKey) ?? []) : claimed;
   },
   enqueueContinueSessionCommand: async () => {
@@ -316,7 +367,28 @@ mock.module('../store', () => ({
   // The delivery path parks a prompt whose RUNTIME was down instead of
   // dead-lettering it. Present so the module mock stays complete.
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
-  parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
+  RUNTIME_STALE_REASON: 'runtime_stale',
+  parkPromptForUnreachableRuntime: async (
+    commandId: string,
+    _error: string,
+    opts: NonNullable<Parameters<typeof parkRuntimePrompt>[2]>,
+  ) => {
+    runtimeParks.push({ commandId, reason: opts.reason });
+    if (mixedVersionForward) {
+      return parkRuntimePrompt(commandId, _error, {
+        ...opts,
+        now: new Date(Date.now()),
+      });
+    }
+    if (respectRuntimeDue && runtimeParkBudget > 0) {
+      const row = claimed.find((candidate) => candidate.commandId === commandId)!;
+      row.status = 'queued';
+      row.attempts -= 1;
+      row.result = { delivery_blocked: opts.reason };
+      row.availableAt = new Date(Date.now() + [30_000, 120_000, 480_000, 120_000][4 - runtimeParkBudget]!);
+    }
+    return { parked: runtimeParkBudget-- > 0, retries: 4 - Math.max(0, runtimeParkBudget) };
+  },
   reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (
     commandId: string,
@@ -324,12 +396,17 @@ mock.module('../store', () => ({
     options?: { retryable?: boolean },
   ) => {
     failedCalls.push({ commandId, message, options });
+    if (mixedVersionForward && options?.retryable === false) claimed[0]!.status = 'dead_lettered';
   },
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
   markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
+    if (mixedVersionForward) {
+      claimed[0]!.status = 'succeeded';
+      claimed[0]!.result = { status: 'forwarded', forwarded_message_id: wireMessageId };
+    }
   },
   markCommandSucceeded: async (commandId: string, result: unknown) => {
     events.push('command-succeeded');
@@ -365,12 +442,17 @@ mock.module('../../lib/sandbox-env-sync', () => ({
 }));
 
 mock.module('../runtime-prompt-file', () => ({
+  RuntimeStaleDaemonError,
   writeRuntimePromptFile: async (input: {
+    externalId: string;
+    sessionId: string;
+    userId: string;
     targetPath: string;
     filename: string;
     mime: string;
     bytes: Uint8Array;
   }) => {
+    if (mixedVersionForward) return writeRuntimePromptFile(input, mixedVersionForward);
     if (runtimeWriteError) throw runtimeWriteError;
     runtimeWrites.push({
       targetPath: input.targetPath,
@@ -378,6 +460,13 @@ mock.module('../runtime-prompt-file', () => ({
       mime: input.mime,
     });
     return { path: input.targetPath, size: input.bytes.byteLength };
+  },
+}));
+
+mock.module('../../lib/sandbox-runtime-refresh', () => ({
+  scheduleSandboxRuntimeRefresh: (sessionId: string, context: string) => {
+    runtimeRefreshes.push({ sessionId, context });
+    if (mixedVersionRefresh) pendingRefreshes.push(mixedVersionRefresh());
   },
 }));
 
@@ -462,6 +551,13 @@ beforeEach(() => {
   events = [];
   runtimeWrites = [];
   runtimeWriteError = null;
+  mixedVersionForward = null;
+  mixedVersionRefresh = null;
+  pendingRefreshes = [];
+  runtimeParks = [];
+  runtimeParkBudget = 4;
+  runtimeRefreshes = [];
+  respectRuntimeDue = false;
   legacyPendingFirst = null;
   legacyRuntimeMessages = {};
   legacyMessageReads = [];
@@ -494,6 +590,205 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  const staleRow = () =>
+    baseRow({
+      payload: {
+        text: 'Inspect this file.',
+        wireMessageId: SUBMITTED_WIRE_ID,
+        parts: [
+          {
+            type: 'file',
+            mime: 'application/zip',
+            filename: 'bundle.zip',
+            url: 'data:application/zip;base64,UEsDBA==',
+          },
+        ],
+      },
+    });
+
+  test('a typed stale attachment failure parks and requests daemon convergence', async () => {
+    runtimeWriteError = new RuntimeStaleDaemonError('/file/append', 200_000);
+    expect(await executeQueuedContinue(staleRow())).toBe('queued');
+    expect(runtimeParks).toEqual([{ commandId: 'cmd-1', reason: 'runtime_stale' }]);
+    expect(runtimeRefreshes).toEqual([{ sessionId: SESSION_ID, context: 'stale-daemon' }]);
+    expect(failedCalls).toEqual([]);
+    expect(capturedBodies).toEqual([]);
+  });
+
+  async function assertOldDaemonRecovery(canUpgrade: boolean): Promise<void> {
+    const boot = NOW_MS;
+    const refreshTimes: number[] = [];
+    let upgradeAt = Number.POSITIVE_INFINITY;
+    const upgraded = () => Date.now() - boot >= upgradeAt;
+    let storedBytes = new Uint8Array();
+    let storedPath = '';
+    const bytes = new Uint8Array(200 * 1024).fill(97);
+    const row = staleRow();
+    row.status = 'queued';
+    row.payload.parts = [
+      {
+        type: 'file',
+        mime: 'application/zip',
+        filename: 'bundle.zip',
+        url: `data:application/zip;base64,${Buffer.from(bytes).toString('base64')}`,
+      },
+    ];
+    claimed = [row];
+    respectRuntimeDue = true;
+    mixedVersionForward = async (
+      _externalId,
+      _port,
+      _access,
+      method,
+      route,
+      _query,
+      headers,
+      body,
+    ) => {
+      if (route === '/kortix/health') {
+        return Response.json(upgraded() ? { capabilities: ['file.append'] } : { opencode: 'ok' });
+      }
+      if (route === '/file/append' && upgraded()) {
+        const form = await new Request('http://daemon.test/file/append', {
+          method,
+          headers,
+          body,
+        }).formData();
+        const chunk = new Uint8Array(await (form.get('file') as File).arrayBuffer());
+        expect(Number(form.get('offset'))).toBe(storedBytes.byteLength);
+        const appended = new Uint8Array(storedBytes.byteLength + chunk.byteLength);
+        appended.set(storedBytes);
+        appended.set(chunk, storedBytes.byteLength);
+        storedBytes = appended;
+        storedPath = `${form.get('path')}/${form.get('filename')}`;
+        return Response.json({ path: storedPath, size: storedBytes.byteLength });
+      }
+      if (route === '/file/rename' && upgraded()) {
+        const rename = JSON.parse(new TextDecoder().decode(body));
+        expect(rename.from).toBe(storedPath);
+        storedPath = rename.to;
+        return Response.json({ ok: true });
+      }
+      throw new Error(`unexpected file request: ${method} ${route}`);
+    };
+    mixedVersionRefresh = async () => {
+      expect(
+        await refreshSandboxRuntimeAssets(
+          SESSION_ID,
+          {
+            loadActiveSandbox: async () => ({ externalId: EXTERNAL_ID, serviceKey: 'svc-key-1' }),
+            resolveIngress: async () => ({ url: 'http://daemon.test', headers: {} }),
+            fetch: async (input, init) => {
+              expect(String(input)).toBe('http://daemon.test/kortix/refresh?restart=0&swap=1');
+              expect(init?.method).toBe('POST');
+              const uptime = Date.now() - boot;
+              refreshTimes.push(uptime);
+              // Daemon 9904dc44d7 ignores swap=1. Its detached reconcile has
+              // no timer and only swaps an idle staged agent after 300 seconds.
+              // A successful response only starts convergence. Keep serving the
+              // old capabilities for another 90 seconds while it completes.
+              if (uptime >= 300_000 && canUpgrade) upgradeAt = uptime + 90_000;
+              return Response.json({
+                ok: true,
+                repo: { before: 'same', after: 'same' },
+                opencode: 'ok',
+                opencode_pid: 123,
+              });
+            },
+            sleep: async () => {
+              throw new Error('healthy daemon must not trigger transport retries');
+            },
+          },
+          'stale-daemon',
+        ),
+      ).toBe('refreshed');
+    };
+    try {
+      for (const [elapsed, next] of [
+        [0, 30_000],
+        [30_000, 150_000],
+        [150_000, 630_000],
+        [630_000, 750_000],
+      ]) {
+        setSystemTime(boot + elapsed!);
+        await drainSessionLifecycleQueue({ limit: 10 });
+        await Promise.all(pendingRefreshes);
+        expect(failedCalls).toEqual([]);
+        expect(row.status).toBe('queued');
+        expect(row.attempts).toBe(0);
+        expect(row.availableAt.getTime()).toBe(boot + next!);
+        expect(capturedBodies).toEqual([]);
+        // Repeated drain ticks do not cause more refreshes or claims.
+        for (let tick = 0; tick < 5; tick++) await drainSessionLifecycleQueue({ limit: 10 });
+      }
+      expect(refreshTimes).toEqual([0, 30_000, 150_000, 630_000]);
+      expect(upgraded()).toBe(false);
+      setSystemTime(boot + 750_000);
+      await drainSessionLifecycleQueue({ limit: 10 });
+      for (let tick = 0; tick < 5; tick++) await drainSessionLifecycleQueue({ limit: 10 });
+      expect(refreshTimes).toEqual([0, 30_000, 150_000, 630_000]);
+      expect(row.attempts).toBe(1);
+      if (!canUpgrade) {
+        expect(row).toMatchObject({ status: 'dead_lettered' });
+        expect(failedCalls).toEqual([
+          {
+            commandId: 'cmd-1',
+            message: 'runtime stale after 4 retries',
+            options: { retryable: false, attempts: 1, sessionId: SESSION_ID },
+          },
+        ]);
+        expect(capturedBodies).toEqual([]);
+        return;
+      }
+      expect(failedCalls).toEqual([]);
+      expect(row).toMatchObject({ status: 'succeeded', result: { status: 'forwarded' } });
+      expect(capturedBodies).toHaveLength(1);
+      expect(forwardedCalls).toHaveLength(1);
+      expect(storedBytes).toEqual(bytes);
+      expect(storedPath).toBe('/workspace/uploads/.kortix-inbox/cmd-1/0-bundle.zip');
+      expect(JSON.stringify(capturedBodies[0])).toContain(storedPath);
+    } finally {
+      setSystemTime();
+    }
+  }
+
+  test('an old daemon receives a post-gate refresh and delivers the full attachment after convergence', async () => {
+    await assertOldDaemonRecovery(true);
+  });
+
+  test('an old daemon that cannot upgrade fails once after its post-gate refresh grace', async () => {
+    await assertOldDaemonRecovery(false);
+  });
+
+  test('five drains in the retry window do not burn the attachment claim budget', async () => {
+    runtimeWriteError = new RuntimeStaleDaemonError('/file/append', 200_000);
+    respectRuntimeDue = true;
+    const row = staleRow();
+    row.attempts = 0;
+    claimed = [row];
+    // The claim harness respects persisted availability. Store tests below the
+    // engine seam prove the actual 30/120/480-second SQL writes and refund.
+    for (let pass = 0; pass < 5; pass++) await drainSessionLifecycleQueue({ limit: 10 });
+    expect(row.status).toBe('queued');
+    expect(row.attempts).toBe(0);
+    expect(row.result).toMatchObject({ delivery_blocked: 'runtime_stale' });
+    expect(runtimeParks).toHaveLength(1);
+    expect(failedCalls).toEqual([]);
+    expect(capturedBodies).toEqual([]);
+  });
+
+  test('a stale daemon fails once with a named error when the runtime budget is spent', async () => {
+    runtimeWriteError = new RuntimeStaleDaemonError('/file/append', 200_000);
+    runtimeParkBudget = 0;
+    expect(await executeQueuedContinue(staleRow())).toBe('failed');
+    expect(failedCalls).toHaveLength(1);
+    expect(failedCalls[0]).toMatchObject({
+      message: 'runtime stale after 4 retries',
+      options: { retryable: false },
+    });
+    expect(capturedBodies).toEqual([]);
+  });
+
   test('materializes non-native staged files before prompt_async', async () => {
     const outcome = await executeQueuedContinue(
       baseRow({

@@ -60,8 +60,11 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   // be a lie in the direction that lost the message before: `failed` invited a
   // manual retry for work the server was already doing. The reason names WHAT it
   // is waiting for, and `runtime_retries` says how much patience is left.
-  if (result.delivery_blocked === 'runtime_unreachable') {
-    return { state: 'queued', reason: 'runtime_unreachable' };
+  if (
+    result.delivery_blocked === 'runtime_unreachable' ||
+    result.delivery_blocked === 'runtime_stale'
+  ) {
+    return { state: 'queued', reason: result.delivery_blocked };
   }
   return { state: 'queued', reason: null };
 }

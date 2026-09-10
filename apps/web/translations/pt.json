@@ -14,6 +14,7 @@
     "codeDescription": "Como tudo é código em um repositório, o sistema pode ler a própria arquitetura, ampliar seus recursos e permanecer estável enquanto cresce. Ele é totalmente extensível, controlável e auto-hospedável. Nada é uma caixa-preta."
   },
   "common": {
+    "workspaceWaiting": "Aguardando o espaço de trabalho…",
     "cancel": "Cancelar",
     "save": "Salvar",
     "saving": "Salvando...",
@@ -9336,7 +9337,25 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Sem perguntas",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recarregar",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gerenciar plano",
+    "composerAttachments": {
+      "couldNotRestore": "Não foi possível restaurar os anexos",
+      "couldNotAttach": "Não foi possível anexar os arquivos",
+      "couldNotRemove": "Não foi possível remover o anexo",
+      "couldNotRetry": "Não foi possível tentar o anexo novamente",
+      "notReady": "Os anexos ainda não estão prontos",
+      "uploadFailed": "Falha no envio",
+      "retry": "Tentar novamente",
+      "retryNamed": "Tentar {name} novamente",
+      "processing": "Processando",
+      "waiting": "Aguardando",
+      "uploading": "Enviando {progress}%"
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Envio do anexo iniciado",
+      "text40078a553439": "Bloco do anexo enviado",
+      "text4c7f8000aabd": "Envio do anexo concluído",
+      "text91420d2587c2": "Envio do anexo removido",
+      "text3aab5b3be2b9": "Descritor de anexo do runtime resolvido",
       "text0005b85debac": "Pacote de som reproduzido para eventos de sessão.",
       "text000c02c11c7a": "Instruções reutilizáveis que seus agentes carregam sob demanda.",
       "text0017bda47853": "URL copiada",

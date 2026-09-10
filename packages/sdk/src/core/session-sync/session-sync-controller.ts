@@ -1,5 +1,5 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { SandboxNotReadyError, isSandboxNotReadyError } from '../http/opencode-errors';
+import { SandboxNotReadyError, SessionNotFoundOnRuntimeError, isSandboxNotReadyError } from '../http/opencode-errors';
 import { isAbortError } from '../http/abort-error';
 
 /**
@@ -221,6 +221,19 @@ export function createHttpSessionSyncPageLoader(
       },
     );
     if (!response.ok) {
+      if (response.status === 404) {
+        const body = await response.text();
+        let payload: { name?: string; data?: { message?: string } } | null = null;
+        try {
+          payload = JSON.parse(body);
+        } catch {
+          // Proxy HTML is wakeable.
+        }
+        if (payload?.name === 'NotFoundError') {
+          throw new SessionNotFoundOnRuntimeError(payload.data?.message);
+        }
+        throw new SandboxNotReadyError(body || 'session 404');
+      }
       // A 503 from the sandbox proxy is the box waking, not a failure — throw
       // the retryable, "loading" error so the controller keeps polling instead
       // of painting an error state over a session that is about to load.
@@ -339,6 +352,8 @@ export class SessionSyncController {
   private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
+  private paused = false;
+  private terminal = false;
   /**
    * One controller-lifetime signal, threaded into every read. A scope reset
    * (registry `resetSessionSyncControllersForSession`) or unmount destroys this
@@ -369,7 +384,7 @@ export class SessionSyncController {
   }
 
   reconcile(reason: SessionSyncReason = 'manual'): Promise<void> {
-    if (this.destroyed) return Promise.resolve();
+    if (this.destroyed || this.terminal) return Promise.resolve();
     if (this.tailRequest) return this.tailRequest;
     // `loading` covers the first read AND a not-ready retry, so a waking box
     // does not flip to `stale` between attempts; a session that already has a
@@ -387,13 +402,13 @@ export class SessionSyncController {
   }
 
   loadOlder = (): Promise<void> => {
-    if (this.destroyed || !this.nextCursor) return Promise.resolve();
+    if (this.destroyed || this.terminal || !this.nextCursor) return Promise.resolve();
     if (this.olderRequest) return this.olderRequest;
     const before = this.nextCursor;
     this.update({ isLoadingOlder: true });
     this.olderRequest = this.loadCompleteOlderTurn(before)
       .then((page) => {
-        if (this.destroyed) return;
+        if (this.destroyed || this.terminal) return;
         this.rememberUserMessages(page.messages);
         this.options.hydrate(page.messages);
         this.olderHistoryStarted = true;
@@ -401,12 +416,14 @@ export class SessionSyncController {
       })
       .finally(() => {
         this.olderRequest = undefined;
+        if (this.destroyed || this.terminal) return;
         this.update({ isLoadingOlder: false });
       });
     return this.olderRequest;
   };
 
   noteActivity(): void {
+    if (this.destroyed || this.terminal) return;
     this.lastActivityAt = this.scheduler.now();
     if (this.snapshot.freshness !== 'fresh') {
       this.update({ freshness: 'fresh' });
@@ -439,7 +456,7 @@ export class SessionSyncController {
       if (wasBusy && !this.destroyed) void this.reconcile('turn-end');
       return;
     }
-    if (this.livenessTimer !== undefined) return;
+    if (this.destroyed || this.terminal || this.paused || this.livenessTimer !== undefined) return;
     this.lastActivityAt = this.scheduler.now();
     this.livenessTimer = this.scheduler.setInterval(
       () => void this.checkLiveness(),
@@ -461,6 +478,15 @@ export class SessionSyncController {
     // controller that is being torn down.
     this.abortController.abort();
     this.listeners.clear();
+  }
+
+  /** Stop automatic retries while no consumer holds this controller. Explicit reads remain bounded. */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    if (paused && this.tailRetryTimer !== undefined) {
+      this.cancelTimer(this.tailRetryTimer);
+      this.tailRetryTimer = undefined;
+    }
   }
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
@@ -493,9 +519,10 @@ export class SessionSyncController {
       // one page up. That is exactly what OpenCode shows, and `loadOlder` —
       // which the user drives — still completes the turn when they scroll.
       const page = await this.loadPage('tail', reason);
-      if (this.destroyed) return;
+      if (this.destroyed || this.terminal) return;
       this.rememberUserMessages(page.messages);
       this.options.hydrate(page.messages);
+      if (this.destroyed || this.terminal) return;
       if (!this.olderHistoryStarted) {
         this.setCursor(page.nextCursor);
       }
@@ -514,10 +541,11 @@ export class SessionSyncController {
       this.options.markLoaded();
       this.retryAttempt = 0;
     } catch (error) {
-      if (this.destroyed) return;
+      if (this.destroyed || this.terminal) return;
       // A superseded/cancelled read is not a failure and never hydrates — it
       // must not paint an error over a live transcript, and it must not retry.
       if (isAbortError(error) || this.abortController.signal.aborted) return;
+      if (error instanceof SessionNotFoundOnRuntimeError) return;
       // A sandbox that is still waking is a RETRYABLE, "loading" state, not a
       // fault: the box may come up any second, so keep polling and keep the UI
       // on its loader. Only a genuine failure earns `error`. NEVER an
@@ -540,7 +568,7 @@ export class SessionSyncController {
    * back is picked up promptly.
    */
   private scheduleTailRetry(reason: SessionSyncReason): void {
-    if (this.destroyed || this.tailRetryTimer !== undefined) return;
+    if (this.destroyed || this.terminal || this.paused || this.tailRetryTimer !== undefined) return;
     const delay = Math.min(
       TAIL_RETRY_BASE_MS * 2 ** this.retryAttempt,
       TAIL_RETRY_MAX_MS,
@@ -548,7 +576,7 @@ export class SessionSyncController {
     this.retryAttempt += 1;
     this.tailRetryTimer = this.startTimer(() => {
       this.tailRetryTimer = undefined;
-      if (this.destroyed) return;
+      if (this.destroyed || this.terminal || this.paused) return;
       void this.reconcile(reason);
     }, delay);
   }
@@ -558,6 +586,7 @@ export class SessionSyncController {
     reason: SessionSyncReason,
     before?: string,
   ): Promise<SessionSyncPage> {
+    if (this.destroyed || this.terminal) return { messages: [] };
     const startedAt = this.scheduler.now();
     try {
       const page = await this.options.loadPage(
@@ -578,6 +607,12 @@ export class SessionSyncController {
       });
       return page;
     } catch (error) {
+      if (!this.destroyed && !this.terminal && error instanceof SessionNotFoundOnRuntimeError) {
+        this.terminal = true;
+        this.stopLivenessTimer();
+        this.setPaused(true);
+        this.update({ freshness: 'error', isLoadingOlder: false });
+      }
       this.options.onTelemetry?.({
         operation,
         reason,
@@ -591,6 +626,7 @@ export class SessionSyncController {
 
   private async loadCompleteOlderTurn(before: string): Promise<SessionSyncPage> {
     const firstPage = await this.loadPage('older', 'manual', before);
+    if (this.destroyed || this.terminal) return firstPage;
     // Commit each page as it lands, including the page that fails. The walk
     // is up to 11 sequential reads (MAX_TURN_BACKFILL_PAGES + 1) and used to
     // commit all of them in one `.then`, so a rejection on ANY page —
@@ -599,6 +635,7 @@ export class SessionSyncController {
     // from, so the retry replayed the identical walk. `onPage` existed for
     // exactly this and was never passed.
     return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (partialPage) => {
+      if (this.destroyed || this.terminal) return;
       // `rememberUserMessages` mutates the instance-level `knownUserMessageIds`
       // Set (below), and `onPage` fires on a rejection too (the catch in
       // `loadCompleteTurn`, right before it rethrows). So a walk that fails
@@ -624,6 +661,7 @@ export class SessionSyncController {
     initialCursor?: string,
     onPage?: (pageSoFar: SessionSyncPage) => void,
   ): Promise<SessionSyncPage> {
+    if (this.destroyed || this.terminal) return firstPage;
     const messages = [...firstPage.messages];
     const knownUserMessageIds = new Set(this.knownUserMessageIds);
     const seenCursors = new Set(initialCursor ? [initialCursor] : []);
@@ -637,6 +675,7 @@ export class SessionSyncController {
     }
 
     while (
+      !this.destroyed && !this.terminal &&
       cursor &&
       // BOUNDED. Without a ceiling a turn of a few thousand messages paged the
       // whole session before anything rendered — see MAX_TURN_BACKFILL_PAGES.
@@ -660,10 +699,12 @@ export class SessionSyncController {
         // (seeded before the loop) plus every completed iteration. Commit it
         // before rethrowing so a rejection on THIS read (including the
         // loop's very first) cannot drop what was already read.
-        onPage?.({ messages: [...messages], nextCursor: cursor });
+        if (!this.destroyed && !this.terminal && !isAbortError(error)) {
+          onPage?.({ messages: [...messages], nextCursor: cursor });
+        }
         throw error;
       }
-      if (this.destroyed) return { messages, nextCursor: cursor };
+      if (this.destroyed || this.terminal) return { messages, nextCursor: cursor };
       pagesRead += 1;
       messages.unshift(...page.messages);
       for (const message of page.messages) {
@@ -682,6 +723,7 @@ export class SessionSyncController {
   }
 
   private rememberUserMessages(messages: SessionSyncMessage[]): void {
+    if (this.destroyed || this.terminal) return;
     for (const message of messages) {
       if (message.info.role === 'user') {
         this.knownUserMessageIds.add(message.info.id);
@@ -690,7 +732,7 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed) return;
+    if (this.destroyed || this.terminal || this.paused) return;
     const nowMs = this.scheduler.now();
     const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
     // `noteActivity` proves frames are ARRIVING, not that none were lost. A
@@ -734,6 +776,7 @@ export class SessionSyncController {
   }
 
   private setCursor(cursor: string | undefined): void {
+    if (this.destroyed || this.terminal) return;
     this.nextCursor = cursor;
     this.update({ hasOlder: Boolean(cursor) });
   }

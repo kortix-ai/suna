@@ -1,18 +1,14 @@
+import type { UploadResult } from '@/features/files/api/runtime-files';
+import { attachmentMime } from '@/features/session/attachment-mime';
+import type { AttachedFile } from '@/features/session/session-chat-input';
+import type { SessionPromptPart } from '@kortix/sdk';
 import {
   MAX_PROMPT_UPLOAD_FILENAME_BYTES,
   promptFileReferenceXml,
   sanitizePromptUploadFilename,
 } from '@kortix/shared';
-import type { UploadResult } from '@/features/files/api/runtime-files';
-import { attachmentMime } from '@/features/session/attachment-mime';
-import type { AttachedFile } from '@/features/session/session-chat-input';
 
-export type PromptFilePart = {
-  type: 'file';
-  mime: string;
-  url: string;
-  filename: string;
-};
+export type PromptFilePart = SessionPromptPart & { type: 'file' };
 
 export type UploadFileForPrompt = (
   file: File | Blob,
@@ -86,6 +82,15 @@ export function optimisticUploadedFileRef(file: AttachedFile, index = 0): Upload
     };
   }
 
+  if (file.kind === 'staged') {
+    return {
+      path: '',
+      mime: file.mime,
+      filename: file.filename,
+      pendingId: `upl_${index}`,
+    };
+  }
+
   return {
     path: file.filename,
     mime: file.mime,
@@ -104,16 +109,34 @@ export function buildOptimisticPromptTextWithUploads(
   return refs ? `${text}\n\n${refs}` : text;
 }
 
-function splitFiles(files: AttachedFile[] | undefined): {
+function splitFiles(
+  files: AttachedFile[] | undefined,
+  stagedParts: readonly SessionPromptPart[],
+): {
   localFiles: Extract<AttachedFile, { kind: 'local' }>[];
   remoteParts: PromptFilePart[];
 } {
   const localFiles: Extract<AttachedFile, { kind: 'local' }>[] = [];
   const remoteParts: PromptFilePart[] = [];
+  let stagedIndex = 0;
 
   for (const file of files ?? []) {
     if (file.kind === 'local') {
-      localFiles.push(file);
+      if (!file.uploadId) {
+        localFiles.push(file);
+        continue;
+      }
+      const part = stagedParts[stagedIndex++];
+      if (!part || part.type !== 'file' || !part.attachment_id) {
+        throw new Error('A staged attachment is missing its completed upload handle');
+      }
+      remoteParts.push(part as PromptFilePart);
+    } else if (file.kind === 'staged') {
+      const part = stagedParts[stagedIndex++];
+      if (!part || part.type !== 'file' || !part.attachment_id) {
+        throw new Error('A restored attachment is missing its completed upload handle');
+      }
+      remoteParts.push(part as PromptFilePart);
     } else {
       remoteParts.push({
         type: 'file',
@@ -122,6 +145,10 @@ function splitFiles(files: AttachedFile[] | undefined): {
         filename: file.filename,
       });
     }
+  }
+
+  if (stagedIndex !== stagedParts.length) {
+    throw new Error('Attachment selection changed before Send. Try again.');
   }
 
   return { localFiles, remoteParts };
@@ -203,11 +230,12 @@ export async function buildPromptPartsWithUploads(
   text: string,
   files: AttachedFile[] | undefined,
   uploadFile: UploadFileForPrompt,
+  stagedParts: readonly SessionPromptPart[] = [],
 ): Promise<{
   text: string;
   remoteParts: PromptFilePart[];
 }> {
-  const { localFiles, remoteParts } = splitFiles(files);
+  const { localFiles, remoteParts } = splitFiles(files, stagedParts);
   if (localFiles.length === 0) return { text, remoteParts };
 
   // `allSettled`, not `all`: an upload's side effect (bytes on disk) is not
@@ -240,11 +268,10 @@ export async function buildPromptPartsWithUploads(
 }
 
 /**
- * First-prompt attachments: the session's sandbox does not exist yet, so there
- * is nowhere to upload into. `data:` URLs are a durable control-plane staging
- * envelope for local files. The API removes non-native file parts before the
- * prompt reaches OpenCode. Already-remote files remain ordinary URL parts,
- * exactly as they do on every later send.
+ * First-prompt attachments. New composer files arrive with project-scoped
+ * handles in `stagedParts`; this function never reads those bytes again.
+ * Legacy callers without a handle retain the old data-URL fallback until their
+ * producer migrates. Already-remote files remain ordinary URL parts.
  *
  * The cap mirrors the API's serialized-row ceiling (`PROMPT_PARTS_MAX_BYTES`,
  * 12 MB of JSON ≈ 9 MB of file bytes): a durable row is a Postgres row, not a
@@ -256,6 +283,7 @@ export const DATA_URL_ATTACHMENTS_MAX_BYTES = 9 * 1024 * 1024;
 
 export async function stageFirstPromptAttachments(
   files: AttachedFile[] | undefined,
+  stagedParts: readonly SessionPromptPart[] = [],
 ): Promise<PromptFilePart[]> {
   if (!files?.length) return [];
 
@@ -263,7 +291,10 @@ export async function stageFirstPromptAttachments(
   // Accumulating as we went meant a batch that busts the cap on its last file
   // had already read every file before it: the full cost of the thing being
   // refused, paid while the composer sat locked.
-  const localFiles = files.filter((file) => file.kind === 'local');
+  const localFiles = files.filter(
+    (file): file is Extract<AttachedFile, { kind: 'local' }> =>
+      file.kind === 'local' && !file.uploadId,
+  );
   const totalBytes = localFiles.reduce((sum, file) => sum + file.file.size, 0);
   if (totalBytes > DATA_URL_ATTACHMENTS_MAX_BYTES) {
     throw new Error(
@@ -277,10 +308,18 @@ export async function stageFirstPromptAttachments(
   // five-file batch paid five round trips through the file system in a row.
   // Order is preserved because `Promise.all` resolves positionally, and the
   // attachment order is the order the user attached them in.
-  return Promise.all(
+  let stagedIndex = 0;
+  const parts = await Promise.all(
     files.map(async (file): Promise<PromptFilePart> => {
       if (file.kind === 'remote') {
         return { type: 'file', mime: file.mime, url: file.url, filename: file.filename };
+      }
+      if (file.kind === 'staged' || file.uploadId) {
+        const part = stagedParts[stagedIndex++];
+        if (!part || part.type !== 'file' || !part.attachment_id) {
+          throw new Error('A staged attachment is missing its completed upload handle');
+        }
+        return part as PromptFilePart;
       }
       const mime = attachmentMime(file.file.type, file.file.name);
       const bytes = new Uint8Array(await file.file.arrayBuffer());
@@ -299,4 +338,8 @@ export async function stageFirstPromptAttachments(
       };
     }),
   );
+  if (stagedIndex !== stagedParts.length) {
+    throw new Error('Attachment selection changed before Send. Try again.');
+  }
+  return parts;
 }

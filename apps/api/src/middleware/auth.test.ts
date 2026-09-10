@@ -17,6 +17,7 @@ const PROJECT_B = 'project-bbb';
 const SANDBOX_A = 'sandbox-for-a';
 const SANDBOX_B = 'sandbox-for-b';
 const ACCOUNT = 'acct-shared';
+const ATTACHMENT_ID = '22222222-2222-4222-8222-222222222222';
 
 const sandboxProjectByOwnSandboxId: Record<string, string> = {
   [SANDBOX_A]: PROJECT_A,
@@ -72,7 +73,16 @@ mock.module('../repositories/service-accounts', () => ({
 }));
 
 mock.module('../repositories/api-keys', () => ({
-  validateSecretKey: async () => ({ isValid: false, error: 'Invalid Kortix token' }),
+  validateSecretKey: async (token: string) =>
+    token === 'kortix_sb_attachment_runtime'
+      ? {
+          isValid: true,
+          type: 'sandbox',
+          sandboxId: SANDBOX_A,
+          accountId: ACCOUNT,
+          keyId: 'legacy-key',
+        }
+      : { isValid: false, error: 'Invalid Kortix token' },
 }));
 
 mock.module('../shared/jwt-verify', () => ({
@@ -111,7 +121,7 @@ mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }))
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
 mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
-const { combinedAuth } = await import('./auth');
+const { combinedAuth, supabaseAuth } = await import('./auth');
 
 function appWithProbe() {
   const app = new Hono();
@@ -138,6 +148,15 @@ function appWithProbe() {
   );
   app.get('/v1/skills/:name', (c) => c.json({ ok: true, name: c.req.param('name') }));
   app.get('/v1/skills/:name/file', (c) => c.json({ ok: true }));
+  return app;
+}
+
+function appWithSandboxDescriptorProbe() {
+  const app = new Hono();
+  app.use('/*', supabaseAuth);
+  app.get('/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId', (c) =>
+    c.json({ sandboxId: c.get('sandboxId' as never) }),
+  );
   return app;
 }
 
@@ -285,5 +304,27 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
 
     expect(res.status).toBe(403);
     expect(await res.text()).toContain('Project-scoped token cannot call this surface');
+  });
+});
+
+describe('legacy sandbox credential route allowlist', () => {
+  test('accepts only the exact runtime prompt attachment descriptor path', async () => {
+    const exact = await appWithSandboxDescriptorProbe().request(
+      `/v1/projects/${PROJECT_A}/runtime/prompt-attachments/${ATTACHMENT_ID}`,
+      { headers: { Authorization: 'Bearer kortix_sb_attachment_runtime' } },
+    );
+    expect(exact.status).toBe(200);
+    expect((await exact.json()).sandboxId).toBe(SANDBOX_A);
+
+    for (const path of [
+      `/v1/projects/${PROJECT_A}/runtime/prompt-attachments`,
+      `/v1/projects/${PROJECT_A}/runtime/prompt-attachments/${ATTACHMENT_ID}/extra`,
+      `/v1/projects/${PROJECT_A}/runtime/prompt-attachments-not/${ATTACHMENT_ID}`,
+    ]) {
+      const response = await appWithSandboxDescriptorProbe().request(path, {
+        headers: { Authorization: 'Bearer kortix_sb_attachment_runtime' },
+      });
+      expect(response.status).toBe(401);
+    }
   });
 });

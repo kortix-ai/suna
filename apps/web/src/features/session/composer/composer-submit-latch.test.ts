@@ -23,6 +23,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import type { PromptAttachmentSnapshot, SessionPromptPart } from '@kortix/sdk';
+
+import { captureAttachmentSubmission } from './attachment-submission';
+import { createSubmitLatch } from './submit-latch';
+import type { AttachedFile } from './types';
+
 const source = readFileSync(fileURLToPath(new URL('./composer.tsx', import.meta.url)), 'utf8');
 
 /** The file with comments removed, for assertions about what CODE references. */
@@ -43,6 +49,135 @@ function between(start: string, end: string): string {
 }
 
 describe('the composer submits through the latch', () => {
+  test('a queued ready draft keeps its captured parts when a later selection is pending', async () => {
+    let releaseFirst!: () => void;
+    const firstAck = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const readyFile: AttachedFile = {
+      kind: 'local',
+      uploadId: 'ready-local',
+      file: new File(['ok'], 'ready.txt', { type: 'text/plain' }),
+      localUrl: 'blob:ready',
+      isImage: false,
+    };
+    const part: SessionPromptPart = {
+      type: 'file',
+      attachment_id: 'ready-server',
+      filename: 'ready.txt',
+      mime: 'text/plain',
+    };
+    let globallyPending = false;
+    const controller = {
+      getReadyParts: () => {
+        if (globallyPending) throw new Error('later attachment is pending');
+        return [part];
+      },
+      getSnapshot: (): PromptAttachmentSnapshot => ({
+        canSend: !globallyPending,
+        attachments: [
+          {
+            id: 'ready-local',
+            filename: 'ready.txt',
+            mime: 'text/plain',
+            size: 2,
+            status: 'ready',
+            receivedBytes: 2,
+            attachment: {
+              attachment_id: 'ready-server',
+              filename: 'ready.txt',
+              mime: 'text/plain',
+              size: 2,
+              expires_at: '2099-01-01T00:00:00.000Z',
+            },
+          },
+        ],
+      }),
+    };
+    const sent: string[][] = [];
+    let queued = true;
+    const submit = createSubmitLatch<{ parts: SessionPromptPart[] }>(
+      async (stash) => {
+        if (!stash) return firstAck;
+        sent.push(stash.parts.map((item) => item.attachment_id ?? ''));
+      },
+      () => {
+        if (!queued) return null;
+        queued = false;
+        return { parts: captureAttachmentSubmission([readyFile], controller).parts };
+      },
+    );
+
+    void submit();
+    await submit();
+    globallyPending = true;
+    releaseFirst();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sent).toEqual([['ready-server']]);
+  });
+
+  test('a pending second draft keeps its text and tile after the first ACK settles', async () => {
+    let releaseFirst!: () => void;
+    const firstAck = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const pendingFile: AttachedFile = {
+      kind: 'local',
+      uploadId: 'pending-local',
+      file: new File(['still uploading'], 'pending.txt', { type: 'text/plain' }),
+      localUrl: 'blob:pending',
+      isImage: false,
+    };
+    let editorText = 'second draft';
+    let visibleFiles: AttachedFile[] = [pendingFile];
+    const dispatched: Array<{ text: string; files: AttachedFile[] }> = [];
+    const controller = {
+      getReadyParts: (): SessionPromptPart[] => {
+        throw new Error('Attachment uploads are still in progress');
+      },
+      getSnapshot: (): PromptAttachmentSnapshot => ({
+        canSend: false,
+        attachments: [
+          {
+            id: 'pending-local',
+            file: pendingFile.kind === 'local' ? pendingFile.file : undefined,
+            filename: 'pending.txt',
+            mime: 'text/plain',
+            size: 15,
+            status: 'uploading',
+            receivedBytes: 4,
+          },
+        ],
+      }),
+    };
+    const submit = createSubmitLatch<{ text: string; files: AttachedFile[] }>(
+      async (stash) => {
+        if (!stash) return firstAck;
+        dispatched.push(stash);
+      },
+      () => {
+        if (!editorText.trim()) return null;
+        try {
+          captureAttachmentSubmission(visibleFiles, controller);
+        } catch {
+          return null;
+        }
+        const stash = { text: editorText, files: [...visibleFiles] };
+        editorText = '';
+        visibleFiles = [];
+        return stash;
+      },
+    );
+
+    const first = submit();
+    await submit();
+    releaseFirst();
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(dispatched).toEqual([]);
+    expect(editorText).toBe('second draft');
+    expect(visibleFiles).toEqual([pendingFile]);
+    expect(visibleFiles[0]?.kind === 'local' ? visibleFiles[0].file.name : '').toBe('pending.txt');
+  });
+
   test('handleSubmit goes through ONE latch instance, held in a ref', () => {
     // A latch rebuilt per render forgets it is in flight, which reopens the
     // same-tick double-fire window mid-send. The `??=` into a ref is what makes
@@ -76,6 +211,10 @@ describe('the composer submits through the latch', () => {
     expect(wiring).toContain('if (!editor || !content || !content.text.trim()) return null;');
     expect(wiring).toContain('editor.clear();');
     expect(wiring).toContain('attachedFilesRef.current = [];');
+    expect(wiring).toContain('attachmentSubmission = captureAttachmentSubmission(');
+    expect(wiring.indexOf('attachmentSubmission = captureAttachmentSubmission(')).toBeLessThan(
+      wiring.indexOf('editor.clear();'),
+    );
   });
 
   test('every submit entry point goes through the latched handler', () => {
@@ -89,5 +228,26 @@ describe('the composer submits through the latch', () => {
     // the ref-mirror assignment. A fourth means something calls it unlatched.
     expect(refs).toHaveLength(3);
     expect(source).toContain('onSubmit={handleSubmit}');
+  });
+
+  test('Send captures readiness before reset and forgets only accepted ids after the await', () => {
+    const send = between('const content = draft', 'const dispatchSubmissionRef = useRef');
+    const capture = send.indexOf('captureAttachmentSubmission(');
+    const reset = send.indexOf('resolveComposerResetOnSend(');
+    const awaitSend = send.indexOf('await onSend(');
+    const forget = send.indexOf('promptAttachments.forget(attachmentSubmission.submittedIds)');
+
+    expect(capture).toBeGreaterThan(-1);
+    expect(reset).toBeGreaterThan(capture);
+    expect(awaitSend).toBeGreaterThan(reset);
+    expect(forget).toBeGreaterThan(awaitSend);
+  });
+
+  test('both the button and Enter are gated by attachment readiness', () => {
+    const normalized = source.replace(/\s+/g, ' ');
+    expect(normalized).toContain('submitDisabled || !promptAttachments.canSend');
+    expect(source).toContain('return captureAttachmentSubmission(filesNow, promptAttachments)');
+    expect(source).toContain('stash?.attachmentSubmission ??');
+    expect(source).toContain('const filesNow = stash ? stash.files : attachedFilesRef.current;');
   });
 });

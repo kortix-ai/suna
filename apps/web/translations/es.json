@@ -14,6 +14,7 @@
     "codeDescription": "Como todo es código en un repositorio, el sistema puede leer su propio diseño, ampliarse y mantenerse estable a medida que crece. Es totalmente extensible, controlable y autoalojable. Nada es una caja negra."
   },
   "common": {
+    "workspaceWaiting": "Esperando al espacio de trabajo…",
     "cancel": "Cancelar",
     "save": "Guardar",
     "saving": "Guardando...",
@@ -9336,7 +9337,25 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Sin preguntas",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recargar",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Administrar plan",
+    "composerAttachments": {
+      "couldNotRestore": "No se pudieron restaurar los archivos adjuntos",
+      "couldNotAttach": "No se pudieron adjuntar los archivos",
+      "couldNotRemove": "No se pudo eliminar el archivo adjunto",
+      "couldNotRetry": "No se pudo reintentar el archivo adjunto",
+      "notReady": "Los archivos adjuntos no están listos",
+      "uploadFailed": "Error de carga",
+      "retry": "Reintentar",
+      "retryNamed": "Reintentar {name}",
+      "processing": "Procesando",
+      "waiting": "En espera",
+      "uploading": "Cargando {progress}%"
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Carga del archivo adjunto iniciada",
+      "text40078a553439": "Bloque del archivo adjunto cargado",
+      "text4c7f8000aabd": "Carga del archivo adjunto completada",
+      "text91420d2587c2": "Carga del archivo adjunto eliminada",
+      "text3aab5b3be2b9": "Descriptor de archivo adjunto de ejecución resuelto",
       "text0005b85debac": "Paquete de sonido reproducido para eventos de sesión.",
       "text000c02c11c7a": "Instrucciones reutilizables que tus agentes cargan cuando las necesitan.",
       "text0017bda47853": "URL copiada",

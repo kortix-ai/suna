@@ -1,6 +1,11 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createElement, useEffect } from 'react';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { configureKortix } from '../../core/http/config';
 import type { Message } from '@opencode-ai/sdk/v2/client';
 import { SandboxNotReadyError } from '../../core/http/opencode-errors';
+import * as errors from '../../core/http/opencode-errors';
+import * as registry from './session-sync-registry';
 import { useSyncStore } from '../stores/sync-store';
 import { setCurrentRuntime } from '../../core/session/current-runtime';
 import {
@@ -19,7 +24,179 @@ import {
 beforeEach(() => {
   resetSessionSyncControllers();
   useSyncStore.getState().reset();
+  setCurrentRuntime('https://runtime-a.test', 'runtime-a');
+});
+
+afterEach(() => resetSessionSyncControllers());
+
+test('refuses controller creation without a runtime URL or explicit client', () => {
   setCurrentRuntime(null);
+  expect(() => getSessionSyncController('unowned')).toThrow('not ready');
+});
+
+test('retaining a prefetched entry preserves its explicit client', async () => {
+  const reads: string[] = [];
+  const client = { session: { messages: async () => { reads.push('a'); return { data: [] }; } } };
+  await prefetchSessionSyncOnce('ses-prefetched', 'runtime-a', client);
+  const release = retainSessionSyncController('ses-prefetched', 'runtime-a');
+  await getSessionSyncController('ses-prefetched', undefined, 'runtime-a').reconcile();
+  release();
+  expect(reads).toEqual(['a', 'a']);
+});
+
+test('runtime switch destroys detached controllers and preserves retained controllers', async () => {
+  const signals: AbortSignal[] = [];
+  const client = { session: { messages: async (_: unknown, opts?: { signal?: AbortSignal }) => {
+    signals.push(opts!.signal!);
+    return { data: [] };
+  } } };
+  const old = getSessionSyncController('old', client, 'runtime-a');
+  const held = getSessionSyncController('held', client, 'runtime-a');
+  const release = retainSessionSyncController('held', 'runtime-a');
+  await old.reconcile();
+  await held.reconcile();
+  registry.resetSessionSyncControllersForRuntime('runtime-b');
+  expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+  await old.reconcile();
+  expect(signals).toHaveLength(2);
+  release();
+});
+
+test('noteSessionSyncEvent updates only the explicit stream scope', () => {
+  const client = { session: { messages: async () => ({ data: [] }) } };
+  const a = getSessionSyncController('shared', client, 'runtime-a');
+  const b = getSessionSyncController('shared', client, 'runtime-b');
+  noteSessionSyncEvent({ type: 'message.updated', properties: { info: { sessionID: 'shared' } } }, 'runtime-a');
+  expect(a.getSnapshot().freshness).toBe('fresh');
+  expect(b.getSnapshot().freshness).toBe('idle');
+});
+
+test('only an OpenCode JSON NotFoundError 404 is tuple-terminal', async () => {
+  const client = (error: unknown, status = 404) => ({ session: { messages: async () => ({
+    error, response: new Response(null, { status }),
+  }) } });
+  await expect(readSessionMessagePage(client({ name: 'NotFoundError', data: { message: 'Session not found' } }), 'missing', { limit: 50 }))
+    .rejects.toBeInstanceOf(errors.SessionNotFoundOnRuntimeError);
+  for (const body of ['<html>Not found</html>', 'Sandbox is not running']) {
+    await expect(readSessionMessagePage(client(body), 'missing', { limit: 50 }))
+      .rejects.toBeInstanceOf(SandboxNotReadyError);
+  }
+});
+
+test('a re-provisioned session gets a new tuple while the old controller cannot write', async () => {
+  let resolveOld!: (value: { data: Array<{ info: Message; parts: [] }> }) => void;
+  const old = getSessionSyncController('reprovisioned', {
+    session: { messages: async () => new Promise((resolve) => { resolveOld = resolve; }) },
+  }, 'runtime-a');
+  const oldRead = old.reconcile();
+  const next = getSessionSyncController('reprovisioned', {
+    session: { messages: async () => ({ data: [] }) },
+  }, 'runtime-b', 'https://runtime-b.test');
+  resetSessionSyncControllersForSession('reprovisioned', 'runtime-b');
+  await next.reconcile();
+  resolveOld({ data: [{ info: { id: 'stale', sessionID: 'reprovisioned', role: 'user' } as Message, parts: [] }] });
+  await oldRead;
+  expect(useSyncStore.getState().messages.reprovisioned).toEqual([]);
+  expect(useSyncStore.getState().sessionRuntime.reprovisioned).toBe('runtime-b');
+  expect(next).not.toBe(old);
+});
+
+test('session.deleted aborts its scoped controller before an in-flight read can refill the store', async () => {
+  let signal: AbortSignal | undefined;
+  let resolveRead!: (value: { data: Array<{ info: Message; parts: [] }> }) => void;
+  const controller = getSessionSyncController('deleted', { session: {
+    messages: async (_: unknown, opts?: { signal?: AbortSignal }) => {
+      signal = opts?.signal;
+      return new Promise((resolve) => { resolveRead = resolve; });
+    },
+  } }, 'runtime-a');
+  const read = controller.reconcile();
+  noteSessionSyncEvent({ type: 'session.deleted', properties: { info: { id: 'deleted' } } }, 'runtime-a');
+  expect(signal?.aborted).toBe(true);
+  resolveRead({ data: [{ info: { id: 'stale', sessionID: 'deleted', role: 'user' } as Message, parts: [] }] });
+  await read;
+  expect('deleted' in useSyncStore.getState().messages).toBe(false);
+});
+
+test('full-history export captures its runtime once across page boundaries', async () => {
+  const reads: string[] = [];
+  configureKortix({ backendUrl: 'https://api.test/v1', getToken: async () => 'test', fetch: async (input) => {
+    reads.push(input instanceof Request ? input.url : String(input));
+    if (reads.length === 1) {
+      setCurrentRuntime('https://export-b.test', 'b');
+      return Response.json([], { headers: { 'x-next-cursor': 'older' } });
+    }
+    return Response.json([]);
+  } });
+  setCurrentRuntime('https://export-a.test', 'a');
+  await registry.loadSessionTranscriptMessages('ses-export');
+  expect(reads).toEqual([
+    'https://export-a.test/session/ses-export/message?limit=100',
+    'https://export-a.test/session/ses-export/message?limit=100&before=older',
+  ]);
+});
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+test('React cleanup order never reads busy session A on runtime B', async () => {
+  const reads: string[] = [];
+  const cleanupOrder: string[] = [];
+  configureKortix({
+    backendUrl: 'https://api.test/v1',
+    getToken: async () => 'test-token',
+    fetch: async (input) => {
+      reads.push(input instanceof Request ? input.url : String(input));
+      return Response.json([]);
+    },
+  });
+  setCurrentRuntime('https://runtime-a.test', 'runtime-a');
+  const controller = getSessionSyncController('ses-a', undefined, 'runtime-a');
+  function SessionA() {
+    // Same declaration order as useSession: clear runtime before sync release.
+    useEffect(() => () => {
+      cleanupOrder.push('clear runtime');
+      setCurrentRuntime(null);
+    }, []);
+    useEffect(() => {
+      const release = retainSessionSyncController('ses-a', 'runtime-a');
+      controller.setBusy(true);
+      return () => {
+        cleanupOrder.push('release controller');
+        release();
+      };
+    }, []);
+    return null;
+  }
+  let tree: ReactTestRenderer;
+  await act(async () => { tree = create(createElement(SessionA)); });
+  await controller.reconcile('initial');
+  expect(reads).toEqual(['https://runtime-a.test/session/ses-a/message?limit=50']);
+  const originalTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const timers = new Map<number, { dueAt: number; run: () => void }>();
+  let timerId = 0;
+  globalThis.setTimeout = ((callback: () => void, delay = 0) => {
+    timers.set(++timerId, { dueAt: delay, run: callback });
+    return timerId;
+  }) as typeof setTimeout;
+  globalThis.clearTimeout = ((id: number) => timers.delete(id)) as typeof clearTimeout;
+  try {
+    await act(async () => { tree!.unmount(); });
+    expect(cleanupOrder).toEqual(['clear runtime', 'release controller']);
+    setCurrentRuntime('https://runtime-b.test', 'runtime-b');
+    // Advance beyond the one-second retry after the turn-end promise settles.
+    for (const [id, timer] of [...timers]) {
+      if (timer.dueAt > 1_100) continue;
+      timers.delete(id);
+      timer.run();
+    }
+    for (let index = 0; index < 25; index++) await Promise.resolve();
+    expect(reads.filter((url) => url.includes('runtime-b.test'))).toEqual([]);
+    expect(timers.size).toBe(0);
+  } finally {
+    globalThis.setTimeout = originalTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
 });
 
 /**
@@ -162,7 +339,7 @@ describe('prefetchSessionSyncOnce', () => {
   test('keeps controllers distinct when two sandboxes contain the same OpenCode id', () => {
     const sharedId = 'session-from-snapshot';
     const runtimeA = getSessionSyncController(sharedId, undefined, 'runtime-a');
-    const runtimeB = getSessionSyncController(sharedId, undefined, 'runtime-b');
+    const runtimeB = getSessionSyncController(sharedId, undefined, 'runtime-b', 'https://runtime-b.test');
 
     expect(runtimeA).not.toBe(runtimeB);
     expect(getSessionSyncController(sharedId, undefined, 'runtime-a')).toBe(runtimeA);
@@ -172,7 +349,7 @@ describe('prefetchSessionSyncOnce', () => {
   test('retires old-sandbox controllers without deleting the current sandbox controller', () => {
     const sharedId = 'session-from-snapshot';
     const runtimeA = getSessionSyncController(sharedId, undefined, 'runtime-a');
-    const runtimeB = getSessionSyncController(sharedId, undefined, 'runtime-b');
+    const runtimeB = getSessionSyncController(sharedId, undefined, 'runtime-b', 'https://runtime-b.test');
 
     resetSessionSyncControllersForSession(sharedId, 'runtime-b');
 
@@ -263,6 +440,7 @@ describe('session sync events', () => {
     const sessionId = 'session-rest-prompt';
     const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
     expect(controller.getSnapshot().freshness).toBe('idle');
+    setCurrentRuntime(null);
 
     noteSessionSyncEvent({
       type: 'message.updated',

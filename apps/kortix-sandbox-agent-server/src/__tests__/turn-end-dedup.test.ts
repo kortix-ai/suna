@@ -1,4 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { configureRuntimeConvergence, resetRuntimeConvergenceForTests } from '../runtime-assets'
 
 import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../main'
 import type { Config } from '../config'
@@ -102,6 +106,39 @@ function sessionEnv(apiUrl: string) {
 }
 
 describe('relayTurnEndToApi — exactly-once per completed turn', () => {
+  test('a confirmed root relay re-asks the guarded staged daemon swap', async () => {
+    const m = startMocks(() => 1000)
+    sessionEnv(m.baseUrl)
+    const stateDir = await mkdtemp(join(tmpdir(), 'turn-end-agent-swap-'))
+    const uptime = spyOn(process, 'uptime').mockReturnValue(600)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Bun.write(join(stateDir, 'agent.next'), 'next')
+      await Bun.write(join(stateDir, 'agent.next.sha256'), 'a'.repeat(64))
+      let exited!: (code: number) => void
+      const exit = new Promise<number>((resolve, reject) => {
+        exited = resolve
+        timer = setTimeout(() => reject(new Error('turn end did not request staged swap')), 500)
+      })
+      configureRuntimeConvergence({
+        agentStateDir: stateDir,
+        seam: { opencodeBaseUrl: () => m.baseUrl, workspace: WORKSPACE, restartOpencode: async () => {} },
+        turnInFlight: async () => false,
+        exit: exited,
+      })
+      await relayTurnEndToApi(ROOT, 'idle', { getInternalUrl: () => m.baseUrl }, {
+        workspace: WORKSPACE,
+      } as Config)
+      expect(await exit).toBe(75)
+      expect(m.calls()).toBe(1)
+    } finally {
+      clearTimeout(timer)
+      resetRuntimeConvergenceForTests()
+      uptime.mockRestore()
+      m.stop()
+      await rm(stateDir, { recursive: true, force: true })
+    }
+  })
   test('two idle relays for the SAME completed turn finalize once', async () => {
     const completedAt = 1000
     const m = startMocks(() => completedAt)

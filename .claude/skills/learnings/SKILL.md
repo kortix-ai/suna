@@ -21,6 +21,25 @@ linked, not inlined.
 
 ## Register
 
+### Deterministic browser launches invalidate revision-local Next output (2026-09-10)
+
+**When:** starting an owned deterministic web server. Remove only that
+worktree's `.next/dev` after the reuse check and before launch. Reject symlinked
+cache roots. Never clear a healthy reused server's cache or sibling worktrees.
+*Near-miss:* journey 27 loaded current desktop JavaScript with pre-merge CSS, so
+the native-only Download action remained visible.
+*Enforcers:* `local-runner.test.ts` and native `27-desktop-parity.spec.ts`.
+
+### Composer attachment regressions must compose async lifecycle boundaries (2026-09-10)
+
+**When:** changing composer submission or attachment draft persistence. Hold the
+first Send ACK while the next upload remains pending, then assert its text and
+tile survive. Test mixed attachments through save, reload, readiness capture,
+and final Send assembly in one flow.
+*Near-miss:* Task 4 tested each helper alone, so review found no regression for
+the two boundary-spanning failures.
+*Enforcers:* `composer-submit-latch.test.ts` and `composer-draft.test.ts`.
+
 ### A self-authenticating route must populate the shared context the resolver reads (2026-09-09)
 
 **When:** adding a route that authenticates its own credential instead of running
@@ -54,6 +73,41 @@ the traffic lights. Global tab-list heights collapsed settings and agent groups.
 *Enforcers:* `window-chrome.test.js`, `desktop-titlebar.test.ts`, and
 `tests/e2e/specs/27-desktop-parity.spec.ts` (Chromium and native Electron).
 
+### Inline attachment budgets use the decoder's scheme rules (2026-09-08)
+
+**When:** enforcing aggregate inline-file limits. Recognize `data:` with the
+same case-insensitive rule as decoding, then count every accepted file.
+*Near-miss:* PR #7148 review found that uppercase `DATA:` passed decoding but
+escaped the case-sensitive aggregate byte count.
+*Enforcer:* `integration-prompt-attachments.test.ts` covers the uppercase budget.
+
+### Attachment cleanup must retain concurrency evidence (2026-09-08)
+
+**When:** deleting private staged uploads. Recheck command references in a fresh
+statement after acquiring the attachment lock. Keep a bounded tombstone after
+deletion so cleanup can remove late object-storage writes.
+*Near-miss:* PR #7148 review reproduced a stale cleanup snapshot after prompt
+binding and an upload that wrote storage after its metadata disappeared.
+*Enforcer:* `integration-prompt-attachments.test.ts` covers both races.
+
+### File imports must handle short writes and cancel rejected downloads (2026-09-08)
+
+**When:** streaming a staged file into a sandbox. Loop until each buffer is fully
+written; verify bytes and digest before atomic rename. Abort the download and
+cancel its reader on rejection, write failure, or timeout.
+*Near-miss:* PR #7148 review produced a 9-byte file while import reported 19 bytes.
+Header and write failures also left the download stream active.
+*Enforcer:* `file-import-route.test.ts` covers short writes and cancellation.
+
+### Request deadlines include response-body parsing (2026-09-08)
+
+**When:** reading authenticated HTTP responses. Keep the attempt timer active
+through body parsing, including bodies discarded before retry. Return typed
+`TIMEOUT`; attachment uploads must not automatically retry client timeouts.
+*Near-miss:* PR #7148 review received headers, stalled JSON, and left upload
+completion pending beyond its request deadline.
+*Enforcers:* SDK `api-client.cancellation.test.ts` and `prompt-attachments.test.ts`.
+
 ### Token publication must not look like sign-out to waiting requests (2026-09-08)
 
 **When:** fencing in-flight auth reads against cache writes. Distinguish a token
@@ -77,6 +131,31 @@ reproduced the failure; `project-access-boundary.test.ts` pins the wiring.
 AuthProvider declares initial readiness only after bootstrap validation and
 cleanup finish, not from an earlier `INITIAL_SESSION` event. Keep the signed-out
 redirect above the pending gate and use the user-scoped key for admin bypass.
+
+### Authenticated reads wait for identity hydration (2026-09-07)
+
+**Rule:** A browser read that requires authentication starts only after the auth provider publishes the user; a missing token during cold hydration is not a resource failure.
+**Near-miss:** A full session-page reload enabled `getProject` from `projectId` alone. The SDK returned `AuthError` before issuing HTTP because auth hydration had not published a token, and the project boundary rendered `This project didn't load.` for a healthy project.
+**Enforcers:** `project-access-boundary.test.ts` verifies the auth-readiness policy and its query wiring. Exact-head preview verification reloads a valid session route and requires the project shell without a manual retry.
+
+### Preview verification includes post-suite frontend liveness (2026-09-07)
+
+**Rule:** After target-full, require a real authenticated page load and a zero frontend restart delta before accepting a preview.
+**Near-miss:** The preview gate passed, then Next 16 exhausted its 249–253 MiB V8 heap twice inside a 512 MiB container. A live 768 MiB trial later exhausted its 379–396 MiB heap during the browser acceptance flow. Each restart aborted the project RSC read and rendered the manual failure card while the API stayed healthy.
+**Enforcers:** `compose-assets.test.ts` keeps the frontend ceiling at or above 1,024 MiB and the total steady-state ceiling below 12 GiB. Exact-head preview verification records the frontend restart count before and after the browser flow.
+
+### Compatibility recovery outlives capability-cache TTL (2026-09-07)
+
+**Rule:** After its eligibility gate, issue a request the old runtime supports and retain one bounded persisted delivery grace beyond capability-cache TTL.
+**Near-miss:** Capability negotiation blocked the large upload before `/file/append`. Refreshes at t=0/30/150 preceded the old daemon's 300-second gate. Delivery failed at t=630 without an eligible refresh, so no swap began.
+**Enforcers:** `queued-continue-inbox-delivery.test.ts`: “an old daemon receives a post-gate refresh and delivers the full attachment after convergence”; “an old daemon that cannot upgrade fails once after its post-gate refresh grace”.
+`runtime-unreachable-park.test.ts`: “stale recovery retains one final grace and Stop hold after the third runtime retry”.
+
+### Daemon routes negotiate capability across mixed builds (2026-09-07)
+
+**Rule:** A new daemon route ships behind a capability check or a fallback; the API and the daemon never assume the same build.
+**Incident:** `/file/append` reached a stale daemon, fell through to OpenCode's SPA as `200 text/html`, and five retries dead-lettered the first prompt.
+**Enforcers:** typed non-JSON response guard; `file.append` capability negotiation; 96 KiB legacy fallback; runtime-ladder parking/attempt refund; terminal file-router JSON 404; explicit swap refresh; deferred swap timer/turn-end tests.
 
 ### Verify a rotated credential with the WRITE it exists for, and every edge worker deploys from the same pipeline as its origin (2026-09-07)
 

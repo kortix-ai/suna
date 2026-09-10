@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 
 // Source assertions, for the same reason as `session-chat-queued-retry-id.test.ts`:
@@ -26,6 +26,13 @@ function between(source: string, start: string, end: string): string {
 }
 
 describe('stop reaches the queue that actually holds the messages', () => {
+  test('a transcript-backed stale row also shows workspace waiting after the hold check', () => {
+    const rowState = between(chat, 'const rowState: QueuedPromptState', '// Only while');
+    expect(rowState).toContain("queueRow.reason === 'runtime_stale'");
+    expect(rowState.indexOf("queueRow.reason === 'held'")).toBeLessThan(
+      rowState.indexOf("queueRow.reason === 'runtime_stale'"),
+    );
+  });
   test('handleStop holds the SERVER inbox — the only queue there is', () => {
     // REWRITTEN with the browser drain's deletion. A client-side pause never
     // reached the admission gate, which would admit the queued prompt about one
@@ -289,7 +296,9 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
       'const reset = resolveComposerResetOnSend(',
       '} catch {',
     );
-    expect(promptBranch).toContain('await onSend(trimmed, filesToSend, mentionsToSend)');
+    expect(promptBranch).toContain(
+      'await onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission.parts)',
+    );
     expect(promptBranch).not.toContain('onQueueMessage(');
     // The shared blocker set has no `session_working` member for a prompt:
     // only `commandBlocker` adds it.
@@ -316,7 +325,7 @@ describe('the boot shell never swallows what the user typed', () => {
     // never got.
     const send = between(shell, 'const handleSend = useCallback(', "playSound('send');");
     expect(send).toContain('await startSessionWithPrompt(projectId, sessionId');
-    expect(send).toContain('stageFirstPromptAttachments(files)');
+    expect(send).toContain('stageFirstPromptAttachments(files, attachmentParts)');
     expect(send).toContain('throw error;');
     expect(shell).not.toContain('useMessageQueueStore');
     expect(shell).not.toContain('carryDraft(');
@@ -324,9 +333,10 @@ describe('the boot shell never swallows what the user typed', () => {
   });
 
   test('ready-session sends retain the workspace upload path', () => {
-    expect(chat).toContain(
-      'buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile)',
+    expect(chat.replace(/\s+/g, ' ')).toMatch(
+      /buildPromptPartsWithUploads\( ?textPrompt\.text, attachedFiles, uploadFile, attachmentParts,? \)/,
     );
+    expect(chat).toContain('attachment_id: p.attachment_id');
   });
 
   test('the stash carries ONLY the picks — the prompt travels as the row', () => {

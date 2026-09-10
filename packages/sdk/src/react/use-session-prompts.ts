@@ -1,7 +1,7 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { focusManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect } from 'react';
 import {
   type CreateSessionPromptInput,
   type CreateSessionPromptResult,
@@ -43,9 +43,77 @@ import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
  * showed those rows — and the same gap hid a prompt queued from a second tab.
  */
 export const SESSION_PROMPTS_POLL_MS = 1_000;
+/** The live inbox cadence. It stays below the 10s working-observation expiry:
+ * `4_000 + 2 * 2_500 < 10_000`. */
+export const SESSION_PROMPTS_LIVE_POLL_LADDER_MS = [1_000, 2_000, 4_000] as const;
 /** The floor for an EMPTY list. Slow enough to be free, fast enough that a
  *  prompt handed back by the server appears while the user is still looking. */
 export const SESSION_PROMPTS_IDLE_POLL_MS = 15_000;
+
+export interface SessionPromptsCadenceState {
+  fingerprint: string;
+  unchangedReads: number;
+}
+
+/** Failed rows are retryable UI, but no longer change without a user action. */
+export function countNonTerminalSessionPrompts(prompts: readonly SessionPrompt[]): number {
+  return prompts.filter((prompt) => prompt.state !== 'failed').length;
+}
+
+/** The server's observation time is deliberately absent: it changes on each read. */
+export function sessionPromptsFingerprint(prompts: readonly SessionPrompt[]): string {
+  return JSON.stringify(
+    prompts.map((prompt) => [
+      prompt.prompt_id,
+      prompt.state,
+      prompt.reason,
+      prompt.attempts,
+      prompt.last_error,
+      prompt.message_id,
+      prompt.available_at,
+    ]),
+  );
+}
+
+/** Advance a live inbox only after the query function observed the same list again. */
+export function nextSessionPromptsCadenceState(
+  previous: SessionPromptsCadenceState | undefined,
+  prompts: readonly SessionPrompt[],
+  reset = false,
+): SessionPromptsCadenceState {
+  const fingerprint = sessionPromptsFingerprint(prompts);
+  if (reset || !previous || previous.fingerprint !== fingerprint) {
+    return { fingerprint, unchangedReads: 0 };
+  }
+  return {
+    fingerprint,
+    unchangedReads: Math.min(
+      previous.unchangedReads + 1,
+      SESSION_PROMPTS_LIVE_POLL_LADDER_MS.length - 1,
+    ),
+  };
+}
+
+const sessionPromptCadences = new Map<string, SessionPromptsCadenceState>();
+const sessionPromptObserverCounts = new Map<string, number>();
+
+function sessionPromptCadenceKey(projectId: string, sessionId: string): string {
+  return `${projectId}/${sessionId}`;
+}
+
+function observeSessionPromptsCadence(
+  projectId: string,
+  sessionId: string,
+  prompts: readonly SessionPrompt[],
+): void {
+  const key = sessionPromptCadenceKey(projectId, sessionId);
+  sessionPromptCadences.set(key, nextSessionPromptsCadenceState(sessionPromptCadences.get(key), prompts));
+}
+
+function resetSessionPromptsCadence(projectId: string | undefined, sessionId: string | undefined): void {
+  if (!projectId || !sessionId) return;
+  sessionPromptCadences.delete(sessionPromptCadenceKey(projectId, sessionId));
+}
 
 /**
  * The cadence for a list of `count` prompts. Pure, so the floor is testable.
@@ -63,9 +131,17 @@ export function sessionPromptsPollMs(
   count: number,
   pollMs?: number,
   believedPending = 0,
+  cadence?: SessionPromptsCadenceState,
 ): number {
   const live = Math.max(count, believedPending);
-  return live > 0 ? (pollMs ?? SESSION_PROMPTS_POLL_MS) : SESSION_PROMPTS_IDLE_POLL_MS;
+  if (live === 0) return SESSION_PROMPTS_IDLE_POLL_MS;
+  return (
+    pollMs ??
+    SESSION_PROMPTS_LIVE_POLL_LADDER_MS[
+      Math.min(cadence?.unchangedReads ?? 0, SESSION_PROMPTS_LIVE_POLL_LADDER_MS.length - 1)
+    ] ??
+    SESSION_PROMPTS_POLL_MS
+  );
 }
 
 /**
@@ -307,13 +383,15 @@ export async function readSessionPromptsInbox(
       // Ordering keeps the server's own stamp, ranked only against other
       // server stamps.
       const observedAtMs = Date.parse(bundle!.observed_at);
-      return applyInboxObservation(
+      const observed = applyInboxObservation(
         sessionId,
         cached,
         bundled,
         Date.now(),
         Number.isFinite(observedAtMs) ? observedAtMs : undefined,
       );
+      observeSessionPromptsCadence(projectId, sessionId, observed);
+      return observed;
     }
   }
   // Age stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
@@ -323,13 +401,15 @@ export async function readSessionPromptsInbox(
   const serverAtMs = observed_at ? Date.parse(observed_at) : Number.NaN;
   // Keep this tab's not-yet-confirmed rows on screen across a poll that landed
   // before their POST returned.
-  return applyInboxObservation(
+  const observed = applyInboxObservation(
     sessionId,
     cached,
     prompts,
     atMs,
     Number.isFinite(serverAtMs) ? serverAtMs : undefined,
   );
+  observeSessionPromptsCadence(projectId, sessionId, observed);
+  return observed;
 }
 
 export interface UseSessionPromptsResult {
@@ -365,6 +445,35 @@ export function useSessionPrompts(
 
   const pollOwner = usePollOwner(`prompts:${projectId ?? ''}/${sessionId ?? ''}`, enabled);
 
+  // The cadence map belongs to the session, not one component. Several inbox
+  // observers share a cache entry; clear the map only after the final one leaves.
+  useEffect(() => {
+    if (!enabled || !projectId || !sessionId) return;
+    const cadenceKey = sessionPromptCadenceKey(projectId, sessionId);
+    sessionPromptObserverCounts.set(
+      cadenceKey,
+      (sessionPromptObserverCounts.get(cadenceKey) ?? 0) + 1,
+    );
+    return () => {
+      const remaining = (sessionPromptObserverCounts.get(cadenceKey) ?? 1) - 1;
+      if (remaining > 0) {
+        sessionPromptObserverCounts.set(cadenceKey, remaining);
+        return;
+      }
+      sessionPromptObserverCounts.delete(cadenceKey);
+      sessionPromptCadences.delete(cadenceKey);
+    };
+  }, [enabled, projectId, sessionId]);
+
+  // React Query issues the focus refetch. Reset before its query function runs
+  // so a same-row answer re-arms the 1s live interval instead of backing off.
+  useEffect(() => {
+    if (!enabled || !projectId || !sessionId) return;
+    return focusManager.subscribe((focused) => {
+      if (focused) resetSessionPromptsCadence(projectId, sessionId);
+    });
+  }, [enabled, projectId, sessionId]);
+
   const query = useQuery({
     queryKey: key,
     enabled,
@@ -381,7 +490,14 @@ export function useSessionPrompts(
     // observer still reads the entry the owner refreshes.
     refetchInterval: (q) =>
       pollOwner
-        ? sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs, believedPending)
+        ? sessionPromptsPollMs(
+            countNonTerminalSessionPrompts(q.state.data ?? []),
+            options?.pollMs,
+            believedPending,
+            projectId && sessionId
+              ? sessionPromptCadences.get(sessionPromptCadenceKey(projectId, sessionId))
+              : undefined,
+          )
         : false,
     // Per-query, because the host disables focus refetching globally. Coming
     // back to a tab is the moment a prompt the server handed back while it was
@@ -414,6 +530,7 @@ export function useSessionPrompts(
     // comes before anything awaited, so the row is on screen in the same frame
     // as the keypress.
     onMutate: async (input: CreateSessionPromptInput) => {
+      resetSessionPromptsCadence(projectId, sessionId);
       queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
         applyOptimisticPrompt(prev ?? [], input, Date.now()),
       );
@@ -440,6 +557,7 @@ export function useSessionPrompts(
       return result;
     },
     onSuccess: (result, input) => {
+      resetSessionPromptsCadence(projectId, sessionId);
       queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
         result.state === 'failed'
           ? removeOptimisticPrompt(prev ?? [], input.clientMessageId)
@@ -447,6 +565,7 @@ export function useSessionPrompts(
       );
     },
     onError: (_error, input) => {
+      resetSessionPromptsCadence(projectId, sessionId);
       queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
         removeOptimisticPrompt(prev ?? [], input.clientMessageId),
       );
@@ -459,16 +578,36 @@ export function useSessionPrompts(
   // expected refusal (e.g. removing a prompt a step just started answering).
   const removeMutation = useMutation({
     mutationFn: (promptId: string) => deleteSessionPrompt(projectId!, sessionId!, promptId),
+    onMutate: () => resetSessionPromptsCadence(projectId, sessionId),
     onError: () => {},
     onSettled: invalidate,
   });
   const retryMutation = useMutation({
     mutationFn: (promptId: string) => retrySessionPrompt(projectId!, sessionId!, promptId),
+    onMutate: () => resetSessionPromptsCadence(projectId, sessionId),
+    onSuccess: (retried) => {
+      // The retry endpoint returns no `observed_at`. Its local ordering stamp
+      // must still outrank a read issued before this mutation, even when both
+      // happen in the same browser millisecond.
+      const current = useSessionWorkingStore.getState().inbox[sessionId!];
+      const atMs = Math.max(Date.now(), (current?.atMs ?? Number.NEGATIVE_INFINITY) + 1);
+      queryClient.setQueryData<SessionPrompt[]>(key, (previous) => {
+        const next = (previous ?? []).some((prompt) => prompt.prompt_id === retried.prompt_id)
+          ? (previous ?? []).map((prompt) =>
+              prompt.prompt_id === retried.prompt_id ? retried : prompt,
+            )
+          : [...(previous ?? []), retried];
+        // Retry has no `observed_at`. Use the same ordering gate as a read, so
+        // an older in-flight snapshot cannot erase this queued row.
+        return applyInboxObservation(sessionId!, previous, next, atMs);
+      });
+    },
     onError: () => {},
     onSettled: invalidate,
   });
   const holdMutation = useMutation({
     mutationFn: (held: boolean) => holdSessionPrompts(projectId!, sessionId!, held),
+    onMutate: () => resetSessionPromptsCadence(projectId, sessionId),
     onError: () => {},
     onSettled: invalidate,
   });

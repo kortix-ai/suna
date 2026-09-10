@@ -252,9 +252,21 @@ all support it. React Native and Expo do not: their `fetch` has no
 bounded history and status synchronization. Use a platform-specific event
 transport for live events.
 
-The controller loads the newest 10 messages first. `loadOlder()` follows the
-server cursor. `loadHttpSessionHistory()` follows every cursor for explicit
-exports.
+The controller loads the newest 50 messages first. `loadOlder()` follows the
+server cursor in pages of 100. `loadHttpSessionHistory()` follows every cursor
+for explicit exports.
+
+Each transcript controller binds one OpenCode session id to one runtime URL.
+When the last React consumer leaves, automatic retries stop. A final turn-end
+read can finish on its original runtime. Its failure cannot restart retries.
+The hook creates no controller until it has a runtime URL. Server mirror
+messages can render during that wait.
+
+OpenCode's JSON `404` with `name: 'NotFoundError'` produces
+`SessionNotFoundOnRuntimeError`, available from `@kortix/sdk`. The controller
+keeps `freshness: 'error'` and stops reading that session/runtime pair.
+Reprovisioning creates a new controller for the replacement runtime.
+Proxy HTML and not-running `404` responses remain wakeable.
 
 ### Event types
 
@@ -366,6 +378,66 @@ never carries `retriable: false`.
 
 `failure.evidence` names the check that produced the negative, when it ran, and
 when the server retries. Every `/start` failure carries it.
+
+## Prompt attachments
+
+Upload local files when users add them to a composer. Private uploads belong to
+the project and do not require a running session.
+
+```tsx
+import { usePromptAttachments } from '@kortix/sdk/react';
+
+const uploads = usePromptAttachments(projectId);
+// File picker, paste, and drop handlers call uploads.add(file) or uploads.addMany(files).
+// Render uploads.attachments; disable Send when !uploads.canSend.
+
+async function submit() {
+  const parts = uploads.getReadyParts();
+  const ids = uploads.getSnapshot().attachments.map((item) => item.id);
+  await kortix.session(projectId, sessionId).prompts.create({
+    clientMessageId,
+    messageId,
+    parts: [{ type: 'text', text }, ...parts],
+  });
+  uploads.forget(ids);
+}
+```
+
+`getReadyParts()` checks readiness synchronously. Call it in the submit handler
+to block a same-tick paste-and-Enter before the next React render.
+The returned file part contains `attachment_id`, `filename`, and `mime`.
+It contains no URL or file bytes. The server binds and materializes the upload.
+Use these parts on platform session creation, warm-session start, or prompt inbox
+routes. Do not pass private handles directly to OpenCode runtime `sendParts`.
+Legacy platform file parts with `url` still work.
+
+Each item has a stable `id`, the original `file` reference, `receivedBytes`, and
+a status: `pending`, `uploading`, `processing`, `ready`, `error`, or `aborted`.
+Acknowledged bytes determine progress. `processing` can remain at 100% until the
+server completes the upload. Limits are 50 MiB per file, 100 MiB per message,
+and 20 files. Files must be nonempty. Two files upload concurrently by default.
+
+`retry(id)` resumes the same handle. `abort(id)` cancels unfinished work.
+`remove(id)` deletes an unbound upload; a bound upload returns a typed 409.
+`forget(ids)` clears accepted selections without deleting server objects.
+Call it only after successful submission. Preserve selections when sending fails.
+The hook aborts unfinished work on unmount or project change, and preserves ready
+uploads so server command binding can finish.
+
+Persist only ready `item.attachment` metadata in a user/project-bound draft.
+`restore(metadata)` validates the fields and expiry. Never persist File objects,
+blob URLs, or signed URLs. Expired restored files must be attached again.
+Abandoned uploads expire after 24 hours.
+
+Framework-free hosts use `kortix.project(projectId).attachments.createController()`
+with the same methods. Subscribe through `subscribe(listener)` and read
+`getSnapshot()`. Call `dispose()` when the composer closes.
+Direct callers can use `attachments.upload(file, { signal, onProgress, onUpload,
+resume })` and `attachments.delete(attachmentId)`.
+Retain `onUpload` metadata for manual same-ID resumption. Completion retries typed
+processing responses and retryable server failures for up to five minutes, plus
+the current request's 30-second deadline. Caller aborts and client timeouts do not
+auto-retry. Each chunk is at most 64 KiB and retries at most twice.
 
 ## Files
 

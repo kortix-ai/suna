@@ -99,6 +99,7 @@ mock.module('../backpressure', () => ({
 }));
 
 mock.module('../store', () => ({
+  RUNTIME_STALE_REASON: 'runtime_stale',
   promoteNextInboxRow: async () => null,
   loadLegacyPendingFirstPrompt: async () => null,
   markLegacyInlineAttachmentsRepaired: async () => {},

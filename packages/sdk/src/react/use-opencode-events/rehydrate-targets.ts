@@ -10,10 +10,14 @@
  * to correct it.
  *
  * A gap means: for some interval, this tab is not sure what the runtime said.
- * The honest response is to re-read every transcript this tab is holding. That
+ * The honest response is to re-read every transcript owned by this stream. That
  * is bounded — a tab holds one open session plus a handful of recently viewed
  * ones — and each read is a single tail page.
  */
-export function sessionsNeedingRehydrate(loadedSessionIds: string[]): string[] {
-  return [...new Set(loadedSessionIds)];
+export function sessionsNeedingRehydrate(loadedSessionIds: string[], scope?: {
+  currentScope: string;
+  ownerOf: (sessionId: string) => string | null | undefined;
+}): string[] {
+  if (!scope?.currentScope || scope.currentScope === 'none') return [];
+  return [...new Set(loadedSessionIds)].filter((id) => scope.ownerOf(id) === scope.currentScope);
 }

@@ -10,6 +10,7 @@ import type {
 	Todo,
 } from "@opencode-ai/sdk/v2/client";
 import { create } from "zustand";
+import { forgetSessionCacheOwnership } from "../session-sync/session-cache-ownership";
 
 import {
 	commitSessionRewind,
@@ -158,6 +159,9 @@ function insertIndexByTime(list: readonly Message[], message: Message): number {
 // ============================================================================
 
 interface SyncState {
+	/** Runtime that supplied each transcript. Separate from stable Kortix cache ownership. */
+	sessionRuntime: Record<string, string>;
+	claimSessionRuntime: (sessionID: string, runtimeScope: string) => void;
 	// Core data (per-session, sorted arrays — matches SolidJS store shape)
 	messages: Record<string, Message[]>;
 	parts: Record<string, Part[]>;
@@ -237,8 +241,8 @@ interface SyncState {
 	sessionRevertNeedsTailReconcile: Record<string, boolean>;
 
 	// ---- Actions ----
-	applyEvent: (event: OpenCodeEvent) => void;
-	upsertMessage: (sessionID: string, message: Message) => void;
+	applyEvent: (event: OpenCodeEvent, runtimeScope?: string) => void;
+	upsertMessage: (sessionID: string, message: Message, runtimeScope?: string) => void;
 	removeMessage: (sessionID: string, messageID: string) => void;
 	/**
 	 * `sessionID` is optional. Omitted, the deltaActiveParts guard below reads
@@ -505,7 +509,7 @@ interface SyncState {
 		 * covers their position drops any it does not contain. Default:
 		 * the runtime.
 		 */
-		opts?: { source?: "cache" | "runtime" },
+		opts?: { source?: "cache" | "runtime"; runtimeScope?: string },
 	) => void;
 	reset: () => void;
 
@@ -966,7 +970,7 @@ function touchSessionMessageRows(
 /** Mounted consumers per session. Absent means "nobody ever retained this" —
  *  see the release returned by `retainSession`, which then leaves the session
  *  alone entirely. */
-const sessionConsumers = new Map<string, number>();
+const sessionConsumers = new Map<string, { count: number }>();
 /** Sessions at zero consumers, oldest first (Set preserves insertion order). */
 const detachedSessions = new Set<string>();
 /**
@@ -1129,6 +1133,11 @@ function pruneDetachedSessions(messages: Record<string, Message[]>): string[] {
 // ============================================================================
 
 export const useSyncStore = create<SyncState>()((set, get) => ({
+	sessionRuntime: {},
+	claimSessionRuntime: (sessionID, runtimeScope) => {
+		if (!runtimeScope || runtimeScope === "none" || get().sessionRuntime[sessionID] === runtimeScope) return;
+		set((s) => ({ sessionRuntime: { ...s.sessionRuntime, [sessionID]: runtimeScope } }));
+	},
 	messages: {},
 	parts: {},
 	sessionStatus: {},
@@ -1147,7 +1156,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	// ---- Core mutations ----
 
-	upsertMessage: (sessionID, message) =>
+	upsertMessage: (sessionID, message, runtimeScope) => {
+		if (runtimeScope) get().claimSessionRuntime(sessionID, runtimeScope);
 		set((s) => {
 			const list = s.messages[sessionID] ?? [];
 			// First try binary search (fast path for sorted lists).
@@ -1177,7 +1187,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const next = [...list];
 			next.splice(insertIndexByTime(next, message), 0, message);
 			return { messages: { ...s.messages, [sessionID]: next } };
-		}),
+		});
+	},
 
 	removeMessage: (sessionID, messageID) =>
 		set((s) => {
@@ -1682,7 +1693,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			deleteOrphanPartBuckets(nextParts, [sessionID]);
 			const nextActivity = { ...s.sessionActivityAt };
 			delete nextActivity[sessionID];
+			const sessionRuntime = { ...s.sessionRuntime };
+			delete sessionRuntime[sessionID];
 			return {
+				sessionRuntime,
 				messages: { ...s.messages, [sessionID]: [] },
 				parts: nextParts,
 				sessionActivityAt: nextActivity,
@@ -1707,7 +1721,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		// Out of the detach window BEFORE pruning it, so mounting a session can
 		// never be what evicts it.
 		detachedSessions.delete(sessionID);
-		sessionConsumers.set(sessionID, (sessionConsumers.get(sessionID) ?? 0) + 1);
+		const consumers = sessionConsumers.get(sessionID) ?? { count: 0 };
+		consumers.count += 1;
+		sessionConsumers.set(sessionID, consumers);
 
 		const evicted = pruneDetachedSessions(get().messages);
 		if (evicted.length > 0) {
@@ -1723,12 +1739,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			if (released) return;
 			released = true;
 			const held = sessionConsumers.get(sessionID);
-			if (held === undefined) return;
+			// Deletion/reset retires this hold. A reused id has a different owner.
+			if (held !== consumers) return;
 			// Another consumer still has this session on screen. THE case a raw
 			// unmount gets wrong: a transcript and a context modal, a split
 			// view, or a parent's spawn-tool preview of a child session.
-			if (held > 1) {
-				sessionConsumers.set(sessionID, held - 1);
+			if (held.count > 1) {
+				held.count -= 1;
 				return;
 			}
 			sessionConsumers.delete(sessionID);
@@ -1778,6 +1795,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	},
 
 	hydrate: (sessionID, msgs, opts) => {
+		if (opts?.runtimeScope) get().claimSessionRuntime(sessionID, opts.runtimeScope);
 		// Set inside the updater below when a RUNTIME read shows the transcript
 		// moved while its tail is still open — the runtime's own output reaching
 		// this tab by pull instead of push. Stamped after the set() commits.
@@ -2256,6 +2274,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		evictedSessions.clear();
 		sessionMessageRows.clear();
 		set({
+			sessionRuntime: {},
 			messages: {},
 			parts: {},
 			sessionStatus: {},
@@ -2289,9 +2308,41 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	// ---- Event reducer (matches SolidJS event-reducer.ts 1:1) ----
 
-	applyEvent: (event) => {
+	applyEvent: (event, runtimeScope) => {
 		const store = get();
+		const properties = event.properties as {
+			sessionID?: string; info?: { sessionID?: string; id?: string }; part?: { sessionID?: string };
+		} | undefined;
+		const sessionID = properties?.sessionID ?? properties?.info?.sessionID ?? properties?.part?.sessionID;
+		if (runtimeScope && sessionID) store.claimSessionRuntime(sessionID, runtimeScope);
 		switch (event.type) {
+			case "session.deleted": {
+				const id = properties?.info?.id;
+				if (!id || (runtimeScope && store.sessionRuntime[id] && store.sessionRuntime[id] !== runtimeScope)) return;
+				forgetSessionIds(id);
+				forgetSessionCacheOwnership(id);
+				sessionConsumers.delete(id);
+				detachedSessions.delete(id);
+				evictedSessions.delete(id);
+				set((s) => {
+					const omit = <T,>(values: Record<string, T>) => {
+						const next = { ...values };
+						delete next[id];
+						return next;
+					};
+					return {
+						...dropSessionData(s, [id]),
+						sessionRuntime: omit(s.sessionRuntime),
+						sessionStatus: omit(s.sessionStatus),
+						sessionStatusOrigin: omit(s.sessionStatusOrigin),
+						sessionStatusAt: omit(s.sessionStatusAt),
+						sessionActivityAt: omit(s.sessionActivityAt),
+						sessionRevert: omit(s.sessionRevert),
+						sessionRevertNeedsTailReconcile: omit(s.sessionRevertNeedsTailReconcile),
+					};
+				});
+				return;
+			}
 			case "message.updated": {
 				{
 					const info = (event.properties as { info?: { sessionID?: string } })?.info;

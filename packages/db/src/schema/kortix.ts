@@ -5792,6 +5792,52 @@ export const connectorCalls = kortixSchema.table(
   ],
 );
 
+// Ownership IDs intentionally have no FK: metadata must outlive project/account
+// deletion until maintenance has removed every private storage object.
+export const promptAttachments = kortixSchema.table(
+  'prompt_attachments',
+  {
+    attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    objectPath: text('object_path').notNull().unique(),
+    filename: text('filename').notNull(),
+    mime: text('mime').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    receivedBytes: integer('received_bytes').default(0).notNull(),
+    chunkDigests: jsonb('chunk_digests').default([]).notNull().$type<string[]>(),
+    sha256: text('sha256'),
+    status: varchar('status', { length: 16 }).default('uploading').notNull(),
+    finalizeToken: uuid('finalize_token'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('prompt_attachments_status_check', sql`${table.status} IN ('uploading', 'finalizing', 'ready', 'deleting')`),
+    check('prompt_attachments_size_check', sql`${table.sizeBytes} > 0 AND ${table.sizeBytes} <= 52428800`),
+    check('prompt_attachments_received_check', sql`${table.receivedBytes} >= 0 AND ${table.receivedBytes} <= ${table.sizeBytes}`),
+    index('idx_prompt_attachments_scope').on(table.projectId, table.userId),
+    index('idx_prompt_attachments_expiry').on(table.expiresAt),
+  ],
+);
+
+export const promptAttachmentReferences = kortixSchema.table(
+  'prompt_attachment_references',
+  {
+    commandId: uuid('command_id').notNull(),
+    attachmentId: uuid('attachment_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.commandId, table.attachmentId] }),
+    foreignKey({ name: 'prompt_attachment_refs_command_fk', columns: [table.commandId], foreignColumns: [sessionLifecycleCommands.commandId] }).onDelete('cascade'),
+    foreignKey({ name: 'prompt_attachment_refs_attachment_fk', columns: [table.attachmentId], foreignColumns: [promptAttachments.attachmentId] }).onDelete('restrict'),
+    index('idx_prompt_attachment_references_attachment').on(table.attachmentId),
+  ],
+);
+
 /**
  * Private, short-lived files staged for one Connector email call.
  *

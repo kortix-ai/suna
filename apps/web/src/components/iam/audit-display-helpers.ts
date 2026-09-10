@@ -128,6 +128,14 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/sessions/:sessionId/reload-stream': 'Reloaded session agent config',
   'POST /v1/projects/:projectId/turn-stream': 'Streamed session turn',
   'POST /v1/projects/:projectId/turn-question': 'Submitted session question',
+  'POST /v1/projects/:projectId/attachments': 'Started attachment upload',
+  'PUT /v1/projects/:projectId/attachments/:attachmentId/chunks/:index':
+    'Uploaded attachment chunk',
+  'POST /v1/projects/:projectId/attachments/:attachmentId/complete': 'Completed attachment upload',
+  'GET /v1/projects/:projectId/attachments/:attachmentId': 'Viewed file content',
+  'DELETE /v1/projects/:projectId/attachments/:attachmentId': 'Removed attachment upload',
+  'GET /v1/projects/:projectId/runtime/prompt-attachments/:attachmentId':
+    'Resolved runtime attachment descriptor',
   'POST /v1/projects/:projectId/sessions/warm': 'Warmed session sandbox',
   'POST /v1/projects/:projectId/sessions/warm/claim': 'Claimed warm session sandbox',
   'GET /v1/projects/:projectId/files/content': 'Viewed file content',
@@ -1091,14 +1099,14 @@ export function formatResourcePill(
  * presentation shell.
  */
 export const KIND_DOT_CLASS: Record<HumanizedAuditAction['kind'], string> = {
-  create: 'bg-emerald-500/70',
-  update: 'bg-amber-500/70',
-  delete: 'bg-rose-500/70',
-  grant: 'bg-violet-500/70',
-  revoke: 'bg-rose-500/70',
-  attach: 'bg-sky-500/70',
-  detach: 'bg-zinc-400/70',
-  read: 'bg-zinc-300/60',
-  export: 'bg-sky-500/70',
-  other: 'bg-zinc-300/60',
+  create: 'bg-kortix-green',
+  update: 'bg-kortix-yellow',
+  delete: 'bg-kortix-red',
+  grant: 'bg-kortix-green',
+  revoke: 'bg-kortix-red',
+  attach: 'bg-kortix-blue',
+  detach: 'bg-muted-foreground/40',
+  read: 'bg-muted-foreground/30',
+  export: 'bg-kortix-blue',
+  other: 'bg-muted-foreground/30',
 };

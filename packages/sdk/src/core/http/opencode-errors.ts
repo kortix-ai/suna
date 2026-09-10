@@ -3,6 +3,14 @@ export interface OpenCodeConfigIssue {
   message?: string;
 }
 
+/** The OpenCode session does not exist on the runtime that answered the read. */
+export class SessionNotFoundOnRuntimeError extends Error {
+  constructor(message = 'Session not found on this runtime') {
+    super(message);
+    this.name = 'SessionNotFoundOnRuntimeError';
+  }
+}
+
 export interface OpenCodeConfigInvalidError {
   name: 'ConfigInvalidError';
   data?: {

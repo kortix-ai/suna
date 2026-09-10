@@ -36,6 +36,13 @@ function deps(overrides: Partial<SandboxRuntimeRefreshDeps> = {}): {
 }
 
 describe('refreshSandboxRuntimeAssets', () => {
+  test('a stale daemon refresh asks for an idle swap without restarting OpenCode', async () => {
+    const d = deps();
+    expect(await refreshSandboxRuntimeAssets('sess-1', d.deps, 'stale-daemon')).toBe('refreshed');
+    expect(d.calls[0].url).toBe(
+      'http://localhost:8008/v1/p/sbx-1/8000/kortix/refresh?restart=0&swap=1',
+    );
+  });
   test('posts /kortix/refresh?restart=0 with the sandbox service key', async () => {
     const d = deps();
     const outcome = await refreshSandboxRuntimeAssets('sess-1', d.deps);

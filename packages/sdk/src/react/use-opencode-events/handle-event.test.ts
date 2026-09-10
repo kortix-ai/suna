@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
+import { setCurrentRuntime } from '../../core/session/current-runtime';
 import type {
   AssistantMessage,
   Message,
@@ -92,6 +93,18 @@ function makeCalls<Args extends unknown[]>() {
   return { fn, calls };
 }
 
+test('event application and compaction repair carry the producing runtime scope', async () => {
+  const repairs: unknown[][] = [];
+  const handler = buildHandler({
+    runtimeScope: 'runtime-a',
+    reconcileSessionTail: async (...args) => { repairs.push(args); },
+  });
+  const event = { type: 'session.compacted', properties: { sessionID: 'ses-a' } } as Parameters<typeof handler.handleEvent>[0];
+  handler.handleEvent(event);
+  expect(handler.applySyncEvent.calls).toEqual([[event, 'runtime-a']]);
+  expect(repairs).toEqual([['ses-a', 'compaction', 'runtime-a']]);
+});
+
 function buildHandler(
   overrides: {
     messagesImpl?: () => Promise<{ data?: unknown }>;
@@ -99,6 +112,8 @@ function buildHandler(
     projectId?: string;
     reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
     userPartsGraceMs?: number;
+    runtimeScope?: string;
+    isActive?: () => boolean;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -117,7 +132,7 @@ function buildHandler(
   // cache writes, notifications) in isolation, instead of that logic being
   // entangled with — and clobbered by — the reducer's own state writes for
   // the very same event (`applySyncEvent` runs BEFORE the switch statement).
-  const applySyncEvent = makeCalls<[unknown]>();
+  const applySyncEvent = makeCalls<[unknown, string?]>();
 
   // `session.compacted`'s targeted refetch reads the RUNTIME-CLIENT SINGLETON
   // (mocked at module scope above), not this injected `client` — set both so
@@ -145,6 +160,8 @@ function buildHandler(
     projectId: overrides.projectId,
     reconcileSessionTail: overrides.reconcileSessionTail,
     userPartsGraceMs: overrides.userPartsGraceMs,
+    runtimeScope: overrides.runtimeScope,
+    isActive: overrides.isActive,
   });
 
   return {
@@ -203,6 +220,7 @@ function assistantMessage(id: string, sessionID = 'ses_1'): AssistantMessage {
 }
 
 beforeEach(() => {
+  setCurrentRuntime(null);
   useSyncStore.getState().reset();
   useDiagnosticsStore.getState().clearAll();
   toasts = [];
@@ -211,6 +229,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setCurrentRuntime(null);
   toasts = [];
   notifications = [];
 });
@@ -424,6 +443,46 @@ describe('session lifecycle cache mutations', () => {
 // ============================================================================
 
 describe('session.compacted', () => {
+  for (const closed of [true, false]) {
+    for (const outcome of ['success', 'empty', 'failure']) {
+      test(`late ${outcome} after A→B switch respects ${closed ? 'closed' : 'active'} stream ownership`, async () => {
+        let active = true;
+        let resolveRead!: (value: { data?: Session }) => void;
+        let rejectRead!: (reason: Error) => void;
+        const pending = new Promise<{ data?: Session }>((resolve, reject) => {
+          resolveRead = resolve;
+          rejectRead = reject;
+        });
+        setCurrentRuntime('https://runtime-a.test', 'runtime-a');
+        const { handleEvent, queryClient } = buildHandler({
+          runtimeScope: 'runtime-a', isActive: () => active,
+          getImpl: () => pending, reconcileSessionTail: async () => {},
+        });
+        const aKey = opencodeKeys.runtimeSession('shared', 'runtime-a');
+        const bKey = opencodeKeys.runtimeSession('shared', 'runtime-b');
+        const aListKey = opencodeKeys.sessions('runtime-a');
+        const bListKey = opencodeKeys.sessions('runtime-b');
+        queryClient.setQueryData(aKey, session('shared', { title: 'A before' }));
+        queryClient.setQueryData(bKey, session('shared', { title: 'B before' }));
+        queryClient.setQueryData(aListKey, [session('shared', { title: 'A before' })]);
+        queryClient.setQueryData(bListKey, [session('shared', { title: 'B before' })]);
+        handleEvent({ id: 'evt_late', type: 'session.compacted', properties: { sessionID: 'shared' } });
+        if (closed) active = false;
+        setCurrentRuntime('https://runtime-b.test', 'runtime-b');
+        if (outcome === 'failure') rejectRead(new Error('late proxy failure'));
+        else resolveRead(outcome === 'success' ? { data: session('shared', { title: 'A after' }) } : {});
+        for (let index = 0; index < 10; index++) await Promise.resolve();
+        expect(queryClient.getQueryData<Session>(bKey)?.title).toBe('B before');
+        expect(queryClient.getQueryData<Session[]>(bListKey)?.[0].title).toBe('B before');
+        expect(queryClient.getQueryState(bKey)?.isInvalidated).toBe(false);
+        expect(queryClient.getQueryData<Session>(aKey)?.title).toBe(!closed && outcome === 'success' ? 'A after' : 'A before');
+        expect(queryClient.getQueryData<Session[]>(aListKey)?.[0].title).toBe(!closed && outcome === 'success' ? 'A after' : 'A before');
+        expect(queryClient.getQueryState(aKey)?.isInvalidated).toBe(!closed && outcome !== 'success');
+        queryClient.clear();
+      });
+    }
+  }
+
   test('success: patches the runtime-session cache AND the session-list mirror directly', async () => {
     const { handleEvent, queryClient, stopCompaction } = buildHandler({
       getImpl: async () => ({ data: session('ses_a', { time: { created: 1, updated: 9 } }) }),

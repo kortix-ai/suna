@@ -181,6 +181,7 @@ Group/role/policy-writing and SSO/SCIM-writing routes are ALSO gated behind `req
 `IAM-9` **super-admin bypass** — the account creator is super-admin; their effective probe (`…/members/:userId/effective`) is `allowed:true reason:super_admin` for every action (account-write, project.create, and any project action on any/unknown project) regardless of policies or project membership. A revoked-super-admin owner still passes via `role`, never `super_admin`. Asserted via the effective endpoint.
 
 > **Allow-reason contract (canonical RBAC).** Every ALLOW that comes from a role the principal holds reports `reason:"role"`. The pre-canonical engine reported `account_role`, `project_role` or `custom_policy` depending on which of the five grant stores the row lived in; `role_assignments` is now the only store, so the distinction has no referent. DENIAL reasons are unchanged (`account_role_insufficient`, `project_role_insufficient`, `no_project_membership`, `resource_scope_insufficient`, `agent_scope_insufficient`, `service_account_scope_insufficient`, `token_out_of_scope`, `account_mfa_required`, `not_a_member`), because each names a constraint the caller can act on and `denial-message.ts` is keyed on them.
+
 `IAM-10` **no deny precedence** — V2 has NO deny rules (engine: "No deny precedence"; access is allow-by-role only, max-role-wins across direct+group sources). There is no constructible allow+deny conflict via real routes. Closest assertion: stack a low (viewer) direct role and a high (manager) group grant on the same project — effective `project.delete` is `allowed:true` (max wins, never denied by the lower grant). NOTE: classic deny-wins is unverifiable black-box because the feature does not exist.
 `IAM-11` **PATs inherit the minter (no token-only policy eval)** — V2 has no per-token policies; a PAT carries no narrowing policy set, it only optionally binds to one project (`account_tokens.project_id`). An unscoped account PAT's effective access equals its minter's (owner → super-admin set). Asserted by exercising the same `…/effective` reads as the JWT owner. NOTE: per-token policy evaluation is unverifiable black-box because the feature does not exist; project-bound-PAT scope narrowing is covered indirectly by the token/scope flows, not here.
 `IAM-12` **account role → action set** — the account-scope role assignment maps to the action set: a plain `member` gets account-reads only — `account.read` allowed but `account.write`/`project.create` denied (`reason:account_role_insufficient`), and a project action on a project they're not on is denied (`reason:no_project_membership`), so they cannot reach all projects. owner/admin → Administrator-level set (`account.write` allowed; implicit Manager on every project). Asserted via the effective endpoint.
@@ -227,6 +228,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 `PROJ-4` `POST /projects/create-repo {name,private?}` (new GitHub repo) → `PROJECT_CREATE` → 201; no account GitHub App install → 409 + `install_url`; auto-dedupes name collision.
 `PROJ-14` `POST /projects/provision-stream {name,provider?:github}` uses the same provision core as `PROJ-3`. An authorized request returns `200 text/event-stream` with data-only JSON frames. It emits ordered `phase` frames and exactly one terminal `done` or `error` frame. An unsupported provider emits `phase:validating`, then `error` with `status:400`, before any external call. ANON → 401 before the stream opens.
 `PROJ-5` `GET /projects/:id` → `read` → 200 (bumps `last_opened_at`); archived → 404; `NONMEMBER` → 403.
+Browser reload contract (`27-project-reload-recovery.spec.ts`): an authenticated user reloads a readable project's sessions page. An aborted project read recovers automatically and renders the project shell. The access boundary retries only transient reads, with three delays of 250/500/1000 ms. Exhaustion exposes manual Retry. A 403 still offers an access request; a 404 still reports the project as gone.
 `PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.yaml` (agents/skills/env) + file list.
 `PROJ-7` `PATCH /projects/:id {name,default_branch,manifest_path}` → `manage` (M_MANAGER/OWNER/ADMIN) → 200; M_EDITOR/M_VIEWER → 403.
 `PROJ-8` `DELETE /projects/:id` → `manage` → 200 status `archived`; M_EDITOR → 403.
@@ -290,6 +292,28 @@ forwards no prompt and keeps the inbox row retryable. A later retry reuses the s
 paths. The user message renders every attachment before and after reload, with the
 same exact timestamp and completed-turn duration. A legacy pending-first ZIP part is
 rewritten in place before the next prompt.
+
+`SESS-28` Eager private attachment uploads. A project accepts bytes before any
+session exists. Initiation returns an opaque handle; indexed requests carry at
+most64KiB and support digest-checked retries across the preview ingress ceiling.
+Completion verifies all bytes and returns canonical filename, MIME and size.
+Warm claim and follow-up enqueue persist handle-only file parts, not base64.
+Identical submissions reuse the same command; a mismatched consumed warm claim
+returns409. Missing handles return404, incomplete uploads409 and oversize bytes413.
+Bound files cannot be deleted. Removing an unbound upload is idempotent.
+The internal descriptor route accepts only a live session sandbox credential.
+It binds the exact running command, attachment reference and part index before it
+returns the canonical path, byte count, SHA-256 and short-lived download URL.
+User JWTs and ordinary project PATs return403.
+
+Browser composer contract (`28-eager-composer-attachments.spec.ts`): picker,
+drop and paste start the private upload before Send. Pending uploads disable both
+the Send button and Enter. Tiles show progress, processing, errors, retry and
+remove controls. A retry reuses the same attachment handle. Remove deletes only
+an unbound upload. An accepted first prompt carries handle-only parts and sends no
+file bytes again. A refused first prompt keeps the captured attachments while new
+selections remain in the composer. Completed draft metadata survives reload
+without File bytes, blob URLs, data URLs, or signed download URLs.
 
 ---
 

@@ -43,6 +43,7 @@ export interface QueuedPromptRow {
   text: string;
   /** Present on a failed row. */
   lastError?: string;
+  blockedReason?: 'runtime_stale';
   /**
    * The row's files, by NAME and TYPE. A queued row is the only thing on
    * screen for a prompt whose bytes are still travelling to the box, and on a
@@ -60,7 +61,8 @@ export const QUEUED_BUBBLE_OPACITY_CLASS = 'opacity-50';
 
 /** `interrupted`: the runtime holds the message but a Stop ended the turn
  *  before a step opened under it — it runs with the next send. */
-export type QueuedPromptState = 'queued' | 'in-flight' | 'held' | 'failed' | 'interrupted';
+export type QueuedPromptState =
+  'queued' | 'in-flight' | 'held' | 'failed' | 'interrupted' | 'runtime-stale';
 
 export function queuedPromptStatusLabel(state: QueuedPromptState, lastError?: string): string {
   switch (state) {
@@ -123,6 +125,7 @@ export function QueuedPromptStatus({
   state: QueuedPromptState;
   lastError?: string;
 }) {
+  const t = useTranslations('common');
   const failed = state === 'failed';
   // A plain queued/in-flight bubble says nothing: the dim IS the state, and a
   // caption under every queued message read as clutter (review feedback).
@@ -136,7 +139,9 @@ export function QueuedPromptStatus({
         className={cn('flex items-center gap-1', failed && 'text-destructive')}
       >
         {failed && <WarningIcon className="size-3.5" />}
-        {queuedPromptStatusLabel(state, lastError)}
+        {state === 'runtime-stale'
+          ? t('workspaceWaiting')
+          : queuedPromptStatusLabel(state, lastError)}
       </span>
     </InlineMeta>
   );
@@ -306,7 +311,7 @@ function QueuedBubble({
         <div
           className={cn(
             BUBBLE_SURFACE,
-            'w-fit transition-opacity duration-500',
+            'w-fit transition-opacity duration-normal motion-reduce:transition-none',
             failed ? 'opacity-90' : live ? 'opacity-100' : QUEUED_BUBBLE_OPACITY_CLASS,
           )}
         >
@@ -316,7 +321,7 @@ function QueuedBubble({
         </div>
         <div
           className={cn(
-            'flex w-6 shrink-0 flex-col items-center justify-center transition-opacity duration-150',
+            'flex w-6 shrink-0 flex-col items-center justify-center transition-opacity duration-normal motion-reduce:transition-none',
             failed
               ? 'opacity-100'
               : 'opacity-0 group-hover/queued:opacity-100 focus-within:opacity-100',
@@ -364,7 +369,15 @@ export function QueuedPromptBubbles({
         <QueuedBubble
           key={row.id}
           row={row}
-          state={inFlight.has(row.id) ? 'in-flight' : held ? 'held' : 'queued'}
+          state={
+            inFlight.has(row.id)
+              ? 'in-flight'
+              : held
+                ? 'held'
+                : row.blockedReason === 'runtime_stale'
+                  ? 'runtime-stale'
+                  : 'queued'
+          }
           live={emphasis === 'live'}
           onRemove={onRemove}
           onSendNow={onSendNow}

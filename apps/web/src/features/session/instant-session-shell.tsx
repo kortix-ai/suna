@@ -1,24 +1,25 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import { retainAttachmentPreviews } from '@/features/session/composer/attachment-submission';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { QueuedPromptBubbles } from '@/features/session/turn/queued-prompt-bubbles';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import {
-  stageFirstPromptAttachments,
   buildOptimisticPromptTextWithUploads,
+  stageFirstPromptAttachments,
 } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import { playSound } from '@/lib/sounds';
@@ -28,7 +29,7 @@ import {
   useFirstPromptPreviewStore,
   usePendingFilesStore,
 } from '@/stores/session-composer-handoff-store';
-import type { SessionStartStage } from '@kortix/sdk';
+import type { SessionPromptPart, SessionStartStage } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
 import {
   readStartStash,
@@ -124,6 +125,14 @@ export function InstantSessionShell({
     text: string;
     files: AttachedFile[];
   } | null>(null);
+  useEffect(
+    () => () => {
+      for (const file of submission?.files ?? []) {
+        if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
+      }
+    },
+    [submission],
+  );
   // Every send AFTER the first, painted the moment Enter lands — the durable
   // row takes over on the next poll. Without this the shell drew only the
   // first prompt, and anything typed while the box booted stayed invisible
@@ -172,11 +181,12 @@ export function InstantSessionShell({
       // `last_error` is the only place a failed upload is ever named.
       // `state`, never `last_error` alone: the API writes `last_error` on
       // rows it keeps `queued` and retries, and never clears it on success.
-      uploadStatus: (row.attachments?.length ?? 0) > 0
-        ? row.state === 'failed'
-          ? ({ state: 'failed', message: row.last_error ?? 'Upload failed' } as const)
-          : ({ state: 'uploading' } as const)
-        : undefined,
+      uploadStatus:
+        (row.attachments?.length ?? 0) > 0
+          ? row.state === 'failed'
+            ? ({ state: 'failed', message: row.last_error ?? 'Upload failed' } as const)
+            : ({ state: 'uploading' } as const)
+          : undefined,
     };
   }, [promptInbox.prompts]);
   // The queue behind the first prompt: every durable row after the first,
@@ -214,12 +224,11 @@ export function InstantSessionShell({
    * for a tab that never held the bytes (a reload).
    */
   const textSource = submission ?? previewSubmission ?? pendingRowSubmission ?? stashedSubmission;
-  const localFiles =
-    submission?.files.length
-      ? submission.files
-      : previewSubmission?.files.length
-        ? previewSubmission.files
-        : (stashedSubmission?.files ?? []);
+  const localFiles = submission?.files.length
+    ? submission.files
+    : previewSubmission?.files.length
+      ? previewSubmission.files
+      : (stashedSubmission?.files ?? []);
   const effectiveSubmission: {
     text: string;
     files: AttachedFile[];
@@ -246,7 +255,12 @@ export function InstantSessionShell({
   }, []);
 
   const handleSend = useCallback(
-    async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
+    async (
+      text: string,
+      files: AttachedFile[] | undefined,
+      options: ComposerOptions,
+      attachmentParts: SessionPromptPart[] = [],
+    ) => {
       if (!text.trim() && !files?.length) return;
       // Hand the PICKS to the real chat through the stash (it seeds the
       // per-session model/agent stores from them). The prompt itself does not
@@ -257,8 +271,8 @@ export function InstantSessionShell({
         model: options.model ?? null,
         variant: options.variant ?? null,
       });
-      // The durable row, POSTed NOW. Attachments ride as data: URLs — there is
-      // no sandbox to upload into yet. A SECOND message typed while the first
+      // The durable row is POSTed now with project-scoped attachment handles.
+      // A SECOND message typed while the first
       // boots POSTs the same way: the admission gate orders rows by
       // (available_at, created_at), so two rows created in order deliver in
       // order — which is exactly what the refusal that used to live here was
@@ -269,7 +283,7 @@ export function InstantSessionShell({
       try {
         const parts = [
           { type: 'text' as const, text },
-          ...(await stageFirstPromptAttachments(files)),
+          ...(await stageFirstPromptAttachments(files, attachmentParts)),
         ];
         await startSessionWithPrompt(projectId, sessionId, {
           parts,
@@ -289,7 +303,10 @@ export function InstantSessionShell({
       }
       playSound('send');
       if (!submitted) {
-        setSubmission({ text, files: files ?? [] });
+        setSubmission({
+          text,
+          files: retainAttachmentPreviews(files ?? [], (file) => URL.createObjectURL(file)),
+        });
         onSubmit?.();
       } else {
         setExtraSends((prev) => [...prev, { id: `shell-extra-${Date.now()}`, text }]);

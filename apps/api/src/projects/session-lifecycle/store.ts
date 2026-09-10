@@ -86,6 +86,7 @@ export interface PromptPartWire {
   text?: string;
   mime?: string;
   url?: string;
+  attachment_id?: string;
   filename?: string;
   name?: string;
   source?: unknown;
@@ -254,6 +255,23 @@ export async function enqueueContinueSessionCommand(
   input: EnqueueContinueSessionCommandInput,
 ): Promise<EnqueuedContinueSessionCommand> {
   const values = buildContinueSessionCommandValues(input);
+  // Legacy callers retain their existing write path. Handle-bearing prompts
+  // atomically commit both the queue row and the storage references.
+  if (input.parts?.some((part) => part.attachment_id)) {
+    return db.transaction(async (tx) => {
+      const [row] = await tx.insert(sessionLifecycleCommands).values(values)
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey }).returning();
+      if (row) {
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, deduped: false };
+      }
+      const [existing] = await tx.select().from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey!)).limit(1);
+      if (!existing || existing.projectId !== input.projectId || existing.accountId !== input.accountId || existing.actorUserId !== input.actorUserId) throw new Error('Prompt idempotency conflict');
+      return { row: existing, deduped: true };
+    });
+  }
   if (!input.idempotencyKey) {
     const [row] = await db.insert(sessionLifecycleCommands).values(values).returning();
     return { row, deduped: false };
@@ -482,8 +500,34 @@ export async function claimCreateSessionCommand(
   };
 
   if (!command.idempotencyKey) {
+    const pending = command.body.pending_prompt as { parts?: PromptPartWire[] } | undefined;
+    if (pending?.parts?.some((part) => part.attachment_id)) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx.insert(sessionLifecycleCommands).values(values).returning();
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, existing: false };
+      });
+    }
     const [row] = await db.insert(sessionLifecycleCommands).values(values).returning();
     return { row, existing: false };
+  }
+
+  const pending = command.body.pending_prompt as { parts?: PromptPartWire[] } | undefined;
+  if (pending?.parts?.some((part) => part.attachment_id)) {
+    return db.transaction(async (tx) => {
+      const [row] = await tx.insert(sessionLifecycleCommands).values(values)
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey }).returning();
+      if (row) {
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, existing: false };
+      }
+      const [existing] = await tx.select().from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.idempotencyKey, command.idempotencyKey!)).limit(1);
+      if (!existing) throw new Error('Create command idempotency conflict');
+      return { row: existing, existing: true };
+    });
   }
 
   const inserted = await db
@@ -777,8 +821,17 @@ export const MAX_RUNTIME_UNREACHABLE_RETRIES = 3;
  */
 const RUNTIME_UNREACHABLE_BACKOFF_MS = [30_000, 120_000, 480_000] as const;
 
+// A pre-swap=1 daemon ignores early swap requests until its 300-second uptime
+// gate, then needs another refresh: it has no deferred swap timer. The ordinary
+// ladder refreshes at 0/30/150 seconds. Keep one final stale-only park at 630
+// seconds so the engine can refresh after the gate and then retry delivery.
+// Two minutes clear the writer's 60-second capability cache and leave time for
+// detached convergence and supervisor boot. This grace is persisted and bounded.
+const RUNTIME_STALE_FINAL_GRACE_MS = 120_000;
+
 /** Set by {@link parkPromptForUnreachableRuntime} on a row waiting for a box. */
 export const RUNTIME_UNREACHABLE_REASON = 'runtime_unreachable';
+export const RUNTIME_STALE_REASON = 'runtime_stale';
 
 export function runtimeUnreachableRetries(payload: unknown): number {
   const value = (payload as { runtimeUnreachableRetries?: unknown } | null)
@@ -812,7 +865,11 @@ export function runtimeUnreachableRetries(payload: unknown): number {
 export async function parkPromptForUnreachableRuntime(
   commandId: string,
   error: string,
-  opts: { sessionId?: string | null; now?: Date } = {},
+  opts: {
+    sessionId?: string | null;
+    now?: Date;
+    reason?: typeof RUNTIME_UNREACHABLE_REASON | typeof RUNTIME_STALE_REASON;
+  } = {},
 ): Promise<{ parked: boolean; retries: number }> {
   const now = opts.now ?? new Date();
   const [current] = await db
@@ -823,10 +880,14 @@ export async function parkPromptForUnreachableRuntime(
   if (!current) return { parked: false, retries: 0 };
 
   const spent = runtimeUnreachableRetries(current.payload);
-  if (spent >= MAX_RUNTIME_UNREACHABLE_RETRIES) return { parked: false, retries: spent };
+  const maxRetries =
+    MAX_RUNTIME_UNREACHABLE_RETRIES + (opts.reason === RUNTIME_STALE_REASON ? 1 : 0);
+  if (spent >= maxRetries) return { parked: false, retries: spent };
   const retries = spent + 1;
   const backoff =
-    RUNTIME_UNREACHABLE_BACKOFF_MS[Math.min(spent, RUNTIME_UNREACHABLE_BACKOFF_MS.length - 1)]!;
+    spent === MAX_RUNTIME_UNREACHABLE_RETRIES
+      ? RUNTIME_STALE_FINAL_GRACE_MS
+      : RUNTIME_UNREACHABLE_BACKOFF_MS[Math.min(spent, RUNTIME_UNREACHABLE_BACKOFF_MS.length - 1)]!;
 
   // Carry the Stop through. `stopPausedOnDelivery` means the user pressed Stop
   // while this row was inside `continueSession`; the hold has to survive a park
@@ -837,7 +898,7 @@ export async function parkPromptForUnreachableRuntime(
     (current.payload as { stopPausedOnDelivery?: unknown } | null)?.stopPausedOnDelivery === true;
 
   const result: Record<string, unknown> = {
-    delivery_blocked: RUNTIME_UNREACHABLE_REASON,
+    delivery_blocked: opts.reason ?? RUNTIME_UNREACHABLE_REASON,
     runtime_retries: retries,
     ...(stopPaused ? { held: true, stop_paused: true } : {}),
   };
@@ -869,11 +930,12 @@ export async function parkPromptForUnreachableRuntime(
     .returning({ commandId: sessionLifecycleCommands.commandId });
   if (!row) return { parked: false, retries: spent };
 
-  logger.info('[session-lifecycle] prompt parked — runtime unreachable, will re-attempt', {
+  logger.info('[session-lifecycle] prompt parked — runtime unavailable, will re-attempt', {
     command_id: commandId,
     session_id: opts.sessionId ?? null,
     runtime_retries: retries,
-    max_retries: MAX_RUNTIME_UNREACHABLE_RETRIES,
+    max_retries: maxRetries,
+    delivery_blocked: result.delivery_blocked,
     backoff_ms: backoff,
     error,
   });
@@ -905,7 +967,7 @@ export async function reArmRuntimeBlockedPrompts(
       and(
         eq(sessionLifecycleCommands.sessionId, sessionId),
         eq(sessionLifecycleCommands.status, 'queued'),
-        sql`${sessionLifecycleCommands.result}->>'delivery_blocked' = ${RUNTIME_UNREACHABLE_REASON}`,
+        sql`${sessionLifecycleCommands.result}->>'delivery_blocked' IN (${RUNTIME_UNREACHABLE_REASON}, ${RUNTIME_STALE_REASON})`,
         sql`COALESCE(${sessionLifecycleCommands.result}->>'held', 'false') <> 'true'`,
       ),
     )

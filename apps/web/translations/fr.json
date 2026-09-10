@@ -14,6 +14,7 @@
     "codeDescription": "Comme tout est du code dans un dépôt, le système peut lire son propre plan, s'étendre et rester stable pendant sa croissance. Il est entièrement extensible, contrôlable et auto-hébergeable. Rien n'est une boîte noire."
   },
   "common": {
+    "workspaceWaiting": "En attente de l’espace de travail…",
     "cancel": "Annuler",
     "save": "Enregistrer",
     "saving": "Enregistrement...",
@@ -9336,7 +9337,25 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Aucune question",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recharger",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gérer le forfait",
+    "composerAttachments": {
+      "couldNotRestore": "Impossible de restaurer les pièces jointes",
+      "couldNotAttach": "Impossible de joindre les fichiers",
+      "couldNotRemove": "Impossible de supprimer la pièce jointe",
+      "couldNotRetry": "Impossible de réessayer la pièce jointe",
+      "notReady": "Les pièces jointes ne sont pas prêtes",
+      "uploadFailed": "Échec du téléversement",
+      "retry": "Réessayer",
+      "retryNamed": "Réessayer {name}",
+      "processing": "Traitement en cours",
+      "waiting": "En attente",
+      "uploading": "Téléversement {progress}%"
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Téléversement de la pièce jointe démarré",
+      "text40078a553439": "Bloc de la pièce jointe téléversé",
+      "text4c7f8000aabd": "Téléversement de la pièce jointe terminé",
+      "text91420d2587c2": "Téléversement de la pièce jointe supprimé",
+      "text3aab5b3be2b9": "Descripteur de pièce jointe d’exécution résolu",
       "text0005b85debac": "Pack de sons joué pour les événements de session.",
       "text000c02c11c7a": "Instructions réutilisables que vos agents chargent à la demande.",
       "text0017bda47853": "URL copiée",

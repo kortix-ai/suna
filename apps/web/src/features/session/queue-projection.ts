@@ -22,6 +22,7 @@ export interface QueueRow {
   id: string;
   text: string;
   lastError?: string;
+  blockedReason?: 'runtime_stale';
   /** The row's files, by name and type only — see `projectQueueRows`. */
   attachments?: ReadonlyArray<{ filename: string; mime: string }>;
   /** `uploading` while the row is undelivered, `failed` with the row's error. */
@@ -62,6 +63,7 @@ export function projectQueueRows(input: {
     const row: QueueRow = {
       id: prompt.prompt_id,
       text: prompt.text,
+      ...(prompt.reason === 'runtime_stale' ? { blockedReason: 'runtime_stale' as const } : {}),
       ...(prompt.last_error ? { lastError: prompt.last_error } : {}),
       // The row's files, by name — the only thing a bubble can draw for bytes
       // that are still travelling to the box. On a WARM box the transcript

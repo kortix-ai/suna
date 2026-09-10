@@ -8,16 +8,22 @@ import {
 } from '../browser/session-sync/session-sync-registry';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { getClientForUrl } from '../core/runtime/client';
+import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from '../core/session/current-runtime';
 import { canQueryOpenCodeSession, type Session } from './use-opencode-sessions';
 
 /** Load a bounded session tail before navigation or through a known runtime URL. */
 export async function prefetchSession(sessionId: string, runtimeUrl?: string): Promise<void> {
   if (!canQueryOpenCodeSession(sessionId)) return;
   if (!runtimeUrl && useSandboxConnectionStore.getState().healthy !== true) return;
+  const url = runtimeUrl ?? getCurrentRuntimeUrl();
+  if (!url) return;
+  const runtimeScope = url === getCurrentRuntimeUrl() ? getCurrentRuntimeSandboxId() ?? url : url;
   await prefetchSessionSyncOnce(
     sessionId,
     runtimeUrl ?? ACTIVE_SESSION_PREFETCH_SOURCE,
-    runtimeUrl ? getClientForUrl(runtimeUrl) : undefined,
+    getClientForUrl(url),
+    runtimeScope,
+    url,
   );
 }
 

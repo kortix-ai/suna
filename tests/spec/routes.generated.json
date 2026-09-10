@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 635,
+  "count": 640,
   "routes": [
     {
       "method": "GET",
@@ -1431,6 +1431,22 @@
       "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/attachments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId/chunks/:index"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId/complete"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/audit"
     },
@@ -1905,6 +1921,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/review/items/:reviewItemId/act"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId"
     },
     {
       "method": "GET",

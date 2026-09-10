@@ -77,9 +77,36 @@ export function errorStatus(error: unknown): number | undefined {
   );
 }
 
+/** A cold document must not ask the SDK for a token before auth hydration publishes the user. */
+export function shouldEnableProjectRead(
+  projectId: string,
+  userId: string | null | undefined,
+): boolean {
+  return Boolean(projectId && userId);
+}
+
+/** Only the idempotent getProject read uses this policy, never access-request writes. */
+export function shouldRetryProjectRead(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 3) return false;
+  const status = errorStatus(error);
+  if (status !== undefined) return status === 408 || status === 429 || (status >= 500 && status < 600);
+  if (!error || typeof error !== 'object') return false;
+
+  const { name, code, message } = error as { name?: string; code?: string; message?: string };
+  if (name === 'AbortError' || name === 'AbortSignal') return true;
+  if (code === 'ABORTED' || code === 'ERR_ABORTED' || code === 'TIMEOUT') return true;
+  return typeof message === 'string' &&
+    /ERR_ABORTED|^Failed to fetch$|^Load failed$|^NetworkError when attempting to fetch resource\.?$/.test(message);
+}
+
+/** Three retries add at most 1.75s of query backoff, in addition to SDK read attempts. */
+export function projectReadRetryDelay(attempt: number): number {
+  return Math.min(250 * 2 ** attempt, 1_000);
+}
+
 /**
  * Maps a failed `getProject` to the screen it should show. 403 is the only
- * status that leads to the request form — every other failure is terminal, so
+ * status that leads to the request form. Called after query retries exhaust;
  * an unknown status must never render a form whose request cannot succeed.
  */
 export function gateStateForError(error: unknown): AccessGateState {
@@ -194,12 +221,17 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // 401/500/offline poll result cannot unmount the waiting screen and hand the
   // user a fresh request form for a request they already sent.
   const [waiting, setWaiting] = useState<WaitingGateState | null>(null);
+  const projectReadEnabled = authReady && shouldEnableProjectRead(projectId, user?.id);
 
   const query = useQuery({
     queryKey: [QUERY_KEY, projectId, user?.id],
     queryFn: () => getProject(projectId, { showErrors: false }),
-    enabled: authReady && !!projectId,
-    retry: false,
+    enabled: projectReadEnabled,
+    // A cancelled read is not an access verdict. The SDK deliberately returns
+    // AbortError without retrying; this mounted boundary owns recovery while
+    // the user still wants the project. Query teardown cancels pending retries.
+    retry: shouldRetryProjectRead,
+    retryDelay: projectReadRetryDelay,
   });
 
   const { refetch } = query;
@@ -268,6 +300,10 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   if (!authReady || query.isPending) return <ProjectPendingScreen />;
 
   if (query.isSuccess) return <>{children}</>;
+
+  // A foreground recovery keeps the branded project loader until the retry resolves.
+  // A waiting access request keeps its gate while background polling runs.
+  if (!waiting && query.isFetching) return <ProjectPendingScreen />;
 
   return (
     <AccessGateScreen

@@ -260,6 +260,8 @@ export function buildOpencodeApp(
   kortixRouter.route('/opencode', opencodeRuntimeRouter)
   kortixRouter.route('/opencode/', opencodeRuntimeRouter)
 
+  // Terminate daemon-owned paths before the OpenCode SPA catch-all.
+  kortixRouter.all('*', (c) => c.json({ error: 'unknown kortix route' }, 404))
   app.route('/kortix', kortixRouter)
 
   // Auth gate for everything except /kortix/*. Spec §3.5: the daemon MUST

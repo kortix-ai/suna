@@ -1249,13 +1249,47 @@ interface RuntimeConvergenceConfig {
  * runtime to converge opencode against.
  */
 let swapConfig: RuntimeConvergenceConfig | null = null
+let swapGeneration = 0
+let swapExitRequested = false
+let swapTimer: ReturnType<typeof setTimeout> | null = null
+let swapTimerDue = 0
+
+function cancelDeferredAgentSwap(): void {
+  if (swapTimer) clearTimeout(swapTimer)
+  swapTimer = null
+  swapTimerDue = 0
+}
+
+function deferAgentSwap(options: AgentSwapOptions, delayMs: number, generation: number): void {
+  const due = Date.now() + delayMs
+  if (swapTimer && swapTimerDue <= due) return
+  cancelDeferredAgentSwap()
+  swapTimerDue = due
+  swapTimer = setTimeout(() => {
+    swapTimer = null
+    swapTimerDue = 0
+    if (generation !== swapGeneration) return
+    void requestAgentSwapIfIdle({
+      ...options,
+      // Test clocks advance with the timer. Production re-reads process uptime.
+      ...(options.uptimeMs === undefined ? {} : { uptimeMs: options.uptimeMs + delayMs }),
+    })
+  }, delayMs)
+  swapTimer.unref()
+}
 
 export function configureRuntimeConvergence(config: RuntimeConvergenceConfig): void {
+  cancelDeferredAgentSwap()
+  swapGeneration += 1
+  swapExitRequested = false
   swapConfig = config
 }
 
 /** Test seam: forget the configured runtime. */
 export function resetRuntimeConvergenceForTests(): void {
+  cancelDeferredAgentSwap()
+  swapGeneration += 1
+  swapExitRequested = false
   swapConfig = null
 }
 
@@ -1265,9 +1299,9 @@ export interface AgentSwapOptions {
   agentStateDir?: string
   /** Defaults to the daemon's own clean shutdown, exiting {@link AGENT_SWAP_EXIT_CODE}. */
   exit?: (code: number) => void
-  /** Seconds this process has been up. Injected by tests. */
+  /** Milliseconds this process has been up. Injected by tests. */
   uptimeMs?: number
-  /** Override the settle window. Tests only. */
+  /** Explicit authenticated stale-daemon refreshes use zero. */
   minUptimeMs?: number
 }
 
@@ -1287,7 +1321,9 @@ export interface AgentSwapOptions {
 export async function requestAgentSwapIfIdle(
   options: AgentSwapOptions = {},
 ): Promise<AgentSwapDecision> {
+  const generation = swapGeneration
   try {
+    if (swapExitRequested) return 'exited'
     const stateDir = options.agentStateDir ?? swapConfig?.agentStateDir ?? DEFAULT_AGENT_STATE_DIR
     const staged = await stagedAgentSha(stateDir)
     const stagedPresent =
@@ -1296,15 +1332,31 @@ export async function requestAgentSwapIfIdle(
         (s) => s.isFile(),
         () => false,
       ))
-    if (!stagedPresent) return 'nothing-staged'
-    if (await agentUpdatesPinned(stateDir)) return 'pinned'
+    if (generation !== swapGeneration) return 'not-configured'
+    if (!stagedPresent) {
+      cancelDeferredAgentSwap()
+      return 'nothing-staged'
+    }
+    const pinned = await agentUpdatesPinned(stateDir)
+    if (generation !== swapGeneration) return 'not-configured'
+    if (swapExitRequested) return 'exited'
+    if (pinned) {
+      cancelDeferredAgentSwap()
+      return 'pinned'
+    }
 
     const uptimeMs = options.uptimeMs ?? process.uptime() * 1000
-    if (uptimeMs < (options.minUptimeMs ?? AGENT_SWAP_MIN_UPTIME_MS)) return 'too-young'
+    const minUptimeMs = options.minUptimeMs ?? AGENT_SWAP_MIN_UPTIME_MS
+    if (uptimeMs < minUptimeMs) {
+      deferAgentSwap(options, minUptimeMs - uptimeMs, generation)
+      return 'too-young'
+    }
+    cancelDeferredAgentSwap()
 
     const probe = options.turnInFlight ?? swapConfig?.turnInFlight
     if (!probe) return 'not-configured'
     const turnInFlight = await probe()
+    if (generation !== swapGeneration) return 'not-configured'
     if (turnInFlight === true) return 'turn-in-flight'
     if (turnInFlight === null) return 'turn-state-unknown'
 
@@ -1327,16 +1379,33 @@ export async function requestAgentSwapIfIdle(
     }
 
     const exit = options.exit ?? swapConfig?.exit ?? ((code: number) => process.exit(code))
+    // An async probe can overlap another request or a runtime reconfiguration.
+    if (generation !== swapGeneration) return 'not-configured'
+    if (swapExitRequested) return 'exited'
+    cancelDeferredAgentSwap()
+    swapExitRequested = true
     logger.info('[runtime-assets] requesting agent swap; exiting for the supervisor', {
       sha256: staged.slice(0, 12),
       code: AGENT_SWAP_EXIT_CODE,
     })
-    exit(AGENT_SWAP_EXIT_CODE)
+    try {
+      exit(AGENT_SWAP_EXIT_CODE)
+    } catch (error) {
+      if (generation === swapGeneration) swapExitRequested = false
+      throw error
+    }
     return 'exited'
   } catch (err) {
     logger.warn('[runtime-assets] agent swap request failed', { err: String(err) })
     return 'not-configured'
   }
+}
+
+/** Re-check disk and the live turn/PTY guards after a confirmed root turn end. */
+export function requestAgentSwapAfterTurnEnd(
+  options: AgentSwapOptions = {},
+): Promise<AgentSwapDecision> {
+  return requestAgentSwapIfIdle(options)
 }
 
 
@@ -1345,20 +1414,28 @@ export async function requestAgentSwapIfIdle(
  * `POST /kortix/refresh` can land within milliseconds of each other; without
  * this they would both download a ~100 MB binary and race to rename over it.
  */
-let inFlight: Promise<RuntimeAssetsResult> | null = null
+let inFlight: Promise<void> | null = null
+let explicitSwapRequested = false
+
+export interface RuntimeReconcileOptions {
+  /** An authenticated caller needs a missing daemon capability now. */
+  swap?: boolean
+}
 
 /**
  * Fire-and-forget entry point for the boot/refresh/adopt call sites. Returns
  * immediately; the pass runs detached and swallows everything.
  */
-export function ensureLatestKortixAssets(configDir?: string): void {
+export function ensureLatestKortixAssets(
+  configDir?: string,
+  options: RuntimeReconcileOptions = {},
+): void {
+  explicitSwapRequested ||= options.swap === true
   if (inFlight) return
+  const generation = swapGeneration
   inFlight = reconcileRuntimeAssets({ configDir, seam: swapConfig?.seam })
-  void inFlight
-    .finally(() => {
-      inFlight = null
-    })
     .then(async (result) => {
+      if (generation !== swapGeneration) return
       // Record BEFORE the swap request below: `requestAgentSwapIfIdle` can exit
       // the process, and a pass that converged but never got reported would
       // make the box look like it had not run at all.
@@ -1368,17 +1445,26 @@ export function ensureLatestKortixAssets(configDir?: string): void {
       } else {
         logger.info('[runtime-assets] reconcile no-op', result)
       }
-      // Asked at most once per pass, and only when a verified binary is
-      // actually waiting. A busy box simply keeps the staging: the supervisor
-      // installs it at the next start.
+      // A young daemon arms one uptime retry. A busy daemon re-asks at turn end.
       if (result.agentSwapPending) {
-        const decision = await requestAgentSwapIfIdle()
-        if (decision !== 'exited') {
-          logger.info('[runtime-assets] agent update staged; swap deferred', { decision })
-        }
+        do {
+          const swapNow = explicitSwapRequested
+          explicitSwapRequested = false
+          const decision = await requestAgentSwapIfIdle(swapNow ? { minUptimeMs: 0 } : {})
+          if (decision !== 'exited') {
+            logger.info('[runtime-assets] agent update staged; swap deferred', { decision })
+          }
+          // A refresh can arrive while the guarded request awaits the turn oracle.
+        } while (explicitSwapRequested && generation === swapGeneration && !swapExitRequested)
+      } else {
+        cancelDeferredAgentSwap()
       }
     })
     .catch((err) => logger.warn('[runtime-assets] reconcile threw', { err: String(err) }))
+    .finally(() => {
+      inFlight = null
+      explicitSwapRequested = false
+    })
 }
 
 /**
@@ -1386,12 +1472,17 @@ export function ensureLatestKortixAssets(configDir?: string): void {
  * detached pass. Returns synchronously — nothing here is ever on a readiness or
  * request-latency path.
  */
-export function scheduleRuntimeAssetsReconcile(cfg: Config): void {
+export function scheduleRuntimeAssetsReconcile(cfg: Config, options: RuntimeReconcileOptions = {}): void {
+  const generation = swapGeneration
   void resolveOpencodeConfigDir(cfg)
-    .then((configDir) => ensureLatestKortixAssets(configDir))
+    .then((configDir) => {
+      if (generation === swapGeneration) ensureLatestKortixAssets(configDir, options)
+    })
     // A config dir we cannot resolve costs the overlay re-injection, not the
     // CLI update — still worth running.
-    .catch(() => ensureLatestKortixAssets())
+    .catch(() => {
+      if (generation === swapGeneration) ensureLatestKortixAssets(undefined, options)
+    })
 }
 
 // ---------------------------------------------------------------------------

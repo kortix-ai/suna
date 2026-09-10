@@ -2,26 +2,102 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
-const CONTAINER = 'kortix-lifetime-rollup-test';
-// Host port for the throwaway container. MUST stay BELOW 32768: Linux's default
-// ephemeral range is 32768-60999 (`/proc/sys/net/ipv4/ip_local_port_range`), and
-// an outbound socket from the suite can transiently own a port in it — Docker
-// then fails the run with `bind: address already in use`. The previous 554xx
-// defaults sat inside that range and flaked CI on two different ports in a
-// single run.
-const PORT = Number(process.env.LIFETIME_ROLLUP_TEST_PORT || 5441);
+const CONTAINER = `kortix-lifetime-rollup-test-${process.pid}`;
+// Docker claims one fixed candidate atomically. Candidates stay below Linux's
+// 32768-60999 ephemeral range, where transient outbound sockets made prior
+// 554xx defaults and Docker-assigned ports unsafe for this migration test.
+const PORT_OVERRIDE = process.env.LIFETIME_ROLLUP_TEST_PORT
+  ? Number(process.env.LIFETIME_ROLLUP_TEST_PORT)
+  : null;
+let port = PORT_OVERRIDE ?? 0;
 const ROOT = repoRoot();
-const ports: Ports = { ...computePorts(0), sbDb: PORT };
-const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
+
+function defaultPortCandidates(pid: number): number[] {
+  const floor = 20_000;
+  const range = 10_000;
+  const start = Math.abs(pid) % range;
+  return Array.from({ length: 100 }, (_, offset) => floor + ((start + offset) % range));
+}
+
+function postgresRunArgs(hostPort: number): string[] {
+  return [
+    'docker',
+    'run',
+    '-d',
+    '--name',
+    CONTAINER,
+    '-e',
+    'POSTGRES_PASSWORD=postgres',
+    '-e',
+    'POSTGRES_USER=postgres',
+    '-e',
+    'POSTGRES_DB=postgres',
+    '--tmpfs',
+    '/var/lib/postgresql/data',
+    '-p',
+    `127.0.0.1:${hostPort}:5432`,
+    'postgres:16-alpine',
+    '-c',
+    'fsync=off',
+    '-c',
+    'synchronous_commit=off',
+    '-c',
+    'full_page_writes=off',
+  ];
+}
+
+function startPostgres(): void {
+  const candidates = PORT_OVERRIDE === null ? defaultPortCandidates(process.pid) : [PORT_OVERRIDE];
+  let lastBindFailure = '';
+
+  for (const candidate of candidates) {
+    sh(['docker', 'rm', '-f', CONTAINER]);
+    const up = sh(postgresRunArgs(candidate));
+    if (up.ok) {
+      port = candidate;
+      return;
+    }
+
+    sh(['docker', 'rm', '-f', CONTAINER]);
+    const detail = `${up.stdout}\n${up.stderr}`.trim();
+    const bindFailed = /address already in use|port is already allocated|bind for .* failed/i.test(detail);
+    if (PORT_OVERRIDE !== null || !bindFailed) {
+      throw new Error(`could not start test container on port ${candidate}: ${detail}`);
+    }
+    lastBindFailure = detail;
+  }
+
+  throw new Error(`could not claim a test port after ${candidates.length} attempts: ${lastBindFailure}`);
+}
+
+function migrationPorts(): Ports {
+  return { ...computePorts(0), sbDb: port };
+}
+
+function postgresUrl(): string {
+  return `postgresql://postgres:postgres@127.0.0.1:${port}/postgres`;
+}
 
 function psql(sql: string): string {
-  const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
+  const res = sh(['psql', postgresUrl(), '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
   if (!res.ok) throw new Error(`psql failed: ${res.stderr}\n${sql}`);
   return res.stdout.trim();
 }
 
 function pgReady(): boolean {
   return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+}
+
+async function waitForPostgres(
+  ready: () => boolean,
+  sleep: (milliseconds: number) => Promise<unknown>,
+  attempts = 60,
+): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    if (ready()) return true;
+    await sleep(1000);
+  }
+  return false;
 }
 
 function newAccount(): string {
@@ -56,40 +132,35 @@ function lifetime(accountId: string): {
 
 const suite = dockerOk ? describe : describe.skip;
 
+test('the successful readiness probe is not discarded by a second probe', async () => {
+  const outcomes = [false, true, false];
+  let probes = 0;
+
+  const ready = await waitForPostgres(
+    () => outcomes[probes++] ?? false,
+    async () => {},
+  );
+
+  expect(ready).toBe(true);
+  expect(probes).toBe(2);
+});
+
+test('the container is process-scoped and default ports avoid the ephemeral range', () => {
+  const candidates = defaultPortCandidates(process.pid);
+
+  expect(CONTAINER).toBe(`kortix-lifetime-rollup-test-${process.pid}`);
+  expect(candidates).toHaveLength(100);
+  expect(new Set(candidates)).toHaveLength(100);
+  expect(candidates.every((port) => port >= 20_000 && port < 30_000)).toBe(true);
+});
+
 suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
-    const up = sh([
-      'docker',
-      'run',
-      '-d',
-      '--name',
-      CONTAINER,
-      '-e',
-      'POSTGRES_PASSWORD=postgres',
-      '-e',
-      'POSTGRES_USER=postgres',
-      '-e',
-      'POSTGRES_DB=postgres',
-      '--tmpfs',
-      '/var/lib/postgresql/data',
-      '-p',
-      `127.0.0.1:${PORT}:5432`,
-      'postgres:16-alpine',
-      '-c',
-      'fsync=off',
-      '-c',
-      'synchronous_commit=off',
-      '-c',
-      'full_page_writes=off',
-    ]);
-    if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
-      await Bun.sleep(1000);
+    startPostgres();
+    if (!(await waitForPostgres(pgReady, (milliseconds) => Bun.sleep(milliseconds)))) {
+      throw new Error('test Postgres never became ready');
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
-    const code = await runMigrate(ROOT, ports);
+    const code = await runMigrate(ROOT, migrationPorts());
     if (code !== 0) throw new Error('migrations failed');
   }, 240_000);
 

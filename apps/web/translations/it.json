@@ -14,6 +14,7 @@
     "codeDescription": "Poiché tutto è codice in un repository, il sistema può leggere il proprio progetto, estendersi e restare stabile mentre cresce. È completamente estendibile, controllabile e self-hosted. Nulla è una scatola nera."
   },
   "common": {
+    "workspaceWaiting": "In attesa dell’area di lavoro…",
     "cancel": "Annulla",
     "save": "Salva",
     "saving": "Salvataggio in corso...",
@@ -9336,7 +9337,25 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Nessuna domanda",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Ricaricare",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gestisci il piano",
+    "composerAttachments": {
+      "couldNotRestore": "Impossibile ripristinare gli allegati",
+      "couldNotAttach": "Impossibile allegare i file",
+      "couldNotRemove": "Impossibile rimuovere l’allegato",
+      "couldNotRetry": "Impossibile riprovare l’allegato",
+      "notReady": "Gli allegati non sono pronti",
+      "uploadFailed": "Caricamento non riuscito",
+      "retry": "Riprova",
+      "retryNamed": "Riprova {name}",
+      "processing": "Elaborazione",
+      "waiting": "In attesa",
+      "uploading": "Caricamento {progress}%"
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Caricamento allegato avviato",
+      "text40078a553439": "Blocco dell’allegato caricato",
+      "text4c7f8000aabd": "Caricamento allegato completato",
+      "text91420d2587c2": "Caricamento allegato rimosso",
+      "text3aab5b3be2b9": "Descrittore dell’allegato di runtime risolto",
       "text0005b85debac": "Pacchetto audio riprodotto per gli eventi della sessione.",
       "text000c02c11c7a": "Istruzioni riutilizzabili che i tuoi agenti caricano quando necessario.",
       "text0017bda47853": "URL copiato",

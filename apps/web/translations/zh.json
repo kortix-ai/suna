@@ -14,6 +14,7 @@
     "codeDescription": "由于一切都是仓库中的代码，系统可以读取自己的蓝图、自行扩展，并在增长过程中保持稳定。系统可完全扩展、可控且可自行托管，没有任何黑箱。"
   },
   "common": {
+    "workspaceWaiting": "正在等待工作区…",
     "cancel": "取消",
     "save": "保存",
     "saving": "保存中...",
@@ -9336,7 +9337,25 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "没有问题",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "充值",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "管理计划",
+    "composerAttachments": {
+      "couldNotRestore": "无法恢复附件",
+      "couldNotAttach": "无法添加文件",
+      "couldNotRemove": "无法移除附件",
+      "couldNotRetry": "无法重试附件",
+      "notReady": "附件尚未准备好",
+      "uploadFailed": "上传失败",
+      "retry": "重试",
+      "retryNamed": "重试 {name}",
+      "processing": "处理中",
+      "waiting": "等待中",
+      "uploading": "正在上传 {progress}%"
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "已开始上传附件",
+      "text40078a553439": "已上传附件分块",
+      "text4c7f8000aabd": "附件上传完成",
+      "text91420d2587c2": "已移除附件上传",
+      "text3aab5b3be2b9": "已解析运行时附件描述符",
       "text0005b85debac": "为会话事件播放声音包。",
       "text000c02c11c7a": "代理按需加载的可复用指令。",
       "text0017bda47853": "URL 已复制",
