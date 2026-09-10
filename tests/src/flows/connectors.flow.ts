@@ -1897,3 +1897,341 @@ flow(
     });
   },
 );
+
+// ── CONN-27 — session grant provenance, channel guarantee, honest denials ────
+// INC-2026-09-08-CONNECTOR-GATEWAY. A live session's connector access is
+// decided per call from the token's agent grant, which is re-derived from the
+// project manifest. This flow drives that path with a REAL session-bound token
+// (minted the way the sandbox's own KORTIX_TOKEN is) and proves:
+//   1. a stale narrow grant is re-pointed at the manifest and stamped with the
+//      manifest blob + commit it came from (hot reload of a mid-session change);
+//   2. a glitched token grant on the SAME manifest blob is repaired by two
+//      consistent reads, never kept;
+//   3. the channel that created the session stays callable under a grant that
+//      excludes it — the agent is never mute;
+//   4. `connector_not_assigned` names the agent, its grant and the manifest;
+//      a declared connector with no credential answers `connector_not_connected`
+//      and lists as `needs_auth`;
+//   5. the turn-stream relay says WHY a step was not relayed;
+//   6. ten consecutive calls after a mid-session connector add keep the grant.
+flow(
+  'CONN-27',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    routes: [
+      'POST /v1/connectors/projects/:projectId/call',
+      'GET /v1/connectors/projects/:projectId/catalog',
+      'GET /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/projects/:projectId/turn-stream',
+    ],
+  },
+  async (ctx) => {
+    // The session-bound token is minted the way apps/api mints it: an
+    // `account_tokens` row whose secret hash is scrypt(secret, API_KEY_SECRET).
+    // The local runner pins that secret; the preview harness exports the
+    // self-host one; any other target must provide KE2E_API_KEY_SECRET.
+    const apiKeySecret =
+      process.env.KE2E_API_KEY_SECRET ??
+      (ctx.env.target === 'local' ? 'local-flow-runner-api-key-secret' : null);
+    const team = await ctx.fixtures.team();
+    // `managedGit` on the LOCAL target is a local bare repository (no GitHub),
+    // which is what the gateway's manifest read needs; the capability gate is
+    // the deployed-target one and is deliberately not required here.
+    const p = await team.project({ managedGit: true });
+    const ownerUserId = ctx.P.OWNER.userId;
+    if (!ownerUserId) throw new Error('OWNER principal has no userId');
+    // Declare the agent in kortix.yaml (a real manifest commit in the project
+    // repository) so the gateway has something to derive the grant from.
+    const declare = await ctx.client.as(ctx.P.OWNER).put(
+      '/v1/projects/:projectId/agents/:agentName/config',
+      { connectors: 'all', secrets: 'all', kortix_cli: 'all', skills: 'all' },
+      { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
+    );
+    declare.status(200);
+
+    const { randomUUID, randomBytes, scryptSync } = await import('node:crypto');
+    const { Client: PgClient } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new PgClient({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    await db.connect();
+
+    const sessionId = randomUUID();
+    const openapiSlug = `ke2e-openapi-${Date.now().toString(36)}`;
+    const secret = `kortix_pat_${randomBytes(24).toString('hex')}`;
+    // Asserted skip: the agent declaration above already proved the manifest
+    // write on this target, so a target that cannot mint a session token skips
+    // AFTER a passing assertion, not before running anything.
+    if (!apiKeySecret) {
+      ctx.skip('KE2E_API_KEY_SECRET is required to mint a session-bound token on this target');
+    }
+    const secretHash = `scrypt:v1:${scryptSync(secret, apiKeySecret as string, 32).toString('hex')}`;
+    const session = ctx.client.withBearer(secret, 'SESSION_TOKEN');
+    const call = (connector: string, action: string) =>
+      session.post(
+        '/v1/connectors/projects/:projectId/call',
+        { connector, action, args: {} },
+        { params: { projectId: p.id }, timeoutMs: 60_000 },
+      );
+    const readGrant = async () => {
+      const r = await db.query<{ agent_grant: Record<string, unknown> | null }>(
+        `SELECT agent_grant FROM kortix.account_tokens WHERE session_id = $1 AND status = 'active'`,
+        [sessionId],
+      );
+      return r.rows[0]?.agent_grant ?? null;
+    };
+    const HEX40 = /^[0-9a-f]{40}$/;
+
+    try {
+      await ctx.step('seed a Slack-born session, its sandbox row, and a session-bound token', async () => {
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+             (session_id, account_id, project_id, branch_name, agent_name, status, metadata, created_by, visibility)
+           VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4::jsonb, $5, 'project')`,
+          [
+            sessionId,
+            team.id,
+            p.id,
+            JSON.stringify({
+              source: 'slack',
+              slack: { channel: 'C0KE2E', thread_ts: '1788825004.144689', team_id: 'TKE2E' },
+            }),
+            ownerUserId,
+          ],
+        );
+        await db.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id)
+           VALUES ($1::uuid, $1, $2, $3, 'active', $4)`,
+          [sessionId, team.id, p.id, `ke2e-${sessionId}`],
+        );
+        // The stale narrow grant a token minted before the manifest changed
+        // would hold: only `stripe`, no provenance at all.
+        await db.query(
+          `INSERT INTO kortix.account_tokens
+             (account_id, user_id, name, public_key, secret_key_hash, project_id, session_id, agent_grant)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+          [
+            team.id,
+            ownerUserId,
+            `Session ${sessionId.slice(0, 8)}`,
+            `kortix_pk_${randomBytes(16).toString('hex')}`,
+            secretHash,
+            p.id,
+            sessionId,
+            JSON.stringify({ agent: 'kortix', connectors: ['stripe'], kortixCli: [], env: [] }),
+          ],
+        );
+        // A declared openapi connector with bearer auth and NO credential
+        // (the shape of the incident's heyreach_api / smartlead rows), with its
+        // project-default connection; and the Slack channel connector.
+        const openapi = await db.query<{ connector_id: string }>(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+           VALUES ($1, $2, $3, 'KE2E OpenAPI', 'openapi', $4::jsonb, 'active') RETURNING connector_id`,
+          [team.id, p.id, openapiSlug, JSON.stringify({ base_url: 'https://ke2e.kortix.test', auth: { type: 'bearer' } })],
+        );
+        await db.query(
+          `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+           VALUES ($1, $2, $3, 'project', 'KE2E OpenAPI', 'active', true, $4::jsonb)`,
+          [team.id, p.id, openapi.rows[0]?.connector_id, JSON.stringify({ provider: 'openapi', connector_slug: openapiSlug })],
+        );
+        await db.query(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+           VALUES ($1, $2, 'kortix_slack', 'Slack', 'channel', $3::jsonb, 'active')
+           ON CONFLICT DO NOTHING`,
+          [team.id, p.id, JSON.stringify({ platform: 'slack' })],
+        );
+      });
+
+      await ctx.step(
+        'the first call re-points the stale grant at the manifest (connectors: all) and stamps provenance',
+        async () => {
+          const r = await call(openapiSlug, 'anything');
+          // Not the grant gate: the manifest grants `all`, so the token is
+          // widened and the call proceeds to connection resolution.
+          if (r.statusCode === 403 && r.json<{ reason?: string }>().reason === 'connector_not_assigned') {
+            throw new Error(`grant was not reconciled from the manifest: ${r.text()}`);
+          }
+          const grant = await readGrant();
+          if (!grant) throw new Error('session token lost its grant');
+          if (grant.connectors !== 'all') {
+            throw new Error(`expected the manifest grant (all), got ${JSON.stringify(grant)}`);
+          }
+          if (!HEX40.test(String(grant.manifestRevision))) {
+            throw new Error(`grant carries no manifest blob provenance: ${JSON.stringify(grant)}`);
+          }
+          if (!HEX40.test(String(grant.manifestCommit))) {
+            throw new Error(`grant carries no manifest commit provenance: ${JSON.stringify(grant)}`);
+          }
+        },
+      );
+
+      await ctx.step(
+        'a declared connector with no credential answers connector_not_connected (not "not found") with a hint',
+        async () => {
+          const r = await call(openapiSlug, 'anything');
+          r.status(403)
+            .body()
+            .has('$.ok', false)
+            .has('$.status', 'denied')
+            .has('$.reason', 'connector_not_connected')
+            .has('$.connector', openapiSlug)
+            .exists('$.hint');
+          if (!String(r.json<{ hint: string }>().hint).includes(`kortix connectors connect ${openapiSlug}`)) {
+            throw new Error(`hint does not name the fix: ${r.text()}`);
+          }
+        },
+      );
+
+      await ctx.step('the project list reports that connector as needs_auth, not active', async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/projects/:projectId/connectors', {
+          params: { projectId: p.id },
+        });
+        r.status(200);
+        const row = r
+          .json<{ connectors: Array<{ slug: string; status: string; secretSet?: boolean }> }>()
+          .connectors.find((c) => c.slug === openapiSlug);
+        if (!row) throw new Error(`project list omitted ${openapiSlug}`);
+        if (row.status !== 'needs_auth') {
+          throw new Error(`expected needs_auth for a connector with no credential, got ${row.status}`);
+        }
+      });
+
+      await ctx.step(
+        'a glitched deny-all grant on the SAME manifest blob is repaired by two consistent reads',
+        async () => {
+          const before = await readGrant();
+          const glitched = { ...(before ?? {}), connectors: [], kortixCli: [], env: [] };
+          await db.query(`UPDATE kortix.account_tokens SET agent_grant = $1::jsonb WHERE session_id = $2`, [
+            JSON.stringify(glitched),
+            sessionId,
+          ]);
+          const r = await call(openapiSlug, 'anything');
+          if (r.statusCode === 403 && r.json<{ reason?: string }>().reason === 'connector_not_assigned') {
+            throw new Error(`the glitched grant was served instead of repaired: ${r.text()}`);
+          }
+          const after = await readGrant();
+          if (!after || after.connectors !== 'all') {
+            throw new Error(`grant was not repaired: ${JSON.stringify(after)}`);
+          }
+        },
+      );
+
+      await ctx.step(
+        'narrowing the agent in kortix.yaml applies on the next call, and the denial names agent, grant and manifest',
+        async () => {
+          const put = await ctx.client.as(ctx.P.OWNER).put(
+            '/v1/projects/:projectId/agents/:agentName/config',
+            { connectors: ['stripe'], secrets: 'all', kortix_cli: 'all', skills: 'all' },
+            { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
+          );
+          put.status(200);
+          const r = await call(openapiSlug, 'anything');
+          r.status(403)
+            .body()
+            .has('$.reason', 'connector_not_assigned')
+            .has('$.agent', 'kortix')
+            .has('$.connector', openapiSlug)
+            .exists('$.manifest_revision')
+            .exists('$.manifest_commit')
+            .exists('$.hint');
+          const body = r.json<{ granted: unknown; manifest_revision: string; hint: string }>();
+          if (JSON.stringify(body.granted) !== JSON.stringify(['stripe'])) {
+            throw new Error(`denial did not name the granted list: ${r.text()}`);
+          }
+          if (!HEX40.test(body.manifest_revision)) {
+            throw new Error(`denial did not name the manifest blob: ${r.text()}`);
+          }
+          if (!body.hint.includes('agents.kortix.connectors')) {
+            throw new Error(`denial hint does not point at kortix.yaml: ${r.text()}`);
+          }
+        },
+      );
+
+      await ctx.step(
+        "the session's own Slack channel connector stays callable under the narrow grant (never mute)",
+        async () => {
+          const r = await call('kortix_slack', 'auth_test');
+          const reason = r.json<{ reason?: string }>().reason;
+          if (reason === 'connector_not_assigned') {
+            throw new Error(`the originating channel was denied by the grant: ${r.text()}`);
+          }
+          // No Slack install exists here, so the call fails AFTER the gate on
+          // connection resolution — which is the proof the gate let it through.
+          if (r.statusCode !== 403 && r.statusCode !== 404) {
+            throw new Error(`expected a post-gate connection denial, got ${r.statusCode}: ${r.text()}`);
+          }
+          const catalog = await session.get('/v1/connectors/projects/:projectId/catalog', {
+            params: { projectId: p.id },
+          });
+          catalog.status(200);
+          const slugs = catalog.json<{ connectors: Array<{ slug: string }> }>().connectors.map((c) => c.slug);
+          if (slugs.includes(openapiSlug)) {
+            throw new Error(`catalog listed a connector outside the grant: ${slugs.join(',')}`);
+          }
+        },
+      );
+
+      await ctx.step('a progress step with no open Slack turn is refused WITH a reason', async () => {
+        const r = await session.post(
+          '/v1/projects/:projectId/turn-stream',
+          { session_id: sessionId, kind: 'step', text: 'Reading the logs' },
+          { params: { projectId: p.id } },
+        );
+        r.status(200).body().has('$.ok', false).has('$.reason', 'no_open_turn');
+      });
+
+      await ctx.step(
+        'ten calls after a mid-session connector add keep the grant (no lossy re-resolution)',
+        async () => {
+          const added = `${openapiSlug}-added`;
+          const create = await ctx.client.as(ctx.P.OWNER).post(
+            '/v1/connectors/projects/:projectId/connectors',
+            {
+              slug: added,
+              name: 'Added mid-session',
+              provider: 'mcp',
+              url: 'https://ke2e.kortix.test/mcp',
+              auth: { type: 'none' },
+              create_only: true,
+            },
+            { params: { projectId: p.id }, timeoutMs: 60_000 },
+          );
+          create.status([200, 409]);
+          for (let i = 0; i < 10; i += 1) {
+            const r = await call(openapiSlug, 'anything');
+            const body = r.json<{ reason?: string; granted?: unknown }>();
+            // Still narrowed to `stripe` by the manifest — and ALWAYS for that
+            // reason, never an empty grant.
+            if (body.reason !== 'connector_not_assigned') {
+              throw new Error(`call ${i + 1}: expected the manifest's narrowing, got ${r.text()}`);
+            }
+            if (JSON.stringify(body.granted) !== JSON.stringify(['stripe'])) {
+              throw new Error(`call ${i + 1}: grant drifted from the manifest: ${r.text()}`);
+            }
+          }
+          const grant = await readGrant();
+          if (!grant || JSON.stringify(grant.connectors) !== JSON.stringify(['stripe'])) {
+            throw new Error(`token grant drifted after ten calls: ${JSON.stringify(grant)}`);
+          }
+        },
+      );
+    } finally {
+      await db
+        .query(`DELETE FROM kortix.account_tokens WHERE session_id = $1`, [sessionId])
+        .catch(() => undefined);
+      await db
+        .query(`DELETE FROM kortix.session_sandboxes WHERE session_id = $1`, [sessionId])
+        .catch(() => undefined);
+      await db
+        .query(`DELETE FROM kortix.project_sessions WHERE session_id = $1`, [sessionId])
+        .catch(() => undefined);
+      await db.end().catch(() => undefined);
+    }
+  },
+);

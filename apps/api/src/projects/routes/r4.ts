@@ -53,10 +53,10 @@ import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
 import {
-  relayTurnAnswer,
+  relayTurnAnswerDetailed,
   relayTurnEnd,
   relayTurnQuestion,
-  relayTurnStep,
+  relayTurnStepDetailed,
 } from '../../channels/turn-relay';
 import { config } from '../../config';
 import {
@@ -2870,15 +2870,19 @@ projectsApp.openapi(
       : undefined;
     const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
 
-    const ok =
+    // `reason` is what makes `ok: false` actionable in the sandbox: `slack
+    // step` and `slack send` print it, so an agent can tell "no Slack turn is
+    // open for this run" from "Slack refused the post" and act on it instead
+    // of assuming its progress was delivered.
+    const relayed =
       body.kind === 'answer'
-        ? await relayTurnAnswer(sessionId, text, blocks)
-        : await relayTurnStep(sessionId, text, {
+        ? await relayTurnAnswerDetailed(sessionId, text, blocks)
+        : await relayTurnStepDetailed(sessionId, text, {
             detail,
             outputForPrev,
             sourcesForPrev,
           });
-    return c.json({ ok });
+    return c.json(relayed.ok ? { ok: true } : { ok: false, reason: relayed.reason });
   },
 );
 

@@ -759,6 +759,18 @@ filter, never fatal (`|| true`) — and verify the reclaim on the real box, beca
 a prune that frees nothing looks exactly like a prune that works.
 *Enforcer:* `tests/unit/sandbox-preview.test.ts`.
 
+### A self-authenticating route must populate the shared context the resolver reads (2026-09-09)
+
+**When:** adding a route that authenticates its own credential instead of running
+the standard auth middleware. Populate the same request-context slots the shared
+authorization resolver reads (`agentGrant`), or the resolver silently default-denies.
+*Incident:* the git proxy resolved a session's agent grant but never placed it on
+the Hono context, so `principalHoldsRefScope` default-denied every non-own-branch
+push even for `kortix_cli: all`. This broke the `ops/reliability-ledgers` rolling
+branch and froze monitoring ground truth for 6 days (2026-09-07 persistence incident).
+*Enforcers:* `receive-pack-gate.test.ts` drives the grant through
+`authorizeGitProxy` (no host-wrapper injection); `unit-git-proxy-authz.test.ts`
+asserts the surfaced grant for both the sandbox and session-PAT paths.
 
 ### Bind native commands to the configured frontend and its main frame (2026-09-08)
 
@@ -6208,3 +6220,51 @@ install and asserts the exact version and checksum.
 **Near-miss:** the Pi parity audit found that the CLI retained the first twelve hex digits instead of the low six bytes. The resulting ID has the correct shape but the wrong ordering clock.
 **Rule:** preserve the low 48 clock bits. Callers without a current transcript must request placement at delivery. A regular-expression format check does not verify ordering.
 **Enforcer:** `apps/cli/src/commands/sessions-queue.test.ts` verifies exact clock bytes and wraparound. The real-process `sessions-parity.test.ts` asserts `remint_on_delivery`. The preview CLI proof delivers a queued prompt after existing assistant history.
+## A per-call authorization grant re-derived from a git read must carry provenance, or one bad read is a session-wide outage (2026-09-08)
+
+INC-2026-09-08-CONNECTOR-GATEWAY, prod project `fda4e35e` (Kortix Company),
+Slack DM session `673b4639`. Every connector call re-derived the session
+token's agent grant from `kortix.yaml` through a forced mirror fetch and
+REPLACED the token row whenever the result differed. One turn's reads produced
+`connectors: []` for an agent declared `connectors: all`; the token was
+rewritten, and for 10 minutes every connector — Slack included — answered
+`connector_not_assigned`. The agent could not even report the failure. The
+same project had 59 such denials in the previous week. No git error was ever
+logged: the read "succeeded" with the wrong content. The repository had no
+`kortix` agent before 2026-08-01, so any stale ref or wrong blob resolves that
+agent to deny-all.
+
+**The rule.** A grant stored on a credential is replaced only by a grant whose
+provenance proves a genuine change. Stamp the manifest blob sha and commit on
+every derived grant. Same blob, different grant = a glitched read: confirm with
+a second read before applying, never on one read. A commit that is an
+ancestor of the stored grant's commit = a stale mirror: never applies. An
+unreadable manifest on a per-call path serves the stored grant
+(last-known-good) and logs; only a credential with nothing stored fails
+closed. The channel that created a session stays callable under any grant,
+so the agent is never mute. A denial says which agent, what it holds, and
+which manifest revision that came from.
+
+**Corollary for honest relays.** A sandbox helper must never collapse an HTTP
+failure into "no turn" (`catch { return false }`) or print `ok: true` for an
+undelivered progress step. `slack step` streamed a whole run into nothing and
+the agent believed it was seen.
+
+*Fix:* PR `connector-gateway-outage` — `AgentGrant.manifestRevision` /
+`manifestCommit`, `remintDecisionFor` keep rules + confirming re-read,
+last-known-good in `reconcileStoredSessionAgentGrant`, a 3 s forced-refresh
+cooldown on the gateway path, `principalMayUseConnector` (originating channel
+allowance), `connectorDenialBody`, `connector_not_connected` +
+`needs_auth` for credential-less connectors, `{ok:false, reason}` from
+`turn-stream`, non-zero `slack step`/`slack send` with the reason, a 20 s
+idle-end grace so a replayed `session.idle` cannot delete a fresh Slack turn,
+and turn-end relay skipped on `identity_mismatch`. *Enforcer:*
+`apps/api/src/projects/lib/session-token-grant-provenance.test.ts` (same-blob
+drift, stale commit, unreadable manifest, cooldown),
+`apps/api/src/connectors/principal-access.test.ts`, and flow `CONN-27`
+(a real session-bound token: hot reload with provenance, glitch repair,
+channel guarantee, honest denials, ten calls after a mid-session add).
+
+## Pi pinned manifests are authoritative, even at older commits (2026-09-10)
+
+A merge with the grant provenance guard treated an intentionally pinned Pi commit as a stale mirror read. This could retain a token grant from a newer, broader manifest. Skip the moving-branch ancestry guard for immutable Pi identities. Continue failing closed when the pinned manifest cannot be read. `session-token-grant-provenance.test.ts` verifies pinned narrowing and unreadable pinned manifests.

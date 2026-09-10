@@ -383,4 +383,20 @@ kortix connectors call stripe-read <action> '<json-args>'
 
 `connectors` lists the connectors in scope. `call` runs one action.
 
+### When a call is denied
+
+A denied call answers `{ ok: false, status: "denied", reason, hint }`. `reason` is a stable code; `hint` says what to do.
+
+| `reason` | HTTP | Meaning | Also in the body |
+| --- | --- | --- | --- |
+| `connector_not_assigned` | 403 | The running agent's `connectors:` grant in `kortix.yaml` does not include this connector. | `agent`, `granted` (the list or `"all"`), `manifest_revision` and `manifest_commit` (the manifest the grant came from). |
+| `connector_not_connected` | 403 | The connector is declared but has no usable connection for this session: no stored credential, or the app was never authorized. `kortix connectors ls` shows it as `needs_auth`. | — |
+| `connector_disabled` | 403 | The connector is declared but disabled. | — |
+| `connector_not_found` | 404 | No connector with this slug is declared in the project. | — |
+| `action_not_found` | 404 | The connector has no such action. | — |
+
+The channel connector that created a session (Slack, Teams, email) is always callable from that session, whatever the agent's grant says, so the agent can always report in the thread it was asked from.
+
+A session's grant follows `kortix.yaml`: a change to the running agent's `connectors:` (including `kortix connectors add --apply`) applies on the next call. The grant records which manifest blob and commit it came from; a read that would replace it from the same blob is confirmed by a second read first, and a read from an older commit never replaces it.
+
 Slack and Microsoft Teams connect from the dashboard the same way as OAuth apps. Connecting Slack writes a `channel` connector to `kortix.yaml` for you. See [Slack & channels](/docs/connect/slack).

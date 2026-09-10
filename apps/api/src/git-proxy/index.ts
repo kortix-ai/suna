@@ -25,6 +25,7 @@ import {
 } from '../projects';
 import type { GitScope, UpstreamGit } from '../projects/git-backends';
 import type { ProjectRow } from '../projects/lib/serializers';
+import type { AppEnv } from '../types';
 import { deriveRequestContext } from '../iam/cache';
 import {
   MAX_COMMAND_SECTION_BYTES,
@@ -88,7 +89,7 @@ import {
 } from './local-upstream';
 import { config } from '../config';
 
-export const gitProxyApp = makeOpenApiApp();
+export const gitProxyApp = makeOpenApiApp<AppEnv>();
 
 /**
  * The git smart-HTTP protocol streams raw binary pack data (pkt-line framed),
@@ -976,6 +977,13 @@ gitProxyApp.openapi(
       if (auth.status === 401) return unauthorized(c, auth.message);
       return c.text(auth.message, auth.status as 403 | 404);
     }
+    // The ref-scope resolver reads the agent grant off the request context, the
+    // same slot the ordinary auth middleware fills on every non-git route. This
+    // route authenticates with its own token (git Basic/Bearer), so it must
+    // place the grant `authorizeGitProxy` resolved. Without it a session is
+    // default-denied beyond its own branch regardless of `project.gitops.ref.any`
+    // / `kortix_cli: all` — see projects/lib/git.ts.
+    c.set('agentGrant', auth.agentGrant ?? null);
     // Ref policy runs HERE, between authorization and transmission — the only
     // point where both the principal and the refs it wants to move are known.
     const gated = await gateReceivePack(c, auth);

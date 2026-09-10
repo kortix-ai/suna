@@ -15,12 +15,36 @@
  * Nothing refuses a switch. Connector and CLI grants are checked against this
  * row at CALL time, so rewriting it genuinely re-scopes every subsequent call —
  * which is why the re-mint, not a refusal, is the mechanism that protects them.
+ *
+ * ── The rewrite is guarded by PROVENANCE (INC-2026-09-08-CONNECTOR-GATEWAY) ──
+ *
+ * Every grant now carries the manifest blob sha and commit it was derived from
+ * (`AgentGrant.manifestRevision` / `manifestCommit`, stamped by
+ * `withGrantProvenance`). A freshly derived grant REPLACES the stored one only
+ * when it is a genuine manifest change:
+ *
+ *   1. Same blob, different grant → the grant is a pure function of the blob
+ *      and the agent name, so this is a glitched read, not a change. KEEP the
+ *      stored grant, log at error level.
+ *   2. Commit is an ANCESTOR of the stored grant's commit → a stale mirror
+ *      served an older manifest. KEEP the stored grant, log.
+ *   3. Manifest unreadable on the gateway path → KEEP the stored grant (the
+ *      last-known-good) instead of failing every connector call. The prompt
+ *      path still fails closed (a prompt can be retried; a turn's every tool
+ *      call cannot).
+ *
+ * Before this guard, one bad read — a session-wide `connectors: []` for a
+ * declared `connectors: all` agent — took every connector away from a live
+ * session, including the Slack channel the agent answers on, until an
+ * unrelated prompt re-minted the row. The project had 59 such denials in the
+ * week before the incident.
  */
 
 import { type AgentGrant, accountTokens, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
+import { existingProjectMirrorPath, runGitCapture } from '../git/mirror';
 import { agentGrantDiffers, resolveSessionAgentGrant } from './secret-grant';
 import { piWorkerRuntimeIdentityFromSessionMetadata, sessionMetadataClaimsPiWorker } from './session-sandbox-metadata';
 
@@ -75,10 +99,30 @@ export async function remintSessionAgentGrant(
   }
 }
 
+/** Why a resolved grant was NOT applied and the stored one kept instead. */
+export type RemintKeepReason =
+  /** Same manifest blob as the stored grant, yet a different grant: a glitched
+   *  read, since the grant is a pure function of blob + agent name. */
+  | 'same_manifest_drift'
+  /** The manifest was read at a commit that is an ancestor of the commit the
+   *  stored grant came from: a stale mirror. */
+  | 'stale_manifest_read'
+  /** The manifest could not be read at all; the stored grant is the
+   *  last-known-good. Gateway path only. */
+  | 'manifest_unreadable';
+
 export type RemintDecision =
   | { action: 'skip' }
   | { action: 'write'; grant: AgentGrant }
-  | { action: 'refuse'; reason: string };
+  | { action: 'refuse'; reason: string }
+  | { action: 'keep'; reason: RemintKeepReason; grant: AgentGrant };
+
+function sameProvenance(stored: AgentGrant | null, running: AgentGrant | null): boolean {
+  return (
+    (stored?.manifestRevision ?? null) === (running?.manifestRevision ?? null) &&
+    (stored?.manifestCommit ?? null) === (running?.manifestCommit ?? null)
+  );
+}
 
 /**
  * Pure policy: what to do with the token's grant when `running` is the agent a
@@ -93,12 +137,25 @@ export type RemintDecision =
  * would hand the switched-to agent every connector and CLI action in the
  * account because we momentarily could not read the file that says otherwise.
  * So a re-mint may re-point or narrow, never blank out.
+ *
+ * `keep` is the provenance guard (see the module comment). `opts.staleRead` is
+ * the ancestry verdict the async caller computed against the git mirror; the
+ * same-blob rule needs no I/O and lives here.
  */
 export function remintDecisionFor(
   stored: AgentGrant | null,
   running: AgentGrant | null,
+  opts: { staleRead?: boolean } = {},
 ): RemintDecision {
-  if (!agentGrantDiffers(stored, running)) return { action: 'skip' };
+  if (!agentGrantDiffers(stored, running)) {
+    // Equal grants. Rewrite once when the provenance changed — a token minted
+    // before provenance existed, or a manifest commit that did not touch this
+    // agent — so the NEXT comparison has a blob and a commit to reason with.
+    if (stored && running && !sameProvenance(stored, running) && running.manifestRevision) {
+      return { action: 'write', grant: running };
+    }
+    return { action: 'skip' };
+  }
   if (running === null) {
     return {
       action: 'refuse',
@@ -106,7 +163,61 @@ export function remintDecisionFor(
         'the agent this prompt runs resolved to an UNRESTRICTED grant while the session token holds a narrower one — refusing rather than widening the token',
     };
   }
+  if (
+    stored &&
+    stored.agent === running.agent &&
+    stored.manifestRevision &&
+    running.manifestRevision &&
+    stored.manifestRevision === running.manifestRevision
+  ) {
+    return { action: 'keep', reason: 'same_manifest_drift', grant: stored };
+  }
+  if (stored && opts.staleRead) {
+    return { action: 'keep', reason: 'stale_manifest_read', grant: stored };
+  }
   return { action: 'write', grant: running };
+}
+
+/**
+ * Is `older` an ancestor of `newer` in this project's mirror? Answers `false`
+ * when either commit is unknown to the mirror or the mirror is absent, so an
+ * unanswerable question never blocks a genuine change.
+ */
+async function isAncestorInMirror(
+  projectId: string,
+  older: string,
+  newer: string,
+): Promise<boolean> {
+  const repoPath = existingProjectMirrorPath({
+    projectId,
+    repoUrl: '',
+    defaultBranch: '',
+    manifestPath: '',
+  });
+  if (!repoPath) return false;
+  try {
+    const result = await runGitCapture(['merge-base', '--is-ancestor', older, newer], repoPath);
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The ancestry verdict for two grants: `true` only when both carry a commit,
+ * the commits differ, and the running grant's commit is an ancestor of the
+ * stored grant's — i.e. the running grant came from an OLDER manifest.
+ */
+async function resolvedFromStaleCommit(
+  projectId: string,
+  stored: AgentGrant | null,
+  running: AgentGrant | null,
+  isAncestor: typeof isAncestorInMirror = isAncestorInMirror,
+): Promise<boolean> {
+  const storedCommit = stored?.manifestCommit ?? null;
+  const runningCommit = running?.manifestCommit ?? null;
+  if (!storedCommit || !runningCommit || storedCommit === runningCommit) return false;
+  return isAncestor(projectId, runningCommit, storedCommit);
 }
 
 async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | null> {
@@ -174,17 +285,62 @@ async function loadSessionAgent(input: { projectId: string; sessionId: string })
   return { agentName: session.agentName, sourceSha: identity.sha };
 }
 
+function describeGrant(grant: AgentGrant | null): Record<string, unknown> {
+  if (!grant) return { grant: null };
+  return {
+    agent: grant.agent,
+    connectors: grant.connectors,
+    kortixCli: grant.kortixCli,
+    env: grant.env ?? 'all',
+    manifestRevision: grant.manifestRevision ?? null,
+    manifestCommit: grant.manifestCommit ?? null,
+  };
+}
+
 async function applyResolvedGrant(
-  sessionId: string,
+  input: { projectId: string; sessionId: string; sourceSha?: string },
   stored: AgentGrant | null,
   running: AgentGrant | null,
+  /** A second, forced read of the manifest. Used ONLY to break the same-blob
+   *  tie: the stored grant and the fresh grant claim the same blob yet differ,
+   *  and nothing in either says which one is the glitch. Two consistent fresh
+   *  reads beat one stored value; one fresh read that the next read
+   *  contradicts is the glitch, and the stored grant stays. */
+  reresolve?: () => Promise<AgentGrant | null>,
 ): Promise<RemintDecision> {
-  const decision = remintDecisionFor(stored, running);
+  const staleRead = !input.sourceSha && agentGrantDiffers(stored, running)
+    ? await resolvedFromStaleCommit(input.projectId, stored, running)
+    : false;
+  let decision = remintDecisionFor(stored, running, { staleRead });
+  if (decision.action === 'keep' && decision.reason === 'same_manifest_drift' && reresolve) {
+    const second = await reresolve().catch(() => null);
+    if (second && !agentGrantDiffers(second, running) && sameProvenance(second, running)) {
+      console.error('[session-token-grant] two consistent manifest reads contradict the stored grant; applying the read', {
+        sessionId: input.sessionId,
+        projectId: input.projectId,
+        stored: describeGrant(stored),
+        resolved: describeGrant(running),
+      });
+      decision = { action: 'write', grant: running as AgentGrant };
+    }
+  }
   if (decision.action === 'refuse') {
-    throw new SessionGrantRemintError(sessionId, new Error(decision.reason));
+    throw new SessionGrantRemintError(input.sessionId, new Error(decision.reason));
+  }
+  if (decision.action === 'keep') {
+    // Loud on purpose. Either the mirror served an older manifest or the same
+    // blob produced two different grants; both are platform faults, and the
+    // token keeps its last-known-good grant while they are investigated.
+    console.error('[session-token-grant] refused to rewrite the session grant from a suspect manifest read', {
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      reason: decision.reason,
+      stored: describeGrant(stored),
+      resolved: describeGrant(running),
+    });
   }
   if (decision.action === 'write') {
-    await remintSessionAgentGrant(sessionId, decision.grant);
+    await remintSessionAgentGrant(input.sessionId, decision.grant);
   }
   return decision;
 }
@@ -231,8 +387,6 @@ export async function remintGrantForAgentSwitch(
   }
 
   const stored = await loadStoredSessionGrant(input.sessionId);
-  const heldAgent = stored?.agent?.trim() || input.sessionAgent;
-  const isSwitch = heldAgent !== runningAgent;
   // Synchronous for the same-agent case too — every ordinary turn. This ran in
   // the background for one release (the manifest read is a git fetch of the
   // project mirror, ~0.8s on the path of every prompt) and the security review
@@ -243,14 +397,45 @@ export async function remintGrantForAgentSwitch(
   // broader grant for the first calls of the next turn. Only the connector
   // gateway reconciles at call time (`reconcileStoredSessionAgentGrant`).
   // The prompt must not be forwarded before the row is rewritten.
-  void isSwitch;
-  const running = await resolveCurrentGrant({
-    ...input,
-    runningAgent,
-    forceRefresh: true,
-    sourceSha: session.sourceSha,
-  });
-  return applyResolvedGrant(input.sessionId, stored, running);
+  const resolve = () =>
+    resolveCurrentGrant({
+      ...input,
+      runningAgent,
+      forceRefresh: true,
+      sourceSha: session.sourceSha,
+    });
+  const running = await resolve();
+  return applyResolvedGrant({ ...input, sourceSha: session.sourceSha }, stored, running, resolve);
+}
+
+/**
+ * Bound the forced mirror fetch the gateway path performs.
+ *
+ * `reconcileStoredSessionAgentGrant` runs on EVERY connector call, and a forced
+ * refresh is a `git fetch --prune` of the whole project mirror (2,000+ refs on
+ * a busy project, ~0.6 s). A turn that fans out five tool calls paid for five
+ * fetches. Within this window the mirror is served as-is; a manifest commit
+ * from another replica is picked up by the first call after it. The prompt
+ * path (`remintGrantForAgentSwitch`) still forces unconditionally — once per
+ * turn.
+ */
+function grantRefreshCooldownMs(): number {
+  const value = Number(process.env.KORTIX_GRANT_REFRESH_COOLDOWN_MS || 3_000);
+  return Number.isFinite(value) && value >= 0 ? value : 3_000;
+}
+
+const lastForcedGrantRefreshAt = new Map<string, number>();
+
+function shouldForceGrantRefresh(projectId: string, now = Date.now()): boolean {
+  const last = lastForcedGrantRefreshAt.get(projectId) ?? 0;
+  if (now - last < grantRefreshCooldownMs()) return false;
+  lastForcedGrantRefreshAt.set(projectId, now);
+  return true;
+}
+
+/** Test seam: forget every cooldown so the next reconcile forces a refresh. */
+export function resetGrantRefreshCooldownForTest(): void {
+  lastForcedGrantRefreshAt.clear();
 }
 
 /**
@@ -265,6 +450,13 @@ export async function remintGrantForAgentSwitch(
  * The stored grant identifies the agent that currently owns the token after an
  * in-session agent switch. A null legacy or unrestricted grant falls back to
  * `project_sessions.agent_name`.
+ *
+ * LAST-KNOWN-GOOD: when the manifest cannot be read (mirror fetch failed, git
+ * proxy hop timed out) and the token already holds a grant, that grant is
+ * returned unchanged and the failure is logged. A session must not lose every
+ * connector — including the channel it answers on — because one git read
+ * failed. A token with NO stored grant still fails closed: there is nothing
+ * known-good to fall back to.
  */
 export async function reconcileStoredSessionAgentGrant(input: {
   projectId: string;
@@ -277,13 +469,47 @@ export async function reconcileStoredSessionAgentGrant(input: {
 
   // This path refreshes connector and CLI authorization only. Secret delivery
   // already ran at prompt time, so resolve this agent against itself.
-  const running = await resolveCurrentGrant({
-    ...input,
-    sessionAgent: runningAgent,
-    runningAgent,
-    forceRefresh: true,
-    sourceSha: session.sourceSha,
-  });
-  await applyResolvedGrant(input.sessionId, stored, running);
+  let running: AgentGrant | null;
+  try {
+    running = await resolveCurrentGrant({
+      ...input,
+      sessionAgent: runningAgent,
+      runningAgent,
+      forceRefresh: session.sourceSha ? true : shouldForceGrantRefresh(input.projectId),
+      sourceSha: session.sourceSha,
+    });
+  } catch (err) {
+    if (session.sourceSha || !stored) throw err;
+    console.error('[session-token-grant] manifest unreadable; serving the last-known-good session grant', {
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      reason: 'manifest_unreadable' satisfies RemintKeepReason,
+      error: err instanceof Error ? err.message : String(err),
+      stored: describeGrant(stored),
+    });
+    return stored;
+  }
+  let decision: RemintDecision;
+  try {
+    decision = await applyResolvedGrant({ ...input, sourceSha: session.sourceSha }, stored, running, () =>
+      resolveCurrentGrant({ ...input, sessionAgent: runningAgent, runningAgent, forceRefresh: true, sourceSha: session.sourceSha }),
+    );
+  } catch (err) {
+    // A refused widening (`running` unrestricted, `stored` narrower) or a
+    // failed row write. Neither changes what this call may do: the stored
+    // grant is the authority the token already carries, so answer with it and
+    // let the next call retry the write. Only a token with nothing stored
+    // has no safe answer.
+    if (session.sourceSha || !stored) throw err;
+    console.error('[session-token-grant] could not apply the resolved session grant; serving the stored grant', {
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      error: err instanceof Error ? err.message : String(err),
+      stored: describeGrant(stored),
+      resolved: describeGrant(running),
+    });
+    return stored;
+  }
+  if (decision.action === 'keep') return decision.grant;
   return running;
 }
