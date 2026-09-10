@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 
 const index = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
 const openapi = readFileSync(new URL('../openapi/index.ts', import.meta.url), 'utf8');
+const authMiddleware = readFileSync(new URL('../middleware/auth.ts', import.meta.url), 'utf8');
 
 describe('boot-timeline is actually reachable', () => {
   test('auth middleware is mounted on the route', () => {
@@ -51,6 +52,28 @@ describe('boot-timeline is actually reachable', () => {
     // `/sandbox/version` and the github-app setup callbacks are deliberately
     // public; a wildcard mount would break them.
     expect(index).not.toContain("app.use('/v1/platform/*', supabaseAuth)");
+  });
+
+  // Mounting the middleware is only HALF of reachable. The credential the
+  // daemon actually holds is a project+SESSION-scoped PAT, which lands in
+  // supabaseAuth's PAT branch and is then judged by enforceTokenProjectScope —
+  // a default-deny function. Mounted-but-not-scope-allowed is still a 403 on
+  // every relay, which is exactly what prod served: 2,338 x
+  // `POST /v1/platform/boot-timeline -> 403 [HTTPException]` in the 7 days to
+  // 2026-09-09 against 47 successes.
+  test('both daemon sinks are allowed by the token-project-scope gate', () => {
+    const set = authMiddleware.slice(
+      authMiddleware.indexOf('const SESSION_BOUND_PLATFORM_SINKS'),
+      authMiddleware.indexOf('const SESSION_BOUND_PLATFORM_SINKS') + 300,
+    );
+    expect(set).toContain("'/v1/platform/boot-timeline'");
+    expect(set).toContain("'/v1/platform/runtime-projection'");
+  });
+
+  test('the scope gate consults that set, not a single hard-coded path', () => {
+    expect(authMiddleware).toContain(
+      'if (opts.sessionBound && SESSION_BOUND_PLATFORM_SINKS.has(path)) return;',
+    );
   });
 
   test('openapi `auth` is metadata, so a route cannot rely on it for identity', () => {
