@@ -105,14 +105,19 @@ const defaultSnapshotQuotaIo: SnapshotQuotaIo = {
  * One GC pass. Safe to call from the periodic maintenance sweep; all failure
  * modes degrade to "did nothing". Pass `dryRun` to classify without deleting.
  */
-/** Process-local memo for the edge-triggered budget alarm. */
+/**
+ * Process-local memo for the edge-triggered budget alarm. Module scope is what
+ * makes the alarm edge-triggered ACROSS passes; tests pass their own through
+ * `opts.budgetState` so one case cannot decide the next one's verdict.
+ */
 const budgetReportState: BudgetReportState = { lastReportedAtMs: null };
 
 export async function reconcileSnapshotQuota(
-  opts: { dryRun?: boolean; now?: number } = {},
+  opts: { dryRun?: boolean; now?: number; budgetState?: BudgetReportState } = {},
   io: SnapshotQuotaIo = defaultSnapshotQuotaIo,
 ): Promise<QuotaGcResult> {
   const dryRun = opts.dryRun ?? false;
+  const budgetState = opts.budgetState ?? budgetReportState;
   const result: QuotaGcResult = {
     observationStatus: 'provider_not_configured',
     orgTotal: 0,
@@ -164,20 +169,39 @@ export async function reconcileSnapshotQuota(
   result.deferred = plan.deferred;
   result.budgetUnresolved = plan.budgetUnresolved;
 
-  if (!plan.underPressure) return result;
-
   // GC has run out of road: one warm tip per active project already exceeds the
   // budget, so no amount of sweeping will keep builds from failing. Only capacity
   // (a bigger org snapshot quota) or gating the warm bake fixes this. Say so —
   // the first outage happened because a GC that couldn't cope logged nothing.
-  if (plan.budgetUnresolved) {
-    console.error(
-      `[snapshot-gc] BUDGET UNRESOLVED: org=${plan.orgTotal} target=${QUOTA_GC_ORG_TARGET} ` +
-        `limit=${DAYTONA_ORG_SNAPSHOT_LIMIT} — evicted everything eligible and still over. ` +
-        `The per-project warm cache floor exceeds the org snapshot quota; raise the quota ` +
-        `or gate the warm bake. Builds will start failing with 'Snapshot quota exceeded'.`,
-    );
+  //
+  // Edge-triggered (see budget-report-policy.ts): on arrival, at most hourly
+  // while it persists, and once when it clears. Decided BEFORE the pressure
+  // early-return below, or the clear edge would be unobservable in the common
+  // case where the condition ends by pressure ending.
+  if (
+    decideBudgetReport({
+      unresolved: plan.budgetUnresolved,
+      state: budgetState,
+      nowMs: now,
+    }) === 'report'
+  ) {
+    if (plan.budgetUnresolved) {
+      console.error(
+        `[snapshot-gc] BUDGET UNRESOLVED: org=${plan.orgTotal} target=${QUOTA_GC_ORG_TARGET} ` +
+          `limit=${DAYTONA_ORG_SNAPSHOT_LIMIT} — evicted everything eligible and still over. ` +
+          `The per-project warm cache floor exceeds the org snapshot quota; raise the quota ` +
+          `or gate the warm bake. Builds will start failing with 'Snapshot quota exceeded'.`,
+      );
+    } else {
+      console.log(
+        `[snapshot-gc] budget resolved: org=${plan.orgTotal} target=${QUOTA_GC_ORG_TARGET} ` +
+          `limit=${DAYTONA_ORG_SNAPSHOT_LIMIT} — back inside the snapshot budget.`,
+      );
+    }
+    budgetState.lastReportedAtMs = plan.budgetUnresolved ? now : null;
   }
+
+  if (!plan.underPressure) return result;
 
   for (const { snapshot, reason } of plan.doomed) {
     if (dryRun) {
