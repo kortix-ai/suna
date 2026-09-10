@@ -21,6 +21,7 @@
  */
 
 import { sandboxTemplates } from '@kortix/db';
+import { type BudgetReportState, decideBudgetReport } from './budget-report-policy';
 import { isNotNull, sql } from 'drizzle-orm';
 import {
   deleteDaytonaSnapshotById,
@@ -104,6 +105,9 @@ const defaultSnapshotQuotaIo: SnapshotQuotaIo = {
  * One GC pass. Safe to call from the periodic maintenance sweep; all failure
  * modes degrade to "did nothing". Pass `dryRun` to classify without deleting.
  */
+/** Process-local memo for the edge-triggered budget alarm. */
+const budgetReportState: BudgetReportState = { lastReportedAtMs: null };
+
 export async function reconcileSnapshotQuota(
   opts: { dryRun?: boolean; now?: number } = {},
   io: SnapshotQuotaIo = defaultSnapshotQuotaIo,
