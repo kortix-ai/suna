@@ -5912,6 +5912,8 @@ Enforced by `projects/opencode-mapping-transport.test.ts` and the Pi/OpenCode
 resume cases in `__tests__/e2e-project-session-contract.test.ts`. The live resume
 benchmark records the native conversation ID and cleanup state independently.
 
+**Environment follow-up, 2026-09-10:** the bundled-resource restart test reproduced the same stale token through the environment proxy. Direct daemon health returned 200 while the proxy returned an authentication error until its five-minute cache expired. Environment cache entries now match the persisted provisioning claim and readiness status. Every API process reads that revision before reusing an HTTP or WebSocket ingress entry. `sandbox-proxy/backend-environment.test.ts` verifies rotation across claims and the provisioning-to-active transition without process-local invalidation.
+
 ## 2026-09-08 — Publish recovered conversation state before reporting idle
 
 A worker outage test observed idle before the interrupted assistant appeared.

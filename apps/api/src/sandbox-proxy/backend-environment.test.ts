@@ -15,9 +15,11 @@ const environmentRow = {
   status: 'active',
   baseUrl: 'https://environment.example',
   config: { serviceKey: 'environment-service-key' } as Record<string, unknown>,
+  metadata: { provisionAttemptId: 'first-boot' },
 };
 let queriedTables: unknown[] = [];
 let environmentColumns: Record<string, unknown> | null = null;
+let ingressResolutions = 0;
 
 mock.module('../config', () => ({ config: {} }));
 mock.module('../shared/preview-ownership', () => ({
@@ -32,7 +34,10 @@ mock.module('../shared/kortix-user-context', () => ({
 mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
-    resolveIngress: async () => ({ url: 'https://environment.example', headers: {} }),
+    resolveIngress: async () => ({
+      url: 'https://environment.example',
+      headers: { 'X-Daytona-Preview-Token': `token-${++ingressResolutions}` },
+    }),
     routeIngress: () => ({ effectivePort: 8000 }),
   }),
 }));
@@ -54,7 +59,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { loadSandbox } = await import('./backend');
+const { loadSandbox, resolveSandboxIngress, invalidateSandbox } = await import('./backend');
 
 describe('environment proxy lookup', () => {
   test('falls back from the worker table to the environment table', async () => {
@@ -82,6 +87,50 @@ describe('environment proxy lookup', () => {
       }
     } finally {
       environmentRow.config = saved;
+    }
+  });
+
+  test.each(['http', 'websocket'] as const)(
+    'refreshes %s provider credentials immediately after another API process resumes the environment',
+    async (transport) => {
+      const saved = environmentRow.metadata;
+      try {
+        invalidateSandbox(environmentRow.externalId);
+        ingressResolutions = 0;
+        const request = { port: 8000, transport, path: '/pty/terminal/connect' };
+        const initial = await resolveSandboxIngress(environmentRow.externalId, request);
+        expect(await resolveSandboxIngress(environmentRow.externalId, request)).toEqual(initial);
+        expect(ingressResolutions).toBe(1);
+
+        environmentRow.metadata = { provisionAttemptId: 'resumed-boot' };
+        const resumed = await resolveSandboxIngress(environmentRow.externalId, request);
+        expect(resumed.headers).not.toEqual(initial.headers);
+        expect(ingressResolutions).toBe(2);
+        expect(await resolveSandboxIngress(environmentRow.externalId, request)).toEqual(resumed);
+        expect(ingressResolutions).toBe(2);
+      } finally {
+        environmentRow.metadata = saved;
+        invalidateSandbox(environmentRow.externalId);
+      }
+    },
+  );
+
+  test('does not reuse a preview link resolved before the resumed environment becomes active', async () => {
+    const savedStatus = environmentRow.status;
+    try {
+      invalidateSandbox(environmentRow.externalId);
+      ingressResolutions = 0;
+      environmentRow.status = 'provisioning';
+      const provisioning = await loadSandbox(environmentRow.externalId);
+      const first = await resolveSandboxIngress(provisioning!, { port: 8000 });
+      environmentRow.status = 'active';
+      const active = await loadSandbox(environmentRow.externalId);
+      const second = await resolveSandboxIngress(active!, { port: 8000 });
+      expect(second.headers).not.toEqual(first.headers);
+      expect(ingressResolutions).toBe(2);
+    } finally {
+      environmentRow.status = savedStatus;
+      invalidateSandbox(environmentRow.externalId);
     }
   });
 });

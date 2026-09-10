@@ -58,6 +58,8 @@ export interface SandboxRecord {
   baseUrl: string;
   /** Sandbox INTERNAL_SERVICE_KEY — proxy authenticates upstream with this. */
   serviceKey: string | null;
+  /** Changes across environment claims and readiness transitions, shared by API replicas. */
+  ingressRevision?: string;
 }
 
 // ── Caches ───────────────────────────────────────────────────────────────────
@@ -69,6 +71,7 @@ export interface SandboxRecord {
 interface PreviewLinkEntry {
   ingress: ResolvedSandboxIngress;
   expiresAt: number;
+  revision?: string;
 }
 interface ServiceKeyEntry {
   key: string | null;
@@ -200,6 +203,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       status: sessionEnvironments.status,
       baseUrl: sessionEnvironments.baseUrl,
       config: sessionEnvironments.config,
+      metadata: sessionEnvironments.metadata,
     };
     const selectEnvironment = async (condition: SQL) => {
       const [match] = await db
@@ -219,6 +223,8 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
 
     const config = (environment.config || {}) as Record<string, unknown>;
     const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+    const metadata = (environment.metadata ?? {}) as Record<string, unknown>;
+    const claim = typeof metadata.provisionAttemptId === 'string' ? metadata.provisionAttemptId : '';
     setCachedServiceKey(externalId, serviceKey);
     return {
       runtimeKind: 'environment',
@@ -232,6 +238,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       status: environment.status,
       baseUrl: environment.baseUrl || '',
       serviceKey,
+      ingressRevision: `${claim}:${environment.status}`,
     };
   }
 
@@ -295,21 +302,25 @@ export async function resolveSandboxIngress(
   request: SandboxIngressRequest,
 ): Promise<ResolvedSandboxIngress> {
   const sandboxId = typeof sandboxRef === 'string' ? sandboxRef : sandboxRef.externalId;
+  const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
+  if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
   const key = previewLinkKey(sandboxId, request);
   const cached = previewLinkCache.get(key);
-  if (cached && Date.now() < cached.expiresAt) {
+  if (cached && cached.revision === record.ingressRevision && Date.now() < cached.expiresAt) {
     return cached.ingress;
   }
   previewLinkCache.delete(key);
 
-  const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
-  if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
   const provider = getProvider(record.provider as ProviderName);
   const ingress = await provider.resolveIngress(record.externalId, request);
 
   const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
   if (cacheTtlMs > 0) {
-    previewLinkCache.set(key, { ingress, expiresAt: Date.now() + cacheTtlMs });
+    previewLinkCache.set(key, {
+      ingress,
+      expiresAt: Date.now() + cacheTtlMs,
+      revision: record.ingressRevision,
+    });
   }
   return ingress;
 }
