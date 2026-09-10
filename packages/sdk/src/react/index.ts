@@ -180,3 +180,7 @@ export {
   useKortixAppViewer,
   type KortixAppViewerState,
 } from './use-kortix-app-viewer';
+
+// The query-key families the live event stream invalidates on `file.edited`;
+// a host's own file hooks must key on these, or a change never reaches them.
+export { fileContentKeys, fileListKeys, gitStatusKeys } from './file-keys';

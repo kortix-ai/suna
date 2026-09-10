@@ -2,16 +2,19 @@
 
 import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { fileListKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { listFiles } from '../api/runtime-files';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 
-export const fileListKeys = {
-  all: ['runtime-files', 'list'] as const,
-  dir: (serverUrl: string, dirPath: string) =>
-    ['runtime-files', 'list', serverUrl, dirPath] as const,
-};
+// THE SAME KEYS THE LIVE STREAM INVALIDATES. The runtime's `file.edited`
+// event invalidates `fileListKeys.all` from `@kortix/sdk/react`
+// (use-opencode-events/handle-event.ts). This hook kept its own
+// `['runtime-files', 'list']` family, so nothing the agent wrote reached the
+// Files panel until it was closed and reopened — measured in a real browser
+// on the pi-js dev stack 2026-09-10 (scratchpad ui-e2e.ts): the frames
+// arrived, the tree stayed stale. One key family, imported.
+export { fileListKeys };
 
 /**
  * Fetch the directory listing for a path on the active OpenCode server.

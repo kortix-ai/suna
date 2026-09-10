@@ -182,6 +182,13 @@ test('deriveSubdomainOpts always returns a fully-populated options object', () =
   });
 });
 
+test('deriveSubdomainOpts previews by the id the runtime is ADDRESSED by, not the box — a cell session on a shared runner', () => {
+  configureKortix({ backendUrl: 'http://localhost:8008/v1', getToken: async () => 'tok' });
+  // base_url names the session; external_id names the runner four sessions share.
+  setCurrentRuntime('http://localhost:8008/v1/p/84b2e629-41dd-41a7-aa1f-4f5592dece4b/8080', 'sbx_01M23Q7W00E9A3F87FFHBZ2SMK');
+  expect(deriveSubdomainOpts().sandboxId).toBe('84b2e629-41dd-41a7-aa1f-4f5592dece4b');
+});
+
 test('deriveSubdomainOpts uses an empty-string sandboxId (never undefined) when none is resolvable', () => {
   configureKortix({ backendUrl: 'http://localhost:8008/v1', getToken: async () => 'tok' });
 

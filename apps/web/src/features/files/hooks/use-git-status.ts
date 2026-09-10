@@ -1,15 +1,13 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { useRuntimeStore, gitStatusKeys } from '@kortix/sdk/react';
 import { getFileStatus } from '../api/runtime-files';
 import type { GitFileStatus } from '@/features/file-browser/types';
 import { useCurrentProject, useServerHealth } from './use-server-health';
 
-export const gitStatusKeys = {
-  all: ['runtime-files', 'git-status'] as const,
-  status: (serverUrl: string) => ['runtime-files', 'git-status', serverUrl] as const,
-};
+// The SDK's key family — the one `file.edited` invalidates (see use-file-list.ts).
+export { gitStatusKeys };
 
 /**
  * Fetch the git file status for the current project.

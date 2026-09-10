@@ -7,7 +7,7 @@ import {
   getCurrentWorkspaceRuntimeUrl,
   currentRuntimeStore,
 } from '../current-runtime';
-import { getBackendUrl, getDefaultSandboxUrl } from './url-helpers';
+import { getBackendUrl, getDefaultSandboxUrl, proxySandboxSegment } from './url-helpers';
 import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../preview-options';
 
 /**
@@ -95,8 +95,12 @@ export function getBackendPort(): number {
  * proxy. See preview-options.ts.
  */
 export function deriveSubdomainOpts(): ResolvedPreviewOptions {
+  // The id the runtime is addressed by wins over the box's external id — on a
+  // shared cell runner they differ, and only the first names the session
+  // (url-helpers.ts proxySandboxSegment).
+  const addressed = proxySandboxSegment(getActiveWorkspaceUrl());
   return resolvePreviewOptions({
-    sandboxId: getActiveWorkspaceSandboxId() || '',
+    sandboxId: addressed || getActiveWorkspaceSandboxId() || '',
     backendPort: getBackendPort(),
     apiBaseUrl: getBackendUrl(),
   });

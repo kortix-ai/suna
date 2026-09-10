@@ -105,3 +105,29 @@ export function runtimeUrlForSandbox(
   }
   return sandbox.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : '';
 }
+
+/**
+ * The sandbox segment of a proxy-shaped runtime URL — `<backend>/p/<id>/<port>`
+ * → `<id>` — or null for any other URL.
+ *
+ * `<id>` is what the runtime is ADDRESSED by, which is not always the box: a
+ * cell session's base_url names the session (`/v1/p/<sessionId>/8080`) on a
+ * runner shared by every session of the project. Preview URLs built from the
+ * box's external id land unaddressed on that runner and serve whichever
+ * session the box picks — measured in a real browser on the pi-js dev stack
+ * 2026-09-10: the HTML preview iframe was `/v1/p/sbx_01M23Q7W…/3211/open`, the
+ * API logged "unaddressed on a shared box", and the frame showed another
+ * session's page. The id that reaches the runtime is the one to preview with.
+ */
+export function proxySandboxSegment(runtimeUrl: string, backendUrl: string = getBackendUrl()): string | null {
+  try {
+    const backend = new URL(backendUrl);
+    const url = new URL(runtimeUrl);
+    const proxyPrefix = `${stripTrailingSlashes(backend.pathname)}/p/`;
+    if (url.origin !== backend.origin || !url.pathname.startsWith(proxyPrefix)) return null;
+    const segment = url.pathname.slice(proxyPrefix.length).split('/')[0] ?? '';
+    return segment.trim() || null;
+  } catch {
+    return null;
+  }
+}
