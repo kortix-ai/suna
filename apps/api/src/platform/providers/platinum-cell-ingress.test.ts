@@ -85,3 +85,23 @@ test('a non-agent port is passed through untouched, cell or not', async () => {
   // No row lookup for a port that was never the agent's.
   expect(rowCalls).toBe(0);
 });
+
+// THE PREVIEW SERVER ON A CELL. The file viewer frames an HTML file from the
+// static file server on 3211; a cell has one port, and serves those routes
+// under /static on it. Measured on the dev stack 2026-09-10: the viewer read
+// "Starting preview server…" for its whole 30 s bound.
+test("a cell's 3211 is its 8080 under /static", async () => {
+  runtime = 'cell';
+  const p = await provider();
+  const r = await p.resolveIngress('sbx_cell_static', { port: 3211, transport: 'http', path: '/open' } as never);
+  expect(r.effectivePort).toBe(8080);
+  expect(r.url).toBe('https://8080-sbx.test/static');
+  expect(exposed).toEqual([8080]);
+});
+test("a microVM's 3211 is still its own static server", async () => {
+  runtime = 'microvm';
+  const p = await provider();
+  const r = await p.resolveIngress('sbx_vm_static', { port: 3211, transport: 'http', path: '/open' } as never);
+  expect(r.effectivePort).toBe(3211);
+  expect(r.url).toBe('https://3211-sbx.test');
+});

@@ -5,6 +5,7 @@ import { upstreamAnsweredFinally } from '../upstream-final';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
+import { publicOriginFor } from '../public-origin';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
@@ -2048,7 +2049,9 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   // https, which breaks the static-web <base> tag over http in local dev.
   const proto = c.req.header('x-forwarded-proto') || upstreamUrl.protocol.replace(':', '');
   const host = c.req.header('host') || upstreamUrl.host;
-  const publicOrigin = `${proto}://${host}`;
+  // Behind an ingress that rewrites Host, `host` is the INTERNAL name; the
+  // deployment's own KORTIX_URL is where a browser actually is (public-origin.ts).
+  const publicOrigin = publicOriginFor(config.KORTIX_URL, proto, host);
 
   return forwardToSandbox(
     sandboxId,

@@ -202,6 +202,10 @@ export const CELL_WORKER_NAME = 'pi-agent';
 export const CELL_TEMPLATE = 'pt-celld';
 /** The port the cell's worker listens on (the microVM agent's is 8000). */
 export const CELL_PORT = 8080;
+/** The daemon's static file server (see sandbox-proxy/session-data-ports.ts). */
+const STATIC_FILE_PORT = 3211;
+/** Where a cell serves that server's routes, on its one port (pi-worker-js cell-static.js). */
+export const CELL_STATIC_PREFIX = '/static';
 
 /**
  * The create body for a session that runs as a CELL.
@@ -815,8 +819,21 @@ export class PlatinumProvider implements SandboxProvider {
     const route = this.routeIngress(request);
     // routeIngress is synchronous and knows only the request, so it answers
     // with the microVM agent port. Only here is the box's identity available.
-    const effectivePort =
+    let effectivePort =
       route.effectivePort === AGENT_PORT ? await this.agentPortFor(externalId) : route.effectivePort;
+    // THE PREVIEW SERVER ON A CELL. The file viewer frames an HTML file from
+    // the sandbox's static file server on 3211 (`/open?path=…` after
+    // `/health`). A cell has ONE port, so that traffic was exposed on a port
+    // nothing serves and the viewer read "Starting preview server…" for its
+    // 30 s bound (measured on the dev stack, 2026-09-10). A cell serves the
+    // same routes under `/static` on its own port: the ingress for a cell's
+    // 3211 is its 8080 with that prefix. The proxy keeps 3211 as the gated,
+    // client-addressed port; only where the bytes go changes.
+    let pathPrefix = '';
+    if (request.port === STATIC_FILE_PORT && (await this.agentPortFor(externalId)) === CELL_PORT) {
+      effectivePort = CELL_PORT;
+      pathPrefix = CELL_STATIC_PREFIX;
+    }
     // Expose the requested port through Platinum's edge → https://<port>-<id>.sbx…
     // No preview token: the sandbox is gated by the serviceKey bearer the proxy
     // already adds. Idempotent — re-exposing returns the same URL.
@@ -828,7 +845,7 @@ export class PlatinumProvider implements SandboxProvider {
     if (!url)
       throw new Error(`[platinum] expose returned no URL for ${externalId}:${effectivePort}`);
     return {
-      url,
+      url: url + pathPrefix,
       headers: {},
       effectivePort,
       websocket: route.websocket,
