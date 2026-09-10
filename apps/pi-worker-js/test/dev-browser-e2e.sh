@@ -74,17 +74,32 @@ ATT=$(head -c 200 /tmp/be2e.sse | tr '\n' ' ')
 ck "the browser's in-box stream attaches (200 + hello)" "$(grep -q 'kortix.hello' /tmp/be2e.sse && echo 1 || echo 0)" "got: ${ATT:-nothing}"
 
 W=streamcheck$RANDOM
+# THE PROMPT'S OWN ID, kept: the runtime echoes the user message the moment it
+# accepts the prompt (worker.js prompt_async), so the word this claim looks for
+# is on the stream TWICE — once in this tab's own echo, once in the answer.
+# Searching the whole stream matched the echo, closed it before the model had
+# written anything, and reported deltas=0 (2026-09-10).
 python3 -c 'import json,random,string,sys
 h="".join(random.choice("0123456789abcdef") for _ in range(12)); t="".join(random.choice(string.ascii_letters+string.digits) for _ in range(14))
-json.dump({"client_message_id":"cm-"+h,"message_id":"msg_"+h+t,"parts":[{"type":"text","text":sys.argv[1]}]}, open(sys.argv[2],"w"))' "Reply with exactly one word: $W" /tmp/be2e.body
+mid="msg_"+h+t
+json.dump({"client_message_id":"cm-"+h,"message_id":mid,"parts":[{"type":"text","text":sys.argv[1]}]}, open(sys.argv[2],"w"))
+open(sys.argv[3],"w").write(mid)' "Reply with exactly one word: $W" /tmp/be2e.body /tmp/be2e.mid
+MID=$(cat /tmp/be2e.mid)
 TP=$(ms)
 PC=$(curl -s -m 30 -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/prompts" "${AH[@]}" -d @/tmp/be2e.body)
 ck "the prompt is accepted" "$([ "$PC" = 200 ] || [ "$PC" = 202 ] && echo 1 || echo 0)" "http $PC"
-t=0; while [ $t -lt 180 ]; do grep -q "$W" /tmp/be2e.sse && break; sleep 0.5; t=$((t+1)); done
+# THE USER MESSAGE COMES BACK FIRST, under the id this tab minted — that echo
+# is what retires the optimistic bubble, and without it the new turn vanished
+# from the transcript for a second on every send.
+t=0; while [ $t -lt 30 ]; do grep -q "$MID" /tmp/be2e.sse && break; sleep 0.5; t=$((t+1)); done
+ck "the runtime echoes the user message under the id the client sent" "$(grep -q "\"id\":\"$MID\"" /tmp/be2e.sse && grep -q "$MID-p0" /tmp/be2e.sse && echo 1 || echo 0)" "echo after $((  $(ms) - TP )) ms"
+# The ANSWER's frames: everything that is not this prompt's own echo.
+answer(){ grep -v "$MID" /tmp/be2e.sse; }
+t=0; while [ $t -lt 180 ]; do answer | grep -q "$W" && break; sleep 0.5; t=$((t+1)); done
 TA=$(ms)
 kill $PUMP 2>/dev/null || true
-D=$(grep -c 'message.part.delta' /tmp/be2e.sse)
-ck "the answer arrived ON THE BROWSER'S STREAM, not by polling" "$(grep -q "$W" /tmp/be2e.sse && echo 1 || echo 0)" "$(tail -c 150 /tmp/be2e.sse)"
+D=$(answer | grep -c 'message.part.delta')
+ck "the answer arrived ON THE BROWSER'S STREAM, not by polling" "$(answer | grep -q "$W" && echo 1 || echo 0)" "$(tail -c 150 /tmp/be2e.sse)"
 ck "and it arrived as deltas" "$([ "$D" -ge 1 ] && echo 1 || echo 0)" "deltas=$D"
 echo "  frames carrying deltas: $D   prompt->answer $((TA-TP)) ms"
 echo; echo "  browser path: $P passed, $F failed"
