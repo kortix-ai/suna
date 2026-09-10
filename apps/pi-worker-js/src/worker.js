@@ -55,7 +55,8 @@ import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 import { providerStream, resolveModel, scriptedStream, supportedProviders } from "./model.js";
 import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
 import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
-import { agentNameFrom, bootAnswer } from "./opencode-boot.js";
+import { agentNameFrom, agentShape, bootAnswer } from "./opencode-boot.js";
+import { agentList, agentModelId, agentSystemPrompt, gatewayModelId, parseAgentConfig, selectAgent } from "./agent-config.js";
 import { transcriptMessages } from "./transcript-read.js";
 import { mintWireMessageId, newestWireIdTime } from "../../api/src/projects/wire-message-id.ts";
 import { runtimeStateDoc, projectionEtag } from "./projection.js";
@@ -242,8 +243,12 @@ function normalizeModelEnv(env) {
     // names one the gateway serves rather than sending nothing — overridable,
     // because which model a deployment defaults to is a product decision and
     // not this file's to fix forever.
+    // KORTIX_MODEL is the control plane's own resolution (explicit → agent →
+    // project → account → platform), so it wins. KORTIX_AGENT_MODEL is what
+    // the project's compiled agent asks for, and only applies where the
+    // control plane sent nothing — a cell whose env predates the model push.
     MODEL_ID: platform
-      ? pick(env.KORTIX_MODEL, env.KORTIX_DEFAULT_MODEL, GATEWAY_FALLBACK_MODEL)
+      ? gatewayModelId(pick(env.KORTIX_MODEL, env.KORTIX_AGENT_MODEL, env.KORTIX_DEFAULT_MODEL, GATEWAY_FALLBACK_MODEL))
       : pick(env.MODEL_ID),
     MODEL_BASE_URL: gateway,
     MODEL_API_KEY: key,
@@ -608,7 +613,7 @@ export class AgentCell {
       // without it because `agent.prompt(text)` adds it — twice would double
       // the user's words in the model's context.
       const echoed = !!next.message_id && this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE wire_id = ? AND role = 'user'", next.message_id).toArray()[0].n > 0;
-      const agent = this.buildAgent(sessionId, script, withSkills(SYSTEM_PROMPT, block),
+      const agent = this.buildAgent(sessionId, script, withSkills(this.systemPrompt(), block),
         this.wireSessionId(next, sessionId), echoed ? next.message_id : null);
       tMark("buildAgent");
       // TWO MARKS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
@@ -664,7 +669,7 @@ export class AgentCell {
         beforeMsgId,
       ).toArray()[0].n;
       if (produced === 0) {
-        const e = normalizeModelEnv(this.effectiveEnv());
+        const e = normalizeModelEnv(this.modelEnv());
         const why = `the model produced nothing: model=${e.MODEL_ID ?? "unset"} api=${agent?.state?.model?.api ?? "?"} provider=${e.MODEL_PROVIDER ?? "unset"} gateway=${e.MODEL_BASE_URL ? "yes" : "no"} key=${e.MODEL_API_KEY ? "yes" : "no"}`;
         this.sql.exec("UPDATE turns SET status='error', error=?, ended_at=? WHERE i=?", why, Date.now(), next.i);
         this.broadcast({ type: "turn_error", turn: next.i, error: why });
@@ -914,7 +919,11 @@ export class AgentCell {
     return loaded;
   }
 
-  buildAgent(sessionId, script, systemPrompt = SYSTEM_PROMPT, wireSessionId = sessionId, excludeWireId = null) {
+  // THE PROJECT'S PROMPT IS THE DEFAULT, not the cell's. A caller that omits
+  // the prompt used to get the built-in three sentences whatever the project
+  // declared — the same bug this reads as fixed at the two turn call sites,
+  // hiding in a default parameter.
+  buildAgent(sessionId, script, systemPrompt = this.systemPrompt(), wireSessionId = sessionId, excludeWireId = null) {
     const configured = modelConfig(this.effectiveEnv());
     const streamFn = configured
       ? configured.streamFn
@@ -1138,6 +1147,37 @@ export class AgentCell {
     const session = this.sessionEnv;
     if (!session || Object.keys(session).length === 0) return this.env ?? {};
     return { ...(this.env ?? {}), ...session };
+  }
+
+  /**
+   * THE AGENT THIS SESSION IS RUNNING, from the project's compiled config
+   * (agent-config.js). Re-parsed only when the config string changes — it
+   * arrives on every prompt's env sync and is the same bytes almost always.
+   */
+  /** effectiveEnv plus what the compiled agent asks for, for model resolution. */
+  modelEnv() {
+    const e = this.effectiveEnv();
+    const { agent, config } = this.agent();
+    const model = agentModelId(agent, config);
+    return model ? { ...e, KORTIX_AGENT_MODEL: model } : e;
+  }
+
+  agent() {
+    const e = this.effectiveEnv();
+    const raw = typeof e.KORTIX_COMPILED_AGENT_CONFIG === "string" ? e.KORTIX_COMPILED_AGENT_CONFIG : "";
+    if (this.__agentRaw !== raw || this.__agentWanted !== agentNameFrom(e)) {
+      const config = parseAgentConfig(raw);
+      const picked = selectAgent(config, agentNameFrom(e));
+      this.__agentRaw = raw;
+      this.__agentWanted = agentNameFrom(e);
+      this.__agent = { config, ...picked, etag: typeof e.KORTIX_COMPILED_AGENT_CONFIG_ETAG === "string" && e.KORTIX_COMPILED_AGENT_CONFIG_ETAG ? e.KORTIX_COMPILED_AGENT_CONFIG_ETAG : null };
+    }
+    return this.__agent;
+  }
+
+  /** The system prompt before skills and the shell note: the project's, or the cell's. */
+  systemPrompt() {
+    return agentSystemPrompt(this.agent().agent, SYSTEM_PROMPT);
   }
 
   /** Bump a meter. One statement, so a concurrent request cannot lose a count. */
@@ -1426,11 +1466,11 @@ export class AgentCell {
         repo_ready: true,
         boot_error: null,
         store_error: null,
-        model_mode: normalizeModelEnv(this.effectiveEnv()).MODEL_API_KEY ? "live" : "scripted",
+        model_mode: normalizeModelEnv(this.modelEnv()).MODEL_API_KEY ? "live" : "scripted",
         model_error: null,
         opencode_session_id: sessionId,
         opencode_session_required: false,
-        agent_config_etag: null,
+        agent_config_etag: this.agent().etag,
         commit_sha: null,
         branch: null,
         runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false },
@@ -1743,7 +1783,7 @@ export class AgentCell {
       // starts from a context that is already out of date.
       const result = this.tail.then(async () => {
         const { block } = await this.skills(sessionId);
-        const agent = this.buildAgent(sessionId, script, withSkills(SYSTEM_PROMPT, block));
+        const agent = this.buildAgent(sessionId, script, withSkills(this.systemPrompt(), block));
         this.running = { agent, turn: null, sessionId };
         // The user message is persisted BEFORE the model runs. If the turn dies
         // mid-flight the prompt is still in the transcript, so a resume continues
@@ -1791,7 +1831,7 @@ export class AgentCell {
     // Never prints the credential: status, timings, byte counts and the first
     // few characters of content only.
     if (path === "/bench/model") {
-      const e = normalizeModelEnv(this.effectiveEnv());
+      const e = normalizeModelEnv(this.modelEnv());
       if (!e.MODEL_BASE_URL || !e.MODEL_API_KEY) {
         return Response.json({ ok: false, reason: "no gateway or no key", hasGateway: !!e.MODEL_BASE_URL, hasKey: !!e.MODEL_API_KEY });
       }
@@ -2250,7 +2290,8 @@ export class AgentCell {
       try { resolved = modelConfig(e)?.model ?? null; } catch { resolved = null; }
       const boot = bootAnswer(req.method, path, {
         sessionId,
-        agentName: agentNameFrom(e),
+        agentName: this.agent().name || agentNameFrom(e),
+        agents: agentList(this.agent().config, this.agent().name, agentShape),
         projectId: e.KORTIX_PROJECT_ID,
         provider: resolved?.provider ?? e.MODEL_PROVIDER,
         modelId: resolved?.id ?? e.MODEL_ID,

@@ -60,7 +60,10 @@ export function bootAnswer(method, path, ctx = {}) {
   const model = configModel(ctx.provider, ctx.modelId);
   switch (path) {
     case "/agent":
-      return { status: 200, body: [agentShape(agentName, ctx.provider, ctx.modelId)] };
+      // The PROJECT's agents when it declares any (agent-config.js
+      // agentList), so the picker lists what the project has. One invented
+      // entry otherwise — a cell with no compiled config still has an agent.
+      return { status: 200, body: Array.isArray(ctx.agents) && ctx.agents.length ? ctx.agents : [agentShape(agentName, ctx.provider, ctx.modelId)] };
     case "/command":
       return { status: 200, body: [] };
     case "/global/config":
@@ -88,7 +91,7 @@ export function bootAnswer(method, path, ctx = {}) {
   }
 }
 
-function agentShape(name, provider, modelId) {
+export function agentShape(name, provider, modelId) {
   return {
     name,
     description: "The session's agent, running in a cell.",
