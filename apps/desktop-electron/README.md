@@ -51,8 +51,10 @@ runs against an isolated profile instead of the real one.
 
 ### First launch: choose a Kortix instance
 
-A new profile asks which instance to connect to before any page loads
-(`assets/instance-setup.html`, policy in `src/instance-setup.js`):
+A new profile asks which instance to connect to before any page loads. The
+window is `src/instance-chooser.js` + `assets/instance-chooser.html`; URL rules
+and the reachability check are `src/instance-rules.js`; `frontend_url`, the
+first-launch marker, and URL precedence are `src/instance-store.js`.
 
 - **Kortix Cloud** — the URL baked in at build time (`kortix.com` for prod,
   `dev.kortix.com` for dev builds). Nothing is written to `frontend_url`, so the

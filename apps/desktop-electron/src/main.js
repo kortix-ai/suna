@@ -23,14 +23,15 @@ const {
   shell,
   ipcMain,
   nativeTheme,
-  net,
   safeStorage,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 const basicAuth = require('./basic-auth');
-const instanceSetup = require('./instance-setup');
+const { openInstanceChooser, focusInstanceChooser } = require('./instance-chooser');
+const { explainNetError, hostOf, normalizeInstanceUrl } = require('./instance-rules');
+const { createInstanceStore } = require('./instance-store');
 const { isConfiguredAppUrl, isTrustedAppSender } = require('./native-sender');
 const {
   DESKTOP_CHROME_JS,
@@ -50,39 +51,6 @@ app.setPath(
   process.env.KORTIX_DESKTOP_USER_DATA ||
     path.join(app.getPath('appData'), `${app.getName()} Desktop`),
 );
-
-/* ─── First launch of a new profile ───────────────────────────────────────
-   A new profile asks which Kortix instance to use before any window loads
-   (see openInstanceWindow). "New" is decided HERE, at module load: the
-   single-instance lock below writes SingletonLock into userData, and Chromium
-   fills it on ready, so any later check would see an existing profile.
-   Existing installs never get the marker, so an upgrade never asks. The marker
-   is removed only after the user chooses; quitting the chooser asks again. */
-
-function setupPendingPath() {
-  return path.join(app.getPath('userData'), instanceSetup.SETUP_PENDING_FILE);
-}
-
-function markNewProfileForSetup() {
-  const dir = app.getPath('userData');
-  let entries;
-  try {
-    entries = fs.readdirSync(dir);
-  } catch (e) {
-    // An unreadable profile must never block launch behind a prompt.
-    if (!e || e.code !== 'ENOENT') return;
-    entries = null;
-  }
-  if (!instanceSetup.isFreshProfile(entries)) return;
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(setupPendingPath(), `${new Date().toISOString()}\n`, 'utf8');
-  } catch (e) {
-    console.warn(`[kortix] could not mark the first launch: ${e}`);
-  }
-}
-
-markNewProfileForSetup();
 
 /* ─── Config ──────────────────────────────────────────────────────────── */
 
@@ -124,50 +92,18 @@ const BG_COLOR = '#0a0a0a';
 // net::ERR_ABORTED — a navigation replaced by another one, not a failure.
 const ERR_ABORTED = -3;
 
-/* ─── Frontend URL override (self-hosting) ────────────────────────────────
-   Persisted as a single line in userData/frontend_url — same contract as the
-   Tauri shell's app-config-dir file. A persisted override wins over the
-   env/compile-time default. */
+/* ─── Kortix instance (frontend URL) ──────────────────────────────────────
+   instance-store.js owns userData/frontend_url (the self-hosting override),
+   the first-launch marker, and URL precedence: saved URL → KORTIX_DESKTOP_URL
+   → DEFAULT_URL. A new profile is marked HERE, at module load, because the
+   single-instance lock at the bottom of this file writes into userData. */
 
-function overridePath() {
-  return path.join(app.getPath('userData'), 'frontend_url');
-}
-
-function readUrlOverride() {
-  try {
-    const raw = fs.readFileSync(overridePath(), 'utf8').trim();
-    return raw || null;
-  } catch {
-    return null;
-  }
-}
-
-function writeUrlOverride(url) {
-  try {
-    fs.mkdirSync(path.dirname(overridePath()), { recursive: true });
-    fs.writeFileSync(overridePath(), url, 'utf8');
-  } catch (e) {
-    return String(e);
-  }
-  return null;
-}
-
-function clearUrlOverride() {
-  try {
-    fs.rmSync(overridePath(), { force: true });
-  } catch {
-    /* already gone */
-  }
-}
-
-function appBaseUrl() {
-  return process.env.KORTIX_DESKTOP_URL || DEFAULT_URL;
-}
-
-/** Effective URL the window should load — persisted override beats the default. */
-function resolveAppUrl() {
-  return readUrlOverride() || appBaseUrl();
-}
+const instanceStore = createInstanceStore({
+  dir: app.getPath('userData'),
+  envUrl: process.env.KORTIX_DESKTOP_URL,
+  defaultUrl: DEFAULT_URL,
+});
+instanceStore.markIfNewProfile();
 
 /**
  * Is this auth challenge coming from the exact origin we load the app from?
@@ -178,7 +114,7 @@ function resolveAppUrl() {
 function isAppOriginChallenge(authInfo) {
   let target;
   try {
-    target = new URL(resolveAppUrl());
+    target = new URL(instanceStore.appUrl());
   } catch {
     return false;
   }
@@ -276,7 +212,7 @@ function shouldLoadInApp(urlStr) {
   const host = u.hostname;
   if (isPreviewHost(host)) return true;
   // Navigation and native commands share the configured frontend origin.
-  if (isConfiguredAppUrl(urlStr, resolveAppUrl()) && isAppPath(u.pathname)) return true;
+  if (isConfiguredAppUrl(urlStr, instanceStore.appUrl()) && isAppPath(u.pathname)) return true;
   return false;
 }
 
@@ -297,7 +233,7 @@ function translateDeepLink(deepLink) {
 
   let target;
   try {
-    target = new URL(resolveAppUrl());
+    target = new URL(instanceStore.appUrl());
   } catch {
     return null;
   }
@@ -522,14 +458,11 @@ function createMainWindow() {
     'did-fail-load',
     (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (!isMainFrame || errorCode === ERR_ABORTED) return;
-      if (!isConfiguredAppUrl(validatedURL, resolveAppUrl())) return;
+      if (!isConfiguredAppUrl(validatedURL, instanceStore.appUrl())) return;
       console.warn(`[kortix] ${validatedURL} did not load: ${errorDescription} (${errorCode}).`);
       dismissSplash();
       if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
-      void changeInstance({
-        mode: 'unreachable',
-        error: instanceSetup.explainNetError(instanceSetup.hostOf(validatedURL), errorDescription),
-      });
+      void changeInstance('unreachable', explainNetError(hostOf(validatedURL), errorDescription));
     },
   );
 
@@ -538,7 +471,7 @@ function createMainWindow() {
   });
 
   // did-fail-load reports failures; the rejected promise carries nothing more.
-  mainWindow.loadURL(resolveAppUrl()).catch(() => {});
+  mainWindow.loadURL(instanceStore.appUrl()).catch(() => {});
 }
 
 /**
@@ -551,185 +484,24 @@ function navigateMainWindow(url) {
   if (!mainWindow) return;
   const wc = mainWindow.webContents;
   wc.loadURL(url)
-    .then(() => wc.navigationHistory?.clear())
+    .then(() => wc.navigationHistory.clear())
     .catch(() => {}); // did-fail-load reports failures
   mainWindow.focus();
 }
 
-/* ─── Kortix instance chooser ─────────────────────────────────────────────
-   One native window (assets/instance-setup.html) for three moments:
-     'setup'        first launch of a new profile, before any window exists
-     'change'       Frontend URL → Custom URL…
-     'unreachable'  the app origin failed to load
-   Policy (URL rules, reachability, labels) is src/instance-setup.js; this
-   section owns the window, the IPC, and the files. Native menus cannot take
-   text input, and the web app's own prompt needs a loaded page — this window
-   works when the page is dead. */
+/** Save a choice (menu, web bridge) and load the app onto it. Returns the save error, or null. */
+function switchInstance(choice) {
+  const error = instanceStore.save(choice);
+  if (!error) navigateMainWindow(instanceStore.appUrl());
+  return error;
+}
 
-const INSTANCE_WINDOW_WIDTH = 460;
-
-/** @type {BrowserWindow | null} */
-let instanceWindow = null;
-/** @type {Promise<{ kind: 'default' | 'custom' } | null> | null} */
-let pendingInstanceChoice = null;
-
-function clearSetupPending() {
-  try {
-    fs.rmSync(setupPendingPath(), { force: true });
-  } catch {
-    /* already gone */
+/** The instance chooser over the running app; a saved choice reloads the app. */
+async function changeInstance(mode, error = null) {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  if (await openInstanceChooser({ mode, error, parent, store: instanceStore })) {
+    navigateMainWindow(instanceStore.appUrl());
   }
-}
-
-function needsFirstLaunchSetup() {
-  const pending = fs.existsSync(setupPendingPath());
-  const override = readUrlOverride();
-  // A URL was already chosen (menu, older build) — setup is complete.
-  if (pending && override) clearSetupPending();
-  return instanceSetup.needsInstanceSetup({
-    pending,
-    override,
-    envUrl: process.env.KORTIX_DESKTOP_URL,
-  });
-}
-
-/** Bring an open chooser forward. Returns false when none is open. */
-function focusInstanceWindow() {
-  if (!instanceWindow || instanceWindow.isDestroyed()) return false;
-  if (instanceWindow.isVisible()) instanceWindow.focus();
-  return true;
-}
-
-/**
- * Open the chooser. Resolves to the saved choice, or null when the user
- * cancels or closes it. The choice is already persisted when this resolves.
- * @param {{ mode: 'setup' | 'change' | 'unreachable', error?: string | null }} opts
- */
-function openInstanceWindow({ mode, error = null }) {
-  if (pendingInstanceChoice) {
-    focusInstanceWindow();
-    return pendingInstanceChoice;
-  }
-  const parent =
-    mode !== 'setup' && mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-
-  pendingInstanceChoice = new Promise((resolve) => {
-    const win = new BrowserWindow({
-      width: INSTANCE_WINDOW_WIDTH,
-      height: 400,
-      useContentSize: true,
-      parent,
-      modal: !!parent,
-      center: true,
-      show: false,
-      resizable: false,
-      minimizable: !parent,
-      maximizable: false,
-      fullscreenable: false,
-      title: 'Kortix',
-      backgroundColor: '#141414',
-      webPreferences: {
-        preload: path.join(__dirname, 'instance-setup-preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-    instanceWindow = win;
-    win.setMenuBarVisibility(false);
-
-    let shown = false;
-    const reveal = () => {
-      if (shown || win.isDestroyed()) return;
-      shown = true;
-      if (!parent) win.center();
-      win.show();
-      win.focus();
-    };
-
-    let settled = false;
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      console.log(`[kortix] instance chooser (${mode}): ${result ? result.kind : 'cancelled'}.`);
-      ipcMain.removeHandler('kortix:instance:submit');
-      ipcMain.removeListener('kortix:instance:cancel', onCancel);
-      ipcMain.removeListener('kortix:instance:resize', onResize);
-      instanceWindow = null;
-      pendingInstanceChoice = null;
-      resolve(result);
-      if (win.isDestroyed()) return;
-      // Hide now, destroy after the caller has opened the app window: on
-      // Windows/Linux closing the last window quits the app (window-all-closed).
-      win.hide();
-      setTimeout(() => {
-        if (!win.isDestroyed()) win.destroy();
-      }, 0);
-    };
-    const fromThisWindow = (event) => !win.isDestroyed() && event.sender === win.webContents;
-
-    ipcMain.handle('kortix:instance:submit', async (event, payload) => {
-      if (!fromThisWindow(event)) throw new Error('Unauthorized IPC sender');
-      if (payload?.kind !== 'custom') {
-        clearUrlOverride();
-        clearSetupPending();
-        finish({ kind: 'default' });
-        return { ok: true };
-      }
-      const normalized = instanceSetup.normalizeInstanceUrl(payload.url);
-      if (!normalized.ok) return normalized;
-      if (!payload.force) {
-        const probe = await instanceSetup.probeInstance(normalized.url, {
-          fetch: (url, init) => net.fetch(url, init),
-        });
-        if (settled) return { ok: false, error: null }; // closed during the check
-        if (!probe.ok) return { ok: false, error: probe.error, unreachable: true };
-      }
-      const writeError = writeUrlOverride(normalized.url);
-      if (writeError) return { ok: false, error: `Kortix could not save the URL: ${writeError}` };
-      clearSetupPending();
-      finish({ kind: 'custom' });
-      return { ok: true };
-    });
-    const onCancel = (event, payload) => {
-      if (!fromThisWindow(event)) return;
-      finish(null);
-      // 'setup' quits in the caller; 'change' never quits.
-      if (mode === 'unreachable' && payload?.quit) app.quit();
-    };
-    const onResize = (event, height) => {
-      if (!fromThisWindow(event)) return;
-      const contentHeight = Math.min(720, Math.max(200, Math.round(Number(height) || 0)));
-      win.setContentSize(INSTANCE_WINDOW_WIDTH, contentHeight);
-      reveal();
-    };
-    ipcMain.on('kortix:instance:cancel', onCancel);
-    ipcMain.on('kortix:instance:resize', onResize);
-    win.on('closed', () => finish(null));
-
-    win.webContents.once('did-finish-load', () => {
-      const override = readUrlOverride();
-      win.webContents.send('kortix:instance:init', {
-        mode,
-        error,
-        host: instanceSetup.hostOf(resolveAppUrl()),
-        defaultInstance: instanceSetup.describeDefaultInstance(appBaseUrl()),
-        current: override ? { kind: 'custom', url: override } : { kind: 'default', url: '' },
-        menuPath: `${process.platform === 'darwin' ? app.name : 'View'} → Frontend URL`,
-      });
-      // The page reports its height first (onResize reveals); never stay hidden.
-      setTimeout(reveal, 1_500);
-    });
-    win.loadFile(path.join(__dirname, '..', 'assets', 'instance-setup.html'));
-  });
-  return pendingInstanceChoice;
-}
-
-/** Chooser over the running app; on a choice, load the app onto it. */
-async function changeInstance({ mode, error = null }) {
-  if (focusInstanceWindow()) return;
-  const choice = await openInstanceWindow({ mode, error });
-  if (choice) navigateMainWindow(resolveAppUrl());
 }
 
 /* ─── HTTP Basic credentials (dev/staging environment password) ────────────
@@ -811,7 +583,7 @@ function forgetBasicCredential(host) {
 function forgetBasicCredentialForAppHost() {
   let host;
   try {
-    host = new URL(resolveAppUrl()).hostname;
+    host = new URL(instanceStore.appUrl()).hostname;
   } catch {
     return;
   }
@@ -958,45 +730,22 @@ function buildMenu() {
 
   // Hidden, nested dev switcher so the backend the app points at can change
   // without a rebuild — mirrors the Tauri "Frontend URL" submenu.
+  const preset = (label, url) => ({ label, click: () => switchInstance({ kind: 'custom', url }) });
   const frontendSubmenu = {
     label: 'Frontend URL',
     submenu: [
-      {
-        label: 'Production (kortix.com)',
-        click: () => {
-          writeUrlOverride(PRESET_PROD);
-          navigateMainWindow(PRESET_PROD);
-        },
-      },
-      {
-        label: 'Dev (dev.kortix.com)',
-        click: () => {
-          writeUrlOverride(PRESET_DEV);
-          navigateMainWindow(PRESET_DEV);
-        },
-      },
-      {
-        label: 'Local (localhost:3000)',
-        click: () => {
-          writeUrlOverride(PRESET_LOCAL);
-          navigateMainWindow(PRESET_LOCAL);
-        },
-      },
+      preset('Production (kortix.com)', PRESET_PROD),
+      preset('Dev (dev.kortix.com)', PRESET_DEV),
+      preset('Local (localhost:3000)', PRESET_LOCAL),
       { type: 'separator' },
       {
         label: 'Custom URL…',
         // The native instance chooser, not the web app's prompt: it also
         // works when the current page failed to load. (Older shells dispatch
         // `kortix-open-frontend-url`; the web prompt stays for them.)
-        click: () => void changeInstance({ mode: 'change' }),
+        click: () => void changeInstance('change'),
       },
-      {
-        label: 'Reset to Default',
-        click: () => {
-          clearUrlOverride();
-          navigateMainWindow(appBaseUrl());
-        },
-      },
+      { label: 'Reset to Default', click: () => switchInstance({ kind: 'default' }) },
       { type: 'separator' },
       {
         // Drops the HTTP Basic credential remembered for the current app host
@@ -1072,7 +821,7 @@ function buildMenu() {
 // may call it; embedded previews and other windows do not inherit that trust.
 function isTrustedSender(event) {
   try {
-    return isTrustedAppSender(event, mainWindow?.webContents, resolveAppUrl());
+    return isTrustedAppSender(event, mainWindow?.webContents, instanceStore.appUrl());
   } catch {
     return false;
   }
@@ -1102,14 +851,13 @@ function registerIpc() {
         return null;
       }
       case 'get_frontend_url':
-        return resolveAppUrl();
+        return instanceStore.appUrl();
       case 'set_frontend_url': {
         // Same URL rules as the instance chooser.
-        const normalized = instanceSetup.normalizeInstanceUrl(String(args.url || ''));
+        const normalized = normalizeInstanceUrl(String(args.url || ''));
         if (!normalized.ok) throw new Error(normalized.error);
-        const writeError = writeUrlOverride(normalized.url);
-        if (writeError) throw new Error(`Kortix could not save the URL: ${writeError}`);
-        navigateMainWindow(normalized.url);
+        const saveError = switchInstance({ kind: 'custom', url: normalized.url });
+        if (saveError) throw new Error(`Kortix could not save the URL: ${saveError}`);
         return null;
       }
       default:
@@ -1207,7 +955,7 @@ if (!gotLock) {
       mainWindow.focus();
     }
     // First launch: the chooser is the only window.
-    focusInstanceWindow();
+    focusInstanceChooser();
   });
 
   // macOS delivers deep links via open-url.
@@ -1233,12 +981,9 @@ if (!gotLock) {
     nativeTheme.themeSource = 'dark';
 
     // First launch of a new profile: choose the instance before anything loads.
-    if (needsFirstLaunchSetup()) {
-      const choice = await openInstanceWindow({ mode: 'setup' });
-      if (!choice) {
-        app.quit();
-        return;
-      }
+    if (instanceStore.needsSetup() && !(await openInstanceChooser({ mode: 'setup', store: instanceStore }))) {
+      app.quit();
+      return;
     }
 
     createSplash();

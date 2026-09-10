@@ -1,5 +1,5 @@
-// Preload for the Kortix instance chooser (assets/instance-setup.html).
-// Isolated context; the page gets four functions and nothing else.
+// Preload for the Kortix instance chooser (assets/instance-chooser.html).
+// Isolated context; the page gets five functions and nothing else.
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -13,7 +13,8 @@ contextBridge.exposeInMainWorld('kortixInstance', {
       url: String(url ?? ''),
       force: Boolean(force),
     }),
-  cancel: ({ quit } = {}) => ipcRenderer.send('kortix:instance:cancel', { quit: Boolean(quit) }),
+  cancel: () => ipcRenderer.send('kortix:instance:cancel'),
+  quit: () => ipcRenderer.send('kortix:instance:quit'),
   /** Page → main: rendered content height, so the window fits its content. */
   resize: (height) => ipcRenderer.send('kortix:instance:resize', Number(height) || 0),
 });

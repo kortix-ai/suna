@@ -95,13 +95,13 @@
       }
       input[type="text"]:focus { border-color: rgba(255, 255, 255, 0.45); }
       #error {
-        min-height: 16px;
         margin-top: -8px;
         font-size: 12px;
         color: #ff6b6b;
         -webkit-user-select: text;
         user-select: text;
       }
+      #error:empty { display: none; }
       .hint {
         margin-top: -8px;
         font-size: 12px;
@@ -132,13 +132,15 @@
       }
       button:disabled { opacity: 0.5; }
       button:focus-visible,
-      input[type="radio"]:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.45); outline-offset: 1px; }
+      .option:has(input[type="radio"]:focus-visible) { outline: 2px solid rgba(255, 255, 255, 0.45); outline-offset: 1px; }
+      /* The card carries the ring; a square outline around a round radio reads as a glitch. */
+      input[type="radio"]:focus-visible { outline: none; }
     </style>
   </head>
   <body>
     <form id="form" autocomplete="off" novalidate>
       <header>
-        <h1 id="title">Connect to Kortix</h1>
+        <h1 id="title"></h1>
         <p class="sub" id="subtitle"></p>
       </header>
       <fieldset>
@@ -147,8 +149,8 @@
           <label class="option-head">
             <input type="radio" name="instance" value="default" id="opt-default" checked />
             <span class="option-text">
-              <span class="option-title" id="default-title">Kortix Cloud</span>
-              <span class="option-detail" id="default-host">kortix.com</span>
+              <span class="option-title" id="default-title"></span>
+              <span class="option-detail" id="default-host"></span>
             </span>
           </label>
         </div>
@@ -174,7 +176,7 @@
       <div id="error" role="alert" aria-live="assertive"></div>
       <p class="hint" id="hint"></p>
       <div class="actions">
-        <button type="button" id="secondary">Quit</button>
+        <button type="button" id="secondary"></button>
         <button type="submit" class="primary" id="primary">Continue</button>
       </div>
     </form>
@@ -184,8 +186,40 @@
       // error text can come from the network and must never be parsed as HTML.
       const api = window.kortixInstance;
       const $ = (id) => document.getElementById(id);
+
+      // Everything that differs between the three moments, in one place.
+      //   secondary      the left button: 'quit' or 'cancel'
+      //   closeOnEscape  false on first launch — there is no app behind it
+      //   retry          label the primary "Try Again" while the current choice is selected
+      const MODES = {
+        setup: (init) => ({
+          title: 'Connect to Kortix',
+          subtitle: 'Use Kortix Cloud, or connect to a Kortix instance your team hosts.',
+          hint: `You can change this later in ${init.menuPath}.`,
+          secondary: 'quit',
+          closeOnEscape: false,
+          retry: false,
+        }),
+        change: () => ({
+          title: 'Change Kortix instance',
+          subtitle: 'Kortix reloads on the instance you choose.',
+          hint: '',
+          secondary: 'cancel',
+          closeOnEscape: true,
+          retry: false,
+        }),
+        unreachable: (init) => ({
+          title: `Can’t reach ${init.host}`,
+          subtitle: 'Try again, or connect to a different instance.',
+          hint: '',
+          secondary: 'quit',
+          closeOnEscape: true,
+          retry: true,
+        }),
+      };
+
       const state = {
-        mode: 'setup',
+        mode: null,
         current: { kind: 'default', url: '' },
         busy: false,
         // The URL whose reachability check failed; submitting it again saves it anyway.
@@ -197,13 +231,10 @@
 
       function primaryLabel() {
         if (state.busy) return 'Checking…';
-        if (selected() === 'custom' && state.unreachableUrl !== null && typedUrl() === state.unreachableUrl) {
-          return 'Continue Anyway';
-        }
-        const isCurrent =
-          selected() === state.current.kind && (selected() === 'default' || typedUrl() === state.current.url);
-        if (state.mode === 'unreachable' && isCurrent) return 'Try Again';
-        return 'Continue';
+        const kind = selected();
+        if (kind === 'custom' && typedUrl() === state.unreachableUrl) return 'Continue Anyway';
+        const isCurrent = kind === state.current.kind && (kind === 'default' || typedUrl() === state.current.url);
+        return state.mode.retry && isCurrent ? 'Try Again' : 'Continue';
       }
 
       let reportedHeight = 0;
@@ -211,8 +242,9 @@
         $('primary').textContent = primaryLabel();
         $('primary').disabled = state.busy || (selected() === 'custom' && !typedUrl());
         for (const id of ['opt-default', 'opt-custom', 'url']) $(id).disabled = state.busy;
-        // The window fits the content; only a wrapped error line changes it.
-        const height = Math.ceil(document.documentElement.scrollHeight);
+        // The window fits the form. Not documentElement.scrollHeight: it never
+        // drops below the viewport, so the window could grow but never shrink.
+        const height = Math.ceil($('form').getBoundingClientRect().height);
         if (height !== reportedHeight) {
           reportedHeight = height;
           api.resize(height);
@@ -224,29 +256,17 @@
       }
 
       api.onInit((init) => {
-        state.mode = init.mode;
+        state.mode = MODES[init.mode](init);
         state.current = init.current;
+        $('title').textContent = state.mode.title;
+        $('subtitle').textContent = state.mode.subtitle;
+        $('hint').textContent = state.mode.hint;
+        $('secondary').textContent = state.mode.secondary === 'quit' ? 'Quit' : 'Cancel';
         $('default-title').textContent = init.defaultInstance.title;
         $('default-host').textContent = init.defaultInstance.host;
-        if (init.mode === 'setup') {
-          $('title').textContent = 'Connect to Kortix';
-          $('subtitle').textContent = 'Use Kortix Cloud, or connect to a Kortix instance your team hosts.';
-          $('hint').textContent = `You can change this later in ${init.menuPath}.`;
-          $('secondary').textContent = 'Quit';
-        } else if (init.mode === 'change') {
-          $('title').textContent = 'Change Kortix instance';
-          $('subtitle').textContent = 'Kortix reloads on the instance you choose.';
-          $('secondary').textContent = 'Cancel';
-        } else {
-          $('title').textContent = `Can’t reach ${init.host}`;
-          $('subtitle').textContent = 'Try again, or connect to a different instance.';
-          $('secondary').textContent = 'Quit';
-        }
         if (init.current.kind === 'custom') {
           $('opt-custom').checked = true;
           $('url').value = init.current.url;
-        } else {
-          $('opt-default').checked = true;
         }
         setError(init.error);
         render();
@@ -269,7 +289,6 @@
       });
 
       $('url').addEventListener('input', () => {
-        if (typedUrl() !== state.unreachableUrl) state.unreachableUrl = null;
         setError('');
         render();
       });
@@ -279,11 +298,6 @@
         if (state.busy) return;
         const kind = selected();
         const url = typedUrl();
-        if (kind === 'custom' && !url) {
-          setError('Enter the URL of your Kortix instance.');
-          $('url').focus();
-          return;
-        }
         const force = kind === 'custom' && url === state.unreachableUrl;
         state.busy = kind === 'custom' && !force;
         setError('');
@@ -295,17 +309,16 @@
           result = { ok: false, error: String((err && err.message) || err) };
         }
         state.busy = false;
-        if (result && result.ok) return; // the main process closes this window
-        if (result && result.unreachable) state.unreachableUrl = url;
-        setError(result && result.error);
+        if (result.ok) return; // the main process closes this window
+        state.unreachableUrl = result.unreachable ? url : null;
+        setError(result.error);
         render();
         if (kind === 'custom') $('url').focus();
       });
 
-      $('secondary').addEventListener('click', () => api.cancel({ quit: state.mode !== 'change' }));
+      $('secondary').addEventListener('click', () => api[state.mode.secondary]());
       window.addEventListener('keydown', (e) => {
-        // First launch has no app behind the chooser: Escape must not quit it.
-        if (e.key === 'Escape' && state.mode !== 'setup') api.cancel({ quit: false });
+        if (e.key === 'Escape' && state.mode?.closeOnEscape) api.cancel();
       });
     </script>
   </body>

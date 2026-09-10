@@ -1,23 +1,15 @@
-// Kortix instance choice for the desktop shell — pure, no Electron.
+// Kortix instance rules for the desktop shell — pure, no Electron, no files.
 //
-// On the first launch of a new profile the shell asks which Kortix instance to
-// connect to: Kortix Cloud (the URL baked in at build time) or a self-hosted
-// URL. The same chooser backs Frontend URL → Custom URL… and the recovery
-// screen after the app origin fails to load. Every decision the chooser makes
-// lives here so it can be unit-tested without a window.
-//
-// Persistence contract (owned by main.js):
-//   userData/frontend_url            the chosen self-hosted URL (absent = default)
-//   userData/instance_setup_pending  written for a new profile; removed once the
-//                                    user chooses, so quitting the chooser asks again
+// What the instance chooser (instance-chooser.js) decides: how a typed URL
+// becomes the URL the app loads, whether that URL answers, how a network error
+// reads, and how the default option is labelled. Files live in
+// instance-store.js.
 
-const SETUP_PENDING_FILE = 'instance_setup_pending';
 const PROBE_TIMEOUT_MS = 8_000;
 
-// Written by the OS into any directory Finder has shown; never app state.
-const IGNORED_PROFILE_ENTRIES = new Set(['.DS_Store']);
-
 const LOOPBACK_HOST = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$|\.localhost$/;
+
+/** @typedef {{ kind: 'default' } | { kind: 'custom', url: string }} InstanceChoice */
 
 /**
  * Turn what the user typed into the URL the window loads.
@@ -60,24 +52,6 @@ function normalizeInstanceUrl(raw) {
   // Same landing path as the Production / Dev / Local presets.
   if (url.pathname === '/') url.pathname = '/projects';
   return { ok: true, url: url.toString() };
-}
-
-/**
- * Is this a profile no earlier launch has used? Checked before anything in the
- * process writes into userData (the single-instance lock creates SingletonLock).
- *
- * @param {string[] | null} entries directory listing; null when the directory is missing
- */
-function isFreshProfile(entries) {
-  if (!entries) return true;
-  return entries.every((name) => IGNORED_PROFILE_ENTRIES.has(name));
-}
-
-/**
- * @param {{ pending: boolean, override?: string | null, envUrl?: string }} input
- */
-function needsInstanceSetup({ pending, override, envUrl }) {
-  return Boolean(pending) && !override && !envUrl;
 }
 
 /** Label for the "use the default" option. */
@@ -164,14 +138,31 @@ async function probeInstance(url, { fetch, timeoutMs = PROBE_TIMEOUT_MS }) {
   }
 }
 
+/**
+ * Turn one chooser submission into a choice to save. Saves nothing.
+ *
+ * @param {{ kind: 'default' | 'custom', url?: string, force?: boolean }} submission
+ *   `force` skips the reachability check ("Continue Anyway").
+ * @param {{ fetch: (url: string, init: object) => Promise<{ status: number }> }} deps
+ * @returns {Promise<{ ok: true, choice: InstanceChoice } | { ok: false, error: string, unreachable?: true }>}
+ */
+async function checkInstanceChoice({ kind, url, force }, { fetch }) {
+  if (kind !== 'custom') return { ok: true, choice: { kind: 'default' } };
+  const normalized = normalizeInstanceUrl(url);
+  if (!normalized.ok) return normalized;
+  if (!force) {
+    const probe = await probeInstance(normalized.url, { fetch });
+    if (!probe.ok) return { ok: false, error: probe.error, unreachable: true };
+  }
+  return { ok: true, choice: { kind: 'custom', url: normalized.url } };
+}
+
 module.exports = {
-  SETUP_PENDING_FILE,
   PROBE_TIMEOUT_MS,
   normalizeInstanceUrl,
-  isFreshProfile,
-  needsInstanceSetup,
   describeDefaultInstance,
   hostOf,
   explainNetError,
   probeInstance,
+  checkInstanceChoice,
 };

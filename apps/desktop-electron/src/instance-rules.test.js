@@ -2,12 +2,20 @@ const { describe, it, expect } = require('bun:test');
 const {
   PROBE_TIMEOUT_MS,
   normalizeInstanceUrl,
-  isFreshProfile,
-  needsInstanceSetup,
   describeDefaultInstance,
   explainNetError,
   probeInstance,
-} = require('./instance-setup');
+  checkInstanceChoice,
+} = require('./instance-rules');
+
+const INSTANCE = 'https://kortix.acme.com/projects';
+const reachable = async () => ({ status: 200 });
+const unreachable = async () => {
+  throw new Error('net::ERR_NAME_NOT_RESOLVED');
+};
+const mustNotFetch = async () => {
+  throw new Error('fetch must not be called');
+};
 
 describe('normalizeInstanceUrl', () => {
   it('rejects empty input', () => {
@@ -17,10 +25,7 @@ describe('normalizeInstanceUrl', () => {
   });
 
   it('adds https:// to a bare host and opens the product surface', () => {
-    expect(normalizeInstanceUrl('kortix.acme.com')).toEqual({
-      ok: true,
-      url: 'https://kortix.acme.com/projects',
-    });
+    expect(normalizeInstanceUrl('kortix.acme.com')).toEqual({ ok: true, url: INSTANCE });
   });
 
   it('adds http:// to a bare loopback host', () => {
@@ -37,10 +42,7 @@ describe('normalizeInstanceUrl', () => {
   });
 
   it('drops the query and fragment', () => {
-    expect(normalizeInstanceUrl('https://kortix.acme.com/?utm=x#top')).toEqual({
-      ok: true,
-      url: 'https://kortix.acme.com/projects',
-    });
+    expect(normalizeInstanceUrl('https://kortix.acme.com/?utm=x#top')).toEqual({ ok: true, url: INSTANCE });
   });
 
   it('rejects non-http schemes', () => {
@@ -59,34 +61,6 @@ describe('normalizeInstanceUrl', () => {
   it('rejects input that is not a URL', () => {
     expect(normalizeInstanceUrl('https://')).toEqual({ ok: false, error: 'This is not a valid URL.' });
     expect(normalizeInstanceUrl('not a url')).toEqual({ ok: false, error: 'This is not a valid URL.' });
-  });
-});
-
-describe('isFreshProfile', () => {
-  it('is fresh when the profile directory is missing or empty', () => {
-    expect(isFreshProfile(null)).toBe(true);
-    expect(isFreshProfile([])).toBe(true);
-    expect(isFreshProfile(['.DS_Store'])).toBe(true);
-  });
-
-  it('is not fresh when any earlier launch left state behind', () => {
-    expect(isFreshProfile(['Preferences'])).toBe(false);
-    expect(isFreshProfile(['.DS_Store', 'window_state.json'])).toBe(false);
-  });
-});
-
-describe('needsInstanceSetup', () => {
-  it('asks only while setup is pending and nothing chose a URL', () => {
-    expect(needsInstanceSetup({ pending: true, override: null, envUrl: undefined })).toBe(true);
-  });
-
-  it('never asks an existing install (no pending marker)', () => {
-    expect(needsInstanceSetup({ pending: false, override: null, envUrl: undefined })).toBe(false);
-  });
-
-  it('skips when a saved override or KORTIX_DESKTOP_URL already chose the URL', () => {
-    expect(needsInstanceSetup({ pending: true, override: 'https://kortix.acme.com/projects' })).toBe(false);
-    expect(needsInstanceSetup({ pending: true, override: null, envUrl: 'http://localhost:3000/projects' })).toBe(false);
   });
 });
 
@@ -127,37 +101,32 @@ describe('explainNetError', () => {
 });
 
 describe('probeInstance', () => {
-  const URL_ = 'https://kortix.acme.com/projects';
-
   it('treats any HTTP response as reachable, including 401 and 404', async () => {
     for (const status of [200, 307, 401, 404, 503]) {
-      const res = await probeInstance(URL_, { fetch: async () => ({ status }) });
-      expect(res).toEqual({ ok: true, status });
+      expect(await probeInstance(INSTANCE, { fetch: async () => ({ status }) })).toEqual({ ok: true, status });
     }
   });
 
   it('sends a HEAD request without credentials', async () => {
     let seen;
-    await probeInstance(URL_, {
+    await probeInstance(INSTANCE, {
       fetch: async (url, init) => {
         seen = { url, method: init.method, credentials: init.credentials, hasSignal: !!init.signal };
         return { status: 200 };
       },
     });
-    expect(seen).toEqual({ url: URL_, method: 'HEAD', credentials: 'omit', hasSignal: true });
+    expect(seen).toEqual({ url: INSTANCE, method: 'HEAD', credentials: 'omit', hasSignal: true });
   });
 
   it('explains a network failure', async () => {
-    const res = await probeInstance(URL_, {
-      fetch: async () => {
-        throw new Error('net::ERR_NAME_NOT_RESOLVED');
-      },
+    expect(await probeInstance(INSTANCE, { fetch: unreachable })).toEqual({
+      ok: false,
+      error: 'kortix.acme.com could not be found. Check the address.',
     });
-    expect(res).toEqual({ ok: false, error: 'kortix.acme.com could not be found. Check the address.' });
   });
 
   it('times out a request that never answers', async () => {
-    const res = await probeInstance(URL_, {
+    const res = await probeInstance(INSTANCE, {
       timeoutMs: 20,
       fetch: (_url, init) =>
         new Promise((_resolve, reject) => {
@@ -166,5 +135,42 @@ describe('probeInstance', () => {
     });
     expect(res).toEqual({ ok: false, error: 'kortix.acme.com did not respond within 1 s.' });
     expect(PROBE_TIMEOUT_MS).toBe(8_000);
+  });
+});
+
+describe('checkInstanceChoice', () => {
+  it('accepts the default without a network request', async () => {
+    expect(await checkInstanceChoice({ kind: 'default', url: 'ignored' }, { fetch: mustNotFetch })).toEqual({
+      ok: true,
+      choice: { kind: 'default' },
+    });
+  });
+
+  it('rejects an invalid URL before any network request', async () => {
+    expect(await checkInstanceChoice({ kind: 'custom', url: 'file:///x' }, { fetch: mustNotFetch })).toEqual({
+      ok: false,
+      error: 'The URL must start with http:// or https://.',
+    });
+  });
+
+  it('returns the normalized URL of a reachable instance', async () => {
+    expect(await checkInstanceChoice({ kind: 'custom', url: 'kortix.acme.com' }, { fetch: reachable })).toEqual({
+      ok: true,
+      choice: { kind: 'custom', url: INSTANCE },
+    });
+  });
+
+  it('marks an unreachable instance so the page can offer Continue Anyway', async () => {
+    expect(await checkInstanceChoice({ kind: 'custom', url: 'kortix.acme.com' }, { fetch: unreachable })).toEqual({
+      ok: false,
+      error: 'kortix.acme.com could not be found. Check the address.',
+      unreachable: true,
+    });
+  });
+
+  it('skips the reachability check when forced', async () => {
+    expect(
+      await checkInstanceChoice({ kind: 'custom', url: 'kortix.acme.com', force: true }, { fetch: mustNotFetch }),
+    ).toEqual({ ok: true, choice: { kind: 'custom', url: INSTANCE } });
   });
 });
