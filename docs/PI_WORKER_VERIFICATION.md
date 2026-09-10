@@ -1868,3 +1868,78 @@ Current limits and replay semantics are documented in `PI_CUSTOM_AGENTS.md`.
 Production parity remains incomplete. Background jobs, child agents, general file
 artifacts, workspace checkpoints and drop-in Pi CLI extensions are not implemented
 by this state change. Preview deployment verification follows this local checkpoint.
+
+## 2026-09-10 — custom state preview verification
+
+Implementation commit: `a2ef8fe9ec`. Tested preview SHA:
+`8b60e2c2b29db16ef71380a5f20febcd3ee6bbc8` on branch `pi-worker`.
+[Draft PR 6998](https://github.com/kortix-ai/suna/pull/6998) remains unmerged.
+[Deploy Preview run 34461166534](https://github.com/kortix-ai/suna/actions/runs/34461166534)
+succeeded. `/v1/health`, the preview checkout, and running API/gateway/frontend
+image tags all match the tested SHA. This deployment preserves the preview data.
+It skips the automatic full preview suite on branch pushes; the focused live
+checks below ran after deployment. No dev or production deployment occurred.
+
+The daily merge from `origin/main` also exposed a grant-provenance regression.
+An intentionally pinned Pi commit was treated as a stale moving-branch read.
+The added regression test failed before the fix. Pi now applies its pinned
+manifest and fails closed when that manifest is unreadable. The three grant
+test files pass **28 tests, 61 assertions**. Existing OpenCode provenance
+behavior remains covered.
+
+Local validation after the merge:
+
+```text
+pnpm test
+[test] PASS core 116.1s
+[test] PASS api-cli-flows 50.0s
+[test] PASS sdk 14.9s
+[test] PASS worker-quality 116.1s
+[test] PASS flow-runner-unit 2.4s
+[test] PASS route-coverage 0.1s
+[test] PASS worktree-unit 2.7s
+results: 402/402 passed · 0 failed · 0 skipped · 0 todo
+Worker: 831 pass, 0 fail, 4414 assertions
+
+pnpm --filter @kortix/sdk typecheck
+tsc --noEmit && tsc --noEmit -p examples/tsconfig.json
+exit 0
+
+pnpm --filter @kortix/sdk smoke:install
+OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs
+✔ install smoke test passed
+
+pnpm --filter kortix-api typecheck
+tsc --noEmit
+exit 0
+```
+
+The live probes use an isolated fixture account on `https://pi.kortix.com`.
+Fixture source commit: `42e80a19d022f13821aa200062998b660a3ed05e`.
+The `stateful` agent has one custom tool, `state_probe`, and no environment tools.
+
+| Probe | Observable result |
+| --- | --- |
+| `node /tmp/pi-state-live.mjs <tested-sha>` | Six real model/tool actions pass. Counter 1; failed update retains 1; stop/resume preserves exact history; next update returns 2; schema 2 migration retains 2; update returns 3. A second session starts at 1. |
+| Same live probe, SSE | Each of the six answers emits 19 text-delta events. |
+| `node /tmp/pi-state-http.mjs` | Duplicate append returns 204 without duplication. Concurrent writes return 204/409 with one committed winner. Reserved-log bypass returns 400, anonymous write 401, and oversized value 413. Rejections preserve two committed records. The session remains stopped. |
+| `node /tmp/pi-state-browser.mjs` | Chromium fills the composer and clicks Send. `/prompts` returns 202 with the exact entered prompt. The custom tool renders revision 3 / schema 1 / count 2. Reload preserves the exact history and visible result. |
+| Environment isolation | Both sessions return 404 from `/environment`; no environment is created. |
+| Cleanup | Both workers report `stopped` in the session API and Daytona after the browser closes. |
+
+Owned sessions:
+
+- `5115cb6b-db07-4f8c-9009-f39e48a9faad` / worker `43c300d1-55a6-4320-b09b-3a3f53965971`.
+- `83d7bee7-b158-4a53-a581-9551d3fc4386` / worker `d98e2534-802f-443b-828d-5d4718723afe`.
+
+Local evidence files are `/tmp/pi-state-deployment.json`,
+`/tmp/pi-state-live.json`, `/tmp/pi-state-http.json`,
+`/tmp/pi-state-browser.json`, `/tmp/pi-state-browser.png`, and
+`/tmp/pi-state-final-owned-state.json`. They contain assertions and fixture IDs,
+not authentication credentials. The fixture account is separate from the user's
+test account. Follow the stateful example in `PI_CUSTOM_AGENTS.md` to repeat the
+check in another project.
+
+Shippable to production: **NOT YET**. The custom-state feature has local and
+focused preview proof. Full runtime parity, the complete preview release suite,
+and dev/production verification are not completed by this checkpoint.

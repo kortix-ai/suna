@@ -283,6 +283,23 @@ The [stateful example](../packages/sdk/examples/14-pi-stateful.ts) needs the
 `increment_counter` tool permission. Run it once, stop/resume the session, and
 run it again. The values must be 1 then 2. A new session must start at 1.
 
+To test it in your own project:
+
+1. Declare a `stateful` agent in the version 3 manifest, with no connector,
+   secret, or skill grants.
+2. Add `.kortix/pi/agents/stateful.md` with a prompt that uses the counter tool,
+   `permission: { '*': deny, increment_counter: allow }`, and a supported model.
+3. Copy the example to `.kortix/pi/agents/stateful.ts`. Replace its repository
+   import with `import { definePiAgent } from '@kortix/sdk/pi'`.
+4. Commit the files. Start a new `stateful` session from that commit. Ask it to
+   call `increment_counter` exactly once, then stop and resume that session.
+5. Call the tool again. Confirm 1 then 2, preserved chat history, and no
+   environment creation. Start another session and confirm its first value is 1.
+
+The 2026-09-10 preview check also exercises a failed update, a forward schema
+migration, concurrent HTTP writes, and browser submission/reload. See
+[verification evidence](PI_WORKER_VERIFICATION.md#2026-09-10--custom-state-preview-verification).
+
 ## Dependencies and compilation
 
 Relative imports stay inside the configured source directory. The compiler bundles
