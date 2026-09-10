@@ -124,6 +124,24 @@ test.describe
       if (user?.id) await deleteAuthUser(user.id, authOptions);
     });
 
+    test('the account hub opens one accessible billing dialog and stays open after Escape', async ({ page }) => {
+      await installBrowserSessionDirect(
+        page, session, `/new?accountId=${accountId}&accountTab=billing`, authOptions,
+      );
+      const subscribeButton = page.getByRole('button', { name: 'Subscribe to Team', exact: true });
+      await subscribeButton.click();
+      const dialog = page.getByRole('dialog', { name: /Subscribe to Kortix/ });
+      await expect(dialog).toHaveCount(1);
+      await expect(dialog.getByRole('button', { name: /^Subscribe —/ })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+      await subscribeButton.click();
+      await expect(dialog).toHaveCount(1);
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+    });
+
     test('an owner starts checkout, reads the active plan, buys credits, and opens billing management', async ({
       page,
     }) => {
