@@ -21,6 +21,116 @@ linked, not inlined.
 
 ## Register
 
+### A renewable grant with no absolute ceiling is an immortal resource (2026-09-10)
+
+**When:** writing any "keep it alive while it is still working" renewal — a
+sandbox deadline, a lease, a lock, a session TTL — where the thing being
+observed reports its own liveness. Observation cannot distinguish WORKING from
+WEDGED: both answer "still running", forever. Give every renewable grant one
+wall-clock ceiling anchored on a value the observed party cannot author
+(`startedAtMs`, written by the control plane at mint), set far above the real
+p99 so it can only catch a record nothing will ever close.
+*Incident:* `activeTurns` re-granted 4h on every reaper pass for as long as the
+daemon said `active`. PROD 2026-09-10: 44 open turn records on `active`
+sandboxes, 42 older than 24h, the oldest **20 days**; 33 of 48 "active" boxes
+predated the week. Those boxes never stopped emitting, and their audit relays
+produced **1,115,227** contended-ingest 503s in seven days — 42–68% of ALL prod
+API responses — plus 62k proxy 404s and thousands of dropped Slack relays.
+*Fix:* `turnAbsoluteMaxMs()` (24h), applied BEFORE the probe so neither the
+renew path nor the drip can see an expired record. *Enforcer:*
+`sandbox-reaper.test.ts` — a 20-day record is settled unprobed and unrenewed; a
+23h record and a record with no start instant are untouched.
+
+### A wrapper error hides its cause — walk the chain, never read `.message` (2026-09-10)
+
+**When:** branching on an error's identity anywhere near an ORM. A Drizzle
+failure's `message` is only `Failed query: <sql>\nparams: <values>`; the
+SQLSTATE, constraint name and detail all hang off `cause`. Every
+`err.message.includes('…')` guard near a database call is already broken.
+*Incidents, all three the same defect:* (1) the credits reset suppressed
+duplicates with `msg.includes('duplicate key')` — never matched, so a correctly
+refused re-grant logged an error every nine minutes for four days (1,118 of
+them, one account); (2) the audit ingest classified retryability on `code`
+alone, so `PostgresError: the database system is shutting down` answered 500 and
+dropped the batch — 21,102 exceptions / 244 users, 19,193 on one day; (3)
+`app.onError` logged `-> 403 [HTTPException]` with the reason only in structured
+context, and Better Stack groups on the message, so 2,338 denials collapsed into
+one unactionable bucket. *Fix:* one cause-walking helper per area
+(`errorChainText`, `auditErrorSqlstate`) and the reason IN the message.
+*Enforcer:* `credit-duplicate-error.test.ts` asserts the naive check would have
+missed it; `audit-db.test.ts` pins recognition through the wrapper.
+
+### "The database went away" is backpressure, not a bad request (2026-09-10)
+
+**When:** classifying a failed write as retryable. Connection-class failures —
+57P01/57P02/57P03, 08000/08003/08006, 53300, and the driver codes that carry no
+SQLSTATE at all (`CONNECTION_CLOSED`, `ECONNREFUSED`, `ECONNRESET`) — mean the
+batch is still good and the database is coming back. Answer 503 with
+`Retry-After`. Only errors that describe the DATA (23505, 23502, 22P05) may
+answer 500, because retrying those can never work.
+*Incident:* every Postgres restart made the audit ingest answer 500, which the
+sandbox relay reads as "your batch is broken" and re-sends on a flat retry —
+rebuilding the convoy after each restart. Prod also showed 53300 (`remaining
+connection slots are reserved…`) taking out unrelated queries for 77 users on
+2026-08-22. *Enforcer:* `audit-db.test.ts`.
+
+### Two modal dialogs from one store hide each other from the accessibility tree (2026-09-10)
+
+**When:** a dialog component is mounted defensively in more than one place
+"so the button has a renderer". Radix marks the rest of the document
+`aria-hidden` while a modal is open, so two instances hide each other: the
+pixels are perfect and the a11y tree contains NEITHER. Screen readers are told
+there is nothing there, and every role-based query finds nothing. Make the
+component single-instance (first mount draws, the rest render null, next is
+promoted on unmount) rather than trusting call sites not to overlap.
+*Incident:* `GlobalUpgradeModal` was mounted in four places. Measured live on
+dev: 3 dialogs, 2 of them the subscribe dialog, both `aria-hidden="true"`. It
+failed the v0.13.13 release gate three times on staging against a screenshot
+that plainly shows the dialog open, while the same click on dev sometimes
+passed — which instance wins is a mount-order race. *Enforcer:*
+`upgrade-modal-registry.test.ts`.
+
+### An alarm for a STANDING condition must be edge-triggered (2026-09-10)
+
+**When:** logging at error level from anything that runs on a schedule. If the
+condition it reports is standing rather than transient, every pass re-logs it
+and the alarm becomes wallpaper. Speak on arrival, at most hourly while it
+persists, and once when it clears — never delete the signal.
+*Incident:* `[snapshot-gc] BUDGET UNRESOLVED` fired 1,936 times in seven days,
+~11/hour, with `org` drifting 264→319 against `limit=100` and nothing changing
+between any two messages. Deleting it was not an option — the first outage in
+that area happened because a GC that could not cope logged nothing.
+*Enforcer:* `budget-report-policy.test.ts`.
+
+### Severity follows the CAUSE, or real failures drown in customer state (2026-09-10)
+
+**When:** an automated retry gives up. `error` means the PLATFORM dropped the
+work. An account that is out of credits, a model it is not entitled to, or a
+manifest its owner wrote wrong are customer state: the product already says so
+where the owner can see it, and paging on it teaches everyone to ignore the
+channel. *Incident:* `[session-lifecycle] command dead-lettered` fired 7,761
+times in seven days; 3,113 of the last 3,238 (96%) were cron triggers firing
+into accounts that cannot pay, one account contributing 2,131. The real signal
+— `delivery outcome: pending`, `runtime unreachable` — was a hundred times
+rarer than the noise burying it. An unrecognised message must stay `error`;
+only a recognised customer-state message is demoted. *Enforcer:*
+`dead-letter-cause.test.ts` pins the five real messages verbatim from prod.
+
+### A 404 is invisible to error alerting — check the 4xx surface for dead integrations (2026-09-10)
+
+**When:** auditing production health. Error dashboards read error-level logs, so
+a correct-looking `404` never appears in them. Sweep the 4xx surface by route
+periodically and ask what SHOULD have happened. *Incident:* `POST
+/v1/webhooks/user-created` has 404'd on **every new user signup since at least
+2026-07-12** — 9 calls for 9 signups on 2026-09-04, 45 for 47 on 2026-09-10,
+with ~4x retries on busy days, roughly 3,000 signups in 60 days. No such handler
+has ever existed in the repo; `/v1/webhooks/:triggerId` reads `user-created` as
+a trigger slug no project defines. Whatever it was meant to trigger has not run
+for two months, and nothing alerted because the API answered "correctly".
+Same shape: the `pr-review` and `qa-pr-sweep` webhook 404s. *Automation:* none
+yet — candidate: a weekly report of the top 4xx routes with no matching route
+definition.
+
 ### A self-authenticating route must populate the shared context the resolver reads (2026-09-09)
 
 **When:** adding a route that authenticates its own credential instead of running
