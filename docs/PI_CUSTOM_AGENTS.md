@@ -61,6 +61,10 @@ agents:
 The `sandbox` field selects the execution environment template. The platform owns
 the worker image and identity.
 
+`workspace: runtime` creates an environment without a repository checkout. A worker
+with this setting can download its pinned agent bundle. Its credential cannot
+clone the repository, request another release, or select another agent.
+
 Version 3 selects Pi and defaults to `.kortix/pi`. Version 2 selects OpenCode
 and defaults to `.kortix/opencode`. Contradictory runtime declarations fail validation. `opencode.config_dir` remains a compatibility
 alias. Setting both directories to different values fails compilation. Directories

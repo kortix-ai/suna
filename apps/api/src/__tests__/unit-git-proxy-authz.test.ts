@@ -394,3 +394,39 @@ describe('authorizeGitProxy — verdict memo', () => {
     expect(allowed.ok).toBe(true);
   });
 });
+
+describe('authorizeGitProxy — pinned Pi bootstrap without repository access', () => {
+  const sha = 'a'.repeat(40);
+  const target = { kind: 'pi-runtime' as const, sourceSha: sha };
+  const metadata = { workspace_mode: 'runtime', sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: 'main', pi_worker_sha: sha };
+
+  for (const credential of ['sandbox', 'session PAT'] as const) {
+    const token = credential === 'sandbox' ? 'kortix_abc' : 'kortix_pat_worker';
+    const setup = () => {
+      sandboxRow = { sandboxId: 'sandbox-1', sessionId: 'session-1', branchName: null, sessionMetadata: metadata };
+      if (credential === 'sandbox') apiKeyResult = { isValid: true, accountId: OWNER_ACCOUNT, type: 'sandbox', sandboxId: 'sandbox-1' };
+      else patResult = { ...patResult, sessionId: 'session-1', projectId: PROJECT_ID };
+    };
+
+    test(`${credential} downloads its pinned artifact while Git read and write stay denied`, async () => {
+      setup();
+      expect(await authorizeGitProxy(token, PROJECT_ID, 'read', {}, target)).toMatchObject({ ok: true, principal: { kind: 'session', sessionId: 'session-1' } });
+      expect(await authorizeGitProxy(token, PROJECT_ID, 'read')).toMatchObject({ ok: false, status: 403 });
+      expect(await authorizeGitProxy(token, PROJECT_ID, 'write')).toMatchObject({ ok: false, status: 403 });
+    });
+
+    test(`${credential} cannot request another release or reuse bootstrap authority for writes`, async () => {
+      setup();
+      expect((await authorizeGitProxy(token, PROJECT_ID, 'read', {}, target)).ok).toBe(true);
+      expect(await authorizeGitProxy(token, PROJECT_ID, 'read', {}, { ...target, sourceSha: 'b'.repeat(40) })).toMatchObject({ ok: false, status: 403 });
+      expect(await authorizeGitProxy(token, PROJECT_ID, 'write', {}, target)).toMatchObject({ ok: false, status: 403 });
+    });
+
+    for (const invalid of [{ ...metadata, sandbox_slug: 'default' }, { ...metadata, deletedAt: '2026-09-10' }, { ...metadata, pi_worker_sha: null }]) {
+      test(`${credential} rejects invalid runtime identity ${JSON.stringify(invalid)}`, async () => {
+        setup(); sandboxRow!.sessionMetadata = invalid;
+        expect(await authorizeGitProxy(token, PROJECT_ID, 'read', {}, target)).toMatchObject({ ok: false, status: 403 });
+      });
+    }
+  }
+});

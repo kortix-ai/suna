@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Pi bootstrap must not depend on workspace Git access
+
+- Incident: the 2026-09-10 resource preview returned `403` for every bundle download
+  when an agent declared `workspace: runtime`. The repository gate blocked startup.
+- Rule: authorize a Pi bootstrap artifact separately from repository access. Bind
+  session credentials to their pinned source SHA and agent. Include the target and
+  SHA in authorization memo keys. Never reuse bootstrap authorization for Git.
+- Enforcement: `unit-git-proxy-authz.test.ts` covers sandbox keys and session PATs,
+  wrong releases, deleted identities, repository denial, and memo separation.
+
 ### Wait for terminal acknowledgments before worker close returns (2026-09-10)
 
 **When:** closing a Pi worker with a terminal relay still in flight.

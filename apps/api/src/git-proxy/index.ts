@@ -26,6 +26,7 @@ import {
 } from '../projects';
 import type { GitScope, UpstreamGit } from '../projects/git-backends';
 import type { ProjectRow } from '../projects/lib/serializers';
+import type { GitProxyTarget } from '../projects/lib/git';
 import type { AppEnv } from '../types';
 import { deriveRequestContext } from '../iam/cache';
 import {
@@ -157,13 +158,13 @@ async function agentOfCallingSession(sessionId: string | null | undefined): Prom
   return row?.agentName ?? '';
 }
 
-async function authorize(c: any, projectId: string, scope: GitScope): Promise<GitProxyAuth> {
+async function authorize(c: any, projectId: string, scope: GitScope, target?: GitProxyTarget): Promise<GitProxyAuth> {
   const token = extractToken(c.req.header('authorization'));
   if (!token) return { ok: false, status: 401, message: 'authentication required' };
   // Pass the request context so IP-allowlist / require-MFA policy conditions
   // evaluate on the per-project capability path the same way they do on every
   // other project route.
-  return authorizeGitProxy(token, projectId, scope, deriveRequestContext(c));
+  return authorizeGitProxy(token, projectId, scope, deriveRequestContext(c), target);
 }
 
 /**
@@ -922,12 +923,12 @@ gitProxyApp.openapi(
   async (c) => {
     const projectId = validProjectIdOrResponse(c, c.req.param('project'));
     if (projectId instanceof Response) return projectId;
-    const auth = await authorize(c, projectId, 'read');
+    const { ref, sha, agent } = c.req.valid('query');
+    const auth = await authorize(c, projectId, 'read', { kind: 'pi-runtime', sourceSha: sha });
     if (!auth.ok) {
       if (auth.status === 401) return unauthorized(c, auth.message);
       return c.text(auth.message, auth.status === 404 ? 404 : 403);
     }
-    const { ref, sha, agent } = c.req.valid('query');
     try {
       const project = await loadGitProject({ row: auth.project });
       const callerSessionId =

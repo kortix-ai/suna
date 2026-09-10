@@ -37,6 +37,7 @@ import type { GitPrincipal } from '../../git-proxy/ref-policy';
 import {
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
+import { piWorkerRuntimeIdentityFromSessionMetadata } from './session-sandbox-metadata';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
 // request. Each DB statement is a fast same-region roundtrip (~3ms measured,
@@ -790,6 +791,15 @@ export type GitProxyAuth =
  * denials are never cached, so a revoked token is refused on its next request
  * and an accepted one is at most GIT_PROXY_AUTHZ_TTL_MS stale.
  */
+export type GitProxyTarget = { kind: 'repository' } | { kind: 'pi-runtime'; sourceSha: string };
+
+function sessionAllowsGitTarget(metadata: unknown, target: GitProxyTarget): boolean {
+  if (target.kind === 'repository') return workspaceMetadataAllowsRepositoryAccess(metadata);
+  const value = metadata as Record<string, unknown> | null;
+  return value?.sandbox_slug === 'pi-worker' && !value.deletedAt &&
+    piWorkerRuntimeIdentityFromSessionMetadata(value)?.sha === target.sourceSha;
+}
+
 const GIT_PROXY_AUTHZ_TTL_MS = 30_000;
 const gitProxyAuthzMemo = new Map<string, { value: GitProxyAuth; expiresAt: number }>();
 export function __resetGitProxyAuthzMemoForTests(): void {
@@ -798,9 +808,9 @@ export function __resetGitProxyAuthzMemoForTests(): void {
 // Per-process random key: the memo key is an HMAC of the credential, so a heap
 // dump exposes neither the credential nor a reusable digest of it.
 const gitProxyAuthzMemoKey = randomBytes(32);
-function authzMemoKey(token: string, projectId: string, scope: GitScope): string {
+function authzMemoKey(token: string, projectId: string, scope: GitScope, target: GitProxyTarget): string {
   const digest = createHmac('sha256', gitProxyAuthzMemoKey).update(token).digest('hex');
-  return `${digest}|${projectId}|${scope}`;
+  return `${digest}|${projectId}|${scope}|${target.kind}|${target.kind === 'pi-runtime' ? target.sourceSha : ''}`;
 }
 
 export async function authorizeGitProxy(
@@ -808,12 +818,16 @@ export async function authorizeGitProxy(
   projectId: string,
   scope: GitScope,
   requestCtx: RequestContext = {},
+  target: GitProxyTarget = { kind: 'repository' },
 ): Promise<GitProxyAuth> {
-  const key = authzMemoKey(token, projectId, scope);
+  if (target.kind === 'pi-runtime' && (scope !== 'read' || !/^[a-f0-9]{40}$/.test(target.sourceSha))) {
+    return { ok: false, status: 403, message: 'Pi bootstrap requires an exact read-only artifact' };
+  }
+  const key = authzMemoKey(token, projectId, scope, target);
   const now = Date.now();
   const hit = gitProxyAuthzMemo.get(key);
   if (hit && hit.expiresAt > now) return hit.value;
-  const verdict = await authorizeGitProxyUncached(token, projectId, scope, requestCtx);
+  const verdict = await authorizeGitProxyUncached(token, projectId, scope, requestCtx, target);
   if (verdict.ok) {
     gitProxyAuthzMemo.set(key, { value: verdict, expiresAt: now + GIT_PROXY_AUTHZ_TTL_MS });
     if (gitProxyAuthzMemo.size > 10_000) {
@@ -828,6 +842,7 @@ async function authorizeGitProxyUncached(
   projectId: string,
   scope: GitScope,
   requestCtx: RequestContext = {},
+  target: GitProxyTarget = { kind: 'repository' },
 ): Promise<GitProxyAuth> {
   // The project row and the token row are independent look-ups; overlap them
   // instead of paying two sequential cross-region round trips.
@@ -902,20 +917,20 @@ async function authorizeGitProxyUncached(
           ),
         )
         .limit(1);
-      if (!sessionRow || !workspaceMetadataAllowsRepositoryAccess(sessionRow.sessionMetadata)) {
+      if (!sessionRow || !sessionAllowsGitTarget(sessionRow.sessionMetadata, target)) {
         return {
           ok: false,
           status: 403,
           message: 'session workspace does not allow repository access',
         };
       }
-      if (!sessionRow.branchName) {
+      if (!sessionRow.branchName && target.kind === 'repository') {
         return { ok: false, status: 403, message: 'session has no branch to push' };
       }
       sessionPrincipal = {
         kind: 'session',
         sessionId: sessionRow.sessionId,
-        branch: sessionRow.branchName,
+        branch: sessionRow.branchName ?? sessionRow.sessionId,
       };
     }
     if (result.accountId !== project.accountId) {
@@ -984,19 +999,19 @@ async function authorizeGitProxyUncached(
           accountId: result.accountId,
           sandboxId: result.sandboxId,
         });
-        if (monitorBox) {
+        if (monitorBox && target.kind === 'repository') {
           return { ok: true, project, principal: { kind: 'monitor' }, agentGrant: null };
         }
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
-      if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
+      if (!sessionAllowsGitTarget(sandbox.sessionMetadata, target)) {
         return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
       }
       // A session's git authority is its own branch and nothing else — see
       // git-proxy/ref-policy.ts. Refuse rather than widen if the row somehow
       // carries no branch: an unnamed branch would make the allowlist empty in
       // one direction and unbounded in the other, depending on how it is read.
-      if (!sandbox.branchName) {
+      if (!sandbox.branchName && target.kind === 'repository') {
         return { ok: false, status: 403, message: 'session has no branch to push' };
       }
       // Resolve the session's agent grant so the ref-scope resolver can widen a
@@ -1022,7 +1037,7 @@ async function authorizeGitProxyUncached(
         principal: {
           kind: 'session',
           sessionId: sandbox.sessionId,
-          branch: sandbox.branchName,
+          branch: sandbox.branchName ?? sandbox.sessionId,
         },
         agentGrant: grantRow?.agentGrant ?? null,
       };
