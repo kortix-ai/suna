@@ -45,6 +45,11 @@ mock.module('../projects', () => ({
   authorizeGitProxy: async () => ({
     ok: true,
     principal,
+    // The real `authorizeGitProxy` resolves the session's agent grant and
+    // surfaces it here; the receive-pack route then places it on the request
+    // context for the ref-scope resolver. The test must NOT inject the grant
+    // through a host middleware, or it would mask the exact plumbing under test.
+    agentGrant,
     project: {
       projectId: PROJECT_ID,
       accountId: 'acc-1',
@@ -122,16 +127,12 @@ beforeAll(async () => {
   });
   upstreamUrl = `http://127.0.0.1:${upstreamServer.port}/upstream.git`;
 
-  // The scope resolver reads the agent grant off the request context, which the
-  // auth middleware sets in production. Hono collects handlers in REGISTRATION
-  // order and this app's routes exist at import time, so a `use('*')` added
-  // here would run AFTER them. A parent app shares the context with a routed
-  // sub-app, which injects the grant without mocking a module process-wide.
+  // The receive-pack route must place the grant it got from `authorizeGitProxy`
+  // onto the request context — the same contract the ordinary auth middleware
+  // fulfills on every non-git route. A parent app that injected the grant here
+  // would hide a missing `c.set('agentGrant', …)` in the route, so mount the
+  // app without one and let the route under test do the work.
   const host = new Hono();
-  host.use('*', async (c, next) => {
-    c.set('agentGrant' as never, agentGrant as never);
-    await next();
-  });
   host.route('/', gitProxyApp);
   proxyServer = Bun.serve({ port: 0, fetch: (req) => host.fetch(req) });
   proxyBase = `http://127.0.0.1:${proxyServer.port}/${PROJECT_ID}.git`;

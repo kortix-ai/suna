@@ -44,7 +44,8 @@ import {
   UserPlusIcon as UserPlus,
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { claimUpgradeModal } from './upgrade-modal-registry';
 
 export interface UpgradePlansModalProps {
   open: boolean;
@@ -394,7 +395,19 @@ function CreditTopUpModal({
   );
 }
 
+/**
+ * True for the one instance that may draw. See `upgrade-modal-registry`: four
+ * surfaces mount this component defensively, and two open Radix dialogs hide
+ * each other from the accessibility tree.
+ */
+function useIsUpgradeModalRenderer(): boolean {
+  const [isRenderer, setIsRenderer] = useState(false);
+  useEffect(() => claimUpgradeModal({}, setIsRenderer), []);
+  return isRenderer;
+}
+
 export function GlobalUpgradeModal() {
+  const isRenderer = useIsUpgradeModalRenderer();
   const {
     isOpen,
     closeUpgradeDialog,
@@ -414,6 +427,11 @@ export function GlobalUpgradeModal() {
   useEffect(() => {
     if (isOpen) invalidateAccountState(queryClient, true, true, accountId);
   }, [isOpen, queryClient, accountId]);
+
+  // Mounted but standing down: another instance on this page owns the dialog.
+  // Returning null keeps the hooks above unconditional and keeps this instance
+  // ready to be promoted the moment the owner unmounts.
+  if (!isRenderer) return null;
 
   return (
     <BillingAccountProvider accountId={accountId ?? null}>
