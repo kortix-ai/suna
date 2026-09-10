@@ -41,6 +41,8 @@ of each feature or the remaining parity matrix passed.
 | Permissions | Tool policy, URL/path patterns, once/always/reject, durable checkpoints | Policy, persistence failures, replacement, closed-boundary and browser tests |
 | Per-agent behavior | Prompt, model at session creation, generation settings, step limit, permission policy | Compiler, HTTP, and distinct reviewer/operator live sessions |
 | Custom Pi code | Static module and pinned dependencies in the immutable bundle | Real compiled artifact, custom tools, initialize/cancel/shutdown and native lifecycle hooks |
+| Custom code resources | Per-agent JSON, text, and binary resources in the bundle; declared environment seeds and helper scripts | Preview `3cf1324e2a`: agent isolation, pinned releases, invalid JSON, edited/deleted seeds across restart, helper cancellation, Files and Terminal, and immediate ingress reconnection |
+| Durable custom state | Versioned state through the session log; conditional writes, quotas, deletion, and initialization recovery | Real compiled SDK errors, HTTP conflicts, crash recovery, and the custom-state preview verification record |
 | Custom-code isolation | Node permission model, scoped remote environment capability | Denied local filesystem/process access and real Node artifact tests |
 | Commands | Compiled templates, arguments, substitutions through environment tools, instruction ordering | Exact-commit compiler and live command UI |
 | Skills | Compiled instruction bodies and environment support files | Compiler, policy, live instruction/support-file markers |

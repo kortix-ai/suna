@@ -80,6 +80,10 @@ jobs:
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
               - 'apps/kortix-worker/**'
+              - 'packages/api-contract/**'
+              - 'packages/manifest-schema/**'
+              - 'packages/sdk/**'
+              - 'packages/llm-catalog/**'
             desktop:
               - '.github/workflows/ci.yml'
               - 'apps/desktop-electron/**'
@@ -235,6 +239,12 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-worker
 
+      - name: Resolve bundled SDK dependencies
+        run: |
+          ln -s "$GITHUB_WORKSPACE/apps/kortix-worker/node_modules" "$GITHUB_WORKSPACE/node_modules"
+          mkdir -p apps/kortix-worker/node_modules/@kortix
+          ln -s "$GITHUB_WORKSPACE/packages/llm-catalog" apps/kortix-worker/node_modules/@kortix/llm-catalog
+
       - name: Test worker
         run: bun run test
         working-directory: apps/kortix-worker
@@ -252,6 +262,10 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+        working-directory: apps/kortix-sandbox-agent-server
+
+      - name: Typecheck worker and daemon integration
+        run: bun run typecheck:worker-integration
         working-directory: apps/kortix-sandbox-agent-server
 
       - name: Build Linux sandbox agent daemon

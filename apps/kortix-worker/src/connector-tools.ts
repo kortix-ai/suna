@@ -159,8 +159,10 @@ export function createConnectorTools(options: {
   projectId: string;
   token: string;
 }): AgentTool[] {
+  let urlEnd = options.apiUrl.length;
+  while (urlEnd > 0 && options.apiUrl[urlEnd - 1] === "/") urlEnd--;
   const client = createScopedKortix({
-    backendUrl: options.apiUrl.replace(/\/+$/, ""),
+    backendUrl: options.apiUrl.slice(0, urlEnd),
     getToken: async () => options.token,
     clientSource: "api",
   });

@@ -74,9 +74,9 @@ function fixture(data?: { value: unknown }) {
     },
   });
   servers.push(server);
-  const create = (token = "worker-token", projectId = "project-one") =>
+  const create = (token = "worker-token", projectId = "project-one", apiPath = "/v1") =>
     createConnectorTools({
-      apiUrl: server.url.toString().replace(/\/$/, "") + "/v1",
+      apiUrl: server.url.toString().replace(/\/$/, "") + apiPath,
       token,
       projectId,
     });
@@ -86,6 +86,23 @@ function fixture(data?: { value: unknown }) {
   };
   return { requests, create, call };
 }
+
+test.each(["/v1", "/v1/", "/v1///", "/nested//v1///"])(
+  "connector URLs preserve interior paths and remove trailing slashes: %s",
+  async (apiPath) => {
+    const { requests, create } = fixture();
+    const tool = create("worker-token", "project-one", apiPath).find((item) => item.name === "connector_search")!;
+    await tool.execute("path-test", { query: "read" });
+    const prefix = apiPath.startsWith("/nested") ? "/nested//v1" : "/v1";
+    expect(requests[0]?.path).toBe(`${prefix}/connectors/projects/project-one/catalog`);
+  },
+);
+
+test("connector initialization handles long interior slash runs without network access", () => {
+  const { requests, create } = fixture();
+  expect(create("worker-token", "project-one", `/${"/".repeat(100_000)}v1`)).toHaveLength(3);
+  expect(requests).toHaveLength(0);
+});
 
 test("MCP tools are discovered and described through the worker-scoped SDK without startup requests", async () => {
   const { requests, create, call } = fixture();

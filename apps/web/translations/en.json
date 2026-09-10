@@ -820,8 +820,8 @@
           "description": "Control which tools and destinations can receive project secrets."
         },
         "pi_worker": {
-          "name": "Pi Worker Runtime (compiled)",
-          "description": "Run sessions with the experimental Pi worker runtime."
+          "name": "Legacy compiled boot prebuild",
+          "description": "Prebuild OpenCode artifacts for YAML v2. YAML v3 always uses Pi, regardless of this flag."
         }
       }
     },

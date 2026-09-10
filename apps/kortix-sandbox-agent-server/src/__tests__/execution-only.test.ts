@@ -118,6 +118,17 @@ describe('execution-only environment', () => {
     const staticPort = staticListener.port!
     listener.stop(true)
     staticListener.stop(true)
+    const resourceRequests: Array<{ path: string; authorization: string | null }> = []
+    const resourceApi = Bun.serve({
+      port: 0,
+      fetch(request) {
+        resourceRequests.push({ path: new URL(request.url).pathname, authorization: request.headers.get('authorization') })
+        return Response.json({
+          project_id: 'execution-project', session_id: 'execution-session',
+          agent_name: 'operator', source_sha: 'a'.repeat(40), files: [],
+        })
+      },
+    })
     const child = Bun.spawn([process.execPath, new URL('../main.ts', import.meta.url).pathname], {
       cwd: workspace,
       env: {
@@ -126,6 +137,9 @@ describe('execution-only environment', () => {
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1', KORTIX_TOKEN: token,
         KORTIX_SERVICE_PORT: String(port), KORTIX_STATIC_PORT: String(staticPort),
         KORTIX_WORKSPACE: workspace, KORTIX_PROJECT_TARGET: workspace,
+        KORTIX_API_URL: `http://127.0.0.1:${resourceApi.port}/v1`,
+        KORTIX_PROJECT_ID: 'execution-project', KORTIX_SESSION_ID: 'execution-session',
+        KORTIX_AGENT_NAME: 'operator', KORTIX_AGENT_STATE_DIR: join(home, 'resource-state'),
         KORTIX_DAEMON_LOG_FILE: 'off', KORTIX_RUNTIME_ASSETS_ENABLED: '0',
       },
       stdout: 'pipe', stderr: 'pipe',
@@ -147,11 +161,16 @@ describe('execution-only environment', () => {
       const response = await fetch(`http://127.0.0.1:${port}/file/content?path=note.txt`, { headers })
       expect(response.status).toBe(200)
       expect(await response.json()).toMatchObject({ content: 'before\n' })
+      expect(resourceRequests).toContainEqual({
+        path: '/v1/projects/execution-project/sessions/execution-session/environment/resources',
+        authorization: `Bearer ${token}`,
+      })
       await expect(access(marker)).rejects.toThrow()
       await expect(access(join(home, '.local/share/opencode/opencode.db'))).rejects.toThrow()
     } finally {
       child.kill('SIGTERM')
       await child.exited
+      resourceApi.stop(true)
       const logs = `${await output}\n${await errors}`
       expect(logs).not.toContain('[seed]')
       expect(logs).not.toContain('opencode-spawned')

@@ -1983,3 +1983,105 @@ Local verification:
 
 Evidence logs use `/tmp/pi-resources-*`. Preview deployment and user-visible
 verification follow this commit. This checkpoint is not a production release.
+
+## 2026-09-10 — bundled custom resources, preview verification
+
+Resource implementation: `bcbb3eaf7da79ade0d0f0f5c755ada1b6aa26738`.
+Pinned bootstrap authorization: `f12c588b05882e83c02447da241cd865af33f898`.
+Environment ingress fix: `3cf1324e2afad83d50c42a1452475ca7df37999a`.
+The preview checkout, API/gateway/frontend image tags, and public API health
+match the ingress-fix SHA. Deployment:
+[34492799002](https://github.com/kortix-ai/suna/actions/runs/34492799002).
+This branch's push deployment skips the complete target suite.
+
+The owned synthetic project is `adb8bd66-c6d2-41bd-bd1a-b0913754d7bb`.
+Its agent source releases are alpha `3cd8cd09517704405036c93650d37a88c0ac0bdd`
+and beta `4b0ab8418ca7fd5842424acd5d89df5968fdbd16`.
+
+| Live case | Verified result |
+| --- | --- |
+| Two agents | Each reads its own JSON and binary bytes. Mutating returned copies leaves the bundle unchanged. Undeclared reads fail. |
+| Worker-only code | Both resource inspections leave `/environment` absent, returning 404. |
+| Environment helper | Python runs with its declared helper and seeds. `/workspace/.kortix` is absent. The helper has mode `0444`. |
+| Stop/resume | Exact conversation history survives. Initialization runs again. A seed edit remains `USER_EDIT`; an intentionally deleted seed stays absent. |
+| New Git release | The existing session and resource API retain alpha. A new session reads beta. |
+| Invalid JSON | Factory evaluation fails before readiness. The actual worker log identifies the JSON parse failure. |
+| Credential boundaries | The worker downloads its own bundle with 200. Another agent, another release, Git clone, and sibling-session resources each return 403. |
+| Cancellation | Async admission returns 204. Stop interrupts a running 45-second Python helper. Its completion file remains absent after another 46 seconds. A new prompt completes. |
+| Browser streaming | A submitted UI prompt produces 21 distinct visible text lengths across 24 samples while Stop is visible. The final tool result and response remain visible. |
+| File and terminal UI | Files shows `USER_EDIT`. A real terminal command prints `PI_RESOURCE_TERMINAL_OK`, then reads `USER_EDIT` from the same environment. |
+| Immediate proxy resume | With a warm ingress cache, stop/resume returns health 200 in 567 ms and file content 200 in 438 ms on the first requests. |
+| Repeated resume and terminal reconnect | A second cycle returns health 200 in 517 ms and file content 200 in 361 ms. The browser terminal reconnects and prints `PI_TERMINAL_AFTER_RESUME`, then `USER_EDIT`. |
+| Runtime separation | Environment health reports `workload: environment`, `opencode: disabled`, and `environmentRuntimeVersion: 2`. |
+
+The first deployment exposed two defects. `workspace: runtime` blocked its own
+compiled bootstrap download. The authorization fix permits only the pinned,
+selected-agent bundle. After environment restart, the proxy retained a stale
+Daytona access token for five minutes. Cache entries now follow the persisted
+provisioning claim and readiness state across API processes.
+
+An initial cancellation probe incorrectly awaited the synchronous prompt. It
+reached the proxy's long-turn deadline before attempting Stop. That probe is not
+counted as a passing cancellation test. The corrected probe uses async admission.
+
+Final local checks:
+
+- `pnpm --filter kortix-api test`: **9,418 pass, 82 existing skips, 0 fail**;
+  32,778 assertions across 828 files, 44.25 seconds.
+- The first full API run failed one stale manifest-read test from the earlier
+  merge. Its replacement runs real Git operations, tests strict failure, and
+  distinguishes a readable empty repository from a missing ref.
+- Five focused proxy and environment lifecycle files: **86 pass, 0 fail**.
+  Three new token-rotation cases fail before the cache fix and pass afterward.
+- API typecheck: exit 0. Route coverage: **625/648, 23 allowlisted, 0 uncovered**.
+- The final `pnpm test -- --id GH-18` run: **1/1 pass**, 2.2 seconds for the
+  flow; cleanup completes. Earlier timed-out fixture deletions were retried
+  successfully. Benchmark: `1789051069086`.
+- SDK, worker, manifest, standalone compilation, and Docker results remain
+  those listed in the local checkpoint above.
+- `pnpm test`: all six local core lanes pass in **116.1 seconds**. REST/CLI:
+  **402/402 pass**, 0 failures/skips. The image-admission fixture now owns its
+  account so other flows cannot change its billing balance. Benchmark: `1789053951713`.
+- `pnpm --filter kortixd typecheck` and `typecheck:worker-integration`: exit 0.
+  The initial workspace check reported 54 diagnostics, also present before this
+  resource change. The daemon now uses its own strict compiler settings. Its
+  worker integration test has a separate, required CI check with worker settings.
+  Binary response bodies use ordinary `Uint8Array` values accepted by both type environments.
+- Four daemon regression files: **55 pass, 0 fail**, 223 assertions. These cover
+  exact binary file/attachment bytes, execution-only boot with resource identity,
+  real environment RPC, and cancellation.
+- A clean directory with standalone locked installs runs **838 worker tests**,
+  both worker/daemon typechecks, the integration typecheck, and both builds.
+  All pass. The worker `.mjs` is 1,686,077 bytes. The Linux AMD64 daemon is
+  95,893,632 bytes. No workspace dependency tree is available during this check.
+  The first clean-directory attempt omitted two repository files read by tests;
+  the corrected run includes them and is the passing evidence.
+- Connector URL tests: **40 pass, 0 fail**. They preserve interior path slashes
+  and cover 100,000 interior slashes without network access. URL trimming no
+  longer uses the polynomial regular expression reported by CodeQL.
+- `E2E_GREP='19 — Feature flags UI' pnpm test -- --browser-only`: **1 pass**,
+  14.6 seconds for the browser journey. The English label describes legacy
+  OpenCode prebuilds and states that YAML v3 selects Pi independently. The
+  browser asserts the real PATCH payload, read-back, and reload. Other locales
+  retain their existing translations and need the same terminology update.
+
+All four owned workers and their one environment are confirmed stopped in both
+the API and Daytona at `2026-09-10T15:14:41Z`. The browser is restored to the
+original test account and project. No test sandbox remains running.
+
+The earlier PR checks are not a green release gate: core, package, and browser
+failures motivated the fixture/build/label corrections above. The complete
+target suite and remaining CodeQL/Trivy/Hadolint findings are not cleared by
+these focused results. Check the PR for the checks on the final pushed commit.
+
+Evidence: `/tmp/pi-resources-live.json`, `/tmp/pi-resources-browser.json`,
+`/tmp/pi-resources-provider-auth.json`, `/tmp/pi-resources-provider-invalid.json`,
+`/tmp/pi-resources-resume-proxy-first.json`, `/tmp/pi-resources-resume-proxy.json`,
+`/tmp/pi-resources-provider-stopped.json`, `/tmp/pi-resources-clean-ci-green.log`,
+`/tmp/pi-resources-root-final.log`, and `/tmp/pi-resources-deployment.json`.
+The manual path is [Test bundled files](PI_CUSTOM_AGENTS.md#test-bundled-files).
+
+Shippable to production: **NOT YET**. This checkpoint does not complete the
+shared OpenCode/Pi configuration adapter, working-file backup and seven-day
+deletion, broader cron parity, or the direct-environment performance comparison.
+No main merge, dev deployment, or production deployment occurred.

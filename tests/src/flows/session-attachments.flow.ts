@@ -250,12 +250,13 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
-    const owner = ctx.client.as(ctx.P.OWNER);
+    const principal = await ctx.fixtures.user({ label: "SESS-31" });
+    const project = await ctx.fixtures.project({ accountId: principal.accountId! });
+    const owner = ctx.client.as(principal);
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
-      accountId: ctx.P.OWNER.accountId!,
-      userId: ctx.P.OWNER.userId!,
+      accountId: principal.accountId!,
+      userId: principal.userId!,
       metadata: { warm: true, pi_worker_boot: true, sandbox_slug: "pi-worker" },
     });
     ctx.track("session", sessionId, { projectId: project.id });

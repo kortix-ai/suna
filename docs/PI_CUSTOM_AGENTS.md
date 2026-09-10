@@ -184,12 +184,16 @@ kortix_version: 3
 default_agent: reporter
 agents:
   reporter:
+    workspace: runtime
     resources:
       worker:
         rules: assets/rules.json
       environment:
         - source: assets/template.txt
           target: /workspace/template.txt
+          mode: seed
+        - source: assets/deletable.txt
+          target: /workspace/deletable.txt
           mode: seed
         - source: scripts/report.py
           target: /opt/kortix/helpers/report.py
@@ -212,6 +216,12 @@ export default definePiAgent(async ({ resources, env }) => {
   const rules = await resources.readJson('rules');
   return {
     tools: [{
+      name: 'inspect_rules', label: 'Inspect rules', description: 'Read bundled rules without compute.',
+      parameters: { type: 'object', properties: {} },
+      async execute() {
+        return { content: [{ type: 'text', text: JSON.stringify(rules) }], details: { rules } };
+      },
+    }, {
       name: 'make_report', label: 'Make report', description: 'Run the report helper.',
       parameters: { type: 'object', properties: {} },
       async execute() {
@@ -246,6 +256,33 @@ access can change permissions. They are not a security boundary. Seed tracking
 lives with the environment. It survives restart, not environment deletion.
 Working-file backup and restoration remain a separate implementation phase.
 YAML v2 rejects `resources` until the OpenCode resource adapter exists.
+
+### Test bundled files
+
+Use the `reporter` YAML and factory above. Its Markdown must permit
+`inspect_rules` and `make_report`. Set a supported model. For the helper, use
+`print(open('/workspace/template.txt').read())` in `scripts/report.py`.
+Put valid JSON in `assets/rules.json`. Add recognizable text to `assets/template.txt`
+and `assets/deletable.txt`.
+
+1. Commit the agent source, Markdown, YAML, rules, template, and helper together.
+   Start a new session from that commit.
+2. Ask for `inspect_rules`. Confirm its value matches Git. This tool must leave
+   the environment absent.
+3. Ask for `make_report`. Open Files and Terminal. Both must read
+   the same template under `/workspace`.
+4. Edit the template and delete `/workspace/deletable.txt`. Stop and resume the session.
+   The edit must remain. The deleted seed must stay absent. File and terminal
+   access must reconnect without waiting for a cached provider token to expire.
+5. Commit different rules and helper content. The old session must retain its
+   original release. A new session must receive the new release.
+6. In a separate release, add an undeclared resource read or invalid JSON. The call must fail explicitly.
+   If the factory reads invalid JSON, the worker must fail before readiness.
+7. Run a helper that sleeps before writing a marker. Press Stop while it runs.
+   The marker must remain absent after the sleep period. Send another prompt.
+
+For automated cancellation tests, use `prompt_async` or keep the prompt request
+in flight. Waiting for a synchronous prompt response tests completion, not Stop.
 
 ## Native hooks and lifecycle
 

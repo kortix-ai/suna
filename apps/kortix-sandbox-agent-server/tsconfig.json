@@ -43,5 +43,8 @@
       "ws": ["./node_modules/@types/ws/index.d.mts"]
     }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  // This test imports the worker and its browser-capable SDK. The separate
+  // typecheck:worker-integration gate uses the worker's compiler settings.
+  "exclude": ["src/__tests__/env-rpc-worker-integration.test.ts"]
 }

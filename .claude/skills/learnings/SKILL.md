@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Verify shared-source imports without a workspace dependency tree (2026-09-10)
+
+**When:** a standalone runtime imports SDK or other workspace source.
+**Incident:** worker tests passed locally but CI could not resolve the SDK's OpenCode client dependency.
+**Rule:** reproduce the standalone install and resolve dependencies from the imported source's ancestry. Keep daemon and worker integration typechecks under their respective compiler settings.
+**Enforcer:** the sandbox-agent CI job links pinned dependencies, checks both compiler configurations, and builds both runtime artifacts. Shared package changes trigger the job.
+
 ### Pi bootstrap must not depend on workspace Git access
 
 - Incident: the 2026-09-10 resource preview returned `403` for every bundle download
