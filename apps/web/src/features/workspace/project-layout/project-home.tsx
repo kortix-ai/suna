@@ -10,6 +10,7 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
   getProjectDetail,
@@ -117,8 +118,8 @@ export function ProjectHome({
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
   // count, so the bell can paint before the destination exists.
-  const accessRequestsHref = accountId
-    ? `/accounts/${accountId}?tab=access-projects&project=${projectId}`
+  const accessRequestsTo = accountId
+    ? hubTarget(accountId, { tab: 'access-projects', project: projectId })
     : null;
 
   const handleSend = useCallback(
@@ -206,7 +207,7 @@ export function ProjectHome({
     <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
-      <AccessRequestsBell count={pendingAccessCount} href={accessRequestsHref} />
+      <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />
 
       <ProjectHomeWelcomeBody
         projectId={projectId}

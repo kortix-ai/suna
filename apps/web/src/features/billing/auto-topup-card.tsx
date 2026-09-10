@@ -169,7 +169,7 @@ export function AutoTopupCard({
     // default told customers with a working, already-charged payment method
     // that they had none — and auto top-up then never fired for them.
     if (enabled && setupStatus && !setupStatus.has_payment_method) {
-      errorToast(tI18nComplete('textb51caac9816a'));
+      errorToast(t('addPaymentFirst'));
       return;
     }
 
@@ -188,7 +188,7 @@ export function AutoTopupCard({
       successToast(tI18nComplete('textd81c55f49c5b'));
     } catch (err: unknown) {
       const error = err as { message?: string; error?: string };
-      errorToast(error?.message || error?.error || tI18nComplete('textdd2d120a9ea9'));
+      errorToast(error?.message || error?.error || t('updateFailed'));
     } finally {
       setSaving(false);
     }

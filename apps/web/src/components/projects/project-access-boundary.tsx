@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { AuthPendingScreen, DetailPanel, DetailRow } from '@/features/auth/auth-consent';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
+import { DetailPanel, DetailRow } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
@@ -281,20 +282,28 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
     forgetLastProjectId(user?.id, projectId);
   }, [unrenderable, projectId, user?.id]);
 
-  // The same quiet spinner every auth sub-surface shows while it resolves —
-  // minus the legal footer. This branch resolves into the project shell, which
-  // carries no footer, so keeping it would flash Terms/Privacy for the length
-  // of one fetch on every project open. The gate screens below still show it:
-  // they are terminal, and there they are the whole page.
+  // The full-page frame every "opening a project" surface shares — the Kortix
+  // mark, nothing else. This is what a hard refresh of `/projects/<id>` or of
+  // a session route shows for the length of one session check plus one
+  // getProject, so it is the most-seen loading surface in the product.
+  //
+  // It used to be `AuthPendingScreen footer={false}` — the auth sub-flows'
+  // quiet spinner with its legal line switched off. Two things were wrong with
+  // it: a bare spinner on an empty field is the least branded frame we ship,
+  // and `footer={false}` existed only to stop Terms/Privacy flashing for the
+  // length of one fetch on the way into a shell that has no footer. Neither
+  // problem exists once the frame is the mark. `AuthPendingScreen` still owns
+  // the consent flows, and the gate screens below still use `AuthFrame`.
+  //
   // A disabled query is pending, not loading. Wait for identity cleanup and
   // token publication before interpreting any result as an access decision.
-  if (!authReady || query.isPending) return <AuthPendingScreen footer={false} />;
+  if (!authReady || query.isPending) return <ProjectPendingScreen />;
 
   if (query.isSuccess) return <>{children}</>;
 
-  // A foreground recovery keeps the initial loader until the retry resolves.
+  // A foreground recovery keeps the branded project loader until the retry resolves.
   // A waiting access request keeps its gate while background polling runs.
-  if (!waiting && query.isFetching) return <AuthPendingScreen footer={false} />;
+  if (!waiting && query.isFetching) return <ProjectPendingScreen />;
 
   return (
     <AccessGateScreen
@@ -337,7 +346,7 @@ function AccessGateScreen({
   // `/projects` list.
   //
   // `useAppHome` reads a cookie, so it is browser-only. This screen never
-  // reaches the server render — the boundary above returns AuthPendingScreen
+  // reaches the server render — the boundary above returns the pending frame
   // while its getProject query is loading, which is its state on the server —
   // so the value can go straight into an href without desyncing hydration.
   const appHome = useAppHome();

@@ -40,14 +40,14 @@ import { getItemsForSurface } from '@/lib/menu-registry';
  * adding a `CapabilityTab`, a `ProjectSettingsSection`, or an account section
  * fails here until it is given a row.
  *
- * `{projectId}` / `{accountId}` are the registry's own tokens, resolved at
- * render by `allPaletteItems` in `command-palette.tsx`; a row still holding an
+ * `{projectId}` is the registry's own token, resolved at render by
+ * `allPaletteItems` in `command-palette.tsx`; a row still holding an
  * unresolved token there is dropped rather than navigated to. Comparing the
- * unresolved hrefs is therefore comparing exactly what ships.
+ * unresolved hrefs is therefore comparing exactly what ships. Account rows
+ * carry no href at all — see `paletteAccountTabs` below.
  */
 
 const PROJECT_TOKEN = '{projectId}';
-const ACCOUNT_TOKEN = '{accountId}';
 
 /**
  * Every routable path under `src/app`, as a segment list.
@@ -117,6 +117,20 @@ const paletteHrefs = new Set(
   paletteRows.filter((item) => item.kind === 'navigate' && item.href).map((item) => item.href!),
 );
 
+/**
+ * Every account-hub section the palette can open.
+ *
+ * Account rows are `kind: 'account'`, not `navigate`, and carry no href — the
+ * hub has no route, only `?accountId=` on the page you are already on
+ * (`stores/account-panel-store.ts`). So the reachability check below is
+ * against `VALID_TABS` rather than against `src/app`, which is a STRONGER
+ * join: it compares a row to the section catalog the hub actually renders
+ * from, instead of to a directory that merely has to exist.
+ */
+const paletteAccountTabs = new Set(
+  paletteRows.filter((item) => item.kind === 'account').map((item) => item.accountTab ?? ''),
+);
+
 function rowFor(href: string) {
   return paletteRows.find((item) => item.href === href) ?? null;
 }
@@ -171,11 +185,37 @@ describe('every account section has a palette row', () => {
   });
 
   for (const tab of VALID_TABS) {
-    test(`?tab=${tab} is reachable`, () => {
-      const href = `/accounts/${ACCOUNT_TOKEN}?tab=${tab}`;
-      expect({ tab, href, hasRow: paletteHrefs.has(href) }).toEqual({ tab, href, hasRow: true });
+    test(`?accountTab=${tab} is reachable`, () => {
+      expect({ tab, hasRow: paletteAccountTabs.has(tab) }).toEqual({ tab, hasRow: true });
     });
   }
+
+  test('the account picker itself is reachable, as the row with no section', () => {
+    expect(paletteAccountTabs.has('')).toBe(true);
+  });
+
+  // The other direction, and the one a deleted section walks through: a row
+  // naming a section the hub does not have renders an empty pane.
+  test('no account row names a section the hub cannot render', () => {
+    const known = new Set<string>([...VALID_TABS, '']);
+    for (const tab of paletteAccountTabs) {
+      expect({ tab, known: known.has(tab) }).toEqual({ tab, known: true });
+    }
+  });
+
+  // `kind` is what routes the click (`handleRegistryItem`). A row left on
+  // `navigate` would try to push a URL that 404s.
+  test('every account row is kind "account", never a navigate with an href', () => {
+    const accountRows = paletteRows.filter((item) => item.group === 'account');
+    expect(accountRows.length).toBeGreaterThan(0);
+    for (const row of accountRows) {
+      expect({ id: row.id, kind: row.kind, href: row.href }).toEqual({
+        id: row.id,
+        kind: 'account',
+        href: undefined,
+      });
+    }
+  });
 });
 
 describe('the two rows that answer in-palette instead of navigating', () => {
@@ -195,15 +235,15 @@ describe('the two rows that answer in-palette instead of navigating', () => {
     }
   });
 
-  test('every submenu row still declares a routed fallback or an action', () => {
+  test('every submenu row still declares a fallback destination or an action', () => {
     // A surface that consumes this registry WITHOUT the palette's nested
     // picker (the right sidebar) has to have somewhere to send the click.
+    // `kind: 'account'` is such a destination — it opens the hub modal — and
+    // needs no href, because the hub has no route.
     for (const id of Object.keys(SUBMENU_PAGE_BY_ID)) {
       const row = paletteRows.find((item) => item.id === id)!;
-      expect({ id, resolvable: Boolean(row.href || row.actionId) }).toEqual({
-        id,
-        resolvable: true,
-      });
+      const resolvable = Boolean(row.href || row.actionId) || row.kind === 'account';
+      expect({ id, resolvable }).toEqual({ id, resolvable: true });
     }
   });
 });

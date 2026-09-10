@@ -237,11 +237,17 @@ test.describe("24 — a menu click never reloads the document", () => {
         "sidebar workspace picker row",
         new RegExp(`/projects/${second.id}`),
       );
-      // The "Account settings" row above the list, same menu, same conversion.
+      // The "Account settings" row above the list, same menu, same rule — and
+      // the rule is what matters here, not the URL shape. The account hub
+      // became a modal on 2026-09-08 (`/accounts/**` deleted), so the row is a
+      // `HubLink`: still an anchor, still carrying a real href, but the href is
+      // now `?accountId=` on the page behind the menu. A modified click opens
+      // that URL for real; a plain click opens the modal with no navigation at
+      // all, which is a stronger version of what this spec is defending.
       await expectAnchor(
         picker.getByRole("menuitem", { name: "Account settings" }),
         'workspace picker "Account settings" row',
-        /\/accounts\//,
+        /[?&]accountId=/,
       );
       await expectSoftNavigation(
         page,

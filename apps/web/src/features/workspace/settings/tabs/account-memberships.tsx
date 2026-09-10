@@ -19,7 +19,7 @@
  * hunt.
  *
  * **Why `/accounts/<id>` with no `?tab=`.** That page's `VALID_TABS` falls back
- * to `members` (`app/(app)/accounts/[id]/page.tsx:349`), which is the section a
+ * to `members` (`features/accounts/hub/account-hub-content.tsx:349`), which is the section a
  * reader arriving from "which organizations am I in" is asking about. Same
  * destination the workspace switcher's "Account settings" row and the Members
  * pane's "Organization account settings" row already use — one account link in
@@ -38,6 +38,8 @@
 
 import Link from 'next/link';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { Button } from '@/components/ui/button';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
@@ -132,7 +134,7 @@ export function AccountMembershipsSection({
               description={accountRoleLabel(account.account_role, copy)}
             >
               <Button asChild variant="outline" size="sm">
-                <Link href={`/accounts/${account.account_id}`}>{copy.manage}</Link>
+                <HubLink to={hubTarget(account.account_id)}>{copy.manage}</HubLink>
               </Button>
             </SettingsRow>
           ))

@@ -123,7 +123,7 @@ async function parseResponse<T>(res: Response): Promise<T> {
     const message = (body && typeof body === 'object' && 'error' in body
       ? String((body as { error: unknown }).error)
       : text || res.statusText) || `HTTP ${res.status}`;
-    throw new CliError(message, 'API_ERROR', 1);
+    throw new CliError(`HTTP ${res.status}: ${message}`, 'API_ERROR', 1, { status: res.status });
   }
   return body as T;
 }

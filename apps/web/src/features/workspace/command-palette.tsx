@@ -28,6 +28,7 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
 import { useWorkspaceSearch } from '@/features/files';
 import { fetchChangeRequests } from '@/features/project-files/api/change-requests';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
@@ -74,7 +75,6 @@ import {
 } from '@/features/workspace/workspace-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
@@ -91,26 +91,16 @@ import { track } from '@/lib/track';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import {
-  buildWebProxyUrl,
-  normalizeExternalInput,
-  parseLocalhostUrl,
-  toInternalUrl,
-} from '@/lib/utils/sandbox-url';
-import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useProjectSwitchStore } from '@/stores/project-switch-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import {
   type FeatureFlagKey,
   type KortixAccount,
@@ -137,7 +127,6 @@ import {
   useCreateRuntimeSession,
   useModelStore,
   useRuntimeAgents,
-  useRuntimeMessages,
   useRuntimeProviders,
 } from '@kortix/sdk/react';
 import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
@@ -153,7 +142,6 @@ import {
   FileTextIcon as FileText,
   FlaskIcon as Flask,
   GitBranchIcon as FolderGit2,
-  GlobeIcon as Globe,
   HashIcon as Hash,
   ChatCircleIcon as MessageCircle,
   MinusIcon as Minus,
@@ -172,7 +160,6 @@ type PalettePage =
   | 'root'
   | 'agents'
   | 'models'
-  | 'messages'
   | 'workspaces'
   | 'accounts'
   | 'sessions'
@@ -533,85 +520,6 @@ function FileSearchPage({
   );
 }
 
-function MessagesPage({
-  sessionId,
-  query,
-  onSelect,
-}: {
-  sessionId: string;
-  query: string;
-  onSelect: (messageId: string) => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: messages, isLoading } = useRuntimeMessages(sessionId);
-
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
-
-  const items = useMemo(() => {
-    const result: { id: string; text: string }[] = [];
-    for (const turn of turns) {
-      const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
-      const raw = textParts.map((p) => p.text).join(' ');
-      const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
-      if (stripped.length > 0) {
-        result.push({ id: turn.userMessage.info.id, text: stripped });
-      }
-    }
-    return result;
-  }, [turns]);
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return items;
-    const q = query.trim().toLowerCase();
-    return items.filter((item) => (item.text || '').toLowerCase().includes(q));
-  }, [items, query]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>
-          {tHardcodedUi.raw('componentsCommandPalette.line328JsxTextLoadingMessages')}
-        </TextShimmer>
-      </div>
-    );
-  }
-
-  if (filtered.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-12">
-        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <MessageCircle className="text-muted-foreground/30 size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query
-            ? tHardcodedUi('i18nComplete.text6d2e757d8700', { value0: query })
-            : tHardcodedUi.raw('i18nComplete.text1b0e06a3f475')}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <CommandGroup heading={`Messages (${filtered.length})`} forceMount>
-      {filtered.map((item, index) => (
-        <CommandItem
-          key={item.id}
-          value={sanitizeCmdkValue(`message ${index} ${item.text.slice(0, 80)}`)}
-          onSelect={() => onSelect(item.id)}
-        >
-          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 shrink-0" />
-          <span className="text-muted-foreground/50 w-6 shrink-0 text-right text-xs tabular-nums">
-            #{index + 1}
-          </span>
-          <span className="flex-1 truncate text-sm">
-            {item.text.length > 80 ? `${item.text.slice(0, 80)}...` : item.text}
-          </span>
-        </CommandItem>
-      ))}
-    </CommandGroup>
-  );
-}
-
 /**
  * The 'changes' page — this workspace's OPEN change requests, listed by number
  * and title, each opening its own detail dialog.
@@ -899,7 +807,6 @@ export function CommandPalette() {
   }, [params?.sessionId, pathname]);
   const sidebarCtx = useContext(SidebarContext);
   const sidebarOpen = sidebarCtx?.open ?? false;
-  const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
   const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
@@ -1178,6 +1085,10 @@ export function CommandPalette() {
       // already declare `requiresProject: true` and are filtered above;
       // `{accountId}` rows are filtered here, off the token itself, so a new
       // account-scoped row can never ship without the guard.
+      // An account row cannot resolve without a selected account, exactly as
+      // an `{accountId}` href could not. Same guard, off the kind instead of
+      // off a token, so a new account row can never ship without it.
+      if (item.kind === 'account' && !selectedAccountId) continue;
       let href = item.href;
       if (href?.includes('{projectId}')) {
         if (!projectId) continue;
@@ -1343,12 +1254,6 @@ export function CommandPalette() {
         label: tHardcodedUi.raw('i18nComplete.text9cb6d01d8b29'),
         keywords: 'change model llm switch select provider anthropic openai claude gpt',
         targetPage: 'models',
-      });
-      items.push({
-        id: 'jump-to-message',
-        label: tHardcodedUi.raw('i18nComplete.text2518d1e2e3d1'),
-        keywords: 'jump message go scroll navigate find conversation chat',
-        targetPage: 'messages',
       });
     }
     return items.filter((item) => {
@@ -1584,8 +1489,14 @@ export function CommandPalette() {
     const rows = hasQuery ? filteredNavItems : rootSuggestionItems;
     for (const item of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
       const href = item.href;
+      // An account row opens a modal, so what it needs warmed is the hub's JS
+      // chunk, not an RSC payload.
+      if (item.kind === 'account') {
+        preloadAccountHub();
+        continue;
+      }
       if (item.kind !== 'navigate' || !href) continue;
-      if (href.startsWith('/projects') || href.startsWith('/accounts')) router.prefetch(href);
+      if (href.startsWith('/projects')) router.prefetch(href);
     }
   }, [open, page, hasQuery, filteredNavItems, rootSuggestionItems, router]);
 
@@ -1635,8 +1546,10 @@ export function CommandPalette() {
   // fallback stays cold on purpose: it exists only for the window before that.
   useEffect(() => {
     if (!open || !projectId || !inviteMembersAccountId) return;
-    router.prefetch(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
-  }, [open, projectId, inviteMembersAccountId, router]);
+    // The destination is the account hub, which is a modal: what needs warming
+    // is its chunk, not an RSC payload.
+    preloadAccountHub();
+  }, [open, projectId, inviteMembersAccountId]);
 
   const hasSessionResults = rootSessionResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
@@ -1677,156 +1590,6 @@ export function CommandPalette() {
     },
     [projectId, router, close],
   );
-
-  const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
-
-  const handleJumpToMessage = useCallback(
-    (messageId: string) => {
-      jumpToMessage(messageId);
-      close();
-    },
-    [jumpToMessage, close],
-  );
-
-  const detectedUrl = useMemo(() => {
-    const q = query.trim();
-    if (!q) return null;
-
-    const localhostParsed = parseLocalhostUrl(q.startsWith('http') ? q : `http://${q}`);
-    if (localhostParsed) {
-      return { kind: 'localhost' as const, ...localhostParsed };
-    }
-
-    if (/^\d{2,5}$/.test(q)) {
-      const port = Number.parseInt(q, 10);
-      if (port >= 1 && port <= 65535) {
-        return {
-          kind: 'localhost' as const,
-          originalUrl: `http://localhost:${port}/`,
-          port,
-          path: '/',
-        };
-      }
-    }
-
-    const normalized = normalizeExternalInput(q);
-    if (normalized) {
-      if (!q.includes('/')) {
-        const ext = q.split('.').pop()?.toLowerCase() || '';
-        const FILE_EXTS = new Set([
-          'ts',
-          'tsx',
-          'js',
-          'jsx',
-          'json',
-          'md',
-          'mdx',
-          'css',
-          'scss',
-          'less',
-          'html',
-          'xml',
-          'yaml',
-          'yml',
-          'toml',
-          'txt',
-          'log',
-          'env',
-          'lock',
-          'sql',
-          'db',
-          'py',
-          'rb',
-          'rs',
-          'go',
-          'java',
-          'sh',
-          'bash',
-          'zsh',
-          'conf',
-          'cfg',
-          'ini',
-          'svg',
-          'png',
-          'jpg',
-          'jpeg',
-          'gif',
-          'ico',
-          'woff',
-          'woff2',
-          'ttf',
-          'eot',
-          'map',
-          'd',
-          'mjs',
-          'cjs',
-          'mts',
-          'cts',
-          'vue',
-          'svelte',
-          'astro',
-          'wasm',
-          'zip',
-          'tar',
-          'gz',
-          'pdf',
-          'docx',
-          'pptx',
-          'xlsx',
-        ]);
-        if (FILE_EXTS.has(ext)) return null;
-      }
-      return { kind: 'external' as const, url: normalized };
-    }
-
-    return null;
-  }, [query]);
-
-  const handleOpenUrl = useCallback(() => {
-    if (!detectedUrl) return;
-
-    if (detectedUrl.kind === 'localhost') {
-      const { port, path } = detectedUrl;
-      const internalUrl = toInternalUrl(port, path);
-      const proxied = buildProxyUrl(internalUrl) || internalUrl;
-      const tabId = `preview:${port}`;
-      openTabAndNavigate({
-        id: tabId,
-        title: tHardcodedUi('i18nComplete.textb1d5e8ac8bb4', { value0: port }),
-        type: 'preview',
-        href: `/p/${port}`,
-        metadata: enrichPreviewMetadata({
-          url: proxied,
-          port,
-          originalUrl: internalUrl,
-          path,
-        }),
-      });
-    } else {
-      const extUrl = detectedUrl.url;
-      const proxyUrl = buildWebProxyUrl(extUrl, subdomainOpts) || extUrl;
-      let displayHost: string;
-      try {
-        displayHost = new URL(extUrl).hostname;
-      } catch {
-        displayHost = extUrl;
-      }
-
-      openTabAndNavigate({
-        id: `preview:web`,
-        title: displayHost,
-        type: 'preview',
-        href: '/p/web',
-        metadata: enrichPreviewMetadata({
-          url: proxyUrl,
-          port: 0,
-          originalUrl: extUrl,
-          path: '/',
-        }),
-      });
-    }
-    close();
-  }, [detectedUrl, close, buildProxyUrl, tHardcodedUi, subdomainOpts]);
 
   const handleToggleSidebar = useCallback(() => {
     // Reached by keyboard, from a palette the user is already typing in — the
@@ -2016,13 +1779,18 @@ export function CommandPalette() {
     // redirect to exactly this destination (it resolves the account id itself
     // and appends the same `&project=` scoping), so the unresolved case costs
     // one extra hop instead of the click doing nothing.
-    // nav-contract: prefetch-only — the destination depends on whether
-    // `inviteMembersAccountId` has resolved, so it is not known at render.
-    router.push(
-      inviteMembersAccountId
-        ? `/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`
-        : `/projects/${projectId}/members`,
-    );
+    if (inviteMembersAccountId) {
+      // The hub over the page you are on — no navigation at all.
+      openAccountPanel(
+        hubTarget(inviteMembersAccountId, { tab: 'access-projects', project: projectId }),
+      );
+      close();
+      return;
+    }
+    // nav-contract: prefetch-only — the fallback only runs in the window
+    // before `inviteMembersAccountId` resolves; that route redirects to the
+    // same hub destination, resolving the account id itself.
+    router.push(`/projects/${projectId}/members`);
     close();
   }, [close, projectId, inviteMembersAccountId, router]);
 
@@ -2197,6 +1965,16 @@ export function CommandPalette() {
   const handleRegistryItem = useCallback(
     (item: MenuItemDef) => {
       switch (item.kind) {
+        // The account hub has no route: it is `?accountId=` over the page you
+        // are on, so this row opens a modal rather than navigating. `close()`
+        // then leaves the palette, and the hub is already there — no fetch, no
+        // transition, and Escape puts you back on this same page.
+        case 'account': {
+          if (!selectedAccountId) break;
+          openAccountPanel(hubTarget(selectedAccountId, { tab: item.accountTab }));
+          close();
+          break;
+        }
         case 'navigate': {
           const href = item.href || '';
 
@@ -2218,7 +1996,7 @@ export function CommandPalette() {
             break;
           }
 
-          if (href.startsWith('/projects') || href.startsWith('/accounts')) {
+          if (href.startsWith('/projects')) {
             // nav-contract: prefetch-only — a cmdk row activated by keyboard,
             // and `href` is resolved from the registry item at click time. The
             // root-navigation effect warms the rendered rows.
@@ -2270,6 +2048,7 @@ export function CommandPalette() {
       handleSetTheme,
       handleSetWallpaper,
       actionHandlers,
+      selectedAccountId,
     ],
   );
 
@@ -2311,10 +2090,10 @@ export function CommandPalette() {
     if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'density') return filteredDensityOptions.length;
-    // 0, like 'messages': these pages fetch and filter their own rows, so the
-    // count lives inside them (the 'changes' group heading carries it) rather
-    // than being lifted here only to be recomputed.
-    if (page === 'messages' || page === 'changes' || page === 'flags') return 0;
+    // 0: these pages fetch and filter their own rows, so the count lives
+    // inside them (the 'changes' group heading carries it) rather than being
+    // lifted here only to be recomputed.
+    if (page === 'changes' || page === 'flags') return 0;
     if (!hasQuery) return 0;
     return (
       filteredNavItems.length +
@@ -2343,7 +2122,6 @@ export function CommandPalette() {
     if (page === 'agents') return tI18nComplete.raw('text32f4468b0b6f');
     if (page === 'models') return tI18nComplete.raw('text37b90680b842');
     if (page === 'files') return tI18nComplete.raw('text19608ade89b8');
-    if (page === 'messages') return tI18nComplete.raw('text764a5aa003f8');
     if (page === 'workspaces') return tI18nComplete.raw('text5c192a3e6f23');
     if (page === 'accounts') return tI18nComplete.raw('text72eb3689cab9');
     if (page === 'sessions') return tI18nComplete.raw('textf41875714fdc');
@@ -2357,7 +2135,6 @@ export function CommandPalette() {
     if (page === 'agents') return tI18nComplete.raw('text6fb2caa0ee1c');
     if (page === 'models') return tI18nComplete.raw('text9cb6d01d8b29');
     if (page === 'files') return tI18nComplete.raw('text5a5bc0c4ce6e');
-    if (page === 'messages') return tI18nComplete.raw('text2518d1e2e3d1');
     if (page === 'workspaces') return tI18nComplete.raw('text9ad6baffd025');
     if (page === 'accounts') return tI18nComplete.raw('text4ecda5e7a644');
     if (page === 'sessions') return tI18nComplete.raw('text113463edeb06');
@@ -2479,22 +2256,18 @@ export function CommandPalette() {
                             )}
                             <ChevronRight className="text-muted-foreground/30 size-3" />
                           </CommandItem>
-                          <CommandItem
-                            value="suggestion jump to message go scroll navigate"
-                            onSelect={() => goToPage('messages')}
-                          >
-                            <MessageCircle className="size-4" />
-                            <span className="flex-1">
-                              {tHardcodedUi.raw(
-                                'componentsCommandPalette.line1235JsxTextJumpToMessage',
-                              )}
-                            </span>
-                            <ChevronRight className="text-muted-foreground/30 size-3" />
-                          </CommandItem>
                         </>
                       )}
 
-                      {projectId && (
+                      {/* `currentSessionId`, not `projectId`. File search runs
+                          against the SESSION's sandbox daemon
+                          (`useWorkspaceSearch` -> `getActiveServerUrl()` ->
+                          `findFiles`/`findText`), so with no session mounted
+                          every query resolved to a swallowed fetch error and
+                          rendered "No files for …" — indistinguishable from a
+                          real zero-result search. A project id is not enough
+                          to make this row work; a session is. */}
+                      {currentSessionId && (
                         <CommandItem
                           value="suggestion search files find file grep repo content"
                           onSelect={() => goToPage('files')}
@@ -2589,8 +2362,6 @@ export function CommandPalette() {
                           >
                             {item.id === 'change-agent' ? (
                               <Bot className="size-4" />
-                            ) : item.id === 'jump-to-message' ? (
-                              <MessageCircle className="size-4" />
                             ) : (
                               <Cpu className="size-4" />
                             )}
@@ -2749,36 +2520,7 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {detectedUrl && (
-                      <CommandGroup
-                        heading={tHardcodedUi.raw(
-                          'componentsCommandPalette.line1419JsxAttrHeadingOpenURL',
-                        )}
-                        forceMount
-                      >
-                        <CommandItem
-                          value={sanitizeCmdkValue(
-                            `open url browser preview ${query.trim()} localhost port`,
-                          )}
-                          onSelect={handleOpenUrl}
-                        >
-                          <Globe className="text-kortix-blue size-4" />
-                          <span className="flex-1 truncate">
-                            {detectedUrl.kind === 'localhost'
-                              ? tI18nComplete('text7ca3b3fe99bb', {
-                                  value0: detectedUrl.port,
-                                  value1: detectedUrl.path !== '/' ? detectedUrl.path : '',
-                                })
-                              : `Open ${new URL(detectedUrl.url).hostname}`}
-                          </span>
-                          <Badge variant="kortix" size="sm">
-                            {tHardcodedUi.raw('i18nComplete.textd4c3e8a11256')}
-                          </Badge>
-                        </CommandItem>
-                      </CommandGroup>
-                    )}
-
-                    {queryLongEnough && !detectedUrl && projectId && (
+                    {queryLongEnough && currentSessionId && (
                       <CommandGroup
                         heading={tHardcodedUi.raw(
                           'componentsCommandPalette.line1437JsxAttrHeadingFileSearch',
@@ -2819,10 +2561,17 @@ export function CommandPalette() {
                             {query.trim()}
                             {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}
                           </span>
+                          {/* The "Search files" half of this hint points at a
+                              row that only exists on a session — see the
+                              `currentSessionId` guards above. Off a session it
+                              named a control that was not on screen, so the
+                              generic half is all that is offered there. */}
                           <p className="text-muted-foreground/30 mt-1 text-xs">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
-                            )}
+                            {currentSessionId
+                              ? tHardcodedUi.raw(
+                                  'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
+                                )
+                              : tHardcodedUi.raw('i18nComplete.textce18e358bf01')}
                           </p>
                         </div>
                       </div>
@@ -3007,7 +2756,7 @@ export function CommandPalette() {
               </>
             )}
 
-            {page === 'files' && projectId && (
+            {page === 'files' && currentSessionId && (
               <FileSearchPage query={query} onSelect={handleSelectFile} />
             )}
 
@@ -3172,14 +2921,6 @@ export function CommandPalette() {
                   </span>
                 </div>
               ))}
-
-            {page === 'messages' && currentSessionId && (
-              <MessagesPage
-                sessionId={currentSessionId}
-                query={query}
-                onSelect={handleJumpToMessage}
-              />
-            )}
 
             {page === 'changes' && projectId && (
               <ChangeRequestsPage

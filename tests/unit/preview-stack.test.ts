@@ -168,7 +168,7 @@ describe('ephemeral self-host preview stack', () => {
 
   it('pins exact images and configures the preview data plane', () => {
     const configured = applyPreviewEnvironment(
-      'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n',
+      'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\nAPI_KEY_SECRET=tokenhash\n',
       {
         origin: 'https://preview.example',
         sha: SHA,
@@ -200,6 +200,9 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');
     expect(configured.runtimeEnv).not.toContain('E2E_AGENTMAIL_API_KEY');
     expect(configured.testEnv).toContain('KE2E_TARGET=preview');
+    // The self-host token-hash secret reaches the flows (CONN-27 mints a real
+    // session-bound token with it); it is never a shared or default value.
+    expect(configured.testEnv).toContain('KE2E_API_KEY_SECRET=tokenhash');
     expect(configured.testEnv).toContain(`KE2E_PREVIEW_AUTHORIZATION=approved:${SHA}`);
     expect(configured.testEnv).toContain('E2E_MAILPIT_URL=https://preview.example/_mailpit');
     expect(configured.testEnv).toContain(

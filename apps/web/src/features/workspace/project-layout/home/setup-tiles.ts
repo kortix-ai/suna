@@ -4,6 +4,7 @@ import {
   channelsHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { hubTarget, type HubTarget } from '@/stores/account-panel-store';
 import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import type { ProjectSetupStepKey } from './setup-steps';
@@ -35,6 +36,8 @@ export type SetupTile = {
    * loading): the tile does nothing rather than navigating to a broken URL.
    */
   href?: (projectId: string, accountId?: string) => string | undefined;
+  /** The account hub — a modal, not a route. Mutually exclusive with `href`. */
+  to?: (projectId: string, accountId?: string) => HubTarget | undefined;
   /**
    * Every IAM leaf the tile's destination asserts. ALL of them must be allowed
    * or the tile is not rendered — hidden, never disabled, because a control a
@@ -90,8 +93,10 @@ export const PROJECT_SETUP_TILES: SetupTile[] = [
     // `section` is unused for this tile but still has to satisfy the type;
     // 'general' is an arbitrary valid placeholder, never read.
     section: 'workspace',
-    href: (projectId, accountId) =>
-      accountId ? `/accounts/${accountId}?tab=access-projects&project=${projectId}` : undefined,
+    to: (projectId, accountId) =>
+      accountId
+        ? hubTarget(accountId, { tab: 'access-projects', project: projectId })
+        : undefined,
     actions: [PROJECT_ACTIONS.PROJECT_MEMBERS_READ],
   },
   {
@@ -126,8 +131,25 @@ export function setupTileHref(
   projectId: string,
   accountId?: string,
 ): string | undefined {
+  // A tile that names a hub target has no href at all — see `setupTileTo`.
+  if (tile.to) return undefined;
   if (tile.href) return tile.href(projectId, accountId);
   return isCapabilityTabKey(tile.section)
     ? capabilityTabHref(projectId, tile.section)
     : `/projects/${projectId}/settings/${tile.section}`;
+}
+
+/**
+ * The tile's destination when it is the account hub — a modal over this page,
+ * which has no URL to prefetch and so cannot be an `href`.
+ *
+ * `undefined` for every other tile, and for "Invite your team" while
+ * `account_id` is still in flight.
+ */
+export function setupTileTo(
+  tile: SetupTile,
+  projectId: string,
+  accountId?: string,
+): HubTarget | undefined {
+  return tile.to?.(projectId, accountId);
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
@@ -23,6 +23,41 @@ function navFor(activeTab = 'members', accountId?: string) {
   return { nav, pushed };
 }
 
+/**
+ * A fake browser, because the account-hub branch below opens a MODAL rather
+ * than navigating: the hub has no route, so its destination is `?accountId=`
+ * written onto the current page with `history.pushState`
+ * (`stores/account-panel-store.ts`). `pushed` therefore stays empty for those
+ * ids, and `hubUrl()` is what proves the click went somewhere.
+ */
+const originalWindow = (globalThis as { window?: unknown }).window;
+let historyUrl = '/projects/p1';
+
+function installFakeBrowser() {
+  historyUrl = '/projects/p1';
+  (globalThis as { window?: unknown }).window = {
+    location: { pathname: '/projects/p1', search: '' },
+    history: {
+      pushState: (_s: unknown, _t: unknown, url: string) => {
+        historyUrl = url;
+      },
+      replaceState: (_s: unknown, _t: unknown, url: string) => {
+        historyUrl = url;
+      },
+      back: () => {},
+    },
+  };
+}
+
+function hubUrl() {
+  return historyUrl;
+}
+
+afterEach(() => {
+  if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+  else (globalThis as { window?: unknown }).window = originalWindow;
+});
+
 beforeEach(() => {
   useSettingsPanelStore.setState({ open: false, membersTab: 'people' });
 });
@@ -40,19 +75,23 @@ describe('buildStandaloneCapabilityNav', () => {
     expect(pushed).toEqual([]);
   });
 
-  test('navigate() to an ACCOUNT_GRADUATED id (groups, roles) routes to the account page', () => {
+  test('navigate() to an ACCOUNT_GRADUATED id (groups, roles) opens the account hub', () => {
     // Regression: Members' Access tab's "Create one in Groups" / "Create one
     // in Roles" links call exactly this — before this branch existed,
     // `groups`/`roles` matched none of the checks and the click did nothing.
+    installFakeBrowser();
     const { nav, pushed } = navFor('members', 'acct-1');
     nav.navigate('groups');
-    expect(pushed).toEqual(['/accounts/acct-1?tab=groups']);
+    expect(pushed).toEqual([]);
+    expect(hubUrl()).toBe('/projects/p1?accountId=acct-1&accountTab=groups');
   });
 
   test('roles resolves the same way', () => {
+    installFakeBrowser();
     const { nav, pushed } = navFor('members', 'acct-1');
     nav.navigate('roles');
-    expect(pushed).toEqual(['/accounts/acct-1?tab=roles']);
+    expect(pushed).toEqual([]);
+    expect(hubUrl()).toBe('/projects/p1?accountId=acct-1&accountTab=roles');
   });
 
   test('an ACCOUNT_GRADUATED id with no accountId yet does nothing, not a broken URL', () => {

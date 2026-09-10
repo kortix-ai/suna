@@ -23,8 +23,8 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const hubDir = join(import.meta.dir, '../../../../features/accounts/hub');
-const source = readFileSync(join(import.meta.dir, 'page.tsx'), 'utf8');
+const hubDir = import.meta.dir;
+const source = readFileSync(join(hubDir, 'account-hub-content.tsx'), 'utf8');
 const accessSource = readFileSync(join(hubDir, 'use-account-hub-access.ts'), 'utf8');
 const membersSource = readFileSync(join(hubDir, 'use-account-members.ts'), 'utf8');
 const sidebarSource = readFileSync(join(hubDir, 'account-settings-sidebar.tsx'), 'utf8');
@@ -251,7 +251,7 @@ describe('account hub — the members-list IAM reads need entitlement AND permis
 // its roles read on NOTHING at all.
 describe('account hub — the drill-down panels need entitlement AND permission too', () => {
   const readPanel = (file: string) =>
-    strip(readFileSync(join(import.meta.dir, '../../../../components/iam', file), 'utf8'));
+    strip(readFileSync(join(hubDir, '../../../components/iam', file), 'utf8'));
 
   const memberPanel = readPanel('member-access-panel.tsx');
   const groupPanel = readPanel('group-access-panel.tsx');

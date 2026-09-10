@@ -1,5 +1,6 @@
 'use client';
 
+import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -82,7 +83,7 @@ import {
  * no headings". Do not reintroduce those headings.
  *
  * **The desktop rail's rows are the account settings page's**
- * (`app/(app)/accounts/[id]/page.tsx`'s `<aside>`): the nav renders as one
+ * (`features/accounts/hub/account-hub-content.tsx`'s `<aside>`): the nav renders as one
  * unlabeled group in that page's `NAV_GROUPS` dialect — same row classes, same
  * icon size, same active/hover treatment. It is ONE list under the hood
  * (`sections.map`, a single `TabsList`); mobile keeps the separate horizontal
@@ -512,7 +513,9 @@ export function buildProjectSettingsNav(state: {
       // `navigate('groups')` / `navigate('roles')` matched nothing and did
       // nothing at all.
       if (state.accountId && isAccountGraduatedSection(tab)) {
-        state.navigateTo(`/accounts/${state.accountId}?tab=${ACCOUNT_GRADUATED[tab]}`);
+        // A modal over the page the caller is already on, not a navigation:
+        // the account hub has no route (`stores/account-panel-store.ts`).
+        openAccountPanel(hubTarget(state.accountId, { tab: ACCOUNT_GRADUATED[tab] }));
         return;
       }
       const overlayTab = parseSettingsTab(tab);

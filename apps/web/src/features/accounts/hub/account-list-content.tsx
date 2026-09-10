@@ -1,12 +1,23 @@
 'use client';
 
+/**
+ * The account list — the pane the hub shows when no account is selected.
+ *
+ * It has no URL of its own: `?accountId=` with an empty value is the modal
+ * open with no account chosen. Rows are `HubLink`s, so picking one is a
+ * `replaceState` and a render.
+ */
+
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { AccountPane } from '@/features/accounts/hub/account-pane';
+import { forgetPushedEntry, hubTarget } from '@/stores/account-panel-store';
+
+import { HubLink } from './account-hub-location';
+import { AccountPane } from './account-pane';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -25,12 +36,14 @@ import {
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-export default function AccountsPage() {
+export function AccountListContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // A brand-new account gets a brand-new project, which is a real page. The
+  // `router.replace` overwrites the entry the modal pushed, so it both closes
+  // the modal and leaves Back pointing where the person started.
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
@@ -155,6 +168,7 @@ export default function AccountsPage() {
           });
           // The landing door, NOT the remembered project: that cookie names a
           // project in the account being left.
+          forgetPushedEntry();
           router.replace(PROJECT_LANDING_PATH);
         }}
       />
@@ -167,10 +181,10 @@ function AccountRow({ account, active }: { account: KortixAccount; active: boole
   const label = account.name || 'Account';
   return (
     <li>
-      {/* The account hub is a render-time destination, so the row is an anchor.
-          A button would run the RSC fetch cold on every click. */}
-      <Link
-        href={`/accounts/${account.account_id}`}
+      {/* A real anchor — Cmd-click opens this page with the modal already on
+          that account — whose plain click costs a `replaceState` and a render. */}
+      <HubLink
+        to={hubTarget(account.account_id)}
         className="group bg-popover hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-colors"
       >
         <EntityAvatar label={label} size="md" />
@@ -190,7 +204,7 @@ function AccountRow({ account, active }: { account: KortixAccount; active: boole
           ) : null}
         </span>
         <ChevronRight className="text-muted-foreground size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-      </Link>
+      </HubLink>
     </li>
   );
 }

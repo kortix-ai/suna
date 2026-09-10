@@ -81,8 +81,12 @@ function productSurfaceRoutes(projectId: string, accountId: string): string[] {
   return [
     "/new",
     "/connections",
-    "/accounts",
-    `/accounts/${accountId}`,
+    // The account hub has no route since 2026-09-08 — it is a modal addressed
+    // by `?accountId=` on the page it opens over. Both census entries follow
+    // it there, so the hub's own strings stay covered: an empty value is its
+    // account list, a real id is that account's panes.
+    `/projects/${projectId}?accountId=`,
+    `/projects/${projectId}?accountId=${accountId}`,
     `/projects/${projectId}`,
     `/projects/${projectId}/customize/agents`,
     `/projects/${projectId}/customize/skills`,

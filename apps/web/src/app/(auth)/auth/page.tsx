@@ -24,6 +24,7 @@ import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } 
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
@@ -1035,14 +1036,19 @@ function AuthContent() {
   }, [trustedUser]);
 
   // A session is already established — the effect above is redirecting (or
-  // handing off to mobile). Keep the quiet branded frame up instead of a
-  // spinner, a blank screen, or a dead form.
+  // handing off to mobile). This is a hand-off, not a screen, so it shows the
+  // SAME frame the destination shows: `/projects/start` and the project access
+  // boundary both render `ProjectPendingScreen`, so the redirect produces no
+  // visual change at all.
+  //
+  // It used to render `<AuthFrame footerVariant="default">` with the entry
+  // step's own "Welcome to Kortix" / "Your AI Command Center" header. That is
+  // the headline a signed-OUT visitor is greeted with, so replaying it the
+  // instant a password is accepted read as the form bouncing backwards — and
+  // the legal footer it pinned then vanished one navigation later. Three
+  // different frames in a row is what made signing in look glitchy.
   if (trustedUser) {
-    return (
-      <AuthFrame footerVariant="default">
-        <StepHeader title={t('welcome')} tagline={t('tagline')} />
-      </AuthFrame>
-    );
+    return <ProjectPendingScreen />;
   }
 
   // Render the form immediately — even while the session check is still in
