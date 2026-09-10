@@ -996,6 +996,10 @@
         "pi_worker": {
           "name": "Runtime worker Pi (compilato)",
           "description": "Esegui sessioni con il runtime sperimentale del worker Pi."
+        },
+        "spaces": {
+          "name": "Spazi",
+          "description": "Raggruppa le sessioni in un'iniziativa denominata nel progetto, ciascuna con il proprio agente predefinito e le attività pianificate."
         }
       }
     },

@@ -996,6 +996,10 @@
         "pi_worker": {
           "name": "Entorno del worker Pi (compilado)",
           "description": "Ejecuta sesiones con el entorno experimental del worker Pi."
+        },
+        "spaces": {
+          "name": "Espacios",
+          "description": "Agrupa sesiones en una iniciativa con nombre dentro del proyecto, cada una con su propio agente predeterminado y trabajo programado."
         }
       }
     },

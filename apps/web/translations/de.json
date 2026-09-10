@@ -996,6 +996,10 @@
         "pi_worker": {
           "name": "Pi-Worker-Laufzeit (kompiliert)",
           "description": "Führen Sie Sitzungen mit der experimentellen Pi-Worker-Laufzeit aus."
+        },
+        "spaces": {
+          "name": "Bereiche",
+          "description": "Fassen Sie Sitzungen zu einem benannten Vorhaben im Projekt zusammen, jeweils mit eigenem Standardagenten und geplanter Arbeit."
         }
       }
     },

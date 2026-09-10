@@ -822,6 +822,10 @@
         "pi_worker": {
           "name": "Pi Worker Runtime (compiled)",
           "description": "Run sessions with the experimental Pi worker runtime."
+        },
+        "spaces": {
+          "name": "Spaces",
+          "description": "Group sessions under a named effort inside the project, each with its own default agent and scheduled work."
         }
       }
     },

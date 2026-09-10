@@ -996,6 +996,10 @@
         "pi_worker": {
           "name": "Ambiente do worker Pi (compilado)",
           "description": "Execute sessões com o ambiente experimental do worker Pi."
+        },
+        "spaces": {
+          "name": "Espaços",
+          "description": "Agrupe sessões sob uma iniciativa nomeada dentro do projeto, cada uma com seu próprio agente padrão e trabalho agendado."
         }
       }
     },
