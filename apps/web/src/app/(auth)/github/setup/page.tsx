@@ -208,8 +208,11 @@ function GitHubSetup() {
 
   // The live region wraps only the status content — not the frame — so
   // screen readers don't re-announce the mark and legal footer on updates.
+  // Desktop Back returns to the page that opened this flow, like the in-page
+  // Back below. The account hub opens it with router.replace, so history alone
+  // would skip the hub's Git tab.
   return (
-    <AuthFrame>
+    <AuthFrame backHref={returnPath ?? undefined}>
       <div role="status" aria-live="polite" aria-label={heading}>
         <Rise>
           <StepHeader title={heading} description={message} />
