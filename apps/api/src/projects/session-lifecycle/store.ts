@@ -1,4 +1,5 @@
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { deadLetterCause } from './dead-letter-cause';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -697,7 +698,16 @@ export async function markCommandFailed(
   // console.warn deep in the drain — invisible to alerting while the user's
   // session sat "queued — agent picking up" forever. Make it a real error.
   const payload = (row.payload ?? {}) as Record<string, unknown>;
-  logger.error('[session-lifecycle] command dead-lettered — giving up after retries', {
+  // Severity follows the CAUSE — see `deadLetterCause`. A terminal
+  // customer-state refusal (out of credits, a model the account is not
+  // entitled to, a workspace mode its manifest forbids) is not a platform
+  // fault and must not page; 96% of prod's dead letters are that, dominated by
+  // cron triggers firing into accounts that cannot pay. Everything else keeps
+  // the error level it was deliberately given.
+  const cause = deadLetterCause(error);
+  const log = cause === 'customer_state' ? logger.warn : logger.error;
+  log('[session-lifecycle] command dead-lettered — giving up after retries', {
+    cause,
     command_id: row.commandId,
     command_type: row.commandType,
     source: row.source,
