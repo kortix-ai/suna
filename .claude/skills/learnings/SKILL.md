@@ -4816,3 +4816,10 @@ completion markers and independent state checks after an update.
 Independent SSM verification matched the installed CLI's published checksum,
 all three released image digests, six healthy containers, and preserved
 instance settings. Both frontend replicas have a 1 GiB memory limit.
+
+**Post-release verification.** The v0.13.13 stable update preserved the configured
+1 GiB limit on both frontend replicas. Nineteen checks across 1,200 seconds
+observed six healthy application containers, zero restarts, and zero frontend
+heap errors. Public API and frontend health returned the released source SHA.
+A temporary confirmed user authenticated, read its account, and was deleted.
+The deletion read-back returned `404`. Existing customer sessions were not exercised.
