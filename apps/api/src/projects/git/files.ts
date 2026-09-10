@@ -164,8 +164,25 @@ export async function readManifestFromRepo(
   project: GitBackedProject,
   candidatePaths: string[],
   ref?: string,
-  opts?: { forceRefresh?: boolean },
-): Promise<{ path: string; content: string; sha: string; candidatePaths: string[] } | null> {
+  opts?: {
+    forceRefresh?: boolean;
+    /** Throw when `ref` does not resolve instead of answering "absent".
+     *  Authorization reads set this: an unreadable ref must not be laundered
+     *  into the synthesized permissive manifest a blank project gets. */
+    strictRef?: boolean;
+  },
+): Promise<{
+  path: string;
+  content: string;
+  sha: string;
+  candidatePaths: string[];
+  /** The commit `ref` resolved to when the manifest was read, or null when
+   *  git could not resolve it. Authorization stamps this onto the grant it
+   *  derives (see `AgentGrant.manifestCommit`) so a later read at an OLDER
+   *  commit — a stale mirror, a mid-fetch ref — is recognisable as stale
+   *  instead of being applied as if the manifest had changed. */
+  commit: string | null;
+} | null> {
   const normalized = candidatePaths
     .map((p) => normalizeTreePath(p))
     .filter((p): p is string => !!p);
@@ -175,6 +192,14 @@ export async function readManifestFromRepo(
   // A pathspec-scoped ls-tree prints only the candidates present at this ref
   // (order-agnostic), so we pick the highest-priority one ourselves.
   const listed = await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);
+  if (listed.exitCode !== 0 && opts?.strictRef) {
+    // A ref that does not resolve is NOT "the manifest is absent". Returning
+    // null here made an unreadable mirror indistinguishable from a blank
+    // project, which callers answer with a synthesized permissive manifest.
+    throw new Error(
+      `git ls-tree ${treeRef} failed (exit ${listed.exitCode}): ${listed.stderr.trim() || 'no output'}`,
+    );
+  }
   const revisions = new Map<string, string>();
   for (const line of listed.stdout.split('\n')) {
     const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
@@ -185,7 +210,9 @@ export async function readManifestFromRepo(
   const revision = revisions.get(winner);
   if (!revision) return null;
   const shown = await runGit(['show', `${treeRef}:${winner}`], repoPath, false);
-  return { path: winner, content: shown.stdout, sha: revision, candidatePaths: normalized };
+  const resolved = await runGitCapture(['rev-parse', '--verify', '--quiet', `${treeRef}^{commit}`], repoPath);
+  const commit = resolved.exitCode === 0 ? resolved.stdout.trim() || null : null;
+  return { path: winner, content: shown.stdout, sha: revision, candidatePaths: normalized, commit };
 }
 
 /**

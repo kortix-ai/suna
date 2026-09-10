@@ -138,3 +138,18 @@ describe('DocMarkdown code fence inside a list', () => {
     expect(html).not.toContain('Click to preview');
   });
 });
+
+// The docs renderer shares `MarkdownOrderedList` with UnifiedMarkdown. See
+// `unified-markdown.test.tsx` for why the gutter grows with the digit count.
+
+describe('DocMarkdown ordered-list marker gutter', () => {
+  test('a list from 8 to 10 widens the gutter and keeps its start ordinal', () => {
+    const md = Array.from({ length: 3 }, (_, i) => `${8 + i}. item`).join('\n') + '\n';
+    const html = renderToStaticMarkup(withIntl(<DocMarkdown content={md} />));
+    const tag = /<ol\b[^>]*>/.exec(html)?.[0] ?? '';
+
+    expect(tag).toContain('start="8"');
+    expect(tag).toContain('marker:tabular-nums');
+    expect(tag).toContain('padding-inline-start:calc(var(--spacing) * 6 + 1ch)');
+  });
+});

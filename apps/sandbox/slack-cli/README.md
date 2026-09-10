@@ -105,4 +105,20 @@ import { kortixGet, kortixPost } from "../lib"
 ```
 
 `kortixGet` / `kortixPost` use `KORTIX_API_URL` + `KORTIX_TOKEN` from env,
-both minted per session by apps/api at sandbox spawn.
+both minted per session by apps/api at sandbox spawn. A non-2xx answer throws a
+`CliError('API_ERROR')` whose `details.status` carries the HTTP status.
+
+### Relay outcomes are never silent
+
+`slack step` and the answer form of `slack send` relay through
+`POST /projects/:id/turn-stream`. The API answers `{ok: true}` or
+`{ok: false, reason}` (`no_open_turn`, `turn_finalized`, `finalize_lost_race`,
+`stream_open_failed`, `no_slack_thread`, `answer_already_posted`,
+`post_failed`). The CLI turns every `ok: false` — and every thrown HTTP error,
+as `relay_request_failed` with the status — into a non-zero exit with
+`code: STEP_NOT_RELAYED` / `ANSWER_NOT_RELAYED`, the `reason`, and a one-line
+hint. It used to print `{ok: true, relayed: false}` for a dropped step and
+"No active Slack turn to answer" for every answer failure including auth and
+5xx errors, so an agent could stream a whole run into nothing and believe it
+was seen (INC-2026-09-08-CONNECTOR-GATEWAY). Do not reintroduce a bare
+`catch { return false }` around the relay.

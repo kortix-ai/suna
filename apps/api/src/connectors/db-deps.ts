@@ -38,7 +38,7 @@ import { config } from '../config';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorOf } from '../iam/actor';
-import { agentMayUseConnector } from '../iam/agent-scope';
+import { principalMayUseConnector } from './principal-access';
 import type { ChannelPlatform } from '../projects/connectors';
 import { invalidateProjectMirror } from '../projects/git';
 import { loadProjectForUser } from '../projects/lib/access';
@@ -48,6 +48,7 @@ import { getProjectSecretValueForConsumer } from '../projects/secrets';
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
+  resolveProjectDefaultConnectorConnection,
   resolveSessionConnectorConnection,
 } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
@@ -592,6 +593,16 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       if (!connection) return null;
       return toGatewayConnector(row, connection);
     },
+    explainMissingConnector: async (projectId, slug) => {
+      const [row] = await db
+        .select({ enabled: connectors.enabled, status: connectors.status })
+        .from(connectors)
+        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+        .limit(1);
+      if (!row) return 'connector_not_found';
+      if (!row.enabled || row.status === 'disabled') return 'connector_disabled';
+      return 'connector_not_connected';
+    },
     loadAction: async (connectorId, relPath) => {
       const [a] = await db
         .select()
@@ -946,6 +957,51 @@ export function projectSessionIdForProjectPrincipal(
   return tokenProjectId ? (contextualSessionId ?? null) : null;
 }
 
+/**
+ * The channel connector(s) that CREATED a session, resolved from the session's
+ * own `metadata.source` and the project's channel connector rows — never from
+ * the request. See `principalMayUseConnector` for why they stay reachable
+ * under any grant.
+ */
+export async function sessionChannelConnectorSlugs(
+  projectId: string,
+  sessionId: string | null,
+): Promise<string[]> {
+  if (!sessionId) return [];
+  try {
+    const [session] = await db
+      .select({ metadata: projectSessions.metadata })
+      .from(projectSessions)
+      .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+      .limit(1);
+    const source = (session?.metadata as { source?: unknown } | null)?.source;
+    if (typeof source !== 'string' || !CHANNEL_SOURCES.has(source)) return [];
+    const rows = await db
+      .select({ slug: connectors.slug, config: connectors.config, providerType: connectors.providerType })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.projectId, projectId),
+          eq(connectors.providerType, 'channel'),
+          eq(connectors.enabled, true),
+        ),
+      );
+    return rows
+      .filter((row) => channelPlatform(row.config) === source)
+      .map((row) => canonicalConnectorAlias(row.slug));
+  } catch (err) {
+    console.warn('[connectors] could not resolve the session channel connector', {
+      projectId,
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
+/** `project_sessions.metadata.source` values that name a channel platform. */
+const CHANNEL_SOURCES: ReadonlySet<string> = new Set(['slack', 'teams', 'email', 'telegram']);
+
 async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> {
   const header = c.req.header('Authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
@@ -957,12 +1013,15 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
     c.req.header('X-Kortix-Session-Id') ?? null,
   );
   if (!sessionIdentity.ok) return null;
-  const agentGrant = sessionIdentity.sessionId
-    ? await reconcileStoredSessionAgentGrant({
-        projectId: result.projectId,
-        sessionId: sessionIdentity.sessionId,
-      })
-    : (result.agentGrant ?? null);
+  const [agentGrant, channelConnectorSlugs] = await Promise.all([
+    sessionIdentity.sessionId
+      ? reconcileStoredSessionAgentGrant({
+          projectId: result.projectId,
+          sessionId: sessionIdentity.sessionId,
+        })
+      : Promise.resolve(result.agentGrant ?? null),
+    sessionChannelConnectorSlugs(result.projectId, sessionIdentity.sessionId),
+  ]);
   return {
     userId: result.userId,
     accountId: result.accountId,
@@ -970,6 +1029,7 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
     sessionId: sessionIdentity.sessionId,
     subject: await resolveShareSubject(result.userId),
     agentGrant,
+    channelConnectorSlugs,
   };
 }
 
@@ -1025,12 +1085,15 @@ async function resolveProjectPrincipal(
   if (!sessionIdentity.ok) return null;
 
   const storedAgentGrant = (c.get('agentGrant') as ConnectorPrincipal['agentGrant']) ?? null;
-  const agentGrant = sessionIdentity.sessionId
-    ? await reconcileStoredSessionAgentGrant({
-        projectId,
-        sessionId: sessionIdentity.sessionId,
-      })
-    : storedAgentGrant;
+  const [agentGrant, channelConnectorSlugs] = await Promise.all([
+    sessionIdentity.sessionId
+      ? reconcileStoredSessionAgentGrant({
+          projectId,
+          sessionId: sessionIdentity.sessionId,
+        })
+      : Promise.resolve(storedAgentGrant),
+    sessionChannelConnectorSlugs(projectId, sessionIdentity.sessionId),
+  ]);
 
   return {
     userId,
@@ -1039,6 +1102,7 @@ async function resolveProjectPrincipal(
     sessionId: sessionIdentity.sessionId,
     subject: await resolveShareSubject(userId),
     agentGrant,
+    channelConnectorSlugs,
   };
 }
 
@@ -1070,7 +1134,7 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
     // This is the ONLY access gate — connectors are project-wide visible to
     // every human with project access (no per-connector member scoping).
     // Canonical on both sides — the grant is canonicalized at construction.
-    if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias(row.slug))) continue;
+    if (!principalMayUseConnector(p, canonicalConnectorAlias(row.slug))) continue;
     const connection = await resolveActiveConnectorConnection(p, row);
     if (!connection) continue;
     const { hasAuth } = authOf(row);
@@ -1241,8 +1305,21 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       ).then(
         (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
       ),
+      // The SAME predicate the gateway applies at call time: resolve the
+      // project-default connection (which checks `connected_account_id`) and
+      // treat "resolves" as authorized. `connectorConnected(row, null)` with no
+      // connection argument answered `false` for every Composio row, so a
+      // fully connected app was listed as `needs_auth` while its calls
+      // succeeded (INC-2026-09-08-CONNECTOR-GATEWAY, E6).
       Promise.all(
-        composioRows.map(async (row) => [row.slug, await connectorConnected(row, null)] as const),
+        composioRows.map(async (row) => {
+          const connection = await resolveProjectDefaultConnectorConnection({
+            accountId: row.accountId,
+            projectId: row.projectId,
+            alias: row.slug,
+          }).catch(() => null);
+          return [row.slug, connection !== null] as const;
+        }),
       ).then(
         (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
       ),
@@ -1283,6 +1360,7 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       connectedSlugs.add(row.slug);
     }
   }
+  for (const slug of authorizedComposioSlugs) connectedSlugs.add(slug);
   const candidates = conns.map((row) => {
     const { auth, hasAuth } = authOf(row);
     const config = row.config as {
@@ -1305,10 +1383,17 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       //
       // Read-side only. `disabled` and `error` are deliberate operator/sync
       // states and outrank this; the DB column is left alone.
+      // Read-side only. `active` in the DB means "declared and synced"; a
+      // connector that needs a credential/authorization it does not have is
+      // reported as `needs_auth` so `kortix connectors ls` says the same thing
+      // the gateway will (a call answers `connector_not_connected`). Before
+      // this, an openapi connector with no stored credential listed as
+      // `active` and then 404'd on call (incident E2).
       status:
-        row.providerType === 'composio' &&
         row.status === 'active' &&
-        !authorizedComposioSlugs.has(row.slug)
+        hasAuth &&
+        row.providerType !== 'channel' &&
+        !connectedSlugs.has(row.slug)
           ? ('needs_auth' as const)
           : row.status,
       authorizationStrategy: row.authorizationStrategy,

@@ -26,7 +26,11 @@ import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
 import { featureDisabledBody } from '../feature-flags/gate';
 import type { FeatureFlagKey } from '../feature-flags/registry';
-import { agentMayUseConnector } from '../iam/agent-scope';
+import {
+  type ConnectorDenialReason,
+  connectorDenialBody,
+  principalMayUseConnector,
+} from './principal-access';
 import { isAllowedSourceValidationError } from '../marketplace/catalog';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { INVALID_SOURCE_ADDRESS_CODE } from '../marketplace/catalog';
@@ -143,6 +147,10 @@ export interface ConnectorPrincipal {
   /** Per-agent grant from the session token — restricts which connectors this
    *  agent may call. Null = no restriction (non-agent token). */
   agentGrant?: AgentGrant | null;
+  /** Canonical slugs of the channel connector(s) that CREATED this session
+   *  (Slack/Teams/email). Always reachable, whatever the grant says — see
+   *  `principalMayUseConnector`. Empty for a session no channel created. */
+  channelConnectorSlugs?: string[];
 }
 
 interface CatalogAction {
@@ -635,6 +643,18 @@ function allowedSourceValidationResponse(c: Context, err: unknown): Response | n
   return null;
 }
 
+const CONNECTOR_DENIAL_REASONS: ReadonlySet<string> = new Set<ConnectorDenialReason>([
+  'connector_not_assigned',
+  'connector_not_found',
+  'connector_not_connected',
+  'connector_disabled',
+  'action_not_found',
+]);
+
+function isConnectorDenialReason(reason: string): reason is ConnectorDenialReason {
+  return CONNECTOR_DENIAL_REASONS.has(reason);
+}
+
 export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   const app = makeOpenApiApp();
 
@@ -688,10 +708,19 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         400,
       );
     }
-    // Per-agent connector assignment: a scoped agent may call only the connector
-    // connectors its kortix.yaml overlay lists. Default-deny otherwise.
-    if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias(connectorSlug))) {
-      return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
+    // Per-agent connector assignment: a scoped agent may call only the
+    // connectors its kortix.yaml overlay lists — plus the channel that created
+    // the session (`principalMayUseConnector`). Default-deny otherwise, with a
+    // body that says WHICH agent, WHAT it holds and WHERE that came from.
+    if (!principalMayUseConnector(p, canonicalConnectorAlias(connectorSlug))) {
+      return c.json(
+        connectorDenialBody('connector_not_assigned', {
+          principal: p,
+          connector: connectorSlug,
+          action: actionPath,
+        }),
+        403,
+      );
     }
     const args =
       body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
@@ -728,7 +757,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         );
       case 'denied':
         return c.json(
-          { ok: false, status: 'denied', reason: result.reason },
+          isConnectorDenialReason(result.reason)
+            ? connectorDenialBody(result.reason, {
+                principal: p,
+                connector: connectorSlug,
+                action: actionPath,
+              })
+            : { ok: false, status: 'denied', reason: result.reason },
           result.reason === 'connector_not_found' || result.reason === 'action_not_found'
             ? 404
             : 403,
@@ -741,8 +776,11 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
 
   const attachmentResponse = async (c: Context, p: ConnectorPrincipal) => {
     if (!deps.attachmentStore) return featureNotSupportedResponse(c, 'connector_attachments');
-    if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias('kortix_email'))) {
-      return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
+    if (!principalMayUseConnector(p, canonicalConnectorAlias('kortix_email'))) {
+      return c.json(
+        connectorDenialBody('connector_not_assigned', { principal: p, connector: 'kortix_email' }),
+        403,
+      );
     }
     let metadata: Omit<StageConnectorAttachmentInput, 'bytes'>;
     try {

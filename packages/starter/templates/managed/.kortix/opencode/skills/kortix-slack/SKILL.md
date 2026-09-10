@@ -125,7 +125,13 @@ slack send "It was api@a3f1 — the new auth middleware drops the trace header o
 - **Use `slack step` to mark phase transitions, not every shell call.** ~3–6 per turn is right for most tasks; one per `bash` is noise.
 - **Set `--detail` and `--output` once per step.** Re-sending them for the same step appends rather than replaces — surprising and ugly.
 - **Keep them short.** `--detail` and `--output` get truncated at 500 chars upstream; aim for one tight sentence.
-- **Don't `slack step` after you've called `slack send`.** The plan is closed. Further steps drop silently.
+- **Don't `slack step` after you've called `slack send`.** The plan is closed. A later step exits non-zero with `reason: turn_finalized`.
+- **A step that did not reach the thread FAILS — it never answers `ok: true`.** `slack step` exits 1 with `{"ok": false, "code": "STEP_NOT_RELAYED", "reason": "<why>", "error": "…<what to do>"}`. Read `reason`, then act:
+  - `no_open_turn` — this run was not started from Slack (a web prompt on a Slack-born session), or the turn was already closed. Keep working; if the user is waiting in a thread, post there with `slack send --channel <id> --thread <ts>`.
+  - `turn_finalized` — you already answered this turn. One `slack send` per turn.
+  - `relay_request_failed` — the Kortix API refused the relay (auth, 5xx, timeout). That is a platform problem, not a missing turn: retry once, then report it in the thread with `--channel/--thread`.
+  - `stream_open_failed` / `post_failed` — Slack rejected the message. Continue; deliver the answer with `slack send` at the end.
+  Never assume a step was seen when the command failed.
 </live-stream>
 
 <keeping-the-stream-alive>
@@ -280,7 +286,11 @@ Reply like a colleague messaging on Slack:
 
 ### One `slack send` per turn
 
-Each turn finalizes exactly one stream. Don't call `slack send` twice — the second call drops silently because the stream is already closed. If you need to deliver multiple things, fold them into one Block Kit message or use `slack send --channel ...` for sibling posts.
+Each turn finalizes exactly one stream. Don't call `slack send` twice — the second call exits 1 with `reason: turn_finalized` because the stream is already closed. If you need to deliver multiple things, fold them into one Block Kit message or use `slack send --channel ...` for sibling posts.
+
+### When `slack send` fails
+
+A `slack send` with no `--channel` is the turn's answer. When it cannot be delivered into a Slack turn it exits 1 with `{"ok": false, "code": "ANSWER_NOT_RELAYED", "reason": "<why>", "error": "…<what to do>"}` — it never prints `ok: true` for an undelivered answer. `no_open_turn` means this run was not started from Slack, or the turn was closed before you answered; if the user is waiting in a thread, deliver the same answer with `slack send --channel <id> --thread <ts>` (the channel and thread are in the prompt header and in `$SLACK_CHANNEL_ID` / `$SLACK_THREAD_TS`). `relay_request_failed` is a Kortix API failure, not a missing turn: retry once, then post with `--channel/--thread`.
 </final-answer>
 
 <asking-the-user>

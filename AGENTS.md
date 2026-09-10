@@ -489,6 +489,29 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### Frontend design standard — Jay/Kortix bar
 
+#### Desktop parity is a UI gate
+
+The Electron app loads `apps/web`. Keep product components, routes, tokens,
+and data behavior shared. Put native window geometry in the shell's explicit
+titlebar classes. Never apply titlebar height or drag rules to generic ARIA
+roles, all sidebars, or page content.
+
+For every shared UI change, verify the affected controls on web and in Electron
+before handoff. Check the outgoing request or route and the visible result.
+Check both themes, the minimum supported window (720 × 480), sidebar collapse,
+fullscreen overlays, and browser zoom. Window controls must not overlap app
+controls. Lists must not overlap or clip their last row. Keyboard focus and
+scrolling must remain usable.
+
+Add regressions to the existing Playwright journeys. The desktop journey runs
+in `pnpm test -- --browser-only` and supports the actual Electron shell:
+`E2E_DESKTOP_NATIVE=1 E2E_GREP='27 — desktop parity' pnpm test -- --browser-only`.
+Run the native journey when changing shell CSS, navigation, settings, agents,
+or connectors. A desktop user-agent test does not prove native hit testing.
+See `docs/runbooks/desktop-verification.md` for the commands and evidence list.
+Report any unverified desktop behavior explicitly. Do not promise that tests
+prevent every future regression.
+
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 

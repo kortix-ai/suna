@@ -1187,11 +1187,15 @@ html:not(.consent-enabled) #cookieyes {
   animation: canvas-shimmer 1.8s ease-in-out infinite;
 }
 
-/* ─── Desktop shell chrome (Tauri) ───────────────────────────────────────
+/* ─── Desktop shell chrome ───────────────────────────────────────
    No visible chrome — the web app's UI extends to the window edge, with
    the OS traffic lights floating over the sidebar's top-left on macOS.
-   This layer just provides a 28px invisible drag strip + Win/Linux
+   This layer provides a 6px invisible drag strip and Win/Linux
    controls. `[data-desktop]` is set on <html> pre-hydration. */
+html[data-desktop='true'] [data-desktop-hidden] {
+  display: none;
+}
+
 .kx-desktop-chrome {
   display: none;
 }
@@ -1214,6 +1218,7 @@ html[data-desktop='true'] .kx-desktop-chrome > * {
 }
 html[data-desktop='true'] .kx-desktop-drag {
   flex: 1;
+  height: 6px;
   -webkit-app-region: drag;
 }
 /* macOS: skip the traffic-light gutter so the OS's own click handling owns
@@ -1267,7 +1272,6 @@ html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] {
   padding-top: var(--kx-titlebar-inset);
   -webkit-app-region: drag;
   app-region: drag;
-  transition: padding 240ms ease;
 }
 /* Right sidebar header sits in the same vertical band as the inset's
    tab bar so the expand/collapse toggle aligns visually with the
@@ -1284,48 +1288,25 @@ html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] 
    `collapsible="offcanvas"` in the shell (project-sidebar.tsx), so a
    collapsed sidebar is fully hidden and reopened from the shell toggle
    next to the window controls. Web keeps the icon rail. */
-/* The inset's title-bar row is the tab bar (`role="tablist"`). The React
-   class is h-[38px] for web. On desktop we bump to 52px to give the
-   window-drag region room; macOS overrides that to 40px to line up with
-   the traffic lights, and turns the bar into a drag region. */
-html[data-desktop='true'] [role='tablist'] {
+/* Only the shell's top tab row shares the native titlebar band. Product tabs
+   keep the shared Tabs primitive's height, typography, and pointer behavior. */
+html[data-desktop='true'] .kx-titlebar-tabs {
   height: 52px;
-  /* Win/Linux only (0px on macOS): the min/max/close cluster floats over this
-     row's right end, so tabs must stop before it. */
-  padding-right: var(--kx-titlebar-controls-width);
 }
-html[data-desktop-platform='macos'] [role='tablist'] {
+html[data-desktop-platform='macos'] .kx-titlebar-tabs {
   -webkit-app-region: drag;
   app-region: drag;
   height: var(--kx-titlebar-inset) !important;
-}
-/* Tab-bar back/forward left padding for the macOS-collapsed-sidebar
-   case is handled in JS (tab-bar.tsx) — read sidebar.state +
-   desktopPlatform(), apply pl-7 conditionally. CSS-only is hard to
-   keep correct as the sidebar state changes. */
-/* Tab label size in the shell.
-   NOTE: this wins over `tabsTriggerTextVariants` in components/ui/tabs.tsx —
-   a descendant selector on <html> outranks the utility class — so it is the
-   ONLY place desktop tab text can be changed. Editing the cva variants alone
-   looks correct and does nothing here.
-
-   Deliberately NOT divided by --kx-desktop-zoom. The band offsets above cancel
-   the zoom because they align to OS-drawn chrome that never scales; text has
-   nothing to align to and must shrink with the rest of the page, or it drifts
-   out of step with every label beside it. So this is an apparent
-   13 × 0.94 ≈ 12.2px, up from 12 × 0.94 ≈ 11.3px. */
-html[data-desktop='true'] [role='tablist'] [role='tab'] {
-  font-size: 13px;
 }
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] button,
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] a,
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] input,
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] [role='button'],
-html[data-desktop-platform='macos'] [role='tablist'] button,
-html[data-desktop-platform='macos'] [role='tablist'] a,
-html[data-desktop-platform='macos'] [role='tablist'] input,
-html[data-desktop-platform='macos'] [role='tablist'] [role='tab'],
-html[data-desktop-platform='macos'] [role='tablist'] [role='button'] {
+html[data-desktop-platform='macos'] .kx-titlebar-tabs button,
+html[data-desktop-platform='macos'] .kx-titlebar-tabs a,
+html[data-desktop-platform='macos'] .kx-titlebar-tabs input,
+html[data-desktop-platform='macos'] .kx-titlebar-tabs [role='tab'],
+html[data-desktop-platform='macos'] .kx-titlebar-tabs [role='button'] {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -1481,6 +1462,7 @@ html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
 html[data-desktop='true'] .kx-titlebar-spacer {
   display: block;
   height: var(--kx-titlebar-inset);
+  flex-shrink: 0;
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -1513,6 +1495,13 @@ html[data-desktop='true'] .kx-titlebar-row {
 }
 html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-content-left);
+}
+/* Below the sidebar breakpoint, its docked cookie does not describe the
+   visible layout. Every top row clears the native controls and shell opener. */
+@media (max-width: 767px) {
+  html[data-desktop='true'] .kx-titlebar-row {
+    padding-left: var(--kx-titlebar-content-left);
+  }
 }
 
 /* Full-screen / top-reaching modals (e.g. the File Preview modal) start

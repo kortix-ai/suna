@@ -54,6 +54,11 @@ code.
 
 ## CI lanes
 
+Desktop UI parity is part of the browser lane in `27-desktop-parity.spec.ts`.
+Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
+`E2E_GREP='27 — desktop parity'`. See
+[`desktop-verification.md`](../docs/runbooks/desktop-verification.md).
+
 GitHub Actions uses `.github/workflows/tests.yml` for local-profile PR tests.
 `tests-pr.yml` calls it once for pull requests into `main` or `staging`. Full
 mode runs four lanes in parallel, each natively on one Blacksmith runner
