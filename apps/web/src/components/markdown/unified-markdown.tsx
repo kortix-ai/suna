@@ -12,6 +12,7 @@ import {
   normalizeClassName,
   prepareMarkdownForKatex,
 } from '@/components/markdown/katex-markdown';
+import { MarkdownOrderedList } from '@/components/markdown/ordered-list';
 import { isInternalUrl, shouldUseNextLink } from '@/components/markdown/unified-markdown-utils';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 import { parseSetupLinkHref } from '@/components/setup-links/util';
@@ -91,11 +92,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             {children}
           </ul>
         ),
-        ol: ({ children }: { children?: React.ReactNode }) => (
-          <ol className="marker:text-muted-foreground/80 my-4 list-outside list-decimal space-y-1 pl-6 marker:font-medium first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
-            {children}
-          </ol>
-        ),
+        ol: MarkdownOrderedList,
         li: ({ children }: { children?: React.ReactNode }) => (
           <li className="text-foreground/95 leading-relaxed font-medium [overflow-wrap:anywhere]">
             {wrapChildrenWithPaths(children)}
