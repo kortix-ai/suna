@@ -118,6 +118,10 @@ describe('local test runner contract', () => {
     expect(workerJob).toContain('bun run typecheck');
     expect(workerJob).toContain('bun run build');
     expect(workerJob).toContain('test -s apps/kortix-worker/dist/worker-runtime.mjs');
+    const testWorkflow = readFileSync(resolve(root, '.github/workflows/tests.yml'), 'utf8');
+    const testedBunVersion = testWorkflow.match(/bun-version: ([\d.]+)/)?.[1];
+    expect(testedBunVersion).toBeTruthy();
+    expect(workerJob).toContain(`bun-version: ${testedBunVersion}`);
   });
 
   it('runs isolated API test files through a bounded parallel worker pool', () => {

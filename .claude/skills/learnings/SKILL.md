@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Wait for PostgREST after local migrations (2026-09-10)
+
+**When:** starting REST or browser tests against a fresh local database.
+**Incident:** Pi `SESS-31` returned 402 with a balance of 2 because the credit RPC returned `PGRST002`. PostgREST started before the `kortix` schema existed and entered retry backoff.
+**Rule:** wait for the required REST schema after migrations. Do not interpret database migration completion as REST readiness or retry spending requests to hide the failure.
+**Enforcer:** `ensureLocalMigrations` checks public OpenAPI metadata for both credit RPCs with a 90-second deadline. `local-profile.test.ts` covers recovery, incomplete metadata, timeout, and loopback enforcement.
+
 ### Verify shared-source imports without a workspace dependency tree (2026-09-10)
 
 **When:** a standalone runtime imports SDK or other workspace source.

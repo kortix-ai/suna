@@ -2041,7 +2041,9 @@ Final local checks:
   those listed in the local checkpoint above.
 - `pnpm test`: all six local core lanes pass in **116.1 seconds**. REST/CLI:
   **402/402 pass**, 0 failures/skips. The image-admission fixture now owns its
-  account so other flows cannot change its billing balance. Benchmark: `1789053951713`.
+  account for isolation. This alone did not fix CI: the fresh CI database's
+  PostgREST cache returned `PGRST002`, producing 402 despite a balance of 2.
+  Benchmark: `1789053951713`.
 - `pnpm --filter kortixd typecheck` and `typecheck:worker-integration`: exit 0.
   The initial workspace check reported 54 diagnostics, also present before this
   resource change. The daemon now uses its own strict compiler settings. Its
@@ -2064,6 +2066,34 @@ Final local checks:
   OpenCode prebuilds and states that YAML v3 selects Pi independently. The
   browser asserts the real PATCH payload, read-back, and reload. Other locales
   retain their existing translations and need the same terminology update.
+
+CI follow-up on `593e721b4d`:
+
+- Preview [34496715220](https://github.com/kortix-ai/suna/actions/runs/34496715220)
+  deploys successfully. Checkout, API/gateway/frontend image tags, and public
+  health match `593e721b4d4542ef53ed72874741e85caa06a29e`. The browser displays
+  the corrected legacy-prebuild label and YAML v3 explanation.
+- CI's standalone job installed Bun 1.4.2 through `latest`. All 839 worker tests
+  passed, but generated OpenCode SDK SSE cancellation produced two unhandled
+  rejections. The job now uses Bun 1.3.14, matching the repository's root test
+  workflow and the passing local standalone run. The workflow contract enforces
+  this alignment. This does not claim compatibility with Bun 1.4.2.
+- The runner now waits for PostgREST's public schema after migrations. It reads
+  metadata for both credit RPCs and never executes a billing operation. The
+  deadline is 90 seconds. Recovery, incomplete schema, timeout, and invalid
+  target tests fail before the change and pass afterward: **16 profile tests**.
+- The corrected `pnpm test` run passes all six lanes in **116.2 seconds**.
+  REST/CLI: **402/402 pass** in 50.3 seconds. Runner unit tests: **461 pass**.
+  Benchmark: `1789055542584`. The combined profile/workflow check passes
+  **29 tests** after adding the Bun-version contract.
+- The package lane found the new resource endpoint missing from the generated
+  audit registry. Regeneration fixes both failures: **44 audit tests pass**,
+  2,110 assertions. The registry covers all **648 routes**.
+- The full local frontend run passes **9,634 tests** and fails one generated
+  content-timestamp check. Regenerating timestamps for the committed Pi docs
+  fixes that check: **2 timestamp tests pass**. Test-runner typecheck exits 0.
+- The browser-1 CI lane passes. The complete target suite and repository-wide
+  security findings remain separate release gates.
 
 All four owned workers and their one environment are confirmed stopped in both
 the API and Daytona at `2026-09-10T15:14:41Z`. The browser is restored to the

@@ -43,6 +43,11 @@ use live provider settings. The runner reads worktree ports from
 `.kortix-worktree.json`. The primary checkout defaults to web `3000`, API
 `8008`, gateway `8090`, and Supabase `54321`.
 
+After migrations, the runner waits up to 90 seconds for PostgREST's public
+schema to expose both credit RPCs. It reads OpenAPI metadata without executing
+the RPCs. An unavailable schema fails startup with its HTTP status and PostgREST
+code, before a flow can mistake infrastructure failure for insufficient credits.
+
 Every root run writes a machine-readable benchmark to:
 
 ```text
