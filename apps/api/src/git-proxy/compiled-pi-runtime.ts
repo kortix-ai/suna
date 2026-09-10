@@ -1,3 +1,4 @@
+import type { CompiledAgentResource } from '@kortix/manifest-schema';
 /**
  * Pure compile step for the pi worker runtime artifact — the `engine: 'pi'`
  * sibling of ./compiled-runtime.ts (`engine: 'opencode'`).
@@ -33,6 +34,7 @@ export interface CompiledPiRuntimeManifest {
   format: typeof COMPILED_PI_RUNTIME_FORMAT;
   engine: 'pi';
   model_limits?: PiModelLimits;
+  agent_resources?: CompiledAgentResource[];
   project_id: string;
   ref: string;
   source_sha: string;
@@ -70,6 +72,7 @@ export interface CompilePiRuntimeInput {
   /** The generic worker runtime bundle (pi-worker-bundle.ts). */
   workerBundle: string;
   agentModule?: PiAgentModule | null;
+  resources?: CompiledAgentResource[];
 }
 
 function validateInput(input: CompilePiRuntimeInput): void {
@@ -143,6 +146,7 @@ export function compilePiRuntime(input: CompilePiRuntimeInput): CompiledPiRuntim
   const manifest: CompiledPiRuntimeManifest = {
     format: COMPILED_PI_RUNTIME_FORMAT,
     engine: 'pi',
+    ...(input.resources?.length ? { agent_resources: input.resources } : {}),
     ...(input.modelLimits ? { model_limits: input.modelLimits } : {}),
     project_id: input.projectId,
     ref: input.ref,

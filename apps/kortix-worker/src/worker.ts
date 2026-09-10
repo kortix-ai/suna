@@ -1069,7 +1069,7 @@ export async function buildHarness(cfg: WorkerConfig) {
         await journalLog.append(item);
       }
     },
-  } : undefined);
+  } : undefined, (globalThis as any).__KORTIX_COMPILED__?.manifest?.agent_resources);
 
   const customAfterToolCall = agent.afterToolCall;
   agent.afterToolCall = async (context, signal) => {
@@ -3359,13 +3359,14 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
       await stopPendingAdmissions();
       for (const timer of admissionRetries.values()) clearTimeout(timer);
       admissionRetries.clear();
-      relayDrain.close();
+      const relayClosed = relayDrain.close();
       try {
         agent.abort();
         await agent.waitForIdle();
         await turnQueue.waitForIdle();
         await customAgent.close();
       } finally {
+        await relayClosed;
         await new Promise<void>((r) => server.close(() => r()));
       }
     },

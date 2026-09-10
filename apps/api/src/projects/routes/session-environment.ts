@@ -11,6 +11,7 @@ import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
+import { buildCompiledPiRuntimeArtifact } from '../../git-proxy/compiled-pi-runtime-artifact';
 import {
   SessionEnvironmentError,
   SessionEnvironmentStopError,
@@ -148,6 +149,49 @@ function serializeWithRpc(info: Parameters<typeof serialize>[0] & { rpcSecret: s
     rpc_secret: info.rpcSecret,
   };
 }
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/environment/resources',
+    tags: ['sessions'],
+    summary: 'Read environment files from the session’s pinned agent release',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: {
+      200: json(z.object({
+        project_id: z.string(), session_id: z.string(), agent_name: z.string(), source_sha: z.string(),
+        files: z.array(z.object({
+          placement: z.literal('environment'), source: z.string(), target: z.string(),
+          mode: z.enum(['seed', 'read_only']), content: z.string(), size: z.number(), sha256: z.string(),
+        })),
+      }), 'Pinned environment resource bytes; does not start compute'),
+      ...errors(400, 403, 404, 409, 503),
+    },
+  }),
+  async (c) => {
+    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    if (gate.kind === 'error') return gate.response as never;
+    if (gate.session.metadata.sandbox_slug !== 'pi-worker') return c.json({ error: 'Session does not run on the pi worker' }, 400);
+    const identity = await ensurePiWorkerIdentity({ projectId: gate.projectId, sessionId: gate.sessionId, metadata: gate.session.metadata });
+    if (!identity) return c.json({ error: 'Pi runtime identity is incomplete' }, 409);
+    try {
+      const project = await withProjectGitAuth(gate.row as never);
+      const artifact = await buildCompiledPiRuntimeArtifact(project, identity.sha, identity.sha, gate.session.agentName);
+      c.header('cache-control', 'private, no-store');
+      return c.json({
+        project_id: gate.projectId,
+        session_id: gate.sessionId,
+        agent_name: gate.session.agentName,
+        source_sha: identity.sha,
+        files: (artifact.manifest.agent_resources ?? []).filter(file => file.placement === 'environment'),
+      });
+    } catch (error) {
+      console.warn('[session-env] pinned agent resources unavailable', { sessionId: gate.sessionId, error: error instanceof Error ? error.message : String(error) });
+      return c.json({ error: 'Pinned agent resources are unavailable' }, 503);
+    }
+  },
+);
 
 projectsApp.openapi(
   createRoute({

@@ -741,6 +741,9 @@ Omitting `runtime` retains OpenCode selection behavior.
 `@kortix/sdk/pi` exports `definePiAgent`, `PiAgentFactory`, `PiAgentDefinition`,
 and `PiAgentContext`. It also exports `PiAgentState`, `PiStateValue`,
 `PiStateSnapshot`, `PiStateDefinition`, `PiStateNamespace`, and `PiStateConflictError`.
+`PiAgentResources` and `PiAgentResource` describe the optional `context.resources`
+reader. Declare `agents.<name>.resources.worker` in YAML v3, then use `readText`,
+`readJson`, or `readBinary` to read immutable bundled files without starting compute.
 The root exports these names too. This authoring API targets
 Pi-enabled worker sessions. It does not replace the session client or load Pi CLI
 TUI extensions.

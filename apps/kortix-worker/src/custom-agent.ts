@@ -1,3 +1,5 @@
+import { createAgentResources } from './agent-resources';
+import type { CompiledAgentResource } from '../../../packages/manifest-schema/src/compiled-agent-resources';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createAgentState } from './agent-state';
 import type { SessionLog } from './session-store';
@@ -33,10 +35,11 @@ const methods = new Set([
 export async function installCustomAgent(
   agent: Agent,
   env: ExecutionEnv,
-  identity: Omit<PiAgentContext, 'env' | 'signal' | 'state'>,
+  identity: Omit<PiAgentContext, 'env' | 'signal' | 'state' | 'resources'>,
   factory?: PiAgentFactory,
   prepareHookInput?: (value: any, signal: AbortSignal) => Promise<any>,
   stateLog?: SessionLog,
+  resources?: readonly CompiledAgentResource[],
 ) {
   if (!factory) return { close: async () => {} };
   const scope = new AsyncLocalStorage<AbortSignal>();
@@ -61,6 +64,7 @@ export async function installCustomAgent(
   const context: PiAgentContext = Object.freeze({
     ...identity,
     env: scopedEnv,
+    resources: await createAgentResources(resources),
     state: createAgentState(stateLog, () => {
       const signal = scope.getStore();
       if (!signal) throw new Error('Pi agent state calls require an active callback');

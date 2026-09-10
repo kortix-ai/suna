@@ -29,6 +29,7 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "resources": false,
           "enabled": {
             "type": "boolean"
           },

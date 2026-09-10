@@ -214,6 +214,7 @@ export function createHealthRouter(
       // it (a box whose env says KORTIX_WORKLOAD=monitor but whose daemon
       // booted the session path can never run monitors).
       workload: cfg.workload || 'session',
+      ...(executionOnly ? { environmentRuntimeVersion: 2 } : {}),
       opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       opencode_pid: opencode.getPid(),

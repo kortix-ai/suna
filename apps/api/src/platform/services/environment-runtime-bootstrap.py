@@ -34,7 +34,7 @@ def bootstrap(root=Path('/'), reuse_workspace=False):
             return {}
 
     def execution_ready(value):
-        return value.get('workload') == 'environment' and value.get('opencode') == 'disabled' and value.get('runtimeReady') is True
+        return value.get('workload') == 'environment' and value.get('opencode') == 'disabled' and value.get('runtimeReady') is True and value.get('environmentRuntimeVersion', 0) >= 2
 
     if execution_ready(health()):
         print(json.dumps({'ready': True, 'changed': False}))

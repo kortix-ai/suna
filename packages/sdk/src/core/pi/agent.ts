@@ -1,3 +1,5 @@
+import type { PiAgentResources } from './resources';
+export type { PiAgentResource, PiAgentResources } from './resources';
 import type {
   AgentEvent,
   AgentOptions,
@@ -17,6 +19,7 @@ export interface PiAgentContext {
   readonly env: ExecutionEnv;
   readonly signal: AbortSignal;
   readonly state: PiAgentState;
+  readonly resources?: PiAgentResources;
 }
 
 /** Native Pi hooks run inside the compiled worker. Kortix owns transport and persistence. */

@@ -1,3 +1,4 @@
+import { validateAgentResources, type AgentResources } from './agent-resources';
 /**
  * `kortix_version` 2 — types + validators.
  *
@@ -115,6 +116,7 @@ export type GrantSetV2 = 'all' | 'none' | string[];
  * compile-agent-config.ts.
  */
 export interface AgentBlockV2 {
+  resources?: AgentResources;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
@@ -520,6 +522,8 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
     return;
   }
+
+  validateAgentResources(entry.resources, `${where}.resources`, issues);
 
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
     issues.push({ path: `${where}.enabled`, message: 'must be a boolean.', severity: 'error' });

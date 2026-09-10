@@ -449,6 +449,7 @@ flow('GH-18', {
     'POST /v1/git/:project/git-upload-pack',
     'POST /v1/git/:project/git-receive-pack',
     'GET /v1/git/:project/compiled-pi-runtime',
+    'GET /v1/projects/:projectId/sessions/:sessionId/environment/resources',
     'PATCH /v1/projects/:projectId/features',
   ],
 }, async (ctx) => {
@@ -482,10 +483,13 @@ flow('GH-18', {
         { feature: 'pi_worker', enabled: false }, { params: { projectId: project.id } });
       flag.status(200).body().has('$.experimental.pi_worker', false);
       await git(['clone', `${ctx.env.apiUrl}/git/${project.id}.git`, repo]);
-      await writeFile(join(repo, 'kortix.yaml'), 'kortix_version: 3\ndefault_agent: reader\nagents:\n  reader: {}\n');
+      await writeFile(join(repo, 'kortix.yaml'), 'kortix_version: 3\ndefault_agent: reader\nagents:\n  reader:\n    resources:\n      worker:\n        rules: assets/rules.json\n      environment:\n        - source: assets/template.txt\n          target: /workspace/template.txt\n          mode: seed\n');
+      await mkdir(join(repo, 'assets'));
+      await writeFile(join(repo, 'assets/rules.json'), '{"currency":"EUR"}');
+      await writeFile(join(repo, 'assets/template.txt'), 'pinned template');
       await mkdir(join(repo, '.kortix/pi/agents'), { recursive: true });
       await writeFile(join(repo, '.kortix/pi/agents/reader.md'), '---\nmodel: kortix/gpt-5.6-luna\n---\nArtifact fixture reader.\n');
-      await git(['-C', repo, 'add', 'kortix.yaml', '.kortix/pi/agents/reader.md']);
+      await git(['-C', repo, 'add', 'kortix.yaml', '.kortix/pi/agents/reader.md', 'assets']);
       await git(['-C', repo, '-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-m', 'Declare Pi runtime']);
       sha = await git(['-C', repo, 'rev-parse', 'HEAD']);
       await git(['-C', repo, 'push', 'origin', 'HEAD:main']);
@@ -510,6 +514,27 @@ flow('GH-18', {
       (await client.get('/v1/git/:project/compiled-pi-runtime', {
         params: { project: project.id }, query: { ref: sha, sha: 'b'.repeat(40) },
       })).status(409);
+    });
+    await ctx.step('A Pi session reads only its pinned environment files after the default branch changes', async () => {
+      const session = await ctx.fixtures.session(project, { agentName: 'reader', piSourceSha: sha });
+      await writeFile(join(repo, 'assets/template.txt'), 'new default branch template');
+      await git(['-C', repo, 'add', 'assets/template.txt']);
+      await git(['-C', repo, '-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-m', 'Change template']);
+      await git(['-C', repo, 'push', 'origin', 'HEAD:main']);
+      const params = { projectId: project.id, sessionId: session.id };
+      const resource = await client.get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params, timeoutMs: 120_000 });
+      resource.status(200);
+      const body = resource.json<any>();
+      assert.equal(body.source_sha, sha);
+      assert.equal(body.agent_name, 'reader');
+      assert.equal(body.files.length, 1);
+      assert.equal(body.files[0].placement, 'environment');
+      assert.equal(body.files[0].target, '/workspace/template.txt');
+      const bytes = Buffer.from(body.files[0].content, 'base64');
+      assert.equal(bytes.toString(), 'pinned template');
+      assert.equal(body.files[0].sha256, createHash('sha256').update(bytes).digest('hex'));
+      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params })).status(401);
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params })).status(403);
     });
   } finally {
     await rm(root, { recursive: true, force: true });

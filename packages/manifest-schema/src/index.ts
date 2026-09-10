@@ -15,6 +15,7 @@
  * no DB calls, just `(rawToml: string | object) → ManifestValidationResult`.
  */
 
+import type { ManifestIssue } from './issue';
 import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
@@ -192,20 +193,6 @@ function isEnabledValue(v: unknown): boolean {
   return false;
 }
 
-/** One diagnostic finding. */
-export interface ManifestIssue {
-  /** Dot-path to the offending value, e.g. `triggers[1].cron`. */
-  path: string;
-  /** Human-readable message. */
-  message: string;
-  /** `error` blocks push/merge; `warning` is advisory. */
-  severity: 'error' | 'warning';
-  /** Optional 1-indexed line within the original TOML text. */
-  line?: number;
-  /** Optional 1-indexed column. */
-  column?: number;
-}
-
 export interface ManifestValidationResult {
   /** True iff there are zero `error` issues. */
   valid: boolean;
@@ -318,6 +305,15 @@ function validateManifestBodyV2(
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues, version);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
+  if (version === 2 && isTable(parsed.agents)) {
+    for (const [name, agent] of Object.entries(parsed.agents)) {
+      if (isTable(agent) && agent.resources !== undefined) issues.push({
+        path: `agents.${name}.resources`,
+        message: 'Bundled resources require kortix_version 3. The OpenCode resource adapter is not available.',
+        severity: 'error',
+      });
+    }
+  }
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }
@@ -1718,3 +1714,8 @@ export {
   buildManifestSchema,
   manifestJsonSchema,
 } from './json-schema';
+
+export { validateAgentResources, validAgentResourceSource } from './agent-resources';
+export type { AgentResources } from './agent-resources';
+export { decodeCompiledAgentResources, MAX_AGENT_RESOURCE_BYTES, type CompiledAgentResource } from './compiled-agent-resources';
+export type { ManifestIssue } from './issue';

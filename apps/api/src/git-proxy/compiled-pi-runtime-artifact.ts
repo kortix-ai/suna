@@ -1,3 +1,4 @@
+import { resolveCompiledAgentResources } from './compile-agent-resources';
 import { piModelLimits } from './pi-model-limits';
 import { resolvePiAgentModule } from "./resolve-pi-agent-module";
 /**
@@ -327,7 +328,10 @@ async function compileArtifact(
     selectedAgent as { permission?: PiSkillPermissionConfig }
   ).permission;
   const skills = filterPiSkillsForPermission(discoveredSkills, skillPermission);
-  const agentModule = await resolvePiAgentModule(project, sourceSha, baked);
+  const [agentModule, resources] = await Promise.all([
+    resolvePiAgentModule(project, sourceSha, baked),
+    resolveCompiledAgentResources(project, sourceSha, baked),
+  ]);
   const artifact = compilePiRuntime({
     projectId: project.projectId,
     ref,
@@ -339,6 +343,7 @@ async function compileArtifact(
     skills,
     workerBundle: workerBundle.source,
     agentModule,
+    resources,
   });
   const stagedPath = `${runtimePath}.${crypto.randomUUID()}.tmp`;
   try {

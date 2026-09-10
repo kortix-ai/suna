@@ -57,7 +57,7 @@ agents:
 
 `agents.<name>` accepts the existing governance fields: `enabled`, `sandbox`,
 `connectors`, `connectors_required`, `connectors_personal` (legacy alias), `secrets`,
-`skills`, `kortix_cli`, and `workspace`. Behavior belongs in the Markdown or source.
+`skills`, `kortix_cli`, `workspace`, and `resources`. Behavior belongs in the Markdown or source.
 The `sandbox` field selects the execution environment template. The platform owns
 the worker image and identity.
 
@@ -125,7 +125,7 @@ Workers without this capability projection keep the control hidden.
 
 Use exactly one of `<name>.ts`, `<name>.js`, or `<name>.mjs` beside its Markdown.
 Export a factory with `definePiAgent` from `@kortix/sdk/pi`. The factory receives
-`agentName`, `sessionId`, `sourceSha`, `env`, durable `state`, and a callback-scoped `signal`.
+`agentName`, `sessionId`, `sourceSha`, `env`, durable `state`, bundled `resources`, and a callback-scoped `signal`.
 
 ```ts
 import { definePiAgent } from '@kortix/sdk/pi';
@@ -168,6 +168,80 @@ The checked examples are [reviewer](../packages/sdk/examples/12-pi-reviewer.ts) 
 [operator](../packages/sdk/examples/13-pi-operator.ts). Copy each default export
 into the matching project agent source. Replace the examples' relative SDK import
 with `@kortix/sdk/pi`. Both examples use native JSON tool schemas.
+
+## Files required by custom code
+
+Declare files separately from source imports. The compiler reads their bytes from
+the same Git commit as the agent code. No environment checkout is needed to read
+a worker resource. Only the selected agent's declarations enter its artifact.
+
+```yaml
+kortix_version: 3
+default_agent: reporter
+agents:
+  reporter:
+    resources:
+      worker:
+        rules: assets/rules.json
+      environment:
+        - source: assets/template.txt
+          target: /workspace/template.txt
+          mode: seed
+        - source: scripts/report.py
+          target: /opt/kortix/helpers/report.py
+          mode: read_only
+```
+
+| Declaration | Placement and access |
+| --- | --- |
+| `worker.rules` | Bytes inside the `.mjs` bundle. Custom code calls `resources.readJson('rules')`. No local pathname is created. |
+| `environment`, `mode: seed` | A working file below `/workspace`. Install once in an environment. Preserve existing files, later edits, and intentional deletions on restart. |
+| `environment`, `mode: read_only` | A helper below `/opt/kortix/helpers`, installed with mode `0444`. Restore its compiled bytes at environment startup. Run scripts through an interpreter. |
+
+In `.kortix/pi/agents/reporter.ts`:
+
+```ts
+import { definePiAgent } from '@kortix/sdk/pi';
+
+export default definePiAgent(async ({ resources, env }) => {
+  if (!resources) throw new Error('This agent requires bundled resource support');
+  const rules = await resources.readJson('rules');
+  return {
+    tools: [{
+      name: 'make_report', label: 'Make report', description: 'Run the report helper.',
+      parameters: { type: 'object', properties: {} },
+      async execute() {
+        const result = await env.exec('python3 /opt/kortix/helpers/report.py');
+        if (!result.ok) throw result.error;
+        if (result.value.exitCode !== 0) throw new Error(result.value.stderr);
+        return { content: [{ type: 'text', text: result.value.stdout }], details: { rules } };
+      },
+    }],
+  };
+});
+```
+
+`resources.list()` returns names, repository paths, sizes, and SHA-256 digests.
+`readText` requires UTF-8. `readJson` parses JSON. `readBinary` returns copied
+bytes. Returned JSON and binary data can be changed without changing the bundle.
+`resources` is optional in the SDK type for older callers; new workers always provide it.
+
+The environment downloads its files through the authenticated session API before
+reporting readiness. The response uses the session's pinned commit, even after
+the default branch changes. It excludes worker resources. This download runs no Pi
+code. The environment runs neither Pi nor OpenCode for a Pi session.
+
+Limits are 64 worker files, 64 environment files, and 8 MiB combined decoded bytes.
+Sources must be regular Git files. Missing files, symlinks, submodules, `.git`,
+`.env` and `.env.*` files, traversal, overlapping targets, invalid modes, and corrupt bytes fail.
+Paths and resource names are case-sensitive. Declare each file explicitly.
+Credentials belong in secret grants, never resource files.
+
+Read-only permissions prevent ordinary writes; trusted code with owner or root
+access can change permissions. They are not a security boundary. Seed tracking
+lives with the environment. It survives restart, not environment deletion.
+Working-file backup and restoration remain a separate implementation phase.
+YAML v2 rejects `resources` until the OpenCode resource adapter exists.
 
 ## Native hooks and lifecycle
 

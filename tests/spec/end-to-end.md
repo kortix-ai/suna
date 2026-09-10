@@ -788,7 +788,7 @@ supplied scope field without restarting the session.
 ## 25. Parallel-authored domains (git/platform/iam/channels/queue/audit/scim)
 
 `GH-9` `GET /git/:project/info/refs` · `GET …/compiled-checkout` · `GET …/compiled-runtime` · `GET …/compiled-pi-runtime` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → Git proxy and compiled boot artifacts, git token auth (not JWT); bad/no token → 401/502.
-`GH-18` A fresh YAML v3 project with `pi_worker: false` pushes through Git and downloads its exact compiled Pi artifact → 200, source SHA and SHA-256 match; anonymous → 401; mismatched ref/SHA → 409. Push-time compilation selects Pi only. YAML v2 keeps OpenCode.
+`GH-18` A fresh YAML v3 project with `pi_worker: false` pushes through Git and downloads its exact compiled Pi artifact → 200, source SHA and SHA-256 match; anonymous → 401; mismatched ref/SHA → 409. `GET /projects/:projectId/sessions/:sessionId/environment/resources` returns only the session agent's environment files, with matching bytes and SHA-256. Changing the default branch does not change an existing session's resources. Anonymous → 401; another account → 403. The resource read does not start compute. Push-time compilation selects Pi only. YAML v2 keeps OpenCode and rejects bundled-resource declarations until its adapter exists.
 
 `GH-10` `GET /git/:project/info/refs` → user JWT is not a git token → 401/403; NONMEMBER → 401/403/404.
 `GH-12` `POST /projects/:id/git/collaborators` → missing username → 400; non-managed → 409; no install → 502.

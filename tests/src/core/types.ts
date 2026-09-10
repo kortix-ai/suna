@@ -100,7 +100,7 @@ export interface Fixtures {
   /** Create a session in a project (provisions a real sandbox). */
   session(
     project: CreatedProject,
-    opts?: { prompt?: string; opencodeModel?: string },
+    opts?: { prompt?: string; opencodeModel?: string; agentName?: string; piSourceSha?: string },
   ): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;

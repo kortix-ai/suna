@@ -60,9 +60,8 @@ describe('session environment routes', () => {
     expect(ensure).toBeGreaterThan(-1);
     expect(slugGate).toBeGreaterThan(ensure);
     expect(slugGate).toBeLessThan(call);
-    // All three routes run the same authorization.
     const occurrences = source.split('authorizeEnvironmentCall(c,').length - 1;
-    expect(occurrences).toBe(3);
+    expect(occurrences).toBe(4);
   });
 
   test('ensure preserves the persisted workspace mode for restricted pi sessions', async () => {

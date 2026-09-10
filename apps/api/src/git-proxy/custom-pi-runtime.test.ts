@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { compilePiAgentModule } from './pi-agent-module';
 import { compilePiRuntime } from './compiled-pi-runtime';
+import { compileAgentResources } from './compile-agent-resources';
 
 async function waitFor<T>(read: () => T | Promise<T>, matches: (value: T) => boolean) {
   const end = Date.now() + 15000;
@@ -112,11 +113,22 @@ test('standalone Node artifacts load distinct custom agents, use environment RPC
           [`agents/${name}.ts`]: `
 import {definePiAgent,PiStateConflictError} from '@kortix/sdk/pi';
 import {Type} from 'typebox';
-export default definePiAgent(ctx=>({
+export default definePiAgent(async ctx=>{
+ const rules=await ctx.resources.readJson('rules');
+ if(rules.agent!==ctx.agentName)throw new Error('wrong agent resources');
+ const bytes=await ctx.resources.readBinary('binary');bytes[0]=99;
+ if((await ctx.resources.readBinary('binary'))[0]!==0)throw new Error('resource mutation leaked');
+ const copy=await ctx.resources.readJson('rules');copy.agent='mutated';
+ if((await ctx.resources.readJson('rules')).agent!==ctx.agentName)throw new Error('JSON mutation leaked');
+ try{await ctx.resources.readText('undeclared');throw new Error('undeclared read succeeded');}
+ catch(error){if(!error.message.includes('not declared'))throw error;}
+ if(ctx.resources.list().length!==2)throw new Error('environment or sibling files leaked');
+ return {
  async initialize(){
    const counter=await ctx.state.open('counter',{schemaVersion:1,initialValue:0});
    console.log('STATE_${name} '+(await counter.read()).value);
    console.log('INIT_${name} '+ctx.sourceSha);
+   console.log('RESOURCE_${name} '+rules.currency);
  },
  shutdown(){console.log('SHUTDOWN_${name}');},
  afterToolCall:async({result})=>({content:[...result.content,{type:'text',text:'HOOK_${name}'}]}),
@@ -126,10 +138,10 @@ export default definePiAgent(ctx=>({
    catch(error){if(!(error instanceof PiStateConflictError))throw new Error('cross-bundle state error lost its identity');}
    const counter=await ctx.state.open('counter',{schemaVersion:1,initialValue:0});
    const saved=await counter.update(n=>n+1);
-   ${name === 'operator' ? `const result=await ctx.env.exec('ENV_'+value);if(!result.ok)throw result.error;const text=result.value.stdout;` : `const text='JS_'+value;`}
+   ${name === 'operator' ? `const result=await ctx.env.exec('ENV_'+rules.agent+'_'+value);if(!result.ok)throw result.error;const text=result.value.stdout;` : `const text='JS_'+rules.agent+'_'+value;`}
    return {content:[{type:'text',text:text+' COUNT_'+saved.value}],details:{agent:ctx.agentName}};
  }}]
-}));`,
+};});`,
         },
       });
       const artifact = compilePiRuntime({
@@ -142,6 +154,15 @@ export default definePiAgent(ctx=>({
         }),
         workerBundle,
         agentModule: module,
+        resources: await compileAgentResources({ agents: { [name]: { resources: {
+          worker: { rules: `assets/${name}.json`, binary: 'assets/binary' },
+          environment: [{ source: 'assets/helper.py', target: '/opt/kortix/helpers/check.py', mode: 'read_only' }],
+        } }, sibling: { resources: { worker: { private: 'never-read' } } } } }, name, async path => {
+          if (path === `assets/${name}.json`) return Buffer.from(JSON.stringify({ agent: name, currency: 'EUR' }));
+          if (path === 'assets/binary') return Buffer.from([0, 255, 42]);
+          if (path === 'assets/helper.py') return Buffer.from('print(42)');
+          throw new Error('Unexpected resource read: ' + path);
+        }),
       });
       hashes.push(artifact.sha256);
       const path = join(root, name + '.mjs');
@@ -209,6 +230,7 @@ export default definePiAgent(ctx=>({
           expect(stdout).toContain('STATE_' + name + ' ' + replacement);
           expect(stdout.split('INIT_' + name).length - 1).toBe(1);
           expect(stdout).toContain('INIT_' + name + ' ' + 'a'.repeat(40));
+          expect(stdout).toContain('RESOURCE_' + name + ' EUR');
           transcript = (await (
             await fetch(base + `/session/${sessions[0].id}/message`, { headers })
           ).json()) as any[];
@@ -232,7 +254,7 @@ export default definePiAgent(ctx=>({
       }
     }
     expect(new Set(hashes).size).toBe(2);
-    expect(effects).toEqual(['ENV_proof', 'ENV_proof']);
+    expect(effects).toEqual(['ENV_operator_proof', 'ENV_operator_proof']);
   } finally {
     provider.stop(true);
     await rm(root, { recursive: true, force: true });

@@ -21,6 +21,20 @@ linked, not inlined.
 
 ## Register
 
+### Wait for terminal acknowledgments before worker close returns (2026-09-10)
+
+**When:** closing a Pi worker with a terminal relay still in flight.
+**Near-miss:** crash-recovery tests observed a late `relayed` write after the replacement read its truncated log.
+**Rule:** stop new relays and await the active acknowledgment before close returns. Abort active agent work concurrently.
+**Enforcer:** `turn-end-relay.test.ts` blocks a real acknowledgment promise. Close must wait and must not relay the next turn.
+
+### Bind compiled artifact selection to the calling session agent (2026-09-10)
+
+**When:** accepting an agent name on an authenticated compiled-runtime download.
+**Near-miss:** the Pi route preferred an explicit query name over the session's assigned agent.
+**Rule:** a session token selects only its assigned agent. Reject mismatches and missing session identity before compilation.
+**Enforcer:** `pi-runtime-agent.test.ts` covers matching, omitted, mismatched, empty, missing-session, and owner selections.
+
 ### Preserve custom SDK error identity across separately compiled bundles (2026-09-10)
 
 **When:** a custom Pi module imports an error type also used by the worker.

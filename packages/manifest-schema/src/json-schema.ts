@@ -1,3 +1,4 @@
+import { agentResourcesSchema } from './agent-resources';
 /**
  * The canonical, PUBLIC JSON Schema for `kortix.toml` / `kortix.yaml` —
  * the Kortix equivalent of opencode's https://opencode.ai/config.json.
@@ -575,10 +576,11 @@ function agentEntryV1Schema(): JsonSchemaFragment {
  *  behavioral field is a hard validation error here — modeled by simply
  *  never listing them in `properties` + `additionalProperties: false`, so
  *  any of them (or a stray `env`, the v1 name) fails as "not allowed". */
-function agentBlockV2Schema(): JsonSchemaFragment {
+function agentBlockV2Schema(version: 2 | 3): JsonSchemaFragment {
   return {
     type: 'object',
     properties: {
+      resources: version === 3 ? agentResourcesSchema() : false,
       enabled: { type: 'boolean' },
       sandbox: { allOf: [SLUG_SCHEMA, { not: { const: PI_WORKER_SANDBOX_SLUG } }] },
       connectors: grantSetSchema(),
@@ -739,7 +741,7 @@ export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
         type: 'object',
         minProperties: 1,
         propertyNames: { pattern: SLUG_RE.source },
-        additionalProperties: agentBlockV2Schema(),
+        additionalProperties: agentBlockV2Schema(version),
       },
       ...sharedSectionProperties(2),
       // `[[channels]]` is removed outright in v2 (spec §2.5).

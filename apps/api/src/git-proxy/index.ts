@@ -17,6 +17,7 @@
  *
  * Scope: `git-receive-pack` ⇒ write; `git-upload-pack` ⇒ read.
  */
+import { resolvePiRuntimeAgent, PiRuntimeAgentScopeError } from './pi-runtime-agent';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   authorizeGitProxy,
@@ -931,7 +932,7 @@ gitProxyApp.openapi(
       const project = await loadGitProject({ row: auth.project });
       const callerSessionId =
         auth.principal.kind === 'session' ? auth.principal.sessionId : null;
-      const agentName = agent ?? (await agentOfCallingSession(callerSessionId));
+      const agentName = await resolvePiRuntimeAgent(callerSessionId, agent, agentOfCallingSession);
       const artifact = await buildCompiledPiRuntimeArtifact(project, ref, sha, agentName);
       return new Response(Bun.file(artifact.path), {
         status: 200,
@@ -948,6 +949,7 @@ gitProxyApp.openapi(
       });
     } catch (error) {
       if (error instanceof CompiledPiRuntimeSourceMovedError) return c.text(error.message, 409);
+      if (error instanceof PiRuntimeAgentScopeError) return c.text(error.message, 403);
       console.warn('[git-proxy] compiled pi runtime unavailable', {
         projectId,
         ref,

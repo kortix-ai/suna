@@ -170,8 +170,8 @@ export interface PendingTurnEnd {
 export interface TurnEndRelayDrain {
   /** Start now, or coalesce with the attempt already in flight. */
   wake(): void;
-  /** Cancel future retry timers. The attempt already in flight can finish. */
-  close(): void;
+  /** Cancel future retries and wait for the in-flight acknowledgment to finish. */
+  close(): Promise<void>;
 }
 
 /**
@@ -194,6 +194,7 @@ export function createTurnEndRelayDrain(input: {
   let running = false;
   let wakePending = false;
   let closed = false;
+  let settled = Promise.resolve();
 
   const scheduleRetry = () => {
     if (closed || timer) return;
@@ -215,10 +216,13 @@ export function createTurnEndRelayDrain(input: {
       return;
     }
     running = true;
+    let finish!: () => void;
+    settled = new Promise<void>(resolve => { finish = resolve; });
     let retry = false;
     let progressed = false;
     try {
       for (const turn of input.pending()) {
+        if (closed) break;
         const delivered = await input.relay(
           turn.status,
           input.identity?.(turn.messageId) ?? { messageId: turn.messageId },
@@ -241,6 +245,7 @@ export function createTurnEndRelayDrain(input: {
       );
     } finally {
       running = false;
+      finish();
       if (progressed) retryIndex = 0;
       if (wakePending) {
         wakePending = false;
@@ -268,6 +273,7 @@ export function createTurnEndRelayDrain(input: {
       closed = true;
       if (timer) clearTimeout(timer);
       timer = null;
+      return settled;
     },
   };
 }

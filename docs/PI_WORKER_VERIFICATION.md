@@ -1943,3 +1943,43 @@ check in another project.
 Shippable to production: **NOT YET**. The custom-state feature has local and
 focused preview proof. Full runtime parity, the complete preview release suite,
 and dev/production verification are not completed by this checkpoint.
+
+## 2026-09-10 — bundled custom resources, local checkpoint
+
+The compiler reads declared resources at the selected agent's pinned Git SHA.
+Custom factories read immutable text, JSON, and binary resources without an
+environment. The environment installs declared seeds and helpers before readiness.
+Seeds preserve existing files, edits, and intentional deletions across restart.
+The authenticated resource endpoint excludes worker files and uses the session's
+immutable commit after the default branch changes. YAML v2 rejects this new
+resource setting until its adapter exists.
+
+The same checkpoint rejects another agent name on session-authenticated artifact
+downloads. It also waits for in-flight terminal acknowledgments during shutdown.
+
+Local verification:
+
+- `bun test --isolate apps/kortix-worker/src packages/manifest-schema/src`:
+  **1,271 pass, 0 fail**, 107 files. Includes hooks, custom tools, cancellation,
+  questions, recovery, permissions, streaming, resource validation, and 8 MiB inputs.
+- `pnpm --filter @kortix/sdk test`: **2,943 pass, 0 fail**, 208 isolated files.
+  Counts aggregate all per-file summaries; the last file alone reports 63 tests.
+- `pnpm --filter @kortix/sdk typecheck`: exit 0, including the resource example
+  and a consumer context without the optional resource field.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit 0. Packed SDK tarballs
+  install, import, and construct in Node ESM.
+- API, worker, and manifest-schema typechecks: exit 0.
+- Nine focused API/compiler/bootstrap files: **74 pass, 0 fail**, 518 assertions.
+- Resource, workspace, and real worker-to-daemon RPC files: **23 pass, 0 fail**,
+  97 assertions. Files and commands execute through the real RPC handler.
+- `pnpm test -- --id GH-18`: **1/1 passed**, including authenticated resource
+  byte/digest checks after a new Git commit, anonymous denial, and cross-account denial.
+  Local fixture cleanup reported Supabase timeouts; cleanup is retried separately.
+- The isolated Docker worker-stage test passes. The Linux ARM64 daemon stage
+  typechecks and builds a compiled binary. The preview verifies Linux AMD64.
+- The standalone compiled Node custom-agent test passes **300 assertions**.
+  Two agents read their own bundled resources, call remote tools, persist state,
+  and survive worker replacement with local file access limited to the artifact.
+
+Evidence logs use `/tmp/pi-resources-*`. Preview deployment and user-visible
+verification follow this commit. This checkpoint is not a production release.

@@ -29,6 +29,92 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "resources": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "worker": {
+                "type": "object",
+                "maxProperties": 64,
+                "propertyNames": {
+                  "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "^(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$"
+                }
+              },
+              "environment": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "source",
+                    "target",
+                    "mode"
+                  ],
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024,
+                      "pattern": "^(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 1044
+                    },
+                    "mode": {
+                      "enum": [
+                        "seed",
+                        "read_only"
+                      ]
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "mode": {
+                            "const": "seed"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "target": {
+                            "pattern": "^/workspace/(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$",
+                            "maxLength": 1035
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "mode": {
+                            "const": "read_only"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "target": {
+                            "pattern": "^/opt/kortix/helpers/(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$",
+                            "maxLength": 1044
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
           "enabled": {
             "type": "boolean"
           },

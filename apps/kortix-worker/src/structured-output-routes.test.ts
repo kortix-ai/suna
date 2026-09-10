@@ -79,10 +79,6 @@ async function fixture() {
   const session = (await (await request("/session")).json())[0].id;
   return {
     items,
-    truncate(index: number) {
-      items.splice(index);
-      keys.clear();
-    },
     get worker() {
       return worker;
     },
@@ -253,8 +249,7 @@ test("a partial structured tool batch never becomes a completed result after a c
       item.kind === "entry" && item.entry.message?.role === "toolResult",
   );
   expect(toolResult).toBeGreaterThan(0);
-  f.truncate(toolResult);
-  await f.restart();
+  await f.restart(f.items.slice(0, toolResult));
   const after = await f.history();
   expect(after.at(-1).info.error.name).toBe("MessageAbortedError");
   expect(after.some((message) => message.info.structured !== undefined)).toBe(
@@ -480,8 +475,7 @@ test.each([true, false])(
         item.kind === "journal" && item.record.type === "completed",
     );
     expect(completion).toBeGreaterThan(0);
-    f.truncate(completion);
-    await f.restart();
+    await f.restart(f.items.slice(0, completion));
     expect(await f.history()).toEqual(before);
     expect(f.worker.faux!.state.callCount).toBe(0);
   },

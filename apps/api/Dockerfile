@@ -52,6 +52,7 @@ COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-ser
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/manifest-schema /repo/packages/manifest-schema
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 
@@ -112,6 +113,7 @@ WORKDIR /repo/apps/kortix-worker
 COPY apps/kortix-worker/package.json apps/kortix-worker/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY apps/kortix-worker/ ./
+COPY packages/manifest-schema /repo/packages/manifest-schema
 COPY packages/sdk /repo/packages/sdk
 COPY packages/llm-catalog /repo/packages/llm-catalog
 # SDK source resolves the worker's pinned dependencies. No dependency is

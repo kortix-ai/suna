@@ -264,6 +264,31 @@ describe('buildTurnEndRelay', () => {
 });
 
 describe('createTurnEndRelayDrain', () => {
+  test('close waits for an in-flight durable acknowledgment and starts no later relay', async () => {
+    let entered!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const marked: string[] = [];
+    const drain = createTurnEndRelayDrain({
+      pending: () => [{ messageId: 'first', status: 'idle' }, { messageId: 'second', status: 'idle' }],
+      relay: async () => true,
+      markRelayed: async id => { entered(); await blocked; marked.push(id); },
+    });
+    drain.wake();
+    await started;
+    let closed = false;
+    const closing = Promise.resolve(drain.close()).then(() => { closed = true; });
+    await Promise.resolve();
+    const returnedBeforeWrite = closed;
+    release();
+    await closing;
+    expect(returnedBeforeWrite).toBe(false);
+    expect(marked).toEqual(['first']);
+    drain.wake();
+    await drain.close();
+    expect(marked).toEqual(['first']);
+  });
   test('retries a durable terminal turn in-process until it is relayed', async () => {
     const pending = [{ messageId: 'msg_1', status: 'error' as const }];
     const attempts: string[] = [];

@@ -9,7 +9,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function fixture(corrupt = false) {
+async function fixture(corrupt = false, legacyEnvironment = false) {
   const root = await mkdtemp(join(tmpdir(), 'environment-bootstrap-'));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, 'workspace'), { recursive: true });
@@ -20,7 +20,7 @@ async function fixture(corrupt = false) {
   const agent = `import http.server,json,os
 class Handler(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
-  self.send_response(200);self.end_headers();self.wfile.write(json.dumps({'runtimeReady':True,'workload':os.environ['KORTIX_WORKLOAD'],'opencode':'disabled' if os.environ['KORTIX_WORKLOAD']=='environment' else 'ok','pid':os.getpid()}).encode())
+  self.send_response(200);self.end_headers();self.wfile.write(json.dumps({'runtimeReady':True,'workload':os.environ['KORTIX_WORKLOAD'],'opencode':'disabled' if os.environ['KORTIX_WORKLOAD']=='environment' else 'ok','environmentRuntimeVersion':2 if os.environ.get('KORTIX_AGENT_BIN') else 1,'pid':os.getpid()}).encode())
  def log_message(self,*args): pass
 http.server.HTTPServer(('127.0.0.1',int(os.environ['KORTIX_SERVICE_PORT'])),Handler).serve_forever()
 `;
@@ -41,7 +41,7 @@ http.server.HTTPServer(('127.0.0.1',int(os.environ['KORTIX_SERVICE_PORT'])),Hand
   });
   cleanups.push(() => api.stop(true));
   const env = {
-    ...process.env, KORTIX_SERVICE_PORT: String(port), KORTIX_WORKLOAD: 'session',
+    ...process.env, KORTIX_SERVICE_PORT: String(port), KORTIX_WORKLOAD: legacyEnvironment ? 'environment' : 'session',
     KORTIX_TOKEN: 'test-environment-token', KORTIX_API_URL: api.url.origin,
   };
   const provider = Bun.spawn(['python3', '-c', 'import time; time.sleep(60)'], { stdout: 'ignore', stderr: 'ignore' });
@@ -71,6 +71,13 @@ http.server.HTTPServer(('127.0.0.1',int(os.environ['KORTIX_SERVICE_PORT'])),Hand
 }
 
 describe('environment daemon bootstrap through the provider process contract', () => {
+  test('an execution-only daemon without resource support upgrades before reporting ready', async () => {
+    const f = await fixture(false, true);
+    expect(await f.health()).toMatchObject({ workload: 'environment', environmentRuntimeVersion: 1 });
+    expect(await f.run()).toMatchObject({ code: 0, report: { ready: true, changed: true } });
+    expect(await f.health()).toMatchObject({ environmentRuntimeVersion: 2 });
+    expect(await readFile(join(f.root, 'workspace/working-file.txt'), 'utf8')).toBe('preserve uncommitted work\n');
+  }, 15000);
   test('replaces the legacy daemon, keeps working files, and becomes idempotent', async () => {
     const f = await fixture();
     expect(await f.health()).toMatchObject({ workload: 'session' });

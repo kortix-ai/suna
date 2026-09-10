@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { createExecutionOnlyRuntime } from './execution-only'
 import { prepareEnvironmentWorkspace } from './environment-workspace'
+import { prepareEnvironmentResources } from './environment-resources'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
 import { dispatchCli, isManagementSubcommand } from './cli'
@@ -1133,6 +1134,7 @@ async function runEnvironmentMode(
     await configureGitCredentialHelper(cfg, homedir())
     bootMark('git-identity')
     await prepareEnvironmentWorkspace(cfg)
+    await prepareEnvironmentResources(cfg)
     await configureRepoCredentialHelper(cfg, cfg.projectTarget)
     scheduleHistoryBackfill(cfg, cfg.projectTarget)
     bootMark('repo-materialized')
