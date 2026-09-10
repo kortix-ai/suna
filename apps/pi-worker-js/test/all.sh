@@ -169,6 +169,7 @@ run_suite cellfs     node --experimental-sqlite ./test/cellfs-logic.mjs
 run_suite files      node --experimental-sqlite test/files-logic.mjs
 run_suite static     node --experimental-sqlite test/static-logic.mjs
 run_suite agentcfg   node --experimental-sqlite test/agent-config-logic.mjs
+run_suite plan       node --experimental-sqlite test/plan-logic.mjs
 run_suite e2e        ./test/e2e.sh
 run_suite streaming  ./test/streaming.sh
 run_suite crash      ./test/crash.sh

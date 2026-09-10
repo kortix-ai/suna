@@ -234,7 +234,7 @@ export function executionEnvFor(env, sessionId, opId, onOp) {
   });
 }
 
-export function piTools(env, sessionId, sql) {
+export function piTools(env, sessionId, sql, extras = []) {
   const envFor = (toolCallId, onOp) => remoteExecutionEnv({
     base: env.TOOL_DAEMON_URL,
     token: env.TOOL_DAEMON_TOKEN,
@@ -245,7 +245,7 @@ export function piTools(env, sessionId, sql) {
   });
   const log = ledger(sql);
   const inflight = new Map();
-  return TOOLSET().map((t) => adapt(t, envFor, log, inflight));
+  return [...TOOLSET(), ...extras].map((t) => adapt(t, envFor, log, inflight));
 }
 
 /**
@@ -267,10 +267,13 @@ export function piToolsPlatinum(env, sessionId, sql, extras = []) {
   });
   const log = ledger(sql);
   const inflight = new Map();
-  return [
-    ...TOOLSET().map((t) => adapt(t, () => execEnv, log, inflight)),
-    ...extras,
-  ];
+  // EXTRAS GO THROUGH THE ADAPTER TOO. A tool appended raw is called by pi
+  // with four arguments and never gets a context — measured live 2026-09-10,
+  // the new `glob` answered "Cannot read properties of undefined (reading
+  // 'env')" on a real session while its unit claims passed, because the claim
+  // handed it a context the harness never does. The adapter is also what gives
+  // a tool its idempotency and its row in /ops.
+  return [...TOOLSET(), ...extras].map((t) => adapt(t, () => execEnv, log, inflight));
 }
 
 /**
@@ -283,5 +286,5 @@ export function piToolsCell(env, sessionId, sql, cell, extras = []) {
   const execEnv = cellExecutionEnv(cell);
   const log = ledger(sql);
   const inflight = new Map();
-  return [...TOOLSET().map((t) => adapt(t, () => execEnv, log, inflight)), ...extras];
+  return [...TOOLSET(), ...extras].map((t) => adapt(t, () => execEnv, log, inflight));
 }

@@ -57,6 +57,7 @@ import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
 import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
 import { agentNameFrom, agentShape, bootAnswer } from "./opencode-boot.js";
 import { agentList, agentModelId, agentSystemPrompt, gatewayModelId, parseAgentConfig, selectAgent } from "./agent-config.js";
+import { globTool, readTodos, todoTools } from "./plantools.js";
 import { transcriptMessages } from "./transcript-read.js";
 import { mintWireMessageId, newestWireIdTime } from "../../api/src/projects/wire-message-id.ts";
 import { runtimeStateDoc, projectionEtag } from "./projection.js";
@@ -99,6 +100,21 @@ const SCRIPTED_MODEL = { id: "scripted", api: "anthropic-messages", provider: "s
 // Defaulting to platinum when its three variables are present, rather than to a
 // config flag, so a deployment that HAS a scoped key cannot accidentally keep
 // talking to a daemon that is not there.
+/**
+ * The two tools the product's UI draws specially and pi's core set does not
+ * carry: `glob` (a search view) and `todowrite`/`todoread` (the checklist the
+ * session panel shows as a plan). Both backends get them — the difference
+ * between backends must never be which abilities the model has.
+ */
+function planTools(sql, owner) {
+  return [
+    globTool(),
+    ...todoTools(sql, (list) => owner?.wire?.publish([
+      { type: "session.todo.updated", properties: { sessionID: owner.effectiveEnv?.().KORTIX_SESSION_ID ?? "", todos: list } },
+    ])),
+  ];
+}
+
 function toolsFor(env, sessionId, sql, owner) {
   const wantsPlatinum = env.PT_API_URL && env.PT_SANDBOX_KEY && env.PT_WORKSPACE_ID;
   // A PLATFORM SESSION WITH NO WORKSPACE GETS THE CELL'S OWN FILESYSTEM.
@@ -118,13 +134,13 @@ function toolsFor(env, sessionId, sql, owner) {
     // Every changed path goes out as OpenCode's `file.edited`, so the Files
     // panel, git status and an open viewer re-read (execenv.cell.js).
     owner.cellFs.onChange = (paths) => owner.wire?.publish(paths.slice(0, 50).map((file) => ({ type: "file.edited", properties: { file } })));
-    return piToolsCell(env, sessionId, sql, owner.cellFs);
+    return piToolsCell(env, sessionId, sql, owner.cellFs, planTools(sql, owner));
   }
   // The daemon backend now runs pi's OWN tools over an ExecutionEnv — bash,
   // read, write and, the one that matters, edit. The hand-rolled set is
   // retired: it maintained three tools worse than pi does and had no edit at
   // all, so every change to a file cost a whole-file rewrite.
-  if (!wantsPlatinum) return piTools(env, sessionId, sql);
+  if (!wantsPlatinum) return piTools(env, sessionId, sql, planTools(sql, owner));
   // Platinum: the same six tools, over the sandbox API.
   //
   // list and grep used to come from tools.platinum.js here, against Platinum's
@@ -132,7 +148,7 @@ function toolsFor(env, sessionId, sql, owner) {
   // path four. They are now written once against the ExecutionEnv and served by
   // both, so the model's abilities do not depend on which backend a deployment
   // happens to use.
-  return piToolsPlatinum(env, sessionId, sql);
+  return piToolsPlatinum(env, sessionId, sql, planTools(sql, owner));
 }
 
 // WHAT THE SESSION IS PRICED AT, which is not the same question as what it
@@ -1660,14 +1676,14 @@ export class AgentCell {
       // Two more routes an OpenCode client polls, seen 404ing in a real
       // browser's boot (2026-09-09): `GET /session/:id/todo` (the todo list,
       // an array) and `POST /log` (the app's client-side log sink, answered
-      // `true`). A cell keeps no todos and needs no log; answering the shapes
-      // stops the client re-asking every few seconds.
+      // `true`). The todo list is the model's own (plantools.js `todowrite`),
+      // stored with the transcript, so a reload and an eviction both keep it.
       const todo = url.pathname.match(/^\/session\/([^/]+)\/todo$/);
       if (todo && req.method === "GET") {
         if (decodeURIComponent(todo[1]) !== sessionId) {
           return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
         }
-        return Response.json([]);
+        return Response.json(readTodos(this.sql));
       }
       if (path === "/log" && req.method === "POST") {
         return Response.json(true);
