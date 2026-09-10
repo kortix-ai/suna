@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Establish an SSE subscription before triggering its test event (2026-09-10)
+
+**When:** testing a transient question, permission, or message event.
+**Incident:** the Pi core CI lane sent a prompt before `/global/event` connected. It missed `question.asked` while the standalone lane passed.
+**Rule:** await the stream response before the mutation. Await the observed event separately. Do not replace this ordering with a sleep or a larger timeout.
+**Enforcer:** the six event subscriptions in `turn-routes.test.ts` use an explicit connection barrier. Fifty repetitions each of question and permission flows pass.
+
 ### Wait for PostgREST after local migrations (2026-09-10)
 
 **When:** starting REST or browser tests against a fresh local database.

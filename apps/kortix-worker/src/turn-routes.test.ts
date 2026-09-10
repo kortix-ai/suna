@@ -165,63 +165,55 @@ function request(
   return fetch(`http://127.0.0.1:${worker.port}${path}`, { ...init, headers });
 }
 
-async function waitForGlobalEvent(
+async function subscribeToGlobalEvent(
   worker: Awaited<ReturnType<typeof startWorker>>,
   type: string,
   messageId: string,
   timeoutMs = 2_000,
-): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let body = '';
-  try {
-    const response = await request(worker, '/global/event', { signal: controller.signal });
-    expect(response.status).toBe(200);
-    const reader = requireValue(response.body, 'global event body').getReader();
-    while (!body.includes(`\"type\":\"${type}\"`) || !body.includes(messageId)) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      body += new TextDecoder().decode(chunk.value, { stream: true });
-    }
-  } catch (error) {
-    if (!controller.signal.aborted) throw error;
-  } finally {
-    clearTimeout(timer);
-    controller.abort();
-  }
-  if (!body.includes(`\"type\":\"${type}\"`) || !body.includes(messageId)) {
-    throw new Error(`did not observe ${type} for ${messageId}`);
-  }
-  return body;
+): Promise<{ event: Promise<string> }> {
+  return subscribeToGlobalEventContaining(worker, [`"type":"${type}"`, messageId], timeoutMs);
 }
 
-async function waitForGlobalEventContaining(
+async function subscribeToGlobalEventContaining(
   worker: Awaited<ReturnType<typeof startWorker>>,
   fragments: readonly string[],
   timeoutMs = 2_000,
-): Promise<string> {
+): Promise<{ event: Promise<string> }> {
   const controller = new AbortController();
+  eventControllers.push(controller);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let body = '';
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
   try {
     const response = await request(worker, '/global/event', { signal: controller.signal });
     expect(response.status).toBe(200);
-    const reader = requireValue(response.body, 'global event body').getReader();
-    while (!fragments.every((fragment) => body.includes(fragment))) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      body += new TextDecoder().decode(chunk.value, { stream: true });
-    }
+    reader = requireValue(response.body, 'global event body').getReader();
   } catch (error) {
-    if (!controller.signal.aborted) throw error;
-  } finally {
     clearTimeout(timer);
     controller.abort();
+    throw error;
   }
-  if (!fragments.every((fragment) => body.includes(fragment))) {
-    throw new Error(`did not observe event fragments: ${fragments.join(', ')}`);
-  }
-  return body;
+  const event = (async () => {
+    let body = '';
+    const decoder = new TextDecoder();
+    try {
+      while (!fragments.every((fragment) => body.includes(fragment))) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        body += decoder.decode(chunk.value, { stream: true });
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+    if (!fragments.every((fragment) => body.includes(fragment))) {
+      throw new Error(`did not observe event fragments: ${fragments.join(', ')}`);
+    }
+    return body;
+  })();
+  void event.catch(() => {});
+  return { event };
 }
 
 function chunkedRequest(
@@ -388,7 +380,7 @@ describe('raw OpenCode turn routes', () => {
       fauxAssistantMessage('Using PostgreSQL.'),
     ]);
     const sessionID = await rootId(worker);
-    const askedEvent = waitForGlobalEventContaining(worker, ['question.asked', 'Database']);
+    const askedEvent = await subscribeToGlobalEventContaining(worker, ['question.asked', 'Database']);
 
     const prompt = await request(worker, `/session/${sessionID}/prompt_async`, {
       method: 'POST',
@@ -399,7 +391,7 @@ describe('raw OpenCode turn routes', () => {
       }),
     });
     expect(prompt.status).toBe(204);
-    await askedEvent;
+    await askedEvent.event;
 
     let pending: Array<{ id: string; sessionID: string; questions: unknown[] }> = [];
     await waitUntil(async () => {
@@ -409,7 +401,7 @@ describe('raw OpenCode turn routes', () => {
     expect(pending[0]).toMatchObject({ sessionID, questions: [{ header: 'Database' }] });
 
     const pendingQuestion = requireValue(pending[0], 'pending question');
-    const repliedEvent = waitForGlobalEventContaining(worker, [
+    const repliedEvent = await subscribeToGlobalEventContaining(worker, [
       'question.replied',
       pendingQuestion.id,
       'PostgreSQL',
@@ -421,7 +413,7 @@ describe('raw OpenCode turn routes', () => {
     });
     expect(reply.status).toBe(200);
     expect(await reply.json()).toBe(true);
-    await repliedEvent;
+    await repliedEvent.event;
 
     let transcript: Array<{ parts: Array<{ text?: string }> }> = [];
     await waitUntil(async () => {
@@ -480,7 +472,7 @@ describe('raw OpenCode turn routes', () => {
       fauxAssistantMessage('Permission flow complete.'),
     ]);
     const sessionID = await rootId(worker);
-    const askedEvent = waitForGlobalEventContaining(worker, ['permission.asked', 'git status']);
+    const askedEvent = await subscribeToGlobalEventContaining(worker, ['permission.asked', 'git status']);
 
     const prompt = request(worker, `/session/${sessionID}/message`, {
       method: 'POST',
@@ -490,7 +482,7 @@ describe('raw OpenCode turn routes', () => {
         parts: [{ type: 'text', text: 'Inspect the repository.' }],
       }),
     });
-    await askedEvent;
+    await askedEvent.event;
 
     const pending = (await (await request(worker, '/permission')).json()) as Array<{
       id: string;
@@ -518,7 +510,7 @@ describe('raw OpenCode turn routes', () => {
     expect(rpcCalls).toEqual([]);
     expect(await (await request(worker, '/permission')).json()).toHaveLength(1);
 
-    const repliedEvent = waitForGlobalEventContaining(worker, [
+    const repliedEvent = await subscribeToGlobalEventContaining(worker, [
       'permission.replied',
       pendingPermission.id,
       'once',
@@ -530,7 +522,7 @@ describe('raw OpenCode turn routes', () => {
     });
     expect(reply.status).toBe(200);
     expect(await reply.json()).toBe(true);
-    await repliedEvent;
+    await repliedEvent.event;
 
     const response = await prompt;
     expect(response.status).toBe(200);
@@ -2292,8 +2284,7 @@ describe('raw OpenCode turn routes', () => {
       ).status,
     ).toBe(204);
 
-    const removedEvent = waitForGlobalEvent(second, 'message.removed', secondID);
-    await Bun.sleep(5);
+    const removedEvent = await subscribeToGlobalEvent(second, 'message.removed', secondID);
     const deleted = await request(first, `/session/${sessionID}/message/${secondID}`, {
       method: 'DELETE',
     });
@@ -2301,7 +2292,7 @@ describe('raw OpenCode turn routes', () => {
     expect(await deleted.json()).toBe(true);
     releaseEnv.resolve();
     await first.agent.waitForIdle();
-    expect(await removedEvent).toContain(secondID);
+    expect(await removedEvent.event).toContain(secondID);
     await Bun.sleep(50);
 
     const ownerTranscript = (await (
@@ -3380,13 +3371,13 @@ describe('context-only prompts', () => {
       noReply: true,
       parts: [{ type: 'text', text: 'Async context.' }],
     };
-    const event = waitForGlobalEvent(worker, 'message.updated', body.messageID);
+    const event = await subscribeToGlobalEvent(worker, 'message.updated', body.messageID);
     const response = await send(worker, body, 'prompt_async');
     expect(response.status).toBe(204);
     expect(items.some((item) => item.kind === 'journal' && item.record.type === 'accepted')).toBe(
       true,
     );
-    expect(await event).toContain(body.messageID);
+    expect(await event.event).toContain(body.messageID);
     await waitUntil(() =>
       items.some((item) => item.kind === 'journal' && item.record.type === 'completed'),
     );

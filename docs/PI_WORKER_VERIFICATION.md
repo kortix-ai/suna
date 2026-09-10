@@ -2095,6 +2095,32 @@ CI follow-up on `593e721b4d`:
 - The browser-1 CI lane passes. The complete target suite and repository-wide
   security findings remain separate release gates.
 
+Follow-up CI on `3fa337adaa` confirms **402/402 REST/CLI flows pass**, including
+`SESS-31`. The standalone job passes **839 worker tests**, both builds, and its
+compiler checks. The core worker lane instead exposes a test subscription race:
+it sends the question prompt before its SSE connection is established.
+
+Event tests now await the HTTP stream before sending the mutation. They retain
+the two-second deadline and await the event independently. The focused route
+file passes **84 tests**, 661 assertions. Fifty repetitions each of question
+and permission flows pass: **100 tests**, 1,000 assertions. Worker typecheck
+exits 0. The full frontend rerun also passes **9,635 tests**, 301,521 assertions,
+in 33.69 seconds.
+
+Preview [34498740858](https://github.com/kortix-ai/suna/actions/runs/34498740858)
+deploys `3fa337adaadfeba26b3b26225ce24969509bcc8f`. Checkout, all three image
+tags, and public health match. The final live tool check resumes the beta agent:
+it reads the pinned JSON and binary data, initialization reaches 2, and **166
+text deltas** arrive. The environment remains absent (404). The worker stops
+afterward. Provider read-back confirms all five owned resource sandboxes stopped.
+The package and browser-1 CI lanes pass on this commit; the core lane's sole
+failure is the subscription race corrected above. Browser-2 is still running.
+
+After the subscription correction, `pnpm test` passes all six lanes in **115.6
+seconds**: 402/402 REST/CLI flows, 839 worker tests plus seven real compiled
+artifact cases, SDK, runner unit tests, route coverage, and worktree tests.
+Benchmark: `1789056243140`.
+
 All four owned workers and their one environment are confirmed stopped in both
 the API and Daytona at `2026-09-10T15:14:41Z`. The browser is restored to the
 original test account and project. No test sandbox remains running.
