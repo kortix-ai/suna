@@ -89,8 +89,16 @@ export function transcriptMessages(rows, sessionId) {
     // saw their own words inside an assistant answer, which was the model's
     // 'The user said "yooooo"…' reasoning block. The part keeps its index so
     // `<id>-p<k>` still matches what the stream named.
+    // A STORED ASSISTANT MESSAGE IS COMPLETE, and the read must say so. The
+    // client's working-turn rule reads an assistant message with no
+    // `time.completed` as still OPEN (working-turn.ts rule 2), so after every
+    // send it painted the busy row under the PREVIOUS answer for ~1 s —
+    // measured 2026-09-10 (scratchpad ui-jump.ts, session de541505): the
+    // previous turn grew 258 → 285 px with a `Loading` row at +785 ms and
+    // shrank back at +1.7 s when the new answer opened. The wire's closing
+    // message.updated carries `completed`; the transcript now does too.
     out.push({
-      info: { id, role: r.role, sessionID: sessionId, time: { created: r.ts } },
+      info: { id, role: r.role, sessionID: sessionId, time: r.role === "assistant" ? { created: r.ts, completed: r.ts } : { created: r.ts } },
       parts: content.map((c, k) => [c, k]).filter(([c]) => partType(c?.type) !== "reasoning").map(([c, k]) => ({
         id: `${id}-p${k}`,
         messageID: id,

@@ -4,7 +4,7 @@
 // never connected (every boot route 404), and every message showed twice (the
 // transcript read named messages by row number while the stream had named
 // them by wire id, and painted pi's thinking as a visible part).
-// EXPECTED_PASSES=28
+// EXPECTED_PASSES=29
 import { bootAnswer, isBootRoute, configModel, agentNameFrom } from "../src/opencode-boot.js";
 import { transcriptMessages, partType, messageIdFor, legacyIdAfter } from "../src/transcript-read.js";
 
@@ -73,6 +73,8 @@ const check = (name, ok, detail = "") => {
     (() => { const a1 = legacyIdAfter("msg_cell_00000007", out[0].info.id), a2 = legacyIdAfter("msg_cell_00000008", out[0].info.id);
              return a1 < a2 && a1.slice(0, 25) === a2.slice(0, 25); })(), "");
   check("with no real id before it a legacy id is left as stored", messageIdFor({ i: 3, wire_id: "msg_cell_00000001" }, null) === "msg_cell_00000001", "");
+  check("a stored assistant message reads as COMPLETE (time.completed), a user message does not",
+    out[1].info.time.completed === 20 && out[1].info.time.created === 20 && out[0].info.time.completed === undefined, JSON.stringify([out[0].info.time, out[1].info.time]));
   check("a real wire id is left exactly as it is", messageIdFor({ i: 9, ts: 5, wire_id: "msg_088088c790015gYS8fAEf15ugc" }) === "msg_088088c790015gYS8fAEf15ugc", "");
   check("pi's thinking block is NOT in the transcript — the stream hides it, so must the read (the chat paints a `reasoning` part as an answer)",
     out[1].parts.length === 1 && out[1].parts[0].type === "text" && out[1].parts[0].text === "sup!", JSON.stringify(out[1].parts));
