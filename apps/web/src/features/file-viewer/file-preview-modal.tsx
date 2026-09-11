@@ -6,7 +6,12 @@ import Hint from '@/components/ui/hint';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
+import {
+  dialogContentZ,
+  DialogDepthProvider,
+  dialogOverlayZ,
+  useDialogLayerDepth,
+} from '@/lib/z-stack';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
@@ -113,13 +118,14 @@ export function FilePreviewModal({
   embedded = false,
 }: FilePreviewModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const dialogDepth = useDialogDepth();
   const isOpen = panelMode === 'viewer' && !!selectedFilePath;
 
   // Embedded viewers start inline (in the side panel); "Expand" pops them to
   // the full-screen overlay. Non-embedded viewers are always full-screen.
   const [expanded, setExpanded] = useState(false);
   const fullscreen = !embedded || expanded;
+  // Only the full-screen overlay is a layer; the inline panel sits in flow.
+  const dialogDepth = useDialogLayerDepth(isOpen && fullscreen);
 
   const fileName = selectedFilePath?.split('/').pop() || '';
   const hasNext = currentFileIndex < filePathList.length - 1;
@@ -495,11 +501,11 @@ export function FilePreviewModal({
   }
 
   const node = (
-    <>
+    <DialogDepthProvider depth={dialogDepth}>
       <div
         data-file-preview-overlay=""
         className="animate-in fade-in-0 pointer-events-auto fixed inset-0 bg-black/50 backdrop-blur-sm duration-150"
-        style={{ zIndex: dialogOverlayZ(dialogDepth + 1) }}
+        style={{ zIndex: dialogOverlayZ(dialogDepth) }}
         onClick={embedded ? () => setExpanded(false) : onClose}
       />
       <div
@@ -512,11 +518,11 @@ export function FilePreviewModal({
         })}
         tabIndex={-1}
         className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-xl border shadow-lg duration-150 outline-none sm:inset-4"
-        style={{ zIndex: dialogContentZ(dialogDepth + 1) }}
+        style={{ zIndex: dialogContentZ(dialogDepth) }}
       >
         {panelInner}
       </div>
-    </>
+    </DialogDepthProvider>
   );
 
   return createPortal(node, document.body);
