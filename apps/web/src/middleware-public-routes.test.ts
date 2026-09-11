@@ -25,6 +25,20 @@ test('token-gated entry points stay public', () => {
   }
 });
 
+test('the PostHog /ingest proxy bypasses the auth gate', async () => {
+  // A 307 to /auth here silently loses every event batch: posthog-js POSTs
+  // /ingest/e/ and /ingest/flags/ (no file extension, so the `includes('.')`
+  // static bypass does not cover them), and the next.config rewrite never runs.
+  for (const path of ['/ingest/e/?ip=1', '/ingest/flags/?v=2', '/ingest/i/v0/e/']) {
+    const response = await middleware(
+      new NextRequest(`http://localhost:3000${path}`, { method: 'POST' }),
+    );
+    expect(response.status).not.toBe(307);
+    expect(response.headers.get('location')).toBeNull();
+  }
+  expect(src).toMatch(/matcher:[\s\S]*\|ingest\|/);
+});
+
 test('middleware imports locale constants without bundling translation loaders', () => {
   expect(src).toContain("from '@/i18n/catalog.mjs'");
   expect(src).not.toContain("from '@/i18n/config'");

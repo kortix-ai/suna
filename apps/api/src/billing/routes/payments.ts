@@ -14,6 +14,7 @@ import { BillingError } from '../../errors';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
 import { resolveBillingWriteAccountId } from '../require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { requestSource, track } from '../../lib/analytics';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();
 
@@ -102,7 +103,16 @@ paymentsRouter.openapi(
         account_id: accountId,
         purchase_id: purchase!.id,
         type: 'credit_purchase',
+        // Read back by the checkout.session.completed webhook so the
+        // `credits_topped_up` analytics event has a person behind it.
+        user_id: c.get('userId'),
       },
+    });
+    track({
+      event: 'checkout_started',
+      userId: c.get('userId'),
+      accountId,
+      properties: { kind: 'credits', amount_usd: amount, source: requestSource(c) },
     });
 
     return c.json({ checkout_url: session.url });

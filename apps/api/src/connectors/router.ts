@@ -44,6 +44,7 @@ import {
 import type { ConnectorAuthDiscovery } from './auth-discovery';
 import type { ConnectorAuth } from './call';
 import { type GatewayDeps, handleCall } from './gateway';
+import { requestSource, track } from '../lib/analytics';
 
 // ── Response schemas ─────────────────────────────────────────────────────────
 // Connector catalog/admin shapes are permissive (opaque tool metadata); the
@@ -1252,6 +1253,19 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       }
       try {
         const result = await deps.createConnector(projectId, admin.accountId, body, admin.userId);
+        if (result.ok) {
+          track({
+            event: 'connector_added',
+            userId: admin.userId,
+            accountId: admin.accountId,
+            projectId,
+            properties: {
+              provider: typeof body?.provider === 'string' ? body.provider : null,
+              slug: typeof body?.slug === 'string' ? body.slug : null,
+              source: requestSource(c),
+            },
+          });
+        }
         return result.ok
           ? c.json({ ok: true, sync: result.sync, authDiscovery })
           : c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);
@@ -1343,6 +1357,15 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         result = await deps.setConnectorCredential(projectId, slug, parsed.data);
       } catch (error) {
         return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
+      }
+      if (result.ok) {
+        track({
+          event: 'connector_connected',
+          userId: admin.userId,
+          accountId: admin.accountId,
+          projectId,
+          properties: { slug, method: 'credential', source: requestSource(c) },
+        });
       }
       return result.ok
         ? c.json({ ok: true })
@@ -1943,6 +1966,18 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       } catch { /* no body */ }
       const result = await finalize(projectId, slug, admin.userId, selector);
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
+      track({
+        event: 'connector_connected',
+        userId: admin.userId,
+        accountId: admin.accountId,
+        projectId,
+        properties: {
+          slug,
+          method: 'oauth',
+          provider: typeof (result as { provider?: unknown }).provider === 'string' ? (result as { provider: string }).provider : null,
+          source: requestSource(c),
+        },
+      });
       return c.json(result);
     },
   );

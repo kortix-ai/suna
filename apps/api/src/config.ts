@@ -153,6 +153,12 @@ const envSchema = z.object({
   // See projects/instance-scope.ts.
   KORTIX_INSTANCE_ID: z.string().trim().optional(),
 
+  // ── Product analytics (optional) ─────────────────────────────────────────
+  // PostHog project token + ingest host. Unset ⇒ every capture is a no-op
+  // (local test profile, self-host). Read by lib/analytics.ts.
+  POSTHOG_KEY: z.string().trim().optional(),
+  POSTHOG_HOST: z.string().trim().optional(),
+
   // Wildcard domain every preview ORIGIN sits under
   // (`{env}-p{port}-{sandbox}.{domain}`). Unset on managed cloud, where it is
   // derived as `p.<registrable domain of KORTIX_URL>`; set it on a self-host

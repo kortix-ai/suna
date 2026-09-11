@@ -16,6 +16,7 @@ import {
   verifyGitHubAppInstallStatePayload,
   verifyGitHubInstallationAdmin,
 } from '../github';
+import { requestSource, track } from '../../lib/analytics';
 import { getProjectSecretValueForConsumer } from '../secrets';
 import { buildProvisionContext, runProvision } from '../provision-core';
 import { loadProjectTriggers } from '../triggers';
@@ -349,6 +350,13 @@ projectsApp.openapi(
     { accountId: scope.accountId, source: 'project-create' },
   );
 
+  track({
+    event: 'project_created',
+    userId: scope.userId,
+    accountId: scope.accountId,
+    projectId: row.projectId,
+    properties: { origin: 'github_import', source: requestSource(c) },
+  });
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },
 );
@@ -420,6 +428,15 @@ projectsApp.openapi(
     // here on purpose — /provision's response shape is depended on by the CLI
     // (`kortix ship`) and the SDK and must not change.
   });
+  if (result.status === 201) {
+    track({
+      event: 'project_created',
+      userId: ctx.scope.userId,
+      accountId: ctx.scope.accountId,
+      projectId: (result.body as { project_id?: string }).project_id ?? null,
+      properties: { origin: 'provision', source: requestSource(c) },
+    });
+  }
   return c.json(result.body, result.status);
 },
 );
@@ -496,6 +513,13 @@ projectsApp.openapi(
         try {
           const result = await runProvision(ctx, (phase) => write({ type: 'phase', phase }));
           if (result.status === 201) {
+            track({
+              event: 'project_created',
+              userId: ctx.scope.userId,
+              accountId: ctx.scope.accountId,
+              projectId: (result.body as { project_id?: string }).project_id ?? null,
+              properties: { origin: 'provision', source: requestSource(c) },
+            });
             write({ type: 'done', project: result.body });
           } else {
             // `status` alongside the body's `error`/`code` — see

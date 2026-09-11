@@ -19,6 +19,7 @@ import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-life
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import type { StopReason } from '../stop-reason';
+import { track } from '../../lib/analytics';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
 export function mergeMetadata(patch: Record<string, unknown>) {
@@ -226,7 +227,12 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // inbox prompt has to be given back. After the erasure there is nothing left
   // to identify those deliveries by.
   const [before] = await db
-    .select({ metadata: sessionSandboxes.metadata })
+    .select({
+      metadata: sessionSandboxes.metadata,
+      accountId: sessionSandboxes.accountId,
+      projectId: sessionSandboxes.projectId,
+      activeSince: sessionSandboxes.activeSince,
+    })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.sandboxId, write.sandboxId))
     .limit(1);
@@ -302,6 +308,35 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     // whose provider box is already off (see settleOpenSandboxTurns).
     await settleOpenSandboxTurns(tx, write.sandboxId, 'runtime_gone');
   });
+  // Product analytics: every stop reason, from the one stop writer. Detached —
+  // a failed owner lookup or capture must never touch the stop itself.
+  void db
+    .select({ createdBy: projectSessions.createdBy })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, write.sessionId))
+    .limit(1)
+    .then(([owner]) =>
+      track({
+        event: 'session_stopped',
+        userId: (write.metadata?.stoppedBy as string | undefined) ?? owner?.createdBy,
+        accountId: before?.accountId,
+        projectId: before?.projectId,
+        sessionId: write.sessionId,
+        properties: {
+          reason:
+            write.stopReason === 'manual'
+              ? 'user'
+              : write.stopReason.startsWith('provider')
+                ? 'provider'
+                : 'idle',
+          stop_reason: write.stopReason,
+          active_ms: before?.activeSince
+            ? Math.max(0, now.getTime() - before.activeSince.getTime())
+            : undefined,
+        },
+      }),
+    )
+    .catch(() => {});
   // AFTER the commit: the requeued prompt must not race the authority it is
   // replacing. Best-effort — a stop that is already durable must never be
   // failed by a repair, and the reaper's own pass reaches the same rows.

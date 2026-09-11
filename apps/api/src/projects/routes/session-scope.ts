@@ -23,6 +23,7 @@ import { accountMayUseManagedModels } from '../../billing/services/entitlements'
 import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape, validateNativeOpencodeModelRef } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
+import { requestSource, track } from '../../lib/analytics';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
@@ -705,6 +706,15 @@ projectsApp.openapi(
         updatedAt: new Date(),
       })
       .where(eq(projectSessions.sessionId, sessionId));
+
+    track({
+      event: 'model_changed',
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+      properties: { from: currentModel, to: nextModel, live_push: needsPush, source: requestSource(c) },
+    });
 
     if (!needsPush) {
       return c.json(

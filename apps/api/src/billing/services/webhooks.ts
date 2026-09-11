@@ -30,6 +30,7 @@ import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { identifyAccount, track } from '../../lib/analytics';
 
 /**
  * The plan a Stripe object names in its metadata.
@@ -169,6 +170,13 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
   }
 
   console.log(`[Webhook] Credit purchase: $${amountTotal} for ${accountId}`);
+  // `user_id` is stamped on the checkout session by POST /billing/purchase-credits.
+  track({
+    event: 'credits_topped_up',
+    userId: session.metadata?.user_id,
+    accountId,
+    properties: { amount_usd: amountTotal },
+  });
 }
 
 async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, accountId: string) {
@@ -386,6 +394,7 @@ async function activateSubscriptionForAccount(params: {
     void tierKey;
   }
 
+  identifyAccount(accountId, { tier: tierKey });
   console.log(`[Webhook] Subscription activated: ${tierKey} for ${accountId} (sub=${subscriptionId})`);
 }
 
@@ -701,6 +710,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     const restored = await tryRestoreOtherActiveSubscription(accountId, subscription, account);
     if (restored) return;
     await revertToFree(accountId, subscription.id, account);
+    identifyAccount(accountId, { tier: 'free' });
   });
 }
 

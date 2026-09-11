@@ -809,6 +809,11 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
           NEXT_PUBLIC_BILLING_ENABLED: "false"
+          # PostHog /ingest proxy target (build-time rewrite). The project KEY is
+          # runtime config on the web task, never a build arg: this image also
+          # ships to self-host, and a baked key would send every self-host's
+          # events to our project. Dev's project is US Cloud.
+          NEXT_PUBLIC_POSTHOG_HOST: https://us.i.posthog.com
           NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.dev-version.outputs.version }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.sha }}
           NEXT_OUTPUT: standalone

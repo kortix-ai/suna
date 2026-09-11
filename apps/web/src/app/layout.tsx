@@ -250,7 +250,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 
         {/* DNS prefetch for analytics (loaded later but resolve DNS early) */}
         <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
-        <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
+        <link rel="dns-prefetch" href={runtimeEnv.POSTHOG_HOST} />
 
         {/* Container Load - Initialize dataLayer with page context BEFORE GTM loads */}
         <script

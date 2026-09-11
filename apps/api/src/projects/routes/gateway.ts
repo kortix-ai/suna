@@ -34,6 +34,7 @@ import {
 } from '../../llm-gateway/hooks';
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
+import { track } from '../../lib/analytics';
 import { config } from '../../config';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
@@ -1071,6 +1072,13 @@ projectsApp.openapi(
       });
     }
     const result = await verifyProviderConnection(principal, providerId);
+    track({
+      event: 'provider_verified',
+      userId: principal.userId,
+      accountId: principal.accountId,
+      projectId,
+      properties: { provider: providerId, state: result.status },
+    });
     return c.json({ ...result, checked_at: new Date().toISOString() });
   },
 );

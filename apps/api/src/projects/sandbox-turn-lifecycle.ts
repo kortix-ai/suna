@@ -24,6 +24,7 @@ import {
   turnGrantMs,
 } from './sandbox-deadline-policy';
 import { confirmInboxPromptConsumed } from './session-lifecycle/consumption';
+import { isAnalyticsEnabled, track } from '../lib/analytics';
 import { mintWireMessageId } from './wire-message-id';
 
 export interface SandboxTurnIdentity {
@@ -188,6 +189,51 @@ function endedLedgerTurns(value: unknown): EndedTurnRecord[] {
   }
   const values = Array.isArray(parsed) ? parsed : [parsed];
   return values.map(toEndedTurnRecord).filter((turn): turn is EndedTurnRecord => turn !== null);
+}
+
+/**
+ * One `turn_completed` per ended turn, from the ONE place every turn end goes
+ * through. The daemon's turn-stream `end` is only one of the paths — older
+ * daemons never post it, and reconcile / the reaper close turns too — so the
+ * route must not emit; this does. Observation only: no analytics key, no DB
+ * read; a failure is logged and never reaches the caller.
+ */
+function emitTurnEnded(
+  owner: SessionTurnOwner,
+  turns: EndedTurnRecord[],
+  reason: SessionTurnEndReason,
+): void {
+  if (turns.length === 0 || !isAnalyticsEnabled()) return;
+  void (async () => {
+    try {
+      const rows = normalizeRows(
+        await execute(sql`SELECT created_by FROM kortix.project_sessions
+                           WHERE session_id = ${owner.sessionId} LIMIT 1`),
+      );
+      const userId = ledgerText(rows?.[0]?.created_by);
+      if (!userId) return;
+      const endedAtMs = Date.now();
+      for (const turn of turns) {
+        track({
+          event: 'turn_completed',
+          userId,
+          accountId: owner.accountId,
+          projectId: owner.projectId,
+          sessionId: owner.sessionId,
+          properties: {
+            status: reason === 'completed' ? 'idle' : reason === 'failed' ? 'error' : reason,
+            end_reason: reason,
+            duration_ms: turn.startedAtMs === null ? undefined : Math.max(0, endedAtMs - turn.startedAtMs),
+          },
+        });
+      }
+    } catch (error) {
+      console.warn(
+        '[turn-ledger] turn_completed analytics failed (ignored):',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  })();
 }
 
 /**
@@ -774,6 +820,7 @@ export async function abandonSandboxTurn(target: DeadlineTarget, token: string):
       ),
       `abandon ${token}`,
     );
+    emitTurnEnded(owner, turns, 'abandoned');
   }
   return true;
 }
@@ -878,6 +925,7 @@ export async function clearSandboxTurn(
       ),
       `clear ${token} (${reason})`,
     );
+    emitTurnEnded(owner, turns, reason);
   }
   return true;
 }
@@ -1110,6 +1158,7 @@ export async function completeSandboxTurn(
       endedTurnLedger(owner, turns, endReason),
       `complete ${turns.map((turn) => turn.token).join(',')} (${endReason})`,
     );
+    emitTurnEnded(owner, turns, endReason);
     // The backstop for an acceptance that never landed: `completed`/`failed`
     // both mean the turn RAN, so the prompt it carried is consumed either way.
     // The never-ran reasons (`abandoned`, `runtime_gone`, `unknown`) cannot
@@ -1248,6 +1297,7 @@ export async function closeSandboxTurnByMessageId(
       endedTurnLedger(owner, turns, reason),
       `close-by-message ${turns.map((turn) => turn.token).join(',')} (${reason})`,
     );
+    emitTurnEnded(owner, turns, reason);
   }
   // The ledger row may still be open with its metadata entry already gone
   // (settled by a renewal/acceptance pass that never named this message):

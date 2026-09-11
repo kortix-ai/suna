@@ -40,6 +40,7 @@ import { assertProjectCapability, loadProjectForUser } from '../projects/lib/acc
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { projectsApp } from '../projects/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
+import { requestSource, track } from '../lib/analytics';
 import {
   appAccessibleToUser,
   appsOpenableByUser,
@@ -704,6 +705,13 @@ projectsApp.openapi(
       return row!;
     });
     triggerAppDeploymentWorker();
+    track({
+      event: 'app_deployed',
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      properties: { app_kind: source.kind, hosting_provider: body.provider ?? null, source: requestSource(c) },
+    });
     return c.json(serializeDeployment(deployment), 202);
   },
 );

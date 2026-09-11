@@ -115,6 +115,7 @@ import { scimRouter } from './scim';
 import { setupApp } from './setup';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { auditApiRequest, shutdownAuditEvents } from './shared/audit';
+import { shutdownAnalytics } from './lib/analytics';
 import {
   startAuditReconciliationWorker,
   stopAuditReconciliationWorker,
@@ -1606,7 +1607,7 @@ async function shutdown(signal: string) {
   // Flush observability data before exit. The audit queue is drained here
   // because audit rows are buffered off the request path — without this, the
   // last ~250 ms of events would be lost on every SIGTERM (i.e. every rollout).
-  await Promise.allSettled([shutdownAuditEvents(), appLogger.flush(), flushSentry()]);
+  await Promise.allSettled([shutdownAuditEvents(), shutdownAnalytics(), appLogger.flush(), flushSentry()]);
   process.exit(0);
 }
 

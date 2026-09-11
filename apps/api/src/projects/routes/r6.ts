@@ -34,6 +34,7 @@ import { readBody, serializeProject } from '../lib/serializers';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import { isFeatureFlagKey } from '../../feature-flags/registry';
 import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
+import { requestSource, track } from '../../lib/analytics';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
 import {
   requestProviderTransition,
@@ -1452,6 +1453,13 @@ const patchFeatureFlagHandler = async (c: any) => {
     projectId,
     accountId: row.accountId,
     metadata: row.metadata,
+  });
+  track({
+    event: 'feature_flag_toggled',
+    userId: loaded.userId,
+    accountId: row.accountId,
+    projectId,
+    properties: { key: String(feature), enabled: enabled === null ? 'default' : enabled, source: requestSource(c) },
   });
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 };
