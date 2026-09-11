@@ -19228,5 +19228,28 @@
         "prompt": "Escreva o documento que uma nova pessoa contratada lê na primeira semana — como trabalhamos, onde as coisas ficam, a quem perguntar e como é um bom resultado. Aproveite o que puder da memória do projeto e, no final, liste tudo o que você precisou supor, em vez de parar para me perguntar."
       }
     }
+  },
+  "createAgent": {
+    "title": "Criar agente",
+    "menuDescription": "Escolher nome e instruções",
+    "intro": "Defina os dados básicos. Configure o modelo e o acesso no editor do agente.",
+    "name": "Nome",
+    "nameHelp": "Use de 1 a 128 letras minúsculas, dígitos, hífens ou sublinhados. Comece com uma letra ou um dígito.",
+    "description": "Descrição",
+    "instructions": "Instruções",
+    "mode": "Modo",
+    "primary": "Principal",
+    "subagent": "Subagente",
+    "all": "Todos",
+    "primaryHelp": "As pessoas podem iniciar sessões com este agente.",
+    "subagentHelp": "Outros agentes podem chamar este agente.",
+    "allHelp": "As pessoas e outros agentes podem usar este agente.",
+    "duplicate": "Já existe um agente com este nome. Escolha outro nome.",
+    "created": "Agente criado",
+    "failed": "Não foi possível criar o agente",
+    "loadFailed": "Não foi possível carregar a configuração do projeto.",
+    "upgrade": "A configuração manual requer um projeto v2. Atualize este projeto para continuar.",
+    "cancel": "Cancelar",
+    "retry": "Tentar novamente"
   }
 }

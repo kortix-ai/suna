@@ -19228,5 +19228,28 @@
         "prompt": "Write the document a new hire reads in their first week — how we work, where things live, who to ask, what good looks like. Take what you can from project memory, and list anything you had to guess at the end rather than stopping to ask me."
       }
     }
+  },
+  "createAgent": {
+    "title": "Create agent",
+    "menuDescription": "Choose its name and instructions",
+    "intro": "Set the basics now. Configure model and access in the agent editor.",
+    "name": "Name",
+    "nameHelp": "Use 1–128 lowercase letters, digits, dashes, or underscores. Start with a letter or digit.",
+    "description": "Description",
+    "instructions": "Instructions",
+    "mode": "Mode",
+    "primary": "Primary",
+    "subagent": "Subagent",
+    "all": "All",
+    "primaryHelp": "People can start sessions with this agent.",
+    "subagentHelp": "Other agents can call this agent.",
+    "allHelp": "People and other agents can use this agent.",
+    "duplicate": "An agent with this name already exists. Choose another name.",
+    "created": "Agent created",
+    "failed": "Failed to create agent",
+    "loadFailed": "Could not load the project configuration.",
+    "upgrade": "Manual setup requires a v2 project. Upgrade this project to continue.",
+    "cancel": "Cancel",
+    "retry": "Retry"
   }
 }

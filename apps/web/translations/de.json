@@ -19228,5 +19228,28 @@
         "prompt": "Schreibe das Dokument, das eine neue Person in ihrer ersten Woche liest – wie wir arbeiten, wo sich Dinge befinden, wen sie fragen kann und woran man gute Arbeit erkennt. Nutze, was du aus dem Projektgedächtnis entnehmen kannst, und liste am Ende alles auf, worüber du Annahmen treffen musstest, statt mich zwischendurch zu fragen."
       }
     }
+  },
+  "createAgent": {
+    "title": "Agent erstellen",
+    "menuDescription": "Name und Anweisungen festlegen",
+    "intro": "Legen Sie die Grundlagen fest. Modell und Zugriff konfigurieren Sie im Agenten-Editor.",
+    "name": "Name",
+    "nameHelp": "Verwenden Sie 1–128 Kleinbuchstaben, Ziffern, Bindestriche oder Unterstriche. Beginnen Sie mit einem Buchstaben oder einer Ziffer.",
+    "description": "Beschreibung",
+    "instructions": "Anweisungen",
+    "mode": "Modus",
+    "primary": "Primär",
+    "subagent": "Unteragent",
+    "all": "Alle",
+    "primaryHelp": "Personen können Sitzungen mit diesem Agenten starten.",
+    "subagentHelp": "Andere Agenten können diesen Agenten aufrufen.",
+    "allHelp": "Personen und andere Agenten können diesen Agenten verwenden.",
+    "duplicate": "Ein Agent mit diesem Namen existiert bereits. Wählen Sie einen anderen Namen.",
+    "created": "Agent erstellt",
+    "failed": "Agent konnte nicht erstellt werden",
+    "loadFailed": "Die Projektkonfiguration konnte nicht geladen werden.",
+    "upgrade": "Die manuelle Einrichtung erfordert ein v2-Projekt. Aktualisieren Sie dieses Projekt, um fortzufahren.",
+    "cancel": "Abbrechen",
+    "retry": "Erneut versuchen"
   }
 }

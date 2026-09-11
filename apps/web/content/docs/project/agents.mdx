@@ -7,6 +7,18 @@ An agent is a markdown file that defines how OpenCode acts in a
 [session](/docs/work/sessions). This page covers agent files, skills, and
 how a session picks an agent.
 
+## Create an agent manually
+
+Open **Customize → Agents → New → Set up manually**. Enter a unique name,
+description, instructions, and mode. Select **Create agent** to save it and
+open its editor. Configure its model, access, tools, and workspace there.
+
+Manual setup requires a v2 project. The form offers an upgrade for legacy
+projects. Saving creates the agent's manifest entry and markdown file in one
+commit on the project's default branch. The project default agent stays the
+same. New agents have no connector, secret, skill, or CLI grants until you
+configure their access.
+
 ## OpenCode runs every session
 
 OpenCode, the open-source coding-agent runtime, runs every session. The

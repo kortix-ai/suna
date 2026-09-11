@@ -56,6 +56,7 @@ import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 
 import { filterAgents } from './agent-filter';
+import { CreateAgentModal } from './create-agent-modal';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -82,6 +83,7 @@ type Agent = ProjectConfigSummary['agents'][number];
  */
 export function AgentsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tCreateAgent = useI18nTranslations('createAgent');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -95,6 +97,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   const configure = useConfigureThread(projectId);
 
   const [query, setQuery] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
 
   const detailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -155,8 +158,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
 
   // One control, two labels — same rule as the Skills page. The header has a
   // title beside it and can be terse; the empty state is the whole screen and
-  // has to name what it creates. Both start the same configure thread, so they
-  // cannot drift apart.
+  // has to name what it creates. Both offer the same chat and manual flows.
   // `size="sm"` is `h-8` — the same height as the search input beside it in the
   // header group. The Button default is `h-9`, which left the pair 4px
   // mismatched on a row that is centred, so both edges were off.
@@ -167,8 +169,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('agent'))}
         manual={{
-          description: tI18nComplete.raw('text5210c5acc2cd'),
-          href: `/projects/${projectId}/files`,
+          description: tCreateAgent('menuDescription'),
+          onSelect: () => setCreateOpen(true),
         }}
       />
     ) : null;
@@ -260,6 +262,13 @@ export function AgentsPage({ projectId }: { projectId: string }) {
           />
         ))}
       </CatalogGrid>
+      {createOpen && canWrite ? (
+        <CreateAgentModal
+          projectId={projectId}
+          config={config}
+          onClose={() => setCreateOpen(false)}
+        />
+      ) : null}
     </CapabilityPageShell>
   );
 }

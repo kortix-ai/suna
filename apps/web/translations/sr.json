@@ -19228,5 +19228,28 @@
         "prompt": "Напиши документ који нови запослени чита током прве недеље — како радимо, где се ствари налазе, кога да питају и како изгледа добар резултат. Узми све што можеш из меморије пројекта, а на крају наведи све што си морао да претпоставиш, уместо да застанеш и питаш ме."
       }
     }
+  },
+  "createAgent": {
+    "title": "Napravi agenta",
+    "menuDescription": "Izaberi naziv i uputstva",
+    "intro": "Podesi osnovne podatke. Model i pristup podesi u uređivaču agenta.",
+    "name": "Naziv",
+    "nameHelp": "Koristi 1–128 malih latiničnih slova, cifara, crtica ili donjih crta. Počni slovom ili cifrom.",
+    "description": "Opis",
+    "instructions": "Uputstva",
+    "mode": "Režim",
+    "primary": "Primarni",
+    "subagent": "Podagent",
+    "all": "Svi",
+    "primaryHelp": "Korisnici mogu da pokrenu sesije sa ovim agentom.",
+    "subagentHelp": "Drugi agenti mogu da pozovu ovog agenta.",
+    "allHelp": "Korisnici i drugi agenti mogu da koriste ovog agenta.",
+    "duplicate": "Agent sa ovim nazivom već postoji. Izaberi drugi naziv.",
+    "created": "Agent je napravljen",
+    "failed": "Pravljenje agenta nije uspelo",
+    "loadFailed": "Učitavanje podešavanja projekta nije uspelo.",
+    "upgrade": "Ručno podešavanje zahteva projekat v2. Nadogradi ovaj projekat da nastaviš.",
+    "cancel": "Otkaži",
+    "retry": "Pokušaj ponovo"
   }
 }
