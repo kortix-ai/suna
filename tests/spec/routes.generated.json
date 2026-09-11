@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 635,
+  "count": 636,
   "routes": [
     {
       "method": "GET",
@@ -953,6 +953,10 @@
     {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/catalog"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connect/sections"
     },
     {
       "method": "GET",

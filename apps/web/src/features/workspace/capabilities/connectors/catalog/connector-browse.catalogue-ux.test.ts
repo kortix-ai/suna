@@ -27,6 +27,7 @@ const capabilities = join(here, '..', '..');
 const browse = code(readFileSync(join(here, 'connector-browse.tsx'), 'utf8'));
 const page = code(readFileSync(join(here, '..', 'connectors-page.tsx'), 'utf8'));
 const catalog = code(readFileSync(join(here, 'use-catalog.ts'), 'utf8'));
+const connectSections = code(readFileSync(join(here, 'connect-sections.ts'), 'utf8'));
 const autoload = code(readFileSync(join(here, 'use-catalog-autoload.ts'), 'utf8'));
 const paging = code(readFileSync(join(here, 'catalog-paging.ts'), 'utf8'));
 const icons = readFileSync(join(here, 'category-icon.tsx'), 'utf8');
@@ -263,11 +264,13 @@ describe('the catalogue browses in place', () => {
   test('a section heading states the category label the source published', () => {
     // The grid renders `section.label` verbatim. Both sources normalise to
     // `CatalogSection` in `use-catalog.ts` — Easy Connect from the server's
-    // facet, Discover through `sectionTitle` over the curated keys — so the
-    // grid has exactly one label to draw and cannot pick a second vocabulary.
+    // sections through `browseSections` (both providers), Discover through
+    // `sectionTitle` over the curated keys — so the grid has exactly one label
+    // to draw and cannot pick a second vocabulary.
     expect(browse).toContain('{section.label}');
     expect(catalog).toContain('label: localizedSectionTitle(section.category, tI18nComplete)');
-    expect(catalog).toContain('label: localizedSectionTitle(section.label, tI18nComplete)');
+    expect(catalog).toContain('title: (label) => localizedSectionTitle(label, tI18nComplete)');
+    expect(connectSections).toContain('label: opts.title(section.label)');
     // Bucketing does not happen in the grid any more.
     expect(browse).not.toContain('groupIntoSections');
     expect(browse).not.toContain('groupByCategory');

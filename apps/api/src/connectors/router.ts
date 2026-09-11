@@ -427,6 +427,12 @@ export interface ConnectorRouterDeps {
   ): Promise<Array<{ slug: string; app: string; provider: string; connected: boolean }>>;
   connectStatus?(): Promise<{ configured: boolean; provider: string | null; providers?: string[] }>;
   listConnectToolkits?(projectId: string, input: { q?: string; category?: string; cursor?: string; limit?: number }): Promise<unknown | null>;
+  /** The easy-connect browse page: a fixed top slice of each of the largest
+   *  categories, each with the category's true total. `null` = no provider. */
+  listConnectSections?(
+    projectId: string,
+    input: { perCategory?: number; maxCategories?: number },
+  ): Promise<unknown | null>;
   /**
    * Pipedream webhook: verify sig + finalize. `ok:false` = the signature (or the
    * connector/authorization binding the id names) did not check out → 401.
@@ -1458,6 +1464,44 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         category: c.req.query('category') || undefined,
         cursor: c.req.query('cursor') || undefined,
         ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+      });
+      return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
+    },
+  );
+
+  // ── Admin: the easy-connect browse page, one request ─────────────────────
+  // The Composio counterpart of `/pipedream/sections`. Sections are grouped from
+  // the complete catalogue, so each heading states its category's real size
+  // instead of how many toolkits one loaded page happened to hold.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connect/sections',
+      tags: ['connector'],
+      summary: 'Browse the easy-connect toolkit catalogue by category',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({
+          perCategory: z.coerce.number().int().positive().max(24).optional(),
+          maxCategories: z.coerce.number().int().positive().max(40).optional(),
+        }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Easy-connect catalogue sections'),
+        ...errors(403, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listConnectSections) return featureNotSupportedResponse(c, 'connect_toolkits');
+      const perCategory = Number(c.req.query('perCategory'));
+      const maxCategories = Number(c.req.query('maxCategories'));
+      const result = await deps.listConnectSections(projectId, {
+        ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
+        ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
       });
       return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
     },

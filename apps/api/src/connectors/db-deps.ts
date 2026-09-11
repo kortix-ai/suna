@@ -834,6 +834,7 @@ type ComposioAdapter = {
     cursor?: string;
     limit?: number;
   }): Promise<unknown>;
+  composioCatalogSections?(input: { perCategory?: number; maxCategories?: number }): Promise<unknown>;
   composioConnectUrl(input: {
     projectId: string;
     slug: string;
@@ -2012,6 +2013,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     // Composio deployment into an implicit Pipedream request. The legacy
     // Pipedream catalogue has explicit `/pipedream/apps` routes for deliberate
     // rollback use.
+    return null;
+  },
+  listConnectSections: async (_projectId, input) => {
+    const composio = await loadComposioAdapter();
+    if (composio?.composioConfigured?.() && composio.composioCatalogSections) {
+      return composio.composioCatalogSections(input);
+    }
+    // Same rule as `/connect/toolkits`: no silent Pipedream fallback.
     return null;
   },
   listSessionConnectRequests: async (projectId, sessionId) => {

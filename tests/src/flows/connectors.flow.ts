@@ -922,6 +922,7 @@ flow(
     routes: [
       'GET /v1/connectors/connect-status',
       'GET /v1/connectors/projects/:projectId/connect/toolkits',
+      'GET /v1/connectors/projects/:projectId/connect/sections',
       'POST /v1/connectors/projects/:projectId/connectors',
       'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
       'POST /v1/connectors/projects/:projectId/connectors/:slug/connect',
@@ -1111,6 +1112,69 @@ flow(
         if (body.toolkits.some((item) => !item.categories?.includes('developer-tools'))) {
           throw new Error(
             'Composio returned an item outside the requested developer-tools category',
+          );
+        }
+      },
+    );
+
+    await ctx.step(
+      'Composio browse sections state each category total that its View all filter returns',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/connect/sections', {
+            params: { projectId: p.id },
+            query: { perCategory: '6', maxCategories: '12' },
+          });
+        if (!composioConfigured) {
+          r.status(501);
+          return;
+        }
+        r.status(200).body().has('$.provider', 'composio').exists('$.sections').exists('$.categories');
+        const body = r.json<{
+          sections: Array<{
+            key: string;
+            total: number;
+            toolkits: Array<{ slug: string; categories?: string[] }>;
+          }>;
+          categories: Array<{ key: string; count: number }>;
+        }>();
+        if (body.sections.length === 0 || body.sections.length > 12) {
+          throw new Error(`expected 1..12 sections, got ${body.sections.length}`);
+        }
+        const totals = body.sections.map((section) => section.total);
+        if (totals.some((total, index) => index > 0 && total > totals[index - 1])) {
+          throw new Error(`sections are not ordered largest first: ${totals.join(',')}`);
+        }
+        const largest = body.sections[0];
+        // The regression: a total equal to the loaded card count (`· 1`). The
+        // largest Composio category holds hundreds of toolkits.
+        if (largest.toolkits.length > 6 || largest.total <= largest.toolkits.length) {
+          throw new Error(
+            `largest section ${largest.key} reports total ${largest.total} over ${largest.toolkits.length} cards`,
+          );
+        }
+        for (const section of body.sections) {
+          if (section.toolkits.some((item) => !item.categories?.includes(section.key))) {
+            throw new Error(`section ${section.key} carried a toolkit outside its category`);
+          }
+          const facet = body.categories.find((category) => category.key === section.key);
+          if (facet?.count !== section.total) {
+            throw new Error(`category facet for ${section.key} disagrees with its section total`);
+          }
+        }
+
+        const viewAll = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/connect/toolkits', {
+            params: { projectId: p.id },
+            query: { category: largest.key, limit: '20' },
+          });
+        viewAll.status(200);
+        const opened = viewAll.json<{ total?: number }>();
+        if (opened.total !== largest.total) {
+          throw new Error(
+            `section ${largest.key} heading says ${largest.total}, View all returns ${opened.total}`,
           );
         }
       },

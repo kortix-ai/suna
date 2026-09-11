@@ -1294,6 +1294,54 @@ export async function listConnectToolkits(
   };
 }
 
+/** One browse section of the hosted toolkit catalog. */
+export interface ConnectSection {
+  /** The provider's category slug. `listConnectToolkits({ category: key })` opens it. */
+  key: string;
+  label: string;
+  /** The category's TRUE size — not `toolkits.length`. A heading states this. */
+  total: number;
+  toolkits: ConnectToolkit[];
+}
+
+/** A category of the hosted toolkit catalog, with its size. */
+export interface ConnectCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface ConnectSectionsPage {
+  provider: 'composio';
+  /** The largest categories, each a fixed top slice by usage. */
+  sections: ConnectSection[];
+  /** Every category, largest first. */
+  categories: ConnectCategory[];
+}
+
+/**
+ * The hosted toolkit catalog's browse page: a fixed top slice of each of the
+ * largest categories, each with the category's true total, in one request.
+ *
+ * The Composio counterpart of `listPipedreamSections`. Sections are grouped
+ * server-side from the complete catalog, so a heading's count never describes
+ * only the toolkits a single loaded page happened to contain.
+ */
+export async function listConnectSections(
+  projectId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<ConnectSectionsPage>(
+      `/connectors/projects/${projectId}/connect/sections${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
 export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
 
 export interface DiscoverConnector {

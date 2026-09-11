@@ -2,6 +2,7 @@
 
 import {
   getConnectStatus,
+  listConnectSections,
   listConnectToolkits,
   listDiscoverConnectors,
   listPipedreamApps,
@@ -22,6 +23,12 @@ import {
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
+import {
+  browseSections,
+  connectToolkitApp,
+  sectionsPageFromConnect,
+  type EasyConnectSectionsPage,
+} from './connect-sections';
 import { CATEGORY_ROW_CAP, localizedSectionTitle } from './connector-categories';
 
 /** Apps per request. One page fills several rows of the widest grid, so a
@@ -173,19 +180,8 @@ export async function listConnectCatalogPage(input: {
   }
   const page = await listConnectToolkits(input.projectId, query);
   return {
-    apps: page.toolkits.map((toolkit) => ({
-      slug: toolkit.slug,
-      name: toolkit.name,
-      description: toolkit.description ?? null,
-      imgSrc: toolkit.logo,
-      authType: toolkit.isNoAuth ? 'none' : 'oauth',
-      categories: toolkit.categories ?? [],
-      hasActions: true,
-      hasTriggers: false,
-      featuredWeight: 0,
-      provider: 'composio' as const,
-    })),
-    categories: [],
+    apps: page.toolkits.map(connectToolkitApp),
+    categories: [] as PipedreamCategory[],
     total: page.total,
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
@@ -284,23 +280,27 @@ export function useCatalog(
     placeholderData: keepPreviousData,
   });
 
-  // The browse page, in one request. Only while actually browsing: a search and
-  // an open category are each a single flat result set, so fetching sections
-  // for them would be work against a grid that will not render them.
+  // The browse page, in one request, from whichever provider serves Easy
+  // Connect. Both answer with each category's TRUE size, so a heading never
+  // reports how many cards one loaded page happened to hold.
+  //
+  // Fetched while browsing. Composio also keeps it while a category is open:
+  // its paged endpoint publishes no category facet, and this response's facet
+  // is what lets the open category's header state its name and size. Same key,
+  // so opening a category from the browse page costs no request.
   const sectionsQuery = useQuery({
-    queryKey: ['easy-connect-sections', projectId],
-    queryFn: () =>
-      listPipedreamSections(projectId, {
-        perCategory: SECTION_CARD_COUNT,
-        maxCategories: SECTION_COUNT,
-      }),
+    queryKey: ['easy-connect-sections', projectId, easyConnectProvider],
+    queryFn: async (): Promise<EasyConnectSectionsPage> => {
+      const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
+      if (easyConnectProvider === 'pipedream') return listPipedreamSections(projectId, limits);
+      return sectionsPageFromConnect(await listConnectSections(projectId, limits));
+    },
     staleTime: 5 * 60_000,
     enabled:
       opts.enabled &&
       easyConnectRunnable &&
-      easyConnectProvider === 'pipedream' &&
       !searching &&
-      category === null,
+      (category === null || easyConnectProvider === 'composio'),
   });
 
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
@@ -353,13 +353,24 @@ export function useCatalog(
     void fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, isPlaceholderData, fetchNextPage]);
 
-  const refetch = useCallback(() => void activeRefetch(), [activeRefetch]);
+  // The browse page is loading until its own request lands — the paged query
+  // behind it says nothing about whether the sections are ready.
+  const showingSections = !searching && category === null && source === 'easy-connect';
+  const { refetch: sectionsRefetch } = sectionsQuery;
+
+  // Retry refetches the sections too: on the browse page they are what failed.
+  const refetch = useCallback(() => {
+    void activeRefetch();
+    if (showingSections) void sectionsRefetch();
+  }, [activeRefetch, sectionsRefetch, showingSections]);
 
   /**
    * The browse sections, normalised across both sources so `ConnectorBrowse`
    * renders one shape.
    *
-   * Easy Connect gets them from the server, complete and fixed. Discover has no
+   * Easy Connect gets them from the server, complete and fixed, for both
+   * providers. Section keys are the provider's own category keys, so "View all"
+   * asks the server for exactly the set the heading counted. Discover has no
    * such endpoint, so it keeps the original client-side bucketing of loaded
    * entries — with `total` set to what is actually in hand, because that is all
    * that source can honestly claim.
@@ -374,40 +385,23 @@ export function useCatalog(
         items: section.items.slice(0, SECTION_CARD_COUNT),
       }));
     }
-    if (easyConnectProvider === 'pipedream') {
-      return (sectionsQuery.data?.sections ?? []).map((section) => ({
-        key: section.key,
-        label: localizedSectionTitle(section.label, tI18nComplete),
-        total: section.total,
-        items: section.apps.map(catalogEntryFromEasyConnect),
-      }));
-    }
-    // Composio serves each section's "View all" from its own catalogue, filtered
-    // by this key. Curated keys are ours and it does not have them — asking for
-    // `sales-marketing` answers zero, which the grid renders as an empty
-    // catalogue. Keying by the provider's slug keeps the heading and the grid
-    // behind it describing the same set.
-    return catalogSections(entries, {
-      popularCap: SECTION_CARD_COUNT,
-      rawCategoryKeys: easyConnectProvider === 'composio',
-    }).map((section) => ({
-      key: section.category,
-      label: localizedSectionTitle(section.category, tI18nComplete),
-      total: section.items.length,
-      items: section.items.slice(0, SECTION_CARD_COUNT),
-    }));
-  }, [
-    searching,
-    category,
-    source,
-    entries,
-    sectionsQuery.data,
-    easyConnectProvider,
-    tI18nComplete,
-  ]);
+    if (!sectionsQuery.data) return [];
+    return browseSections(sectionsQuery.data, {
+      native: computersCatalogEntry(tI18nComplete),
+      cardCount: SECTION_CARD_COUNT,
+      title: (label) => localizedSectionTitle(label, tI18nComplete),
+    });
+  }, [searching, category, source, entries, sectionsQuery.data, tI18nComplete]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
-  const categories = source === 'easy-connect' ? (easyConnectPage?.categories ?? []) : [];
+  const categories = useMemo<PipedreamCategory[]>(() => {
+    if (source !== 'easy-connect') return [];
+    if (easyConnectProvider === 'pipedream') return easyConnectPage?.categories ?? [];
+    return (sectionsQuery.data?.categories ?? []).map((facet) => ({
+      ...facet,
+      label: localizedSectionTitle(facet.label, tI18nComplete),
+    }));
+  }, [source, easyConnectProvider, easyConnectPage, sectionsQuery.data, tI18nComplete]);
 
   const excludedNoActions = easyConnectPage?.excludedNoActions ?? 0;
 
@@ -416,13 +410,9 @@ export function useCatalog(
   const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
   const total = typeof reportedTotal === 'number' ? reportedTotal + nativeCount : entries.length;
 
-  // The browse page is loading until its own request lands — the paged query
-  // behind it says nothing about whether the sections are ready.
-  const showingSections =
-    !searching &&
-    category === null &&
-    source === 'easy-connect' &&
-    easyConnectProvider === 'pipedream';
+  // A failed sections request on the browse page is an error, not an empty
+  // catalogue — without this the grid would say "no connectors" over an outage.
+  const sectionsFailed = showingSections && sectionsQuery.isError;
 
   return {
     entries,
@@ -446,8 +436,8 @@ export function useCatalog(
         active.isLoading ||
         (showingSections && sectionsQuery.isLoading)),
     isRefreshing: opts.enabled && isPlaceholderData,
-    isError: active.isError,
-    error: active.error,
+    isError: active.isError || sectionsFailed,
+    error: active.isError ? active.error : sectionsFailed ? sectionsQuery.error : null,
     hasMore: opts.enabled && hasNextPage && !isPlaceholderData,
     isLoadingMore: isFetchingNextPage,
     loadMore,

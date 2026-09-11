@@ -240,6 +240,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|connectors|projects|:projectId|attachments",
   "POST|v1|connectors|projects|:projectId|call",
   "GET|v1|connectors|projects|:projectId|catalog",
+  "GET|v1|connectors|projects|:projectId|connect|sections",
   "GET|v1|connectors|projects|:projectId|connect|toolkits",
   "GET|v1|connectors|projects|:projectId|connectors",
   "POST|v1|connectors|projects|:projectId|connectors",

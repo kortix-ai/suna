@@ -17,6 +17,7 @@ import {
   getDiscoverConnector,
   listAllConnections,
   listConnections,
+  listConnectSections,
   listConnectToolkits,
   listConnectors,
   listDiscoverConnectors,
@@ -683,6 +684,43 @@ test('listConnectToolkits GETs the Composio-first toolkit catalog with paginatio
   expect(result.toolkits[0]?.slug).toBe('gmail');
   expect(result.nextCursor).toBe('cursor-2');
   expect(result.hasMore).toBe(true);
+});
+
+test('listConnectSections GETs the Composio browse page with true category totals', async () => {
+  const gmail = {
+    slug: 'gmail',
+    name: 'Gmail',
+    logo: null,
+    description: 'Email',
+    categories: ['email'],
+    isNoAuth: false,
+    connected: false,
+  };
+  nextResponse = {
+    status: 200,
+    body: {
+      provider: 'composio',
+      sections: [{ key: 'email', label: 'email', total: 58, toolkits: [gmail] }],
+      categories: [{ key: 'email', label: 'email', count: 58 }],
+    },
+  };
+
+  const result = await listConnectSections('P1', { perCategory: 6, maxCategories: 12 });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/connectors/projects/P1/connect/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  expect(result.provider).toBe('composio');
+  // `total` is the category's size, not `toolkits.length` — 58 over one card.
+  expect(result.sections).toEqual([{ key: 'email', label: 'email', total: 58, toolkits: [gmail] }]);
+  expect(result.categories).toEqual([{ key: 'email', label: 'email', count: 58 }]);
+});
+
+test('listConnectSections GETs without a query string when unparameterised', async () => {
+  nextResponse = { status: 200, body: { provider: 'composio', sections: [], categories: [] } };
+  await listConnectSections('P1');
+  expect(last().url).toMatch(/\/connectors\/projects\/P1\/connect\/sections$/);
 });
 
 test('listPipedreamApps GETs with q + cursor as query params when given', async () => {

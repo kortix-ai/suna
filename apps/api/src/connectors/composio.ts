@@ -9,6 +9,9 @@ import type { ExecResult } from './call';
 import { searchComposioCatalog, type ComposioCatalogClient } from './composio-catalog-search';
 import type { ComposioToolLike } from './types';
 
+// Re-exported so `db-deps` reaches it through the lazily imported adapter module.
+export { composioCatalogSections } from './composio-catalog-search';
+
 interface ComposioConnectionRequestLike {
   id: string;
   status?: string;

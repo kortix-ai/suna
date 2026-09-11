@@ -70,6 +70,82 @@ function offsetFromCursor(cursor?: string): number {
   return /^\d+$/.test(decoded) && Number.isSafeInteger(offset) ? offset : 0;
 }
 
+function defaultCatalogClient(): ComposioCatalogClient {
+  return (client ??= new ComposioClient({
+    apiKey: process.env.COMPOSIO_API_KEY,
+  }));
+}
+
+/** The public card shape. `connected` is always false: connection state is
+ *  per project and must never enter this deployment-wide cache. */
+function publicToolkit(item: CatalogToolkit) {
+  return {
+    slug: item.slug,
+    name: item.name,
+    logo: item.meta.logo ?? null,
+    description: item.meta.description ?? null,
+    categories: (item.meta.categories ?? []).map((category) => category.id),
+    isNoAuth: item.no_auth === true,
+    connected: false,
+  };
+}
+
+function boundedCount(value: number | undefined, fallback: number, max: number): number {
+  return value && value > 0 ? Math.min(Math.floor(value), max) : fallback;
+}
+
+/**
+ * The browse page: the top `perCategory` toolkits of each of the largest
+ * categories, each with the category's TRUE size, in one request.
+ *
+ * The client used to bucket one 48-toolkit page by category and label each
+ * bucket with its own length. The catalogue has ~1500 toolkits across ~90
+ * categories, so most headings read `· 1` over a category that holds dozens.
+ * Grouping the complete snapshot fixes the count at the source.
+ *
+ * The keys are Composio's category ids, which equal the slugs its
+ * `toolkits.get({ category })` filter accepts — so a section's `total` is the
+ * size of the grid its "View all" opens. Within a section toolkits keep the
+ * snapshot's usage order. Limits and defaults match `pipedreamCatalogSections`.
+ */
+export async function composioCatalogSections(input: {
+  perCategory?: number;
+  maxCategories?: number;
+  catalogClient?: ComposioCatalogClient;
+}) {
+  const perCategory = boundedCount(input.perCategory, 6, 24);
+  const maxCategories = boundedCount(input.maxCategories, 12, 40);
+  const catalog = await catalogSnapshot(input.catalogClient ?? defaultCatalogClient());
+
+  const byCategory = new Map<string, { label: string; items: CatalogToolkit[] }>();
+  for (const item of catalog) {
+    const seen = new Set<string>();
+    for (const category of item.meta.categories ?? []) {
+      const key = category.id.trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const bucket = byCategory.get(key);
+      if (bucket) bucket.items.push(item);
+      else byCategory.set(key, { label: category.name?.trim() || key, items: [item] });
+    }
+  }
+
+  const categories = [...byCategory.entries()]
+    .map(([key, bucket]) => ({ key, label: bucket.label, count: bucket.items.length }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+
+  return {
+    provider: 'composio' as const,
+    sections: categories.slice(0, maxCategories).map((category) => ({
+      key: category.key,
+      label: category.label,
+      total: category.count,
+      toolkits: byCategory.get(category.key)!.items.slice(0, perCategory).map(publicToolkit),
+    })),
+    categories,
+  };
+}
+
 /** Composio rejects searches shorter than three characters. Search its complete
  * public catalogue here; session toolkits omit descriptions and connection data
  * must never enter this deployment-wide cache. */
@@ -79,11 +155,7 @@ export async function searchComposioCatalog(input: {
   limit?: number;
   catalogClient?: ComposioCatalogClient;
 }) {
-  const catalogClient =
-    input.catalogClient ??
-    (client ??= new ComposioClient({
-      apiKey: process.env.COMPOSIO_API_KEY,
-    }));
+  const catalogClient = input.catalogClient ?? defaultCatalogClient();
   const catalog = await catalogSnapshot(catalogClient);
   const query = input.q.trim().toLowerCase();
   const matches = catalog.filter((item) =>
@@ -95,15 +167,7 @@ export async function searchComposioCatalog(input: {
   const hasMore = nextOffset < matches.length;
   return {
     provider: 'composio' as const,
-    toolkits: matches.slice(offset, nextOffset).map((item) => ({
-      slug: item.slug,
-      name: item.name,
-      logo: item.meta.logo ?? null,
-      description: item.meta.description ?? null,
-      categories: (item.meta.categories ?? []).map((category) => category.id),
-      isNoAuth: item.no_auth === true,
-      connected: false,
-    })),
+    toolkits: matches.slice(offset, nextOffset).map(publicToolkit),
     total: matches.length,
     ...(hasMore ? { nextCursor: Buffer.from(String(nextOffset)).toString('base64url') } : {}),
     hasMore,
