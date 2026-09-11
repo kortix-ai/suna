@@ -136,18 +136,20 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
           'relative shrink-0 cursor-pointer touch-none rounded-full outline-none',
           'transition-colors duration-80',
           'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-1 focus-visible:ring-offset-2',
+          // WCAG 1.4.11 needs 3:1 for the track edge and the thumb. The off
+          // track (`--accent`) is ~1.1:1 against the page in both themes, so
+          // the edge comes from an inset ring and the thumb takes the same ink.
+          // Off: ≥4.86:1 on every surface. Hover raises it to ≥17:1. On: the
+          // white thumb is 3.23:1 on `--kortix-blue`. `inset-ring` composes
+          // with the focus `ring`; an inline box-shadow would erase it.
+          !isChecked && 'inset-ring',
+          !isChecked && (hovered ? 'inset-ring-foreground' : 'inset-ring-muted-foreground'),
           !label && className,
         )}
         style={{
           width: TRACK_WIDTH,
           height: TRACK_HEIGHT,
-          backgroundColor: isChecked
-            ? hovered
-              ? 'var(--kortix-blue)'
-              : 'var(--kortix-blue)'
-            : hovered
-              ? 'color-mix(in oklab, var(--accent), rgb(var(--overlay)) 10%)'
-              : 'var(--accent)',
+          backgroundColor: isChecked ? 'var(--kortix-blue)' : 'var(--accent)',
         }}
         onPointerEnter={(e) => {
           if (e.pointerType === 'mouse') setHovered(true);
@@ -164,7 +166,11 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
       >
         <SwitchPrimitive.Thumb asChild>
           <m.span
-            className="absolute top-0 left-0 block rounded-full bg-white shadow-sm"
+            className={cn(
+              'duration-fast absolute top-0 left-0 block rounded-full shadow-sm transition-colors',
+              // A white thumb on the light off track is 1.1:1 — invisible.
+              isChecked ? 'bg-white' : hovered ? 'bg-foreground' : 'bg-muted-foreground',
+            )}
             initial={false}
             style={{ x: motionX }}
             animate={{
