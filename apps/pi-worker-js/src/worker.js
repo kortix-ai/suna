@@ -47,12 +47,13 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import { CELL_CWD, cellExecutionEnv, cellFs, cellShellNote } from "./execenv.cell.js";
 import { filesAnswer } from "./cell-files.js";
 import { STATIC_PREFIX, staticAnswer } from "./cell-static.js";
-import { executionEnvFor, piTools, piToolsCell, piToolsPlatinum } from "./pitools.js";
+import { executionEnvFor, piTools, piToolsCell, piToolsOver, piToolsPlatinum } from "./pitools.js";
 import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 import { workspaceConfigDir } from "./manifest.js";
 import { attachEnvironment, readCached as readEnvironment, ENVIRONMENT_TABLE_SQL } from "./environment.js";
 import { envRpcExecutionEnv, mintUserContext } from "./execenv.envrpc.js";
 import { machineTool } from "./machine-tool.js";
+import { machineFs, machineGit } from "./machine-fs.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
 // through the ExecutionEnv in execenv.platinum.js (see pitools.js). The module
 // stays for platinum-shapes.mjs, which unit-tests its ledger and bodies.
@@ -160,7 +161,14 @@ function toolsFor(env, sessionId, sql, owner) {
     // Every changed path goes out as OpenCode's `file.edited`, so the Files
     // panel, git status and an open viewer re-read (execenv.cell.js).
     owner.cellFs.onChange = (paths) => owner.wire?.publish(paths.slice(0, 50).map((file) => ({ type: "file.edited", properties: { file } })));
-    return piToolsCell(env, sessionId, sql, owner.cellFs, [...planTools(sql, owner), owner.machineTool(sessionId)]);
+    // THE MACHINE IS THE WORKSPACE ONCE IT IS ATTACHED. The six tools bind to
+    // it and the cell's own tree becomes the tree the session HAD — pushed to
+    // the branch and pulled into the machine at attach (attachMachine). The
+    // env is prepared on the prompt path (prepareMachine), because minting
+    // its signed context is async and this chooser is not.
+    const extras = [...planTools(sql, owner), owner.machineTool(sessionId)];
+    if (owner.__machineEnv) return piToolsOver(owner.__machineEnv, sql, extras);
+    return piToolsCell(env, sessionId, sql, owner.cellFs, extras);
   }
   // The daemon backend now runs pi's OWN tools over an ExecutionEnv — bash,
   // read, write and, the one that matters, edit. The hand-rolled set is
@@ -658,6 +666,10 @@ export class AgentCell {
       // read live in it. Bounded and best-effort — see ensureCheckout.
       await this.ensureCheckout().catch(() => null);
       tMark("checkout");
+      // An attached machine is where this turn's tools run; a session that
+      // attached one in an earlier turn (or before an eviction) picks it up
+      // here from the record in SQLite.
+      await this.prepareMachine().catch(() => null);
       // The checkout may have just ARRIVED, so a skills answer cached from
       // before it is stale by definition.
       const { block } = await this.skills(sessionId, { reload: !this.skillsAfterCheckout });
@@ -1355,7 +1367,7 @@ export class AgentCell {
       return;
     }
     this.cellFs ??= cellFs(this.sql);
-    const env = cellExecutionEnv(this.cellFs, term.editor.cwd);
+    const env = (await this.machineEnv()) ?? cellExecutionEnv(this.cellFs, term.editor.cwd);
     const cd = cdTarget(line);
     const command = cd === null ? line : `cd ${cd === "~" ? "/workspace" : cd} && pwd`;
     term.editor.busy = true;
@@ -1399,19 +1411,86 @@ export class AgentCell {
    */
   machineTool(sessionId) {
     this.__machine ??= machineTool({
-      attach: () => attachEnvironment({
-        env: this.effectiveEnv(),
-        sql: this.sql,
-        onProgress: (line) => this.broadcast({ type: "machine", line }),
-      }),
-      envFor: async (record) => envRpcExecutionEnv({
-        base: record.edge,
-        context: await mintUserContext(record.rpcSecret, record.externalId),
-      }),
-      workspace: () => executionEnvFor(this.effectiveEnv(), sessionId, "machine-sync", undefined, this.cellFs ?? null),
+      attach: () => this.attachMachine(),
+      envFor: async () => this.machineEnv(),
+      // `push`/`pull` move files between the CELL's tree and the machine —
+      // useful before the switch, and for anything left behind after it.
+      workspace: () => { this.cellFs ??= cellFs(this.sql); return cellExecutionEnv(this.cellFs); },
       onProgress: (line) => this.broadcast({ type: "machine", line }),
     });
     return this.__machine;
+  }
+
+  /** The cached environment record, if this session attached one. */
+  machineRecord() {
+    try { this.sql.exec(ENVIRONMENT_TABLE_SQL); return readEnvironment(this.sql); } catch { return null; }
+  }
+
+  /**
+   * The ExecutionEnv over the attached machine — built once per record and
+   * re-signed before the context's day is up. Null when no machine is
+   * attached, which is what every caller checks.
+   */
+  async machineEnv() {
+    const record = this.machineRecord();
+    if (!record) { this.__machineEnv = null; return null; }
+    const stale = !this.__machineEnvMeta || this.__machineEnvMeta.externalId !== record.externalId || Date.now() - this.__machineEnvMeta.mintedAt > 12 * 3600_000;
+    if (stale) {
+      const context = await mintUserContext(record.rpcSecret, record.externalId);
+      this.__machineEnv = envRpcExecutionEnv({ base: record.edge, context });
+      this.__machineEnvMeta = { externalId: record.externalId, mintedAt: Date.now() };
+    }
+    return this.__machineEnv;
+  }
+
+  /** Called on the prompt path: makes `__machineEnv` current for the sync tool chooser. */
+  async prepareMachine() { return this.machineEnv(); }
+
+  /**
+   * ATTACH, THEN MAKE THE MACHINE THE WORKSPACE. The environment clones the
+   * session branch as it was on the origin; anything the cell's tree holds
+   * that was never pushed would be lost to the model the moment its tools
+   * moved. So the cell commits and pushes first when it is dirty, and the
+   * machine pulls — one fetch, fast-forward only — before the switch.
+   */
+  async attachMachine() {
+    const r = await attachEnvironment({
+      env: this.effectiveEnv(),
+      sql: this.sql,
+      onProgress: (line) => this.broadcast({ type: "machine", line }),
+    });
+    if (!r.ok) return r;
+    const env = await this.machineEnv();
+    const e = this.effectiveEnv();
+    const branch = typeof e.KORTIX_BRANCH_NAME === "string" && e.KORTIX_BRANCH_NAME.trim() ? e.KORTIX_BRANCH_NAME.trim() : null;
+    try {
+      this.cellFs ??= cellFs(this.sql);
+      const dirty = branch && (await isCheckedOut(this.cellFs.fs)) && (await workingStatus(this.cellFs)).length > 0;
+      if (dirty) {
+        const pushed = await commitAndPush({ cell: this.cellFs, url: e.KORTIX_REPO_URL, token: e.KORTIX_TOKEN, branch, message: "Work from the session before its machine was attached" });
+        this.broadcast({ type: "machine", line: pushed.ok ? `pushed the session tree to ${branch}` : `could not push the session tree: ${pushed.error}` });
+      }
+      if (branch) {
+        const pulled = await machineGit(env).pull(branch);
+        this.broadcast({ type: "machine", line: pulled.ok ? "machine checkout is current" : `machine pull: ${pulled.output}` });
+      }
+    } catch (err) {
+      this.broadcast({ type: "machine", line: `sync skipped: ${String(err?.message ?? err)}` });
+    }
+    this.wire?.publish([{ type: "file.edited", properties: { file: CELL_CWD } }]);
+    return r;
+  }
+
+  /** The tree the routes answer about: the machine's when attached, else the cell's. */
+  async workspaceFs() {
+    const env = await this.machineEnv();
+    // The file and static routes take the CELL-SHAPED object — `{fs, ready,
+    // persist}` — so the machine is handed over in that shape: its fs is the
+    // adapter, it is always ready, and there is nothing to persist because the
+    // machine's disk is the record.
+    if (env) return { kind: "machine", fs: machineFs(env), ready: Promise.resolve(), persist: async () => {} };
+    this.cellFs ??= cellFs(this.sql);
+    return this.cellFs;
   }
 
   /**
@@ -2016,6 +2095,8 @@ export class AgentCell {
         }
         this.cellFs ??= cellFs(this.sql);
         await this.ensureCheckout().catch(() => null);
+        const menv = await this.machineEnv();
+        if (menv) return Response.json(await machineGit(menv).fileDiffs().catch(() => []));
         return Response.json(await fileDiffs(this.cellFs).catch(() => []));
       }
       // ONE MESSAGE, AND THE TWO DELETES THE CONTROL PLANE USES TO CANCEL A
@@ -2308,8 +2389,14 @@ export class AgentCell {
       try {
         claimOk = !!JSON.parse(atob(key.split(".")[1]))?.["https://api.openai.com/auth"]?.chatgpt_account_id;
       } catch (e) { claimOk = `decode failed: ${e.message}`; }
+      // WHERE THE TOOLS ACTUALLY RUN. An attached machine takes the six tools
+      // with it (toolsFor), so a session that reported `cell` while its bash
+      // ran on a microVM was telling whoever asked the opposite of the truth.
+      const attached = this.machineRecord();
       return Response.json({
-        tools: (e.PT_API_URL && e.PT_SANDBOX_KEY && e.PT_WORKSPACE_ID)
+        tools: attached
+          ? { backend: "machine", environment: attached.externalId, cwd: CELL_CWD }
+          : (e.PT_API_URL && e.PT_SANDBOX_KEY && e.PT_WORKSPACE_ID)
           ? { backend: "platinum", api: e.PT_API_URL, workspace: e.PT_WORKSPACE_ID }
           : (this.cellFs || e.TOOLS_BACKEND === "cell" || normalizeModelEnv(e).MODEL_BASE_URL || e.KORTIX_SESSION_ID)
             // `files` is what is DURABLE — rows in the cell's SQLite — not the
@@ -2499,6 +2586,11 @@ export class AgentCell {
       if (path === "/kortix/opencode/vcs-diff" && req.method === "GET") {
         this.cellFs ??= cellFs(this.sql);
         await this.ensureCheckout().catch(() => null);
+        const menv = await this.machineEnv();
+        if (menv) {
+          const per = await machineGit(menv).fileDiffs().catch(() => []);
+          return Response.json({ files: per.map((f) => ({ path: f.file, status: f.status, added: f.additions, removed: f.deletions })), patch: per.map((f) => f.patch).join("") });
+        }
         return Response.json(await workingDiff(this.cellFs).catch(() => ({ files: [], patch: "" })));
       }
       if (path === "/kortix/opencode/act" && req.method === "POST") {
@@ -2564,7 +2656,8 @@ export class AgentCell {
           // THE MACHINE, IF ONE IS ATTACHED: the environment's box id, so a
           // session whose model said "I ran it on the machine" can be checked
           // against a box that exists.
-          environment: (() => { try { this.sql.exec(ENVIRONMENT_TABLE_SQL); return readEnvironment(this.sql)?.externalId ?? null; } catch { return null; } })(),
+          environment: this.machineRecord()?.externalId ?? null,
+          workspace: this.machineRecord() ? "machine" : "cell",
           model: normalizeModelEnv(this.modelEnv()).MODEL_ID ?? null,
           terminals: [...(this.terminals?.values() ?? [])].length,
         });
@@ -2582,13 +2675,17 @@ export class AgentCell {
         const e = this.effectiveEnv();
         this.cellFs ??= cellFs(this.sql);
         if (this.__commitPush) return Response.json({ error: "commit-push already running" }, { status: 409 });
-        this.__commitPush = commitAndPush({
+        const menv = await this.machineEnv();
+        this.__commitPush = menv
+          ? machineGit(menv).commitAndPush({ branch: e.KORTIX_BRANCH_NAME, message: typeof body?.message === "string" ? body.message : undefined })
+          : commitAndPush({
           cell: this.cellFs,
           url: e.KORTIX_REPO_URL,
           token: e.KORTIX_TOKEN,
           branch: e.KORTIX_BRANCH_NAME,
           message: typeof body?.message === "string" ? body.message : undefined,
-        }).finally(() => { this.__commitPush = null; });
+        });
+        this.__commitPush = this.__commitPush.finally(() => { this.__commitPush = null; });
         const r = await this.__commitPush;
         return r.ok
           ? Response.json({ ok: true, committed: r.committed, pushed: r.pushed, nothingToDo: r.nothingToDo, branch: r.branch, headSha: r.headSha })
@@ -2922,10 +3019,12 @@ export class AgentCell {
       // so the checkout happens here too, not only at turn start.
       await this.ensureCheckout().catch(() => null);
       // `/file/status` is git's answer once there is a checkout (cell-git.js).
+      const tree = await this.workspaceFs();
       if (path === "/file/status" && req.method === "GET") {
+        if (tree.kind === "machine") return Response.json(await machineGit(await this.machineEnv()).status().catch(() => []));
         return Response.json(await workingStatus(this.cellFs).catch(() => []));
       }
-      const answered = await filesAnswer(req, path, url, this.cellFs);
+      const answered = await filesAnswer(req, path, url, tree);
       if (answered) return answered;
     }
     // THE TERMINAL TAB'S REST: list, create, rename, remove. One shell per
@@ -2956,7 +3055,7 @@ export class AgentCell {
     // sends a cell's 3211 here. cell-static.js.
     if (path === STATIC_PREFIX || path.startsWith(STATIC_PREFIX + "/")) {
       this.cellFs ??= cellFs(this.sql);
-      const answered = await staticAnswer(req, path, url, this.cellFs);
+      const answered = await staticAnswer(req, path, url, await this.workspaceFs());
       if (answered) return answered;
     }
     return Response.json({

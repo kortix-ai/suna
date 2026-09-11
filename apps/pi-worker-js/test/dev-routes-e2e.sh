@@ -362,7 +362,16 @@ print(1 if d.get("ok") is True and d.get("committed") is True and d.get("pushed"
 # AND THE ORIGIN AGREES. A push that reports success and left nothing behind is
 # the failure this route is most likely to have, and only the remote can say.
 if [ -n "$BRANCH" ] && [ -n "$HEAD" ]; then
-  REMOTE=$(GIT_TERMINAL_PROMPT=0 git ls-remote "$BASE/v1/git/$PROJ.git" "refs/heads/$BRANCH" 2>/dev/null | awk '{print $1}')
+  # THE ORIGIN IS ASKED MORE THAN ONCE. A ref pushed a moment ago is not always
+  # visible to the next `ls-remote` through the proxy — measured 2026-09-11: the
+  # first ask answered nothing and the ref was there when asked again, so a
+  # single ask turned a working push into a failed claim.
+  REMOTE=""
+  for try in 1 2 3 4; do
+    REMOTE=$(GIT_TERMINAL_PROMPT=0 git ls-remote "$BASE/v1/git/$PROJ.git" "refs/heads/$BRANCH" 2>/dev/null | awk '{print $1}')
+    [ -n "$REMOTE" ] && break
+    sleep 3
+  done
   ck "and the ORIGIN really has that commit on that branch — asked of the remote, not of the cell" \
     "$([ -n "$REMOTE" ] && [ "$REMOTE" = "$HEAD" ] && echo 1 || echo 0)" "cell said $HEAD, origin says ${REMOTE:-<nothing>}"
 else
@@ -371,10 +380,18 @@ fi
 # A TOKEN OUTLIVES THE SUITE ONLY IF IT IS REFRESHED. This runs minutes after
 # sign-in, behind a model turn and forty probes; the first version of this leg
 # reported the API's own "Invalid or expired token" as a cell failure.
-A=$(curl -s -m 30 -X POST "$BASE/v1/auth/sign-in/password" -H 'content-type: application/json' -d "$SIGNIN" \
-  | python3 -c 'import json,sys
+# A REFRESH THAT FAILS MUST NOT REPLACE A WORKING TOKEN WITH AN EMPTY STRING.
+# The first version assigned the re-sign-in's output unconditionally; one
+# transient answer left `A` empty and the next call came back 401 "Missing
+# authentication token", which this suite reported as a cell failure.
+for try in 1 2 3; do
+  FRESH=$(curl -s -m 30 -X POST "$BASE/v1/auth/sign-in/password" -H 'content-type: application/json' -d "$SIGNIN" \
+    | python3 -c 'import json,sys
 try: print(json.load(sys.stdin)["session"]["access_token"])
 except Exception: print("")')
+  [ -n "$FRESH" ] && { A=$FRESH; break; }
+  sleep 3
+done
 AH=(-H "authorization: Bearer $A"); JH=("${AH[@]}" -H 'content-type: application/json')
 CP2=$(post "/kortix/git/commit-push" '{}')
 ck "a second push with nothing changed is 'nothing to do', not a second empty commit" \

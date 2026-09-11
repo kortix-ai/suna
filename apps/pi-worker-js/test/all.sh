@@ -173,6 +173,7 @@ run_suite manifest   node --experimental-sqlite test/manifest-logic.mjs
 run_suite envrpc     node test/envrpc-logic.mjs
 run_suite environ    node --experimental-sqlite test/environment-logic.mjs
 run_suite machine    node test/machine-logic.mjs
+run_suite machinefs  node test/machine-fs-logic.mjs
 run_suite plan       node --experimental-sqlite test/plan-logic.mjs
 run_suite pty        node --experimental-sqlite test/pty-logic.mjs
 run_suite git        node --experimental-sqlite test/git-logic.mjs

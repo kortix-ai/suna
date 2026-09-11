@@ -39,7 +39,7 @@ export const ALL_SUITES = [
   "manifest-logic.mjs", "plan-logic.mjs", "pty-logic.mjs", "git-logic.mjs",
   "kortix-routes-logic.mjs",
   // THE MACHINE: the environment's RPC client, the attach, and the tool.
-  "envrpc-logic.mjs", "environment-logic.mjs", "machine-logic.mjs",
+  "envrpc-logic.mjs", "environment-logic.mjs", "machine-logic.mjs", "machine-fs-logic.mjs",
 ];
 
 /** The suites test/all.sh runs under node's SQLite — they open a DatabaseSync

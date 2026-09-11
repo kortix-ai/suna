@@ -288,6 +288,18 @@ export function piToolsPlatinum(env, sessionId, sql, extras = []) {
 }
 
 /**
+ * THE SAME SIX TOOLS OVER ANY ExecutionEnv — the machine's, once a session has
+ * attached one (execenv.envrpc.js). Same adapter, same ledger, same op rows in
+ * /ops as the cell path, so a tool call on the machine is retried, cancelled
+ * and reported exactly like one in the cell; only the shell underneath moved.
+ */
+export function piToolsOver(execEnv, sql, extras = []) {
+  const log = ledger(sql);
+  const inflight = new Map();
+  return [...TOOLSET(), ...extras].map((t) => adapt(t, () => execEnv, log, inflight));
+}
+
+/**
  * The same six tools over the CELL'S OWN filesystem and shell — no microVM,
  * no daemon. `cell` is the cellFs() instance the AgentCell holds, so the tree
  * and the shell outlive one tool call and one turn, and go to storage with

@@ -86,6 +86,11 @@ const isDir = (e) => /EISDIR|is a directory/i.test(e?.message ?? "");
 
 /** Every file under `dir`, workspace-relative, skipping what the daemon skips. */
 export async function listAllFiles(fs, workspace = CELL_CWD) {
+  // A REMOTE TREE LISTS ITSELF. Walking a machine's checkout one readdir at a
+  // time is one RPC per directory; the machine has ripgrep and answers the
+  // whole list in one (machine-fs.js). The in-memory tree has no such thing
+  // and walks.
+  if (typeof fs.listAll === "function") return fs.listAll(workspace);
   const out = [];
   async function walk(dir) {
     if (out.length >= MAX_FILES) return;
@@ -122,6 +127,7 @@ export function fuzzyScore(candidate, query) {
 
 /** `GET /find?pattern=` — ripgrep's match shape, over the tree's text files. */
 export async function textSearch(fs, pattern, workspace = CELL_CWD) {
+  if (typeof fs.search === "function") return fs.search(pattern, workspace);
   let re;
   try { re = new RegExp(pattern, "g"); } catch { re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"); }
   const matches = [];

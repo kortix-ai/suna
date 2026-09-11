@@ -3,7 +3,7 @@
 // it: the transcript envelope, the act route, ports, logs, diag, a part's
 // bytes, and the commit-push the dashboard uses to open a change request. A
 // cell answered four of them and `unknown route` to the rest.
-// EXPECTED_PASSES=70
+// EXPECTED_PASSES=81
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -293,6 +293,102 @@ check("logs on an empty cell is empty rather than absent", logsAnswer(undefined)
   check("every one of these refuses another session by name",
     (await del("/session/other/message/msg_000000000001aaaaaaaaaaaaaa")).status === 404
       && (await get("/session/other/message/msg_000000000001aaaaaaaaaaaaaa")).status === 404, "");
+}
+
+
+// THE MACHINE AS THE WORKSPACE OF RECORD.
+//
+// Once a session has attached its environment, every route that answers
+// about "the workspace" — the Files panel, the viewer, git status, the Changes
+// tab, commit-push — and every tool the model holds has to mean the MACHINE.
+// A cell that kept answering from its own tree would show the user one tree
+// while the model built in another. Here the machine is a fake behind a
+// stubbed fetch at its edge address: the record is written the way
+// attachEnvironment writes it, and each route is asked what it answers.
+{
+  const { writeCached, ENVIRONMENT_TABLE_SQL } = await import("../src/environment.js");
+  const EDGE = "https://8000-fake.sbx.example";
+  const machine = { files: { "/workspace/README.md": "# on the machine\n", "/workspace/src/app.js": "app" }, dirs: ["/workspace", "/workspace/src"], execs: [] };
+  const answer = (command) => {
+    machine.execs.push(command);
+    if (/git status --porcelain/.test(command)) return { stdout: " M src/app.js\0?? notes.txt\0", stderr: "", exitCode: 0 };
+    if (/git diff --numstat/.test(command)) return { stdout: "1\t0\tsrc/app.js\n", stderr: "", exitCode: 0 };
+    if (/git diff --no-index/.test(command)) return { stdout: "+notes\n", stderr: "", exitCode: 0 };
+    if (/git diff --no-color HEAD/.test(command)) return { stdout: "+app\n", stderr: "", exitCode: 0 };
+    if (/git add -A/.test(command)) return { stdout: "cafe0001\n", stderr: "", exitCode: 0 };
+    if (/git push origin HEAD:refs\/heads\//.test(command)) return { stdout: "pushed", stderr: "", exitCode: 0 };
+    if (/git rev-parse HEAD/.test(command)) return { stdout: "cafe0001\n", stderr: "", exitCode: 0 };
+    return { stdout: `machine ran: ${command}`, stderr: "", exitCode: 0 };
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (!u.startsWith(EDGE)) return realFetch(url, init);
+    if (u.endsWith("/kortix/health")) return new Response(JSON.stringify({ daemon: "ok", repo_ready: true, branch: "b1" }), { status: 200 });
+    const { op, args } = JSON.parse(init.body);
+    const rep = (value) => new Response(JSON.stringify({ ok: true, value }), { status: 200 });
+    const nope = (code = "ENOENT") => new Response(JSON.stringify({ ok: false, error: { code, message: "no such file", path: args.path } }), { status: 200 });
+    switch (op) {
+      case "exec": return rep(answer(args.command));
+      case "exists": return rep(args.path in machine.files || machine.dirs.includes(args.path));
+      case "fileInfo": return args.path in machine.files ? rep({ name: args.path.split("/").pop(), kind: "file", size: machine.files[args.path].length })
+        : machine.dirs.includes(args.path) ? rep({ name: args.path.split("/").pop(), kind: "directory", size: 0 }) : nope();
+      case "listDir": return machine.dirs.includes(args.path) ? rep([
+        ...machine.dirs.filter((d) => d !== args.path && d.startsWith(`${args.path}/`) && !d.slice(args.path.length + 1).includes("/")).map((d) => ({ name: d.split("/").pop(), kind: "directory", size: 0 })),
+        ...Object.keys(machine.files).filter((f) => f.startsWith(`${args.path}/`) && !f.slice(args.path.length + 1).includes("/")).map((f) => ({ name: f.split("/").pop(), kind: "file", size: machine.files[f].length })),
+      ]) : nope();
+      case "readBinaryFile": return args.path in machine.files ? rep(btoa(machine.files[args.path])) : nope();
+      case "writeFile": machine.files[args.path] = args.encoding === "base64" ? atob(args.content) : args.content; return rep(undefined);
+      case "createDir": machine.dirs.push(args.path); return rep(undefined);
+      default: return new Response(JSON.stringify({ ok: false, error: { code: "unknown_op", message: `unsupported op: ${op}` } }), { status: 200 });
+    }
+  };
+  try {
+    const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "w1", TOOLS_BACKEND: "cell", KORTIX_BRANCH_NAME: "b1", SCRIPT: "[]" });
+    const c = h.cell ?? h;
+    await h.fetch("/?c=w1");
+    c.sql.exec(ENVIRONMENT_TABLE_SQL);
+    writeCached(c.sql, { externalId: "sbx_fake", edge: EDGE, rpcSecret: "s3cret" });
+    const get = async (p) => { const r = await h.fetch(`${p}${p.includes("?") ? "&" : "?"}c=w1`); return { status: r.status, body: await r.json().catch(() => null) }; };
+    const post = async (p, body) => { const r = await h.fetch(`${p}?c=w1`, { method: "POST", body: JSON.stringify(body ?? {}) }); return { status: r.status, body: await r.json().catch(() => null) }; };
+
+    const diag = await get("/kortix/diag");
+    check("with an environment record the diag says the workspace is the MACHINE, and which box",
+      diag.body.workspace === "machine" && diag.body.environment === "sbx_fake", JSON.stringify({ w: diag.body.workspace, e: diag.body.environment }));
+    const list = await get("/file?path=");
+    check("GET /file lists the MACHINE's tree, not the cell's — the Files panel shows where the model builds",
+      list.status === 200 && list.body.some((n) => n.name === "README.md") && list.body.some((n) => n.name === "src" && n.type === "directory"), JSON.stringify(list.body).slice(0, 160));
+    const content = await get("/file/content?path=README.md");
+    check("and /file/content reads the machine's file", content.body?.content === "# on the machine\n", JSON.stringify(content.body).slice(0, 100));
+    const status = await get("/file/status");
+    check("/file/status is git's answer ON THE MACHINE, with line counts",
+      status.body.length === 2 && status.body[0].path === "src/app.js" && status.body[0].status === "modified" && status.body[0].added === 1 && status.body[1].status === "added", JSON.stringify(status.body));
+    const diff = await get("/session/w1/diff");
+    check("/session/:id/diff is one entry per changed file from the machine's git", diff.body.length === 2 && diff.body[0].file === "src/app.js" && /\+app/.test(diff.body[0].patch), JSON.stringify(diff.body).slice(0, 160));
+    const vcs = await get("/kortix/opencode/vcs-diff");
+    check("and /kortix/opencode/vcs-diff joins the same patches", vcs.body.files.length === 2 && /\+app/.test(vcs.body.patch) && /\+notes/.test(vcs.body.patch), JSON.stringify(vcs.body).slice(0, 120));
+    const find = await get("/find/file?query=app");
+    check("/find/file asks the machine's ripgrep once rather than walking it", machine.execs.some((x) => /rg --files/.test(x)) && Array.isArray(find.body), JSON.stringify(find.body).slice(0, 80));
+    const cp = await post("/kortix/git/commit-push", { message: "from the cell's route" });
+    check("POST /kortix/git/commit-push commits and pushes ON THE MACHINE to the session branch",
+      cp.body?.ok === true && cp.body.committed === true && cp.body.pushed === true && cp.body.headSha === "cafe0001"
+        && machine.execs.some((x) => /git add -A/.test(x) && /from the cell/.test(x)) && machine.execs.some((x) => /git push origin HEAD:refs\/heads\/b1/.test(x)),
+      JSON.stringify(cp.body));
+    await c.prepareMachine();
+    const agent = c.buildAgent("w1", []);
+    const bash = agent.state.tools.find((t) => t.name === "bash");
+    const before = machine.execs.length;
+    await bash.execute("t1", { command: "node --version" }, undefined, undefined);
+    check("the model's bash tool now RUNS ON THE MACHINE — the six tools moved with the workspace",
+      machine.execs.length > before && machine.execs.some((x) => /node --version/.test(x)), JSON.stringify(machine.execs.slice(-1)));
+    check("the machine tool is still there, for status and for moving files the cell's tree still holds",
+      agent.state.tools.some((t) => t.name === "machine"), "");
+    const model = await get("/model");
+    check("and /model says the tools run on the MACHINE, naming the box — it used to report `cell` while bash ran on a microVM",
+      model.body.tools?.backend === "machine" && model.body.tools.environment === "sbx_fake", JSON.stringify(model.body.tools));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");
