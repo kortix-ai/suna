@@ -1,25 +1,19 @@
-Reliable connector access, account settings, and session Git permissions
+Wedged sandboxes are reclaimed, and database contention no longer looks like a server fault
 
 ### Fixed
-- Billing opens one subscription dialog from the account hub. Its controls remain accessible, and Escape closes the subscription dialog while keeping account settings open.
-- Session Git pushes honor explicit ref grants within the effective IAM role. Manager-authorized sessions can update shared branches; agent grants cannot elevate a member to manager ref authority.
-- **Connectors keep working after a bad manifest read.** A session no longer loses every connector when one read of `kortix.yaml` answers wrong. Each grant now records the manifest revision it came from; a grant read from the same revision or an older commit never replaces it, and an unreadable manifest keeps the last known grant. The channel that started a session (Slack, Teams, email) stays callable under any grant, so the agent can always report in its own thread.
-- **Connector denials say why.** `connector_not_assigned` now names the agent, its granted list, the manifest revision, and what to change. A declared connector with no credential answers `connector_not_connected` and lists as `needs_auth`. Composio connectors no longer show `needs_auth` while they are connected.
-- **Slack progress is never silently dropped.** `slack step` and `slack send` fail with a reason when a checkpoint or an answer does not reach the thread, instead of reporting success. A replayed idle event no longer closes a turn that just started. Button clicks carry the full turn instructions and never vanish without a trace.
-- Sessions: the waiting row and the Stop button stay accurate while a prompt is in flight.
-- Triggers: the manager override for reuse-mode prompt delivery works again.
-- Web: auth tokens are preserved during hydration and fenced before cross-user adoption, and project access waits for auth, so cold loads no longer show "This project didn't load".
-- Web: 18 toasts no longer render their own translation key; the template OG image route runs on Node and stops bundling every translation.
-- Desktop: navigation layout restored, with parity checks in the package gate.
 
-### Improved
-- Self-host operators can set `KORTIX_FRONTEND_MEMORY_LIMIT` to give the frontend more memory. The setting persists through CLI updates and affects only the frontend.
-- **Account hub as a modal.** Organization settings, members, groups, roles, identity, billing, and audit open over the page you are on instead of a separate route tree. The `/accounts` routes are gone; links resolve to `?accountId=` on the current page, and Back, reload, and pasted links keep working.
-- Signing in paints one brand mark across the whole path to the project instead of four different loading frames.
-- Command palette: file search is offered only where it can run; the Open URL row and the Jump to message page are removed; the empty state no longer names a row that is not there.
+- **Sandboxes cannot outlive their work.** A session turn now has an absolute ceiling as well as a renewable one. Renewal asks whether a turn is still running, and a wedged turn answers "yes" forever, so a turn record past the ceiling is now settled instead of being renewed indefinitely and its sandbox is reclaimed. This one cause sat behind several classes of server error.
+- **Fewer server errors when the database is busy.** Connection-class and contention failures are now recognised as the temporary conditions they are and retried, instead of being reported as server faults.
+- **Errors say what actually went wrong.** A failure now carries its real cause rather than the message of whatever wrapped it, and how serious it is follows that cause. Ordinary customer state no longer looks like a platform failure, so real failures stop being buried.
+- **A large unused database index is gone**, removing its write cost from every audit record. It was 8.6 GB and had served no read in two and a half months.
+- **One subscription dialog, in the right place.** The upgrade dialog now renders above the deepest panel that opened it, so its controls stay reachable and screen readers can see it. Escape closes it and leaves account settings open.
+- Ordered lists size their gutter to the widest marker, so long lists no longer clip their numbers.
+- Desktop: the Back control sits correctly on sign-in screens.
+
+### New
+
+- Desktop asks which Kortix instance to use on first launch.
 
 ### Internal
-- Release fixtures follow the current connector tab and use a normal cancellation request. Test artifacts mask diagnostic credentials and upload only after the secret guard passes.
-- End-to-end flow GH-17 verifies member branch isolation and owner ref authority through real Git HTTP.
-- New end-to-end flow (CONN-27) covers session grant provenance, the channel guarantee, and honest denials, with preview harness support. Browser specs follow the account hub to its new URLs; spec 23 ignores CORS preflights.
-- Connector authorization tests mint credentials through the token API and close database connections after each run.
+
+- The test harness no longer loses a whole browser shard when a dev-server cache restore fails, and a finished test run now exits instead of hanging when something leaves a connection open. Both had turned passing runs into failed ones.
