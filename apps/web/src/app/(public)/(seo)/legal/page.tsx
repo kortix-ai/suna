@@ -261,6 +261,18 @@ function PrivacyPolicy() {
           <li>{t.raw('appLegalPage.line1700JsxTextOnlyIfWeReasonablyBelieveItSNecessary')}</li>
           <li>{t.raw('appLegalPage.line1705JsxTextInTheEventOfACorporateRestructuringOr')}</li>
         </Bullets>
+        <P>{t.raw('appLegalPage.serviceProvidersLead')}</P>
+        <Bullets>
+          <li>{t.raw('appLegalPage.serviceProvidersHosting')}</li>
+          <li>{t.raw('appLegalPage.serviceProvidersAuthDb')}</li>
+          <li>{t.raw('appLegalPage.serviceProvidersPayments')}</li>
+          <li>{t.raw('appLegalPage.serviceProvidersSandboxes')}</li>
+          <li>{t.raw('appLegalPage.serviceProvidersErrors')}</li>
+          <li>{t.raw('appLegalPage.serviceProvidersAnalytics')}</li>
+          <li>{t.raw('appLegalPage.serviceProvidersMarketing')}</li>
+          <li>{t.raw('appLegalPage.serviceProvidersModels')}</li>
+        </Bullets>
+        <P>{t.raw('appLegalPage.serviceProvidersObject')}</P>
         <P>{t.raw('appLegalPage.line1712JsxTextPleaseNoteThatSomeOfOurServicesInclude')}</P>
         <P>{t.raw('appLegalPage.line1721JsxTextFinallyWeMayShareNonPersonalInformationIn')}</P>
       </Section>

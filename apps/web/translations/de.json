@@ -4659,7 +4659,17 @@
       "line1729JsxTextWeImplementPhysicalBusinessAndTechnicalSecurityMeasures": "Wir setzen physische, geschäftliche und technische Sicherheitsmaßnahmen ein, um Ihre personenbezogenen Daten zu schützen. Im Falle einer Sicherheitsverletzung benachrichtigen wir Sie, damit Sie geeignete Schutzmaßnahmen ergreifen können. Wir bewahren Ihre personenbezogenen Daten nur so lange auf, wie es für den Zweck erforderlich ist, für den wir sie erhoben haben. Danach vernichten wir sie, sofern keine gesetzliche Aufbewahrungspflicht besteht.",
       "line1739JsxTextContactUs": "Kontaktieren Sie uns",
       "line1742JsxTextYouCanGetInTouchByEmailingUs": "Sie können uns per E-Mail erreichen unter",
-      "line1747JsxTextInfoKortixCom": "info@kortix.com"
+      "line1747JsxTextInfoKortixCom": "info@kortix.com",
+      "serviceProvidersLead": "Die Dienstleister, die personenbezogene Daten in unserem Auftrag verarbeiten, und was sie für uns tun:",
+      "serviceProvidersHosting": "Hosting und Infrastruktur: Vercel (Webanwendung) und Amazon Web Services (API und Datenspeicherung), mit Standort in den Vereinigten Staaten.",
+      "serviceProvidersAuthDb": "Datenbank und Authentifizierung: Supabase.",
+      "serviceProvidersPayments": "Zahlungen: Stripe. Wir speichern selbst niemals Kartennummern.",
+      "serviceProvidersSandboxes": "Agenten-Sandboxes: Daytona und Platinum, die die isolierten Umgebungen betreiben, in denen Ihre Sitzungen ausgeführt werden.",
+      "serviceProvidersErrors": "Fehlerüberwachung: Better Stack über das Sentry SDK, so konfiguriert, dass keine persönlichen Identifikatoren gesendet werden.",
+      "serviceProvidersAnalytics": "Produktanalyse: PostHog. Es erfasst, wie das Produkt genutzt wird (aufgerufene Seiten, verwendete Funktionen und Ereignisse wie das Starten einer Sitzung oder das Senden eines Prompts), verknüpft mit Ihrer Konto-ID. Wir übermitteln weder Ihre E-Mail-Adresse noch Prompts, Dateien oder Geheimnisse. Auf der öffentlichen Website läuft es erst, nachdem Sie Analyse-Cookies akzeptiert haben.",
+      "serviceProvidersMarketing": "Website-Analyse und Cookie-Einwilligung: Google Tag Manager, Google Analytics und CookieYes, nur auf der öffentlichen Website und vorbehaltlich Ihrer Cookie-Einstellungen.",
+      "serviceProvidersModels": "Modellanbieter und Konnektoren, die Sie nutzen möchten (zum Beispiel OpenAI, Anthropic, Amazon Bedrock, OpenRouter oder Composio), erhalten die Daten, die zur Ausführung der von Ihnen angeforderten Arbeit erforderlich sind, zu ihren eigenen Bedingungen.",
+      "serviceProvidersObject": "Sie können der Produktanalyse widersprechen oder uns bitten, die über Sie gespeicherten Analysedaten zu löschen, indem Sie eine E-Mail an info@kortix.com senden."
     },
     "appMaintenancePage": {
       "line54JsxTextCheckSystemStatus": "Systemstatus prüfen →",

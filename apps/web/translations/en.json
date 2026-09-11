@@ -4659,7 +4659,17 @@
       "line1729JsxTextWeImplementPhysicalBusinessAndTechnicalSecurityMeasures": "We implement physical, business, and technical security measures to safeguard your personal information. In the event of a security breach, we'll notify you so that you can take appropriate protective steps. We only keep your personal information for as long as is needed to do what we collected it for. After that, we destroy it unless required by law.",
       "line1739JsxTextContactUs": "Contact Us",
       "line1742JsxTextYouCanGetInTouchByEmailingUs": "You can get in touch by emailing us at",
-      "line1747JsxTextInfoKortixCom": "info@kortix.com"
+      "line1747JsxTextInfoKortixCom": "info@kortix.com",
+      "serviceProvidersLead": "The service providers that process personal information on our behalf, and what they do for us:",
+      "serviceProvidersHosting": "Hosting and infrastructure: Vercel (web application) and Amazon Web Services (API and data storage), located in the United States.",
+      "serviceProvidersAuthDb": "Database and authentication: Supabase.",
+      "serviceProvidersPayments": "Payments: Stripe. We never store card numbers ourselves.",
+      "serviceProvidersSandboxes": "Agent sandboxes: Daytona and Platinum, which run the isolated environments your sessions execute in.",
+      "serviceProvidersErrors": "Error monitoring: Better Stack, through the Sentry SDK, configured not to send personal identifiers.",
+      "serviceProvidersAnalytics": "Product analytics: PostHog. It records how the product is used (pages viewed, features used, and events such as starting a session or sending a prompt) tied to your account id. We do not send your email address, prompts, files, or secrets. On the public website it runs only after you accept analytics cookies.",
+      "serviceProvidersMarketing": "Website analytics and cookie consent: Google Tag Manager, Google Analytics, and CookieYes, on the public website only and subject to your cookie choices.",
+      "serviceProvidersModels": "Model providers and connectors you choose to use (for example OpenAI, Anthropic, Amazon Bedrock, OpenRouter, or Composio) receive the data needed to perform the work you ask for, under their own terms.",
+      "serviceProvidersObject": "You can object to product analytics, or ask us to delete the analytics data held about you, by emailing info@kortix.com."
     },
     "appMaintenancePage": {
       "line54JsxTextCheckSystemStatus": "Check system status →",

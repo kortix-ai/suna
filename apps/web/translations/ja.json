@@ -4659,7 +4659,17 @@
       "line1729JsxTextWeImplementPhysicalBusinessAndTechnicalSecurityMeasures": "当社は、お客様の個人情報を保護するために、物理的、業務上、および技術的なセキュリティ対策を実施しています。セキュリティ侵害が発生した場合、お客様が適切な保護措置を講じられるよう通知します。当社は、収集目的の達成に必要な期間に限り、お客様の個人情報を保持します。その後、法律で義務付けられている場合を除き、これを破棄します。",
       "line1739JsxTextContactUs": "お問い合わせ",
       "line1742JsxTextYouCanGetInTouchByEmailingUs": "お問い合わせは、次のメールアドレスまでご連絡ください",
-      "line1747JsxTextInfoKortixCom": "info@kortix.com"
+      "line1747JsxTextInfoKortixCom": "info@kortix.com",
+      "serviceProvidersLead": "当社に代わって個人情報を処理するサービス提供者と、その役割は次のとおりです。",
+      "serviceProvidersHosting": "ホスティングおよびインフラ：Vercel（ウェブアプリケーション）と Amazon Web Services（API およびデータ保存）。所在地は米国です。",
+      "serviceProvidersAuthDb": "データベースおよび認証：Supabase。",
+      "serviceProvidersPayments": "決済：Stripe。当社自身がカード番号を保存することはありません。",
+      "serviceProvidersSandboxes": "エージェントのサンドボックス：Daytona と Platinum。お客様のセッションが実行される隔離環境を稼働させます。",
+      "serviceProvidersErrors": "エラー監視：Better Stack（Sentry SDK 経由）。個人識別子を送信しないよう設定しています。",
+      "serviceProvidersAnalytics": "プロダクト分析：PostHog。製品の利用状況（閲覧したページ、使用した機能、セッションの開始やプロンプトの送信などのイベント）を、お客様のアカウント ID に紐付けて記録します。メールアドレス、プロンプト、ファイル、シークレットは送信しません。公開ウェブサイトでは、分析 Cookie に同意いただいた後にのみ動作します。",
+      "serviceProvidersMarketing": "ウェブサイト分析および Cookie 同意：Google Tag Manager、Google Analytics、CookieYes。公開ウェブサイトのみで、お客様の Cookie 設定に従います。",
+      "serviceProvidersModels": "お客様が利用を選択したモデル提供者およびコネクタ（例：OpenAI、Anthropic、Amazon Bedrock、OpenRouter、Composio）は、依頼された作業の実行に必要なデータを、各社の規約のもとで受け取ります。",
+      "serviceProvidersObject": "プロダクト分析への異議申し立て、またはお客様に関する分析データの削除依頼は、info@kortix.com までメールでご連絡ください。"
     },
     "appMaintenancePage": {
       "line54JsxTextCheckSystemStatus": "システムステータスを確認 →",

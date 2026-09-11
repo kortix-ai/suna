@@ -4659,7 +4659,17 @@
       "line1729JsxTextWeImplementPhysicalBusinessAndTechnicalSecurityMeasures": "Nous mettons en œuvre des mesures de sécurité physiques, organisationnelles et techniques afin de protéger vos informations personnelles. En cas de violation de sécurité, nous vous en informerons afin que vous puissiez prendre les mesures de protection appropriées. Nous ne conservons vos informations personnelles que le temps nécessaire à la finalité pour laquelle nous les avons collectées. Ensuite, nous les détruisons, sauf si la loi exige leur conservation.",
       "line1739JsxTextContactUs": "Nous contacter",
       "line1742JsxTextYouCanGetInTouchByEmailingUs": "Vous pouvez nous contacter par e-mail à",
-      "line1747JsxTextInfoKortixCom": "info@kortix.com"
+      "line1747JsxTextInfoKortixCom": "info@kortix.com",
+      "serviceProvidersLead": "Les prestataires de services qui traitent des informations personnelles pour notre compte, et ce qu'ils font pour nous :",
+      "serviceProvidersHosting": "Hébergement et infrastructure : Vercel (application web) et Amazon Web Services (API et stockage des données), situés aux États-Unis.",
+      "serviceProvidersAuthDb": "Base de données et authentification : Supabase.",
+      "serviceProvidersPayments": "Paiements : Stripe. Nous ne stockons jamais nous-mêmes les numéros de carte.",
+      "serviceProvidersSandboxes": "Sandboxes d'agents : Daytona et Platinum, qui exécutent les environnements isolés dans lesquels vos sessions s'exécutent.",
+      "serviceProvidersErrors": "Surveillance des erreurs : Better Stack, via le SDK Sentry, configuré pour ne pas envoyer d'identifiants personnels.",
+      "serviceProvidersAnalytics": "Analyse produit : PostHog. Il enregistre la manière dont le produit est utilisé (pages consultées, fonctionnalités utilisées et événements tels que le démarrage d'une session ou l'envoi d'un prompt), rattachée à l'identifiant de votre compte. Nous n'envoyons ni votre adresse e-mail, ni vos prompts, fichiers ou secrets. Sur le site web public, il ne s'exécute qu'après votre acceptation des cookies d'analyse.",
+      "serviceProvidersMarketing": "Analyse du site web et consentement aux cookies : Google Tag Manager, Google Analytics et CookieYes, uniquement sur le site web public et selon vos choix en matière de cookies.",
+      "serviceProvidersModels": "Les fournisseurs de modèles et les connecteurs que vous choisissez d'utiliser (par exemple OpenAI, Anthropic, Amazon Bedrock, OpenRouter ou Composio) reçoivent les données nécessaires à l'exécution du travail que vous demandez, selon leurs propres conditions.",
+      "serviceProvidersObject": "Vous pouvez vous opposer à l'analyse produit, ou nous demander de supprimer les données d'analyse détenues à votre sujet, en écrivant à info@kortix.com."
     },
     "appMaintenancePage": {
       "line54JsxTextCheckSystemStatus": "Vérifier l’état du système →",

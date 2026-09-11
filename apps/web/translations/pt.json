@@ -4659,7 +4659,17 @@
       "line1729JsxTextWeImplementPhysicalBusinessAndTechnicalSecurityMeasures": "Implementamos medidas de segurança físicas, empresariais e técnicas para proteger suas informações pessoais. Em caso de violação de segurança, notificaremos você para que possa tomar as medidas de proteção adequadas. Mantemos suas informações pessoais apenas pelo tempo necessário para cumprir a finalidade para a qual as coletamos. Depois disso, nós as destruímos, salvo quando a lei exigir sua retenção.",
       "line1739JsxTextContactUs": "Fale Conosco",
       "line1742JsxTextYouCanGetInTouchByEmailingUs": "Você pode entrar em contato enviando um e-mail para",
-      "line1747JsxTextInfoKortixCom": "info@kortix.com"
+      "line1747JsxTextInfoKortixCom": "info@kortix.com",
+      "serviceProvidersLead": "Os prestadores de serviços que tratam informações pessoais em nosso nome, e o que fazem por nós:",
+      "serviceProvidersHosting": "Hospedagem e infraestrutura: Vercel (aplicação web) e Amazon Web Services (API e armazenamento de dados), localizados nos Estados Unidos.",
+      "serviceProvidersAuthDb": "Banco de dados e autenticação: Supabase.",
+      "serviceProvidersPayments": "Pagamentos: Stripe. Nós nunca armazenamos números de cartão.",
+      "serviceProvidersSandboxes": "Sandboxes de agentes: Daytona e Platinum, que executam os ambientes isolados nos quais suas sessões são executadas.",
+      "serviceProvidersErrors": "Monitoramento de erros: Better Stack, por meio do SDK do Sentry, configurado para não enviar identificadores pessoais.",
+      "serviceProvidersAnalytics": "Análise de produto: PostHog. Ele registra como o produto é usado (páginas visualizadas, funcionalidades utilizadas e eventos como iniciar uma sessão ou enviar um prompt), vinculado ao ID da sua conta. Não enviamos seu endereço de e-mail, prompts, arquivos ou segredos. No site público, ele só é executado depois que você aceita os cookies de análise.",
+      "serviceProvidersMarketing": "Análise do site e consentimento de cookies: Google Tag Manager, Google Analytics e CookieYes, apenas no site público e sujeitos às suas escolhas de cookies.",
+      "serviceProvidersModels": "Os provedores de modelos e conectores que você escolhe usar (por exemplo OpenAI, Anthropic, Amazon Bedrock, OpenRouter ou Composio) recebem os dados necessários para realizar o trabalho que você solicita, sob seus próprios termos.",
+      "serviceProvidersObject": "Você pode se opor à análise de produto, ou pedir que excluamos os dados analíticos mantidos sobre você, escrevendo para info@kortix.com."
     },
     "appMaintenancePage": {
       "line54JsxTextCheckSystemStatus": "Verificar status do sistema →",
