@@ -969,10 +969,6 @@
           "name": "Puerta de enlace LLM",
           "description": "Dirige este proyecto mediante la puerta de enlace LLM administrada de Kortix para modelos, medición y presupuestos."
         },
-        "review_center": {
-          "name": "Centro de revisión",
-          "description": "Revisa solicitudes de cambio, aprobaciones y resultados de agentes desde una bandeja en la web o Slack."
-        },
         "meta_agent": {
           "name": "Metaagente",
           "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
@@ -1251,8 +1247,6 @@
     "metaCoordinator": "Coordinador Meta",
     "files": "Archivos",
     "retry": "Reintentar",
-    "proposedChanges": "Cambios propuestos",
-    "untitledChange": "Cambio sin título",
     "review": "Revisar",
     "connectGpt": "Conectar suscripción GPT",
     "upgradePlan": "Mejorar plan",

@@ -27,7 +27,6 @@ const setDemoEnterprise = (accountId: string, enabled: boolean) =>
   applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
 import { config } from '../config';
 import { app } from '../index';
-import { metadataClearSubtreeKey, metadataMergeSubtree } from '../projects/lib/metadata-merge';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
@@ -44,7 +43,6 @@ let humanUserId = '';
 let readOnlyToken = '';
 let readOnlyUserId = '';
 let priorDemoEnterprise = false;
-let priorReviewCenterOverride: unknown = null;
 
 beforeAll(async () => {
   await db.execute(
@@ -161,35 +159,9 @@ beforeAll(async () => {
   // contract has its own dedicated test that toggles it off.
   priorDemoEnterprise = (await getCreditAccount(ctx.accountId))?.demoEnterprise ?? false;
   await setDemoEnterprise(ctx.accountId, true);
-  // The Review Center routes are gated on the per-project `review_center`
-  // feature flag (403 `feature_disabled` when off). Turn it on for the borrowed
-  // project and restore the prior override in afterAll.
-  const [projectRow] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, ctx.projectId))
-    .limit(1);
-  priorReviewCenterOverride =
-    (projectRow?.metadata as { experimental?: Record<string, unknown> } | null)?.experimental
-      ?.review_center ?? null;
-  await db
-    .update(projects)
-    .set({ metadata: metadataMergeSubtree('experimental', { review_center: true }) })
-    .where(eq(projects.projectId, ctx.projectId));
 }, 30_000);
 
 afterAll(async () => {
-  if (ctx) {
-    await db
-      .update(projects)
-      .set({
-        metadata:
-          typeof priorReviewCenterOverride === 'boolean'
-            ? metadataMergeSubtree('experimental', { review_center: priorReviewCenterOverride })
-            : metadataClearSubtreeKey('experimental', 'review_center'),
-      })
-      .where(eq(projects.projectId, ctx.projectId));
-  }
   for (const id of execIds)
     await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, SESSION));

@@ -9,19 +9,13 @@ import {
   projectSettingsSection,
   projectSettingsSectionHref,
   projectSettingsSections,
-  type ProjectSettingsSectionFlags,
 } from './project-settings-sections';
 
-const OFF: ProjectSettingsSectionFlags = {
-  reviewEnabled: false,
-};
-
-const keysFor = (flags: ProjectSettingsSectionFlags) =>
-  projectSettingsSections(flags).map((s) => s.key);
+const keys = () => projectSettingsSections().map((s) => s.key);
 
 /**
- * The four sections of `/projects/[id]/customize/settings` — the Customize bar's Settings
- * tab. Two always-on, two flag-gated. They arrived here from the settings
+ * The sections of `/projects/[id]/customize/settings` — the Customize bar's Settings
+ * tab. None is flag-gated. They arrived here from the settings
  * overlay's `Workspace` and `Agent` rail groups, plus its pinned Upgrades row
  * and its `experimental` row; `rail.test.ts` pins that they left there.
  * Models, Channels, Secrets, and Members graduated a SECOND time onto their
@@ -32,30 +26,22 @@ const keysFor = (flags: ProjectSettingsSectionFlags) =>
  * no flag or section for it any more.
  */
 describe('projectSettingsSections', () => {
-  test('with every flag off it holds the two always-on sections, in order', () => {
-    expect(keysFor(OFF)).toEqual(['general', 'git', 'sandbox', 'feature-flags', 'upgrades']);
+  test('it holds every section, in order', () => {
+    expect(keys()).toEqual(['general', 'git', 'sandbox', 'feature-flags', 'upgrades']);
   });
 
-  test('the review flag adds no section — Review is a capability tab', () => {
-    expect(keysFor({ ...OFF, reviewEnabled: true })).not.toContain('review');
-    expect(keysFor(OFF)).not.toContain('review');
-  });
-
-  test('the review flag preserves all static sections', () => {
-    const keys = keysFor({ reviewEnabled: true });
-    // Review is a capability tab, not a section, whatever the flag says.
-    expect(keys).not.toContain('review');
-    expect(keys).toHaveLength(5);
+  test('Review is not a section — it is a capability tab', () => {
+    expect(keys()).not.toContain('review');
   });
 
   test('Upgrades is last, where the rail pinned it', () => {
-    const keys = keysFor({ reviewEnabled: true });
-    expect(keys[keys.length - 1]).toBe('upgrades');
+    const all = keys();
+    expect(all[all.length - 1]).toBe('upgrades');
   });
 
   test('no section appears twice', () => {
-    const keys = keysFor({ reviewEnabled: true });
-    expect(new Set(keys).size).toBe(keys.length);
+    const all = keys();
+    expect(new Set(all).size).toBe(all.length);
   });
 
   test('every section carries a label, an icon and a real IAM gate', () => {
@@ -94,21 +80,20 @@ describe('projectSettingsSections', () => {
   });
 
   test('Marketplace is gone, not merely hidden', () => {
-    expect(keysFor({ reviewEnabled: true })).not.toContain('marketplace');
+    expect(keys()).not.toContain('marketplace');
     expect(parseProjectSettingsSection('marketplace')).toBeNull();
   });
 
   test('Models, Channels, Secrets, and Members are not sections here — they graduated to their own tabs', () => {
-    const keys = keysFor({ reviewEnabled: true });
-    expect(keys).not.toContain('models');
-    expect(keys).not.toContain('channels');
-    expect(keys).not.toContain('secrets');
-    expect(keys).not.toContain('members');
+    const all = keys();
+    expect(all).not.toContain('models');
+    expect(all).not.toContain('channels');
+    expect(all).not.toContain('secrets');
+    expect(all).not.toContain('members');
   });
 
   test('Repositories is not a section here — it merged into General', () => {
-    const keys = keysFor({ reviewEnabled: true });
-    expect(keys).not.toContain('repositories');
+    expect(keys()).not.toContain('repositories');
     expect(parseProjectSettingsSection('repositories')).toBeNull();
   });
 });
@@ -144,8 +129,8 @@ describe('projectSettingsSectionHref', () => {
     );
   });
 
-  test('the default survives every flag, so the page always has a landing section', () => {
-    expect(keysFor(OFF)).toContain(DEFAULT_PROJECT_SETTINGS_SECTION);
+  test('the default is always a section, so the page always has a landing section', () => {
+    expect(keys()).toContain(DEFAULT_PROJECT_SETTINGS_SECTION);
   });
 });
 
@@ -173,7 +158,7 @@ describe('the sub-nav is flat', () => {
   });
 
   test('the list order IS the rail order — one pass, nothing re-sorted', () => {
-    expect(projectSettingsSections({ reviewEnabled: true }).map((s) => s.key)).toEqual(['general', 'git', 'sandbox',
+    expect(projectSettingsSections().map((s) => s.key)).toEqual(['general', 'git', 'sandbox',
       'feature-flags',
       'upgrades',
     ]);

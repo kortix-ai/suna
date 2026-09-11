@@ -778,9 +778,6 @@ export const menuRegistry: MenuItemDef[] = [
     // Its own capability tab since 2026-09-02, beside Agents and Triggers.
     href: '/projects/{projectId}/customize/review',
     requiresProject: true,
-    // Same gate the tab carries (`visibleCapabilityTabs` hides Review while
-    // `review_center` is off), so the row cannot outlive the page.
-    requiresFlag: 'review_center',
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
   {

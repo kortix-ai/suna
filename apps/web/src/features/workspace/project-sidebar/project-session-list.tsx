@@ -29,8 +29,6 @@ import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
-import { ProjectFilesProvider } from '@/features/project-files/context';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
@@ -77,7 +75,7 @@ import {
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -209,7 +207,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   );
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
-  const [selectedChangeRequestId, setSelectedChangeRequestId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: qk.project.sessions(projectId),
@@ -228,7 +225,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   });
 
   // The brief is a session record, not a Review Center inbox. It therefore
-  // loads every CR state even when the Review Center feature flag is disabled.
+  // loads every CR state, not only the ones awaiting review.
   const { data: changeRequestData } = useQuery({
     queryKey: changeRequestKeys.list(projectId, 'all'),
     queryFn: () => listChangeRequests(projectId, 'all'),
@@ -238,11 +235,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   });
 
   // Review Center is one coherent system: the per-session row indicators, the
-  // footer "Review" pill, and the Customize rail all read the SAME inbox summary
-  // and gate on the SAME flag. When the flag is off the summary query never runs,
-  // so no indicators render and nothing polls.
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
+  // footer "Review" pill, and the Customize rail all read the SAME inbox summary.
+  const reviewSummary = useReviewSessionSummary(projectId);
 
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
@@ -410,8 +404,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
             changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
             canShowHoverCard={canShowSessionHoverCard}
-            reviewEnabled={reviewEnabled}
-            onOpenChangeRequest={setSelectedChangeRequestId}
             onDelete={(id, label) => setSessionToDelete({ id, label })}
             onShare={(s) => setSessionToShare(s)}
             onRename={(id, name) => setSessionToRename({ id, name })}
@@ -515,15 +507,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
-
-      {!reviewEnabled && (
-        <ProjectFilesProvider value={{ projectId, ref: '' }}>
-          <ChangeRequestDetailDialog
-            crId={selectedChangeRequestId}
-            onClose={() => setSelectedChangeRequestId(null)}
-          />
-        </ProjectFilesProvider>
-      )}
     </div>
   );
 }
@@ -748,8 +731,6 @@ interface ProjectSessionRowProps {
   reviewCount?: number;
   changeRequests: readonly ChangeRequest[];
   canShowHoverCard: boolean;
-  reviewEnabled: boolean;
-  onOpenChangeRequest: (changeRequestId: string) => void;
   /** Rendered indented under its coordinator — the indent already conveys the
    *  spawn link, so the right-side spawned-by icon is omitted. */
   nested?: boolean;
@@ -773,8 +754,6 @@ function ProjectSessionRow({
   reviewCount = 0,
   changeRequests,
   canShowHoverCard,
-  reviewEnabled,
-  onOpenChangeRequest,
   nested = false,
 }: ProjectSessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -948,8 +927,6 @@ function ProjectSessionRow({
             source={source}
             changeRequests={changeRequests}
             projectId={session.project_id}
-            reviewEnabled={reviewEnabled}
-            onOpenChangeRequest={onOpenChangeRequest}
           >
             {sessionLink}
           </SessionBriefHoverCard>

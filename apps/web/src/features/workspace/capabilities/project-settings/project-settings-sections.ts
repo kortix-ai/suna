@@ -35,8 +35,8 @@ import type { CustomizeSection } from '@/lib/project-actions';
  * General under a "Git repo" section (`git-view.tsx`, rendered by
  * `general-tab.tsx`'s `gitRepoSlot`); it was never its own top-level concept,
  * just a workspace detail. Marketplace was removed from this surface outright
- * (not relocated) at the product owner's explicit request — Review and Voice
- * stay, flag-gated exactly as they were on the old rail; nothing else pointed
+ * (not relocated) at the product owner's explicit request. Voice was removed
+ * later, and Review became a capability tab with no flag; nothing else pointed
  * at Marketplace, but the sidebar's change-requests nav still links to Review
  * (`project-sidebar/footer/project-change-requests-nav.tsx`), so dropping it
  * too would have broken a live row, not just tidied a list. Sandbox templates
@@ -144,10 +144,6 @@ export const REVIEW_SECTION: ProjectSettingsSection = {
   gate: 'review',
 };
 
-export interface ProjectSettingsSectionFlags {
-  reviewEnabled: boolean;
-}
-
 const PROJECT_SETTINGS_SOURCE = {
   staticSections: STATIC_SECTIONS,
   featureFlagsSection: FEATURE_FLAGS_SECTION,
@@ -156,15 +152,11 @@ const PROJECT_SETTINGS_SOURCE = {
 };
 
 /**
- * The sub-nav, composed from the static sections plus every flag-gated one.
- * Marketplace is gone for good — not a flag, removed from the product. Review
- * and Voice are the two still-flag-gated rows left; each is pushed in its own
- * pass, never on an early return, the exact bug the old rail documented
- * (Marketplace defaulting on for effectively every project made an early
- * return skip Review and Voice entirely).
+ * The sub-nav: the static sections, then Feature flags and Upgrades. No row is
+ * flag-gated any more. Marketplace and Voice were removed from the product;
+ * Review is a capability tab of its own and graduated out of the flag system.
  */
 export function projectSettingsSections(
-  flags: ProjectSettingsSectionFlags,
   tI18nComplete?: UiTranslator,
 ): readonly ProjectSettingsSection[] {
   const source = tI18nComplete
@@ -173,17 +165,16 @@ export function projectSettingsSections(
   const sections = [...source.staticSections];
   // Review is NOT a section here any more: it is a capability tab of its own
   // (`capability-tab-routes.ts`, 2026-09-02). Listing it twice — as a tab and
-  // as a Settings section — was the leftover of restoring this page. The flag
-  // still gates the tab; `REVIEW_SECTION` stays exported for the legacy
-  // `?section=review` redirect target and the pane switch.
-  void flags.reviewEnabled;
+  // as a Settings section — was the leftover of restoring this page.
+  // `REVIEW_SECTION` stays exported for the legacy `?section=review` redirect
+  // target and the pane switch.
   sections.push(source.featureFlagsSection, source.upgradesSection);
   return sections;
 }
 
-/** Every section, independent of any flag — for copy lookups and tests. */
+/** Every section — for copy lookups and tests. */
 export const ALL_PROJECT_SETTINGS_SECTIONS: readonly ProjectSettingsSection[] =
-  projectSettingsSections({ reviewEnabled: true });
+  projectSettingsSections();
 
 /**
  * The section a `?section=` value names. `general` is the default because it

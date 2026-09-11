@@ -969,7 +969,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'marketplace',
     'meta_agent',
     'monitors',
-    'review_center',
     'secrets_egress',
     'pi_worker',
     'teams',
@@ -983,8 +982,18 @@ test('FEATURE_FLAG_KEYS members are assignable to FeatureFlagKey', () => {
   // A compile-time assertion with a runtime witness: if the runtime list and
   // the hand-written union drift, this stops typechecking.
   const keys: readonly FeatureFlagKey[] = FEATURE_FLAG_KEYS;
-  const one: FeatureFlagKey = 'review_center';
+  const one: FeatureFlagKey = 'apps';
   expect(keys).toContain(one);
+});
+
+test('a graduated flag key still typechecks but is no longer a served flag', () => {
+  // Review Center graduated out of the flag system: it is on for every project,
+  // and the API no longer lists, resolves, or accepts `review_center`. The key
+  // stays in the `FeatureFlagKey` union (deprecated) so code written against
+  // the older union keeps compiling; the runtime list mirrors what the API
+  // actually serves, so it drops the key.
+  const graduated: FeatureFlagKey = 'review_center';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 
 test('FeatureFlagView stability accepts stable, beta, and experimental', () => {
@@ -1028,15 +1037,15 @@ async function captureFeatureCall(
 }
 
 test('updateFeatureFlag PATCHes the canonical /features route', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'review_center', true));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'apps', true));
 
   expect(sent.method).toBe('PATCH');
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/features');
-  expect(sent.parsed).toEqual({ feature: 'review_center', enabled: true });
+  expect(sent.parsed).toEqual({ feature: 'apps', enabled: true });
 });
 
 test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent key', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'review_center', null));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'apps', null));
 
   // Both halves matter: `parsed.enabled === null` alone passes when the key was
   // dropped; `'enabled' in parsed` alone passes when the value was rewritten.
