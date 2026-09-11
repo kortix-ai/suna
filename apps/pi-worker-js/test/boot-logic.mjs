@@ -4,7 +4,7 @@
 // never connected (every boot route 404), and every message showed twice (the
 // transcript read named messages by row number while the stream had named
 // them by wire id, and painted pi's thinking as a visible part).
-// EXPECTED_PASSES=29
+// EXPECTED_PASSES=35
 import { bootAnswer, isBootRoute, configModel, agentNameFrom } from "../src/opencode-boot.js";
 import { transcriptMessages, partType, messageIdFor, legacyIdAfter } from "../src/transcript-read.js";
 
@@ -85,6 +85,39 @@ const check = (name, ok, detail = "") => {
   check("partType: thinking and reasoning both hide; text is text; tools keep their name",
     partType("thinking") === "reasoning" && partType("reasoning") === "reasoning" && partType("text") === "text" && partType(undefined) === "text" && partType("toolCall") === "toolCall", "");
   check("messageIdFor ignores a blank wire id", messageIdFor({ i: 7, wire_id: "  " }) === "7" && messageIdFor({ i: 7, wire_id: "w" }) === "w", "");
+}
+
+
+// THREE ROUTES THE CLIENT CALLS THAT WERE NOT IN THE BOOT SET.
+//
+// Found 2026-09-11 by probing a live cell with every path the SDK, the web app
+// and the control plane build on a sandbox base. `/project` is the LIST behind
+// the project picker, `/path` is where OpenCode keeps its directories, and
+// `/global/health` is the file client's own liveness probe — each answered
+// `unknown route`, and each fails as something other than a missing route.
+{
+  const ctx = { sessionId: "s1", projectId: "p1", cwd: "/workspace", createdAt: 1700, checkedOut: true, version: "pi-cell" };
+  const path = bootAnswer("GET", "/path", ctx);
+  check("GET /path names every directory OpenCode asks after, and a cell has exactly one",
+    path.status === 200 && path.body.worktree === "/workspace" && path.body.directory === "/workspace"
+      && typeof path.body.home === "string" && typeof path.body.state === "string" && typeof path.body.config === "string",
+    JSON.stringify(path?.body));
+  const list = bootAnswer("GET", "/project", ctx);
+  const current = bootAnswer("GET", "/project/current", ctx);
+  check("GET /project is the LIST, and it holds exactly the project /project/current names",
+    Array.isArray(list.body) && list.body.length === 1 && JSON.stringify(list.body[0]) === JSON.stringify(current.body),
+    JSON.stringify(list?.body));
+  check("a project reports `vcs: git` once there IS a checkout — that field is what makes the app offer its git surface",
+    current.body.vcs === "git" && bootAnswer("GET", "/project/current", { ...ctx, checkedOut: false }).body.vcs === undefined,
+    JSON.stringify(current.body));
+  check("and it carries the `sandboxes` array the shape requires, empty because a cell is not a box",
+    Array.isArray(current.body.sandboxes) && current.body.sandboxes.length === 0, JSON.stringify(current.body.sandboxes));
+  const health = bootAnswer("GET", "/global/health", ctx);
+  check("GET /global/health is the client's own probe, separate from /kortix/health which the control plane reads",
+    health.status === 200 && health.body.healthy === true && typeof health.body.version === "string", JSON.stringify(health?.body));
+  check("none of the three answers a write — they are reads, and a PATCH must not look accepted",
+    bootAnswer("PATCH", "/path", ctx) === null && bootAnswer("POST", "/project", ctx) === null
+      && bootAnswer("PATCH", "/global/health", ctx) === null, "");
 }
 
 console.log(bad ? `\n  ${bad} failed` : "");

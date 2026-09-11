@@ -108,7 +108,14 @@ export async function deleteSessionEnvironment(sessionId: string): Promise<void>
   const meteredId =
     row.environmentId ?? (row.metadata as { environmentId?: string } | null)?.environmentId;
   if (meteredId) await endComputeSession(meteredId).catch(() => {});
-  if (row.externalId) {
+  if (row.externalId && row.provider !== 'daytona') {
+    // Every provider but Daytona is reached through its SandboxProvider; only
+    // Daytona still has SDK-specific paths here. A Platinum environment is
+    // removed the way its worker is.
+    await getProvider(row.provider)
+      .remove(row.externalId)
+      .catch((err) => console.warn(`[session-env] delete of ${row.externalId} failed:`, err));
+  } else if (row.externalId) {
     try {
       const daytona = getDaytona();
       const sandbox = await withTimeout(

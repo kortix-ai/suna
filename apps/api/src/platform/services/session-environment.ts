@@ -25,7 +25,7 @@
  *   without an OpenCode session.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
-import { projectSessions, sessionEnvironments } from '@kortix/db';
+import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
@@ -36,7 +36,7 @@ import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import { withTimeout } from '../../shared/with-timeout';
 import { ensureSandboxImage } from '../../snapshots/builder';
-import { getProvider } from '../providers';
+import { getProvider, type ProviderName } from '../providers';
 import { classifyDaytonaState } from '../providers/daytona-state';
 import { decideEnvironmentLiveness, environmentReconcileWrite } from './environment-liveness';
 import type { SessionEnvironmentInfo } from './session-environment-types';
@@ -57,6 +57,27 @@ const PROVIDER_CALL_TIMEOUT_MS = 30_000;
 const ENVIRONMENT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 /** A claim whose owner died mid-provision is re-claimable after this. */
 const PROVISION_STALE_MS = 5 * 60_000;
+
+/**
+ * WHERE THE ENVIRONMENT RUNS: on the same provider as the session's worker.
+ *
+ * This file was written against Daytona by name — `getDaytona()` for status,
+ * resume and preview links, `getProvider('daytona')` for create and remove —
+ * so a session whose worker is a Platinum cell asked for an environment and
+ * got `Sandbox provider daytona is not configured` (measured on pi-js dev,
+ * 2026-09-11: the route accepted the cell's own token, claimed the row, and
+ * failed only there). The worker's row says which provider this session
+ * lives on; the environment follows it, and only Daytona keeps its
+ * SDK-specific paths.
+ */
+async function environmentProviderFor(sessionId: string): Promise<ProviderName> {
+  const [row] = await db
+    .select({ provider: sessionSandboxes.provider })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  return row?.provider === 'platinum' ? 'platinum' : 'daytona';
+}
 
 export type { SessionEnvironmentInfo } from './session-environment-types';
 
@@ -109,7 +130,26 @@ async function withPreview(row: {
 }): Promise<SessionEnvironmentInfo> {
   let previewUrl: string | null = null;
   let previewToken: string | null = null;
-  if (row.status === 'active' && row.externalId) {
+  const rowProvider = (row as { provider?: string }).provider ?? 'daytona';
+  if (row.status === 'active' && row.externalId && rowProvider !== 'daytona') {
+    // THE PROVIDER EDGE, NOT THE KORTIX PROXY — for the same reason the header
+    // comment gives (gate G0), and for one more measured on dev 2026-09-11:
+    // the proxy re-signs `X-Kortix-User-Context` with the box's service key,
+    // and the environment's RPC verifies it against KORTIX_ENV_RPC_SECRET, so
+    // every RPC through `/v1/p/<env>/8000` came back 401 → "sandbox proxy
+    // authentication rejected". The exposed edge answers `/kortix/*` with the
+    // daemon's own auth (HMAC on the RPC, none on health) and needs no token.
+    try {
+      const ingress = await withTimeout(
+        getProvider(rowProvider as ProviderName).resolveIngress(row.externalId, { port: 8000 }),
+        PROVIDER_CALL_TIMEOUT_MS,
+        `${rowProvider} resolveIngress(${row.externalId}:8000)`,
+      );
+      previewUrl = String(ingress.url ?? '').replace(/\/+$/, '') || null;
+    } catch (err) {
+      console.warn(`[session-env] edge for ${row.externalId} failed:`, err);
+    }
+  } else if (row.status === 'active' && row.externalId) {
     try {
       const sandbox = await withTimeout(
         getDaytona().get(row.externalId),
@@ -142,7 +182,11 @@ async function withPreview(row: {
   };
 }
 
-async function resumeEnvironment(externalId: string): Promise<void> {
+async function resumeEnvironment(externalId: string, provider: ProviderName): Promise<void> {
+  if (provider !== 'daytona') {
+    await withTimeout(getProvider(provider).start(externalId), 90_000, `${provider} start(${externalId})`);
+    return;
+  }
   const daytona = getDaytona();
   const sandbox = await withTimeout(
     daytona.get(externalId),
@@ -166,7 +210,12 @@ async function resumeEnvironment(externalId: string): Promise<void> {
  * deliberately means "we could not determine the state right now" and
  * `decideEnvironmentLiveness` refuses to act on it.
  */
-async function readBoxStatus(externalId: string) {
+async function readBoxStatus(externalId: string, provider: ProviderName) {
+  if (provider !== 'daytona') {
+    return getProvider(provider)
+      .getStatus(externalId)
+      .catch(() => 'unknown' as const);
+  }
   try {
     const sandbox = await withTimeout(
       getDaytona().get(externalId),
@@ -243,9 +292,10 @@ export interface EnsureSessionEnvironmentInput {
 export async function ensureSessionEnvironment(
   input: EnsureSessionEnvironmentInput,
 ): Promise<SessionEnvironmentInfo> {
-  const [workerStatus, initialEnvironment] = await Promise.all([
+  const [workerStatus, initialEnvironment, provider] = await Promise.all([
     readWorkerStatus(input.sessionId),
     readRow(input.sessionId),
+    environmentProviderFor(input.sessionId),
   ]);
   const workerState = workerRuntimeStateFromSessionStatus(workerStatus);
   const runtimeDecision = decideSessionRuntimePair(
@@ -264,7 +314,7 @@ export async function ensureSessionEnvironment(
     // row left reading 'active' over a stopped box wedges the session for good,
     // because `claimEnvironmentWork` re-claims only 'error'/'stopped'/stale
     // 'provisioning'. See `environment-liveness.ts`.
-    const action = decideEnvironmentLiveness(await readBoxStatus(existing.externalId));
+    const action = decideEnvironmentLiveness(await readBoxStatus(existing.externalId, provider));
     const write = environmentReconcileWrite(action);
     if (!write) return withPreview(existing);
     // Write the truth, then fall through: the claim path below already knows
@@ -274,7 +324,7 @@ export async function ensureSessionEnvironment(
     existing = await reconcileEnvironmentStatus(input.sessionId, write);
   }
 
-  const claimed = await claimEnvironmentWork(input, existing);
+  const claimed = await claimEnvironmentWork(input, existing, provider);
   if (!claimed) {
     // Someone else owns the work. Report how far it has got and let the caller
     // poll — waiting here is what the deadline kills.
@@ -295,6 +345,7 @@ export async function ensureSessionEnvironment(
     claimed.externalId,
     claimed.environmentId,
     provisionAttemptId,
+    provider,
   ).catch((err) => {
     console.error('[session-env] environment work failed', {
       sessionId: input.sessionId,
@@ -317,6 +368,7 @@ export async function ensureSessionEnvironment(
 async function claimEnvironmentWork(
   input: EnsureSessionEnvironmentInput,
   existing: Awaited<ReturnType<typeof readRow>>,
+  provider: ProviderName,
 ): Promise<{
   sessionId: string;
   status: string;
@@ -333,7 +385,7 @@ async function claimEnvironmentWork(
         environmentId: randomUUID(),
         accountId: input.accountId,
         projectId: input.projectId,
-        provider: 'daytona',
+        provider,
         status: 'provisioning',
         metadata: { provisionAttemptId },
       })
@@ -360,6 +412,14 @@ async function claimEnvironmentWork(
     .set({
       status: 'provisioning',
       environmentId,
+      // THE PROVIDER IS RE-DECIDED ON EVERY CLAIM, not only on the insert. A
+      // row that failed on one provider and is reclaimed for another kept the
+      // old name — measured on dev 2026-09-11: the first attempt failed on
+      // Daytona, the reclaim built the box on Platinum, and the row still read
+      // `daytona`, so its preview was asked of a provider that had never seen
+      // it. A reused provider box keeps its provider; a rebuild follows the
+      // worker's.
+      ...(reusesProviderBox ? {} : { provider }),
       metadata: sql`coalesce(${sessionEnvironments.metadata}, '{}'::jsonb) || ${JSON.stringify({
         provisionAttemptId,
       })}::jsonb`,
@@ -396,10 +456,11 @@ async function runEnvironmentWork(
   externalId: string | null,
   environmentId: string | null,
   provisionAttemptId: string,
+  provider: ProviderName,
 ): Promise<void> {
   if (externalId) {
     try {
-      await resumeEnvironment(externalId);
+      await resumeEnvironment(externalId, provider);
       const claimed = await readRow(input.sessionId);
       const meteredId =
         claimed?.environmentId ??
@@ -410,7 +471,7 @@ async function runEnvironmentWork(
         externalId,
       });
       if (!activated) {
-        await removeUnownedEnvironment(externalId, meteredId);
+        await removeUnownedEnvironment(externalId, provider, meteredId);
         return;
       }
       if (meteredId) {
@@ -419,14 +480,14 @@ async function runEnvironmentWork(
           accountId: input.accountId,
           sessionId: input.sessionId,
           actorUserId: input.userId ?? null,
-          provider: 'daytona',
+          provider,
           workloadType: 'environment',
           spec: { ...ENVIRONMENT_METERING_SPEC },
           metadata: { workload: 'session-environment', externalId, resumed: true },
         });
       }
       if (!(await environmentClaimIsOwned(input.sessionId, provisionAttemptId, externalId))) {
-        await removeUnownedEnvironment(externalId, meteredId);
+        await removeUnownedEnvironment(externalId, provider, meteredId);
       }
       return;
     } catch (err) {
@@ -442,7 +503,7 @@ async function runEnvironmentWork(
     );
     return;
   }
-  await provisionEnvironment(input, environmentId, provisionAttemptId);
+  await provisionEnvironment(input, environmentId, provisionAttemptId, provider);
 }
 
 async function markEnvironmentError(
@@ -536,9 +597,10 @@ async function environmentClaimIsOwned(
   );
 }
 
-async function removeUnownedEnvironment(externalId: string, meteredId?: string): Promise<void> {
+async function removeUnownedEnvironment(externalId: string,
+  provider: ProviderName, meteredId?: string): Promise<void> {
   if (meteredId) await endComputeSession(meteredId).catch(() => {});
-  await getProvider('daytona')
+  await getProvider(provider)
     .remove(externalId)
     .catch((err) =>
       console.warn(
@@ -552,13 +614,14 @@ async function provisionEnvironment(
   input: EnsureSessionEnvironmentInput,
   environmentId: string,
   provisionAttemptId: string,
+  provider: ProviderName,
 ): Promise<void> {
   let credential: { tokenId: string; secretKey: string } | null = null;
   let credentialPublished = false;
   const rpcSecret = randomBytes(32).toString('base64url');
   try {
     const [image, envVars] = await Promise.all([
-      ensureSandboxImage(input.gitProject, { provider: 'daytona' }),
+      ensureSandboxImage(input.gitProject, { provider }),
       buildSessionSandboxEnvVars({
         accountId: input.accountId,
         projectId: input.projectId,
@@ -586,8 +649,7 @@ async function provisionEnvironment(
       agentName: input.agentName,
       gitProject: input.gitProject,
     });
-    const provider = getProvider('daytona');
-    const result = await provider.create({
+    const result = await getProvider(provider).create({
       accountId: input.accountId,
       userId: input.userId,
       name: `env-${input.sessionId.slice(0, 8)}`,
@@ -626,7 +688,7 @@ async function provisionEnvironment(
       await revokeAccountToken(credential.tokenId, input.accountId, input.projectId).catch(
         () => {},
       );
-      await removeUnownedEnvironment(result.externalId, environmentId);
+      await removeUnownedEnvironment(result.externalId, provider, environmentId);
       return;
     }
     credentialPublished = true;
@@ -641,7 +703,7 @@ async function provisionEnvironment(
       accountId: input.accountId,
       sessionId: input.sessionId,
       actorUserId: input.userId ?? null,
-      provider: 'daytona',
+      provider,
       workloadType: 'environment',
       spec: { ...ENVIRONMENT_METERING_SPEC },
       metadata: { workload: 'session-environment', externalId: result.externalId },
@@ -650,7 +712,7 @@ async function provisionEnvironment(
       await revokeAccountToken(credential.tokenId, input.accountId, input.projectId).catch(
         () => {},
       );
-      await removeUnownedEnvironment(result.externalId, environmentId);
+      await removeUnownedEnvironment(result.externalId, provider, environmentId);
     }
   } catch (err) {
     if (credential && !credentialPublished) {

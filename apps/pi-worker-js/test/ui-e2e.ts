@@ -205,7 +205,7 @@ async function main() {
   const fileWord = `fern${Math.floor(Math.random() * 1e5)}`;
   const composer3 = page.locator('[contenteditable="true"], textarea, [role="textbox"]').last();
   await composer3.click();
-  await page.keyboard.type(`Use your write tool to create a file named notes.txt containing exactly the text ${fileWord}-file-ok and then reply with the single word done`, { delay: 5 });
+  await page.keyboard.type(`Use your write tool to create the file /workspace/notes.txt containing exactly the text ${fileWord}-file-ok and then reply with the single word done`, { delay: 5 });
   await page.keyboard.press('Enter');
   await page.getByText('done', { exact: true }).first().waitFor({ timeout: 90000 }).catch(() => null);
   await page.waitForTimeout(1500);
@@ -214,12 +214,20 @@ async function main() {
   const filesBtn = page.getByRole('button', { name: /^Files$/ }).first();
   const filesVisible = await filesBtn.isVisible().catch(() => false);
   if (filesVisible) await filesBtn.click(); else console.log('  (no Files button found in the header)');
+  // INSIDE THE PANEL, NOT ANYWHERE ON THE PAGE. `getByText('notes.txt')`
+  // matches the agent's own reply in the transcript, so this claim passed for
+  // a session whose Files panel was empty — and then the click landed on a
+  // paragraph and timed out after 30 s (2026-09-11). The panel is a dialog
+  // labelled "Files" (features/session/action-panel/easy/detail-view.tsx) and
+  // it lists ONE directory at a time, so a file the model chose to put in a
+  // subdirectory is legitimately not here.
+  const filesPanel = page.getByRole('dialog', { name: 'Files' });
   let listed = false;
-  try { await page.getByText('notes.txt', { exact: true }).first().waitFor({ timeout: 20000 }); listed = true; } catch { /* not listed */ }
+  try { await filesPanel.getByText('notes.txt', { exact: true }).first().waitFor({ timeout: 20000 }); listed = true; } catch { /* not listed */ }
   ck('the Files panel lists the file the agent wrote (GET /file answered)', listed, JSON.stringify(fileCalls).slice(0, 300));
   let previewed = false;
   if (listed) {
-    await page.getByText('notes.txt', { exact: true }).first().click();
+    await filesPanel.getByText('notes.txt', { exact: true }).first().click({ timeout: 15000 }).catch(() => null);
     try { await page.getByText(`${fileWord}-file-ok`).first().waitFor({ timeout: 20000 }); previewed = true; } catch { /* no preview */ }
   }
   ck('clicking it opens the viewer with the file content (GET /file/content answered)', previewed, JSON.stringify(fileCalls).slice(0, 300));
@@ -233,7 +241,7 @@ async function main() {
   page.on('response', (rs) => { const u = rs.url(); if (/\/3211\//.test(u)) previewCalls.push({ url: u.replace(/^.*\/3211/, '').slice(0, 60), status: rs.status() }); });
   const composer4 = page.locator('[contenteditable="true"], textarea, [role="textbox"]').last();
   await composer4.click();
-  await page.keyboard.type(`Use your write tool to create page.html: a complete HTML page whose body holds one h1 element with the text ${htmlWord} and nothing else. Then reply with the single word finished`, { delay: 5 });
+  await page.keyboard.type(`Use your write tool to create /workspace/page.html: a complete HTML page whose body holds one h1 element with the text ${htmlWord} and nothing else. Then reply with the single word finished`, { delay: 5 });
   await page.keyboard.press('Enter');
   let finishedSeen = true;
   await page.getByText('finished', { exact: true }).first().waitFor({ timeout: 90000 }).catch(() => { finishedSeen = false; });
@@ -243,20 +251,20 @@ async function main() {
   // (whether the tree refreshes on its own is a separate check below).
   // THE TREE REFRESHES ON ITS OWN: the cell publishes `file.edited`, the
   // panel's list query is keyed on what that invalidates. No reopen.
-  const listedLive = await page.getByText('page.html', { exact: true }).first().isVisible().catch(() => false);
+  const listedLive = await filesPanel.getByText('page.html', { exact: true }).first().isVisible().catch(() => false);
   ck('the Files panel shows the new file without being reopened (file.edited → list refetch)', listedLive, '');
   let htmlListed = false;
-  try { await page.getByText('page.html', { exact: true }).first().waitFor({ timeout: 20000 }); htmlListed = true; } catch { /* not listed */ }
+  try { await filesPanel.getByText('page.html', { exact: true }).first().waitFor({ timeout: 20000 }); htmlListed = true; } catch { /* not listed */ }
   if (!htmlListed) {
     await page.screenshot({ path: `${process.env.SCRATCH ?? '/tmp'}/preview-step.png` }).catch(() => {});
     const panelText = await page.locator('aside, [role="complementary"], [data-panel]').allInnerTexts().catch(() => []);
     console.log(`  panel text: ${JSON.stringify(panelText).slice(0, 500)}`);
-    const hits = await page.getByText(/page\.html/).count().catch(() => -1);
+    const hits = await filesPanel.getByText(/page\.html/).count().catch(() => -1);
     console.log(`  elements containing page.html: ${hits}`);
   }
   let framed = false;
   if (htmlListed) {
-    await page.getByText('page.html', { exact: true }).first().click({ timeout: 10000 }).catch(async () => { await page.getByText('page.html', { exact: true }).first().click({ force: true, timeout: 10000 }).catch(() => {}); });
+    await filesPanel.getByText('page.html', { exact: true }).first().click({ timeout: 10000 }).catch(async () => { await filesPanel.getByText('page.html', { exact: true }).first().click({ force: true, timeout: 10000 }).catch(() => {}); });
     // The preview frame carries the file name as its title (HtmlPreview).
     const frames = () => page.locator('iframe').evaluateAll((els) => els.map((e) => ({ title: e.getAttribute('title'), src: (e.getAttribute('src') || '').replace(/^.*\/v1/, '/v1').slice(0, 90), sandbox: e.getAttribute('sandbox') })));
     await page.waitForTimeout(2000);

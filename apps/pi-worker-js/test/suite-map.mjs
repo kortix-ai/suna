@@ -29,10 +29,28 @@ export const ALL_SUITES = [
   "build-and-model.mjs", "execenv-logic.mjs", "daemon-persist.mjs", "opid-identity.mjs",
   "cancel-logic.mjs", "skills-logic.mjs", "ledger-parity.mjs", "archive-logic.mjs",
   "meter-logic.mjs", "execenv-platinum.mjs",
+  // THE CELL'S OWN SURFACE. These were added over 2026-09-09/10 and were never
+  // added here, so the auditors' pool did not contain a single suite that
+  // imports cell-files, cell-git, cell-pty, cell-static, agent-config,
+  // plantools, kortix-runtime or manifest — every condition in eight new files
+  // would have been reported as a survivor by suites that were never run.
+  "kortix-parity.mjs", "wire-logic.mjs", "boot-logic.mjs", "projection-logic.mjs",
+  "cellfs-logic.mjs", "files-logic.mjs", "static-logic.mjs", "agent-config-logic.mjs",
+  "manifest-logic.mjs", "plan-logic.mjs", "pty-logic.mjs", "git-logic.mjs",
+  "kortix-routes-logic.mjs",
+  // THE MACHINE: the environment's RPC client, the attach, and the tool.
+  "envrpc-logic.mjs", "environment-logic.mjs", "machine-logic.mjs",
 ];
 
-/** cell-logic needs node's SQLite; the rest run plain. */
-export const nodeArgsFor = (suite) => (suite === "cell-logic.mjs" ? ["--experimental-sqlite"] : []);
+/** The suites test/all.sh runs under node's SQLite — they open a DatabaseSync
+ *  (directly, or through cell-harness) and are a syntax error without it. */
+const NEEDS_SQLITE = new Set([
+  "cell-logic.mjs", "kortix-parity.mjs", "wire-logic.mjs", "boot-logic.mjs",
+  "projection-logic.mjs", "cellfs-logic.mjs", "files-logic.mjs", "static-logic.mjs",
+  "agent-config-logic.mjs", "manifest-logic.mjs", "plan-logic.mjs", "pty-logic.mjs",
+  "git-logic.mjs", "kortix-routes-logic.mjs", "environment-logic.mjs",
+]);
+export const nodeArgsFor = (suite) => (NEEDS_SQLITE.has(suite) ? ["--experimental-sqlite"] : []);
 
 // THERE IS NO HAND-WRITTEN MAP HERE, and there was, and it was wrong twice in
 // the same commit that added it.

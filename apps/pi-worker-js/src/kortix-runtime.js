@@ -135,3 +135,37 @@ export function partAnswer(messages, messageID, partID) {
   if (!part) return { status: 404, body: { error: "part not found", partID } };
   return { status: 200, body: part };
 }
+
+/**
+ * `GET /kortix/opencode/turn/:messageId` — WHAT BECAME OF ONE PROMPT.
+ *
+ * The control plane asks this when it has an open turn record and never saw it
+ * close: it names the wire id it sent and wants to know whether that turn is
+ * still running, ended, or was accepted and never run at all. The daemon reads
+ * OpenCode's delivery state; a cell reads its own turn ledger, which is the
+ * same question asked of the same row.
+ *
+ * `orphaned_prompt` is the one that matters and the one a status alone cannot
+ * express: a row still `pending` with nothing running is a prompt this cell
+ * took and dropped, and a client that cannot tell that from "still thinking"
+ * waits forever.
+ */
+export function turnAnswer(row, ctx) {
+  const seq = ctx?.seq ?? 0;
+  const sessionId = ctx?.sessionId ?? null;
+  const messageId = ctx?.messageId ?? row?.message_id ?? null;
+  if (!row) {
+    return { message_id: messageId, opencode_session_id: sessionId, in_flight: null, end: null, orphaned_prompt: false, seq };
+  }
+  const running = ctx?.running != null && ctx.running === row.i;
+  const status = String(row.status ?? "");
+  const end = status === "done" ? "completed" : status === "error" ? "failed" : status === "cancelled" ? "abandoned" : null;
+  return {
+    message_id: messageId,
+    opencode_session_id: sessionId,
+    in_flight: running || status === "running",
+    end,
+    orphaned_prompt: status === "pending" && !running,
+    seq,
+  };
+}

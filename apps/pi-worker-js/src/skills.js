@@ -23,9 +23,25 @@ import { formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "
  */
 export const DEFAULT_SKILLS_DIR = ".kortix/opencode/skills,.pi/skills";
 
-export function skillDirs(env) {
-  return String(env.SKILLS_DIR ?? DEFAULT_SKILLS_DIR)
-    .split(",").map((d) => d.trim()).filter(Boolean);
+/**
+ * WHERE THE PROJECT SAYS ITS SKILLS ARE, not where they used to be.
+ *
+ * `configDir` is the manifest's own answer (manifest.js) — `.kortix/opencode`
+ * up to schema v2, `.kortix/pi` from v3, or whatever `pi.config_dir` spells
+ * out. Hard-coding the v2 path made a v3 project's skills invisible, which is
+ * the same directory move that silently emptied its compiled agent prompt.
+ *
+ * `.pi/skills` is appended whatever the manifest says: it is pi's own
+ * convention and belongs to the runtime, not to the project's schema.
+ *
+ * `SKILLS_DIR` still wins over both, and EMPTY still means none: `??` and not
+ * a truthiness test, because `SKILLS_DIR=""` is how an operator turns skills
+ * off and a falsy check would silently hand them the manifest's directory
+ * instead.
+ */
+export function skillDirs(env, configDir = null) {
+  const raw = env.SKILLS_DIR ?? (configDir ? `${configDir}/skills,.pi/skills` : DEFAULT_SKILLS_DIR);
+  return String(raw).split(",").map((d) => d.trim()).filter(Boolean);
 }
 
 // A FRESH OP PREFIX ON EVERY LOAD, and this is not a detail.
@@ -44,8 +60,8 @@ const nextPrefix = () => `skills-${Date.now().toString(36)}-${loadSeq++}`;
  * factory the tools use, so skills are read over exactly the backend the tools
  * write through.
  */
-export async function loadWorkspaceSkills(env, envFor) {
-  const dirs = skillDirs(env);
+export async function loadWorkspaceSkills(env, envFor, configDir = null) {
+  const dirs = skillDirs(env, configDir);
   if (dirs.length === 0) return { skills: [], diagnostics: [], block: "", dirs };
   const execEnv = envFor(nextPrefix());
   // Absolute, so the <location> the model is shown is a path it can hand

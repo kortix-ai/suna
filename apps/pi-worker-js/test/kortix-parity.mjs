@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=129
+// EXPECTED_PASSES=130
 import { DatabaseSync } from "node:sqlite";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -696,13 +696,25 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   check("/events still carries the RAW harness contract, unchanged",
     rawHead.startsWith(": connected"), rawHead.slice(0, 40));
 
-  // The example moved: `/kortix/opencode/state` was the unserved route this
-  // claim pointed at, and the cell serves it now — the claim noticed, which is
-  // the only reason this comment exists. `/kortix/opencode/messages/:id` is the
-  // control plane's next unimplemented read.
-  const unknown = await h.fetch("/session/s/kortix/opencode/messages/msg-1");
+  // THE EXAMPLE KEEPS MOVING, and that is the point of naming a shape instead
+  // of a route. `/kortix/opencode/state` was the unserved route this claim
+  // pointed at, then `/kortix/opencode/messages/:id` — the cell serves both
+  // now, and the claim noticed each time. So it asks the question directly:
+  // whatever is NOT a route answers `ok: false` with the path it could not
+  // route, and never a 200 that looks served.
+  const unknown = await h.fetch("/kortix/no-such-route");
+  const unknownBody = await unknown.json();
   check("a route the cell does not serve is a 404, not a 200 that looks served",
-    unknown.status === 404 && (await unknown.json()).ok === false, String(unknown.status));
+    unknown.status === 404 && unknownBody.ok === false && unknownBody.error === "unknown route" && unknownBody.path === "/kortix/no-such-route",
+    `${unknown.status} ${JSON.stringify(unknownBody).slice(0, 90)}`);
+  // A SERVED ROUTE ASKED ABOUT SOMETHING THAT DOES NOT EXIST is a different
+  // 404, and a caller has to be able to tell them apart: "this runtime cannot
+  // do that" and "that thing is not here" send it to different places.
+  const missing = await h.fetch("/kortix/opencode/messages/msg-1");
+  const missingBody = await missing.json();
+  check("and a SERVED route with an unknown session 404s as `unknown session`, naming the one it has",
+    missing.status === 404 && missingBody.error === "unknown session" && typeof missingBody.expected === "string" && missingBody.expected.length > 0,
+    `${missing.status} ${JSON.stringify(missingBody).slice(0, 90)}`);
 }
 
 // THE ONE CELL NAME celld CANNOT ROUTE.

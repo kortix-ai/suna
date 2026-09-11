@@ -14,8 +14,14 @@
 // Shapes are `@opencode-ai/sdk` 1.18 (`types.gen.d.ts`: Agent, Command,
 // Config, Project, Permission).
 
+// `/project`, `/path` and `/global/health` joined the set on 2026-09-11, after
+// probing a live cell with every path the SDK, the web app and the control
+// plane are known to build on a sandbox base: those three answered `unknown
+// route` while the client calls all of them
+// (react/use-opencode-sessions/projects.ts, core/files/client.ts).
 const BOOT_ROUTES = new Set([
   "/agent", "/command", "/global/config", "/config", "/project/current",
+  "/project", "/path", "/global/health",
   "/permission", "/question", "/lsp/diagnostics",
 ]);
 
@@ -73,14 +79,25 @@ export function bootAnswer(method, path, ctx = {}) {
       // nothing to refuse — the client merges what it gets back.
       return { status: 200, body: model ? { model } : {} };
     case "/project/current":
-      return {
-        status: 200,
-        body: {
-          id: String(ctx.projectId || sessionId || "cell"),
-          worktree: String(ctx.cwd || "/workspace"),
-          time: { created: Number(ctx.createdAt) || 0 },
-        },
-      };
+      return { status: 200, body: projectShape(ctx, sessionId) };
+    // `GET /project` is the LIST. A cell holds exactly one checkout, so the
+    // list is the current project and nothing else — an empty array made the
+    // app's project picker show a session with no project at all.
+    case "/project":
+      return { status: 200, body: [projectShape(ctx, sessionId)] };
+    // `GET /path` is where OpenCode keeps its directories. A cell has one
+    // directory and no config or state on disk, so it names the workspace for
+    // the two that exist and the workspace for the rest rather than inventing
+    // paths nothing can read (packages/sdk react/use-opencode-sessions/projects.ts).
+    case "/path": {
+      const worktree = String(ctx.cwd || "/workspace");
+      return { status: 200, body: { home: worktree, state: worktree, config: worktree, worktree, directory: worktree } };
+    }
+    // `GET /global/health` is the client's own liveness probe, separate from
+    // `/kortix/health` which the control plane reads. Both have to answer or
+    // the file client treats the runtime as down.
+    case "/global/health":
+      return { status: 200, body: { healthy: true, version: String(ctx.version || "pi-cell") } };
     case "/permission":
     case "/question":
       return { status: 200, body: [] };
@@ -89,6 +106,23 @@ export function bootAnswer(method, path, ctx = {}) {
     default:
       return null;
   }
+}
+
+/**
+ * The project this cell is a checkout of, in OpenCode's `Project` shape.
+ *
+ * `vcs: "git"` is the truth once a checkout exists and is what makes the app
+ * offer the git surface at all; `sandboxes` is empty because a cell is not a
+ * box and has none of its own.
+ */
+export function projectShape(ctx, sessionId) {
+  return {
+    id: String(ctx.projectId || sessionId || "cell"),
+    worktree: String(ctx.cwd || "/workspace"),
+    ...(ctx.checkedOut ? { vcs: "git" } : {}),
+    time: { created: Number(ctx.createdAt) || 0, updated: Number(ctx.createdAt) || 0 },
+    sandboxes: [],
+  };
 }
 
 export function agentShape(name, provider, modelId) {

@@ -136,6 +136,129 @@ TA4=$(ms)
 ck "and a LATER turn reads the file back — the workspace persists between turns" \
   "$(printf '%s' "$A4" | grep -q "$NONCE" && echo 1 || echo 0)" "got: $(printf '%s' "$A4" | head -c 70)"
 
+# ---------- 6c. THE PROJECT'S OWN CONFIGURATION, not the runtime's defaults.
+#
+# Three things travel from the repository into the running model, and each of
+# them was silently absent on pi-js until 2026-09-10: the skills directory the
+# MANIFEST names, the system prompt the project's agent `.md` carries, and the
+# instructions in AGENTS.md. Every one of them fails as "the agent answered,
+# just as itself", which is why they need claims of their own.
+#
+# The e2e project bumped `kortix_version` to 3 on 2026-09-06, which MOVES the
+# config dir from `.kortix/opencode` to `.kortix/pi`. The cell had that path
+# hard-coded and read an empty directory; the control plane resolved it
+# correctly and compiled the project's agent from a `.md` that was no longer
+# there, so the compiled config carried a name and no prompt.
+CELL="$BASE/v1/p/$SID/8080"
+MANI=$(curl -s -m 60 "$CELL/file/content?path=kortix.yaml" "${AH[@]}" \
+  | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("content") or "")
+except Exception: print("")')
+# The schema's own rule (packages/manifest-schema manifestDefaultConfigDir):
+# `.kortix/pi` from v3, `.kortix/opencode` before it, unless spelled out.
+WANTDIR=$(M="$MANI" python3 -c '
+import os, re
+m = os.environ["M"]
+spelled = re.search(r"^(?:pi|opencode):\s*$\s+^\s+config_dir:\s*\"?([^\"\n]+)\"?\s*$", m, re.M)
+if spelled: print(spelled.group(1).strip().rstrip("/"))
+else:
+    v = re.search(r"^kortix_version:\s*(\d+)", m, re.M)
+    print(".kortix/pi" if v and int(v.group(1)) >= 3 else ".kortix/opencode")')
+SK=$(curl -s -m 60 "$CELL/skills" "${AH[@]}")
+SKDIRS=$(printf '%s' "$SK" | python3 -c 'import json,sys;print(",".join(json.load(sys.stdin).get("dirs") or []))')
+SKN=$(printf '%s' "$SK" | python3 -c 'import json,sys;print(len(json.load(sys.stdin).get("skills") or []))')
+echo "  --- project config: manifest dir $WANTDIR | skills $SKN in $SKDIRS"
+if [ -z "$MANI" ]; then
+  echo "  SKIP the project has no kortix.yaml — nothing declares a config dir"
+else
+  ck "the cell reads skills from the directory the MANIFEST names, not a hard-coded one" \
+    "$(printf '%s' "$SKDIRS" | grep -q "/workspace/$WANTDIR/skills" && echo 1 || echo 0)" "wanted /workspace/$WANTDIR/skills, got $SKDIRS"
+  ck "and it finds the project's skills there" "$([ "${SKN:-0}" -gt 0 ] && echo 1 || echo 0)" "$SKN skills"
+fi
+# The compiled agent, as the client's own /agent route reports it. A project
+# agent carries the description from its `.md` frontmatter; the runtime's
+# stand-in says "The session's agent, running in a cell."
+AG=$(curl -s -m 60 "$CELL/agent" "${AH[@]}")
+AGDESC=$(printf '%s' "$AG" | python3 -c '
+import json,sys
+try: a=json.load(sys.stdin); print((a[0].get("description") or "") if isinstance(a,list) and a else "")
+except Exception: print("")')
+ck "the /agent route reports the PROJECT's agent, with the description from its own .md" \
+  "$([ -n "$AGDESC" ] && ! printf '%s' "$AGDESC" | grep -q "running in a cell" && echo 1 || echo 0)" "description: $(printf '%s' "$AGDESC" | head -c 90)"
+
+# ---------- 6d. AND THE SAME TWO THINGS AS THE MODEL SEES THEM ----------
+# The routes above report what the cell HOLDS. Only the model can say what it
+# was actually run with, so one turn asks for both: the first sentence of its
+# instructions (the agent `.md`) and the passphrase (AGENTS.md).
+PASSPHRASE=$(curl -s -m 60 "$CELL/file/content?path=AGENTS.md" "${AH[@]}" \
+  | python3 -c 'import json,re,sys
+try: t=json.load(sys.stdin).get("content") or ""
+except Exception: t=""
+m=re.search(r"passphrase is `([^`]+)`", t)
+print(m.group(1) if m else "")')
+AGENTMD=$(curl -s -m 60 "$CELL/file/content?path=$WANTDIR/agents/$(printf '%s' "$AG" | python3 -c '
+import json,sys
+try: a=json.load(sys.stdin); print((a[0].get("name") or "") if isinstance(a,list) and a else "")
+except Exception: print("")').md" "${AH[@]}" \
+  | python3 -c 'import json,re,sys
+try: t=json.load(sys.stdin).get("content") or ""
+except Exception: t=""
+body=re.sub(r"^---.*?^---\s*", "", t, flags=re.S|re.M).strip()
+# The first SENTENCE, which is what the model is asked to quote back.
+print(re.sub(r"[*_`]", "", body.split(".")[0]).strip())')
+if [ -z "$PASSPHRASE" ] && [ -z "$AGENTMD" ]; then
+  echo "  SKIP this project declares neither AGENTS.md nor an agent .md body"
+else
+  mkprompt "Quote the first sentence of your system instructions verbatim. Then on a new line, give the project passphrase and nothing else. Do not use any tools." /tmp/de2e.b5
+  TP5=$(ms)
+  curl -s -m 30 -o /dev/null -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/prompts" "${AH[@]}" -d @/tmp/de2e.b5
+  t=0; A5=""
+  while [ $t -lt 150 ]; do A5=$(ans); [ -n "$PASSPHRASE" ] && printf '%s' "$A5" | grep -q "$PASSPHRASE" && break; sleep 1; t=$((t+1)); done
+  TA5=$(ms)
+  echo "  --- the model's own account: $(printf '%s' "$A5" | head -c 160)"
+  if [ -n "$PASSPHRASE" ]; then
+    ck "the model followed AGENTS.md — it answered with the passphrase only that file carries" \
+      "$(printf '%s' "$A5" | grep -q "$PASSPHRASE" && echo 1 || echo 0)" "got: $(printf '%s' "$A5" | head -c 90)"
+  fi
+  if [ -n "$AGENTMD" ]; then
+    ck "and it is running the PROJECT's system prompt — it quoted the first sentence of the agent's own .md" \
+      "$(printf '%s' "$A5" | tr -d '*_`' | grep -qF "$AGENTMD" && echo 1 || echo 0)" "wanted: $(printf '%s' "$AGENTMD" | head -c 80)"
+  fi
+fi
+
+# ---------- 6e. THE MACHINE: a full Linux environment, attached on demand.
+#
+# The cell's shell has no runtimes. The model is told so, and told the way out:
+# the `machine` tool, whose first call asks the control plane for the session's
+# ENVIRONMENT — a Platinum box from the project's own image, with node, pnpm,
+# python and the repo on the session branch — and runs there over the daemon's
+# RPC. Three things have to be true at once for this to count: the model chose
+# the tool and got a real answer; the control plane holds an active
+# environment for this session; and the cell says it is attached to that same
+# box. Each was measured on dev 2026-09-11: 10 s to attach, node v22.23.1.
+mkprompt "Use the machine tool to run exactly: node --version && git branch --show-current . Then reply with only what it printed, nothing else." /tmp/de2e.b6
+TP6=$(ms)
+curl -s -m 30 -o /dev/null -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/prompts" "${AH[@]}" -d @/tmp/de2e.b6
+t=0; A6=""
+while [ $t -lt 240 ]; do A6=$(ans); printf '%s' "$A6" | grep -q "$SID" && break; sleep 2; t=$((t+2)); done
+TA6=$(ms)
+echo "  --- the machine said: $(printf '%s' "$A6" | head -c 120)"
+ck "the model ran node on the MACHINE — a version came back, and the branch is this session's" \
+  "$(printf '%s' "$A6" | grep -qE 'v[0-9]+\.[0-9]+\.[0-9]+' && printf '%s' "$A6" | grep -q "$SID" && echo 1 || echo 0)" "got: $(printf '%s' "$A6" | head -c 100)"
+ENVROW=$(curl -s -m 60 "$BASE/v1/projects/$PROJ/sessions/$SID/environment" "${AH[@]}")
+ENVID=$(printf '%s' "$ENVROW" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin); print(d.get("external_id") or "")
+except Exception: print("")')
+ck "the control plane holds an ACTIVE environment for this session, with a box id and an edge address" \
+  "$(printf '%s' "$ENVROW" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin); print(1 if d.get("status")=="active" and d.get("external_id") and (d.get("preview_url") or "").startswith("https://") else 0)
+except Exception: print(0)')" "$(printf '%s' "$ENVROW" | head -c 160)"
+DIAG2=$(curl -s -m 60 "$CELL/kortix/diag" "${AH[@]}")
+ck "and the cell reports itself attached to THAT box — the same id the control plane names" \
+  "$(D="$DIAG2" I="$ENVID" python3 -c 'import json,os
+try: d=json.loads(os.environ["D"]); print(1 if os.environ["I"] and d.get("environment")==os.environ["I"] else 0)
+except Exception: print(0)')" "diag.environment=$(printf '%s' "$DIAG2" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("environment"))' 2>/dev/null) api=$ENVID"
+
 wait $PUMP 2>/dev/null || true
 # ---------- 7. what the stream carried ----------
 echo "  --- stream:"
@@ -174,7 +297,13 @@ u=[x for x in m if x.get("role")=="user"]; a=[x for x in m if x.get("role")=="as
 print(1 if len(u)>=4 and len(a)>=4 else 0)')" \
   "$(printf '%s' "$TX" | python3 -c 'import json,sys;m=json.load(sys.stdin).get("messages",[]);print(len(m),"messages")')"
 
+# THE MACHINE IS A MICROVM ON THE DEV HOST, and this suite made one. Stopped
+# here rather than left for the hour-long idle timer: three of them from one
+# afternoon's runs held 6 GB of a 32 GB host and every later suite that needed
+# a cell answered "could not create a cell sandbox" (2026-09-11). A stopped
+# environment resumes on its next ensure, so nothing is lost by stopping it.
+curl -s -m 90 -o /dev/null -X POST "$BASE/v1/projects/$PROJ/sessions/$SID/environment/stop" "${AH[@]}" -d '{}' || true
 echo
-echo "  legs (ms): create $((TC-T0))  ready $((TR-TC))  bundle $((TB-TR))  answer1 $((TA1-TP1))  answer2 $((TA2-TP2))  tool-turn $((TA3-TP3))  read-back $((TA4-TP4))"
+echo "  legs (ms): create $((TC-T0))  ready $((TR-TC))  bundle $((TB-TR))  answer1 $((TA1-TP1))  answer2 $((TA2-TP2))  tool-turn $((TA3-TP3))  read-back $((TA4-TP4))  machine $((TA6-TP6))"
 echo "  a session, end to end: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)

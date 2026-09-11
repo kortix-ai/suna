@@ -169,6 +169,10 @@ run_suite cellfs     node --experimental-sqlite ./test/cellfs-logic.mjs
 run_suite files      node --experimental-sqlite test/files-logic.mjs
 run_suite static     node --experimental-sqlite test/static-logic.mjs
 run_suite agentcfg   node --experimental-sqlite test/agent-config-logic.mjs
+run_suite manifest   node --experimental-sqlite test/manifest-logic.mjs
+run_suite envrpc     node test/envrpc-logic.mjs
+run_suite environ    node --experimental-sqlite test/environment-logic.mjs
+run_suite machine    node test/machine-logic.mjs
 run_suite plan       node --experimental-sqlite test/plan-logic.mjs
 run_suite pty        node --experimental-sqlite test/pty-logic.mjs
 run_suite git        node --experimental-sqlite test/git-logic.mjs
@@ -186,6 +190,7 @@ run_suite dev-evict  ./test/dev-evict.sh
 run_suite file-dur   ./test/dev-file-durability.sh
 run_suite box-loss   ./test/dev-box-loss.sh
 run_suite session-e2e ./test/dev-session-e2e.sh
+run_suite routes-e2e ./test/dev-routes-e2e.sh
 # The cell against a REAL Platinum dev sandbox as its workspace. Opt-in by the
 # presence of a dev token (PT_SANDBOX_KEY or ~/.config/platinum/credentials);
 # without one it SKIPs and says so. Last, because it owns the node's lifecycle.

@@ -360,19 +360,42 @@ export async function commitAndPush(input) {
  * body, which is what every diff viewer does with one.
  */
 export async function workingDiff(cell, dir = CELL_CWD) {
+  const perFile = await fileDiffs(cell, dir);
+  if (!perFile.length) return { files: [], patch: "" };
+  return {
+    files: perFile.map((f) => ({ path: f.file, status: f.status, added: f.additions, removed: f.deletions })),
+    patch: perFile.map((f) => f.patch).filter(Boolean).join(""),
+  };
+}
+
+/**
+ * THE SAME DIFF, ONE ENTRY PER FILE, IN OPENCODE'S OWN `SnapshotFileDiff`
+ * SHAPE — `{file, patch, additions, deletions, status}`.
+ *
+ * `GET /session/:id/diff` is what the app's Changes tab reads, and it wants
+ * each file's own patch; `/kortix/opencode/vcs-diff` wants the counts plus one
+ * joined patch. Both are the same walk, so it happens once here and each route
+ * takes the part it needs — computing them separately would have meant two
+ * passes over every changed blob for one panel.
+ */
+export async function fileDiffs(cell, dir = CELL_CWD) {
   const changes = await workingStatus(cell, dir);
-  if (!changes.length) return { files: [], patch: "" };
+  if (!changes.length) return [];
   const fs = gitFs(cell.fs);
-  const files = [];
-  const parts = [];
+  const out = [];
   for (const change of changes) {
     const before = change.status === "added" ? "" : await readHeadFile(fs, dir, change.path);
     const after = change.status === "deleted" ? "" : await readWorkFile(cell.fs, dir, change.path);
     const patch = unifiedDiff(change.path, before, after);
-    files.push({ path: change.path, status: change.status, added: countLines(patch, "+"), removed: countLines(patch, "-") });
-    if (patch) parts.push(patch);
+    out.push({
+      file: change.path,
+      patch,
+      additions: countLines(patch, "+"),
+      deletions: countLines(patch, "-"),
+      status: change.status,
+    });
   }
-  return { files, patch: parts.join("") };
+  return out;
 }
 
 async function readHeadFile(fs, dir, filepath) {

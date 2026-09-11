@@ -49,6 +49,10 @@ import { filesAnswer } from "./cell-files.js";
 import { STATIC_PREFIX, staticAnswer } from "./cell-static.js";
 import { executionEnvFor, piTools, piToolsCell, piToolsPlatinum } from "./pitools.js";
 import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
+import { workspaceConfigDir } from "./manifest.js";
+import { attachEnvironment, readCached as readEnvironment, ENVIRONMENT_TABLE_SQL } from "./environment.js";
+import { envRpcExecutionEnv, mintUserContext } from "./execenv.envrpc.js";
+import { machineTool } from "./machine-tool.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
 // through the ExecutionEnv in execenv.platinum.js (see pitools.js). The module
 // stays for platinum-shapes.mjs, which unit-tests its ledger and bodies.
@@ -58,8 +62,8 @@ import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
 import { agentNameFrom, agentShape, bootAnswer } from "./opencode-boot.js";
 import { agentList, agentModelId, agentSystemPrompt, gatewayModelId, parseAgentConfig, selectAgent } from "./agent-config.js";
 import { globTool, readTodos, todoTools } from "./plantools.js";
-import { cloneProject, commitAndPush, isCheckedOut, workingDiff, workingStatus } from "./cell-git.js";
-import { actAnswer, logsAnswer, messagesPage, partAnswer, portsAnswer } from "./kortix-runtime.js";
+import { cloneProject, commitAndPush, fileDiffs, isCheckedOut, workingDiff, workingStatus } from "./cell-git.js";
+import { actAnswer, logsAnswer, messagesPage, partAnswer, portsAnswer, turnAnswer } from "./kortix-runtime.js";
 import { banner, cdTarget, feed, newEditor, prompt, ptyCreate, ptyGet, ptyList, ptyRemove, ptySetCwd, ptyUpdate } from "./cell-pty.js";
 import { transcriptMessages } from "./transcript-read.js";
 import { mintWireMessageId, newestWireIdTime } from "../../api/src/projects/wire-message-id.ts";
@@ -156,7 +160,7 @@ function toolsFor(env, sessionId, sql, owner) {
     // Every changed path goes out as OpenCode's `file.edited`, so the Files
     // panel, git status and an open viewer re-read (execenv.cell.js).
     owner.cellFs.onChange = (paths) => owner.wire?.publish(paths.slice(0, 50).map((file) => ({ type: "file.edited", properties: { file } })));
-    return piToolsCell(env, sessionId, sql, owner.cellFs, planTools(sql, owner));
+    return piToolsCell(env, sessionId, sql, owner.cellFs, [...planTools(sql, owner), owner.machineTool(sessionId)]);
   }
   // The daemon backend now runs pi's OWN tools over an ExecutionEnv — bash,
   // read, write and, the one that matters, edit. The hand-rolled set is
@@ -482,6 +486,11 @@ export class AgentCell {
     // the same way (transcript-read.js). Rows that predate the column fall back
     // to their row number, which is what the read used to emit for every row.
     try { this.sql.exec("ALTER TABLE msgs ADD COLUMN wire_id TEXT"); } catch { /* already there */ }
+    // ENV A SESSION SET FOR ITSELF, kept apart from the platform's own.
+    // `PUT /env/:key` writes here and `GET /env` reports only this table as
+    // `secrets`; the control plane's keys (the Kortix token above all) live in
+    // `sessionEnv` and are never handed back to a caller.
+    this.sql.exec("CREATE TABLE IF NOT EXISTS userenv (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
     // Assistant ids are minted time-sortable, past the newest id the transcript
     // holds (see mintWireMessageId below) — nothing to seed.
     // THE SESSION'S OWN CONFIGURATION, WHICH MUST OUTLIVE THE ISOLATE.
@@ -956,15 +965,27 @@ export class AgentCell {
     // invisible, and the suite passed only because its fixture was written to
     // that other path.
     this.skillsCache ??= new Map();
-    if (this.skillsCache.has(sessionId) && !reload) return this.skillsCache.get(sessionId);
     // OVER THE CELL'S OWN TREE when there is one — that is where the
     // checkout, and therefore the project's skills, actually are.
     if (usesCellFilesystem(this.effectiveEnv())) this.cellFs ??= cellFs(this.sql);
     const cell = this.cellFs ?? null;
+    // WHERE THE PROJECT SAYS ITS SKILLS ARE, resolved BEFORE the cache is
+    // trusted — because the answer changes exactly once, when the checkout
+    // lands, and a load taken a moment earlier read the wrong directory.
+    // `ensureCheckout` is best-effort and bounded, so "the first turn" is not
+    // the same instant as "the files are here": measured on dev 2026-09-10, a
+    // session whose clone was still in flight cached `.kortix/opencode/skills`
+    // for a v3 project and reported zero skills for the rest of its life,
+    // while a slower session on the same box found all eleven.
+    const configDir = await this.configDir(sessionId);
+    const cached = this.skillsCache.get(sessionId);
+    if (cached && !reload && cached.configDir === configDir) return cached;
     const loaded = await loadWorkspaceSkills(
       this.effectiveEnv(),
       (opId) => executionEnvFor(this.effectiveEnv(), sessionId, opId, undefined, cell),
+      configDir,
     );
+    loaded.configDir = configDir;
     this.skillsCache.set(sessionId, loaded);
     return loaded;
   }
@@ -1127,6 +1148,37 @@ export class AgentCell {
     this.setContextFrom(lastArchived + 1);
     this.pruneArchive();
     return result;
+  }
+
+  /** What this session set for itself through `PUT /env/:key`. */
+  userEnv() {
+    const out = {};
+    for (const r of this.sql.exec("SELECT k, v FROM userenv ORDER BY k")) out[r.k] = r.v;
+    return out;
+  }
+
+  /**
+   * COMPACT NOW, WHETHER OR NOT THE CONTEXT IS FULL — `POST
+   * /session/:id/summarize`, OpenCode's manual compaction, which the app
+   * offers as a button and answers with a plain boolean.
+   *
+   * The automatic path only fires above the model's window, so this asks for
+   * the same work with a window of 1: everything before the last exchange is
+   * older than the budget, and `maybeCompact` summarises it. The model and the
+   * stream come from a freshly built agent because there is no turn running —
+   * this is the one compaction that happens between turns rather than after
+   * one.
+   *
+   * Returns false rather than throwing when there is nothing to summarise: a
+   * session with one exchange has no older half, and "I did not need to" is
+   * not an error.
+   */
+  async compactNow(sessionId) {
+    const { block } = await this.skills(sessionId);
+    const agent = this.buildAgent(sessionId, undefined, withSkills(this.systemPrompt(), block));
+    const compacted = await this.compactIfNeeded(sessionId, streamFnOf(agent), agent.state.model, 1);
+    if (compacted) this.broadcast({ type: "compacted", ...compacted });
+    return !!compacted;
   }
 
   // Hibernation handlers. Their existence is what lets the runtime evict the
@@ -1336,6 +1388,49 @@ export class AgentCell {
   /** The system prompt before skills and the shell note: the project's, or the cell's. */
   systemPrompt() {
     return agentSystemPrompt(this.agent().agent, SYSTEM_PROMPT);
+  }
+
+  /**
+   * THE `machine` TOOL, bound to this session: attaches the session's
+   * environment on first use (environment.js, over the control plane with the
+   * session's own token) and runs in it over the daemon's RPC
+   * (execenv.envrpc.js, over the provider edge). One per cell — the tool keeps
+   * the attached record, and a second instance would attach twice.
+   */
+  machineTool(sessionId) {
+    this.__machine ??= machineTool({
+      attach: () => attachEnvironment({
+        env: this.effectiveEnv(),
+        sql: this.sql,
+        onProgress: (line) => this.broadcast({ type: "machine", line }),
+      }),
+      envFor: async (record) => envRpcExecutionEnv({
+        base: record.edge,
+        context: await mintUserContext(record.rpcSecret, record.externalId),
+      }),
+      workspace: () => executionEnvFor(this.effectiveEnv(), sessionId, "machine-sync", undefined, this.cellFs ?? null),
+      onProgress: (line) => this.broadcast({ type: "machine", line }),
+    });
+    return this.__machine;
+  }
+
+  /**
+   * WHERE THIS PROJECT KEEPS ITS AGENTS AND SKILLS, read from the manifest in
+   * the checkout — `.kortix/opencode` up to schema v2, `.kortix/pi` from v3,
+   * or whatever `pi.config_dir` names (manifest.js).
+   *
+   * Cached per cell once ANSWERED, and only then: the manifest can only change
+   * with a commit, but a cell is asked this before its checkout exists, and
+   * caching that first "no manifest" would pin the wrong directory for the
+   * life of the box.
+   */
+  async configDir(sessionId) {
+    if (this.__configDir) return this.__configDir;
+    try {
+      const env = executionEnvFor(this.effectiveEnv(), sessionId, "manifest", undefined, this.cellFs ?? null);
+      this.__configDir = await workspaceConfigDir(env);
+    } catch { this.__configDir = null; }
+    return this.__configDir;
   }
 
   /**
@@ -1832,6 +1927,21 @@ export class AgentCell {
         diagnostics,
       });
     }
+    // `GET /skill` — OPENCODE'S OWN NAME FOR THE SAME LIST, and the one the
+    // SDK actually calls (react/use-opencode-sessions/tools.ts). `/skills` is
+    // this runtime's richer answer, with the directories it searched and the
+    // diagnostics from reading them; the client does not know that route
+    // exists and got `unknown route`, so a project's skills were loaded into
+    // every prompt and shown in the UI as none.
+    if (path === "/skill" && req.method === "GET") {
+      const { skills } = await this.skills(sessionId, { reload: url.searchParams.get("reload") === "1" });
+      return Response.json(skills.map((sk) => ({
+        name: sk.name,
+        description: sk.description ?? "",
+        location: sk.filePath,
+        content: sk.content,
+      })));
+    }
 
     // THE ROUTE THE PRODUCT ACTUALLY DELIVERS PROMPTS ON.
     //
@@ -1895,6 +2005,92 @@ export class AgentCell {
       }
       if (path === "/log" && req.method === "POST") {
         return Response.json(true);
+      }
+      // `GET /session/:id/diff` — the Changes tab. OpenCode's own
+      // `SnapshotFileDiff[]`, one entry per changed file with its own patch
+      // (cell-git.js fileDiffs).
+      const diff = url.pathname.match(/^\/session\/([^/]+)\/diff$/);
+      if (diff && req.method === "GET") {
+        if (decodeURIComponent(diff[1]) !== sessionId) {
+          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        }
+        this.cellFs ??= cellFs(this.sql);
+        await this.ensureCheckout().catch(() => null);
+        return Response.json(await fileDiffs(this.cellFs).catch(() => []));
+      }
+      // ONE MESSAGE, AND THE TWO DELETES THE CONTROL PLANE USES TO CANCEL A
+      // FORWARDED TURN (projects/session-lifecycle/cancel-forwarded.ts). All
+      // three answered `unknown route`, so a cancelled forward left its
+      // half-written message in the transcript forever.
+      const oneMsg = url.pathname.match(/^\/session\/([^/]+)\/message\/([^/]+)$/);
+      if (oneMsg) {
+        const rootId = decodeURIComponent(oneMsg[1]);
+        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        const messageID = decodeURIComponent(oneMsg[2]);
+        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
+        const found = transcriptMessages(rows, sessionId).find((m) => m.info.id === messageID);
+        if (req.method === "GET") {
+          if (!found) return Response.json({ error: "message not found", messageID }, { status: 404 });
+          return Response.json(found);
+        }
+        if (req.method === "DELETE") {
+          if (!found) return Response.json(false, { status: 404 });
+          const row = rows[transcriptMessages(rows, sessionId).findIndex((m) => m.info.id === messageID)];
+          this.sql.exec("DELETE FROM msgs WHERE i = ?", row.i);
+          this.wire?.publish([{ type: "message.removed", properties: { sessionID: sessionId, messageID } }]);
+          return Response.json(true);
+        }
+      }
+      // A PART IS BLANKED, NOT SPLICED OUT. Its id is `<message>-p<index>`
+      // over the stored content array, so removing an entry would renumber
+      // every part after it and silently change ids the client already holds.
+      // A null entry keeps every other index exactly where it was
+      // (transcript-read.js skips it).
+      const onePart = url.pathname.match(/^\/session\/([^/]+)\/message\/([^/]+)\/part\/([^/]+)$/);
+      if (onePart && req.method === "DELETE") {
+        const rootId = decodeURIComponent(onePart[1]);
+        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        const messageID = decodeURIComponent(onePart[2]);
+        const partID = decodeURIComponent(onePart[3]);
+        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
+        const at = transcriptMessages(rows, sessionId).findIndex((m) => m.info.id === messageID);
+        if (at < 0) return Response.json(false, { status: 404 });
+        const row = rows[at];
+        let parsed = {};
+        try { parsed = JSON.parse(row.json); } catch { parsed = {}; }
+        const content = Array.isArray(parsed?.content) ? parsed.content : [];
+        const k = Number(String(partID).slice(`${messageID}-p`.length));
+        if (!Number.isInteger(k) || k < 0 || k >= content.length || content[k] == null) {
+          return Response.json(false, { status: 404 });
+        }
+        content[k] = null;
+        this.sql.exec("UPDATE msgs SET json = ? WHERE i = ?", JSON.stringify({ ...parsed, content }), row.i);
+        this.wire?.publish([{ type: "message.part.removed", properties: { sessionID: sessionId, messageID, partID } }]);
+        return Response.json(true);
+      }
+      // WHAT A CELL WILL NOT DO, said in the route's own terms. Each of these
+      // is a real OpenCode route the SDK calls; `unknown route` reads as a
+      // broken runtime, and 501 with the reason reads as the truth.
+      const refuse = url.pathname.match(/^\/session\/([^/]+)\/(share|revert|unrevert|summarize)$/);
+      if (refuse) {
+        const rootId = decodeURIComponent(refuse[1]);
+        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
+        const what = refuse[2];
+        if (what === "summarize") {
+          // COMPACTION IS THE ONE A CELL REALLY HAS. `/session/:id/summarize`
+          // is OpenCode's manual compaction and answers a plain boolean.
+          const done = await this.compactNow(sessionId).catch(() => false);
+          return Response.json(!!done);
+        }
+        const detail = what === "share"
+          ? "a cell has no share host: the transcript lives in Kortix, and sharing is the control plane's own route"
+          : "revert rewrites a transcript this runtime stores append-only";
+        return Response.json({ error: `${what} is not available in a cell`, detail }, { status: 501 });
+      }
+      // A cell's tools run without prompting, so nothing ever asks — but the
+      // client still posts a reply when a user clicks through a stale prompt.
+      if (/^\/(permission|question)\/[^/]+\/(reply|reject)$/.test(url.pathname) && req.method === "POST") {
+        return Response.json({ error: "nothing is asked in a cell", detail: "its tools run without prompting, so there is no request to answer" }, { status: 409 });
       }
     }
     {
@@ -2319,6 +2515,15 @@ export class AgentCell {
         });
         return Response.json(answered.body, { status: answered.status });
       }
+      // `GET /kortix/opencode/turn/:messageId` — did THIS prompt's turn finish?
+      // The control plane asks it about one wire id when it is reconciling a
+      // turn it never saw close, and the answer is in the turn ledger.
+      const turnAt = path.match(/^\/kortix\/opencode\/turn\/([^/]+)$/);
+      if (turnAt && req.method === "GET") {
+        const messageId = decodeURIComponent(turnAt[1]);
+        const row = this.sql.exec("SELECT i, status, error, message_id FROM turns WHERE message_id = ? ORDER BY i DESC LIMIT 1", messageId).toArray()[0] ?? null;
+        return Response.json(turnAnswer(row, { messageId, sessionId, seq: this.wire?.seq ?? 0, running: this.running?.turn ?? null }));
+      }
       if (path === "/kortix/ports" && req.method === "GET") return Response.json(portsAnswer());
       if (path === "/kortix/logs" && req.method === "GET") {
         const rows = [...this.sql.exec("SELECT i, status, error, text, created_at FROM turns ORDER BY i DESC LIMIT 50")]
@@ -2341,8 +2546,25 @@ export class AgentCell {
           ops: this.sql.exec("SELECT COUNT(*) AS n FROM ops").toArray()[0].n,
           files: this.cellFs.fileCount?.() ?? null,
           checkedOut: await isCheckedOut(this.cellFs.fs).catch(() => false),
+          // WHICH DIRECTORY THIS PROJECT'S AGENTS AND SKILLS COME FROM. The
+          // schema moved it at v3 and a session that resolved it before its
+          // checkout landed read the wrong one silently — the only symptom
+          // was an agent with no skills, which reads as a model choosing not
+          // to use them.
+          configDir: await this.configDir(sessionId).catch(() => null),
           agent: this.agent().name,
           agent_config_etag: this.agent().etag,
+          // WHOSE SYSTEM PROMPT IS ACTUALLY RUNNING. A compiled config can
+          // carry an agent's NAME and no prompt — that is what a project whose
+          // agent `.md` sits outside its declared config dir compiles to, and
+          // the control plane caches the failure as "this project has none".
+          // The session then answers perfectly well as the runtime's own
+          // agent, and nothing anywhere says the project's prompt was dropped.
+          agent_prompt: typeof this.agent().agent?.prompt === "string" && this.agent().agent.prompt.trim() ? "project" : "built-in",
+          // THE MACHINE, IF ONE IS ATTACHED: the environment's box id, so a
+          // session whose model said "I ran it on the machine" can be checked
+          // against a box that exists.
+          environment: (() => { try { this.sql.exec(ENVIRONMENT_TABLE_SQL); return readEnvironment(this.sql)?.externalId ?? null; } catch { return null; } })(),
           model: normalizeModelEnv(this.modelEnv()).MODEL_ID ?? null,
           terminals: [...(this.terminals?.values() ?? [])].length,
         });
@@ -2375,12 +2597,52 @@ export class AgentCell {
       // The bare `/env` a daemon serves beside `/kortix/env`, and the dispose
       // the client calls when it closes a session.
       if (path === "/env" && req.method === "GET") {
-        return Response.json({ ok: true, sessionId, keys: Object.keys(this.sessionEnv ?? {}) });
+        // `keys` is this runtime's own answer; `secrets` is what the SDK's env
+        // editor reads (core/runtime/env.ts). Only what a CALLER set through
+        // `PUT /env/:key` appears there — the platform keys beside it include
+        // this session's Kortix token, and a route that hands those back turns
+        // an env panel into a credential dump.
+        const own = this.userEnv();
+        return Response.json({ ok: true, sessionId, keys: Object.keys(this.sessionEnv ?? {}), secrets: own });
+      }
+      // `PUT /env/:key` and `DELETE /env/:key` — the env editor's writes. They
+      // land in the same per-session store the control plane's `/kortix/env`
+      // push uses, so a value set here survives an eviction like every other
+      // session setting, and they are namespaced so a caller cannot overwrite
+      // KORTIX_TOKEN from the browser.
+      const envKey = path.match(/^\/env\/([^/]+)$/);
+      if (envKey && (req.method === "PUT" || req.method === "DELETE")) {
+        const key = decodeURIComponent(envKey[1]);
+        if (/^KORTIX_/.test(key) || /^CELLD_/.test(key)) {
+          return Response.json({ error: "reserved key", detail: `${key} is set by the control plane and cannot be written from a session` }, { status: 409 });
+        }
+        if (req.method === "DELETE") {
+          this.sql.exec("DELETE FROM userenv WHERE k = ?", key);
+          return Response.json({ ok: true, key, deleted: true });
+        }
+        const body = await req.json().catch(() => ({}));
+        const value = typeof body?.value === "string" ? body.value : String(body?.value ?? "");
+        this.sql.exec("INSERT INTO userenv(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", key, value);
+        return Response.json({ ok: true, key });
       }
       if (path === "/global/dispose") return Response.json(true);
-      // A port proxy needs something listening, and nothing can be.
+      // A port proxy needs something listening, and nothing can be. The web
+      // proxy is the same answer for the same reason: it forwards through the
+      // sandbox's own network stack, and a cell is not one.
       if (path === "/proxy" || path.startsWith("/proxy/")) {
         return Response.json({ error: "no ports in a cell", detail: "a cell has no processes, so nothing can listen on a port" }, { status: 501 });
+      }
+      if (path === "/web-proxy" || path.startsWith("/web-proxy/")) {
+        return Response.json({ error: "no web proxy in a cell", detail: "a cell forwards nothing: its network is the guarded fetch its tools use" }, { status: 501 });
+      }
+      // `POST /kortix/abort` — the BOX-WIDE stop the control plane sends when
+      // it reaps a sandbox (projects/reaping/stop-box.ts). A cell holds one
+      // session, so it is the same abort as the session's own; answering
+      // `unknown route` made a reap look like a broken runtime.
+      if (path === "/kortix/abort" && req.method === "POST") {
+        const running = this.running;
+        if (running) running.agent.abort();
+        return Response.json({ ok: true, opencode_session_id: sessionId, aborted: !!running, turn: running?.turn ?? null });
       }
       if (path === "/presentation" || path.startsWith("/presentation/")) {
         return Response.json({ error: "no converter in a cell", detail: "the deck converter is a binary this runtime does not carry" }, { status: 501 });
@@ -2635,6 +2897,11 @@ export class AgentCell {
       try { resolved = modelConfig(e)?.model ?? null; } catch { resolved = null; }
       const boot = bootAnswer(req.method, path, {
         sessionId,
+        // `vcs: "git"` on the project only once there IS a checkout — the app
+        // offers its git surface on that field, and offering it over an empty
+        // workspace is how the Changes tab came up with nothing to show.
+        checkedOut: !!this.cellFs && await isCheckedOut(this.cellFs.fs).catch(() => false),
+        version: "pi-cell",
         agentName: this.agent().name || agentNameFrom(e),
         agents: agentList(this.agent().config, this.agent().name, agentShape),
         projectId: e.KORTIX_PROJECT_ID,

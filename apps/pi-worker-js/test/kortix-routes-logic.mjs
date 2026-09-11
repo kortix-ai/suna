@@ -3,7 +3,7 @@
 // it: the transcript envelope, the act route, ports, logs, diag, a part's
 // bytes, and the commit-push the dashboard uses to open a change request. A
 // cell answered four of them and `unknown route` to the rest.
-// EXPECTED_PASSES=43
+// EXPECTED_PASSES=70
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -102,6 +102,27 @@ check("logs on an empty cell is empty rather than absent", logsAnswer(undefined)
   const diag = await get("/kortix/diag");
   check("GET /kortix/diag names the runtime, the session and what it holds",
     diag.body.runtime === "cell" && diag.body.engine === "pi" && diag.body.sessionId === "s" && typeof diag.body.messages === "number", JSON.stringify(diag.body).slice(0, 160));
+  // AND WHICH DIRECTORY THE PROJECT'S AGENTS AND SKILLS COME FROM. A cell that
+  // resolved it before its checkout landed read the v2 path for a v3 project
+  // and reported zero skills, which is indistinguishable from a model that
+  // chose not to use them — so the dump has to say it out loud.
+  check("and it reports the config dir it resolved — null while the workspace has no manifest",
+    "configDir" in diag.body && diag.body.configDir === null, JSON.stringify(diag.body.configDir));
+  check("and whose system prompt is running: `built-in` when no project agent compiled one",
+    diag.body.agent_prompt === "built-in", JSON.stringify(diag.body.agent_prompt));
+  {
+    // The other half: a project whose agent DID compile a prompt. A config
+    // that carries the name and not the body is the failure this distinguishes.
+    const cfg = JSON.stringify({ agent: { kortix: { description: "d", prompt: "You are the project's own agent." } } });
+    const p = makeCell(AgentCell, { KORTIX_SESSION_ID: "p", TOOLS_BACKEND: "cell", KORTIX_AGENT_NAME: "kortix", KORTIX_COMPILED_AGENT_CONFIG: cfg });
+    const got = await (await p.fetch("/kortix/diag?c=p")).json();
+    check("and `project` when it did — the two are indistinguishable in every other field",
+      got.agent_prompt === "project" && got.agent === "kortix", JSON.stringify({ a: got.agent, p: got.agent_prompt }));
+    const bodiless = makeCell(AgentCell, { KORTIX_SESSION_ID: "q", TOOLS_BACKEND: "cell", KORTIX_AGENT_NAME: "kortix", KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { kortix: { description: "d" } } }) });
+    const gotQ = await (await bodiless.fetch("/kortix/diag?c=q")).json();
+    check("a compiled agent with a NAME and no body reads as `built-in` — the exact shape a misplaced .md compiles to",
+      gotQ.agent === "kortix" && gotQ.agent_prompt === "built-in", JSON.stringify({ a: gotQ.agent, p: gotQ.agent_prompt }));
+  }
   const messages = await get("/kortix/opencode/messages/s");
   check("GET /kortix/opencode/messages/:id answers the envelope", messages.status === 200 && messages.body.session_id === "s" && Array.isArray(messages.body.messages), JSON.stringify(messages.body).slice(0, 120));
   check("and refuses another session's transcript", (await get("/kortix/opencode/messages/other")).status === 404, "");
@@ -146,6 +167,132 @@ check("logs on an empty cell is empty rather than absent", logsAnswer(undefined)
   check("and the tree is clean afterwards — the changes are in the commit, not still pending", diff.files.length === 0, JSON.stringify(diff.files));
   check("a push that cannot reach its origin reports the failure rather than claiming success",
     pushed.ok === false && !!pushed.error, JSON.stringify(pushed).slice(0, 140));
+}
+
+// THE ROUTES A CLIENT CALLS THAT A CELL ANSWERED `unknown route`.
+//
+// Measured 2026-09-11 by asking a LIVE cell for every path the SDK, the web
+// app and the control plane are known to build on a sandbox base (the audit
+// behind scratchpad/probe-routes.sh): twenty-one of them were not served at
+// all. Each one fails as something else — the Changes tab is empty, the skills
+// list is empty, a reap looks like a broken runtime, a cancelled forward
+// leaves its half-written message in the transcript — and none of them looks
+// like a missing route from the outside.
+//
+// The rule: a route a cell CAN do, does it; a route it CANNOT do says so in
+// that route's own terms with a status that means "not possible", never 404.
+{
+  const db = new DatabaseSync(":memory:");
+  void db;
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "r1", TOOLS_BACKEND: "cell" });
+  const c = h.cell ?? h;
+  const get = async (p) => { const r = await h.fetch(`${p}${p.includes("?") ? "&" : "?"}c=r1`); return { status: r.status, body: await r.json().catch(() => null) }; };
+  const send = async (m, p, body) => {
+    const r = await h.fetch(`${p}${p.includes("?") ? "&" : "?"}c=r1`, { method: m, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+
+  // ── the ones a cell can simply do ──
+  const skill = await get("/skill");
+  check("GET /skill answers OpenCode's own name for the skills list — the one the SDK actually calls",
+    skill.status === 200 && Array.isArray(skill.body), JSON.stringify(skill.body).slice(0, 80));
+  const diff = await get("/session/r1/diff");
+  check("GET /session/:id/diff answers a list of per-file diffs, not the joined patch /kortix/opencode/vcs-diff returns",
+    diff.status === 200 && Array.isArray(diff.body), JSON.stringify(diff.body).slice(0, 80));
+  check("and it refuses another session's diff", (await get("/session/other/diff")).status === 404, "");
+
+  const turn = await get("/kortix/opencode/turn/msg-nothing");
+  check("GET /kortix/opencode/turn/:messageId answers the daemon's fields for a prompt it never saw",
+    turn.status === 200 && turn.body.message_id === "msg-nothing" && turn.body.opencode_session_id === "r1"
+      && turn.body.in_flight === null && turn.body.end === null && turn.body.orphaned_prompt === false,
+    JSON.stringify(turn.body));
+
+  const abort = await send("POST", "/kortix/abort");
+  check("POST /kortix/abort is the box-wide stop the reaper sends, and names the session it stopped",
+    abort.status === 200 && abort.body.ok === true && abort.body.opencode_session_id === "r1" && abort.body.aborted === false,
+    JSON.stringify(abort.body));
+
+  // ── the ones it cannot, each in its own words ──
+  const web = await get("/web-proxy/http/example.com");
+  check("a web proxy is 501 with the reason, the same answer /proxy gives — a cell forwards nothing",
+    web.status === 501 && /no web proxy/.test(web.body.error), JSON.stringify(web.body).slice(0, 90));
+  const share = await send("POST", "/session/r1/share");
+  check("POST /session/:id/share is 501 and says WHY, rather than 404 which reads as a broken runtime",
+    share.status === 501 && /share/.test(share.body.error) && !!share.body.detail, JSON.stringify(share.body).slice(0, 110));
+  check("DELETE /session/:id/share is refused the same way", (await send("DELETE", "/session/r1/share")).status === 501, "");
+  const revert = await send("POST", "/session/r1/revert", { messageID: "m1" });
+  check("revert and unrevert are 501 for the reason act already gives: this transcript is append-only",
+    revert.status === 501 && /append-only/.test(revert.body.detail) && (await send("POST", "/session/r1/unrevert")).status === 501,
+    JSON.stringify(revert.body).slice(0, 110));
+  const perm = await send("POST", "/permission/req-1/reply", { response: "allow" });
+  check("a permission or question reply is 409, not 404 — nothing is ASKED in a cell, which is different from the route not existing",
+    perm.status === 409 && /without prompting/.test(perm.body.detail)
+      && (await send("POST", "/question/req-1/reply")).status === 409,
+    JSON.stringify(perm.body).slice(0, 110));
+
+  // ── env: what a session may write, and what it may never read back ──
+  // The control plane's own push first, so `secrets` has something dangerous
+  // to withhold rather than passing on an empty object.
+  await send("POST", "/kortix/env", { env: { KORTIX_TOKEN: "a-real-token", KORTIX_PROJECT_ID: "p1" } });
+  const put = await send("PUT", "/env/MY_KEY", { value: "hello" });
+  check("PUT /env/:key stores a value the session set for itself", put.status === 200 && put.body.ok === true, JSON.stringify(put.body));
+  const env1 = await get("/env");
+  check("and GET /env reports it under `secrets`, which is the field the SDK's env editor reads",
+    env1.body.secrets?.MY_KEY === "hello", JSON.stringify(env1.body.secrets));
+  // THE PLATFORM'S OWN KEYS ARE NOT SECRETS TO HAND BACK. `sessionEnv` holds
+  // this session's Kortix token; a route that returned it would turn an env
+  // panel into a credential dump.
+  check("but the platform's env is NOT in `secrets` — its keys are listed, its values never leave the cell",
+    !("KORTIX_TOKEN" in (env1.body.secrets ?? {}))
+      && env1.body.keys.includes("KORTIX_TOKEN")
+      && !JSON.stringify(env1.body).includes("a-real-token"),
+    JSON.stringify(env1.body).slice(0, 160));
+  const reserved = await send("PUT", "/env/KORTIX_TOKEN", { value: "stolen" });
+  check("and a reserved key cannot be written from a session at all",
+    reserved.status === 409 && /reserved/.test(reserved.body.error), JSON.stringify(reserved.body).slice(0, 100));
+  check("DELETE /env/:key removes it again",
+    (await send("DELETE", "/env/MY_KEY")).status === 200 && !((await get("/env")).body.secrets ?? {}).MY_KEY, "");
+}
+
+// ── one message, and the two deletes that cancel a forwarded turn ──
+{
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "r2", TOOLS_BACKEND: "cell" });
+  const c = h.cell ?? h;
+  await h.fetch("/?c=r2");
+  c.saveMessage("user", { role: "user", content: [{ type: "text", text: "one" }] }, "msg_000000000001aaaaaaaaaaaaaa");
+  c.saveMessage("assistant", { role: "assistant", content: [{ type: "text", text: "first" }, { type: "text", text: "second" }] }, "msg_000000000002bbbbbbbbbbbbbb");
+  const get = async (p) => { const r = await h.fetch(`${p}?c=r2`); return { status: r.status, body: await r.json().catch(() => null) }; };
+  const del = async (p) => { const r = await h.fetch(`${p}?c=r2`, { method: "DELETE" }); return { status: r.status, body: await r.json().catch(() => null) }; };
+
+  const one = await get("/session/r2/message/msg_000000000002bbbbbbbbbbbbbb");
+  check("GET /session/:id/message/:messageID is that ONE message with its parts",
+    one.status === 200 && one.body.info.id === "msg_000000000002bbbbbbbbbbbbbb" && one.body.parts.length === 2,
+    JSON.stringify(one.body).slice(0, 120));
+  check("and a message id this session does not have is 404, not an empty 200",
+    (await get("/session/r2/message/msg-nope")).status === 404, "");
+
+  // A PART IS BLANKED, NOT SPLICED. Its id is its INDEX in the stored content,
+  // so removing the entry would renumber every later part and change ids the
+  // client already holds.
+  const delPart = await del("/session/r2/message/msg_000000000002bbbbbbbbbbbbbb/part/msg_000000000002bbbbbbbbbbbbbb-p0");
+  check("DELETE …/part/:partID removes that part and answers true",
+    delPart.status === 200 && delPart.body === true, JSON.stringify(delPart.body));
+  const after = await get("/session/r2/message/msg_000000000002bbbbbbbbbbbbbb");
+  check("and the SURVIVING part keeps the id it already had — a splice would have renumbered it to -p0",
+    after.body.parts.length === 1 && after.body.parts[0].id.endsWith("-p1") && after.body.parts[0].text === "second",
+    JSON.stringify(after.body.parts));
+  check("deleting the same part twice is 404 the second time, not a silent true",
+    (await del("/session/r2/message/msg_000000000002bbbbbbbbbbbbbb/part/msg_000000000002bbbbbbbbbbbbbb-p0")).status === 404, "");
+
+  const delMsg = await del("/session/r2/message/msg_000000000002bbbbbbbbbbbbbb");
+  check("DELETE /session/:id/message/:messageID removes the message from the transcript",
+    delMsg.status === 200 && delMsg.body === true, JSON.stringify(delMsg.body));
+  const left = await get("/session/r2/message");
+  check("and the transcript is what is left — the user's message, alone",
+    left.body.length === 1 && left.body[0].info.role === "user", JSON.stringify(left.body.map((m) => m.info.role)));
+  check("every one of these refuses another session by name",
+    (await del("/session/other/message/msg_000000000001aaaaaaaaaaaaaa")).status === 404
+      && (await get("/session/other/message/msg_000000000001aaaaaaaaaaaaaa")).status === 404, "");
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");

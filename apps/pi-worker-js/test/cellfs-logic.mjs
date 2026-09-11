@@ -69,13 +69,18 @@ check("a removal is persisted too — deleted rows do not come back", r.ok && ro
 // message even names the interpreter's own host ("not available in browser
 // environments").
 {
+  // TWO FACTS, NOT AN INVENTORY. The note used to list every command the
+  // shell has and every one it lacks — 900 characters a prompt teaching a
+  // catalogue one `ls` discovers — and still left the model nowhere to go when
+  // the task needed a machine. Now it says it is restricted and names the way
+  // out (2026-09-11).
   const note = cellShellNote();
-  check("the shell note lists the commands that exist",
-    note.includes("jq") && note.includes("rg") && note.includes("awk") && note.includes("sed"),
-    note.slice(0, 100));
-  check("and names the ones that do not, so the model does not reach for them",
-    ["git", "curl", "npm", "pip", "python3", "docker"].every((c) => note.includes(c)),
-    note.slice(0, 200));
+  check("the shell note says what this shell is NOT — a Linux machine — without cataloguing commands",
+    /not a Linux machine/i.test(note) && !note.includes("jq") && !note.includes("docker") && note.length < 700,
+    `${note.length} chars: ${note.slice(0, 100)}`);
+  check("and it names the way out: the machine tool, for runtimes, installs, builds and a dev server",
+    /machine tool/.test(note) && /node/.test(note) && /python/.test(note) && /dev server/.test(note),
+    note.slice(-220));
   check("and says the working directory survives to the next turn",
     note.includes(CELL_CWD_EXPECTED) && /persists between turns/.test(note), note.slice(-200));
 

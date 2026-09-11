@@ -125,19 +125,17 @@ export const CELL_MISSING = [
  *  claim compares `ls /usr/bin`, where a fetch-registered command may not show. */
 export const CELL_NET_COMMANDS = ["curl", "wget"];
 
+// WHAT THE MODEL IS TOLD ABOUT ITS SHELL. Two facts, not an inventory: the
+// note used to list every command the shell has and every one it lacks, which
+// spent 900 characters of every prompt teaching the model a catalogue it
+// could discover with one `ls`, and still left it with nowhere to go when the
+// task needed a real machine. Now it knows it is restricted and it knows the
+// way out.
 export function cellShellNote() {
   return [
-    "Your bash tool runs a POSIX shell over this session's own virtual filesystem.",
-    "It is NOT a Linux machine: there is no package manager and no language runtime.",
-    `These do not exist — never call them and never propose a plan that needs them: ${CELL_MISSING.join(", ")}.`,
-    "",
-    `Network: ${CELL_NET_COMMANDS.join(" and ")} work over HTTP(S) (GET, POST, headers, -o files, -L redirects); internal and private addresses are refused.`,
-    `The ${CELL_COMMANDS.length} other commands you have: ${CELL_COMMANDS.join(", ")}.`,
-    "",
-    `Your working directory is ${CELL_CWD}, and it persists between turns: a file you write now is`,
-    "still there in the next message. Use the write and read tools for file contents, grep/rg/find to",
-    "search, and awk/sed/jq to transform. To run a program, write the logic as a shell script — you",
-    "cannot execute Python or JavaScript here.",
+    `Your bash tool is a small POSIX shell over this session's own tree at ${CELL_CWD}, which persists between turns.`,
+    "It is not a Linux machine: no language runtimes, no package manager, no processes. curl and wget work over HTTP(S).",
+    "When a task needs a real machine — node, python, package installs, builds, a dev server, git — use the machine tool: it attaches a full Linux environment with the project checked out, and runs your command there.",
   ].join("\n");
 }
 

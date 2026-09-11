@@ -99,7 +99,11 @@ export function transcriptMessages(rows, sessionId) {
     // message.updated carries `completed`; the transcript now does too.
     out.push({
       info: { id, role: r.role, sessionID: sessionId, time: r.role === "assistant" ? { created: r.ts, completed: r.ts } : { created: r.ts } },
-      parts: content.map((c, k) => [c, k]).filter(([c]) => partType(c?.type) !== "reasoning").map(([c, k]) => ({
+      // A NULL ENTRY IS A DELETED PART, not a broken one. `DELETE
+      // /session/:id/message/:id/part/:id` blanks the slot instead of splicing
+      // it out, because a part's id is its INDEX here and splicing would
+      // renumber every part after it.
+      parts: content.map((c, k) => [c, k]).filter(([c]) => c != null && partType(c?.type) !== "reasoning").map(([c, k]) => ({
         id: `${id}-p${k}`,
         messageID: id,
         sessionID: sessionId,
