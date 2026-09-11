@@ -495,7 +495,22 @@ export function resolveAppViewerUserId(
   url: URL,
   app: Pick<AppAccessRow, 'appId' | 'accessMode' | 'accessRevision'>,
 ): string | null {
-  if (app.accessMode === 'public' || app.accessMode === 'password') return null;
+  // A PUBLIC App still recognises whoever the gate signed in.
+  //
+  // This used to bail here for `public`, so the cookie was never even read and
+  // `public` quietly meant two things: "anyone with the link may open this" AND
+  // "nobody is ever recognised". Only the first is what public is for. An App
+  // shared with an outside client still wants to know its own team when they
+  // open it, without shutting the client out.
+  //
+  // Identity is not authorization. A public App already authorizes everyone;
+  // this only answers WHO, and only when the gate's own signed, revision-bound
+  // cookie says so. A visitor with no cookie stays anonymous, which is what
+  // keeps the bare shared link working.
+  //
+  // `password` needs no special case: its cookie proves knowledge of a shared
+  // secret rather than a person, and the `kind !== 'kortix'` check below is
+  // already what keeps it out.
   const localHttp = url.protocol === 'http:' && url.hostname.endsWith('.apps.localhost');
   const raw = cookieValue(request, appAccessCookieName(localHttp));
   if (!raw) return null;
@@ -629,10 +644,13 @@ export async function authorizeAppRequest(
   app: AppAccessRow,
   verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
 ): Promise<Response | null> {
-  if (app.accessMode === 'public') return null;
   const localHttp = url.protocol === 'http:' && url.hostname.endsWith('.apps.localhost');
   const secret = appAccessSecret();
   const queryToken = url.searchParams.get('__kortix_access');
+  // NOTE the public App does not return early here any more. It still redeems
+  // an access link — that exchange is the only way its identity cookie can ever
+  // exist — and only the DENIAL paths below are skipped for it. See the guard
+  // after this block.
   if (queryToken && (request.method === 'GET' || request.method === 'HEAD')) {
     const verified = verifyAppAccessToken(queryToken, app.appId, secret);
     if (await accessTokenAuthorizesRequest(verified, app, verifyUserAccess)) {
@@ -653,6 +671,13 @@ export async function authorizeAppRequest(
       });
     }
   }
+  // A public App is never gated. Everything from here down decides whether to
+  // REFUSE, and refusing is exactly what public means not doing — so it lets
+  // the request through, with or without an identity. A visitor who redeemed a
+  // link above is now carrying the cookie; the client who was sent the bare URL
+  // simply stays anonymous.
+  if (app.accessMode === 'public') return null;
+
   const browserToken = cookieValue(request, appAccessCookieName(localHttp));
   if (
     browserToken &&

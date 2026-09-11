@@ -7,7 +7,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { auditDb, isAuditContentionError } from '../../shared/audit-db';
+import { auditDb, auditErrorSqlstate, isAuditContentionError } from '../../shared/audit-db';
 import { logger as appLogger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
@@ -345,7 +345,28 @@ projectsApp.openapi(
         attempted += chunk.length;
         insertedCount += inserted.length;
       } catch (error) {
-        if (!isAuditContentionError(error)) throw error;
+        if (!isAuditContentionError(error)) {
+          // A write that is NOT backpressure is a defect, and until now the
+          // only trace of it was Drizzle's wrapper: `DrizzleQueryError: Failed
+          // query: insert into "kortix"."audit_events" …` with the whole
+          // statement and every bound parameter, and no SQLSTATE anywhere —
+          // the pg cause hangs off `error.cause`, which the wrapper does not
+          // print. PROD 2026-09-09 06:32–06:33 UTC produced 76 of these in 90
+          // seconds, alongside api_keys and account_tokens SELECT failures from
+          // the same window, and the class of fault was unreadable from the
+          // logs. Name the SQLSTATE and the session; the throw is unchanged.
+          console.error('[audit-ingest] write failed', {
+            projectId,
+            sessionId,
+            accountId,
+            chunkSize: chunk.length,
+            batchSize: toInsert.length,
+            offset,
+            sqlstate: auditErrorSqlstate(error),
+            reason: error instanceof Error ? error.message.split('\n')[0] : String(error),
+          });
+          throw error;
+        }
         // The session lock is queued. Pushing the remaining chunks into it
         // would only lengthen the queue that just rejected this one. Stop and
         // tell the relay to come back — the batch is still in its spool.

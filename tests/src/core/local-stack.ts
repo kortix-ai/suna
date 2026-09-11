@@ -332,6 +332,46 @@ export async function localWebHealthy(webUrl: string): Promise<boolean> {
   }
 }
 
+/**
+ * The environment the deterministic local stack hands its Next dev server.
+ *
+ * Exported as a pure function so the contract is assertable without spawning a
+ * process — see local-web-environment.test.ts.
+ */
+export function localWebEnvironment(options: {
+  webPort: number;
+  webUrl: string;
+  apiUrl: string;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+}): Record<string, string> {
+  const { webPort, webUrl, apiUrl, supabaseUrl, supabaseAnonKey } = options;
+  return {
+    WEB_PORT: String(webPort),
+    KORTIX_API_PROXY_TARGET: apiUrl.replace(/\/v1$/, ""),
+    NEXT_PUBLIC_BACKEND_URL: apiUrl,
+    KORTIX_PUBLIC_BACKEND_URL: apiUrl,
+    BACKEND_URL: apiUrl,
+    SUPABASE_URL: supabaseUrl,
+    NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+    KORTIX_PUBLIC_SUPABASE_URL: supabaseUrl,
+    SUPABASE_ANON_KEY: supabaseAnonKey,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+    KORTIX_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+    NEXT_PUBLIC_APP_URL: webUrl,
+    KORTIX_PUBLIC_APP_URL: webUrl,
+    NEXT_PUBLIC_URL: webUrl,
+    NEXT_PUBLIC_BILLING_ENABLED: "false",
+    // A one-shot test run starts with a cold `.next/dev/cache` and deletes it
+    // afterwards, so Turbopack's dev filesystem cache saves nothing here. It
+    // can still cost the entire browser shard: a failed restore panics outside
+    // turbo-tasks' per-task boundary and aborts the dev server, after which
+    // every remaining spec fails with ERR_CONNECTION_REFUSED and names itself
+    // instead of the real cause. See apps/web/next.config.ts.
+    KORTIX_TURBOPACK_FS_CACHE: "off",
+  };
+}
+
 export async function ensureLocalWeb(
   topology: LocalTopology,
   options: { autoStart: boolean; supabase: LocalSupabaseEnvironment },
@@ -356,21 +396,13 @@ export async function ensureLocalWeb(
       detached: true,
       env: {
         ...process.env,
-        WEB_PORT: String(webPort),
-        KORTIX_API_PROXY_TARGET: topology.apiUrl.replace(/\/v1$/, ""),
-        NEXT_PUBLIC_BACKEND_URL: topology.apiUrl,
-        KORTIX_PUBLIC_BACKEND_URL: topology.apiUrl,
-        BACKEND_URL: topology.apiUrl,
-        SUPABASE_URL: API_URL,
-        NEXT_PUBLIC_SUPABASE_URL: API_URL,
-        KORTIX_PUBLIC_SUPABASE_URL: API_URL,
-        SUPABASE_ANON_KEY: ANON_KEY,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
-        KORTIX_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
-        NEXT_PUBLIC_APP_URL: webUrl,
-        KORTIX_PUBLIC_APP_URL: webUrl,
-        NEXT_PUBLIC_URL: webUrl,
-        NEXT_PUBLIC_BILLING_ENABLED: "false",
+        ...localWebEnvironment({
+          webPort,
+          webUrl,
+          apiUrl: topology.apiUrl,
+          supabaseUrl: API_URL,
+          supabaseAnonKey: ANON_KEY,
+        }),
       },
       stdin: "ignore",
       stdout: "inherit",
@@ -381,9 +413,27 @@ export async function ensureLocalWeb(
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
     if (await localWebHealthy(webUrl)) {
+      // Nothing watches the dev server once it is ready, so a mid-run death
+      // used to reach the report as N unrelated spec failures — each one
+      // blaming itself for an ERR_CONNECTION_REFUSED against a dead port, the
+      // real cause hundreds of lines earlier in a shared stdout. Say it once,
+      // loudly, at the moment it happens.
+      let stopping = false;
+      void web.exited.then((code) => {
+        if (stopping) return;
+        console.error(
+          `[local-stack] the local web server exited with code ${code} while ` +
+            `tests were still running. Every browser spec from this point on ` +
+            `will fail against ${webUrl} with a connection error, whatever ` +
+            `each one reports. Look above this line for the cause.`,
+        );
+      });
       return {
         started: true,
-        stop: async () => stopOwnedStack(web),
+        stop: async () => {
+          stopping = true;
+          await stopOwnedStack(web);
+        },
       };
     }
     if (web.exitCode !== null) {
