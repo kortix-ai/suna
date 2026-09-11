@@ -172,18 +172,22 @@ describe('queueHeaderAction', () => {
 });
 
 describe('queueStartsCollapsed', () => {
-  test('below the collapse threshold stays open', () => {
-    expect(queueStartsCollapsed(QUEUE_COLLAPSE_AT_DEPTH - 1)).toBe(false);
-  });
-
-  test('at the threshold collapses', () => {
+  /**
+   * ALWAYS collapsed, at any depth. It used to open expanded below
+   * `QUEUE_COLLAPSE_AT_DEPTH`, which pushed the composer down by a row for
+   * every prompt parked — the box you are typing in moved while you typed.
+   * The collapsed row shows the prompt that goes next, which is the only one
+   * worth a line when the list is shut.
+   */
+  test('a queue opens collapsed at every depth', () => {
+    expect(queueStartsCollapsed(0)).toBe(true);
+    expect(queueStartsCollapsed(1)).toBe(true);
+    expect(queueStartsCollapsed(QUEUE_COLLAPSE_AT_DEPTH - 1)).toBe(true);
     expect(queueStartsCollapsed(QUEUE_COLLAPSE_AT_DEPTH)).toBe(true);
-  });
-
-  test('past the threshold stays collapsed', () => {
-    expect(queueStartsCollapsed(QUEUE_COLLAPSE_AT_DEPTH + 1)).toBe(true);
+    expect(queueStartsCollapsed(QUEUE_MAX_DEPTH)).toBe(true);
   });
 });
+
 
 describe('nextQueueOrderAfterMoveToTop', () => {
   test('moves the target id to index 0, keeping the others in relative order', () => {

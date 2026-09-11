@@ -31,10 +31,19 @@ const noop = () => {};
 const CATALOG = en.hardcodedUi.i18nComplete as Record<string, string>;
 const QUEUE_FULL_HINT = CATALOG[QUEUE_FULL_HINT_KEY];
 
+/**
+ * Rendered OPEN by default here.
+ *
+ * The queue ships collapsed — one line showing the prompt that goes next — and
+ * expanding it is a click, which `renderToStaticMarkup` cannot perform (there
+ * is no DOM environment in `apps/web`). `defaultOpen` is the component's own
+ * prop, not a test hatch: it exists for a host with room to show the list. Any
+ * test about the COLLAPSED state passes `defaultOpen: false` explicitly.
+ */
 function render(props: Partial<QueuedMessagesProps>): string {
   return renderToStaticMarkup(
     <TooltipProvider>
-      <QueuedMessages messages={[]} {...props} />
+      <QueuedMessages messages={[]} defaultOpen {...props} />
     </TooltipProvider>,
   );
 }
@@ -89,13 +98,19 @@ describe('header', () => {
 });
 
 describe('collapse', () => {
-  test('a deep queue opens collapsed, header only', () => {
-    const html = render({ messages: rows(6) });
-    expect(html).toContain('6 queued');
-    expect(html).not.toContain('message 1');
+  /**
+   * Collapsed shows the PROMPT THAT GOES NEXT, not a count of prompts. The
+   * header used to read "6 queued · runs after this turn" — a sentence about
+   * the queue that never said what was in it.
+   */
+  test('a collapsed queue shows the next prompt and hides the rest', () => {
+    const html = render({ messages: rows(6), defaultOpen: false });
+    expect(html).toContain('message 1');
+    expect(html).not.toContain('message 2');
+    expect(html).not.toContain('message 6');
   });
 
-  test('a short queue opens with its rows visible', () => {
+  test('opening it reveals every row', () => {
     const html = render({ messages: rows(3) });
     expect(html).toContain('message 1');
     expect(html).toContain('message 3');
@@ -106,8 +121,9 @@ describe('collapse', () => {
     const html = render({
       messages: rows(6),
       failed: [{ id: 'f1', text: 'this one broke' }],
+      defaultOpen: false,
     });
-    expect(html).not.toContain('message 1');
+    expect(html).not.toContain('message 2');
     expect(html).toContain('this one broke');
   });
 });
@@ -145,15 +161,27 @@ describe('positions and markers', () => {
     expect(html.match(/Runs next/g)).toHaveLength(1);
   });
 
-  test('a parked row is pinned, counted, and never runs next', () => {
+  /**
+   * The pin is GONE, deliberately. Every row in this list is parked, so a pin
+   * on all of them carried no information — it was one of two icon columns in
+   * front of a line of text usually shorter than they were. Position is spoken
+   * for screen readers (which cannot see the list to count it) and shown by the
+   * order of the rows for everyone else.
+   *
+   * What the pin used to also mean — a parked row is not in the drain order and
+   * so never "runs next" — is still true and still asserted.
+   */
+  test('a parked row is counted for screen readers and never runs next', () => {
     const html = render({
       messages: [
         { id: 'm1', text: 'held one', parked: true },
         { id: 'm2', text: 'message 2' },
       ],
     });
-    expect(html).toContain('Parked, position 1');
+    expect(html).toContain('Position 1');
     expect(html).toContain('Position 2');
+    // No pin, and no per-row parked caption.
+    expect(html).not.toContain('Parked, position');
     // One marker, and it is on the row that is not parked.
     expect(html.match(/Runs next/g)).toHaveLength(1);
     expect(html.indexOf('Runs next')).toBeGreaterThan(html.indexOf('Position 2'));

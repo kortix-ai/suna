@@ -5628,28 +5628,6 @@ export function SessionChat({
   const chatInputSlot = useMemo(
     () => (
       <>
-        {/* QUEUE PAUSED BY A STOP HOLD — self-hides when nothing is held.
-            `queuePausedByUser`, not the raw hold: the error halt sets the same
-            server flag, and there this banner would say "paused" beside a
-            header saying "last run failed" with two different ways out. */}
-        {queuePausedByUser && heldQueueCount > 0 ? (
-          <div className="flex w-full items-center justify-between gap-3 px-2">
-            <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs leading-none">
-              <PauseIcon weight="fill" className="size-3 shrink-0" />
-              <span className="truncate">
-                {tHardcodedUi('i18nComplete.text43ba7b95db1e', { count: heldQueueCount })}
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => void handleResumeQueue()}
-              className="text-muted-foreground hover:text-foreground flex shrink-0 cursor-pointer items-center gap-1 text-xs leading-none transition-colors active:scale-[0.96]"
-            >
-              <PlayIcon weight="fill" className="size-3 shrink-0" />
-              {tHardcodedUi.raw('i18nComplete.textd640c7421da0')}
-            </button>
-          </div>
-        ) : null}
         {/* THE QUEUE LIST — rows the user parked with Cmd/Ctrl+Enter, above the
             composer, in the order they will run, draggable to change it.
             Self-hides when empty. Prompts sent with plain Enter are NOT here:

@@ -144,7 +144,14 @@ export const QUEUE_COLLAPSE_AT_DEPTH = 4;
 
 /** Should the parked-queue list render collapsed the first time this depth is seen? */
 export function queueStartsCollapsed(depth: number): boolean {
-  return depth >= QUEUE_COLLAPSE_AT_DEPTH;
+  // ALWAYS, at any depth. The queue opens as one line showing the prompt that
+  // goes next; the rest is one click away. It used to open expanded below
+  // `QUEUE_COLLAPSE_AT_DEPTH`, which pushed the composer down by a row for
+  // every prompt parked — the box you are typing in moved while you typed.
+  // `QUEUE_COLLAPSE_AT_DEPTH` is kept as the depth the list is worth scrolling
+  // at, which is what the scroll box is sized from.
+  void depth;
+  return true;
 }
 
 /**

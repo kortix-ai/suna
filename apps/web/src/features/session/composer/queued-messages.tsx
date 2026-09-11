@@ -87,33 +87,20 @@
  * the state and the drain owns the timing.
  */
 
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import {
   ArrowClockwiseIcon,
-  ArrowLineUpIcon,
   CaretDownIcon,
   CaretRightIcon,
-  CopyIcon,
   DotsSixVerticalIcon,
-  DotsThreeIcon,
   PaperclipIcon,
   PaperPlaneRightIcon,
   PencilSimpleIcon,
   PlayIcon,
-  PushPinIcon,
-  QueueIcon,
   TrashIcon,
   WarningIcon,
 } from '@phosphor-icons/react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Reorder, useDragControls, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
@@ -201,6 +188,12 @@ export interface QueuedMessagesProps {
    */
   isRunning?: boolean;
   /**
+   * Start expanded. The queue opens collapsed — one line showing the prompt
+   * that goes next — so parking a prompt never pushes the composer down while
+   * you are typing in it. A host that owns more vertical room can open it.
+   */
+  defaultOpen?: boolean;
+  /**
    * The queue is held by a stop and will not drain on its own.
    *
    * Dims the list, switches what the live region announces — "sends when
@@ -253,30 +246,37 @@ export interface QueuedMessagesProps {
  */
 function QueueHeader({
   depth,
-  runState,
+  firstText,
   paused,
   collapsed,
   listId,
   onToggle,
   onResume,
   onRetryQueue,
+  runState,
 }: {
   depth: number;
-  runState: QueueRunState;
+  /** The text of queue[0] — what the collapsed row shows. */
+  firstText: string;
   paused: boolean;
   collapsed: boolean;
   listId: string;
   onToggle: () => void;
   onResume?: () => void;
   onRetryQueue?: () => void;
+  runState: QueueRunState;
 }) {
-  // The words are in the catalog; this file keeps only the RANKING that picks
-  // which of them applies (`queueHeaderLabelKey` -> `queueDrainBlockedReason`).
   const t = useTranslations('hardcodedUi.i18nComplete');
   const action = queueHeaderAction({ runState, paused });
   const onAction = action === 'resume' ? onResume : action === 'retry' ? onRetryQueue : undefined;
+
   return (
-    <div className="flex w-full items-center gap-2 px-1.5 py-1">
+    <div className="flex w-full items-center gap-2 px-1.5 pt-1">
+      {/* THE NEXT MESSAGE, not a count of them.
+          This line read "3 queued · runs after this turn" — a sentence about
+          the queue that never said what was IN it. Collapsed, the one thing
+          worth showing is the prompt that goes next; the count is a number
+          beside it, and the rest is one click away. */}
       <button
         type="button"
         onClick={onToggle}
@@ -288,21 +288,26 @@ function QueueHeader({
         )}
       >
         {/* TWO GLYPHS, not one that rotates. This line is on screen the whole
-            time a queue exists; the budget here is transition-colors, and a
-            spinning caret is motion nobody asked to watch again. */}
+            time a queue exists, and a spinning caret is motion nobody asked to
+            watch again. */}
         {collapsed ? (
           <CaretRightIcon aria-hidden className="size-3 shrink-0" />
         ) : (
           <CaretDownIcon aria-hidden className="size-3 shrink-0" />
         )}
-        <span className="truncate text-xs">
-          {t(queueHeaderLabelKey({ runState, paused }), { count: depth })}
-        </span>
+        <span className="truncate text-xs">{firstText}</span>
+        {depth > 1 && (
+          <span className="shrink-0 text-xs tabular-nums opacity-70">{depth}</span>
+        )}
+        {/* The state, only when it is not the ordinary one — a queue that is
+            simply waiting its turn needs no caption. */}
+        {(paused || runState === 'error' || runState === 'awaiting_input') && (
+          <span className="shrink-0 truncate text-xs">
+            {t(queueHeaderLabelKey({ runState, paused }), { count: depth })}
+          </span>
+        )}
       </button>
 
-      {/* The cap, said where the refusal happens. Cmd/Ctrl+Enter simply stops
-          adding rows at `QUEUE_MAX_DEPTH`, which without this reads as a
-          broken shortcut rather than a full queue. */}
       {queueIsAtCap(depth) && (
         <span className="text-muted-foreground shrink-0 text-xs">
           {t.raw(QUEUE_FULL_HINT_KEY)}
@@ -314,16 +319,10 @@ function QueueHeader({
           type="button"
           onClick={onAction}
           className={cn(
-            'flex shrink-0 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs',
-            'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
-            'transition-colors active:scale-[0.96]',
+            'shrink-0 cursor-pointer rounded-sm px-1 text-xs',
+            'text-muted-foreground hover:text-foreground transition-colors',
           )}
         >
-          {action === 'resume' ? (
-            <PlayIcon aria-hidden className="size-3 shrink-0" />
-          ) : (
-            <ArrowClockwiseIcon aria-hidden className="size-3 shrink-0" />
-          )}
           {action === 'resume' ? t.raw('textd640c7421da0') : t.raw('text942087cc2d41')}
         </button>
       )}
@@ -372,31 +371,6 @@ function RowAction({
   );
 }
 
-/**
- * The Duplicate row, with its refusal attached to it.
- *
- * Split out for one mechanical reason: a Radix menu item wears
- * `data-disabled:pointer-events-none` (see `menu-recipe.ts`), so a tooltip
- * bound to the item itself never fires — the hover the user makes to find out
- * why the row is dead lands on nothing at all. The wrapper takes the hover
- * instead. Same shape `access-row.tsx` uses for a disabled item that carries
- * its reason.
- */
-function DuplicateItem({ hintKey, onSelect }: { hintKey: string | null; onSelect: () => void }) {
-  const t = useTranslations('hardcodedUi.i18nComplete');
-  const item = (
-    <DropdownMenuItem disabled={Boolean(hintKey)} onSelect={onSelect}>
-      <CopyIcon className="size-3.5 shrink-0" />
-      {t.raw('text02cdaabfca80')}
-    </DropdownMenuItem>
-  );
-  if (!hintKey) return item;
-  return (
-    <Hint label={t.raw(hintKey)} side="left">
-      <div>{item}</div>
-    </Hint>
-  );
-}
 
 function QueuedRow({
   message,
@@ -501,7 +475,7 @@ function QueuedRow({
       data-queued-id={message.id}
       aria-busy={inFlight || undefined}
       className={cn(
-        'group flex items-center gap-2 rounded-md px-1.5 py-1',
+        'group/queued flex items-center gap-2 rounded-md px-1.5 py-1',
         'hover:bg-muted-foreground/[0.06]',
         'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
         // Lifted row: opaque over its siblings, one hairline of elevation.
@@ -513,75 +487,41 @@ function QueuedRow({
           and commit), so a grab handle there advertises something that cannot
           happen — and the pencil is the second half of the "this row is live"
           signal the caret starts. */}
-      {editing ? (
-        <PencilSimpleIcon
-          aria-hidden
-          // Full strength, unlike the muted grab handle it replaces: the row
-          // is the one being typed into, and that is what the glyph says.
-          className="text-foreground size-3.5 shrink-0"
-        />
-      ) : draggable ? (
-        <button
-          type="button"
-          aria-label={t.raw('text66f1eea2412e')}
-          data-drag-handle
-          // `touch-none` so a touch drag reorders instead of scrolling the
-          // strip; preventDefault so starting a drag does not also focus.
-          onPointerDown={(event) => {
-            event.preventDefault();
-            dragControls.start(event);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-            event.preventDefault();
-            onMoveStep(message.id, event.key === 'ArrowUp' ? 'up' : 'down');
-          }}
-          className={cn(
-            // The negative margin collapses the 24px hit box to the queue
-            // glyph's own footprint, so the text column does not shift when the
-            // list crosses the one-row threshold and the glyph swaps in.
-            // `-m-1.5` (5.52px on this scale — `--spacing` is 0.23rem) rather
-            // than the hand-tuned `-m-[5px]` it replaced: half a pixel is
-            // invisible here, and an arbitrary value is not.
-            'relative -m-1.5 flex size-6 shrink-0 touch-none items-center justify-center rounded-sm',
-            'text-muted-foreground/60 hover:text-foreground transition-[color]',
-            dragging ? 'cursor-grabbing' : 'cursor-grab',
-            'before:absolute before:top-1/2 before:left-1/2 before:h-7 before:w-7',
-            'before:-translate-x-1/2 before:-translate-y-1/2 before:content-[""]',
-          )}
-        >
-          <DotsSixVerticalIcon className="size-3.5" />
-        </button>
-      ) : (
-        <QueueIcon
-          aria-hidden
-          className={cn(
-            'text-muted-foreground/60 size-3.5 shrink-0',
-            // The only motion on the row, and it is the only thing that says
-            // this one is already gone to the agent rather than waiting here.
-            inFlight && !reduceMotion && 'animate-pulse',
-          )}
-        />
-      )}
-
-      {/* THE POSITION COLUMN. Fixed width and tabular figures so the text
-          column starts at the same x on every row — a ragged left edge in a
-          list this dense reads as a rendering fault, and `10` is two digits
-          wide (`QUEUE_MAX_DEPTH`).
-          A parked row swaps the number for a pin: the number is a place in the
-          drain order, and a parked row is not in it. The number is still said
-          for screen readers, which cannot see the list to count it. */}
-      <span className="text-muted-foreground flex w-5 shrink-0 items-center justify-end text-xs tabular-nums">
-        {message.parked ? (
-          <PushPinIcon aria-hidden className="size-3.5" />
-        ) : (
-          <span aria-hidden>{position}</span>
-        )}
-        <span className="sr-only">
-          {message.parked
-            ? t('texte24a3c4cb336', { position })
-            : t('text0d2e397de6ff', { position })}
-        </span>
+      {/* ONE LEADING SLOT, empty until you hover.
+          It used to hold a queue glyph OR a drag handle, and then a position
+          number OR a pin — two glyph columns in front of a line of text that is
+          usually shorter than they are. The order of the list IS the position,
+          and every row in this list is parked, so a pin on all of them says
+          nothing. Width is reserved so the text does not shift when the handle
+          fades in. The position is still spoken: a screen reader cannot see the
+          list to count it. */}
+      <span className="flex w-4 shrink-0 items-center justify-center">
+        {draggable && !editing ? (
+          <button
+            type="button"
+            aria-label={t.raw('text66f1eea2412e')}
+            data-drag-handle
+            // `touch-none` so a touch drag reorders instead of scrolling the
+            // strip; preventDefault so starting a drag does not also focus.
+            onPointerDown={(event) => {
+              event.preventDefault();
+              dragControls.start(event);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+              event.preventDefault();
+              onMoveStep(message.id, event.key === 'ArrowUp' ? 'up' : 'down');
+            }}
+            className={cn(
+              'text-muted-foreground/60 hover:text-foreground flex size-4 touch-none items-center justify-center rounded-sm',
+              'opacity-0 transition-[color,opacity] group-hover/queued:opacity-100 focus-visible:opacity-100',
+              dragging ? 'cursor-grabbing opacity-100' : 'cursor-grab',
+            )}
+          >
+            <DotsSixVerticalIcon aria-hidden className="size-3.5" />
+          </button>
+        ) : null}
+        <span className="sr-only">{t('text0d2e397de6ff', { position })}</span>
       </span>
 
       {editing ? (
@@ -638,86 +578,45 @@ function QueuedRow({
           pencil and a bin, and "send this one now, ahead of the others" is not
           something a paper plane says on its own.
           Nothing here for an in-flight row — the server refuses all three. */}
-      {hasActions && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={t.raw('text85ac386e5d1b')}
-              // Visible at muted strength like the controls it replaces: a
-              // control you can see is a control you can find. `data-[state=open]`
-              // keeps it lit while its own menu is open, so the row does not
-              // look like it lost focus to the popover.
-              className={cn(
-                'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
-                'data-[state=open]:text-foreground data-[state=open]:bg-muted-foreground/10',
-                'relative inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md',
-                'transition-colors active:scale-[0.96]',
-                // Hit area to 28px without changing the layout — the rows sit
-                // on a ~28px pitch, so a taller target would overlap its
-                // neighbour and make the wrong row's menu the thing you open.
-                'before:absolute before:left-1/2 before:top-1/2 before:size-7 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[""]',
-              )}
+      {/* THREE ACTIONS, INLINE, ON HOVER — no ⋯ menu.
+          The menu hid the two things people actually do (run this one next,
+          take it back out) behind a click, on a row whose whole job is to be
+          glanceable. Menus earn their place when a row has many actions or
+          rare ones; this row has three and two of them are one-word verbs.
+          Duplicate and Move-to-top went with the menu: dragging IS move-to-top,
+          and Duplicate was disabled on any row it could not copy faithfully,
+          which is most of the long ones.
+          Hover-revealed, but always in the DOM and reachable by Tab, so the
+          keyboard path does not depend on a pointer. */}
+      {hasActions && !editing && (
+        <span
+          className={cn(
+            'flex shrink-0 items-center gap-0.5',
+            'opacity-0 transition-opacity group-hover/queued:opacity-100 focus-within:opacity-100',
+          )}
+        >
+          {onSendNow && (
+            <RowAction label={t.raw(sendNowLabelKey)} onClick={() => onSendNow(message.id)}>
+              <PaperPlaneRightIcon aria-hidden className="size-3.5" />
+            </RowAction>
+          )}
+          {onEdit && (
+            <RowAction label={t.raw('text464c4ffd019e')} onClick={() => setEditing(true)}>
+              <PencilSimpleIcon aria-hidden className="size-3.5" />
+            </RowAction>
+          )}
+          {onRemove && (
+            <RowAction
+              label={t.raw('textc0b9d9e9ac1d')}
+              onClick={() => {
+                onFocusSibling(message.id);
+                onRemove(message.id);
+              }}
             >
-              <DotsThreeIcon className="size-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            {onEdit && (
-              <DropdownMenuItem onSelect={() => setEditing(true)}>
-                <PencilSimpleIcon className="size-3.5 shrink-0" />
-                {t.raw('text464c4ffd019e')}
-              </DropdownMenuItem>
-            )}
-            {onSendNow && (
-              <DropdownMenuItem onSelect={() => onSendNow(message.id)}>
-                <PaperPlaneRightIcon className="size-3.5 shrink-0" />
-                {t.raw(sendNowLabelKey)}
-              </DropdownMenuItem>
-            )}
-            {onDuplicate && (
-              // DISABLED, NEVER HIDDEN, and never silently lossy.
-              //
-              // Three things refuse a copy — the queue is full, the row's text
-              // is the server's 2000-char preview, the row has files the list
-              // only knows by name — and all three produce a copy that is not
-              // the message the user is looking at. `duplicateBlockedHint`
-              // ranks them and supplies the sentence; the item wears it as a
-              // tooltip, the same way a disabled row in the access menu
-              // carries its reason, because Radix sets `pointer-events: none`
-              // on a disabled item and the wrapper is what the hover lands on.
-              <DuplicateItem
-                hintKey={duplicateHintKey}
-                onSelect={() => onDuplicate(message.id)}
-              />
-            )}
-            {/* HIDDEN, not disabled, on the row that is already first — there
-                is no state to explain there, and `canMoveToTop` is the same
-                authority the reorder itself uses, so the item can never be
-                offered for a move that would fire a no-op request. */}
-            {onMoveToTop && promotable && (
-              <DropdownMenuItem onSelect={() => onMoveToTop(message.id)}>
-                <ArrowLineUpIcon className="size-3.5 shrink-0" />
-                {t.raw('text349d5d60126b')}
-              </DropdownMenuItem>
-            )}
-            {onRemove && (onEdit || onSendNow || onDuplicate || onMoveToTop) && (
-              <DropdownMenuSeparator />
-            )}
-            {onRemove && (
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => {
-                  onFocusSibling(message.id);
-                  onRemove(message.id);
-                }}
-              >
-                <TrashIcon className="size-3.5 shrink-0" />
-                {t.raw('textc0b9d9e9ac1d')}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <TrashIcon aria-hidden className="size-3.5" />
+            </RowAction>
+          )}
+        </span>
       )}
     </Reorder.Item>
   );
@@ -736,6 +635,7 @@ export function QueuedMessages({
   onRetry,
   paused = false,
   isRunning = false,
+  defaultOpen = false,
   onSendNow,
   runState = 'idle',
   onResume,
@@ -755,7 +655,7 @@ export function QueuedMessages({
    * already deep when the page loaded is the case `queueStartsCollapsed`
    * exists for, and that is the one this reads.
    */
-  const [collapsed, setCollapsed] = useState(() => queueStartsCollapsed(messages.length));
+  const [collapsed, setCollapsed] = useState(() => !defaultOpen && queueStartsCollapsed(messages.length));
   /** What the last move did, for the live region. Empty until a move happens. */
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
   /**
@@ -959,6 +859,7 @@ export function QueuedMessages({
       {visibleMessages.length > 0 && (
         <QueueHeader
           depth={visibleMessages.length}
+          firstText={visibleMessages[0]?.text ?? ''}
           runState={runState}
           paused={paused}
           collapsed={collapsed}
@@ -971,20 +872,21 @@ export function QueuedMessages({
 
       {/* ONE list. Failures are rows in the queue that need attention, not a
           second queue below it. The cap keeps a long queue from pushing the
-          textarea off screen — it scrolls inside itself, and FadedScrollArea
-          fades whichever edge has more rows beyond it, so a clipped row reads
-          as "scroll", not as a rendering fault. The strip is `bg-sidebar`, so
-          the default `from-sidebar` fade matches by construction.
+          textarea off screen — it scrolls inside itself.
 
           Rendered even while collapsed, empty: `aria-controls` on the header
           has to point at an element that exists, and a failed row is shown
           regardless — a failure hidden behind a collapse is a message the user
           believes was sent. */}
-      <FadedScrollArea
-        rootClassName="w-full"
+      {/* A REAL SCROLLBAR, not a fade.
+          The list was a faded scroll area with `scrollbar-hide`, so a queue
+          longer than the box gave no handle to grab and no sign of how much
+          was below. `scrollbar-minimal` is the house thin scrollbar; the box
+          is capped so a long queue cannot push the composer off screen. */}
+      <div
         className={cn(
-          'max-h-40',
-          orderedMessages.length > 4 && !collapsed ? 'from-sidebar' : 'from-transparent',
+          'scrollbar-minimal w-full overflow-y-auto',
+          collapsed ? 'max-h-0' : 'max-h-52',
         )}
       >
         <Reorder.Group
@@ -1077,7 +979,7 @@ export function QueuedMessages({
             </li>
           ))}
         </Reorder.Group>
-      </FadedScrollArea>
+      </div>
     </>
   );
 }
