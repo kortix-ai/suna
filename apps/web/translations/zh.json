@@ -271,7 +271,7 @@
       "totalCredits": "总可用积分",
       "allCredits": "所有积分",
       "monthlyCredits": "月度积分",
-      "renewalIn": "在 {days} {days, plural, one {天} other {天}} 后续费",
+      "renewalIn": "在 {days} {days, plural, other {天}} 后续费",
       "noRenewal": "未安排续费",
       "extraCredits": "额外积分",
       "nonExpiring": "不过期",
@@ -1023,7 +1023,7 @@
     "credits": {
       "loadFailed": "无法加载此帐户。",
       "availableBalance": "可用余额",
-      "creditCount": "{count, plural, one {{formatted} 个积分} other {{formatted} 个积分}}",
+      "creditCount": "{count, plural, other {{formatted} 个积分}}",
       "owed": "欠款",
       "buckets": {
         "monthly": {
@@ -1042,7 +1042,7 @@
       "includedInPlan": "套餐包含",
       "usedThisPeriod": "本周期已用",
       "planCreditsSpent": "套餐积分已用完。接下来将使用已购买的积分。",
-      "grantRemaining": "{count, plural, one {本周期额度还剩 {formatted} 个积分。} other {本周期额度还剩 {formatted} 个积分。}}",
+      "grantRemaining": "{count, plural, other {本周期额度还剩 {formatted} 个积分。}}",
       "dailyAmountEvery": "每 {hours} 小时 +{credits} 个积分",
       "dailyAmount": "+{credits} 个积分",
       "countdown": {
@@ -1541,7 +1541,7 @@
     "providerRecovery": {
       "savedPrompt": "已保存的提示词",
       "noText": "未附加文本提示词。",
-      "attachments": "{count, plural, one {个附件} other {个附件}}",
+      "attachments": "{count, plural, other {个附件}}",
       "reattach": "重新加载后请重新附加这些文件。",
       "unavailable": "没有可用的已保存提示词。",
       "retrying": "正在重试…",
@@ -1551,10 +1551,10 @@
     },
     "connectorRequired": {
       "title": "连接{connectors}以继续",
-      "description": "{count, plural, one {此会话需要{connectors}，但目前尚未连接任何账户。尚未执行任何操作，也未产生任何费用——连接账户后，你的消息会重新发送。} other {此会话需要{connectors}，但目前尚未连接任何账户。尚未执行任何操作，也未产生任何费用——连接账户后，你的消息会重新发送。}}",
+      "description": "{count, plural, other {此会话需要{connectors}，但目前尚未连接任何账户。尚未执行任何操作，也未产生任何费用——连接账户后，你的消息会重新发送。}}",
       "connectOne": "连接{connector}",
       "connectMany": "连接账户",
-      "privateDescription": "{count, plural, one {{connectors}一次授权一个账户，因此必须使用此会话运行所用的账户进行连接。} other {{connectors}一次授权一个账户，因此必须使用此会话运行所用的账户进行连接。}}"
+      "privateDescription": "{count, plural, other {{connectors}一次授权一个账户，因此必须使用此会话运行所用的账户进行连接。}}"
     },
     "composerMenus": {
       "noMatches": "没有匹配项",
@@ -1691,7 +1691,7 @@
   },
   "billing": {
     "plan": {
-      "teamSeats": "{count, plural, one {团队 · # 个席位} other {团队 · # 个席位}}",
+      "teamSeats": "{count, plural, other {团队 · # 个席位}}",
       "cancels": "将于 {date} 取消",
       "cancelsAtPeriodEnd": "将在周期结束时取消",
       "renews": "将于 {date} 续订",
@@ -9369,7 +9369,7 @@
       "text00d60e31a4e6": "运行",
       "text00d8d3f11739": "mail",
       "text00dd9d632755": "搜索分支",
-      "text00e99be56ba9": "{count, plural, one {已删除 # 行} other {已删除 # 行}}",
+      "text00e99be56ba9": "{count, plural, other {已删除 # 行}}",
       "text00f5aae9f9d3": "该代理可以调用​​外部服务。将其标记为必需，并且在解决之前会话不会启动。",
       "text00f8ca92de43": "代理需要决定时，会发布带按钮的卡片，而不是让一次执行永久阻塞。你的点击就是裁决，会话会从该决定继续，并留在同一主题中。",
       "text00ff22485ed6": "连接它",
@@ -10773,7 +10773,7 @@
       "text2a6b24ad2872": "积分",
       "text2a728809f134": "可以复用为 SAML SSO 创建的同一个 Custom Application——SCIM 位于其“Identity Management”选项卡中。",
       "text2a78025de6aa": "选择",
-      "text2a8f24e937b7": "{count, plural, one {已自定义 # 个工具} other {已自定义 # 个工具}}",
+      "text2a8f24e937b7": "{count, plural, other {已自定义 # 个工具}}",
       "text2a91147eb974": "邀请过期时间",
       "text2a94ea8db704": "从哪里获取 {value0} 密钥",
       "text2a9575e3e816": "询问",
@@ -12242,7 +12242,7 @@
       "text53f71e08be88": "Stripe 订阅",
       "text53f76274b923": "此频道连接缺少平台设置。",
       "text5405931307e3": "配置完成，正在启动服务……",
-      "text540afa4c53ff": "{label}：{count, plural, one {# 位成员} other {# 位成员}}",
+      "text540afa4c53ff": "{label}：{count, plural, other {# 位成员}}",
       "text54266bfe04ff": "更新维护配置失败",
       "text5427e0ef4eba": "权限：",
       "text542d24012988": "person@example.com",
@@ -13945,7 +13945,7 @@
       "text854a397472d0": "幻灯片 {value0} 编辑成功",
       "text854e6dd9d777": "类型在注册时固定。要更改类型，请注册新应用。",
       "text8552ade1b621": "会话的隔间：{inside} 是什么，以及 {outside} 是什么。",
-      "text8559d8fd97d1": "{count, plural, one {# 个席位已启用} other {# 个席位已启用}} · 已存入 ${credit} 使用额度。",
+      "text8559d8fd97d1": "{count, plural, other {# 个席位已启用}} · 已存入 ${credit} 使用额度。",
       "text8564edf2cd1f": "由服务器端解析的连接器凭据",
       "text857be0b1fee8": "既有成果",
       "text8585b95f4600": "Kortix GitHub 仓库",
@@ -14704,7 +14704,7 @@
       "text9a6a77d58095": "谁来执行工作——每个代理的指令、模型和访问权限。",
       "text9a6b697e6d4c": "可直接替换的 OpenAI 和 Anthropic 兼容端点。使用上方部分中的网关密钥。",
       "text9a70da1bb740": "不属于任何群组",
-      "text9a719be343e8": "{count, plural, one {# 个结果} other {# 个结果}}",
+      "text9a719be343e8": "{count, plural, other {# 个结果}}",
       "text9a72221a2747": "问题",
       "text9a788c263969": "新的通知服务应使用哪个数据库？",
       "text9a7b1baef5f5": "SAML2 网络应用 → 设置",
