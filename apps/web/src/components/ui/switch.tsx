@@ -4,7 +4,15 @@ import { spring } from '@/lib/springs';
 import { cn } from '@/lib/utils';
 import * as SwitchPrimitive from '@radix-ui/react-switch';
 import { animate, m, useMotionValue } from 'motion/react';
-import { forwardRef, useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type CSSProperties,
+} from 'react';
 
 type SwitchProps = Omit<ComponentProps<typeof SwitchPrimitive.Root>, 'asChild'> & {
   label?: string;
@@ -19,6 +27,13 @@ const PILL_EXTEND = 2;
 const PRESS_EXTEND = 4;
 const PRESS_SHRINK = 4;
 const DRAG_DEAD_ZONE = 2;
+
+// Off-state ring + thumb gray: the lightest mix that still clears WCAG 1.4.11
+// (3:1) on every surface. Light #858585: ≥3.11:1 (worst: `bg-muted`), dark
+// #767676: ≥3.75:1. Below 78% the light `bg-card` and `bg-muted` pairs fail.
+// Hover steps to plain `--muted-foreground` (light #666, dark #999): ≥4.86:1.
+const SWITCH_EDGE = 'color-mix(in oklab, var(--muted-foreground) 78%, var(--background))';
+const SWITCH_EDGE_HOVER = 'var(--muted-foreground)';
 
 const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
   ({ label, checked, onCheckedChange, disabled = false, className, id, ...props }, ref) => {
@@ -138,19 +153,20 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
           'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-1 focus-visible:ring-offset-2',
           // WCAG 1.4.11 needs 3:1 for the track edge and the thumb. The off
           // track (`--accent`) is ~1.1:1 against the page in both themes, so
-          // the edge comes from an inset ring and the thumb takes the same ink.
-          // Off: ≥4.86:1 on every surface. Hover raises it to ≥17:1. On: the
-          // white thumb is 3.23:1 on `--kortix-blue`. `inset-ring` composes
-          // with the focus `ring`; an inline box-shadow would erase it.
-          !isChecked && 'inset-ring',
-          !isChecked && (hovered ? 'inset-ring-foreground' : 'inset-ring-muted-foreground'),
+          // the edge comes from an inset ring and the thumb shares its gray.
+          // `inset-ring` composes with the focus `ring`; an inline box-shadow
+          // would erase it.
+          !isChecked && 'inset-ring inset-ring-(--switch-edge)',
           !label && className,
         )}
-        style={{
-          width: TRACK_WIDTH,
-          height: TRACK_HEIGHT,
-          backgroundColor: isChecked ? 'var(--kortix-blue)' : 'var(--accent)',
-        }}
+        style={
+          {
+            width: TRACK_WIDTH,
+            height: TRACK_HEIGHT,
+            backgroundColor: isChecked ? 'var(--kortix-blue)' : 'var(--accent)',
+            '--switch-edge': isChecked ? undefined : hovered ? SWITCH_EDGE_HOVER : SWITCH_EDGE,
+          } as CSSProperties
+        }
         onPointerEnter={(e) => {
           if (e.pointerType === 'mouse') setHovered(true);
         }}
@@ -169,7 +185,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
             className={cn(
               'duration-fast absolute top-0 left-0 block rounded-full shadow-sm transition-colors',
               // A white thumb on the light off track is 1.1:1 — invisible.
-              isChecked ? 'bg-white' : hovered ? 'bg-foreground' : 'bg-muted-foreground',
+              isChecked ? 'bg-white' : 'bg-(--switch-edge)',
             )}
             initial={false}
             style={{ x: motionX }}
