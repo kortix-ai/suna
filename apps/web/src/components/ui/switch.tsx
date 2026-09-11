@@ -4,22 +4,14 @@ import { spring } from '@/lib/springs';
 import { cn } from '@/lib/utils';
 import * as SwitchPrimitive from '@radix-ui/react-switch';
 import { animate, m, useMotionValue } from 'motion/react';
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ComponentProps,
-  type CSSProperties,
-} from 'react';
+import { forwardRef, useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 
 type SwitchProps = Omit<ComponentProps<typeof SwitchPrimitive.Root>, 'asChild'> & {
   label?: string;
 };
 
+// Track is `w-[34px] h-[20px]` in the className — keep it in sync with these.
 const TRACK_WIDTH = 34;
-const TRACK_HEIGHT = 20;
 const THUMB_SIZE = 16;
 const THUMB_OFFSET = 2;
 const THUMB_TRAVEL = TRACK_WIDTH - THUMB_SIZE - THUMB_OFFSET * 2;
@@ -27,13 +19,6 @@ const PILL_EXTEND = 2;
 const PRESS_EXTEND = 4;
 const PRESS_SHRINK = 4;
 const DRAG_DEAD_ZONE = 2;
-
-// Off-state ring + thumb gray: the lightest mix that still clears WCAG 1.4.11
-// (3:1) on every surface. Light #858585: ≥3.11:1 (worst: `bg-muted`), dark
-// #767676: ≥3.75:1. Below 78% the light `bg-card` and `bg-muted` pairs fail.
-// Hover steps to plain `--muted-foreground` (light #666, dark #999): ≥4.86:1.
-const SWITCH_EDGE = 'color-mix(in oklab, var(--muted-foreground) 78%, var(--background))';
-const SWITCH_EDGE_HOVER = 'var(--muted-foreground)';
 
 const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
   ({ label, checked, onCheckedChange, disabled = false, className, id, ...props }, ref) => {
@@ -148,25 +133,17 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         disabled={disabled}
         tabIndex={0}
         className={cn(
-          'relative shrink-0 cursor-pointer touch-none rounded-full outline-none',
+          'group/switch relative h-[20px] w-[34px] shrink-0 cursor-pointer touch-none rounded-full outline-none',
           'transition-colors duration-80',
           'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-1 focus-visible:ring-offset-2',
-          // WCAG 1.4.11 needs 3:1 for the track edge and the thumb. The off
-          // track (`--accent`) is ~1.1:1 against the page in both themes, so
-          // the edge comes from an inset ring and the thumb shares its gray.
-          // `inset-ring` composes with the focus `ring`; an inline box-shadow
-          // would erase it.
-          !isChecked && 'inset-ring inset-ring-(--switch-edge)',
+          // Colours come from Radix's `data-state`, never from JS state.
+          // Off is translucent ink, so one class reads in both themes and on
+          // any panel. Thumb vs track (WCAG 1.4.11, 3:1), worst of page /
+          // card / muted: rest 3.13:1, hover 4.13:1. On: white thumb 3.23:1.
+          'data-[state=checked]:bg-kortix-blue',
+          'data-[state=unchecked]:bg-foreground/10 data-[state=unchecked]:hover:bg-foreground/15',
           !label && className,
         )}
-        style={
-          {
-            width: TRACK_WIDTH,
-            height: TRACK_HEIGHT,
-            backgroundColor: isChecked ? 'var(--kortix-blue)' : 'var(--accent)',
-            '--switch-edge': isChecked ? undefined : hovered ? SWITCH_EDGE_HOVER : SWITCH_EDGE,
-          } as CSSProperties
-        }
         onPointerEnter={(e) => {
           if (e.pointerType === 'mouse') setHovered(true);
         }}
@@ -183,11 +160,13 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         <SwitchPrimitive.Thumb asChild>
           <m.span
             className={cn(
-              'duration-fast absolute top-0 left-0 block rounded-full shadow-sm transition-colors',
-              // A white thumb on the light off track is 1.1:1 — invisible.
-              isChecked ? 'bg-white' : 'bg-(--switch-edge)',
+              'duration-fast absolute top-0 left-0 rounded-full shadow-sm transition-colors',
+              'data-[state=checked]:bg-white',
+              // A white thumb on the light off track would be ~1.25:1.
+              'data-[state=unchecked]:bg-foreground/45 group-hover/switch:data-[state=unchecked]:bg-foreground/55',
             )}
             initial={false}
+            // Motion value binding for drag, not a colour or layout style.
             style={{ x: motionX }}
             animate={{
               y: thumbY,
