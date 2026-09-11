@@ -847,6 +847,72 @@ function ProjectSessionRow({
           {childCount}
         </Badge>
       )}
+
+      {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
+          and whatever markers get added here later. These are ambient state,
+          readable at rest; the `⋯` is the action. They occupy the SAME slot,
+          so hovering the row (or leaving its menu open) hands the slot to the
+          trigger and hides the strip.
+
+          Inside the link, not after it. The link is the hover card's trigger,
+          and HoverCard exports no `Anchor`, so the card positions against the
+          link's right edge. As a sibling, the strip shortened the link by its
+          own width plus the row's `gap-2`: a Slack or shared session's card
+          opened 24-56px inside the sidebar while a plain chat session's card
+          cleared it. In here, every row's link ends at the row's `px-2` edge.
+
+          Hidden with `opacity-0`, never `hidden`/`w-0`: the strip stays in
+          flow at its natural width, so the title's truncation point is fixed
+          and the text cannot reflow as the pointer crosses the row. It goes
+          `pointer-events-none` at the same time — an invisible icon must not
+          swallow a click meant for the trigger above it.
+
+          The trade: those icons' tooltips are unreachable, because reaching
+          an icon means hovering the row, which hides it. Accepted — they are
+          markers to be glanced at, not controls.
+
+          No transition, matching the trigger: the `⋯` appears instantly, and
+          a fade would leave both drawn on top of each other mid-cross. */}
+      {hasIndicators && (
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-0 transition-none',
+            'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
+            'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
+            'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
+          )}
+          data-session-indicators="true"
+        >
+          {showSpawnedBy && spawnedBy && (
+            <Hint
+              side="top"
+              label={tI18nComplete('text4d67694a7607', { value0: spawnedBy.slice(0, 8) })}
+            >
+              <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
+                <SpawnedBy className="size-3" />
+              </span>
+            </Hint>
+          )}
+          {SourceIcon && (
+            <span
+              className="flex size-4 shrink-0 items-center justify-center"
+              data-session-source="true"
+            >
+              <Hint
+                side="top"
+                label={
+                  source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
+                }
+              >
+                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                  <SourceIcon className="size-3" />
+                </span>
+              </Hint>
+            </span>
+          )}
+          <SessionSharedIcon session={session} />
+        </div>
+      )}
     </HoverPrefetchLink>
   );
 
@@ -899,67 +965,8 @@ function ProjectSessionRow({
           changeRequests={changeRequests}
         />
 
-        {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
-            and whatever markers get added here later. These are ambient state,
-            readable at rest; the `⋯` is the action. They occupy the SAME slot,
-            so hovering the row (or leaving its menu open) hands the slot to the
-            trigger and hides the strip.
-
-            Hidden with `opacity-0`, never `hidden`/`w-0`: the strip stays in
-            flow at its natural width, so the title's truncation point is fixed
-            and the text cannot reflow as the pointer crosses the row. It goes
-            `pointer-events-none` at the same time — an invisible icon must not
-            swallow a click meant for the trigger underneath it.
-
-            The trade: those icons' tooltips are unreachable, because reaching
-            an icon means hovering the row, which hides it. Accepted — they are
-            markers to be glanced at, not controls.
-
-            No transition, matching the trigger: the `⋯` appears instantly, and
-            a fade would leave both drawn on top of each other mid-cross. */}
-        {hasIndicators && (
-          <div
-            className={cn(
-              'flex shrink-0 items-center gap-0 transition-none',
-              'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
-              'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
-              'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
-            )}
-            data-session-indicators="true"
-          >
-            {showSpawnedBy && spawnedBy && (
-              <Hint
-                side="top"
-                label={tI18nComplete('text4d67694a7607', { value0: spawnedBy.slice(0, 8) })}
-              >
-                <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
-                  <SpawnedBy className="size-3" />
-                </span>
-              </Hint>
-            )}
-            {SourceIcon && (
-              <span
-                className="flex size-4 shrink-0 items-center justify-center"
-                data-session-source="true"
-              >
-                <Hint
-                  side="top"
-                  label={
-                    source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
-                  }
-                >
-                  <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
-                    <SourceIcon className="size-3" />
-                  </span>
-                </Hint>
-              </span>
-            )}
-            <SessionSharedIcon session={session} />
-          </div>
-        )}
-
-        {/* Out of flow on purpose. This trigger is a sibling of the link and of
-            the indicator strip, absolutely positioned against the row itself —
+        {/* Out of flow on purpose. This trigger is a sibling of the link (which
+            holds the indicator strip), absolutely positioned against the row —
             it reserves NO width, so the title measures against the full row and
             truncates only at the real edge. It used to sit inside a `relative`
             wrapper at the end of the indicator strip; that wrapper was still a
