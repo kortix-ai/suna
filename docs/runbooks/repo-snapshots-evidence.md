@@ -258,6 +258,14 @@ The single API failure is `src/secrets/relay-transport.test.ts`, a bun
 response-header behaviour assertion. `git diff origin/main -- apps/api/src/secrets`
 is empty, so this branch does not touch it.
 
+### CI flakes seen, and why they are not this branch
+
+| Failure | Why it is not this change |
+| --- | --- |
+| `Vercel — Authorization required to deploy` | A Vercel account authorization, separate from the repository preview. Not a code failure. |
+| `apps/cli sessions new CLI flow` — two 30 s timeouts on one head | Those tests drive the CLI against a STUB HTTP handler that returns a canned `POST /sessions` response; the API code never executes. `git diff origin/main -- apps/cli` is empty, and both pass locally (6 pass / 0 fail). A local-git + stub-server timeout under CI load. |
+| `audit HTTP route registry` | This one WAS this branch, and is fixed: `apps/web` keeps a generated registry plus a label per route, and three new routes had to be registered. |
+
 ## 5b. LFS and submodules
 
 Writing the fixtures the brief asks for found that an LFS repository could not be
