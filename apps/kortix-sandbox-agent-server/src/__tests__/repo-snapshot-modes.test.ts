@@ -256,6 +256,42 @@ describe('materializeRepo under each snapshot mode', () => {
     expect(readRepoTransportAttribution().gitNetworkOps).toBe(0)
   }, 60_000)
 
+  test('resume keeps a dirty workspace and never overlays the archive', async () => {
+    const fixture = await makeArchive()
+    const url = await serve(readFileSync(fixture.archive))
+    const target = join(tempRoot('kortix-mode-target-'), 'workspace')
+
+    // An EXISTING session workspace: the agent's checkout plus uncommitted work.
+    mkdirSync(target, { recursive: true })
+    git(target, 'init', '-b', 'session-a')
+    writeFileSync(join(target, 'README.md'), 'agent edited this\n')
+    git(target, 'add', '-A')
+    git(target, 'commit', '-m', 'agent commit')
+    const agentSha = git(target, 'rev-parse', 'HEAD')
+    writeFileSync(join(target, 'UNCOMMITTED.txt'), 'work in progress\n')
+    git(target, 'remote', 'add', 'origin', 'https://api.kortix.invalid/v1/git/project.git')
+
+    const cfg = configFor({
+      mode: 'prefer',
+      url,
+      sha256: fixture.sha256,
+      sha: fixture.sha,
+      target,
+      branch: 'session-a',
+    })
+    // A resume, not a fresh session.
+    await materializeRepo({ ...cfg, sessionFresh: false })
+
+    // The agent's commit and its UNCOMMITTED file both survive. Overlaying the
+    // archive here would silently destroy work the session had not pushed.
+    expect(git(target, 'rev-parse', 'HEAD')).toBe(agentSha)
+    expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('agent edited this\n')
+    expect(readFileSync(join(target, 'UNCOMMITTED.txt'), 'utf8')).toBe('work in progress\n')
+    expect(existsSync(join(target, REPO_SNAPSHOT_EMBEDDED_MANIFEST))).toBe(false)
+    // The snapshot branch was never entered, so nothing is attributed to it.
+    expect(readRepoTransportAttribution().snapshot).toBeNull()
+  }, 60_000)
+
   test('off: the descriptor is ignored entirely', async () => {
     const fixture = await makeArchive()
     const url = await serve(readFileSync(fixture.archive))
