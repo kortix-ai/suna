@@ -271,6 +271,10 @@ async function streamIntoStage(
     let entryCount = 0
     let firstEntryAtMs = -1
     let rejection: RepoSnapshotError | null = null
+    // A repeated path means the LAST copy silently wins on disk, so an archive
+    // can ship a benign file and then overwrite it. A well-formed snapshot
+    // never contains one.
+    const seenPaths = new Set<string>()
     const extractor = tar.x({
       cwd: stage,
       // Reject rather than sanitize: node-tar strips leading `/` and `..` with a
@@ -296,6 +300,15 @@ async function streamIntoStage(
       onReadEntry: (entry) => {
         if (firstEntryAtMs < 0) firstEntryAtMs = Date.now() - started
         entryCount += 1
+        const normalized = String(entry.path).replace(/\/+$/, '')
+        if (seenPaths.has(normalized)) {
+          rejection ??= new RepoSnapshotError(
+            `archive contains a duplicate entry: ${normalized}`,
+            'duplicate_entry',
+            false,
+          )
+        }
+        seenPaths.add(normalized)
         if (entryCount > entryLimit) {
           rejection ??= new RepoSnapshotError(`snapshot exceeds ${entryLimit} entries`, 'too_many_entries', false)
         }

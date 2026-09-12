@@ -287,7 +287,27 @@ export async function buildRepoSnapshot(
     // Written last so it is inside the archive but outside the Git index — the
     // extracted tree stays clean while remaining self-describing.
     const embeddedPath = join(checkout, REPO_SNAPSHOT_EMBEDDED_MANIFEST);
-    const archiveEntries = [...entries.map((e) => e.path), REPO_SNAPSHOT_EMBEDDED_MANIFEST];
+    // Files and symlinks only, plus EMPTY directories.
+    //
+    // Handing node-tar a non-empty directory makes it recurse into that
+    // directory AND emit the children that are also listed explicitly, so the
+    // archive gains duplicate entries for every nested path (measured: a
+    // 55-path tree produced 153 entries, `src/deep/c.txt` three times).
+    // Duplicate entries are exactly what the consumer's guards treat as
+    // hostile, and the parent directories tar creates implicitly are all a Git
+    // checkout needs. An empty directory has no children to duplicate and is
+    // kept so `.git/refs/tags` and friends survive the round trip.
+    const nonEmptyDirectories = new Set(
+      entries
+        .filter((entry) => entry.path.includes('/'))
+        .map((entry) => entry.path.slice(0, entry.path.lastIndexOf('/'))),
+    );
+    const archiveEntries = [
+      ...entries
+        .filter((entry) => !entry.directory || !nonEmptyDirectories.has(entry.path))
+        .map((entry) => entry.path),
+      REPO_SNAPSHOT_EMBEDDED_MANIFEST,
+    ];
 
     // Counted on the UNCOMPRESSED side so `expanded_bytes` is exactly what a
     // consumer's decompressor will emit — the number an expansion guard can
@@ -338,9 +358,22 @@ export async function buildRepoSnapshot(
       { mode: 0o644 },
     );
 
+    // Counted from the archive itself, not from the path list handed to tar:
+    // the writer decides how many entries a path set becomes, and a consumer
+    // enforces this number exactly.
+    let writtenEntries = 0;
     await pipeline(
       tar.create(
-        { cwd: checkout, portable: true, noMtime: true, preservePaths: false, follow: false },
+        {
+          cwd: checkout,
+          portable: true,
+          noMtime: true,
+          preservePaths: false,
+          follow: false,
+          onWriteEntry: () => {
+            writtenEntries += 1;
+          },
+        },
         archiveEntries,
       ),
       expansion,
@@ -366,7 +399,7 @@ export async function buildRepoSnapshot(
         sha256: archiveSha256,
         compressed_bytes: compressedBytes,
         expanded_bytes: expandedBytes,
-        entry_count: archiveEntries.length,
+        entry_count: writtenEntries,
       },
       checkout: { git_metadata: 'sanitized-shallow', layout_version: REPO_SNAPSHOT_LAYOUT_VERSION },
       producer_version: REPO_SNAPSHOT_PRODUCER_VERSION,

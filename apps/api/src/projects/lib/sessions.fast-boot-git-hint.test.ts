@@ -25,12 +25,36 @@ describe('session fast boot Git hint cache', () => {
 
   test('keeps the cache lookup inside the existing two-second boot deadline', async () => {
     const source = await sessionsSource();
-    const gate = source.indexOf('config.KORTIX_FAST_GIT_BOOT_ENABLED');
-    const provision = source.indexOf('provisionSessionSandbox({', gate);
-    const fastBootBlock = source.slice(gate, provision);
+    // Anchor on the hint declaration, not on the gate: the gate now sits INSIDE
+    // an early-return whose own text the slice would otherwise cut in half.
+    const hint = source.indexOf('const fastBootGitHintPromise');
+    const provision = source.indexOf('provisionSessionSandbox({', hint);
+    const fastBootBlock = source.slice(hint, provision);
     expect(fastBootBlock).toContain('setTimeout(() => resolve(undefined), 2_000)');
     expect(fastBootBlock).toContain('clearTimeout(fastBootHintTimeout)');
-    expect(fastBootBlock).toContain(': Promise.resolve(undefined)');
+    // A disabled gate resolves to `undefined` without touching Git. Config
+    // Provider v1 turned the old ternary into an early return so the snapshot
+    // pin can answer first; the "no hint work when disabled" property is the
+    // same one, still pinned.
+    expect(fastBootBlock).toContain(
+      'if (piWorkerBoot || !config.KORTIX_FAST_GIT_BOOT_ENABLED) return undefined;',
+    );
+  });
+
+  test('a pinned repository snapshot replaces the Git hint entirely', async () => {
+    const source = await sessionsSource();
+    const hint = source.indexOf('const fastBootGitHintPromise');
+    const gate = source.indexOf('config.KORTIX_FAST_GIT_BOOT_ENABLED', hint);
+    const block = source.slice(hint, gate);
+    // The pin is checked BEFORE the gate, and its branch returns without ever
+    // reaching resolveFastBootGitHintWithCache — that call is what performs the
+    // `ls-remote` plus mirror refresh a prepared start must not do.
+    expect(block).toContain('if (pin) {');
+    expect(block).toContain('resolveOpencodeConfigDirFromSnapshot(pin.row, project.manifestPath)');
+    expect(block).not.toContain('resolveFastBootGitHintWithCache');
+    // A pinned snapshot also suppresses the compiled-boot prebuild, which would
+    // otherwise refresh the mirror for an artifact nothing consumes.
+    expect(source).toContain('!pin && hint?.baseSha');
   });
 
   test('gates every session allocation before a full-repository image can be selected', async () => {
@@ -71,7 +95,9 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
     const source = await sessionsSource();
     // Hint: a worker never clones, so the scaffold/delta race must not hold
     // its env build (measured 1.1–2.4 s on dev 2026-08-27).
-    expect(source).toContain('!piWorkerBoot && config.KORTIX_FAST_GIT_BOOT_ENABLED');
+    expect(source).toContain('if (piWorkerBoot || !config.KORTIX_FAST_GIT_BOOT_ENABLED) return undefined;');
+    // A worker never pins a snapshot either — same reason, same fork.
+    expect(source).toContain('if (piWorkerBoot || platformMetaAgent || !createSnapshotPin) return null;');
     // OpenCode compiled-boot artifacts are daemon-path-only.
     expect(source).toContain("!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off'");
     // The env fork must sit before the OpenCode builder in the same chain.

@@ -167,6 +167,39 @@ describe('buildRepoSnapshot', () => {
     }
   }, 120_000);
 
+  test('emits every path exactly once and keeps empty directories', async () => {
+    useIsolatedMirror();
+    const fixture = makeFixture();
+    const identity = normalizeRepoSnapshotIdentity({
+      repositoryId: '515151',
+      owner: 'kortix-ai',
+      repo: 'fixture',
+      commitSha: fixture.headSha,
+    });
+    const built = await buildRepoSnapshot(fixture.project, identity, { compression: 'gzip' });
+    try {
+      const paths: string[] = [];
+      const { createReadStream } = await import('node:fs');
+      const { pipeline } = await import('node:stream/promises');
+      await pipeline(
+        createReadStream(built.archivePath),
+        (await import('./codec')).createDecompressor('gzip'),
+        tar.t({ onReadEntry: (entry) => paths.push(String(entry.path).replace(/\/+$/, '')) }),
+      );
+      // Listing a non-empty directory makes node-tar recurse AND re-emit the
+      // children that were listed too; that duplication is what this asserts is
+      // gone. The reader's count must also equal the manifest's declared count.
+      expect(new Set(paths).size).toBe(paths.length);
+      expect(paths.length).toBe(built.manifest.payload.entry_count);
+      // Git keeps empty directories inside .git; they must survive the trip.
+      expect(paths).toContain('.git/refs/tags');
+      expect(paths).toContain('README.md');
+      expect(paths).toContain('.kortix/skills/unused-skill/SKILL.md');
+    } finally {
+      await discardBuiltRepoSnapshot(built);
+    }
+  }, 120_000);
+
   test('packages an older commit even after the branch moved past it', async () => {
     useIsolatedMirror();
     const fixture = makeFixture();
