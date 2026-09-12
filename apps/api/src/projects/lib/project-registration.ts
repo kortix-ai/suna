@@ -1,3 +1,4 @@
+import { schedulePreparationForNewProject } from '../../repo-snapshots/prepare';
 import {
   type accountGithubInstallations,
   projectGitConnections,
@@ -164,6 +165,10 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
   });
 
   invalidateIamCacheForUser(input.userId);
+  // Config Provider v1: queue the snapshot for this project's default branch so
+  // its first session starts from S3. Fire-and-forget by design — registration
+  // must not wait on GitHub, and the reconciliation pass covers a failure here.
+  schedulePreparationForNewProject(row);
   return row;
 }
 

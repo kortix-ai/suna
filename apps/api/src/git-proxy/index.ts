@@ -298,6 +298,25 @@ async function forwardAuthorized(
             );
           });
         }
+        // Config Provider v1: prepare the snapshot for the revision this push
+        // just produced, so the next session on it starts from S3 instead of a
+        // Git fetch. The tip is re-resolved server-side by the publisher rather
+        // than trusted from the pack, and enqueueing is deduplicated by
+        // (repository id, SHA), so a push that did not move the tip costs one
+        // no-op upsert.
+        void (async () => {
+          const { prepareRevisionForPush } = await import('../repo-snapshots/prepare');
+          const result = await prepareRevisionForPush(auth.project, gitProject.defaultBranch);
+          if (!result.prepared) {
+            console.warn(`[git-proxy] snapshot preparation skipped for ${projectId}: ${result.reason}`);
+          }
+        })().catch((err) => {
+          console.warn(
+            `[git-proxy] snapshot preparation failed for ${projectId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        });
+
         // MANIFEST TRIPWIRE. A project always has a manifest
         // (../projects/managed-repo-seed.ts). Provisioning now guarantees one
         // at birth and `kortix ship` refuses to push without one, but a plain

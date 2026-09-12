@@ -83,10 +83,11 @@ export interface GithubAppManifest {
    *  proven CLI implementation this ports) uses `default_permissions`. */
   default_permissions: Record<string, string>;
   default_events: string[];
-  /** GitHub REQUIRES `url` inside hook_attributes whenever the object is present
-   *  — omit it and the manifest is rejected with the opaque "'url' wasn't
-   *  supplied" (it means the WEBHOOK url, not the homepage). We don't use
-   *  webhooks, so point it at a valid FQDN and set active:false. */
+  /** GitHub REQUIRES `url` inside hook_attributes whenever the object is
+   *  present — omit it and the manifest is rejected with the opaque "'url'
+   *  wasn't supplied" (it means the WEBHOOK url, not the homepage). Config
+   *  Provider v1 consumes `push` deliveries, so this now points at the real
+   *  ingestion route and is active. */
   hook_attributes: { url: string; active: boolean };
 }
 
@@ -122,8 +123,11 @@ export function buildGithubAppManifest(opts: {
       // every organization installation.
       members: 'read',
     },
-    default_events: [],
-    hook_attributes: { url: opts.homepageUrl, active: false },
+    // `push` feeds repository-snapshot preparation. Reconciliation is still
+    // the safety net: an App created before this change keeps delivering
+    // nothing, and GitHub offers no API to retrofit an existing App's hook.
+    default_events: ['push'],
+    hook_attributes: { url: `${base}/v1/platform/github-app/webhook`, active: true },
   };
 }
 
@@ -1334,5 +1338,54 @@ githubAppSetupRouter.openapi(
         500,
       );
     }
+  },
+);
+
+
+/**
+ * GitHub push ingestion for repository-snapshot preparation.
+ *
+ * Deliberately unauthenticated at the middleware layer and authenticated by
+ * `X-Hub-Signature-256` inside the handler: GitHub cannot present a Kortix
+ * credential. The body is read RAW before any parse, because the signature
+ * covers exact bytes.
+ *
+ * The payload is never used as a revision source — see repo-snapshots/webhook.ts.
+ */
+githubAppSetupRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/webhook',
+    tags: ['platform'],
+    summary: 'GitHub App webhook — push deliveries for snapshot preparation',
+    responses: {
+      200: json(z.object({ ok: z.boolean(), detail: z.string().optional() }), 'Accepted'),
+      401: { description: 'Missing or invalid X-Hub-Signature-256' },
+    },
+  }),
+  async (c: any) => {
+    const raw = await c.req.text();
+    const { ingestGitHubPush, verifyGitHubWebhookSignature } = await import(
+      '../../repo-snapshots/webhook'
+    );
+    if (!verifyGitHubWebhookSignature(raw, c.req.header('x-hub-signature-256') ?? null)) {
+      return c.json({ ok: false, detail: 'invalid signature' }, 401);
+    }
+    const event = (c.req.header('x-github-event') ?? '').trim();
+    // A ping proves the hook is wired; nothing else here handles other events.
+    if (event === 'ping') return c.json({ ok: true, detail: 'pong' });
+    if (event !== 'push') return c.json({ ok: true, detail: `ignored event ${event || '(none)'}` });
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return c.json({ ok: false, detail: 'payload is not JSON' }, 401);
+    }
+    const result = await ingestGitHubPush(payload as Record<string, never>);
+    return c.json(
+      result.handled
+        ? { ok: true, detail: `prepared ${result.prepared}, skipped ${result.skipped}` }
+        : { ok: true, detail: result.reason },
+    );
   },
 );

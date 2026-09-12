@@ -45,8 +45,13 @@ describe('buildGithubAppManifest', () => {
       'https://api.kortix.example/v1/platform/github-app/oauth/callback',
     ]);
     expect(manifest.public).toBe(false);
-    expect(manifest.hook_attributes).toEqual({ url: 'https://kortix.ai', active: false });
-    expect(manifest.default_events).toEqual([]);
+    // Config Provider v1 consumes `push` deliveries, so a manifest-created App
+    // subscribes to push and delivers to this API's ingestion route.
+    expect(manifest.hook_attributes).toEqual({
+      url: 'https://api.kortix.example/v1/platform/github-app/webhook',
+      active: true,
+    });
+    expect(manifest.default_events).toEqual(['push']);
     expect(manifest.default_permissions).toEqual({
       administration: 'write',
       contents: 'write',
