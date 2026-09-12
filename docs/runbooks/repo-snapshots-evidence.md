@@ -96,6 +96,24 @@ cannot pass vacuously). Config reads are exercised with an empty AND a warm
 local cache. Prerequisites FAIL the test rather than skipping, unless
 `KORTIX_REPO_SNAPSHOT_E2E=skip` is set explicitly.
 
+## 1b. `prefer` falls back, in a real sandbox
+
+The same harness with `KORTIX_REPO_SNAPSHOT_MODE=prefer` and nothing published
+for the revision (`E2E_SKIP_PUBLISH=1`):
+
+```text
+POST /projects/:id/sessions → 201   (session 06eeba63)
+  runtimeReady      (boot proceeds on the existing path)
+  git_network_ops   2
+  repo_snapshot     null
+```
+
+`prefer` did not fail the session and did not invent a revision: with nothing
+prepared, the API's pin missed, no descriptor reached the sandbox, and the boot
+used the existing Git path — whose network operations are counted (2, against 0
+on the prepared run). That is the counted-fallback contract, observed rather
+than asserted.
+
 ## 2b. Descriptor and archive routes — real HTTP, real Kortix token
 
 `apps/api/scripts/verify-repo-snapshot-http.ts`, against the running API and a
