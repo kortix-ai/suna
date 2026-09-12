@@ -148,6 +148,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/git/:project/compiled-checkout': 'Downloaded compiled project checkout',
   'GET /v1/git/:project/compiled-runtime': 'Downloaded compiled session runtime',
   'GET /v1/git/:project/compiled-pi-runtime': 'Downloaded compiled pi worker runtime',
+  'GET /v1/git/:project/repo-snapshot': 'Resolved project snapshot for a session',
+  'GET /v1/git/:project/repo-snapshot/archive': 'Downloaded project snapshot archive',
   'POST /v1/projects/:projectId/marketplace/install-session': 'Started marketplace install',
   'POST /v1/projects/:projectId/review/bulk': 'Updated review items in bulk',
   'POST /v1/projects/:projectId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
@@ -268,6 +270,7 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/platform/github-app/manifest-start': 'Started GitHub App setup',
   'GET /v1/platform/github-app/oauth/authorize': 'Started GitHub identity verification',
   'GET /v1/platform/github-app/oauth/callback': 'Completed GitHub identity verification',
+  'POST /v1/platform/github-app/webhook': 'Received a GitHub push notification',
   'POST /v1/prewarm': 'Prewarmed sandbox capacity',
 };
 
