@@ -185,6 +185,7 @@ interface Round {
   started_at: string;
   runtime_ready_at: string | null;
   git_proxy_requests: number | null;
+  git_proxy_paths: string[];
 }
 
 async function oneRound(arm: Arm, jwt: string, projectId: string, round: number, apiLog?: string): Promise<Round> {
@@ -214,6 +215,7 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
     started_at: startedAt.toISOString(),
     runtime_ready_at: null,
     git_proxy_requests: null,
+    git_proxy_paths: [],
   };
   if (created.status !== 201 || !sessionId) {
     result.error = `create ${created.status}: ${JSON.stringify(created.body).slice(0, 200)}`;
@@ -261,23 +263,29 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
     await api(arm.api, jwt, `/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
   }
   if (apiLog && result.runtime_ready_at) {
-    result.git_proxy_requests = countGitProxyRequests(apiLog, projectId, startedAt, new Date(result.runtime_ready_at));
+    const seen = listGitProxyRequests(apiLog, projectId, startedAt, new Date(result.runtime_ready_at));
+    result.git_proxy_requests = seen.length;
+    result.git_proxy_paths = seen;
   }
   return result;
 }
 
-/** Git-proxy requests for this project logged by the arm's API inside [from, to]. */
-function countGitProxyRequests(logPath: string, projectId: string, from: Date, to: Date): number {
-  if (!existsSync(logPath)) return -1;
-  const re = new RegExp(`^\\[(\\d{4}-\\d{2}-\\d{2}T[^\\]]+)\\] \\[INFO\\] Request completed: (GET|POST) /v1/git/${projectId}\\.git/(info/refs|git-upload-pack|fast-boot-bundle|compiled-checkout|project-snapshot)`);
-  let n = 0;
+/**
+ * Git-proxy requests for this project logged by the arm's API inside
+ * [from, to], as `METHOD suffix status`. Per PROJECT, not per session: rounds
+ * run sequentially with a cooldown, so a window belongs to one boot.
+ */
+function listGitProxyRequests(logPath: string, projectId: string, from: Date, to: Date): string[] {
+  if (!existsSync(logPath)) return [];
+  const re = new RegExp(`^\\[(\\d{4}-\\d{2}-\\d{2}T[^\\]]+)\\] \\[INFO\\] Request completed: (GET|POST) /v1/git/${projectId}\\.git/(info/refs|git-upload-pack|fast-boot-bundle|compiled-checkout|project-snapshot) (\\d{3})`);
+  const seen: string[] = [];
   for (const line of readFileSync(logPath, 'utf8').split('\n')) {
     const m = line.match(re);
     if (!m) continue;
     const at = new Date(m[1]!);
-    if (at >= from && at <= to) n += 1;
+    if (at >= from && at <= to) seen.push(`${m[2]} ${m[3]} ${m[4]}`);
   }
-  return n;
+  return seen;
 }
 
 async function run(): Promise<void> {
@@ -306,6 +314,7 @@ async function run(): Promise<void> {
     for (const arm of order) {
       const r = await oneRound(arm, jwt, projectId, round, apiLogs.get(arm.label));
       appendFileSync(out, `${JSON.stringify(r)}\n`);
+      await sleep(Number(arg('cooldown-ms', '10000')));
       const cp = (r.config_provider ?? {}) as Record<string, unknown>;
       console.error(
         `round ${round} ${arm.label}: ${r.ok ? 'ok' : 'FAIL'} ack=${r.create_ack_ms}ms start=${r.start_ready_ms}ms ready=${r.runtime_ready_ms}ms ` +
