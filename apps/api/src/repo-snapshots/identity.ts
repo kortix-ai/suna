@@ -27,6 +27,14 @@ export interface RepoIdentityResolution {
   repository: RepoSnapshotRepository | null;
   /** Why this project cannot be snapshotted, for the coverage report. */
   unsupportedReason?: string;
+  /**
+   * Is this a GitHub-backed project at all?
+   *
+   * Distinct from `repository`: a GitHub project with no recorded repository id
+   * is in scope and merely unprepared, while a GitLab or generic project is out
+   * of scope entirely and must keep its existing behaviour under every mode.
+   */
+  githubBacked: boolean;
 }
 
 function upstreamGitHubCoordinates(project: ProjectRow): { owner: string; repo: string } | null {
@@ -51,15 +59,27 @@ export function recordedRepositoryId(project: ProjectRow): string | null {
 export function readRepoSnapshotRepository(project: ProjectRow): RepoIdentityResolution {
   const remote = getProjectGitRemote(project);
   if (remote.provider !== 'github') {
-    return { repository: null, unsupportedReason: `provider ${remote.provider} is not GitHub` };
+    return {
+      repository: null,
+      unsupportedReason: `provider ${remote.provider} is not GitHub`,
+      githubBacked: false,
+    };
   }
   const coordinates = upstreamGitHubCoordinates(project);
   if (!coordinates) {
-    return { repository: null, unsupportedReason: 'project has no resolvable GitHub owner/repo' };
+    return {
+      repository: null,
+      unsupportedReason: 'project has no resolvable GitHub owner/repo',
+      githubBacked: true,
+    };
   }
   const repositoryId = recordedRepositoryId(project);
   if (!repositoryId) {
-    return { repository: null, unsupportedReason: 'project has no recorded GitHub repository id' };
+    return {
+      repository: null,
+      unsupportedReason: 'project has no recorded GitHub repository id',
+      githubBacked: true,
+    };
   }
   try {
     const identity = normalizeRepoSnapshotIdentity({
@@ -69,10 +89,13 @@ export function readRepoSnapshotRepository(project: ProjectRow): RepoIdentityRes
       repo: coordinates.repo,
       commitSha: '0'.repeat(40),
     });
-    return { repository: { provider: 'github', repositoryId, owner: identity.owner, repo: identity.repo } };
+    return {
+      repository: { provider: 'github', repositoryId, owner: identity.owner, repo: identity.repo },
+      githubBacked: true,
+    };
   } catch (error) {
     const message = error instanceof RepoSnapshotIdentityError ? error.message : String(error);
-    return { repository: null, unsupportedReason: message };
+    return { repository: null, unsupportedReason: message, githubBacked: true };
   }
 }
 
@@ -92,7 +115,13 @@ export async function ensureRepoSnapshotRepository(
     return cached;
   }
   const coordinates = upstreamGitHubCoordinates(project);
-  if (!coordinates) return { repository: null, unsupportedReason: 'project has no resolvable GitHub owner/repo' };
+  if (!coordinates) {
+    return {
+      repository: null,
+      unsupportedReason: 'project has no resolvable GitHub owner/repo',
+      githubBacked: true,
+    };
+  }
   try {
     const authed = await withProjectGitAuth(project);
     const repo = await getRepo({
@@ -125,10 +154,15 @@ export async function ensureRepoSnapshotRepository(
         owner: identity.owner,
         repo: identity.repo,
       },
+      githubBacked: true,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { repository: null, unsupportedReason: `GitHub repository lookup failed: ${message}` };
+    return {
+      repository: null,
+      unsupportedReason: `GitHub repository lookup failed: ${message}`,
+      githubBacked: true,
+    };
   }
 }
 

@@ -21,11 +21,34 @@ import { findReadyRepoSnapshot, type RepoSnapshotRow } from './store';
 
 export type RepoSnapshotMode = 'off' | 'shadow' | 'prefer' | 'required';
 
+/** True when storage is configured; false means `required` will fail closed. */
+export function repoSnapshotStorageConfigured(): boolean {
+  return resolveRepoSnapshotBucket() !== null;
+}
+
+/**
+ * The configured mode.
+ *
+ * An unconfigured bucket degrades `shadow` and `prefer` to `off` — both are
+ * best-effort and there is nothing to serve. `required` is NOT degraded: an
+ * operator who asked to fail closed must not be silently switched to the Git
+ * path by a missing environment variable. It stays `required` and every
+ * eligible start then reports a preparation error naming the misconfiguration,
+ * which is visible, instead of a silent downgrade, which is not.
+ */
+export function resolveRepoSnapshotMode(
+  configured: RepoSnapshotMode,
+  storageConfigured: boolean,
+): RepoSnapshotMode {
+  if (storageConfigured) return configured;
+  return configured === 'required' ? 'required' : 'off';
+}
+
 export function repoSnapshotMode(): RepoSnapshotMode {
-  const mode = (config.KORTIX_REPO_SNAPSHOT_MODE ?? 'off') as RepoSnapshotMode;
-  // An unconfigured bucket makes every mode behave as `off` rather than
-  // failing sessions in `required`.
-  return resolveRepoSnapshotBucket() ? mode : 'off';
+  return resolveRepoSnapshotMode(
+    (config.KORTIX_REPO_SNAPSHOT_MODE ?? 'off') as RepoSnapshotMode,
+    repoSnapshotStorageConfigured(),
+  );
 }
 
 export type RepoSnapshotDelivery = 'presigned' | 'proxy';
@@ -51,7 +74,12 @@ export interface RepoSnapshotBootDescriptor {
 
 export type RepoSnapshotMiss =
   | { reason: 'disabled' }
-  | { reason: 'unsupported_project'; detail: string }
+  | {
+      reason: 'unsupported_project';
+      detail: string;
+      /** Only a GitHub-backed project is in this policy's scope. */
+      githubBacked: boolean;
+    }
   | { reason: 'not_prepared'; commitSha: string }
   | { reason: 'preparing'; commitSha: string }
   | { reason: 'failed'; commitSha: string; detail: string };
@@ -142,7 +170,20 @@ export async function resolveSnapshotForRevision(input: {
   projectId?: string;
   apiBase?: string;
 }): Promise<RepoSnapshotResolution> {
-  if (repoSnapshotMode() === 'off') return { ok: false, miss: { reason: 'disabled' } };
+  const mode = repoSnapshotMode();
+  if (mode === 'off') return { ok: false, miss: { reason: 'disabled' } };
+  if (!repoSnapshotStorageConfigured()) {
+    // `required` with no bucket. Say so plainly rather than pretend the
+    // revision merely is not prepared yet.
+    return {
+      ok: false,
+      miss: {
+        reason: 'failed',
+        commitSha: input.commitSha,
+        detail: 'KORTIX_REPO_SNAPSHOT_BUCKET is unset, so no snapshot can be served',
+      },
+    };
+  }
   const row = await findReadyRepoSnapshot({
     provider: 'github',
     repositoryId: input.repositoryId,

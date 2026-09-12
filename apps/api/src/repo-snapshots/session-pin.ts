@@ -36,6 +36,15 @@ import { readRepoRef, type RepoSnapshotRow } from './store';
 
 export interface SessionSnapshotPin {
   mode: RepoSnapshotMode;
+  /**
+   * Does this pin GOVERN the start?
+   *
+   * False in `shadow`: the snapshot is resolved and verified out of band, but
+   * the session keeps the legacy behaviour — Git-backed config reads, the
+   * fresh-session Git hint, and create-time remote-branch publishing. A shadow
+   * that changed any of those would not be a shadow.
+   */
+  governs: boolean;
   descriptor: RepoSnapshotBootDescriptor;
   row: RepoSnapshotRow;
   commitSha: string;
@@ -70,7 +79,11 @@ export async function pinSessionSnapshot(input: {
     return {
       pinned: false,
       mode,
-      miss: { reason: 'unsupported_project', detail: identity.unsupportedReason ?? 'not GitHub-backed' },
+      miss: {
+        reason: 'unsupported_project',
+        detail: identity.unsupportedReason ?? 'not GitHub-backed',
+        githubBacked: identity.githubBacked,
+      },
     };
   }
   const refRow = input.requestedSha
@@ -93,6 +106,7 @@ export async function pinSessionSnapshot(input: {
     pinned: true,
     pin: {
       mode,
+      governs: mode === 'prefer' || mode === 'required',
       descriptor: resolved.descriptor,
       row: resolved.row,
       commitSha,
@@ -177,12 +191,18 @@ export function requiredModeFailure(
     case 'disabled':
       return null;
     case 'unsupported_project':
-      return {
-        status: 409,
-        code: 'REPO_SNAPSHOT_UNSUPPORTED_PROJECT',
-        message: `repository snapshots are required but this project cannot be snapshotted: ${outcome.miss.detail}`,
-        retryable: false,
-      };
+      // The policy is scoped to GITHUB-backed projects. A project that is not
+      // GitHub-backed is out of scope entirely and must keep working exactly as
+      // it does today — failing it closed would take an unrelated project type
+      // down with a flag that was never meant to govern it.
+      return outcome.miss.githubBacked
+        ? {
+            status: 409,
+            code: 'REPO_SNAPSHOT_UNSUPPORTED_PROJECT',
+            message: `repository snapshots are required but this GitHub project cannot be snapshotted: ${outcome.miss.detail}`,
+            retryable: false,
+          }
+        : null;
     case 'failed':
       return {
         status: 503,

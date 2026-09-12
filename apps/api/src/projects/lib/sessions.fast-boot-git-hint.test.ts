@@ -57,7 +57,7 @@ describe('session fast boot Git hint cache', () => {
     expect(source).toContain('!pin && authedProject && hint?.baseSha');
     // The authoring credential is LAZY on a prepared start: `withProjectGitAuth`
     // mints a GitHub token, and a prepared start must attempt no GitHub call.
-    expect(source).toContain('const preparedStart = createSnapshotPin?.pinned === true;');
+    expect(source).toContain('const preparedStart = governingPin !== null;');
     expect(source).toContain('const projectWithGitAuthPromise = preparedStart');
     // …and the remote session branch, which is authoring work, is deferred.
     expect(source).toContain('const deferRemoteBranch = preparedStart;');
@@ -142,6 +142,17 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
     expect(pinned).toContain('sha = pinnedSnapshotRow.commitSha;');
     expect(pinned).not.toContain('withProjectGitAuth');
     expect(pinned).not.toContain('resolveCommitSha');
+  });
+
+  test('shadow mode changes nothing about the session', async () => {
+    const source = await sessionsSource();
+    // A shadow pin must not reach the sandbox env, the hint chain, or the
+    // authoring decisions. Only a GOVERNING pin (prefer/required) does.
+    expect(source).toContain(
+      'createSnapshotPin?.pinned && createSnapshotPin.pin.governs ? createSnapshotPin.pin : null',
+    );
+    expect(source).toContain('const pinnedSnapshotRow = governingPin?.row ?? null;');
+    expect(source).toContain('if (!createSnapshotPin.pinned || !createSnapshotPin.pin.governs) return null;');
   });
 
   test('required mode fails closed instead of falling through to the clone path', async () => {

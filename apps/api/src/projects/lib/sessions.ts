@@ -1045,7 +1045,12 @@ export async function createProjectSession(input: {
       },
     };
   }
-  const pinnedSnapshotRow = createSnapshotPin?.pinned ? createSnapshotPin.pin.row : null;
+  // `shadow` resolves a pin but does NOT govern: the session keeps every
+  // legacy behaviour so the comparison stays a comparison. Only `prefer` and
+  // `required` change what the API reads and when it authors.
+  const governingPin =
+    createSnapshotPin?.pinned && createSnapshotPin.pin.governs ? createSnapshotPin.pin : null;
+  const pinnedSnapshotRow = governingPin?.row ?? null;
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: !pinnedSnapshotRow,
     rethrowReadErrors: true,
@@ -1761,7 +1766,9 @@ export async function createProjectSession(input: {
       // needs a GitHub credential. `withProjectGitAuth` MINTS an installation
       // token — a GitHub API call — so it is not started at all here; the
       // authoring paths below resolve it only when they actually author.
-      const preparedStart = createSnapshotPin?.pinned === true;
+      // Only a GOVERNING pin makes this a prepared start. Shadow keeps the
+      // eager credential and the create-time branch publish, unchanged.
+      const preparedStart = governingPin !== null;
       let gitAuthPromise: Promise<Awaited<ReturnType<typeof withProjectGitAuth>>> | null = null;
       /** Resolve the authoring credential lazily, and only once. */
       const projectWithGitAuth = (): Promise<Awaited<ReturnType<typeof withProjectGitAuth>>> => {
@@ -1790,7 +1797,9 @@ export async function createProjectSession(input: {
       const snapshotPinPromise: Promise<SessionSnapshotPin | null> = (async () => {
         if (piWorkerBoot || platformMetaAgent || !createSnapshotPin) return null;
         logSnapshotOutcome(createSnapshotPin, { projectId, sessionId, ref: baseRef });
-        if (!createSnapshotPin.pinned) return null;
+        // A shadow pin is logged and then dropped: it must not reach the
+        // sandbox env, the hint chain, or the authoring decisions below.
+        if (!createSnapshotPin.pinned || !createSnapshotPin.pin.governs) return null;
         tl.mark('snapshot-pin');
         return createSnapshotPin.pin;
       })();

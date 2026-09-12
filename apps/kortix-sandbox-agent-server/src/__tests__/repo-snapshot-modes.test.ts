@@ -132,12 +132,23 @@ function configFor(options: {
 // The attribution counter is module state shared by every test in this bun
 // process, so it is reset BEFORE each test as well as after: the zero-network
 // assertions must describe this test, not whatever ran before it.
+let originalGitConfigGlobal: string | undefined
 beforeEach(() => {
   __resetRepoTransportAttributionForTests()
+  // `materializeRepo` can reach `git config --global`. Pin it at a throwaway
+  // file so no test here touches a real global config, and restore by DELETING
+  // when there was none — assigning `undefined` stringifies to "undefined" and
+  // makes git write a file with that name into the working directory.
+  originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL
+  const home = tempRoot('kortix-mode-gitconfig-')
+  writeFileSync(join(home, 'gitconfig'), '')
+  process.env.GIT_CONFIG_GLOBAL = join(home, 'gitconfig')
 })
 
 afterEach(async () => {
   __resetRepoTransportAttributionForTests()
+  if (originalGitConfigGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL
+  else process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal
   for (const server of servers.splice(0)) await new Promise<void>((r) => server.close(() => r()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })

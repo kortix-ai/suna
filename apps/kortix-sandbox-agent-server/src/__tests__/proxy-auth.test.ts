@@ -32,6 +32,19 @@ import {
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 const TEST_AGENT_ENV_FILE = join(tmpdir(), `kortix-proxy-agent-env-${process.pid}.sh`)
 
+/**
+ * Restore `GIT_CONFIG_GLOBAL` without leaving the literal string "undefined"
+ * behind. Assigning `undefined` to a `process.env` property STRINGIFIES it, so
+ * the old `process.env.X = original` restore set the variable to "undefined"
+ * and git then wrote its global config to a file named `undefined` in the
+ * current working directory — which is how that file kept appearing in the
+ * repository root. The developer's real `~/.gitconfig` is never touched.
+ */
+function restoreGitConfigGlobal(original: string | undefined): void {
+  if (original === undefined) delete process.env.GIT_CONFIG_GLOBAL
+  else process.env.GIT_CONFIG_GLOBAL = original
+}
+
 function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
@@ -288,7 +301,7 @@ describe('daemon proxy auth gate', () => {
       expect(readdirSync(target).filter((entry) => entry.startsWith('.kortix-'))).toEqual([])
     } finally {
       chmodSync(root, 0o755)
-      process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal
+      restoreGitConfigGlobal(originalGitConfigGlobal)
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -381,7 +394,7 @@ describe('daemon proxy auth gate', () => {
       expect(readFileSync(globalGitConfig, 'utf8')).toContain(`directory = ${target}`)
     } finally {
       globalThis.fetch = originalFetch
-      process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal
+      restoreGitConfigGlobal(originalGitConfigGlobal)
       rmSync(root, { recursive: true, force: true })
     }
   })
