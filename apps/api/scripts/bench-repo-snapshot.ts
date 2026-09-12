@@ -56,7 +56,7 @@ import { join } from 'node:path';
 import { buildRepoSnapshot, discardBuiltRepoSnapshot } from '../src/repo-snapshots/build';
 import { normalizeRepoSnapshotIdentity } from '../src/repo-snapshots/format';
 import { publishRepoSnapshot } from '../src/repo-snapshots/publish';
-import { requireRepoSnapshotBucket, s3GetObjectStream } from '../src/repo-snapshots/s3';
+import { requireRepoSnapshotBucket } from '../src/repo-snapshots/s3';
 import { materializeSnapshotLocally } from '../src/repo-snapshots/source-reader';
 import type { RepoSnapshotRow } from '../src/repo-snapshots/store';
 
@@ -293,7 +293,6 @@ async function runArm(
 ): Promise<Omit<Sample, 'cohort' | 'repo' | 'codec' | 'arm' | 'round'>> {
   const work = join(scratch, 'work', `${arm}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(join(scratch, 'work'), { recursive: true });
-  const spawnsGit = arm === 'git-cold' || arm === 'git-warm' || arm === 'prepare-miss';
   try {
     if (arm === 'git-cold') {
       const measured = await timed(async () => {

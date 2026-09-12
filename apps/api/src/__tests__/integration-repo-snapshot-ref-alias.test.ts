@@ -37,6 +37,8 @@ const ids = {
   migrationAlias: String(912000000 + Math.floor(Math.random() * 9000000)),
   migrationBoth: String(913000000 + Math.floor(Math.random() * 9000000)),
 };
+/** Extra ids the race cases create; cleaned with the rest. */
+const ownedRaceIds: string[] = [];
 const shaOld = 'a'.repeat(40);
 const shaNew = 'b'.repeat(40);
 
@@ -74,7 +76,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const repositoryId of Object.values(ids)) {
+  for (const repositoryId of [...Object.values(ids), ...ownedRaceIds]) {
     await db
       .execute(sql`delete from kortix.repo_snapshot_refs where repository_id = ${repositoryId}`)
       .catch(() => {});
@@ -147,6 +149,59 @@ describe('a ref row stored under the old full-ref spelling stays usable', () => 
     // canonical row is the one every other reader already uses.
     expect((await readRepoRef(identity(ids.bothSpellings), 'main'))?.desiredSha).toBe(shaNew);
     expect((await beginRefObservation(identity(ids.bothSpellings), 'main')).generation).toBe(3);
+  });
+
+  test('a rename during an observation cannot resurrect the old row', async () => {
+    if (!guard()) return;
+    const postgres = (await import('postgres')).default;
+    const raced = String(914000000 + Math.floor(Math.random() * 9000000));
+    ownedRaceIds.push(raced);
+    const identityFull = { provider: 'github' as const, repositoryId: raced, owner: 'kortix-ai', repo: 'alias-fixture' };
+    await insertRaw({ repositoryId: raced, ref: 'refs/heads/main', desiredSha: shaOld, revision: 9 });
+
+    // A: takes its token from the row as it stands — the legacy spelling.
+    const token = await beginRefObservation({ provider: 'github', repositoryId: raced }, 'main');
+    expect(token.ref).toBe('refs/heads/main');
+    expect(token.generation).toBe(9);
+
+    // A consolidation starts and holds this branch's lock, exactly as the
+    // migration does. Everything below is ordered by that lock, not by timing.
+    const holder = postgres('postgresql://postgres:postgres@127.0.0.1:13922/postgres', { max: 1 });
+    await holder.unsafe('begin');
+    await holder.unsafe(
+      `select pg_advisory_xact_lock(hashtextextended('github:' || $1 || ':main', 0))`,
+      [raced] as never,
+    );
+
+    // A resumes and blocks on the lock before it can resolve a key or write.
+    const delayed = observeRepoRef({
+      identity: identityFull,
+      ref: 'main',
+      desiredSha: shaOld,
+      via: 'reconcile',
+      token,
+    });
+
+    // Under the lock: the row is renamed and a newer observation is recorded.
+    await holder.unsafe(
+      `update kortix.repo_snapshot_refs set ref = 'main' where repository_id = $1 and ref = 'refs/heads/main'`,
+      [raced] as never,
+    );
+    await holder.unsafe(
+      `update kortix.repo_snapshot_refs set desired_sha = $2, revision = 10 where repository_id = $1 and ref = 'main'`,
+      [raced, shaNew] as never,
+    );
+    await holder.unsafe('commit');
+    await holder.end();
+
+    const result = await delayed;
+    // A's token described a row that no longer exists. It must not write, and
+    // it must not recreate the legacy row beside the survivor.
+    expect(result.ref).toBe('main');
+    expect(result.desiredSha).toBe(shaNew);
+    const rows = await rowsFor(raced);
+    expect(rows.map((r) => r.ref)).toEqual(['main']);
+    expect(rows[0]?.desired_sha).toBe(shaNew);
   });
 
   test('a claimed alias row still reconciles under its own spelling', async () => {
@@ -251,7 +306,7 @@ describe('the consolidation migration folds old rows into the canonical one', ()
           // postgres-js reports an UPDATE/DELETE's affected rows in `count`;
           // `length` is 0 without RETURNING, which would end the batching loop
           // after one pass and silently leave everything past it behind.
-          return { rowCount: result.count ?? 0 };
+          return { rowCount: result.count ?? 0, rows: [...result] };
         },
       },
     } as never);

@@ -118,8 +118,8 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
   test('the pi decision resolves runtime and tip in one parallel round trip', async () => {
     const source = await sessionsSource();
     const decision = source.indexOf("resolveFeatureFlag(project.metadata, 'pi_worker')");
-    const parallel = source.indexOf('[runtime, sha] = await Promise.all([', decision);
     expect(decision).toBeGreaterThan(-1);
+    const parallel = source.indexOf('[runtime, sha] = await Promise.all([', decision);
     expect(parallel).toBeGreaterThan(decision);
     const block = source.slice(parallel, source.indexOf(']);', parallel));
     expect(block).toContain('resolveManifestRuntime(authedProject, baseRef)');
@@ -129,7 +129,6 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
   test('a pinned snapshot answers the pi decision with no Git and no GitHub', async () => {
     const source = await sessionsSource();
     const decision = source.indexOf("resolveFeatureFlag(project.metadata, 'pi_worker')");
-    const parallel = source.indexOf('[runtime, sha] = await Promise.all([', decision);
     // Slice the PINNED branch only: the else branch legitimately keeps the Git
     // resolution, so including it would make the negative assertions vacuous.
     const branchStart = source.indexOf('if (pinnedSnapshotRow) {', decision);

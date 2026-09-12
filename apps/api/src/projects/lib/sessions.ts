@@ -40,6 +40,7 @@ import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
+import { pinnedSandboxDefaultSlug } from '../../snapshots/templates';
 import {
   grantFromLoadedAgents,
   loadProjectAgents,
@@ -1396,9 +1397,14 @@ export async function createProjectSession(input: {
   }
   // Explicit request wins. The selected agent environment is next. The
   // project default and platform default remain the final fallbacks.
-  const projectDefaultSandboxSlug = normalizeString(
-    (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
-  );
+  // A prepared session takes its default from its OWN revision. The project
+  // metadata copy is written by the manifest sync from whatever revision last
+  // ran it, so it can name a template this revision renamed or dropped.
+  const projectDefaultSandboxSlug = pinnedSnapshotRow
+    ? await pinnedSandboxDefaultSlug(project, pinnedSnapshotRow)
+    : normalizeString(
+        (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
+      );
   const requestedSandboxSlug = normalizeString(body.sandbox_slug ?? body.sandboxSlug);
   let sandboxSlug: string;
   if (platformMetaAgent) {

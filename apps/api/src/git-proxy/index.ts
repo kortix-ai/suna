@@ -196,12 +196,21 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
  * ref policy, and either refuses (without opening an upstream connection at
  * all) or hands the reconstructed body back here untouched.
  */
+/**
+ * Branches prepared per push. A push that moves more than this is a bulk
+ * operation (a mirror sync, a branch import); preparing every one of them would
+ * fan out one provider lookup per ref on a background task.
+ */
+const PREPARE_REFS_PER_PUSH = 20;
+
 async function forwardAuthorized(
   c: any,
   auth: Extract<GitProxyAuth, { ok: true }>,
   scope: GitScope,
   suffix: string,
   body: ReadableStream<Uint8Array> | null,
+  /** Branch refs this push tried to move, from the receive-pack command section. */
+  pushedRefs: string[] = [],
 ): Promise<Response> {
   const projectId = auth.project.projectId;
   const upstream = await resolveProjectUpstreamMemo(auth.project, scope);
@@ -301,17 +310,42 @@ async function forwardAuthorized(
             );
           });
         }
-        // Config Provider v1: prepare the snapshot for the revision this push
-        // just produced, so the next session on it starts from S3 instead of a
-        // Git fetch. The tip is re-resolved server-side by the publisher rather
-        // than trusted from the pack, and enqueueing is deduplicated by
-        // (repository id, SHA), so a push that did not move the tip costs one
+        // Config Provider v1: prepare a snapshot for every branch this push
+        // touched, so the next session on any of them starts from S3 instead of
+        // a Git fetch. Preparing only the default branch left every other
+        // active branch — the ones sessions actually work on — permanently
+        // unprepared on a project with no usable webhook.
+        //
+        // The refs come from the push's own command section; the SHA does not.
+        // Each tip is re-resolved server-side, so a ref the upstream REJECTED
+        // simply resolves to its unchanged value — HTTP 200 on the whole
+        // request never meant every ref succeeded. Enqueueing is deduplicated
+        // by (repository id, SHA), so re-resolving an unchanged tip costs one
         // no-op upsert.
         void (async () => {
           const { prepareRevisionForPush } = await import('../repo-snapshots/prepare');
-          const result = await prepareRevisionForPush(auth.project, gitProject.defaultBranch);
-          if (!result.prepared) {
-            console.warn(`[git-proxy] snapshot preparation skipped for ${projectId}: ${result.reason}`);
+          const branches = [...new Set(pushedRefs.filter((ref) => ref.startsWith('refs/heads/')))];
+          if (branches.length > PREPARE_REFS_PER_PUSH) {
+            console.warn(
+              `[git-proxy] push moved ${branches.length} branches for ${projectId}; ` +
+              `preparing the first ${PREPARE_REFS_PER_PUSH}`,
+            );
+          }
+          for (const ref of branches.slice(0, PREPARE_REFS_PER_PUSH) ) {
+            const result = await prepareRevisionForPush(auth.project, ref);
+            if (!result.prepared) {
+              console.warn(
+                `[git-proxy] snapshot preparation skipped for ${projectId} ${ref}: ${result.reason}`,
+              );
+            }
+          }
+          if (branches.length === 0) {
+            // No command section was parsed (a non-gated path); the default
+            // branch is the only thing we can name.
+            const result = await prepareRevisionForPush(auth.project, gitProject.defaultBranch);
+            if (!result.prepared) {
+              console.warn(`[git-proxy] snapshot preparation skipped for ${projectId}: ${result.reason}`);
+            }
           }
         })().catch((err) => {
           console.warn(
@@ -415,7 +449,7 @@ async function forwardAuthorized(
 async function gateReceivePack(
   c: any,
   auth: Extract<GitProxyAuth, { ok: true }>,
-): Promise<Response | { body: ReadableStream<Uint8Array> }> {
+): Promise<Response | { body: ReadableStream<Uint8Array>; updates: string[] }> {
   // git never content-encodes a receive-pack body (it gzips upload-pack
   // requests only, verified against git 2.39.1). If one ever arrives encoded we
   // cannot read the commands, so we refuse instead of forwarding unexamined.
@@ -481,6 +515,7 @@ async function gateReceivePack(
   // through. The pack itself is never buffered.
   const prefix = concatChunks(chunks, buffered);
   return {
+    updates: parsed.updates.map((update) => update.ref),
     body: new ReadableStream<Uint8Array>({
       start(controller) {
         if (prefix.length > 0) controller.enqueue(prefix);
@@ -1088,6 +1123,6 @@ gitProxyApp.openapi(
     // point where both the principal and the refs it wants to move are known.
     const gated = await gateReceivePack(c, auth);
     if (gated instanceof Response) return gated;
-    return forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
+    return forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body, gated.updates);
   },
 );

@@ -473,6 +473,28 @@ async function pinnedManifestTemplates(
 }
 
 /**
+ * The project's default template slug AT a governing pin.
+ *
+ * `projects.metadata.default_sandbox_slug` is written by the manifest sync from
+ * whatever revision last ran it, so it does not describe a pinned session: a
+ * revision that changes `sandbox.default` would still boot the previous one's
+ * choice. Read it from the pin instead, applying the same rule the sync
+ * applies — a default naming no template in THIS revision's catalogue is not a
+ * default — and let a failed read propagate rather than silently booting the
+ * platform image.
+ */
+export async function pinnedSandboxDefaultSlug(
+  project: GitBackedProject,
+  snapshot: RepoSnapshotRow,
+): Promise<string | null> {
+  const parsed = await readManifest(project, { snapshot });
+  const wanted = extractSandboxDefault(parsed?.raw ?? null);
+  if (!wanted) return null;
+  const catalogue = await listTemplatesForProject(project, { sessionSnapshot: snapshot });
+  return catalogue.some((template) => template.slug === wanted) ? wanted : null;
+}
+
+/**
  * A slug that resolves to no template. Typed so callers can answer 404 instead of
  * folding a client mistake into a generic 502 alongside real provider failures.
  */

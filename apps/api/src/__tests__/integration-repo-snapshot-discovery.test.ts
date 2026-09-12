@@ -192,8 +192,11 @@ beforeAll(async () => {
   const base = `http://127.0.0.1:${server.port}`;
   globalThis.fetch = ((input: any, init?: any) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (url.startsWith('https://api.github.com')) {
-      return realFetch(base + url.slice('https://api.github.com'.length), init);
+    // Compare the PARSED origin, never a string prefix: `https://api.github.com.example`
+    // starts with the same characters and is a different host entirely.
+    const parsed = URL.parse?.(url) ?? (() => { try { return new URL(url); } catch { return null; } })();
+    if (parsed?.origin === 'https://api.github.com') {
+      return realFetch(base + parsed.pathname + parsed.search, init);
     }
     return realFetch(input, init);
   }) as typeof fetch;

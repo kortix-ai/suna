@@ -167,6 +167,15 @@ export interface EnsureSandboxImageResult {
   built: boolean;
   isDefault: boolean;
   runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
+  /**
+   * The resource specification of the template this image was built from.
+   *
+   * Carried out so metering and any later consumer bill the revision that was
+   * actually selected. Resolving the template a second time would re-read the
+   * source — and, without the session's pin, could read a DIFFERENT revision
+   * and bill a spec no part of this session ever used.
+   */
+  spec?: { cpu?: number; memoryGb?: number; diskGb?: number };
 }
 
 /**
@@ -254,6 +263,22 @@ export async function ensureSandboxImage(
   const template = await resolveTemplateBySlug(project, opts.slug, {
     sessionSnapshot: opts.sessionSnapshot,
   });
+  const result = await ensureSandboxImageForTemplate(project, template, opts);
+  // The spec travels WITH the image so no consumer has to resolve the template
+  // again. A second resolution without this session's pin reads the default
+  // branch, which is how a session can end up billed for a spec it never ran.
+  return {
+    ...result,
+    spec: { cpu: template.cpu, memoryGb: template.memoryGb, diskGb: template.diskGb },
+  };
+}
+
+/** `ensureSandboxImage` with the template already resolved. */
+async function ensureSandboxImageForTemplate(
+  project: GitBackedProject,
+  template: ResolvedTemplate,
+  opts: Parameters<typeof ensureSandboxImage>[1] & {} = {},
+): Promise<EnsureSandboxImageResult> {
   const buildProvider = opts.provider ?? template.provider;
 
   const provider = getSandboxProvider(buildProvider);
@@ -346,6 +371,7 @@ export async function ensureSandboxImage(
           accountId: opts.accountId,
           provider: buildProvider,
           snapshotName: identity.snapshotName,
+          sessionSnapshot: opts.sessionSnapshot,
         });
       }
       console.log(
@@ -611,11 +637,22 @@ const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
  */
 export async function deleteSandboxImage(
   project: GitBackedProject,
-  opts: { slug?: string; provider?: string } = {},
+  opts: {
+    slug?: string;
+    provider?: string;
+    /**
+     * The pin the caller resolved the image from. Recomputing identity without
+     * it resolves the DEFAULT branch instead, so a heal would delete a
+     * different revision's image and leave the broken one in place.
+     */
+    sessionSnapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null;
+  } = {},
 ): Promise<{ deleted: boolean; snapshotName: string; slug: string }> {
-  const template = await resolveTemplateForBuildSlug(project, opts.slug);
+  const template = await resolveTemplateForBuildSlug(project, opts.slug, {
+    sessionSnapshot: opts.sessionSnapshot,
+  });
   const provider = getSandboxProvider(opts.provider ?? template.provider);
-  const identity = await computeTemplateIdentity(project, template);
+  const identity = await computeTemplateIdentity(project, template, opts.sessionSnapshot);
   const before = await provider.getSnapshotState(identity.snapshotName);
   await provider.deleteSnapshot(identity.snapshotName);
   // Reflect on the template row.
@@ -1016,7 +1053,14 @@ export function backgroundBuildKey(provider: string, snapshotName: string): stri
  */
 function kickBackgroundRebuild(
   project: GitBackedProject,
-  opts: { slug?: string; accountId?: string; provider: string; snapshotName: string },
+  opts: {
+    slug?: string;
+    accountId?: string;
+    provider: string;
+    snapshotName: string;
+    /** The same pin the foreground resolve used; without it this rebuilds another revision. */
+    sessionSnapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null;
+  },
 ): void {
   const key = backgroundBuildKey(opts.provider, opts.snapshotName);
   if (inflightBackgroundBuilds.has(key)) return;
@@ -1026,6 +1070,7 @@ function kickBackgroundRebuild(
     accountId: opts.accountId,
     source: 'background',
     provider: opts.provider,
+    sessionSnapshot: opts.sessionSnapshot,
   })
     .catch((err) =>
       console.warn(

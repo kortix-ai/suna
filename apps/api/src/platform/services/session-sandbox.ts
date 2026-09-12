@@ -92,21 +92,20 @@ const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 
 async function openComputeSessionForSandbox(
   sandboxId: string,
   accountId: string,
-  project: GitBackedProject,
   userId: string | null | undefined,
-  sandboxSlug: string | undefined,
+  /**
+   * The spec of the image this session actually booted, from
+   * `ensureSandboxImage`. Resolving the template again here used to re-read the
+   * source — and, after a prepared start, would have read the DEFAULT branch
+   * rather than the session's pin, billing a spec this session never ran.
+   */
+  resolvedSpec: { cpu?: number; memoryGb?: number; diskGb?: number } | undefined,
   provider: ProviderName,
 ): Promise<void> {
-  let spec = { ...DEFAULT_METERING_SPEC };
-  try {
-    const tpl = await resolveTemplate(project, sandboxSlug);
-    if (tpl.cpu !== undefined) spec.cpuCores = tpl.cpu;
-    if (tpl.memoryGb !== undefined) spec.memoryGb = tpl.memoryGb;
-    if (tpl.diskGb !== undefined) spec.diskGb = tpl.diskGb;
-  } catch {
-    // Template resolution failed (repo unreachable, parse error, etc.). Fall
-    // back to defaults so metering still records the session.
-  }
+  const spec = { ...DEFAULT_METERING_SPEC };
+  if (resolvedSpec?.cpu !== undefined) spec.cpuCores = resolvedSpec.cpu;
+  if (resolvedSpec?.memoryGb !== undefined) spec.memoryGb = resolvedSpec.memoryGb;
+  if (resolvedSpec?.diskGb !== undefined) spec.diskGb = resolvedSpec.diskGb;
   await startComputeSession({
     sandboxId,
     accountId,
@@ -619,6 +618,8 @@ export async function provisionSessionSandbox(opts: {
       contentHash: string;
       isDefault: boolean;
       runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
+      /** The spec of the template this image was built from; see `EnsureSandboxImageResult`. */
+      spec?: { cpu?: number; memoryGb?: number; diskGb?: number };
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
     // and image name), read once, best-effort — a DB hiccup yields null → name-boot. Set
@@ -678,6 +679,7 @@ export async function provisionSessionSandbox(opts: {
         contentHash: image.contentHash,
         isDefault: image.isDefault,
         runtimeProfile: image.runtimeProfile,
+        spec: image.spec,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
@@ -1053,7 +1055,7 @@ export async function provisionSessionSandbox(opts: {
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.
-      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug, providerName).catch(
+      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, userId, imageInfo?.spec, providerName).catch(
         (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
@@ -1067,9 +1069,12 @@ export async function provisionSessionSandbox(opts: {
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        await deleteSandboxImage(opts.gitProject, {
+        await deleteSandboxImage(await resolveGitProject(), {
           slug: imageInfo.slug,
           provider: providerName,
+          // The same pin the image was resolved from, or this deletes a
+          // different revision's image and leaves the broken one in place.
+          sessionSnapshot: opts.repoSnapshotRow,
         }).catch((err: unknown) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,

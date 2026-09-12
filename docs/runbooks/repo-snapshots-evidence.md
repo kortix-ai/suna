@@ -409,9 +409,9 @@ Object store: the existing MinIO on `127.0.0.1:19000`, bucket
 
 | Suite | Result |
 | --- | --- |
-| `apps/api` full unit suite (`bash scripts/test.sh`) | 9014 pass, 79 skip, 1 fail |
+| `apps/api` full unit suite (`bash scripts/test.sh`) | 9013 pass, 79 skip, 1 fail |
 | `src/repo-snapshots/` + `src/snapshots/` + metadata-merge guard | 384 pass, 5 skip, 0 fail |
-| 6 repo-snapshot integration suites (real DB + MinIO) | 46 pass, 0 fail |
+| 6 repo-snapshot integration suites (real DB + MinIO) | 51 pass, 0 fail |
 | `apps/api` `tsc --noEmit` | clean |
 | `packages/db` migration lint | 209 files pass |
 
@@ -462,6 +462,41 @@ The migration test now runs against a throwaway database it creates and drops,
 because the migration's SQL is deployment-wide by definition. The one test that
 calls `claimRefsDueForReconcile` asserts nothing else is due before claiming,
 rather than leasing another writer's row.
+
+### Correction — one branch, one lock
+
+Three further races, each reproduced against the real table before the fix.
+
+1. **A generation only means something for the row it came from.** A token read
+   from a legacy `refs/heads/main` row carried a bare counter, so after that row
+   was consolidated away it could authenticate a write to the *canonical* row
+   that happened to sit at the same number, restoring a stale SHA.
+   `RefObservationToken` now carries the ref key it was read from, and an
+   observation whose authoritative row identity changed is dropped.
+2. **Resolving the key and writing to it are two statements.** A consolidation
+   renaming the row between them let a delayed write recreate the legacy row
+   beside the canonical one — reintroducing exactly the orphan the migration
+   removes. Every mutation now resolves the key and writes inside one
+   transaction holding `pg_advisory_xact_lock` on the branch's CANONICAL name,
+   so all writers for one branch serialize regardless of which spelling they
+   started from.
+3. **The migration takes the same lock.** It consolidates one branch at a time
+   under that branch's lock, so the "does a canonical row exist" test and the
+   write that depends on it are atomic and a rolling writer can no longer turn
+   the rename into a `23505`. Its progress loop counts ROWS RETURNED rather
+   than reading a value out of a result, which is the one answer node-pg and
+   postgres-js report identically.
+
+Residual, and documented rather than fixed: an API replica running the PREVIOUS
+build takes no advisory lock, so during a rolling deploy it can still create a
+legacy row. The consolidation is safe to run again, and the running application
+reads either spelling, so the effect is a row to clean up later, not a lost
+revision.
+
+`integration-repo-snapshot-ref-alias.test.ts` proves the lock ordering directly:
+a second connection holds the branch lock, renames the row and records a newer
+SHA while a delayed observation waits on it; the observation then returns the
+canonical row and creates nothing.
 
 ### Outstanding
 

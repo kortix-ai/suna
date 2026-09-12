@@ -256,6 +256,17 @@ export interface RefObservationToken {
    * started" — and loses to any row that exists by the time the write lands.
    */
   generation: number | null;
+  /**
+   * The ref key the generation was read FROM.
+   *
+   * A generation only means something for the row it came from. One branch can
+   * be stored under two keys during a rollout, and the authoritative one can
+   * change between the lookup and the write — a consolidation deletes the
+   * legacy row while a rolling replica writes the canonical one. Without this,
+   * a counter read from the legacy row would authenticate a write to a
+   * different row that happens to sit at the same number.
+   */
+  ref: string;
 }
 
 /** Take the generation token for a ref before resolving its tip. */
@@ -263,8 +274,9 @@ export async function beginRefObservation(
   identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
   ref: string,
 ): Promise<RefObservationToken> {
-  const row = await readRepoRef(identity, ref);
-  return { generation: row ? Number(row.revision) : null };
+  const key = await storedRefKey(db, identity, ref);
+  const row = await readRepoRefByKey(db, identity, key);
+  return { generation: row ? Number(row.revision) : null, ref: key };
 }
 
 /**
@@ -296,10 +308,19 @@ export async function observeRepoRef(input: {
   token?: RefObservationToken;
 }): Promise<RepoSnapshotRefRow> {
   const now = new Date();
-  // One row per branch, whichever spelling that row already uses; see
-  // `storedRefKey`. New rows get the canonical key.
-  const ref = await storedRefKey(input.identity, input.ref);
-  const [row] = await db
+  // One row per branch, whichever spelling that row already uses — resolved and
+  // written under the branch lock, so the key cannot move between the two. See
+  // `withRefLock`. New rows get the canonical key.
+  return withRefLock(input.identity, input.ref, async (tx, ref) => {
+  // The token was taken from a specific row. If the authoritative row is a
+  // different one now — the legacy spelling was consolidated away while this
+  // lookup ran — the generation it carries describes a row that no longer
+  // exists, and must not authenticate a write to the survivor.
+  if (input.token && input.token.ref !== ref) {
+    const current = await readRepoRefByKey(tx, input.identity, ref);
+    if (current) return current;
+  }
+  const [row] = await tx
     .insert(repoSnapshotRefs)
     .values({
       provider: input.identity.provider,
@@ -340,9 +361,10 @@ export async function observeRepoRef(input: {
     .returning();
   if (row) return row;
   // The guard rejected this write. The stored row is the authoritative one.
-  const current = await readRepoRef(input.identity, ref);
+  const current = await readRepoRefByKey(tx, input.identity, ref);
   if (current) return current;
   throw new Error(`ref observation for ${ref} was rejected and the row could not be read back`);
+  });
 }
 
 /**
@@ -361,24 +383,26 @@ export async function ensureRefReconcileScheduled(input: {
   at: Date;
 }): Promise<void> {
   const now = new Date();
-  await db
-    .insert(repoSnapshotRefs)
-    .values({
-      provider: input.identity.provider,
-      repositoryId: input.identity.repositoryId,
-      owner: input.identity.owner,
-      repo: input.identity.repo,
-      ref: await storedRefKey(input.identity, input.ref),
-      desiredSha: null,
-      revision: 0,
-      observedAt: now,
-      observedVia: 'reconcile',
-      reconcileAfter: input.at,
-    })
-    .onConflictDoUpdate({
-      target: [repoSnapshotRefs.provider, repoSnapshotRefs.repositoryId, repoSnapshotRefs.ref],
-      set: { reconcileAfter: input.at, updatedAt: now },
-    });
+  await withRefLock(input.identity, input.ref, async (tx, ref) =>
+    tx
+      .insert(repoSnapshotRefs)
+      .values({
+        provider: input.identity.provider,
+        repositoryId: input.identity.repositoryId,
+        owner: input.identity.owner,
+        repo: input.identity.repo,
+        ref,
+        desiredSha: null,
+        revision: 0,
+        observedAt: now,
+        observedVia: 'reconcile',
+        reconcileAfter: input.at,
+      })
+      .onConflictDoUpdate({
+        target: [repoSnapshotRefs.provider, repoSnapshotRefs.repositoryId, repoSnapshotRefs.ref],
+        set: { reconcileAfter: input.at, updatedAt: now },
+      }),
+  );
 }
 
 /**
@@ -397,11 +421,12 @@ export async function ensureRefReconcileScheduled(input: {
  * stays because a rolling deploy can always write one more.
  */
 async function storedRefKey(
+  executor: RefExecutor,
   identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
   ref: string,
 ): Promise<string> {
   const canonical = normalizeRefKey(ref);
-  const [row] = await db
+  const [row] = await executor
     .select({ ref: repoSnapshotRefs.ref })
     .from(repoSnapshotRefs)
     .where(
@@ -418,22 +443,58 @@ async function storedRefKey(
   return row?.ref ?? canonical;
 }
 
-export async function readRepoRef(
+/** `db`, or a transaction handle. Every ref statement runs through one of these. */
+type RefExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'execute'>;
+
+async function readRepoRefByKey(
+  executor: RefExecutor,
   identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
-  ref: string,
+  key: string,
 ): Promise<RepoSnapshotRefRow | null> {
-  const [row] = await db
+  const [row] = await executor
     .select()
     .from(repoSnapshotRefs)
     .where(
       and(
         eq(repoSnapshotRefs.provider, identity.provider),
         eq(repoSnapshotRefs.repositoryId, identity.repositoryId),
-        eq(repoSnapshotRefs.ref, await storedRefKey(identity, ref)),
+        eq(repoSnapshotRefs.ref, key),
       ),
     )
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Run `fn` with this BRANCH locked, whichever key it is stored under.
+ *
+ * Resolving the stored key and writing to it are two statements, and between
+ * them the key itself can move: the consolidation migration renames a legacy
+ * row to the canonical one. A write that resolved the old key and then inserted
+ * it would recreate the legacy row the migration had just removed, with a stale
+ * SHA and no generation to lose against. The lock is taken on the CANONICAL
+ * name, so every writer for one branch serializes on the same key no matter
+ * which spelling it started from — and the migration takes the same lock.
+ */
+async function withRefLock<T>(
+  identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
+  ref: string,
+  fn: (executor: RefExecutor, key: string) => Promise<T>,
+): Promise<T> {
+  const canonical = normalizeRefKey(ref);
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`${identity.provider}:${identity.repositoryId}:${canonical}`}, 0))`,
+    );
+    return fn(tx as unknown as RefExecutor, await storedRefKey(tx as unknown as RefExecutor, identity, ref));
+  });
+}
+
+export async function readRepoRef(
+  identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
+  ref: string,
+): Promise<RepoSnapshotRefRow | null> {
+  return readRepoRefByKey(db, identity, await storedRefKey(db, identity, ref));
 }
 
 /**
@@ -480,14 +541,16 @@ export async function scheduleRefReconcile(
   ref: string,
   at: Date,
 ): Promise<void> {
-  await db
-    .update(repoSnapshotRefs)
-    .set({ reconcileAfter: at, updatedAt: new Date() })
-    .where(
-      and(
-        eq(repoSnapshotRefs.provider, identity.provider),
-        eq(repoSnapshotRefs.repositoryId, identity.repositoryId),
-        eq(repoSnapshotRefs.ref, await storedRefKey(identity, ref)),
+  await withRefLock(identity, ref, async (tx, key) =>
+    tx
+      .update(repoSnapshotRefs)
+      .set({ reconcileAfter: at, updatedAt: new Date() })
+      .where(
+        and(
+          eq(repoSnapshotRefs.provider, identity.provider),
+          eq(repoSnapshotRefs.repositoryId, identity.repositoryId),
+          eq(repoSnapshotRefs.ref, key),
+        ),
       ),
-    );
+  );
 }

@@ -92,22 +92,15 @@ describe('normalizeRefKey', () => {
     expect(normalizeRefKey('  refs/heads/main  ')).toBe('main');
   });
 
+  // How the STORE uses this — resolving whichever spelling a row is stored
+  // under, under a per-branch lock so the key cannot move mid-write — is proved
+  // against the real table in
+  // `__tests__/integration-repo-snapshot-ref-alias.test.ts`. A source-string
+  // assertion here would only pin the shape of the code, not the behaviour.
   test('leaves a non-branch ref alone — it is a different ref', async () => {
     const { normalizeRefKey } = await import('./format');
     expect(normalizeRefKey('refs/tags/v1')).toBe('refs/tags/v1');
     expect(normalizeRefKey('refs/notes/commits')).toBe('refs/notes/commits');
   });
 
-  test('no store entry point lets a caller choose the key', async () => {
-    const source = await Bun.file(new URL('./store.ts', import.meta.url)).text();
-    // Each of the three entry points resolves the stored spelling itself, so a
-    // caller passing `refs/heads/main` and one passing `main` reach the same
-    // row. What that resolution DOES — including rows an older build wrote
-    // under the full-ref spelling — is proved against the real table in
-    // `__tests__/integration-repo-snapshot-ref-alias.test.ts`; this only pins
-    // that no entry point was left taking the caller's word for the key.
-    expect(source).toContain('const ref = await storedRefKey(input.identity, input.ref);');
-    expect(source).toContain('eq(repoSnapshotRefs.ref, await storedRefKey(identity, ref))');
-    expect(source).toContain('ref: await storedRefKey(input.identity, input.ref),');
-  });
 });

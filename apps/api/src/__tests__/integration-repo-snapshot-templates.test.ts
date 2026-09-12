@@ -38,7 +38,9 @@ const { normalizeRepoSnapshotIdentity } = await import('../repo-snapshots/format
 const { publishRepoSnapshot } = await import('../repo-snapshots/publish');
 const { requireRepoSnapshotBucket } = await import('../repo-snapshots/s3');
 const { findRepoSnapshot } = await import('../repo-snapshots/store');
-const { listTemplatesForProject, invalidateTemplateCache } = await import('../snapshots/templates');
+const { listTemplatesForProject, invalidateTemplateCache, pinnedSandboxDefaultSlug } = await import(
+  '../snapshots/templates'
+);
 const { DEFAULT_SANDBOX_SLUG } = await import('../snapshots/dockerfile-layer');
 
 const ALLOW_SKIP = process.env.KORTIX_REPO_SNAPSHOT_E2E === 'skip';
@@ -89,6 +91,7 @@ function manifest(revision: 'old' | 'new'): string {
     : [
         'kortix_version: 2',
         'sandbox:',
+        '  default: builder',
         '  templates:',
         '    - slug: builder',
         '      name: Builder',
@@ -352,6 +355,28 @@ describe('a pinned session sees the catalogue its own revision declares', () => 
     // Absent is not broken: the UI template and the platform default remain.
     expect(templates.map((t) => t.slug)).toContain('handmade');
     expect(templates.map((t) => t.slug)).toContain(DEFAULT_SANDBOX_SLUG);
+  });
+
+  test('the default template slug comes from the pin, not project metadata', async () => {
+    if (!guard()) return;
+    invalidateTemplateCache(projectId);
+    // Written by the manifest sync from an older revision, and wrong for both
+    // revisions under test.
+    await db.execute(sql`
+      update kortix.projects
+      set metadata = metadata || jsonb_build_object('default_sandbox_slug', 'legacy-image'::text)
+      where project_id = ${projectId}`);
+
+    expect(await pinnedSandboxDefaultSlug(await projectRow(), await snapshotFor(newSha))).toBe('builder');
+    // The old revision declares no default at all — and must not inherit one.
+    expect(await pinnedSandboxDefaultSlug(await projectRow(), await snapshotFor(oldSha))).toBeNull();
+  });
+
+  test('a default naming a template this revision does not declare is ignored', async () => {
+    if (!guard()) return;
+    invalidateTemplateCache(projectId);
+    // `bareSha` has no manifest, so nothing declares `builder` there.
+    expect(await pinnedSandboxDefaultSlug(await projectRow(), await snapshotFor(bareSha))).toBeNull();
   });
 
   test('an unreadable snapshot fails the catalogue instead of defaulting', async () => {

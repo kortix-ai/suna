@@ -355,6 +355,12 @@ export async function s3PutObject(
     payloadHash,
     extraHeaders,
   });
+  // The request body IS file data, by design: this is the archive upload, and
+  // the bytes come from an archive this process just built from a repository
+  // checkout — never from a request, a URL, or user-supplied path. The
+  // destination is not influenced by the body at all: `location` is derived
+  // from the configured bucket and a content-addressed key, and the request is
+  // SigV4-signed over that exact key, so the bytes cannot redirect the write.
   const response = await fetch(location.url, {
     method: 'PUT',
     headers,
