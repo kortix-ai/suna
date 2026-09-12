@@ -26,6 +26,9 @@ DAEMON HEALTH (/kortix/health, read through the API proxy)
                      config-deps@420ms, opencode-workspace-reloaded@611ms …
 ```
 
+Reproduced after every subsequent change (session 5cbda8f2: `runtimeReady: true`,
+`git_network_ops: 0`, `used: true`, `transferMs: 274`, `firstEntryAtMs: 252`).
+
 What this establishes:
 
 - The workspace was served from the published S3 object in `required` mode,
@@ -184,13 +187,32 @@ variable away if a future cohort shows a real win.
 
 | Suite | Result |
 | --- | --- |
-| `apps/api` (`bash scripts/test.sh`) | 8987 pass / 1 fail |
+| `apps/api` (`bash scripts/test.sh`) | 8988 pass / 1 fail |
 | `apps/kortix-sandbox-agent-server` (`bun test`) | 1183 pass / 0 fail |
 | Route coverage (`bun bin/ke2e.ts coverage`) | 0 uncovered of 640 |
 
 The single API failure is `src/secrets/relay-transport.test.ts`, a bun
 response-header behaviour assertion. `git diff origin/main -- apps/api/src/secrets`
 is empty, so this branch does not touch it.
+
+## 5b. LFS and submodules
+
+Writing the fixtures the brief asks for found that an LFS repository could not be
+packaged at all. `.gitattributes` declares a smudge filter, `git checkout` tries
+to run `git-lfs`, and on an image without that binary packaging failed with
+`git-lfs: command not found`. The sandbox's verification had the same exposure.
+
+Both now run filter-neutral, which is also the property the brief already
+requires — "verification must not execute archive-provided hooks, external
+filters, or configuration includes". The archive carries the LFS POINTER byte
+for byte, which is what a checkout without `git-lfs` produces today. Submodule
+CONTENT is not populated, which is what `git clone --depth 1` already does; the
+gitlink and `.gitmodules` survive so `git submodule update` still works.
+
+Both are preserved, neither is materialized, and that is the status quo rather
+than a change. A repository declaring some other custom filter fails loudly when
+that binary is absent — recorded on the snapshot row, never silently packaged
+with different content.
 
 ## 6. Blockers — exact, with the supported action
 
