@@ -666,8 +666,25 @@ export async function listRepositoryBranches(input: {
   owner: string;
   repo: string;
   auth: Pick<GitHubAuthContext, 'token'>;
+  /**
+   * Fetch ONE page instead of walking them all.
+   *
+   * A repository with thousands of branches is one request per hundred, and a
+   * caller on a background tick needs to bound how much of that it does per
+   * pass and resume where it stopped. Omit for the historical behaviour.
+   */
+  page?: number;
+  perPage?: number;
 }): Promise<GitHubBranch[]> {
-  const perPage = 100;
+  const perPage = Math.min(100, Math.max(1, input.perPage ?? 100));
+  if (input.page !== undefined) {
+    return ghFetch<GitHubBranch[]>(
+      `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}` +
+        `/branches?per_page=${perPage}&page=${Math.max(1, input.page)}`,
+      { method: 'GET' },
+      input.auth,
+    );
+  }
   const branches: GitHubBranch[] = [];
 
   for (let page = 1; ; page += 1) {

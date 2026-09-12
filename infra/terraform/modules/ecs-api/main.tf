@@ -212,6 +212,34 @@ resource "aws_iam_role_policy" "ses_send" {
   })
 }
 
+# Repository snapshots. Deliberately the NARROWEST grant that works, and no
+# wider: GetObject and PutObject on the environment's own prefix.
+#
+# There is no s3:ListBucket, which is why publication leads with a conditional
+# PUT rather than a HEAD — without ListBucket, AWS answers 403 for a key that
+# does not exist, and "does this object exist" is unanswerable. Reading 403 as
+# absence would be a correctness bug and a permissions guess at once; the
+# publisher does not do it (apps/api/src/repo-snapshots/publish.ts).
+#
+# No grant at all until an operator sets repo_snapshot_bucket, so applying this
+# module changes nothing in an environment that has not opted in.
+resource "aws_iam_role_policy" "repo_snapshots" {
+  count = length(trimspace(var.repo_snapshot_bucket)) > 0 ? 1 : 0
+  name  = "${local.name}-repo-snapshots"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "ReadWriteSnapshotObjects"
+      Effect = "Allow"
+      Action = ["s3:GetObject", "s3:PutObject"]
+      Resource = [
+        "arn:${data.aws_partition.current.partition}:s3:::${var.repo_snapshot_bucket}/${var.repo_snapshot_prefix}*",
+      ]
+    }]
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"

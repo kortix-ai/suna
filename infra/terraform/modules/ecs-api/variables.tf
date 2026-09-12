@@ -255,3 +255,24 @@ variable "ses_send_region" {
     error_message = "ses_send_region is required when ses_send_identity_names is not empty."
   }
 }
+
+variable "repo_snapshot_bucket" {
+  description = <<-EOT
+    S3 bucket holding prepared repository snapshots. Empty (the default)
+    grants the task role nothing, which is the state every environment is in
+    until an operator opts in — applying this module changes no permissions
+    on its own.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "repo_snapshot_prefix" {
+  description = <<-EOT
+    Key prefix inside repo_snapshot_bucket, separating environments that share
+    one bucket. Must match KORTIX_REPO_SNAPSHOT_PREFIX. The grant is scoped to
+    this prefix, so a dev task role cannot read or write prod's objects.
+  EOT
+  type        = string
+  default     = ""
+}

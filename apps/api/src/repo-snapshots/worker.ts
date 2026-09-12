@@ -37,7 +37,11 @@ import {
   gitMetadataSubtree,
   pendingPushedRefs,
   clearPendingOverflowExpr,
+  pendingOverflowPage,
   pendingPushedRefsOverflowed,
+  pendingPushedSeq,
+  pendingSeqUnchanged,
+  setPendingOverflowPageExpr,
   readRepoSnapshotRepository,
   recordedRepositoryIdSql,
   removePendingPushedRefsExpr,
@@ -355,18 +359,28 @@ async function drainPendingPushedRefs(
   // More branches were pushed than the parking slot holds, so the parked list
   // is not the accepted set. Ask the provider for the authoritative one — the
   // truncated names are a hint, the repository's own branch list is the answer.
+  //
+  // ONE PAGE per pass, resuming from where the last one stopped: a repository
+  // with thousands of branches must not turn a background tick into thousands
+  // of ref writes and a hundred provider calls.
   if (pendingPushedRefsOverflowed(project)) {
-    const enumerated = await enumerateBranches(project, repository).catch((error) => {
+    // Read BEFORE the enumeration. A push that overflows while this runs bumps
+    // it, and the acknowledgement below then does not fire — otherwise this
+    // pass would erase a marker set for names it never saw.
+    const seq = pendingPushedSeq(project);
+    const page = pendingOverflowPage(project);
+    const names = await enumerateBranchPage(project, repository, page).catch((error) => {
       logger.warn('[repo-snapshot] could not enumerate branches for an overflowed push', {
         projectId: project.projectId,
+        page,
         error: error instanceof Error ? error.message : String(error),
       });
       return null;
     });
-    if (enumerated) {
+    if (names) {
       const at = new Date();
       let scheduled = 0;
-      for (const ref of enumerated) {
+      for (const ref of names) {
         await ensureRefReconcileScheduled({ identity: repository, ref, at }).then(
           () => {
             scheduled += 1;
@@ -374,22 +388,27 @@ async function drainPendingPushedRefs(
           () => {},
         );
       }
-      if (scheduled === enumerated.length) {
+      const lastPage = names.length < BRANCH_PAGE_SIZE;
+      if (lastPage && scheduled === names.length) {
+        // Acknowledge, but only if nothing has parked since this pass began.
         await db
           .update(projects)
           .set({ metadata: clearPendingOverflowExpr(project) })
-          .where(eq(projects.projectId, project.projectId))
+          .where(and(eq(projects.projectId, project.projectId), pendingSeqUnchanged(project, seq)))
           .catch(() => {});
+      } else if (!lastPage) {
         await db
           .update(projects)
-          .set({ metadata: removePendingPushedRefsExpr(project, pendingPushedRefs(project)) })
-          .where(eq(projects.projectId, project.projectId))
+          .set({ metadata: setPendingOverflowPageExpr(project, page + 1) })
+          .where(and(eq(projects.projectId, project.projectId), pendingSeqUnchanged(project, seq)))
           .catch(() => {});
       }
-      logger.info('[repo-snapshot] enumerated branches after an overflowed push', {
+      logger.info('[repo-snapshot] enumerated a branch page after an overflowed push', {
         projectId: project.projectId,
-        branches: enumerated.length,
+        page,
+        branches: names.length,
         scheduled,
+        done: lastPage,
       });
       return scheduled;
     }
@@ -422,10 +441,14 @@ async function drainPendingPushedRefs(
   return scheduled.length;
 }
 
-/** Every branch the repository actually has, as the provider reports it. */
-async function enumerateBranches(
+/** Branches per enumeration pass; one provider request. */
+const BRANCH_PAGE_SIZE = 100;
+
+/** One page of the repository's branches, as the provider reports them. */
+async function enumerateBranchPage(
   project: ProjectRow,
   repository: RepoSnapshotRepository,
+  page: number,
 ): Promise<string[]> {
   const authed = await withProjectGitAuth(project);
   const coordinates = parseGitHubRepoUrl(authed.repoUrl) ?? {
@@ -436,6 +459,8 @@ async function enumerateBranches(
     owner: coordinates.owner,
     repo: coordinates.repo,
     auth: { token: authed.gitAuthToken ?? '' },
+    page,
+    perPage: BRANCH_PAGE_SIZE,
   });
   return branches.map((branch) => branch.name).filter(Boolean);
 }

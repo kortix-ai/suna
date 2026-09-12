@@ -290,9 +290,44 @@ export function addPendingPushedRefsExpr(project: ProjectRow, refs: string[]): S
     (select count(*) from ${union} u) > ${MAX_PENDING_REFS}
     or coalesce((${subtree} ->> 'snapshot_pending_overflow')::boolean, false)
   )`;
+  // A monotonic counter, bumped by every park. The drain reads it before it
+  // starts and clears the overflow marker only if it has not moved — otherwise
+  // a push that overflowed WHILE the drain was enumerating would have its
+  // marker erased by the drain's acknowledgement of the earlier one.
+  const nextSeq = sql`(coalesce((${subtree} ->> 'snapshot_pending_seq')::bigint, 0) + 1)`;
   return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
     ${subtree} || jsonb_build_object('snapshot_pending_refs', ${merged})
-               || jsonb_build_object('snapshot_pending_overflow', ${overflowed}))`;
+               || jsonb_build_object('snapshot_pending_overflow', ${overflowed})
+               || jsonb_build_object('snapshot_pending_seq', ${nextSeq}))`;
+}
+
+/** The park counter this project is at; see `addPendingPushedRefsExpr`. */
+export function pendingPushedSeq(project: ProjectRow): number {
+  const meta = (project.metadata ?? {}) as Record<string, any>;
+  const raw = meta[gitMetadataSubtree(project)]?.snapshot_pending_seq;
+  return Number.isFinite(Number(raw)) ? Number(raw) : 0;
+}
+
+/** Where a bounded enumeration got to, so the next pass resumes rather than restarts. */
+export function pendingOverflowPage(project: ProjectRow): number {
+  const meta = (project.metadata ?? {}) as Record<string, any>;
+  const raw = meta[gitMetadataSubtree(project)]?.snapshot_pending_page;
+  const page = Number(raw);
+  return Number.isFinite(page) && page > 0 ? page : 1;
+}
+
+/** Record how far the enumeration got. */
+export function setPendingOverflowPageExpr(project: ProjectRow, page: number): SQL {
+  const key = gitMetadataSubtree(project);
+  const subtree = sql`coalesce(${projects.metadata} -> ${key}, '{}'::jsonb)`;
+  return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
+    ${subtree} || jsonb_build_object('snapshot_pending_page', ${Math.max(1, page)}::int))`;
+}
+
+/** Only a project whose park counter is still `seq` may have its marker cleared. */
+export function pendingSeqUnchanged(project: ProjectRow, seq: number): SQL {
+  const key = gitMetadataSubtree(project);
+  return sql`coalesce((coalesce(${projects.metadata} -> ${key}, '{}'::jsonb) ->> 'snapshot_pending_seq')::bigint, 0) = ${seq}`;
 }
 
 /** Did a push park more branches than the bound allows? */
@@ -329,7 +364,7 @@ export function clearPendingOverflowExpr(project: ProjectRow): SQL {
   const key = gitMetadataSubtree(project);
   const subtree = sql`coalesce(${projects.metadata} -> ${key}, '{}'::jsonb)`;
   return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
-    ${subtree} - 'snapshot_pending_overflow')`;
+    (${subtree} - 'snapshot_pending_overflow') - 'snapshot_pending_page')`;
 }
 
 export function withCommit(

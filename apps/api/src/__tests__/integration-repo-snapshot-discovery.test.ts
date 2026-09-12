@@ -537,7 +537,9 @@ describe('a failed first preparation recovers without another webhook', () => {
     if (!guard()) return;
     githubHealthy = true;
     const { prepareRevisionsForPush } = await import('../repo-snapshots/prepare');
-    const { pendingPushedRefs, pendingPushedRefsOverflowed } = await import('../repo-snapshots/identity');
+    const { pendingPushedRefs, pendingPushedRefsOverflowed, pendingPushedSeq } = await import(
+      '../repo-snapshots/identity'
+    );
     const { drainRegisteredPendingRefs } = await import('../repo-snapshots/worker');
     const projectId = await seedProject('discovery-overflow');
     overflowBranchCount = 1500;
@@ -554,6 +556,9 @@ describe('a failed first preparation recovers without another webhook', () => {
     expect(pendingPushedRefs(parked as never).length).toBeLessThanOrEqual(1000);
     // The truncation is RECORDED, which is what makes it recoverable.
     expect(pendingPushedRefsOverflowed(parked as never)).toBe(true);
+    // And every park bumps a counter, so a drain cannot acknowledge an overflow
+    // that was raised after it started reading.
+    expect(pendingPushedSeq(parked as never)).toBeGreaterThan(0);
 
     // Registration, then the drain: because the list was truncated, recovery
     // asks the repository for its branches rather than trusting what fitted.
@@ -566,7 +571,17 @@ describe('a failed first preparation recovers without another webhook', () => {
       ?.repositoryId;
     expect(repositoryId).toBeTruthy();
     ownedRepositoryIds.add(repositoryId as string);
-    await drainRegisteredPendingRefs(50);
+
+    // Bounded and RESUMABLE: each pass enumerates one provider page and records
+    // where it stopped. A repository with thousands of branches must not turn
+    // one background tick into thousands of writes.
+    const perPass: number[] = [];
+    for (let pass = 0; pass < 40; pass += 1) {
+      if (!pendingPushedRefsOverflowed((await projectRow(projectId)) as never)) break;
+      perPass.push(await drainRegisteredPendingRefs(50));
+    }
+    expect(Math.max(...perPass)).toBeLessThanOrEqual(100);
+    expect(perPass.length).toBeGreaterThan(1);
 
     const stored = (await db.execute(sql`
       select count(*)::int as n from kortix.repo_snapshot_refs
@@ -684,7 +699,11 @@ describe('legacy metadata.github projects are not damaged by discovery', () => {
         commitSha: fixtureSha,
       }),
     );
-    expect(queued?.status).toBe('queued');
+    // Enqueued. The background worker may already have claimed it, so the
+    // assertion is that the row EXISTS for this revision and names the project
+    // that supplied it — not that nothing has touched it since.
+    expect(queued).toBeTruthy();
+    expect(['queued', 'building', 'ready', 'failed']).toContain(queued?.status);
     expect(queued?.sourceProjectId).toBe(ids.get('discovery-legacy-done') as string);
     expect((await readRepoRef({ provider: 'github', repositoryId: legacyDoneRepoId }, 'main'))?.desiredSha).toBe(
       fixtureSha,
