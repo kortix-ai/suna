@@ -13,9 +13,10 @@ export async function resolveSessionNetworkBoundary(
   sessionId: string,
   requestedAgent?: string | null,
   /**
-   * The repository snapshot governing this session, when one does. Only the
-   * manifest READ moves to the archive; the boundary's authorization inputs are
-   * unchanged.
+   * Prepared source for the grant read, at the project's DEFAULT BRANCH — see
+   * `resolveDefaultBranchGrantSnapshot`. Only the manifest READ moves to the
+   * archive; the boundary's authorization inputs are unchanged, and the session's
+   * own ref is deliberately not a valid source here.
    */
   repoSnapshot?: import('../../repo-snapshots/store').RepoSnapshotRow | null,
 ) {
@@ -52,9 +53,9 @@ export async function resolveSessionNetworkBoundary(
     manifestPath: project.manifestPath,
     sessionAgent,
     requestedAgent,
-    // Declarations from the pinned archive when one governs this session, so
-    // the boundary check performs no Git operation. The secret VALUES and every
-    // revocation still come from the secret store below, unchanged.
+    // Declarations from the DEFAULT-BRANCH archive, so the boundary check
+    // performs no Git operation. The secret VALUES and every revocation still
+    // come from the secret store below, unchanged.
     snapshot: repoSnapshot ?? null,
   });
   const rows = await listResolvedProjectSecrets(projectId, session.createdBy ?? null);

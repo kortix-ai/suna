@@ -6,12 +6,13 @@
  * The publisher re-resolves the tip server-side, so a caller that passes a
  * stale or out-of-order value cannot publish the wrong revision as current.
  */
+import { config } from '../config';
 import { logger } from '../lib/logger';
 import { getBranchCommitSha, parseGitHubRepoUrl } from '../projects/github';
 import { withProjectGitAuth } from '../projects/lib/git';
 import type { ProjectRow } from '../projects/lib/serializers';
 import { ensureRepoSnapshotRepository } from './identity';
-import { observeRepoRef } from './store';
+import { ensureRefReconcileScheduled, observeRepoRef } from './store';
 import { prepareRevision, repoSnapshotWorkerEnabled, triggerRepoSnapshotWorker } from './worker';
 
 export type PrepareResult = { prepared: true; commitSha: string } | { prepared: false; reason: string };
@@ -40,13 +41,17 @@ export async function prepareRefTip(
       owner: resolved.repository.owner,
       repo: resolved.repository.repo,
     };
+    // Stamped BEFORE the provider call: this observation is only as fresh as
+    // the moment it asked, and a slower request must not outrank a newer one
+    // just by finishing later. See `observeRepoRef`.
+    const observedAt = new Date();
     const commitSha = await getBranchCommitSha({
       owner: coordinates.owner,
       repo: coordinates.repo,
       branch,
       auth: authed.gitAuthToken ? { token: authed.gitAuthToken } : undefined,
     });
-    const outcome = await prepareRevision({ project, ref, commitSha, via });
+    const outcome = await prepareRevision({ project, ref, commitSha, via, observedAt });
     return outcome.prepared ? { prepared: true, commitSha } : { prepared: false, reason: outcome.reason };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -61,8 +66,22 @@ export async function prepareRefTip(
       });
       return { prepared: false, reason: `ref ${ref} no longer exists` };
     }
+    // Any other failure leaves NO revision recorded, so without this the ref
+    // would never be looked at again — the row reconciliation scans is the only
+    // thing that brings a project back. Schedule the retry, and never touch a
+    // desired SHA that may already be correct.
+    await ensureRefReconcileScheduled({
+      identity: resolved.repository,
+      ref,
+      at: new Date(Date.now() + reconcileRetryDelayMs()),
+    }).catch(() => {});
     return { prepared: false, reason: message };
   }
+}
+
+/** Backoff before a failed preparation is re-examined. */
+function reconcileRetryDelayMs(): number {
+  return Math.max(1, config.KORTIX_REPO_SNAPSHOT_RECONCILE_INTERVAL_MINUTES ?? 15) * 60_000;
 }
 
 /** A successful push through the Kortix git proxy. */

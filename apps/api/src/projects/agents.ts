@@ -342,8 +342,16 @@ export async function loadProjectAgents(
 export async function resolveAgentGrant(
   agentName: string,
   project: GitBackedProject,
+  /**
+   * Prepared source for this read, which must be the project's DEFAULT-BRANCH
+   * snapshot — see `repo-snapshots/session-pin.ts`
+   * `resolveDefaultBranchGrantSnapshot`. Passing a session's pinned snapshot
+   * here would let a feature branch widen its own grant, which is the hole the
+   * default-branch rule exists to close.
+   */
+  grantSnapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null,
 ): Promise<AgentGrant | null> {
-  return grantFromLoadedAgents(agentName, await loadProjectAgents(project));
+  return grantFromLoadedAgents(agentName, await loadProjectAgents(project, { snapshot: grantSnapshot }));
 }
 
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */

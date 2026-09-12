@@ -147,6 +147,12 @@ export async function mintSessionToken(opts: {
   sandboxId: string;
   agentName: string;
   gitProject: GitBackedProject;
+  /**
+   * Prepared source for the grant read, at the project's DEFAULT BRANCH.
+   * Never the session's pinned workspace snapshot — see
+   * `resolveDefaultBranchGrantSnapshot`.
+   */
+  grantSnapshotRow?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
 }): Promise<string> {
   const platformMetaAgent = isMetaAgentName(opts.agentName);
   // The reserved coordinator uses a platform-owned full project grant. It acts
@@ -160,7 +166,7 @@ export async function mintSessionToken(opts: {
         // The SA resolution is FAIL-SAFE: on error
         // we mint without a service_account_id, which is the legacy behavior
         // (authorize as the user ∩ grant). It never widens authority.
-        resolveAgentGrant(opts.agentName, opts.gitProject),
+        resolveAgentGrant(opts.agentName, opts.gitProject, opts.grantSnapshotRow),
         ensureAgentServiceAccount({
           accountId: opts.accountId,
           projectId: opts.projectId,
@@ -327,8 +333,14 @@ export async function provisionSessionSandbox(opts: {
    */
   gitProject: GitBackedProject;
   resolveGitProject?: () => Promise<GitBackedProject>;
-  /** Pinned repository snapshot, so the boundary check performs no Git read. */
+  /** Pinned repository snapshot for the WORKSPACE, at the session's ref. */
   repoSnapshotRow?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
+  /**
+   * Prepared source for AUTHORIZATION reads, at the project's DEFAULT BRANCH.
+   * Deliberately separate from `repoSnapshotRow`: the grant must not come from
+   * the session's own ref. See `resolveDefaultBranchGrantSnapshot`.
+   */
+  grantSnapshotRow?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
   baseRef?: string;
   /**
    * Slug of the sandbox template to boot from. Resolves against the project's
@@ -498,6 +510,7 @@ export async function provisionSessionSandbox(opts: {
       sandboxId,
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
+      grantSnapshotRow: opts.grantSnapshotRow,
     }),
     llmGatewayEnabled
       ? accountEntitledToLlmGateway(accountId).catch((err) => {
@@ -626,7 +639,7 @@ export async function provisionSessionSandbox(opts: {
       // one mechanism serves daytona, e2b and platinum alike (docs/specs/
       // 2026-08-19-secrets-exposure-usage-model.md §4): the guest gets a HANDLE
       // and the broker route substitutes the real value server-side.
-      await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId, null, opts.repoSnapshotRow ?? null);
+      await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId, null, opts.grantSnapshotRow ?? null);
 
       // Stateless image resolution: ask Daytona if it has the image; build if not.
       // No DB lookup, no degraded fallback — the snapshot is either there or we

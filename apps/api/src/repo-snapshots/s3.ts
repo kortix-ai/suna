@@ -54,6 +54,18 @@ export class S3RequestError extends Error {
   get notFound(): boolean {
     return this.status === 404;
   }
+  /**
+   * The caller may not ask this question — NOT a statement about the object.
+   *
+   * On AWS, a HEAD or GET for a key that does not exist answers 403, not 404,
+   * unless the principal also holds `s3:ListBucket` on the bucket
+   * (https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html).
+   * A caller that treated 403 as "absent" would be wrong in exactly the case
+   * that matters, so absence is never inferred from this.
+   */
+  get accessDenied(): boolean {
+    return this.status === 403;
+  }
   /** A conditional create lost: another publisher already wrote this key. */
   get preconditionFailed(): boolean {
     return this.status === 412 || this.status === 409;
@@ -276,6 +288,16 @@ export async function s3GetObjectText(
   return response.text();
 }
 
+/**
+ * HEAD an object.
+ *
+ * `null` means the store said 404 — the object is genuinely absent. It does NOT
+ * cover 403: without `s3:ListBucket`, AWS answers 403 for a missing key, and
+ * collapsing that into `null` would make every first publication look like a
+ * successful absence check. A 403 therefore throws, and callers that need to
+ * decide existence must use a conditional write instead. See
+ * `publish.ts:ensureArchiveUploaded`.
+ */
 export async function s3HeadObject(
   bucket: RepoSnapshotBucket,
   key: string,

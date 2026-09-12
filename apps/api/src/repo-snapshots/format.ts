@@ -136,6 +136,24 @@ export function payloadKey(
   return `${snapshotPrefix(identity)}${archiveSha256}.${archiveExtension(compression)}`;
 }
 
+/**
+ * Canonical key for a ref row.
+ *
+ * The same branch arrives spelled two ways: a GitHub `push` payload carries
+ * `refs/heads/main` while a project's `defaultBranch`, a session's `base_ref`
+ * and a proxy push all carry `main`. Storing both produced TWO rows for one
+ * branch, and the session pin — which looks up the short form — never saw the
+ * row the webhook wrote. Every write and read goes through this, so a call site
+ * cannot get it wrong.
+ *
+ * Only `refs/heads/` is collapsed. A tag or a note keeps its full name, which is
+ * correct: it is a different ref.
+ */
+export function normalizeRefKey(ref: string): string {
+  const trimmed = (ref ?? '').trim();
+  return trimmed.startsWith('refs/heads/') ? trimmed.slice('refs/heads/'.length) : trimmed;
+}
+
 export interface RepoSnapshotLimits {
   maxCompressedBytes: number;
   maxExpandedBytes: number;

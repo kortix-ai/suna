@@ -12,6 +12,7 @@ import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
   REPO_SNAPSHOT_FORMAT,
+  normalizeRefKey,
   type RepoSnapshotCompression,
   type RepoSnapshotIdentity,
   type RepoSnapshotManifest,
@@ -244,14 +245,32 @@ export type RefObservationSource = 'webhook' | 'reconcile' | 'proxy_push' | 'imp
  * attacker-controlled. A write only takes effect when it carries a strictly
  * higher revision, which is how a slow reconcile loses to a newer webhook.
  */
+/**
+ * Record the latest SHA the control plane has OBSERVED for one ref.
+ *
+ * `observedAt` is when the tip was RESOLVED from the provider, not when this
+ * row is written, and a write only lands if it is strictly newer than what is
+ * stored. Those are different clocks: a reconcile that resolved at T1 can reach
+ * the database after a webhook that resolved at T2 > T1, and without this guard
+ * the slower request would overwrite the newer truth with an older SHA. Webhook
+ * ARRIVAL order is never trusted for the same reason.
+ *
+ * Returns the row that is now authoritative — which is the stored one when this
+ * observation lost.
+ */
 export async function observeRepoRef(input: {
   identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId' | 'owner' | 'repo'>;
   ref: string;
   desiredSha: string | null;
   via: RefObservationSource;
   reconcileAfter?: Date | null;
+  /** When the tip was resolved from the provider. Defaults to now. */
+  observedAt?: Date;
 }): Promise<RepoSnapshotRefRow> {
   const now = new Date();
+  const observedAt = input.observedAt ?? now;
+  // One canonical spelling per branch; see `normalizeRefKey`.
+  const ref = normalizeRefKey(input.ref);
   const [row] = await db
     .insert(repoSnapshotRefs)
     .values({
@@ -259,10 +278,10 @@ export async function observeRepoRef(input: {
       repositoryId: input.identity.repositoryId,
       owner: input.identity.owner,
       repo: input.identity.repo,
-      ref: input.ref,
+      ref,
       desiredSha: input.desiredSha,
       revision: 1,
-      observedAt: now,
+      observedAt,
       observedVia: input.via,
       reconcileAfter: input.reconcileAfter ?? null,
     })
@@ -273,14 +292,58 @@ export async function observeRepoRef(input: {
         owner: input.identity.owner,
         repo: input.identity.repo,
         revision: sql`${repoSnapshotRefs.revision} + 1`,
-        observedAt: now,
+        observedAt,
         observedVia: input.via,
         reconcileAfter: input.reconcileAfter ?? null,
         updatedAt: now,
       },
+      // Drop a stale observation instead of applying it. The bound is passed as
+      // an ISO string with an explicit cast: a raw `sql` fragment does not carry
+      // the column's type, so a JS Date reaches the driver unserialized.
+      where: sql`${repoSnapshotRefs.observedAt} < ${observedAt.toISOString()}::timestamptz`,
     })
     .returning();
-  return row!;
+  if (row) return row;
+  // The guard rejected this write. The stored row is the authoritative one.
+  const current = await readRepoRef(input.identity, ref);
+  if (current) return current;
+  throw new Error(`ref observation for ${ref} was rejected and the row could not be read back`);
+}
+
+/**
+ * Make sure this ref is re-examined later, WITHOUT asserting anything about its
+ * revision.
+ *
+ * Preparation that fails before it ever learns a SHA used to leave no row at
+ * all, and `claimRefsDueForReconcile` only sees rows — so a project whose very
+ * first preparation failed was never retried by anything. This creates the row
+ * with no desired revision when it is missing, and otherwise only moves the
+ * reconcile deadline, so it can never clobber a good SHA with null.
+ */
+export async function ensureRefReconcileScheduled(input: {
+  identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId' | 'owner' | 'repo'>;
+  ref: string;
+  at: Date;
+}): Promise<void> {
+  const now = new Date();
+  await db
+    .insert(repoSnapshotRefs)
+    .values({
+      provider: input.identity.provider,
+      repositoryId: input.identity.repositoryId,
+      owner: input.identity.owner,
+      repo: input.identity.repo,
+      ref: normalizeRefKey(input.ref),
+      desiredSha: null,
+      revision: 0,
+      observedAt: now,
+      observedVia: 'reconcile',
+      reconcileAfter: input.at,
+    })
+    .onConflictDoUpdate({
+      target: [repoSnapshotRefs.provider, repoSnapshotRefs.repositoryId, repoSnapshotRefs.ref],
+      set: { reconcileAfter: input.at, updatedAt: now },
+    });
 }
 
 export async function readRepoRef(
@@ -294,7 +357,7 @@ export async function readRepoRef(
       and(
         eq(repoSnapshotRefs.provider, identity.provider),
         eq(repoSnapshotRefs.repositoryId, identity.repositoryId),
-        eq(repoSnapshotRefs.ref, ref),
+        eq(repoSnapshotRefs.ref, normalizeRefKey(ref)),
       ),
     )
     .limit(1);
@@ -323,7 +386,7 @@ export async function scheduleRefReconcile(
       and(
         eq(repoSnapshotRefs.provider, identity.provider),
         eq(repoSnapshotRefs.repositoryId, identity.repositoryId),
-        eq(repoSnapshotRefs.ref, ref),
+        eq(repoSnapshotRefs.ref, normalizeRefKey(ref)),
       ),
     );
 }

@@ -78,13 +78,39 @@ async function readVerifiedArtifact(archivePath: string, expectedSha256: string)
   return body;
 }
 
+/**
+ * Put the archive there, exactly once.
+ *
+ * The CONDITIONAL WRITE is what decides existence, never a HEAD. On AWS a HEAD
+ * for a missing key answers 403 unless the principal also holds
+ * `s3:ListBucket`, so a HEAD-as-absence check makes the FIRST publication of
+ * every new key fail for a correctly minimal role — the role this feature
+ * documents. `If-None-Match: *` needs only `s3:PutObject` and is authoritative:
+ * 2xx means this call created it, 412 means someone else already did.
+ *
+ * The HEAD is kept purely as a bandwidth optimisation and is allowed to fail.
+ * It can answer "present" (skip the upload) but it can never answer "absent":
+ * a 403 means the question was refused, which says nothing about the object, so
+ * the conditional write proceeds and settles it. The key is the content digest,
+ * so an object already at that key is by construction these exact bytes.
+ */
 async function ensureArchiveUploaded(
   bucket: RepoSnapshotBucket,
   manifest: RepoSnapshotManifest,
   archivePath: string,
 ): Promise<'created' | 'present'> {
-  const existing = await s3HeadObject(bucket, manifest.payload.key);
-  if (existing && existing.contentLength === manifest.payload.compressed_bytes) return 'present';
+  try {
+    const existing = await s3HeadObject(bucket, manifest.payload.key);
+    if (existing && existing.contentLength === manifest.payload.compressed_bytes) return 'present';
+  } catch (error) {
+    // Refused or unavailable: unknown, not absent. Fall through to the write.
+    if (!(error instanceof S3RequestError)) throw error;
+    if (!error.accessDenied && !error.retryable) throw error;
+    logger.debug('[repo-snapshot] existence probe unavailable; the conditional write decides', {
+      key: manifest.payload.key,
+      status: error.status,
+    });
+  }
   const body = await readVerifiedArtifact(archivePath, manifest.payload.sha256);
   try {
     await s3PutObject(bucket, manifest.payload.key, body, {

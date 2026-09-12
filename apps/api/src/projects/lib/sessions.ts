@@ -123,6 +123,7 @@ import {
   logSnapshotOutcome,
   pinSessionSnapshot,
   requiredModeFailure,
+  resolveDefaultBranchGrantSnapshot,
   resolveOpencodeConfigDirFromSnapshot,
   type SessionSnapshotPin,
 } from '../../repo-snapshots/session-pin';
@@ -466,8 +467,12 @@ export async function buildSessionSandboxEnvVars(input: {
   workspaceMode?: WorkspaceModeV2 | null;
   /** `KORTIX_REPO_SNAPSHOT_*` for the pinned revision; see repo-snapshots. */
   repoSnapshotEnv?: Record<string, string>;
-  /** The pinned snapshot row, so config and grant reads skip Git entirely. */
+  /** Pinned WORKSPACE snapshot, at the session's ref. Source for the compiled
+   *  agent config, which is deliberately per-session. */
   repoSnapshotRow?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
+  /** Prepared source for AUTHORIZATION reads, at the project's DEFAULT BRANCH.
+   *  Never the session's ref — see `resolveDefaultBranchGrantSnapshot`. */
+  grantSnapshotRow?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -529,9 +534,9 @@ export async function buildSessionSandboxEnvVars(input: {
       defaultBranch: input.defaultBranch,
       manifestPath: input.manifestPath,
       sessionAgent: input.agentName,
-      // Declarations from the pinned archive; the secret VALUES and every
-      // revocation still resolve through the secret store, unchanged.
-      snapshot: input.repoSnapshotRow,
+      // DEFAULT-BRANCH declarations; the secret VALUES and every revocation
+      // still resolve through the secret store, unchanged.
+      snapshot: input.grantSnapshotRow,
     });
   }
 
@@ -1057,10 +1062,43 @@ export async function createProjectSession(input: {
   const governingPin =
     createSnapshotPin?.pinned && createSnapshotPin.pin.governs ? createSnapshotPin.pin : null;
   const pinnedSnapshotRow = governingPin?.row ?? null;
+  // AUTHORIZATION reads use the project's DEFAULT BRANCH, which is the ref
+  // `loadProjectAgents` has always read and the reason it does: a session on a
+  // feature branch must not widen its own grant by editing `kortix.yaml` there.
+  // This is deliberately a SECOND resolution, not `pinnedSnapshotRow` — for the
+  // common case where base_ref IS the default branch the two are the same row,
+  // and where they differ, only this one may decide authority.
+  const grantSnapshotRow = governingPin ? await resolveDefaultBranchGrantSnapshot(project) : null;
+  if (governingPin && !grantSnapshotRow && repoSnapshotMode() === 'required') {
+    // `required` promises no Git on a prepared start, and authorization is part
+    // of that start. Reading the grant over Git here would quietly break the
+    // promise, so this is a bounded pending state instead — the default branch
+    // is what import, proxy pushes and reconciliation all prepare first, so it
+    // clears on its own.
+    return {
+      error: {
+        status: 503,
+        body: {
+          error:
+            `repository snapshots are required but the grant source (${project.defaultBranch}) ` +
+            'is not prepared yet; retry once preparation completes',
+          code: 'REPO_SNAPSHOT_GRANT_SOURCE_PREPARING',
+          retryable: true,
+        },
+        headers: { 'retry-after': '10' },
+      },
+    };
+  }
+  // Agent DISCOVERY reads `project.defaultBranch` too — which agents exist and
+  // which is the default is an authorization input, not a per-branch choice, so
+  // it takes the same default-branch source as the grant. Using the session's
+  // pin here would let a feature branch declare an agent the default branch
+  // does not, and then `resolveAgentGrant` would default-DENY it: the two halves
+  // would disagree about the same manifest.
   const loadedAgents = await loadProjectAgents(project, {
-    forceRefresh: !pinnedSnapshotRow,
+    forceRefresh: !grantSnapshotRow,
     rethrowReadErrors: true,
-    snapshot: pinnedSnapshotRow,
+    snapshot: grantSnapshotRow,
   });
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
@@ -1931,6 +1969,7 @@ export async function createProjectSession(input: {
             workspaceMode,
             repoSnapshotEnv: pin?.env,
             repoSnapshotRow: pin?.row ?? null,
+            grantSnapshotRow,
           });
         })
         .then((envVars) => {
@@ -2048,6 +2087,7 @@ export async function createProjectSession(input: {
         // mints a GitHub token it will not use.
         resolveGitProject: () => projectWithGitAuth(),
         repoSnapshotRow: governingPin?.row ?? null,
+        grantSnapshotRow,
         baseRef,
         sandboxSlug,
       });

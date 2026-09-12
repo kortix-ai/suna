@@ -200,13 +200,18 @@ export interface SessionSecretGrantInput {
    *  request, not up to 60 seconds later. */
   forceRefresh?: boolean;
   /**
-   * A prepared repository snapshot for the revision this session pinned.
+   * Prepared source for this read.
    *
-   * The manifest DECLARATIONS come from the archive instead of Git, which is
-   * what keeps a prepared start off the network. Nothing about authorization
-   * changes: the grant is still derived from those declarations, current secret
-   * values and revocations are still resolved through the secret store, and an
-   * unreadable source still fails closed. Only the I/O source moves.
+   * It MUST be the project's DEFAULT-BRANCH snapshot
+   * (`resolveDefaultBranchGrantSnapshot`), because that is the ref
+   * `loadProjectAgents` has always read and the reason it does: a session on a
+   * feature branch must not be able to widen its own secrets grant by editing
+   * `kortix.yaml` on that branch. Passing the session's pinned snapshot here
+   * would reproduce that hole with the network removed.
+   *
+   * Only the I/O source moves. The grant is still derived from the same
+   * declarations, secret values and revocations still resolve through the
+   * secret store, and an unreadable source still fails closed.
    */
   snapshot?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
 }

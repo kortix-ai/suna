@@ -32,7 +32,7 @@ import {
 } from './descriptor';
 import { readRepoSnapshotRepository } from './identity';
 import { readSnapshotFile, snapshotDirectoryExists } from './source-reader';
-import { readRepoRef, type RepoSnapshotRow } from './store';
+import { findReadyRepoSnapshot, readRepoRef, type RepoSnapshotRow } from './store';
 
 export interface SessionSnapshotPin {
   mode: RepoSnapshotMode;
@@ -173,6 +173,42 @@ export async function readManifestFromSnapshot(
     };
   }
   return null;
+}
+
+/**
+ * The prepared source for an AUTHORIZATION read, which is the project's DEFAULT
+ * BRANCH — never the session's ref.
+ *
+ * `loadProjectAgents` has always read the manifest at `project.defaultBranch`,
+ * and that is a policy boundary, not an accident: it is what stops a session on
+ * a feature branch editing `kortix.yaml` on that branch to widen its own
+ * secrets, connectors or Kortix-CLI grant. Handing an authorization read the
+ * session's pinned snapshot would reproduce exactly that hole with the network
+ * removed, which is worse than the Git read it replaced.
+ *
+ * So this deliberately takes ONLY the project. There is no parameter through
+ * which a caller could pass the session's ref or its pin.
+ *
+ * Returns null when the default branch has no ready snapshot; the caller then
+ * decides between the existing Git-backed read and failing closed.
+ */
+export async function resolveDefaultBranchGrantSnapshot(
+  project: ProjectRow,
+): Promise<RepoSnapshotRow | null> {
+  if (repoSnapshotMode() === 'off') return null;
+  const identity = readRepoSnapshotRepository(project);
+  if (!identity.repository) return null;
+  const refRow = await readRepoRef(
+    { provider: 'github', repositoryId: identity.repository.repositoryId },
+    project.defaultBranch,
+  );
+  const commitSha = (refRow?.desiredSha ?? '').trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(commitSha)) return null;
+  return findReadyRepoSnapshot({
+    provider: 'github',
+    repositoryId: identity.repository.repositoryId,
+    commitSha,
+  });
 }
 
 /**

@@ -183,6 +183,7 @@ export async function reconcileRef(row: RepoSnapshotRefRow): Promise<
   try {
     const authed = await withProjectGitAuth(project);
     const coordinates = parseGitHubRepoUrl(authed.repoUrl) ?? { owner: row.owner, repo: row.repo };
+    const observedAt = new Date();
     const sha = await getBranchCommitSha({
       owner: coordinates.owner,
       repo: coordinates.repo,
@@ -195,6 +196,7 @@ export async function reconcileRef(row: RepoSnapshotRefRow): Promise<
       desiredSha: sha,
       via: 'reconcile',
       reconcileAfter: new Date(Date.now() + reconcileIntervalMs()),
+      observedAt,
     });
     await enqueueRepoSnapshot({
       identity: withCommit(
@@ -233,6 +235,8 @@ export async function prepareRevision(input: {
   ref: string;
   commitSha: string;
   via: 'webhook' | 'reconcile' | 'proxy_push' | 'import';
+  /** When the tip was resolved from the provider; see `observeRepoRef`. */
+  observedAt?: Date;
 }): Promise<{ prepared: true } | { prepared: false; reason: string }> {
   if (!repoSnapshotWorkerEnabled()) return { prepared: false, reason: 'snapshot storage is not configured' };
   const resolved = await ensureRepoSnapshotRepository(input.project);
@@ -246,6 +250,7 @@ export async function prepareRevision(input: {
     desiredSha: identity.commitSha,
     via: input.via,
     reconcileAfter: new Date(Date.now() + reconcileIntervalMs()),
+    observedAt: input.observedAt,
   });
   await enqueueRepoSnapshot({
     identity,
