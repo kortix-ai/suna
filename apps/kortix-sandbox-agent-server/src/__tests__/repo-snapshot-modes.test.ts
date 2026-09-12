@@ -209,6 +209,46 @@ describe('materializeRepo under each snapshot mode', () => {
     expect(existsSync(join(second, 'only-in-one.txt'))).toBe(false)
   }, 120_000)
 
+  test('the activated workspace supports the full edit/commit cycle offline', async () => {
+    const fixture = await makeArchive()
+    const url = await serve(readFileSync(fixture.archive))
+    const target = join(tempRoot('kortix-mode-target-'), 'workspace')
+
+    await materializeRepo(
+      configFor({ mode: 'prefer', url, sha256: fixture.sha256, sha: fixture.sha, target, branch: 'session-a' }),
+    )
+
+    // Edit, add, delete, binary change, commit — every local authoring
+    // operation, with no network available. The snapshot ships a shallow
+    // history, and a commit on top of a shallow HEAD is the case that would
+    // break if the Git metadata were not self-contained.
+    writeFileSync(join(target, 'README.md'), 'edited by the agent\n')
+    writeFileSync(join(target, 'added.txt'), 'new file\n')
+    writeFileSync(join(target, 'binary.bin'), Buffer.from([0, 1, 2, 253, 254, 255]))
+    git(target, 'add', '-A')
+    git(target, 'commit', '-m', 'agent edit')
+    const first = git(target, 'rev-parse', 'HEAD')
+    expect(first).not.toBe(fixture.sha)
+    expect(git(target, 'rev-parse', 'HEAD~1')).toBe(fixture.sha)
+
+    rmSync(join(target, 'added.txt'))
+    git(target, 'add', '-A')
+    git(target, 'commit', '-m', 'agent delete')
+    expect(git(target, 'status', '--porcelain')).toBe('')
+    expect(git(target, 'log', '--oneline').split('\n').length).toBeGreaterThanOrEqual(2)
+
+    // A diff against the session's base still works on a shallow checkout —
+    // this is what a change request is built from.
+    const diff = git(target, 'diff', '--stat', `${fixture.sha}..HEAD`)
+    expect(diff).toContain('README.md')
+    expect(diff).toContain('binary.bin')
+
+    // The origin the session installed is intact and ready for the first push.
+    expect(git(target, 'remote', 'get-url', 'origin')).toBe('https://api.kortix.invalid/v1/git/project.git')
+    // Still zero Git network operations: none of the above needed the remote.
+    expect(readRepoTransportAttribution().gitNetworkOps).toBe(0)
+  }, 60_000)
+
   test('shadow: verifies the archive and then leaves the workspace to the existing path', async () => {
     const fixture = await makeArchive()
     const url = await serve(readFileSync(fixture.archive))

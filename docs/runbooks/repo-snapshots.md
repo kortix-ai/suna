@@ -160,6 +160,31 @@ OBSERVED". Startup cannot prove an unobserved GitHub HEAD without a remote
 lookup. The pin records when the ref was observed and through which path, and an
 explicit-SHA request stays exact.
 
+## 6a. Coverage by GitHub auth mode
+
+Every GitHub-backed project type, and what each actually gets. A project type is
+listed as covered only where the whole chain works: identity, preparation, and a
+prepared start.
+
+| Auth mode | Identity (`repository_id`) | Preparation trigger | Prepared start |
+| --- | --- | --- | --- |
+| `managed` (Kortix-provisioned repo) | From the connection row, or resolved once and cached | Proxy push, import, reconciliation | Yes |
+| `github_app` (linked, App created AFTER this change) | Same | Proxy push, import, **push webhook**, reconciliation | Yes |
+| `github_app` (linked, App created BEFORE this change) | Same | Proxy push, import, reconciliation. **No webhook** — the App's manifest declared `hook_attributes.active: false` and GitHub exposes no API to retrofit an existing App's hook | Yes, at reconciliation cadence |
+| `pat` (project credential) | Same | Proxy push, import, reconciliation. **No webhook** — a PAT link installs no App | Yes, at reconciliation cadence |
+| `project_credential` (BYO token) | Same | As `pat` | Yes, at reconciliation cadence |
+| Any project with **no recorded repository id** | Resolved once from the GitHub API at preparation and cached on the project | As above, after that resolution | Yes, after the first preparation |
+| **Non-GitHub** (`gitlab`, `bitbucket`, `generic`) | None | — | **Out of scope.** Keeps its existing behaviour under every mode, `required` included |
+
+The two rows with no webhook are not silently stale: reconciliation re-resolves
+their refs every `KORTIX_REPO_SNAPSHOT_RECONCILE_INTERVAL_MINUTES`, and the pin
+records when the revision was observed and through which path, so the lag is
+visible rather than assumed away.
+
+`scripts/backfill-repo-snapshots.ts --dry-run --json <path>` produces the live
+version of this table for a real deployment: it lists every project it could not
+prepare, individually, with the reason.
+
 ## 6b. LFS and submodules
 
 Both are preserved exactly as the current clone path leaves them. Neither is
