@@ -93,6 +93,36 @@ cannot pass vacuously). Config reads are exercised with an empty AND a warm
 local cache. Prerequisites FAIL the test rather than skipping, unless
 `KORTIX_REPO_SNAPSHOT_E2E=skip` is set explicitly.
 
+## 2b. Descriptor and archive routes — real HTTP, real Kortix token
+
+`apps/api/scripts/verify-repo-snapshot-http.ts`, against the running API and a
+live object store. The `tests/` flow suite covers the auth boundary, which is
+all a shared deployment can safely assert; this proves what a boundary test
+cannot.
+
+```text
+14 pass, 0 fail
+  200 for a prepared revision
+  names the exact pinned commit
+  carries the archive digest
+  declares the delivery mode (proxy)
+  never leaks the bucket name
+  is not cacheable
+  a second project on one revision reuses the artifact
+  a project on another repository cannot reach it          409
+  an unprepared revision is 409, not a substitution
+  a branch name is refused                                 400
+  archive: 200 and the exact published byte count
+  archive: advertises the archive digest
+  archive: another repository cannot stream it             409
+  archive: anonymous is refused                            401
+```
+
+The shared-artifact and cross-repository rows are the brief's "shared identity"
+and "access and restriction" groups: two projects on one revision receive the
+SAME object, and repository identity — not project ownership alone — is what
+gates it.
+
 ## 3. Object store: what was actually used
 
 | Evidence | Store |
@@ -114,9 +144,41 @@ as proving AWS. What is needed to close it is in §6.
 It is a **local component microbenchmark** and does not establish the rollout
 gates. Both arms are local (a `file://` Git mirror and a local S3 endpoint), the
 Git arm is a synthetic clone rather than the daemon's full `materializeRepo`,
-and request-to-execution-ready is not measured at all. Observed cold medians on
-the corrected methodology are 43.2–52.9% against the local synthetic Git arm.
-**No claim is made that the proposed 50% gate is met.**
+and request-to-execution-ready is not measured at all. Observed cold medians on the corrected methodology are **43.2–53.7%** against
+the local synthetic Git arm (960 samples, 0 errors, 30 measured rounds per
+cohort, arms shuffled each round). **No claim is made that the proposed 50%
+gate is met**: the gate is defined on a measurement this script does not take.
+
+Concurrency (same revision, cold local cache, 0 failures at every level):
+
+| repo | 1 | 5 | 20 |
+| --- | --- | --- | --- |
+| small | 57 ms | 40 ms/each | 44 ms/each |
+| median | 86 ms | 59 ms/each | 55 ms/each |
+| large | 783 ms | 509 ms/each | 468 ms/each |
+| many-small | 1278 ms | 1058 ms/each | 941 ms/each |
+
+### Codec decision: gzip stays the default
+
+| repo | gzip | zstd | delta |
+| --- | --- | --- | --- |
+| large | 10137025 B | 9848707 B | −2.8% |
+| many-small | 558527 B | 478162 B | −14.4% |
+| median | 542804 B | 546161 B | +0.6% |
+| small | 101856 B | 103801 B | +1.9% |
+
+Read time is within noise on every cohort (720/726, 1223/1232, 87/88, 55/54 ms).
+zstd builds faster on the largest cohort (1872 vs 2186 ms), but building runs on
+a background worker and is off the session critical path. The payload is
+dominated by already-zlib-compressed Git objects, which is why recompression
+barely moves either way.
+
+gzip therefore stays the default: no measured read-time win, a size delta inside
+±3% on three of four cohorts, and the one place zstd wins is not on the path
+that matters. zstd is fully supported and verified end to end — both runtimes
+were checked for `node:zlib` Zstandard support (`oven/bun:1.2` → bun 1.2.23 and
+`oven/bun:1.3.11`, the API and sandbox-agent pins) — so it is one environment
+variable away if a future cohort shows a real win.
 
 ## 5. Test results
 
