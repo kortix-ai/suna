@@ -75,7 +75,7 @@ import {
   buildCompiledRuntimeArtifact,
 } from './compiled-runtime-artifact';
 import {
-  repoSnapshotMode,
+  repoSnapshotModeForProject,
   resolveSnapshotForRevision,
   serializeBootDescriptor,
 } from '../repo-snapshots/descriptor';
@@ -747,7 +747,8 @@ gitProxyApp.openapi(
       if (auth.status === 401) return unauthorized(c, auth.message);
       return c.text(auth.message, auth.status === 404 ? 404 : 403);
     }
-    if (repoSnapshotMode() === 'off') return c.json({ error: 'repository snapshots are disabled' }, 501);
+    if (repoSnapshotModeForProject(projectId) === 'off')
+      return c.json({ error: 'repository snapshots are disabled' }, 501);
     const { sha } = c.req.valid('query');
     const identity = readRepoSnapshotRepository(auth.project);
     if (!identity.repository) {
@@ -834,7 +835,7 @@ gitProxyApp.openapi(
       if (auth.status === 401) return unauthorized(c, auth.message);
       return c.text(auth.message, auth.status === 404 ? 404 : 403);
     }
-    const mode = repoSnapshotMode();
+    const mode = repoSnapshotModeForProject(projectId);
     if (mode === 'off') return c.json({ error: 'repository snapshots are disabled' }, 501);
     const { sha } = c.req.valid('query');
     // Identity comes from the AUTHORIZED project row, never from the request:

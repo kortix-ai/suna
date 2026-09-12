@@ -124,11 +124,29 @@ publisher + backfill → shadow → selected projects in prefer → measured cov
 3. **`shadow`.** The existing path still serves. The snapshot is fetched,
    verified and discarded, so a failure never touches the live workspace or
    gates readiness.
-4. **`prefer`.** The ready artifact serves first; an eligible recoverable
-   failure falls back to Git at the SAME SHA and is counted.
+4. **`prefer`, for a cohort.** `KORTIX_REPO_SNAPSHOT_COHORT` is a
+   comma-separated list of project ids the mode applies to. Outside that list a
+   project behaves as `off` — it keeps the exact behaviour it has today —
+   whatever `KORTIX_REPO_SNAPSHOT_MODE` says.
+
+   ```sh
+   KORTIX_REPO_SNAPSHOT_MODE=prefer
+   KORTIX_REPO_SNAPSHOT_COHORT=<project-uuid>,<project-uuid>
+   ```
+
+   Empty or `*` means every project, which is the deployment-wide rollout. The
+   list is deployment configuration, not project state: widening it, narrowing
+   it and emptying it are all one config change and one deploy, and nothing in
+   the database has to be rewritten to undo it. The cohort never switches a
+   project ON when the deployment-wide mode is `off`.
+
+   The ready artifact serves first for a project in the cohort; an eligible
+   recoverable failure falls back to Git at the SAME SHA and is counted.
 5. **`required`.** No automatic Git fallback. A missing artifact is a bounded
-   pending state or a clear retryable error. Enable only for cohorts whose
-   coverage and benchmark evidence you have actually read.
+   pending state or a clear retryable error. It honours the same cohort, so a
+   fail-closed canary is possible without putting the deployment on it. Enable
+   only for cohorts whose coverage and benchmark evidence you have actually
+   read.
 
 Authorization, identity and integrity failures never become a fallback to
 another revision. Retries stay bound to the pinned SHA; a newer tip requires a
@@ -136,7 +154,10 @@ new binding.
 
 ## 5. Rollback
 
-Set `KORTIX_REPO_SNAPSHOT_MODE=off` and redeploy the API.
+Set `KORTIX_REPO_SNAPSHOT_MODE=off` and redeploy the API. To roll back only part
+of a cohort, remove those project ids from `KORTIX_REPO_SNAPSHOT_COHORT` — the
+effect is identical to `off` for exactly those projects, and needs no database
+change.
 
 - It affects NEW materializations only. Sessions already running keep their
   workspaces.

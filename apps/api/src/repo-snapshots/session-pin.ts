@@ -27,6 +27,7 @@ import {
   type RepoSnapshotMiss,
   type RepoSnapshotMode,
   repoSnapshotMode,
+  repoSnapshotModeForProject,
   resolveSnapshotForRevision,
   snapshotSessionEnv,
 } from './descriptor';
@@ -71,7 +72,7 @@ export async function pinSessionSnapshot(input: {
   /** `$KORTIX_API_URL` for this deployment. Required for proxy delivery. */
   apiBase?: string;
 }): Promise<SessionSnapshotOutcome> {
-  const mode = repoSnapshotMode();
+  const mode = repoSnapshotModeForProject(input.project.projectId);
   if (mode === 'off') return { pinned: false, mode, miss: { reason: 'disabled' } };
 
   const identity = readRepoSnapshotRepository(input.project);
@@ -195,7 +196,7 @@ export async function readManifestFromSnapshot(
 export async function resolveDefaultBranchGrantSnapshot(
   project: ProjectRow,
 ): Promise<RepoSnapshotRow | null> {
-  if (repoSnapshotMode() === 'off') return null;
+  if (repoSnapshotModeForProject(project.projectId) === 'off') return null;
   const identity = readRepoSnapshotRepository(project);
   if (!identity.repository) return null;
   const refRow = await readRepoRef(

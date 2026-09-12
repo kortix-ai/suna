@@ -161,7 +161,8 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
     // would have made the mode inert.
     expect(source).toContain('const failure = requiredModeFailure(createSnapshotPin);');
     expect(source).toContain("code: 'REPO_SNAPSHOT_UNAVAILABLE'");
-    expect(source).toContain("} else if (repoSnapshotMode() === 'required') {");
+    // Per-project: the canary cohort decides whether THIS project fails closed.
+    expect(source).toContain("} else if (repoSnapshotModeForProject(project.projectId) === 'required') {");
     // An explicit revision reaches the pin; it is not replaced by the tip.
     expect(source).toContain('const requestedSha = normalizeString(body.base_sha ?? body.baseSha);');
     expect(source).toContain('requestedSha,');

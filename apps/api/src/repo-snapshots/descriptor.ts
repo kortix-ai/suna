@@ -51,6 +51,55 @@ export function repoSnapshotMode(): RepoSnapshotMode {
   );
 }
 
+/**
+ * The canary cohort: project ids this mode applies to, or every project.
+ *
+ * A rollout wants a handful of real projects on `prefer` while the rest of the
+ * deployment keeps its existing behaviour, and the ability to take them back
+ * off in one deploy. That is what this list is — a deployment-level allowlist,
+ * with no per-project database state and no user-facing surface to get out of
+ * step with it.
+ *
+ * Empty (the default) means EVERY project, so an operator who never sets it
+ * gets the plain deployment-wide mode. `*` is accepted as the explicit spelling
+ * of the same thing.
+ */
+export function parseRepoSnapshotCohort(raw: string | null | undefined): Set<string> | null {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed || trimmed === '*') return null;
+  const ids = trimmed
+    .split(',')
+    .map((id) => id.trim().toLowerCase())
+    .filter((id) => id.length > 0);
+  return ids.length > 0 ? new Set(ids) : null;
+}
+
+export function repoSnapshotCohort(): Set<string> | null {
+  return parseRepoSnapshotCohort(config.KORTIX_REPO_SNAPSHOT_COHORT);
+}
+
+/** The pure decision: does this deployment-wide mode apply to this project? */
+export function applyRepoSnapshotCohort(
+  mode: RepoSnapshotMode,
+  projectId: string,
+  cohort: Set<string> | null,
+): RepoSnapshotMode {
+  if (mode === 'off') return 'off';
+  return !cohort || cohort.has(projectId.toLowerCase()) ? mode : 'off';
+}
+
+/**
+ * The mode in effect FOR ONE PROJECT.
+ *
+ * Outside the cohort a project behaves exactly as it did before this feature —
+ * `off` — whatever the deployment-wide mode says. This is the only control that
+ * decides whether a given session takes the prepared path, so every entry point
+ * asks it rather than the global mode.
+ */
+export function repoSnapshotModeForProject(projectId: string): RepoSnapshotMode {
+  return applyRepoSnapshotCohort(repoSnapshotMode(), projectId, repoSnapshotCohort());
+}
+
 export type RepoSnapshotDelivery = 'presigned' | 'proxy';
 
 export interface RepoSnapshotBootDescriptor {

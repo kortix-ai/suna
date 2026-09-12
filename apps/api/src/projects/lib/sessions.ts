@@ -119,7 +119,7 @@ import {
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
-import { repoSnapshotMode } from '../../repo-snapshots/descriptor';
+import { repoSnapshotModeForProject } from '../../repo-snapshots/descriptor';
 import {
   logSnapshotOutcome,
   pinSessionSnapshot,
@@ -1044,7 +1044,7 @@ export async function createProjectSession(input: {
         },
       };
     }
-  } else if (repoSnapshotMode() === 'required') {
+  } else if (repoSnapshotModeForProject(project.projectId) === 'required') {
     return {
       error: {
         status: 503,
@@ -1070,7 +1070,7 @@ export async function createProjectSession(input: {
   // common case where base_ref IS the default branch the two are the same row,
   // and where they differ, only this one may decide authority.
   const grantSnapshotRow = governingPin ? await resolveDefaultBranchGrantSnapshot(project) : null;
-  if (governingPin && !grantSnapshotRow && repoSnapshotMode() === 'required') {
+  if (governingPin && !grantSnapshotRow && repoSnapshotModeForProject(project.projectId) === 'required') {
     // `required` promises no Git on a prepared start, and authorization is part
     // of that start. Reading the grant over Git here would quietly break the
     // promise, so this is a bounded pending state instead — the default branch

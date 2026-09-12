@@ -409,7 +409,7 @@ Object store: the existing MinIO on `127.0.0.1:19000`, bucket
 
 | Suite | Result |
 | --- | --- |
-| `apps/api` full unit suite (`bash scripts/test.sh`) | 9017 pass, 79 skip, 1 fail |
+| `apps/api` full unit suite (`bash scripts/test.sh`) | 9024 pass, 79 skip, 1 fail |
 | `src/repo-snapshots/` + `src/snapshots/` + metadata-merge guard | 384 pass, 5 skip, 0 fail |
 | 6 repo-snapshot integration suites (real DB + MinIO) | 53 pass, 0 fail |
 | `apps/api` `tsc --noEmit` | clean |
@@ -546,6 +546,22 @@ unregistered project — 25 stored, 20 prepared inline, identity persisted.
   signed PUT to the configured bucket, and missing or unusable setup FAILS
   instead of skipping. Local mode still skips, and its pass is evidence about
   the S3 protocol only.
+
+### The cohort control the runbook promised
+
+The rollout section described "selected projects in prefer" while the only
+control was a deployment-wide mode — a rollout plan with no mechanism behind it.
+`KORTIX_REPO_SNAPSHOT_COHORT` is that mechanism: a comma-separated list of
+project ids the mode applies to, empty or `*` meaning every project. Outside the
+list a project resolves to `off` and keeps exactly the behaviour it has today.
+
+It is deployment configuration, not project state, so widening, narrowing and
+emptying it are one config change and one deploy, with nothing in the database
+to rewrite on rollback. It can never switch a project ON when the
+deployment-wide mode is `off`. Every entry point that decides whether a session
+takes the prepared path — the session pin, the required-mode gates in
+`sessions.ts`, and both snapshot routes on the Git proxy — resolves through it;
+`cohort.test.ts` asserts that no call site was left on the global mode.
 
 ### The last-ready fallback is not pinned-image parity
 

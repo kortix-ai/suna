@@ -561,6 +561,11 @@ const envSchema = z.object({
     .enum(['off', 'shadow', 'prefer', 'required'])
     .optional()
     .default('off'),
+  // The canary cohort: a comma-separated list of project ids the mode applies
+  // to. Empty (the default) or `*` means every project. Outside the list a
+  // project behaves as `off`, so a rollout can put a handful of real projects
+  // on `prefer` and take them back off in one deploy.
+  KORTIX_REPO_SNAPSHOT_COHORT: optStr,
   // Private, environment-scoped bucket. Empty = the feature is unconfigured and
   // every mode behaves as `off`.
   KORTIX_REPO_SNAPSHOT_BUCKET: optStr,
@@ -1227,6 +1232,7 @@ export const config = {
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_REPO_SNAPSHOT_MODE: env.KORTIX_REPO_SNAPSHOT_MODE,
+  KORTIX_REPO_SNAPSHOT_COHORT: env.KORTIX_REPO_SNAPSHOT_COHORT,
   KORTIX_REPO_SNAPSHOT_BUCKET: env.KORTIX_REPO_SNAPSHOT_BUCKET,
   KORTIX_REPO_SNAPSHOT_REGION: env.KORTIX_REPO_SNAPSHOT_REGION,
   KORTIX_REPO_SNAPSHOT_ENDPOINT: env.KORTIX_REPO_SNAPSHOT_ENDPOINT,

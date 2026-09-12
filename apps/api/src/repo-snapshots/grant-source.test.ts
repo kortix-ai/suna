@@ -76,7 +76,9 @@ describe('every authorization read uses the default-branch source', () => {
       new URL('../projects/lib/sessions.ts', import.meta.url),
     ).text();
     expect(source).toContain("code: 'REPO_SNAPSHOT_GRANT_SOURCE_PREPARING'");
-    expect(source).toContain("repoSnapshotMode() === 'required'");
+    // Per-project, not global: a canary cohort decides whether THIS project
+    // fails closed. See `cohort.test.ts`.
+    expect(source).toContain("repoSnapshotModeForProject(project.projectId) === 'required'");
   });
 });
 
