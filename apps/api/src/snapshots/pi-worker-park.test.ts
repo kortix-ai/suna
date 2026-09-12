@@ -43,13 +43,37 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
+/**
+ * A port nothing else is on.
+ *
+ * The old `18800 + random(500)` had no collision check, so under the parallel
+ * suite two park servers (or a lingering one) could share a port and the health
+ * probe would answer from the WRONG process — `parked` came back undefined and
+ * the test failed for a reason that had nothing to do with the park protocol.
+ * Binding an ephemeral listener and releasing it takes a port the OS has just
+ * confirmed is free, which makes the assertions describe the server this test
+ * actually started.
+ */
+async function freePort(): Promise<number> {
+  const { createServer } = await import('node:net');
+  return new Promise<number>((resolve, reject) => {
+    const probe = createServer();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      probe.close(() => (port ? resolve(port) : reject(new Error('no free port'))));
+    });
+  });
+}
+
 async function bootPark(): Promise<{ port: number; base: string }> {
   const root = await mkdtemp(join(tmpdir(), 'kortix-park-'));
   roots.push(root);
   await writeFile(join(root, 'park.mjs'), piWorkerParkScriptForTest());
   await writeFile(join(root, 'fetch-runtime.mjs'), FAKE_FETCH);
   await writeFile(join(root, 'session-worker.mjs'), FAKE_WORKER);
-  const port = 18800 + Math.floor(Math.random() * 500);
+  const port = await freePort();
   child = spawn('node', [join(root, 'park.mjs')], {
     env: {
       PATH: process.env.PATH,

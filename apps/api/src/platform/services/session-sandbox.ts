@@ -327,6 +327,8 @@ export async function provisionSessionSandbox(opts: {
    */
   gitProject: GitBackedProject;
   resolveGitProject?: () => Promise<GitBackedProject>;
+  /** Pinned repository snapshot, so the boundary check performs no Git read. */
+  repoSnapshotRow?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
   baseRef?: string;
   /**
    * Slug of the sandbox template to boot from. Resolves against the project's
@@ -624,7 +626,7 @@ export async function provisionSessionSandbox(opts: {
       // one mechanism serves daytona, e2b and platinum alike (docs/specs/
       // 2026-08-19-secrets-exposure-usage-model.md §4): the guest gets a HANDLE
       // and the broker route substitutes the real value server-side.
-      await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
+      await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId, null, opts.repoSnapshotRow ?? null);
 
       // Stateless image resolution: ask Daytona if it has the image; build if not.
       // No DB lookup, no degraded fallback — the snapshot is either there or we

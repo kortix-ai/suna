@@ -12,6 +12,12 @@ export async function resolveSessionNetworkBoundary(
   projectId: string,
   sessionId: string,
   requestedAgent?: string | null,
+  /**
+   * The repository snapshot governing this session, when one does. Only the
+   * manifest READ moves to the archive; the boundary's authorization inputs are
+   * unchanged.
+   */
+  repoSnapshot?: import('../../repo-snapshots/store').RepoSnapshotRow | null,
 ) {
   const [session, project] = await Promise.all([
     db
@@ -46,6 +52,10 @@ export async function resolveSessionNetworkBoundary(
     manifestPath: project.manifestPath,
     sessionAgent,
     requestedAgent,
+    // Declarations from the pinned archive when one governs this session, so
+    // the boundary check performs no Git operation. The secret VALUES and every
+    // revocation still come from the secret store below, unchanged.
+    snapshot: repoSnapshot ?? null,
   });
   const rows = await listResolvedProjectSecrets(projectId, session.createdBy ?? null);
   return resolveNetworkBoundaryBindings(rows, {

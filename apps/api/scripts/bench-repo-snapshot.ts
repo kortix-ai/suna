@@ -504,10 +504,11 @@ async function main(): Promise<void> {
           arm: cell.arm,
           round,
           wallMs: Number.NaN,
-          cpuMs: Number.NaN,
-          peakRssMb: Number.NaN,
-          networkBytes: 0,
-          entryCount: 0,
+          cpuMs: null,
+          rssMbAfter: Number.NaN,
+          transferredBytes: null,
+          checkoutBytes: 0,
+          entryCount: null,
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -621,11 +622,16 @@ async function main(): Promise<void> {
     const gzipBuild = summary.find((s) => s.repo === repo && s.arm === 'prepare-miss' && s.codec === 'gzip');
     const zstdBuild = summary.find((s) => s.repo === repo && s.arm === 'prepare-miss' && s.codec === 'zstd');
     if (!gzip || !zstd) continue;
+    const gzipBytes = gzip.transferredBytes;
+    const zstdBytes = zstd.transferredBytes;
     codecRows.push({
       repo,
-      gzipBytes: gzip.networkBytes,
-      zstdBytes: zstd.networkBytes,
-      sizeDeltaPercent: Number((100 * (zstd.networkBytes - gzip.networkBytes) / gzip.networkBytes).toFixed(1)),
+      gzipBytes,
+      zstdBytes,
+      // Null rather than NaN when either side is unknown: an unavailable metric
+      // must read as unavailable, not as a number-shaped nothing.
+      sizeDeltaPercent:
+        gzipBytes && zstdBytes ? Number((100 * (zstdBytes - gzipBytes) / gzipBytes).toFixed(1)) : null,
       gzipReadP50Ms: gzip.p50Ms,
       zstdReadP50Ms: zstd.p50Ms,
       gzipBuildP50Ms: gzipBuild?.p50Ms ?? null,
@@ -635,9 +641,11 @@ async function main(): Promise<void> {
   if (codecRows.length) {
     console.error('\ncodec — gzip vs zstd (negative size delta = zstd smaller):');
     for (const row of codecRows) {
+      const kib = (value: unknown) => (typeof value === 'number' ? `${Math.round(value / 1024)}KiB` : 'n/a');
+      const delta = row.sizeDeltaPercent === null ? 'n/a' : `${row.sizeDeltaPercent}%`;
       console.error(
-        `  ${String(row.repo).padEnd(12)} gzip=${Math.round(Number(row.gzipBytes) / 1024)}KiB/${row.gzipReadP50Ms}ms  ` +
-          `zstd=${Math.round(Number(row.zstdBytes) / 1024)}KiB/${row.zstdReadP50Ms}ms  size ${row.sizeDeltaPercent}%`,
+        `  ${String(row.repo).padEnd(12)} gzip=${kib(row.gzipBytes)}/${row.gzipReadP50Ms}ms  ` +
+          `zstd=${kib(row.zstdBytes)}/${row.zstdReadP50Ms}ms  size ${delta}`,
       );
     }
   }
@@ -662,10 +670,25 @@ async function main(): Promise<void> {
         2,
       ),
     );
-    const csv = ['repo,codec,arm,round,wall_ms,cpu_ms,peak_rss_mb,network_bytes,entry_count,error'];
-    for (const s of samples) {
+    const csv = [
+      'repo,codec,arm,round,wall_ms,cpu_ms,rss_mb_after,transferred_bytes,checkout_bytes,entry_count,error',
+    ];
+    for (const sample of samples) {
       csv.push(
-        [s.repo, s.codec, s.arm, s.round, s.wallMs.toFixed(3), s.cpuMs.toFixed(3), s.peakRssMb.toFixed(1), s.networkBytes, s.entryCount, s.error ?? ''].join(','),
+        [
+          sample.repo,
+          sample.codec,
+          sample.arm,
+          sample.round,
+          Number.isFinite(sample.wallMs) ? sample.wallMs.toFixed(3) : '',
+          // Null for the arms whose work runs in `git` child processes.
+          sample.cpuMs === null ? '' : sample.cpuMs.toFixed(3),
+          Number.isFinite(sample.rssMbAfter) ? sample.rssMbAfter.toFixed(1) : '',
+          sample.transferredBytes ?? '',
+          sample.checkoutBytes,
+          sample.entryCount ?? '',
+          (sample.error ?? '').replace(/[,\n]/g, ' '),
+        ].join(','),
       );
     }
     writeFileSync(join(OUT, 'results.csv'), `${csv.join('\n')}\n`);
@@ -695,7 +718,9 @@ async function main(): Promise<void> {
       '| --- | --- | --- | --- | --- | --- | --- | --- |',
       ...codecRows.map(
         (c) =>
-          `| ${c.repo} | ${c.gzipBytes} | ${c.zstdBytes} | ${c.sizeDeltaPercent}% | ${c.gzipReadP50Ms} ms | ${c.zstdReadP50Ms} ms | ${c.gzipBuildP50Ms ?? 'n/a'} ms | ${c.zstdBuildP50Ms ?? 'n/a'} ms |`,
+          `| ${c.repo} | ${c.gzipBytes ?? 'n/a'} | ${c.zstdBytes ?? 'n/a'} | ` +
+          `${c.sizeDeltaPercent === null ? 'n/a' : `${c.sizeDeltaPercent}%`} | ${c.gzipReadP50Ms} ms | ` +
+          `${c.zstdReadP50Ms} ms | ${c.gzipBuildP50Ms ?? 'n/a'} ms | ${c.zstdBuildP50Ms ?? 'n/a'} ms |`,
       ),
       '',
       '## Component ratio — local synthetic Git clone versus local S3 snapshot',

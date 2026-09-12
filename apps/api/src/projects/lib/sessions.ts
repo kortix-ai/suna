@@ -466,6 +466,8 @@ export async function buildSessionSandboxEnvVars(input: {
   workspaceMode?: WorkspaceModeV2 | null;
   /** `KORTIX_REPO_SNAPSHOT_*` for the pinned revision; see repo-snapshots. */
   repoSnapshotEnv?: Record<string, string>;
+  /** The pinned snapshot row, so config and grant reads skip Git entirely. */
+  repoSnapshotRow?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -505,6 +507,7 @@ export async function buildSessionSandboxEnvVars(input: {
           : await resolveCompiledAgentConfigForSession(
               gitProject,
               input.baseRef,
+              input.repoSnapshotRow,
             ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
@@ -526,6 +529,9 @@ export async function buildSessionSandboxEnvVars(input: {
       defaultBranch: input.defaultBranch,
       manifestPath: input.manifestPath,
       sessionAgent: input.agentName,
+      // Declarations from the pinned archive; the secret VALUES and every
+      // revocation still resolve through the secret store, unchanged.
+      snapshot: input.repoSnapshotRow,
     });
   }
 
@@ -1924,6 +1930,7 @@ export async function createProjectSession(input: {
             manifestPath: project.manifestPath,
             workspaceMode,
             repoSnapshotEnv: pin?.env,
+            repoSnapshotRow: pin?.row ?? null,
           });
         })
         .then((envVars) => {
@@ -2040,6 +2047,7 @@ export async function createProjectSession(input: {
         // genuinely needs an authoring credential, so a prepared start never
         // mints a GitHub token it will not use.
         resolveGitProject: () => projectWithGitAuth(),
+        repoSnapshotRow: governingPin?.row ?? null,
         baseRef,
         sandboxSlug,
       });

@@ -199,6 +199,16 @@ export interface SessionSecretGrantInput {
    *  a manifest commit handled by another API replica applies on the next
    *  request, not up to 60 seconds later. */
   forceRefresh?: boolean;
+  /**
+   * A prepared repository snapshot for the revision this session pinned.
+   *
+   * The manifest DECLARATIONS come from the archive instead of Git, which is
+   * what keeps a prepared start off the network. Nothing about authorization
+   * changes: the grant is still derived from those declarations, current secret
+   * values and revocations are still resolved through the secret store, and an
+   * unreadable source still fails closed. Only the I/O source moves.
+   */
+  snapshot?: import('../../repo-snapshots/store').RepoSnapshotRow | null;
 }
 
 /**
@@ -252,7 +262,13 @@ async function loadGrantForRunningAgent(
         manifestPath: input.manifestPath ?? 'kortix.yaml',
         gitAuthToken: null,
       },
-      { rethrowReadErrors: true, forceRefresh: input.forceRefresh },
+      {
+        rethrowReadErrors: true,
+        // A pinned archive is authoritative for this revision, so a mirror
+        // refresh would be a network call with nothing to learn.
+        forceRefresh: input.snapshot ? false : input.forceRefresh,
+        snapshot: input.snapshot,
+      },
     );
   } catch (err) {
     throw new SecretGrantResolutionError(runningAgent, err);

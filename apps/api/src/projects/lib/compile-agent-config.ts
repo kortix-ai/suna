@@ -498,11 +498,23 @@ export async function resolveCompiledAgentConfigForSession(
    * Falls back to the default branch, which is what every caller got before.
    */
   baseRef?: string | null,
+  /**
+   * A prepared repository snapshot for the revision this session pinned. The
+   * manifest and every agent behavior file are then read from the archive, so
+   * compiling a config performs no Git operation. `compileAgentConfig` and
+   * every selection rule are untouched — only the I/O source moves.
+   */
+  snapshot?: import('../../repo-snapshots/store').RepoSnapshotRow | null,
 ): Promise<string | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
+    const reader = snapshot ? await import('../../repo-snapshots/session-pin') : null;
+    const source = snapshot ? await import('../../repo-snapshots/source-reader') : null;
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref);
+    const found =
+      snapshot && reader
+        ? await reader.readManifestFromSnapshot(snapshot, project.manifestPath)
+        : await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
 
     const format = manifestFormatForPath(found.path);
@@ -518,6 +530,22 @@ export async function resolveCompiledAgentConfigForSession(
       Object.keys(agents).map(async (name) => {
         const path = agentMarkdownPath(raw, name);
         try {
+          if (snapshot && source) {
+            const file = await source.readSnapshotFile(snapshot, path);
+            if (!file) {
+              // Absent in the archive is the same expected client condition a
+              // missing file is over Git: the manifest may declare an agent
+              // that carries no behavior file. Reported and skipped, exactly as
+              // the Git path does below — NOT thrown, because a throw here
+              // would make the whole compile return null.
+              console.warn(
+                `[compile-agent-config] project ${project.projectId}: agent "${name}" has no behavior file at "${path}"`,
+              );
+              return;
+            }
+            agentMdFiles[path] = file.content;
+            return;
+          }
           agentMdFiles[path] = await readRepoFile(project, path, ref);
         } catch (err) {
           // A MISSING file is an expected client condition: the manifest may
