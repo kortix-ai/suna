@@ -7,7 +7,7 @@
  * GitHub API call back on the critical path this feature exists to remove.
  */
 import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { getProjectGitRemote, resolveUpstreamUrl, withProjectGitAuth } from '../projects/lib/git';
 import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
@@ -43,6 +43,65 @@ function upstreamGitHubCoordinates(project: ProjectRow): { owner: string; repo: 
   // `resolveUpstreamUrl` is the pure, DB-free derivation. The async
   // `resolveProjectUpstream` mints a credential, which this path must not do.
   return parseGitHubRepoUrl(resolveUpstreamUrl(project, remote));
+}
+
+/**
+ * `getProjectGitRemote`'s subtree precedence, as SQL.
+ *
+ * It reads `metadata.git` whenever that key exists and falls back to the legacy
+ * `metadata.github` only when it does not. EVERY query that selects projects by
+ * git identity must use these, or it silently excludes every legacy project —
+ * which then keeps its credentials and its repository id and is still never
+ * reconciled, published or webhook-matched.
+ */
+export const effectiveGitSubtreeSql = sql`(case when ${projects.metadata} ? 'git'
+  then ${projects.metadata} -> 'git'
+  else coalesce(${projects.metadata} -> 'github', '{}'::jsonb) end)`;
+
+/** The repository id `getProjectGitRemote` would read. `repo_id` is the legacy spelling. */
+export const recordedRepositoryIdSql = sql`coalesce(
+  nullif(${effectiveGitSubtreeSql} ->> 'external_repo_id', ''),
+  nullif(${effectiveGitSubtreeSql} ->> 'repo_id', '')
+)`;
+
+/** Exactly the projects `getProjectGitRemote` reports as GitHub-backed. */
+export const githubBackedProjectsSql = sql`(
+  ${projects.metadata} -> 'git' ->> 'provider' = 'github'
+  or (not (${projects.metadata} ? 'git') and ${projects.metadata} ? 'github')
+)`;
+
+/** Last snapshot-discovery attempt, from whichever subtree is in effect. */
+export const discoveryMarkerSql = sql`coalesce(${effectiveGitSubtreeSql} ->> 'snapshot_discovery_at', '')`;
+
+/**
+ * Which metadata subtree holds this project's git bookkeeping.
+ *
+ * `getProjectGitRemote` reads `metadata.git` FIRST and only falls back to the
+ * legacy `metadata.github` when `git` is absent. Writing a partial `git`
+ * subtree onto a legacy project therefore SHADOWS the legacy one completely:
+ * the remote degrades to provider `generic` with auth `none`, and the project
+ * silently loses both its repository id and its credential routing. Every
+ * writer here must target the subtree the project already uses.
+ */
+export function gitMetadataSubtree(project: ProjectRow): 'git' | 'github' {
+  const meta = (project.metadata ?? {}) as Record<string, unknown>;
+  if (meta.git && typeof meta.git === 'object') return 'git';
+  return meta.github ? 'github' : 'git';
+}
+
+/**
+ * The sub-patch that records a repository id in the shape this project uses.
+ *
+ * Composed with `metadataMergeSubtree` at the write site rather than returning
+ * the whole expression, so the sanctioned atomic-merge helper stays visible to
+ * the FIX-J guard in `projects/lib/metadata-merge.test.ts`.
+ */
+export function repositoryIdFields(project: ProjectRow, repositoryId: string): Record<string, string> {
+  // The legacy shape spells it `repo_id`; `getProjectGitRemote` reads exactly
+  // that key and nothing else for a legacy project.
+  return gitMetadataSubtree(project) === 'git'
+    ? { external_repo_id: repositoryId }
+    : { repo_id: repositoryId };
 }
 
 /** The provider repository id already recorded on the project, if any. */
@@ -139,7 +198,10 @@ export async function ensureRepoSnapshotRepository(
     await db
       .update(projects)
       .set({
-        metadata: metadataMergeSubtree('git', { external_repo_id: identity.repositoryId }),
+        metadata: metadataMergeSubtree(
+          gitMetadataSubtree(project),
+          repositoryIdFields(project, identity.repositoryId),
+        ),
         updatedAt: new Date(),
       })
       .where(eq(projects.projectId, project.projectId));

@@ -98,11 +98,16 @@ describe('normalizeRefKey', () => {
     expect(normalizeRefKey('refs/notes/commits')).toBe('refs/notes/commits');
   });
 
-  test('every store read and write goes through it', async () => {
+  test('no store entry point lets a caller choose the key', async () => {
     const source = await Bun.file(new URL('./store.ts', import.meta.url)).text();
-    // A call site cannot get this wrong because no call site chooses.
-    expect(source).toContain('const ref = normalizeRefKey(input.ref);');
-    expect(source).toContain('eq(repoSnapshotRefs.ref, normalizeRefKey(ref))');
-    expect(source).toContain('ref: normalizeRefKey(input.ref),');
+    // Each of the three entry points resolves the stored spelling itself, so a
+    // caller passing `refs/heads/main` and one passing `main` reach the same
+    // row. What that resolution DOES — including rows an older build wrote
+    // under the full-ref spelling — is proved against the real table in
+    // `__tests__/integration-repo-snapshot-ref-alias.test.ts`; this only pins
+    // that no entry point was left taking the caller's word for the key.
+    expect(source).toContain('const ref = await storedRefKey(input.identity, input.ref);');
+    expect(source).toContain('eq(repoSnapshotRefs.ref, await storedRefKey(identity, ref))');
+    expect(source).toContain('ref: await storedRefKey(input.identity, input.ref),');
   });
 });

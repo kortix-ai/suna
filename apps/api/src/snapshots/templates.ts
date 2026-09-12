@@ -295,25 +295,74 @@ const templateListCache = new Map<string, { at: number; value: ResolvedTemplate[
 /** Invalidate the in-memory template list cache for a project. Called from
  *  the CRUD endpoints after a create / update / delete. */
 export function invalidateTemplateCache(projectId: string): void {
-  templateListCache.delete(projectId);
+  // Cache keys are `projectId:<source>`, so deleting the bare projectId would
+  // miss every entry. Drop every key belonging to this project.
+  for (const key of [...templateListCache.keys()]) {
+    if (key === projectId || key.startsWith(`${projectId}:`)) templateListCache.delete(key);
+  }
+  for (const key of [...tomlSyncCache.keys()]) {
+    if (key === projectId || key.startsWith(`${projectId}:`)) tomlSyncCache.delete(key);
+  }
+}
+
+/** A ready repository snapshot row; see `repo-snapshots/store.ts`. */
+type RepoSnapshotRow = import('../repo-snapshots/store').RepoSnapshotRow;
+
+export interface TemplateSourceOptions {
+  /**
+   * The session's GOVERNING repository snapshot.
+   *
+   * A build declaration is not an authorization decision. The grant boundary
+   * pins authority to the default branch precisely because a branch must not
+   * widen it; a Dockerfile, a `sandbox.default`, and a resource spec are the
+   * opposite — they describe what this session is supposed to run, so they must
+   * come from the revision this session is running. Combining a default-branch
+   * declaration with feature-branch Dockerfile bytes would be the worst of
+   * both: a build nobody declared.
+   *
+   * With this set, manifest-declared templates are resolved IN MEMORY from the
+   * pin and are never written to `sandbox_templates` — two concurrent sessions
+   * on different revisions would otherwise take turns overwriting the same
+   * project-global rows. UI-owned and shared rows still come from the database
+   * and still win where they exist.
+   */
+  sessionSnapshot?: RepoSnapshotRow | null;
+}
+
+/** Cache identity: a catalogue derived from one revision may not serve another. */
+function templateSourceKey(
+  project: Pick<GitBackedProject, 'projectId'>,
+  sessionSnapshot?: RepoSnapshotRow | null,
+): string {
+  return `${project.projectId}:${sessionSnapshot?.commitSha ?? 'git'}`;
 }
 
 export async function listTemplatesForProject(
   project: GitBackedProject,
-  opts: { forceTomlSync?: boolean } = {},
+  opts: TemplateSourceOptions & { forceTomlSync?: boolean } = {},
 ): Promise<ResolvedTemplate[]> {
+  // Both caches are keyed by the SOURCE, not just the project. The template
+  // catalogue is derived from a manifest, and two revisions can declare
+  // different templates; a project-only key let one revision serve another's
+  // answer, and let an older sync overwrite a newer one's rows.
+  const sourceKey = templateSourceKey(project, opts.sessionSnapshot);
   // Burst-cache: hot reads return without touching the DB.
   if (!opts.forceTomlSync) {
-    const cached = templateListCache.get(project.projectId);
+    const cached = templateListCache.get(sourceKey);
     if (cached && Date.now() - cached.at < TEMPLATE_LIST_TTL_MS) {
       return cached.value;
     }
   }
 
-  const last = tomlSyncCache.get(project.projectId) ?? 0;
-  if (opts.forceTomlSync || Date.now() - last > TOML_SYNC_TTL_MS) {
-    await syncManifestTemplatesForProject(project);
-    tomlSyncCache.set(project.projectId, Date.now());
+  // With a pinned revision the manifest half is resolved in memory below and
+  // NOTHING is written, so the project-global rows cannot flap between two
+  // concurrent sessions. Without one, the historical DB sync runs unchanged.
+  if (!opts.sessionSnapshot) {
+    const last = tomlSyncCache.get(sourceKey) ?? 0;
+    if (opts.forceTomlSync || Date.now() - last > TOML_SYNC_TTL_MS) {
+      await syncManifestTemplatesForProject(project);
+      tomlSyncCache.set(sourceKey, Date.now());
+    }
   }
 
   const rows = await db
@@ -321,11 +370,19 @@ export async function listTemplatesForProject(
     .from(sandboxTemplates)
     .where(or(eq(sandboxTemplates.projectId, project.projectId), eq(sandboxTemplates.isShared, true)));
 
+  // Read the pin FIRST. It is the authority on what this revision declares, so
+  // it must be consulted even when the project has no rows at all — otherwise a
+  // pinned session on a project that never synced silently gets the platform
+  // default instead of its own declared template.
+  const pinned = opts.sessionSnapshot
+    ? await pinnedManifestTemplates(project, opts.sessionSnapshot)
+    : [];
+
   if (rows.length === 0) {
     // No DB rows at all — synthesize a platform default so the system still
     // works before migrations seed one.
-    const value = [synthesizedDefault()];
-    templateListCache.set(project.projectId, { at: Date.now(), value });
+    const value = [synthesizedDefault(), ...pinned];
+    templateListCache.set(sourceKey, { at: Date.now(), value });
     return value;
   }
 
@@ -333,8 +390,24 @@ export async function listTemplatesForProject(
   // defines its own `[[sandbox.templates]]` entry with slug
   // "default", that wins over the platform default. Otherwise the platform's
   // shared row is the project's default.
-  const projectSlugs = new Set(rows.filter((r) => !r.isShared).map((r) => r.slug));
-  const deduped = rows.filter((r) => !r.isShared || !projectSlugs.has(r.slug));
+  //
+  // When a pin governs, the manifest half of the catalogue is EXACTLY what the
+  // pin declares. Every project-scoped `source: 'toml'` row is dropped, not
+  // just the slugs the pin also declares: those rows were written from whatever
+  // revision last synced, so keeping the others would resurrect a template this
+  // revision renamed or deleted, with its old path and its old spec. UI-owned
+  // project rows and shared platform rows are kept — a person created the
+  // first deliberately and the manifest does not own either.
+  const pinnedSlugs = new Set(pinned.map((t) => t.slug));
+  const usable = opts.sessionSnapshot
+    ? rows.filter((row) => row.isShared || (row.source ?? 'toml') !== 'toml')
+    : rows.filter((row) => !(pinnedSlugs.has(row.slug) && (row.source ?? 'toml') === 'toml'));
+
+  const projectSlugs = new Set([
+    ...usable.filter((r) => !r.isShared).map((r) => r.slug),
+    ...pinnedSlugs,
+  ]);
+  const deduped = usable.filter((r) => !r.isShared || !projectSlugs.has(r.slug));
 
   // Sort: shared (platform default) first, then project templates by createdAt.
   deduped.sort((a, b) => {
@@ -342,9 +415,61 @@ export async function listTemplatesForProject(
     if (!a.isShared && b.isShared) return 1;
     return a.createdAt.getTime() - b.createdAt.getTime();
   });
-  const value = deduped.map(rowToResolved);
-  templateListCache.set(project.projectId, { at: Date.now(), value });
+  const value = [...deduped.map(rowToResolved), ...pinned];
+  templateListCache.set(sourceKey, { at: Date.now(), value });
   return value;
+}
+
+/**
+ * Manifest-declared templates read from a pinned snapshot, as resolved values.
+ *
+ * Deliberately NOT persisted. `sandbox_templates` is keyed by (project, slug)
+ * with no revision, so writing here would let a session on an older revision
+ * overwrite a newer one's declaration for every other session in the project.
+ * Anything durable these need — the built snapshot name, its content hash — is
+ * recorded by the builder against the content-addressed identity instead.
+ */
+async function pinnedManifestTemplates(
+  project: GitBackedProject,
+  snapshot: RepoSnapshotRow,
+): Promise<ResolvedTemplate[]> {
+  // Deliberately NOT caught. `readManifest` returns null for a manifest that is
+  // genuinely ABSENT at this revision and throws only when the read itself
+  // failed — a missing archive, a checksum mismatch, an unparseable manifest.
+  // Swallowing that would hand the session the platform default and build the
+  // wrong image; the pin has to fail closed and be retried instead.
+  const parsed = await readManifest(project, { snapshot });
+  const declared = extractSandboxTemplates(parsed?.raw ?? null);
+  return declared
+    .filter((tpl) => tpl.slug !== DEFAULT_SANDBOX_SLUG)
+    .map((tpl) => ({
+      // No row exists, and none should: the builder addresses the image by
+      // content, not by template id.
+      templateId: null,
+      projectId: project.projectId,
+      slug: tpl.slug,
+      name: tpl.name ?? tpl.slug,
+      isShared: false,
+      source: 'toml' as const,
+      provider: 'daytona',
+      image: tpl.image ?? null,
+      dockerfilePath: tpl.dockerfile ?? null,
+      entrypoint: null,
+      // Same clamp the persisted path applies, then the same defaults
+      // `rowToResolved` uses for an unset column — so a pinned template and a
+      // stored one resolve to identical specs for identical declarations.
+      cpu: clamp(tpl.spec.cpu, SANDBOX_SPEC_LIMITS.cpu) ?? DEFAULT_CPU,
+      memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory) ?? DEFAULT_MEMORY_GB,
+      diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk) ?? DEFAULT_DISK_GB,
+      providerState: 'missing' as const,
+      providerSnapshotName: null,
+      contentHash: null,
+      builtFromCommit: snapshot.commitSha,
+      // No recorded predecessor, so the builder has nothing to agent-swap
+      // against and does a full build. Correct for a declaration it has not
+      // built before.
+      swapKey: null,
+    }));
 }
 
 /**
@@ -362,6 +487,7 @@ export class TemplateNotFoundError extends Error {
 export async function resolveTemplateBySlug(
   project: GitBackedProject,
   slug: string | undefined,
+  opts: TemplateSourceOptions = {},
 ): Promise<ResolvedTemplate> {
   const target = (slug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
 
@@ -378,7 +504,7 @@ export async function resolveTemplateBySlug(
     return resolveDefaultTemplate();
   }
 
-  const items = await listTemplatesForProject(project);
+  const items = await listTemplatesForProject(project, opts);
   const match = items.find((t) => t.slug === target);
   if (match) return match;
   throw new TemplateNotFoundError(target);
@@ -397,12 +523,13 @@ export async function resolveTemplateBySlug(
 export async function resolveTemplateForBuildSlug(
   project: GitBackedProject,
   slug: string | undefined,
+  opts: TemplateSourceOptions = {},
 ): Promise<ResolvedTemplate> {
   try {
-    return await resolveTemplateBySlug(project, slug);
+    return await resolveTemplateBySlug(project, slug, opts);
   } catch (err) {
     if (err instanceof TemplateNotFoundError && slug && isWarmBuildSlug(slug)) {
-      return resolveTemplateBySlug(project, templateSlugFromBuildSlug(slug));
+      return resolveTemplateBySlug(project, templateSlugFromBuildSlug(slug), opts);
     }
     throw err;
   }
@@ -587,6 +714,8 @@ export async function refreshTemplateState(
 export async function computeTemplateIdentity(
   project: GitBackedProject,
   template: ResolvedTemplate,
+  /** Prepared source for the Dockerfile; see `resolveUserDockerfile`. */
+  buildSnapshot?: RepoSnapshotRow | null,
 ): Promise<{
   snapshotName: string;
   contentHash: string;
@@ -605,7 +734,11 @@ export async function computeTemplateIdentity(
   swapKey: string;
 }> {
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
-  const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
+  const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(
+    project,
+    template,
+    buildSnapshot,
+  );
   const hashInputs = {
     dockerfile: userDockerfile,
     contextTreeOid: template.isShared ? 'platform-default' : `template:${template.slug}`,
@@ -636,9 +769,37 @@ export async function computeTemplateIdentity(
 export async function resolveUserDockerfile(
   project: GitBackedProject,
   template: ResolvedTemplate,
+  /**
+   * The session's governing repository snapshot.
+   *
+   * With one, the Dockerfile is read from the archive at that EXACT pinned SHA
+   * and no Git command runs — the previous `resolveCommitSha(defaultBranch)` +
+   * `readRepoFile` pair was both a network call on the start path and the wrong
+   * revision for a session on another ref. Without one, the Git path is
+   * unchanged.
+   *
+   * Two revisions with different Dockerfiles produce different bytes, and the
+   * snapshot name is content-addressed over exactly those bytes
+   * (`computeSnapshotHash`), so they cannot share a built image.
+   */
+  buildSnapshot?: RepoSnapshotRow | null,
 ): Promise<{ dockerfile: string; commit: string | null }> {
   if (template.isShared) return { dockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE, commit: null };
   if (template.dockerfilePath) {
+    if (buildSnapshot) {
+      const { readSnapshotFile } = await import('../repo-snapshots/source-reader');
+      const found = await readSnapshotFile(buildSnapshot, template.dockerfilePath);
+      if (!found) {
+        throw new Error(
+          `Sandbox template "${template.slug}": Dockerfile ${template.dockerfilePath} is absent at ${buildSnapshot.commitSha}`,
+        );
+      }
+      const fromSnapshot = normalizeUserDockerfileForSnapshot(found.content);
+      if (!fromSnapshot.trim()) {
+        throw new Error(`Sandbox template "${template.slug}": Dockerfile ${template.dockerfilePath} is empty`);
+      }
+      return { dockerfile: fromSnapshot, commit: buildSnapshot.commitSha };
+    }
     const commitSha = await resolveCommitSha(project, project.defaultBranch);
     const bytes = await readRepoFile(project, template.dockerfilePath, commitSha);
     const normalized = normalizeUserDockerfileForSnapshot(bytes);

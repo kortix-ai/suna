@@ -343,3 +343,104 @@ cd apps/api && BENCH_TARGETS='[{"label":"dev","projectId":"<uuid>"}]' \
 
 It reports snapshot-served boot counts, transfer and first-entry times, every
 fallback reason, and how many boots reached zero Git network operations.
+
+## Checkpoint — 2026-09-12, readiness fixes on top of 55047593c4
+
+This checkpoint covers the observation-ordering, discovery, legacy-metadata and
+pinned-catalogue corrections. Image startup end-to-end, benchmarks and the
+production package are still open; see "Outstanding" below.
+
+### Reproducible local setup
+
+The worktree's database and Supabase are NOT the ports the inherited profile
+names, and `KORTIX_URL` is unset there while internal billing is enabled. Every
+command below is exactly what was run:
+
+```sh
+cd apps/api
+dotenvx run -f .env.local -f .env --quiet -- bash -c 'export \
+  DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:13922/postgres \
+  KORTIX_URL=http://127.0.0.1:13608; bun test --isolate --timeout=120000 <files>'
+```
+
+Object store: the existing MinIO on `127.0.0.1:19000`, bucket
+`kortix-repo-snapshots`. Supabase gateway: `127.0.0.1:13921`.
+
+### What changed
+
+1. **A null observation generation is an assertion, not an absence.**
+   `store.ts` treated `generation: null` — "no row existed when my lookup
+   began" — as "no token", so the write applied unconditionally. A 404 that
+   started before a branch existed could therefore erase the SHA someone
+   recorded while it was in flight. A null generation is now INSERT-ONLY on
+   conflict.
+2. **A 404 no longer proves a branch was deleted.** GitHub answers 404 for a
+   repository the credential cannot see, with the same message as a missing
+   ref, so the previous wording-based classifier deleted good revisions on a
+   permissions blip. `confirmBranchDeleted` re-reads the repository with the
+   SAME credential and only confirms deletion when that succeeds.
+3. **A project whose first preparation failed comes back on its own.** Two
+   bounded scans run in the worker tick: `discoverUnregisteredProjects` retries
+   identity lookups, ordered by an attempt timestamp stored ON THE PROJECT so
+   the scan advances past permanent failures instead of re-reading the same
+   first page; `scheduleMissingDefaultRefs` gives a registered project its
+   missing ref row.
+4. **Legacy `metadata.github` projects survive all of it.** `getProjectGitRemote`
+   reads `metadata.git` first, so writing a partial `git` subtree onto a legacy
+   project downgraded it to provider `generic` with no auth. Bookkeeping now
+   writes into the subtree the project already uses, and every worker and
+   webhook project selector uses the same effective-remote SQL — previously
+   they matched `metadata.git.external_repo_id` only, so a legacy project could
+   be discovered and repaired and still never reconcile.
+5. **Pre-existing `refs/heads/*` rows are readable and consolidated.** Rows an
+   older build wrote under the full-ref spelling were invisible to a lookup for
+   `main`. Every store entry point now resolves the stored spelling, and
+   migration `20260912164500000_repo_snapshot_ref_alias_consolidation.concurrent.ts`
+   folds the old rows into the canonical one (batched, incrementally committed).
+6. **A pinned session gets its own catalogue.** With a governing pin, every
+   project-scoped `source: 'toml'` row is excluded — not just the slugs the pin
+   also declares — so a template the revision renamed or deleted cannot come
+   back with its old path and spec. UI-owned and shared rows are kept. The
+   pinned manifest read no longer swallows failures: a missing archive or a
+   checksum mismatch fails the catalogue instead of quietly serving the
+   platform default.
+
+### Results
+
+| Suite | Result |
+| --- | --- |
+| `apps/api` full unit suite (`bash scripts/test.sh`) | 9014 pass, 79 skip, 1 fail |
+| `src/repo-snapshots/` + `src/snapshots/` + metadata-merge guard | 384 pass, 5 skip, 0 fail |
+| 6 repo-snapshot integration suites (real DB + MinIO) | 46 pass, 0 fail |
+| `apps/api` `tsc --noEmit` | clean |
+| `packages/db` migration lint | 209 files pass |
+
+The single unit failure is `src/secrets/relay-transport.test.ts` — "bun does NOT
+preserve duplicate non-known RESPONSE headers" — in a file this branch does not
+touch. It fails identically at the branch point.
+
+New integration coverage:
+
+- `integration-repo-snapshot-discovery.test.ts` (13) — a first identity-lookup
+  failure recovers with no second webhook; several pages of failing projects
+  cannot starve the one behind them; the attempt is recorded in the database,
+  not in memory; legacy PAT and GitHub-App projects keep their remote through
+  every write; a legacy project reconciles to a queued revision with its own
+  `source_project_id`.
+- `integration-repo-snapshot-ref-alias.test.ts` (8) — raw pre-existing
+  `refs/heads/*` rows, and the migration driven against the real table.
+- `integration-repo-snapshot-templates.test.ts` (7) — the pinned catalogue:
+  old-only slug rejection, path/spec/declaration from the pin, two revisions
+  side by side, no writes to project-global rows, UI and platform precedence,
+  no-manifest, unreadable snapshot.
+- `branch-deletion.test.ts` (6) — the 404 classifier against real HTTP.
+- `integration-repo-snapshot-lifecycle.test.ts` (+5) — observation ordering as a
+  generation rather than a clock.
+
+Every integration suite cleans up only the ids it created.
+
+### Outstanding
+
+Real HTTP GitHub-App and custom-image startup with Git blocked on both sides,
+later Git and Kortix-CR operations, the three-arm boot benchmark, the strict AWS
+test mode, and the production deployment package.

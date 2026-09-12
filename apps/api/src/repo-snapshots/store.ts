@@ -22,6 +22,8 @@ export type RepoSnapshotRow = typeof repoSnapshots.$inferSelect;
 export type RepoSnapshotRefRow = typeof repoSnapshotRefs.$inferSelect;
 
 export const REPO_SNAPSHOT_LEASE_MS = 5 * 60_000;
+/** How long a claimed ref is hidden from other replicas' reconcile scans. */
+export const REPO_SNAPSHOT_RECONCILE_LEASE_MS = 2 * 60_000;
 export const REPO_SNAPSHOT_MAX_ATTEMPTS = 4;
 const ACTIVE_STATUSES = ['queued', 'building'] as const;
 
@@ -238,24 +240,47 @@ export async function markRepoSnapshotAttemptFailed(input: {
 export type RefObservationSource = 'webhook' | 'reconcile' | 'proxy_push' | 'import';
 
 /**
- * Record the latest SHA the control plane has OBSERVED for one ref.
+ * A token taken BEFORE a ref lookup starts, and handed back to
+ * `observeRepoRef` when it finishes.
  *
- * `revision` is a server-side counter, not a timestamp and not the webhook's
- * arrival order: GitHub delivers out of order and a commit timestamp is
- * attacker-controlled. A write only takes effect when it carries a strictly
- * higher revision, which is how a slow reconcile loses to a newer webhook.
+ * It is the row's `revision` as the database reported it — a generation, not a
+ * clock. Clocks do not work here: two replicas can disagree, a replica running
+ * ahead would suppress every later real observation until the others caught up,
+ * and two observations inside one millisecond would silently drop one of them.
  */
+export interface RefObservationToken {
+  /**
+   * `revision` at the moment the lookup began; null when no row existed.
+   *
+   * A null generation is a real assertion — "this ref was unknown when I
+   * started" — and loses to any row that exists by the time the write lands.
+   */
+  generation: number | null;
+}
+
+/** Take the generation token for a ref before resolving its tip. */
+export async function beginRefObservation(
+  identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
+  ref: string,
+): Promise<RefObservationToken> {
+  const row = await readRepoRef(identity, ref);
+  return { generation: row ? Number(row.revision) : null };
+}
+
 /**
  * Record the latest SHA the control plane has OBSERVED for one ref.
  *
- * `observedAt` is when the tip was RESOLVED from the provider, not when this
- * row is written, and a write only lands if it is strictly newer than what is
- * stored. Those are different clocks: a reconcile that resolved at T1 can reach
- * the database after a webhook that resolved at T2 > T1, and without this guard
- * the slower request would overwrite the newer truth with an older SHA. Webhook
- * ARRIVAL order is never trusted for the same reason.
+ * Ordering is a compare-and-set on the row's generation, taken by
+ * `beginRefObservation` before the lookup ran. The write lands only if nobody
+ * else has observed this ref since — so a slow reconcile that started earlier
+ * can never overwrite a newer webhook just by finishing later, and a late 404
+ * cannot erase a SHA recorded while it was in flight.
  *
- * Returns the row that is now authoritative — which is the stored one when this
+ * Losing a race drops THIS observation rather than applying it. That is the
+ * safe direction: reconciliation re-resolves, so a dropped observation costs a
+ * cycle, while an applied stale one is wrong until something else corrects it.
+ *
+ * Returns the row that is now authoritative — the stored one when this
  * observation lost.
  */
 export async function observeRepoRef(input: {
@@ -264,13 +289,16 @@ export async function observeRepoRef(input: {
   desiredSha: string | null;
   via: RefObservationSource;
   reconcileAfter?: Date | null;
-  /** When the tip was resolved from the provider. Defaults to now. */
-  observedAt?: Date;
+  /**
+   * The generation this observation started from. Omit ONLY for a write with
+   * no preceding lookup; every provider-resolved observation must carry one.
+   */
+  token?: RefObservationToken;
 }): Promise<RepoSnapshotRefRow> {
   const now = new Date();
-  const observedAt = input.observedAt ?? now;
-  // One canonical spelling per branch; see `normalizeRefKey`.
-  const ref = normalizeRefKey(input.ref);
+  // One row per branch, whichever spelling that row already uses; see
+  // `storedRefKey`. New rows get the canonical key.
+  const ref = await storedRefKey(input.identity, input.ref);
   const [row] = await db
     .insert(repoSnapshotRefs)
     .values({
@@ -281,7 +309,7 @@ export async function observeRepoRef(input: {
       ref,
       desiredSha: input.desiredSha,
       revision: 1,
-      observedAt,
+      observedAt: now,
       observedVia: input.via,
       reconcileAfter: input.reconcileAfter ?? null,
     })
@@ -292,15 +320,22 @@ export async function observeRepoRef(input: {
         owner: input.identity.owner,
         repo: input.identity.repo,
         revision: sql`${repoSnapshotRefs.revision} + 1`,
-        observedAt,
+        observedAt: now,
         observedVia: input.via,
         reconcileAfter: input.reconcileAfter ?? null,
         updatedAt: now,
       },
-      // Drop a stale observation instead of applying it. The bound is passed as
-      // an ISO string with an explicit cast: a raw `sql` fragment does not carry
-      // the column's type, so a JS Date reaches the driver unserialized.
-      where: sql`${repoSnapshotRefs.observedAt} < ${observedAt.toISOString()}::timestamptz`,
+      // CAS on the generation.
+      //
+      // `generation: null` is NOT "no token". It means no row existed when this
+      // lookup began, so on conflict somebody created one while it was in
+      // flight and this result is stale: the write becomes insert-only. Only a
+      // caller with no preceding lookup at all (no token) writes unconditionally.
+      where: input.token
+        ? input.token.generation === null
+          ? sql`false`
+          : sql`${repoSnapshotRefs.revision} = ${input.token.generation}`
+        : undefined,
     })
     .returning();
   if (row) return row;
@@ -333,7 +368,7 @@ export async function ensureRefReconcileScheduled(input: {
       repositoryId: input.identity.repositoryId,
       owner: input.identity.owner,
       repo: input.identity.repo,
-      ref: normalizeRefKey(input.ref),
+      ref: await storedRefKey(input.identity, input.ref),
       desiredSha: null,
       revision: 0,
       observedAt: now,
@@ -344,6 +379,43 @@ export async function ensureRefReconcileScheduled(input: {
       target: [repoSnapshotRefs.provider, repoSnapshotRefs.repositoryId, repoSnapshotRefs.ref],
       set: { reconcileAfter: input.at, updatedAt: now },
     });
+}
+
+/**
+ * The spelling this ref is actually STORED under.
+ *
+ * Rows written before ref keys were normalized hold `refs/heads/main`, and a
+ * deployment mid-rollout can still produce one. Such a row is invisible to a
+ * lookup for `main`, so its revision is never read, its generation comes back
+ * null, and a write creates a SECOND row for the same branch — two revisions of
+ * one ref, one of them permanently due for reconciliation.
+ *
+ * So every store entry point resolves the stored spelling first: the canonical
+ * key when a row for it exists, the legacy alias when only that one does, and
+ * the canonical key when neither exists (which is what a new row gets). The
+ * migration that consolidates existing aliases makes this a no-op over time; it
+ * stays because a rolling deploy can always write one more.
+ */
+async function storedRefKey(
+  identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
+  ref: string,
+): Promise<string> {
+  const canonical = normalizeRefKey(ref);
+  const [row] = await db
+    .select({ ref: repoSnapshotRefs.ref })
+    .from(repoSnapshotRefs)
+    .where(
+      and(
+        eq(repoSnapshotRefs.provider, identity.provider),
+        eq(repoSnapshotRefs.repositoryId, identity.repositoryId),
+        inArray(repoSnapshotRefs.ref, [canonical, `refs/heads/${canonical}`]),
+      ),
+    )
+    // Canonical wins when both exist, so a consolidation in flight cannot make
+    // the alias authoritative.
+    .orderBy(sql`case when ${repoSnapshotRefs.ref} = ${canonical} then 0 else 1 end`)
+    .limit(1);
+  return row?.ref ?? canonical;
 }
 
 export async function readRepoRef(
@@ -357,21 +429,50 @@ export async function readRepoRef(
       and(
         eq(repoSnapshotRefs.provider, identity.provider),
         eq(repoSnapshotRefs.repositoryId, identity.repositoryId),
-        eq(repoSnapshotRefs.ref, normalizeRefKey(ref)),
+        eq(repoSnapshotRefs.ref, await storedRefKey(identity, ref)),
       ),
     )
     .limit(1);
   return row ?? null;
 }
 
-/** Refs whose re-resolution against the provider is due. */
-export async function claimRefsDueForReconcile(limit: number, now = new Date()): Promise<RepoSnapshotRefRow[]> {
-  return db
-    .select()
-    .from(repoSnapshotRefs)
-    .where(lte(repoSnapshotRefs.reconcileAfter, now))
-    .orderBy(asc(repoSnapshotRefs.reconcileAfter))
-    .limit(limit);
+/**
+ * CLAIM the refs whose re-resolution is due, pushing their deadline out in the
+ * same statement.
+ *
+ * A plain SELECT let every replica pick up the same rows and resolve them
+ * concurrently, which is wasted provider quota and a generation race that both
+ * sides then lose. The UPDATE ... RETURNING is atomic, so one replica takes
+ * each row and the others move on; if the claimer dies, the pushed-out deadline
+ * expires and the row becomes claimable again.
+ */
+export async function claimRefsDueForReconcile(
+  limit: number,
+  now = new Date(),
+): Promise<RepoSnapshotRefRow[]> {
+  const lease = new Date(now.getTime() + REPO_SNAPSHOT_RECONCILE_LEASE_MS);
+  const claimed = await db.execute(sql`
+    update kortix.repo_snapshot_refs as target
+       set reconcile_after = ${lease.toISOString()}::timestamptz,
+           updated_at = ${now.toISOString()}::timestamptz
+     where (target.provider, target.repository_id, target.ref) in (
+       select due.provider, due.repository_id, due.ref
+         from kortix.repo_snapshot_refs as due
+        where due.reconcile_after <= ${now.toISOString()}::timestamptz
+        order by due.reconcile_after asc
+        limit ${limit}
+        for update skip locked
+     )
+     returning target.*`);
+  return (claimed as unknown as RepoSnapshotRefRow[]).map((row) => ({
+    ...row,
+    // `db.execute` returns raw snake_case; callers read the Drizzle shape.
+    repositoryId: (row as never as { repository_id: string }).repository_id,
+    desiredSha: (row as never as { desired_sha: string | null }).desired_sha,
+    observedAt: new Date((row as never as { observed_at: string }).observed_at),
+    observedVia: (row as never as { observed_via: string }).observed_via,
+    reconcileAfter: new Date((row as never as { reconcile_after: string }).reconcile_after),
+  })) as RepoSnapshotRefRow[];
 }
 
 export async function scheduleRefReconcile(

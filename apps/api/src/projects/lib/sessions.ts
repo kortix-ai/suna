@@ -1523,6 +1523,13 @@ export async function createProjectSession(input: {
           gitAuthToken: null,
         },
         sandboxSlug,
+        // Prevalidation is a manifest read like any other, and it runs BEFORE
+        // provisioning. Without a prepared source it falls through to a
+        // host-side Git fetch — with null auth, so on a private repository it
+        // fails and turns a valid slug into `UNKNOWN_SANDBOX_TEMPLATE`. It reads
+        // the SESSION's revision, which is the one whose declaration decides
+        // whether this slug exists for this session.
+        { sessionSnapshot: pinnedSnapshotRow },
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

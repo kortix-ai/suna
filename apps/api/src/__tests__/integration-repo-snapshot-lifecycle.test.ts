@@ -14,6 +14,7 @@ import { db } from '../shared/db';
 import { normalizeRepoSnapshotIdentity, type RepoSnapshotManifest, payloadKey } from '../repo-snapshots/format';
 import {
   REPO_SNAPSHOT_MAX_ATTEMPTS,
+  beginRefObservation,
   claimRepoSnapshot,
   enqueueRepoSnapshot,
   findReadyRepoSnapshot,
@@ -30,6 +31,8 @@ import {
 let hasDb = false;
 let hasStorage = false;
 const repositoryId = String(800000000 + Math.floor(Math.random() * 90000000));
+/** Every synthetic repository id this file creates rows for, so none is left behind. */
+const createdRepositoryIds: string[] = [repositoryId];
 const shaA = 'a'.repeat(39) + '1';
 const shaB = 'b'.repeat(39) + '2';
 
@@ -81,8 +84,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!hasDb) return;
-  await db.execute(sql`delete from kortix.repo_snapshots where repository_id = ${repositoryId}`).catch(() => {});
-  await db.execute(sql`delete from kortix.repo_snapshot_refs where repository_id = ${repositoryId}`).catch(() => {});
+  for (const id of createdRepositoryIds) {
+    await db.execute(sql`delete from kortix.repo_snapshots where repository_id = ${id}`).catch(() => {});
+    await db.execute(sql`delete from kortix.repo_snapshot_refs where repository_id = ${id}`).catch(() => {});
+  }
 });
 
 describe('the real worker publishes a queued revision', () => {
@@ -123,6 +128,7 @@ describe('the real worker publishes a queued revision', () => {
     }
     const projectId = crypto.randomUUID();
     const workerRepositoryId = String(980000000 + Math.floor(Math.random() * 9000000));
+    createdRepositoryIds.push(workerRepositoryId);
     await db.execute(sql`
       insert into kortix.projects (project_id, account_id, name, repo_url, default_branch, manifest_path, status, metadata)
       values (${projectId}, ${accounts[0].account_id}, 'repo-snapshot-worker', ${`file://${upstream}`},
@@ -313,5 +319,101 @@ describe('repo snapshot publication lifecycle', () => {
     const cleared = await observeRepoRef({ identity: base, ref: 'main', desiredSha: null, via: 'webhook' });
     expect(cleared.desiredSha).toBeNull();
     expect(cleared.revision).toBeGreaterThan(second.revision);
+  });
+});
+
+/**
+ * Ordering between a ref lookup that started earlier and one that finished
+ * first, against the real table.
+ *
+ * These are the races that erase a good revision: a 404 that was already in
+ * flight when the branch came back, and a reconcile that overtakes a webhook.
+ * Ordering is a database generation, not a clock — two replicas disagree about
+ * time, and two observations inside one millisecond are indistinguishable by it.
+ */
+describe('observation ordering is a generation, not a clock', () => {
+  const raceRepositoryId = String(700000000 + Math.floor(Math.random() * 90000000));
+  createdRepositoryIds.push(raceRepositoryId);
+  const identity = { provider: 'github' as const, repositoryId: raceRepositoryId, owner: 'kortix-ai', repo: 'race' };
+  const ref = `race-${Math.floor(Math.random() * 1e6)}`;
+  const shaA = '1'.repeat(40);
+  const shaB = '2'.repeat(40);
+  const shaC = '3'.repeat(40);
+
+  afterAll(async () => {
+    if (!hasDb) return;
+    await db
+      .execute(sql`delete from kortix.repo_snapshot_refs where repository_id = ${raceRepositoryId}`)
+      .catch(() => {});
+  });
+
+  test('a delayed 404 cannot erase a branch recreated while it was in flight', async () => {
+    if (!hasDb) return;
+    // A looks up a ref that does not exist yet, so it holds a null generation.
+    const late404 = await beginRefObservation(identity, ref);
+    expect(late404.generation).toBeNull();
+
+    // Meanwhile the branch is created and someone records it.
+    const created = await beginRefObservation(identity, ref);
+    await observeRepoRef({ identity, ref, desiredSha: shaB, via: 'webhook', token: created });
+    expect((await readRepoRef(identity, ref))?.desiredSha).toBe(shaB);
+
+    // A finally returns 404. A null generation is an assertion that the ref was
+    // unknown, so the write is insert-only and loses to the row that now exists.
+    const row = await observeRepoRef({ identity, ref, desiredSha: null, via: 'reconcile', token: late404 });
+    expect(row.desiredSha).toBe(shaB);
+    expect((await readRepoRef(identity, ref))?.desiredSha).toBe(shaB);
+  });
+
+  test('a stale-generation deletion cannot erase a newer revision', async () => {
+    if (!hasDb) return;
+    const stale = await beginRefObservation(identity, ref);
+    expect(stale.generation).not.toBeNull();
+
+    const fresh = await beginRefObservation(identity, ref);
+    await observeRepoRef({ identity, ref, desiredSha: shaA, via: 'webhook', token: fresh });
+
+    const row = await observeRepoRef({ identity, ref, desiredSha: null, via: 'reconcile', token: stale });
+    expect(row.desiredSha).toBe(shaA);
+  });
+
+  test('a stale-generation observation cannot overwrite a newer SHA', async () => {
+    if (!hasDb) return;
+    const stale = await beginRefObservation(identity, ref);
+    const fresh = await beginRefObservation(identity, ref);
+    await observeRepoRef({ identity, ref, desiredSha: shaB, via: 'webhook', token: fresh });
+
+    const row = await observeRepoRef({ identity, ref, desiredSha: shaC, via: 'reconcile', token: stale });
+    expect(row.desiredSha).toBe(shaB);
+  });
+
+  test('consecutive observations both apply, whatever the clock says', async () => {
+    if (!hasDb) return;
+    // Back to back, inside the same millisecond as far as any timestamp is
+    // concerned. A time comparison drops the second one; a generation does not.
+    const first = await beginRefObservation(identity, ref);
+    const one = await observeRepoRef({ identity, ref, desiredSha: shaA, via: 'webhook', token: first });
+    const second = await beginRefObservation(identity, ref);
+    const two = await observeRepoRef({ identity, ref, desiredSha: shaC, via: 'webhook', token: second });
+
+    expect(Number(two.revision)).toBe(Number(one.revision) + 1);
+    expect(two.desiredSha).toBe(shaC);
+  });
+
+  test('a deletion with the current generation does apply', async () => {
+    if (!hasDb) return;
+    const token = await beginRefObservation(identity, ref);
+    const row = await observeRepoRef({ identity, ref, desiredSha: null, via: 'reconcile', token });
+    expect(row.desiredSha).toBeNull();
+    // And it keeps a deadline, or the due scan would never look at it again.
+    const scheduled = await observeRepoRef({
+      identity,
+      ref,
+      desiredSha: null,
+      via: 'reconcile',
+      reconcileAfter: new Date(Date.now() + 60_000),
+      token: await beginRefObservation(identity, ref),
+    });
+    expect(scheduled.reconcileAfter).not.toBeNull();
   });
 });

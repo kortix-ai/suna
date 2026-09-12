@@ -241,9 +241,19 @@ export async function ensureSandboxImage(
      * row's provider for non-session callers (pre-build/manual/background).
      */
     provider?: string;
+    /**
+     * The session's GOVERNING repository snapshot. It supplies BOTH halves of
+     * the build — the manifest declaration (slug, Dockerfile path, resource
+     * spec) and the Dockerfile bytes — so a session always builds what its own
+     * revision declares. The snapshot name is content-addressed over those
+     * bytes, so two revisions that differ cannot share an image.
+     */
+    sessionSnapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null;
   } = {},
 ): Promise<EnsureSandboxImageResult> {
-  const template = await resolveTemplateBySlug(project, opts.slug);
+  const template = await resolveTemplateBySlug(project, opts.slug, {
+    sessionSnapshot: opts.sessionSnapshot,
+  });
   const buildProvider = opts.provider ?? template.provider;
 
   const provider = getSandboxProvider(buildProvider);
@@ -251,7 +261,7 @@ export async function ensureSandboxImage(
     throw new SnapshotBuildError(`Sandbox provider ${buildProvider} is not configured`);
   }
 
-  const identity = await computeTemplateIdentity(project, template);
+  const identity = await computeTemplateIdentity(project, template, opts.sessionSnapshot);
   const blockingPreparation = (opts.source ?? 'session-start') !== 'session-start';
 
   // Trust-the-row fast path. If the template row already recorded THIS exact

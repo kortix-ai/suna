@@ -19,6 +19,7 @@ import { config } from '../config';
 import { logger } from '../lib/logger';
 import { managedGithubAppConfig } from '../platform/services/managed-github-app';
 import type { ProjectRow } from '../projects/lib/serializers';
+import { recordedRepositoryIdSql } from './identity';
 import { db } from '../shared/db';
 import { prepareRefTip } from './prepare';
 import { repoSnapshotWorkerEnabled } from './worker';
@@ -64,10 +65,7 @@ async function projectsForRepository(repositoryId: string): Promise<ProjectRow[]
     .select()
     .from(projects)
     .where(
-      and(
-        ne(projects.status, 'archived'),
-        sql`${projects.metadata} -> 'git' ->> 'external_repo_id' = ${repositoryId}`,
-      ),
+      and(ne(projects.status, 'archived'), sql`${recordedRepositoryIdSql} = ${repositoryId}`),
     )
     .limit(50);
 }

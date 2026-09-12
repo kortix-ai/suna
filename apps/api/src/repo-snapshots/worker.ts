@@ -12,11 +12,13 @@
  */
 import { randomUUID } from 'node:crypto';
 import { projects } from '@kortix/db';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, ne, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { getBranchCommitSha, parseGitHubRepoUrl } from '../projects/github';
 import { withProjectGitAuth } from '../projects/lib/git';
+import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
+import { confirmBranchDeleted } from './prepare';
 import type { ProjectRow } from '../projects/lib/serializers';
 import { db } from '../shared/db';
 import {
@@ -26,12 +28,22 @@ import {
   discardBuiltRepoSnapshot,
 } from './build';
 import { type RepoSnapshotCompression, normalizeRepoSnapshotIdentity } from './format';
-import { ensureRepoSnapshotRepository, withCommit } from './identity';
+import {
+  discoveryMarkerSql,
+  ensureRepoSnapshotRepository,
+  githubBackedProjectsSql,
+  gitMetadataSubtree,
+  readRepoSnapshotRepository,
+  recordedRepositoryIdSql,
+  withCommit,
+} from './identity';
 import { publishRepoSnapshot } from './publish';
 import { requireRepoSnapshotBucket, resolveRepoSnapshotBucket } from './s3';
 import {
   REPO_SNAPSHOT_MAX_ATTEMPTS,
+  beginRefObservation,
   claimRefsDueForReconcile,
+  ensureRefReconcileScheduled,
   claimRepoSnapshot,
   enqueueRepoSnapshot,
   markRepoSnapshotAttemptFailed,
@@ -81,12 +93,7 @@ async function anyProjectForRepository(repositoryId: string): Promise<ProjectRow
   const rows = await db
     .select()
     .from(projects)
-    .where(
-      and(
-        ne(projects.status, 'archived'),
-        sql`${projects.metadata} -> 'git' ->> 'external_repo_id' = ${repositoryId}`,
-      ),
-    )
+    .where(and(ne(projects.status, 'archived'), sql`${recordedRepositoryIdSql} = ${repositoryId}`))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -180,15 +187,24 @@ export async function reconcileRef(row: RepoSnapshotRefRow): Promise<
     return { ok: false, reason: 'no project can supply source access for this repository' };
   }
   const branch = row.ref.replace(/^refs\/heads\//, '');
+  let token: Awaited<ReturnType<typeof beginRefObservation>> | undefined;
+  // Hoisted for the 404 path: deciding a branch is deleted takes the same
+  // coordinates and the same credential. See `confirmBranchDeleted`.
+  let coordinates = { owner: row.owner, repo: row.repo };
+  let auth: { token: string } | undefined;
   try {
     const authed = await withProjectGitAuth(project);
-    const coordinates = parseGitHubRepoUrl(authed.repoUrl) ?? { owner: row.owner, repo: row.repo };
-    const observedAt = new Date();
+    coordinates = parseGitHubRepoUrl(authed.repoUrl) ?? coordinates;
+    auth = authed.gitAuthToken ? { token: authed.gitAuthToken } : undefined;
+    token = await beginRefObservation(
+      { provider: 'github', repositoryId: row.repositoryId },
+      row.ref,
+    );
     const sha = await getBranchCommitSha({
       owner: coordinates.owner,
       repo: coordinates.repo,
       branch,
-      auth: authed.gitAuthToken ? { token: authed.gitAuthToken } : undefined,
+      auth,
     });
     await observeRepoRef({
       identity: { provider: 'github', repositoryId: row.repositoryId, owner: row.owner, repo: row.repo },
@@ -196,7 +212,7 @@ export async function reconcileRef(row: RepoSnapshotRefRow): Promise<
       desiredSha: sha,
       via: 'reconcile',
       reconcileAfter: new Date(Date.now() + reconcileIntervalMs()),
-      observedAt,
+      token,
     });
     await enqueueRepoSnapshot({
       identity: withCommit(
@@ -210,20 +226,164 @@ export async function reconcileRef(row: RepoSnapshotRefRow): Promise<
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // A deleted branch clears the desired revision; it never leaves a stale one
-    // in place pretending to be current.
-    if (/404|not found/i.test(message)) {
+    // in place pretending to be current. A 404 alone does not prove deletion.
+    if (token && (await confirmBranchDeleted({ ...coordinates, error, auth }))) {
+      // Carries the SAME generation token as the success path. Without it a
+      // lookup that started while the branch was absent could return 404 after
+      // someone else recorded a recreated branch's SHA, and erase it.
       await observeRepoRef({
         identity: { provider: 'github', repositoryId: row.repositoryId, owner: row.owner, repo: row.repo },
         ref: row.ref,
         desiredSha: null,
         via: 'reconcile',
         reconcileAfter: new Date(Date.now() + reconcileIntervalMs()),
+        token,
       });
       return { ok: true, sha: null };
     }
     await scheduleRefReconcile({ provider: 'github', repositoryId: row.repositoryId }, row.ref, new Date(Date.now() + reconcileIntervalMs()));
     return { ok: false, reason: message };
   }
+}
+
+/**
+ * How long a failed discovery attempt is skipped.
+ *
+ * Recorded in the project's own metadata, not in memory: the scan is ordered by
+ * that timestamp, so a project whose lookup keeps failing moves to the BACK of
+ * the queue instead of occupying the first page forever. In-memory skipping
+ * cannot do this — the rows are already chosen by then, and skipping one after
+ * `limit` has been applied advances nothing.
+ */
+export const REPO_SNAPSHOT_DISCOVERY_RETRY_MS = 10 * 60_000;
+
+/**
+ * Mark a discovery attempt. Written BEFORE the lookup, so a crash still
+ * advances the scan, and into the subtree the project already uses — see
+ * `gitMetadataSubtree`, which a legacy project depends on for its whole
+ * credential routing.
+ */
+async function markDiscoveryAttempt(project: ProjectRow): Promise<void> {
+  await db
+    .update(projects)
+    .set({
+      metadata: metadataMergeSubtree(gitMetadataSubtree(project), {
+        snapshot_discovery_at: new Date().toISOString(),
+      }),
+    })
+    .where(eq(projects.projectId, project.projectId));
+}
+
+/** Test seam: forget every recorded discovery attempt for these projects. */
+export async function resetRepoSnapshotDiscoveryBackoff(projectIds: string[]): Promise<void> {
+  for (const projectId of projectIds) {
+    const [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    if (!project) continue;
+    await db
+      .update(projects)
+      .set({ metadata: metadataMergeSubtree(gitMetadataSubtree(project), { snapshot_discovery_at: null }) })
+      .where(eq(projects.projectId, projectId));
+  }
+}
+
+
+
+/**
+ * GitHub-backed projects that have never been registered, retried.
+ *
+ * Everything else in this worker is driven by ref ROWS, and a project whose
+ * very first identity lookup failed has none: `prepareRefTip` returns before it
+ * can schedule anything, so nothing would ever look at that project again
+ * without another webhook or a manual backfill. This is the only pass that can
+ * rediscover it.
+ *
+ * Ordered by last attempt, oldest first, so every eligible project is reached
+ * in turn and a permanently failing one cannot hold the front of the queue.
+ */
+export async function discoverUnregisteredProjects(limit: number): Promise<number> {
+  const cutoff = new Date(Date.now() - REPO_SNAPSHOT_DISCOVERY_RETRY_MS).toISOString();
+  const candidates = await db
+    .select()
+    .from(projects)
+    .where(
+      and(
+        ne(projects.status, 'archived'),
+        githubBackedProjectsSql,
+        sql`${recordedRepositoryIdSql} is null`,
+        // ISO-8601 UTC sorts and compares lexicographically in time order, and
+        // '' (never attempted) sorts before every timestamp. No cast, so a bad
+        // value can never fail the whole scan.
+        sql`${discoveryMarkerSql} < ${cutoff}`,
+      ),
+    )
+    .orderBy(discoveryMarkerSql)
+    .limit(Math.max(1, limit));
+
+  let discovered = 0;
+  for (const project of candidates) {
+    await markDiscoveryAttempt(project);
+    const resolved = await ensureRepoSnapshotRepository(project).catch(() => null);
+    if (!resolved?.repository) continue;
+    discovered += 1;
+    logger.info('[repo-snapshot] registered a previously unidentified project', {
+      projectId: project.projectId,
+      repositoryId: resolved.repository.repositoryId,
+    });
+  }
+  return discovered;
+}
+
+/**
+ * Registered projects whose default branch has no ref row, given one.
+ *
+ * A project is only reconciled through its ref rows, so a project that has an
+ * identity but no row is as invisible as an unregistered one. That state is
+ * reachable in several ways — a failed write right after the id was persisted,
+ * a row deleted by hand, an identity recorded by an older build that never
+ * scheduled anything — and none of them leaves a marker to retry from. The
+ * missing row IS the marker, so this asks the database for it directly.
+ */
+export async function scheduleMissingDefaultRefs(limit: number): Promise<number> {
+  const candidates = await db
+    .select()
+    .from(projects)
+    .where(
+      and(
+        ne(projects.status, 'archived'),
+        githubBackedProjectsSql,
+        sql`${recordedRepositoryIdSql} ~ '^[0-9]{1,20}$'`,
+        sql`not exists (
+          select 1 from kortix.repo_snapshot_refs r
+          where r.provider = 'github'
+            and r.repository_id = ${recordedRepositoryIdSql}
+            and r.ref = regexp_replace(coalesce(nullif(${projects.defaultBranch}, ''), 'main'), '^refs/heads/', '')
+        )`,
+      ),
+    )
+    .orderBy(asc(projects.updatedAt))
+    .limit(Math.max(1, limit));
+
+  let scheduled = 0;
+  for (const project of candidates) {
+    const repository = readRepoSnapshotRepository(project).repository;
+    if (!repository) continue;
+    // Every candidate is attempted, so one row that cannot be written consumes
+    // its own slot and nothing else's.
+    try {
+      await ensureRefReconcileScheduled({
+        identity: repository,
+        ref: project.defaultBranch || 'main',
+        at: new Date(),
+      });
+      scheduled += 1;
+    } catch (error) {
+      logger.warn('[repo-snapshot] could not schedule the first reconcile', {
+        projectId: project.projectId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return scheduled;
 }
 
 /**
@@ -235,8 +395,8 @@ export async function prepareRevision(input: {
   ref: string;
   commitSha: string;
   via: 'webhook' | 'reconcile' | 'proxy_push' | 'import';
-  /** When the tip was resolved from the provider; see `observeRepoRef`. */
-  observedAt?: Date;
+  /** Generation taken before the lookup; see `beginRefObservation`. */
+  token?: import('./store').RefObservationToken;
 }): Promise<{ prepared: true } | { prepared: false; reason: string }> {
   if (!repoSnapshotWorkerEnabled()) return { prepared: false, reason: 'snapshot storage is not configured' };
   const resolved = await ensureRepoSnapshotRepository(input.project);
@@ -250,7 +410,7 @@ export async function prepareRevision(input: {
     desiredSha: identity.commitSha,
     via: input.via,
     reconcileAfter: new Date(Date.now() + reconcileIntervalMs()),
-    observedAt: input.observedAt,
+    token: input.token,
   });
   await enqueueRepoSnapshot({
     identity,
@@ -298,12 +458,18 @@ export function triggerRepoSnapshotWorker(): void {
   scheduleTriggeredTick();
 }
 
-export async function runRepoSnapshotTick(): Promise<{ published: number; reconciled: number }> {
-  if (workerRunning || !repoSnapshotWorkerEnabled()) return { published: 0, reconciled: 0 };
+export async function runRepoSnapshotTick(): Promise<{
+  published: number;
+  reconciled: number;
+  discovered: number;
+}> {
+  if (workerRunning || !repoSnapshotWorkerEnabled())
+    return { published: 0, reconciled: 0, discovered: 0 };
   workerRunning = true;
   const owner = `${config.INTERNAL_KORTIX_ENV}:${process.pid}:${randomUUID()}`;
   let published = 0;
   let reconciled = 0;
+  let discovered = 0;
   try {
     const batch = Math.max(1, Math.min(10, config.KORTIX_REPO_SNAPSHOT_WORKER_BATCH ?? 2));
     for (let index = 0; index < batch; index++) {
@@ -314,7 +480,22 @@ export async function runRepoSnapshotTick(): Promise<{ published: number; reconc
       await reconcileRef(row);
       reconciled += 1;
     }
-    return { published, reconciled };
+    // The two self-healing scans. Both are bounded, both return nothing once
+    // every GitHub project carries an id and a ref row, and together they are
+    // the ONLY paths that recover a project whose first preparation failed:
+    // `prepareRefTip` has no row to schedule a retry against.
+    discovered = await discoverUnregisteredProjects(batch).catch((error) => {
+      logger.warn('[repo-snapshot] project discovery pass failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 0;
+    });
+    await scheduleMissingDefaultRefs(batch).catch((error) => {
+      logger.warn('[repo-snapshot] missing-ref scan failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return { published, reconciled, discovered };
   } finally {
     workerRunning = false;
     if (workerRerunRequested) scheduleTriggeredTick();

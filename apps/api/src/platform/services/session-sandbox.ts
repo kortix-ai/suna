@@ -371,6 +371,12 @@ export async function provisionSessionSandbox(opts: {
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
   // Resolve the project + fresh provider-neutral git access (the snapshot
   // builder may need it to read the repo's Dockerfile).
+  /** True when the image is platform-owned and reads nothing from the repository. */
+  const sharedImageSlug = (candidate: string | undefined): boolean =>
+    candidate === META_SANDBOX_SLUG ||
+    candidate === PI_WORKER_SANDBOX_SLUG ||
+    (candidate ?? DEFAULT_SANDBOX_SLUG) === DEFAULT_SANDBOX_SLUG;
+
   const resolveGitProject = async (): Promise<GitBackedProject> => {
     if (!opts.resolveGitProject) return opts.gitProject;
     return opts.resolveGitProject();
@@ -401,6 +407,10 @@ export async function provisionSessionSandbox(opts: {
             ensurePiWorkerImage({ source: 'session-start', provider: targetProvider }),
           )
         : ensureSandboxImage(gitProject, {
+          // Declaration AND Dockerfile from the session's own pinned revision:
+          // a build describes what this session runs, so both halves must come
+          // from the same place. See `templates.ts` `TemplateSourceOptions`.
+          sessionSnapshot: opts.repoSnapshotRow,
           slug,
           accountId,
           source: 'session-start',
@@ -420,7 +430,14 @@ export async function provisionSessionSandbox(opts: {
   // / stateful-snapshot fast path — Platinum and Daytona take the identical cold
   // path.
   let firstImagePromise: Promise<FirstImage> | null = (async () => {
-    const gitProject = await resolveGitProject();
+    // The shared images — meta, pi worker, and the platform default template —
+    // are content-hashed from platform artifacts and read nothing from the
+    // repository. Resolving the git project for them MINTS a GitHub
+    // installation token that nothing then uses, which is a network call on the
+    // start path for no reason. Only a project template needs the project, and
+    // with a prepared snapshot it needs its coordinates rather than its
+    // credential.
+    const gitProject = sharedImageSlug(slug) ? opts.gitProject : await resolveGitProject();
     const image = await resolveImage(gitProject, providerName);
     return { ...image, gitProject };
   })();
