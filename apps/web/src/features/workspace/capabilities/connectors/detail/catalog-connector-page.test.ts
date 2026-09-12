@@ -17,7 +17,13 @@ describe('catalogue connector detail route', () => {
     const route = readFileSync(appRoute, 'utf8');
     const page = readFileSync(pagePath, 'utf8');
 
-    expect(route).toContain('<CatalogConnectorPage');
+    // The `/connectors/catalog/<source>/<slug>` spelling is retired: the app
+    // page is the single-segment `/connectors/<slug>` (non-default catalogues
+    // ride as `?src=`), and the old route ONLY forwards there — it must never
+    // render the page itself again.
+    expect(route).toContain('redirect(');
+    expect(route).toContain("params.set('src', 'apps')");
+    expect(route).not.toContain('<CatalogConnectorPage');
     expect(page).toContain('listDiscoverConnectors(projectId, slug)');
     expect(page).toContain('getDiscoverConnector(projectId, discoverEntry.connector.id)');
     expect(page).toContain('listPipedreamApps(projectId, slug)');

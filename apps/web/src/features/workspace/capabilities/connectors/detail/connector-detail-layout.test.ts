@@ -10,7 +10,6 @@ describe('connector detail layout', () => {
 
     expect(layout).toContain('export function ConnectorDetailLayout');
     expect(layout).toContain('primaryAction');
-    expect(layout).toContain('export function ConnectorSetupGuide');
     expect(layout).toContain('export function ConnectorDocumentationLinks');
   });
 

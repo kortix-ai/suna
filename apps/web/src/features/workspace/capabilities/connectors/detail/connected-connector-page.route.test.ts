@@ -17,7 +17,31 @@ describe('connected connector route', () => {
     const route = readFileSync(appRoute, 'utf8');
     const page = readFileSync(pagePath, 'utf8');
 
-    expect(route).toContain('<ConnectedConnectorPage');
+    // The single-segment route RESOLVES the slug — a project connector
+    // forwards into the app-split view when its catalogue app is known, and
+    // a slug that is not a connector renders the app's catalogue page
+    // (`/connectors/canva` IS the Canva page).
+    expect(route).toContain('<ConnectorSlugPage');
+    const resolver = readFileSync(join(feature, 'connector-slug-resolver.tsx'), 'utf8');
+    expect(resolver).toContain('<ConnectedConnectorPage');
+    expect(resolver).toContain('<CatalogConnectorPage');
+    expect(resolver).toContain('appConnectorHref(projectId, resolvedApp.slug, slug)');
+    // Managed OAuth connectors resolve against the Easy Connect catalogue and
+    // carry the `?src=apps` marker; Discover providers resolve against the
+    // Discover catalogue.
+    expect(resolver).toContain('listPipedreamApps(projectId, query)');
+    expect(resolver).toContain("params.set('src', 'apps')");
+    // The app-split route exists and composes the two pages as columns.
+    const splitRoute = resolve(
+      feature,
+      '../../../../../app/(app)/projects/[id]/(capabilities)/connectors/[slug]/[connectorSlug]/page.tsx',
+    );
+    expect(existsSync(splitRoute)).toBe(true);
+    const split = readFileSync(join(feature, 'app-connector-split-page.tsx'), 'utf8');
+    expect(split).toContain('<SplitSheetMain');
+    expect(split).toContain('<CatalogConnectorPage');
+    expect(split).toContain('<ConnectedConnectorPage');
+    expect(split).toContain('backHref={appHref}');
     expect(page).toContain('qk.project.connectors(projectId)');
     expect(page).toContain('getConnectorConfig(projectId, connector.slug)');
     expect(page).toContain('<ConnectorDetailLayout');

@@ -84,7 +84,9 @@ describe('connectors page error path', () => {
     const imports = source.slice(0, source.indexOf('const SCOPES'));
     expect(imports).not.toContain('AddAppPanel');
     expect(source).not.toContain('<AddAppPanel');
-    expect(source).toContain("setPanel('custom')");
+    // `openAdd()` — the custom form takes the split column, which is also how
+    // it stays the only front door (`connectors-page.add-sheet.test.ts`).
+    expect(source).toContain('openAdd()');
     expect(source).toContain('<CustomConnectorForm');
   });
 

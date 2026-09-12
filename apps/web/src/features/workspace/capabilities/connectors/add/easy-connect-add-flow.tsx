@@ -69,7 +69,9 @@ export function EasyConnectAddFlow({
             value1: connection.syncError,
           }),
         );
-        onAdded();
+        // Sync failing does not undo the create — open the connector anyway
+        // so its page (and connect dialog) can finish the job.
+        onAdded(connection.slug);
         onClose();
         return;
       }

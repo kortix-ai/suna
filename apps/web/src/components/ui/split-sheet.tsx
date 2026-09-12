@@ -63,10 +63,13 @@ import { Button } from './button';
 import Hint from './hint';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
-export type SplitSheetSize = 'sm' | 'md' | 'lg';
+export type SplitSheetSize = 'xs' | 'sm' | 'md' | 'lg';
 
-/** Sheet column width, from Tailwind's container scale. The grid caps it at 50% of the root. */
+/** Sheet column width, from Tailwind's container scale. The grid caps it at
+ *  `--split-sheet-max` (default 50%) of the root — a caller whose sheet IS
+ *  the main content may raise the cap (`[--split-sheet-max:60%]`). */
 const SIZE_CLASS: Record<SplitSheetSize, string> = {
+  xs: '[--split-sheet-width:var(--container-2xs)]', // 18rem
   sm: '[--split-sheet-width:var(--container-xs)]', // 20rem
   md: '[--split-sheet-width:var(--container-sm)]', // 24rem
   lg: '[--split-sheet-width:var(--container-md)]', // 28rem
@@ -207,7 +210,8 @@ function SplitSheet({
           data-slot="split-sheet-grid"
           className={cn(
             'grid h-full min-h-0 grid-cols-1 grid-rows-1',
-            open && '@3xl/split-sheet:grid-cols-[minmax(0,1fr)_min(var(--split-sheet-width),50%)]',
+            open &&
+              '@3xl/split-sheet:grid-cols-[minmax(0,1fr)_min(var(--split-sheet-width),var(--split-sheet-max,50%))]',
           )}
         >
           {children}

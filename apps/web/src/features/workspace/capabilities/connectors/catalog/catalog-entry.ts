@@ -1,8 +1,6 @@
 import type { UiTranslator } from '@/i18n/translator';
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
-import { groupIntoSections, POPULAR_SECTION } from './connector-categories';
-import { sortByPicks } from './connector-picks';
 
 /**
  * Which catalogue an entry came from. This is not cosmetic — it decides which
@@ -102,18 +100,24 @@ export function catalogEntryKind(entry: CatalogEntry): DiscoverConnector['kind']
 }
 
 /**
- * MCP servers first, everything else in its existing order — a stable
- * partition, not a re-sort.
- *
- * This is the COR-17 editorial rule: MCP auth got good enough for one-click
- * connect (OAuth discovery + dynamic client registration), so the marketplace
- * leads with MCP. It applies to the sectioned Discovery browse only — the All
- * tab keeps raw feed order on purpose, so one tab stays unopinionated.
+ * The one fact that varies between cards: HOW this entry connects. Short
+ * nouns, shown as the card's quiet line under the title — every card gets
+ * one, so the rows scan as a consistent column instead of some cards
+ * carrying a mark and others nothing.
  */
-export function mcpFirst(entries: readonly CatalogEntry[]): CatalogEntry[] {
-  const mcp = entries.filter((entry) => catalogEntryKind(entry) === 'mcp');
-  if (mcp.length === 0) return [...entries];
-  return [...mcp, ...entries.filter((entry) => catalogEntryKind(entry) !== 'mcp')];
+export function catalogEntryKindLabel(entry: CatalogEntry): string {
+  if (entry.source === 'computer') return 'Native';
+  if (entry.source === 'easy-connect') return 'App';
+  switch (entry.connector.kind) {
+    case 'mcp':
+      return 'MCP';
+    case 'graphql':
+      return 'GraphQL';
+    case 'cli':
+      return 'CLI';
+    default:
+      return 'API';
+  }
 }
 
 export function foldKey(value: string): string {
@@ -214,6 +218,28 @@ export function isCatalogEntryConnected(
  * "what exists", not "what works" — a half-connected connector belongs in the
  * list with its status line saying so.
  */
+/**
+ * The inverse of {@link catalogEntryConnectors}: given catalogue items, which
+ * one does this CONNECTOR belong to? Same prefix rule, same direction — the
+ * connector token extends the app token ("canvamcpserver" extends "canva") —
+ * so the two joins cannot disagree about membership.
+ */
+export function catalogAppForConnector<T extends { slug: string; name: string }>(
+  items: readonly T[],
+  connector: Pick<AdminConnector, 'slug' | 'name'>,
+): T | null {
+  const connectorTokens = [foldKey(connector.slug), foldKey(connector.name ?? '')].filter(Boolean);
+  return (
+    items.find((item) =>
+      [foldKey(item.slug), foldKey(item.name)]
+        .filter(Boolean)
+        .some((token) =>
+          connectorTokens.some((connectorToken) => tokenIdentifiesEntry(connectorToken, token)),
+        ),
+    ) ?? null
+  );
+}
+
 export function catalogEntryConnectors(
   connectors: readonly AdminConnector[],
   entry: CatalogEntry,
@@ -229,66 +255,3 @@ export function catalogEntryConnectors(
   );
 }
 
-/** The synthetic first section. Not a catalogue category — see
- *  `catalogSections` below. Defined in `connector-categories.ts` (which this
- *  module already imports from, so it cannot import back) and re-exported here
- *  because this is where it is used. */
-export { POPULAR_SECTION };
-
-/**
- * The catalogue as ordered sections: Popular first, then the curated browse
- * order (`groupIntoSections`, which is `CURATED_SECTIONS` then the uncurated
- * tail by size then `Other`).
- *
- * Popular stays above all of it because it is not a category — it is the
- * highest-ranked apps across every category, which is the one row that answers
- * "what do people actually connect?" before the user has picked a subject. It
- * only exists on the Discover source; Easy Connect ranks nothing, so there
- * Productivity leads.
- *
- * Popular is synthesised rather than read as a category, because `popularity`
- * is a per-item rank and no catalogue publishes a "popular" bucket. Entries in
- * it are NOT removed from their real sections — an app is both popular and a
- * developer tool, and hiding it from Developer tools to avoid repeating it
- * would make that section lie about what it contains. `groupIntoSections`
- * already duplicates items across the sections they claim, so this is the same
- * rule applied one level up.
- *
- * A section is emitted only when it has entries, so a catalogue with no ranked
- * items (Easy Connect, whose `popularity` is uniformly `null`) simply has no
- * Popular section instead of an empty heading.
- */
-export function catalogSections(
-  entries: readonly CatalogEntry[],
-  opts: {
-    popularCap: number;
-    /** Key sections by the catalogue's own category slug rather than the curated
-     *  bucket. Set for any source whose sections are opened by asking the server
-     *  for that key — see `sectionKeysForEntry`. */
-    rawCategoryKeys?: boolean;
-  },
-): Array<{ category: string; items: CatalogEntry[] }> {
-  const ranked = mcpFirst(
-    entries
-      .filter((entry) => entry.popularity !== null)
-      .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
-      .slice(0, opts.popularCap),
-  );
-
-  // Picks are applied HERE and nowhere else, which scopes them to the Discovery
-  // tab: this is the only caller that builds sections. The All tab reads
-  // `groupIntoSections` directly and keeps raw feed order, so the two tabs
-  // never disagree about what "first" means — one is opinionated, one is not.
-  //
-  // `mcpFirst` rides on top of both orderings (COR-17): within Popular and
-  // within each section, MCP servers lead and the existing ranking (popularity,
-  // then picks) decides the order inside each half. A stable partition, so the
-  // real rankings survive intact on both sides of the split.
-  const sections = groupIntoSections(entries, (entry) => entry.categories, {
-    raw: opts.rawCategoryKeys,
-  }).map((section) => ({
-    category: section.category,
-    items: mcpFirst(sortByPicks(section.category, section.items)),
-  }));
-  return ranked.length > 0 ? [{ category: POPULAR_SECTION, items: ranked }, ...sections] : sections;
-}

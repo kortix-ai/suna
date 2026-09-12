@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeftIcon, ArrowSquareOutIcon, CheckIcon } from '@phosphor-icons/react';
+import { ArrowLeftIcon, ArrowSquareOutIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -13,18 +13,8 @@ import {
   ItemDescription,
   ItemTitle,
 } from '@/components/ui/item';
-import {
-  Stepper,
-  StepperDescription,
-  StepperIndicator,
-  StepperItem,
-  StepperSeparator,
-  StepperTitle,
-  StepperTrigger,
-} from '@/components/ui/stepper';
 import { cn } from '@/lib/utils';
 
-import type { ConnectorSetupStep } from './connector-detail-copy';
 
 export interface ConnectorDocumentationLink {
   label: string;
@@ -38,17 +28,23 @@ export function ConnectorDetailLayout({
   title,
   description,
   status,
+  headerAction,
   primaryTitle,
   primaryDescription,
   primaryAction,
   children,
   className,
 }: {
-  backHref: string;
+  /** `null` hides the back row — the split view's right pane closes via its
+   *  column, so a Go back inside it is a second, redundant exit. */
+  backHref: string | null;
   icon: ReactNode;
   title: ReactNode;
   description?: string | null;
   status?: ReactNode;
+  /** Rendered at the right end of the icon+title row — the page-level verb
+   *  (start a session with this connector). */
+  headerAction?: ReactNode;
   primaryTitle: string;
   primaryDescription: string;
   primaryAction?: ReactNode;
@@ -57,40 +53,50 @@ export function ConnectorDetailLayout({
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      {/* Back sits at the container's extreme top-left, OUTSIDE the centered
-          column — it navigates the page, it is not part of the page's
-          content, so it anchors to the surface's corner like a window
-          control. */}
-      <div className="px-4 pt-3">
-        <Button asChild variant="ghost" size="sm" className="-ml-2 w-fit gap-1.5">
-          <Link href={backHref}>
-            <ArrowLeftIcon className="size-3.5 shrink-0" />
-            Back to connectors
-          </Link>
-        </Button>
-      </div>
-
       <main
-        className={cn('mx-auto w-full max-w-3xl space-y-6 px-4 pt-4 pb-20 lg:pt-6', className)}
+        className={cn('mx-auto w-full max-w-3xl space-y-6 px-4 py-8 pb-20 lg:py-12', className)}
       >
-        <header className="flex min-w-0 items-start gap-3">
-          {icon}
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
+        {backHref ? (
+          <div className="flex justify-start">
+            {/* `-ml-2.5` cancels the button's own padding so the label sits
+                flush with the column's left edge. */}
+            <Button
+              asChild
+              size="xs"
+              variant="ghost"
+              className="text-muted-foreground hover:text-foreground -ml-2.5 w-fit gap-1.5"
+            >
+              <Link href={backHref}>
+                <ArrowLeftIcon className="size-3.5 shrink-0" />
+                Go back
+              </Link>
+            </Button>
+          </div>
+        ) : null}
+
+        {/* Icon and title share ONE centered row — top-aligning a 40/56px
+            tile against a 32px title line left them visually adrift. The
+            description gets its own full-width line below, flush with the
+            icon's left edge, like the reference connection pages. */}
+        <header className="min-w-0 space-y-1.5">
+          <div className="flex min-w-0 items-center gap-3">
+            {icon}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <span className="text-foreground text-2xl font-semibold tracking-tight text-balance">
                 {title}
-              </h1>
+              </span>
               {status}
             </div>
-            {description ? (
-              // Clamped: catalogue descriptions are third-party prose and some
-              // run to a paragraph — the header is an identity line, not a
-              // reading assignment.
-              <p className="text-muted-foreground line-clamp-3 max-w-[64ch] text-base text-pretty sm:text-sm">
-                {description}
-              </p>
-            ) : null}
+            {headerAction ? <div className="ml-auto shrink-0 self-start">{headerAction}</div> : null}
           </div>
+          {description ? (
+            // Clamped: catalogue descriptions are third-party prose and some
+            // run to a paragraph — the header is an identity line, not a
+            // reading assignment.
+            <p className="text-muted-foreground line-clamp-3 max-w-[64ch] text-base text-pretty sm:text-sm">
+              {description}
+            </p>
+          ) : null}
         </header>
 
         <Item variant="outline" size="sm" className="bg-popover">
@@ -114,38 +120,27 @@ export function ConnectorDetailLayout({
 }
 
 /**
- * The loading state, shape-matched to the loaded page: real back link (its
- * target is known before any data), then quiet bars where the header, the
- * Connection panel, and a short list will land. No placeholder sentences —
- * words in a skeleton read as content and then get replaced, which is worse
- * than gray.
+ * The loading state, shape-matched to the loaded page: quiet bars where the
+ * header, the Connection panel, and a short list will land. No controls and
+ * no placeholder sentences — a Go back button on gray bars reads as content
+ * that then jumps, which is worse than waiting.
  */
 export function ConnectorDetailSkeleton({
-  backHref,
   iconClassName = 'size-10',
 }: {
-  backHref: string;
   /** Matches the loaded header's icon tile — `size-14` on the connected page. */
   iconClassName?: string;
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" aria-busy>
-      <div className="px-4 pt-3">
-        <Button asChild variant="ghost" size="sm" className="-ml-2 w-fit gap-1.5">
-          <Link href={backHref}>
-            <ArrowLeftIcon className="size-3.5 shrink-0" />
-            Back to connectors
-          </Link>
-        </Button>
-      </div>
+      <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 pb-20 lg:py-12">
 
-      <main className="mx-auto w-full max-w-3xl space-y-6 px-4 pt-4 pb-20 lg:pt-6">
-        <header className="flex items-start gap-3">
-          <Skeleton className={cn('shrink-0 rounded-md', iconClassName)} />
-          <div className="min-w-0 flex-1 space-y-2 pt-1">
+        <header className="min-w-0 space-y-2">
+          <div className="flex items-center gap-3">
+            <Skeleton className={cn('shrink-0 rounded-md', iconClassName)} />
             <Skeleton className="h-6 w-44 max-w-full rounded-sm" />
-            <Skeleton className="h-4 w-72 max-w-full rounded-sm" />
           </div>
+          <Skeleton className="h-4 w-72 max-w-full rounded-sm" />
         </header>
 
         {/* The Connection Item. */}
@@ -161,79 +156,6 @@ export function ConnectorDetailSkeleton({
         </div>
       </main>
     </div>
-  );
-}
-
-/**
- * "Connection flow" — a LIVE stepper, not a printed list.
- *
- * `currentStep` is the 0-based index of the step the user is on, derived by
- * the caller from real state (`connected`, `added`, …). Steps before it show
- * a green check, the current one is emphasized, the rest wait muted — so the
- * page answers "where am I?" at a glance instead of re-printing the same
- * static instructions before and after connecting. Pass `steps.length` when
- * everything is done.
- */
-export function ConnectorSetupGuide({
-  steps,
-  currentStep = 0,
-}: {
-  steps: readonly ConnectorSetupStep[];
-  currentStep?: number;
-}) {
-  if (steps.length === 0) return null;
-  return (
-    <section className="space-y-3" aria-labelledby="connector-setup-title">
-      <h2 id="connector-setup-title" className="text-foreground text-sm font-medium">
-        Connection flow
-      </h2>
-      <Stepper
-        orientation="vertical"
-        value={currentStep + 1}
-        count={steps.length}
-        className="flex w-full flex-col"
-      >
-        {steps.map((step, index) => (
-          <div key={step.title} className="flex gap-3.5">
-            <StepperItem step={index + 1} className="items-center">
-              <StepperTrigger asChild>
-                <span className="flex shrink-0">
-                  <StepperIndicator
-                    className={cn(
-                      'size-7 text-sm font-medium tabular-nums',
-                      'data-[state=completed]:bg-kortix-green/15 data-[state=completed]:text-kortix-green',
-                    )}
-                  >
-                    <span className="group-data-[state=completed]/step:hidden">{index + 1}</span>
-                    <CheckIcon
-                      weight="bold"
-                      className="hidden size-3.5 group-data-[state=completed]/step:block"
-                    />
-                  </StepperIndicator>
-                </span>
-              </StepperTrigger>
-              <StepperSeparator className="bg-secondary m-0" />
-            </StepperItem>
-            {/* Titles keep ONE weight and ONE color in every state — the
-                indicator alone carries progress. `pt-1` centers the first
-                text line (20px) against the 28px circle. */}
-            <div
-              className={cn(
-                'min-w-0 flex-1 space-y-0.5 pt-1',
-                index === steps.length - 1 ? 'pb-0' : 'pb-8',
-              )}
-            >
-              <StepperTitle className="text-foreground text-base font-medium sm:text-sm">
-                {step.title}
-              </StepperTitle>
-              <StepperDescription className="text-base text-pretty sm:text-sm">
-                {step.description}
-              </StepperDescription>
-            </div>
-          </div>
-        ))}
-      </Stepper>
-    </section>
   );
 }
 

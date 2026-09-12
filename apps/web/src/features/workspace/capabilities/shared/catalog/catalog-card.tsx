@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import type React from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
 import { Checkbox } from '@/components/ui/checkbox';
@@ -13,13 +14,27 @@ export interface CatalogCardProps {
   badges?: ReactNode;
   /** A muted facts line under the description — the card's third row. */
   meta?: ReactNode;
+  /** Rendered on its own row directly under the title — a badge or short
+   *  token, not prose. Unlike `description` it takes nodes, so it can carry
+   *  a Badge. */
+  subtitle?: ReactNode;
+  /** `plain` drops the border and resting fill — icon and title on the bare
+   *  page, only a hover fill. The connectors grids use it; every other
+   *  catalogue keeps the outlined default. */
+  variant?: 'default' | 'plain';
   trailing?: ReactNode;
+  /** The trailing slot holds its own control (a menu, a button). With `href`
+   *  it then renders as a SIBLING of the link body — a button inside an
+   *  anchor is invalid HTML — using the same split the select mode uses. */
+  trailingInteractive?: boolean;
   /** A card that NAVIGATES renders as a real `next/link` — prefetched, middle-
    *  clickable, and a client transition rather than a `router.push` from a
    *  button (see the no-hard-refresh nav contract). Cards that open a modal
    *  in place keep `onClick`. Exactly one of the two. */
   href?: string;
-  onClick?: () => void;
+  /** Receives the click event: an `href` card may `preventDefault()` to open
+   *  an in-page panel instead of navigating (middle-click still navigates). */
+  onClick?: (event: React.MouseEvent<HTMLElement>) => void;
   disabled?: boolean;
   className?: string;
   style?: CSSProperties;
@@ -42,7 +57,10 @@ export function CatalogCard({
   description,
   badges,
   meta,
+  subtitle,
+  variant = 'default',
   trailing,
+  trailingInteractive = false,
   href,
   onClick,
   disabled,
@@ -51,9 +69,11 @@ export function CatalogCard({
   select,
 }: CatalogCardProps) {
   const classes = cn(
-    'bg-accent/50 group border-border/60 flex w-full items-start gap-3 rounded-md border px-4 py-3.5 text-left',
-    'transition-[background-color,border-color] duration-150 ease-out',
-    'hover:bg-accent hover:border-border',
+    'group flex w-full items-start gap-3 rounded-md border px-4 py-2.5 text-left',
+    'transition-[background-color,border-color] duration-normal ease-out',
+    variant === 'plain'
+      ? 'border-transparent bg-transparent px-3 py-2.5 hover:bg-accent'
+      : 'bg-accent/50 border-border/60 hover:bg-accent hover:border-border',
     'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
     'disabled:pointer-events-none disabled:opacity-60',
     disabled && 'pointer-events-none opacity-60',
@@ -66,11 +86,14 @@ export function CatalogCard({
   const content = (
     <>
       {leading ? <span className="shrink-0">{leading}</span> : null}
-      <span className="min-w-0 flex-1 space-y-1">
+      <span className="min-w-0 flex-1 space-y-0">
         <span className="flex items-center gap-1.5">
           <span className="text-foreground truncate text-sm font-medium">{title}</span>
           {badges}
         </span>
+        {subtitle ? (
+          <span className="flex flex-wrap items-center gap-1.5">{subtitle}</span>
+        ) : null}
         {description ? (
           <span className="text-muted-foreground line-clamp-2 text-xs text-pretty">
             {description}
@@ -120,6 +143,23 @@ export function CatalogCard({
   // `pointer-events-none` stops the pointer but leaves an anchor tabbable, so a
   // disabled link is also taken out of the tab order explicitly.
   if (href) {
+    if (trailingInteractive && trailingSlot) {
+      return (
+        <div style={style} className={classes}>
+          <Link
+            href={href}
+            prefetch
+            onClick={onClick}
+            aria-disabled={disabled || undefined}
+            tabIndex={disabled ? -1 : undefined}
+            className="flex min-w-0 flex-1 items-start gap-3 text-left focus-visible:outline-none"
+          >
+            {content}
+          </Link>
+          {trailingSlot}
+        </div>
+      );
+    }
     return (
       <Link
         href={href}

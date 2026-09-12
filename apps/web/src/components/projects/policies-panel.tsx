@@ -20,7 +20,7 @@
  */
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
-import { CheckIcon, PlusIcon, ShieldCheckIcon, TrashIcon } from '@phosphor-icons/react';
+import { PlusIcon, TrashIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -29,6 +29,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -97,12 +98,12 @@ const DEFAULT_OPTIONS: Array<{ value: PolicyDefaultMode; label: string; descript
   {
     value: 'risk',
     label: 'Ask before risky actions',
-    description: 'Reads run on their own. Writes and deletes wait for your approval.',
+    description: 'Writes and deletes wait for your approval.',
   },
   {
     value: 'allow_all',
     label: 'Run everything',
-    description: 'Every tool runs without asking. Only the rules below can stop one.',
+    description: 'No tool waits unless a rule below stops it.',
   },
 ];
 
@@ -277,52 +278,40 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex h-full w-full flex-1 grow flex-col space-y-8">
-      {/* ── Default behavior ───────────────────────────────────────────────── */}
-      <section className="space-y-4">
-        <div className="space-y-1">
-          <Label>{tI18nHardcoded.raw('i18nComplete.texta98b3578d57b')}</Label>
-          <p className="text-muted-foreground text-xs text-pretty">
-            {tI18nHardcoded.raw('i18nComplete.text39839e17c1cd')}
-          </p>
-        </div>
-
+      {/* ── Default (what happens when no rule matches) ────────────────────── */}
+      <section>
         {query.isLoading ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Skeleton className="h-18 rounded-md" />
-            <Skeleton className="h-18 rounded-md" />
+          <div className="space-y-3">
+            <Skeleton className="h-9 rounded-md" />
+            <Skeleton className="h-9 rounded-md" />
           </div>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {defaultOptions.map((opt) => {
-              const selected = defaultMode === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setDefaultMode(opt.value)}
-                  aria-pressed={selected}
-                  className={cn(
-                    'flex cursor-pointer flex-col items-start gap-1 rounded-md border px-4 py-3 text-left',
-                    // Never `transition-all` — `scale` is listed so the press
-                    // feedback below actually eases instead of snapping.
-                    'transition-[background-color,border-color,scale] duration-150 ease-out',
-                    'motion-safe:active:scale-[0.99]',
-                    selected
-                      ? 'border-primary/40 bg-primary/[0.06]'
-                      : 'bg-popover hover:bg-foreground/[0.03]',
-                  )}
-                >
-                  <span className="flex w-full items-center justify-between gap-2">
-                    <span className="text-foreground text-sm font-medium">{opt.label}</span>
-                    {selected ? <CheckIcon className="text-foreground size-4 shrink-0" /> : null}
-                  </span>
-                  <span className="text-muted-foreground text-xs text-pretty">
-                    {opt.description}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          // Two radios, no heading: the sheet's own title already frames the
+          // panel, and the option labels carry the whole meaning (Jay: the
+          // "Default behavior" label + paragraph were noise).
+          <RadioGroup
+            value={defaultMode}
+            onValueChange={(value) => setDefaultMode(value as PolicyDefaultMode)}
+            className="gap-3"
+          >
+            {defaultOptions.map((opt) => (
+              <label
+                key={opt.value}
+                htmlFor={`policy-default-${opt.value}`}
+                className="bg-popover hover:bg-accent flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 transition-colors"
+              >
+                <RadioGroupItem
+                  id={`policy-default-${opt.value}`}
+                  value={opt.value}
+                  className="mt-0.5"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="text-foreground block text-sm font-medium">{opt.label}</span>
+                  <span className="text-muted-foreground block text-xs">{opt.description}</span>
+                </span>
+              </label>
+            ))}
+          </RadioGroup>
         )}
       </section>
 
@@ -332,7 +321,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
           <div className="space-y-1">
             <Label>{tI18nHardcoded.raw('i18nComplete.text4228aeb07c41')}</Label>
             <p className="text-muted-foreground text-xs text-pretty">
-              {tI18nHardcoded.raw('i18nComplete.texteb35a8dd49a7')}
+              Pick a tool and choose what happens when an agent uses it.
             </p>
           </div>
           {/* The empty state owns the CTA when there is nothing to list, so the
@@ -377,7 +366,6 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
         ) : draft.length === 0 ? (
           <div className="bg-popover rounded-md border">
             <EmptyState
-              icon={ShieldCheckIcon}
               size="sm"
               className="p-8 md:p-10"
               title={tI18nHardcoded.raw(
@@ -599,10 +587,6 @@ function RuleRow({
               </Button>
             </div>
           ))}
-
-          <p className="text-muted-foreground text-xs text-pretty">
-            {tI18nHardcoded.raw('i18nComplete.text9fdd73a806a4')}
-          </p>
         </div>
       )}
 

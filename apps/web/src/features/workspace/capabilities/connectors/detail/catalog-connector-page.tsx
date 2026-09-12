@@ -14,8 +14,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,8 +33,7 @@ import {
   foldKey,
   type CatalogEntry,
 } from '../catalog/catalog-entry';
-import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
-import { connectedConnectorHref, parseCatalogSource } from '../connector-routes';
+import { appConnectorHref, connectedConnectorHref, parseCatalogSource } from '../connector-routes';
 import { connectorStatusLine } from '../connector-status-line';
 import { providerLabel } from '../provider-label';
 import { recommendedSurfaceVariant } from './connector-detail-copy';
@@ -43,7 +42,6 @@ import {
   ConnectorDetailLayout,
   ConnectorDetailSkeleton,
   ConnectorDocumentationLinks,
-  ConnectorSetupGuide,
   type ConnectorDocumentationLink,
 } from './connector-detail-layout';
 
@@ -87,10 +85,8 @@ function CatalogDetailIcon({ entry }: { entry: CatalogEntry }) {
   );
 }
 
-function CatalogConnectorSkeleton({ projectId }: { projectId: string }) {
-  return (
-    <ConnectorDetailSkeleton backHref={`/projects/${encodeURIComponent(projectId)}/connectors`} />
-  );
+function CatalogConnectorSkeleton() {
+  return <ConnectorDetailSkeleton />;
 }
 
 export function CatalogConnectorPage({
@@ -105,8 +101,29 @@ export function CatalogConnectorPage({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const source = parseCatalogSource(sourceValue);
   const router = useRouter();
+  const search = useSearchParams();
   const queryClient = useQueryClient();
   const [actionOpen, setActionOpen] = useState(false);
+  const [installFor, setInstallFor] = useState<'project' | 'user' | null>(null);
+
+  // The card's Install dropdown lands here with `?add=1&for=project|me` —
+  // open the add panel with that scope preselected, then strip the params so
+  // refresh and back do not re-open it.
+  const addRequested = search?.get('add') === '1';
+  useEffect(() => {
+    if (!addRequested) return;
+    setInstallFor(search?.get('for') === 'me' ? 'user' : 'project');
+    setActionOpen(true);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('add');
+    params.delete('for');
+    const suffix = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      suffix ? `${window.location.pathname}?${suffix}` : window.location.pathname,
+    );
+  }, [addRequested, search]);
 
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
@@ -200,7 +217,7 @@ export function CatalogConnectorPage({
   const entryLoading =
     (source === 'discover' && discoverQuery.isLoading) ||
     (source === 'easy-connect' && easyConnectQuery.isLoading);
-  if (entryLoading) return <CatalogConnectorSkeleton projectId={projectId} />;
+  if (entryLoading) return <CatalogConnectorSkeleton />;
 
   const entryError =
     source === 'discover'
@@ -245,10 +262,6 @@ export function CatalogConnectorPage({
 
   const projectMatches = catalogEntryConnectors(connectors, entry);
   const alreadyAdded = projectMatches.length > 0;
-  const anyReady = projectMatches.some((match) => {
-    const status = connectorSetupStatus(match);
-    return status === 'connected' || status === 'no_auth';
-  });
   const discoverDetail = discoverDetailQuery.data ?? null;
   const added = (addedSlug?: string) => {
     setActionOpen(false);
@@ -257,7 +270,18 @@ export function CatalogConnectorPage({
     // when a credential is still needed, so adding flows into connecting
     // without hunting for the next button. The page ignores it when nothing
     // is left to connect (managed flows authorize during add).
-    if (addedSlug) router.push(`${connectedConnectorHref(projectId, addedSlug)}?connect=1`);
+    if (addedSlug) {
+      // Catalogue apps land in the SPLIT view — app context kept on the left,
+      // the new connector (with its connect dialog) in the right column.
+      // `?src=apps` marks the Easy Connect catalogue for the left pane.
+      const target =
+        entry.source === 'discover'
+          ? `${appConnectorHref(projectId, entry.slug, addedSlug)}?connect=1`
+          : entry.source === 'easy-connect'
+            ? `${appConnectorHref(projectId, entry.slug, addedSlug)}?src=apps&connect=1`
+            : `${connectedConnectorHref(projectId, addedSlug)}?connect=1`;
+      router.push(target);
+    }
   };
 
   // The surface this page leads with. MCP wins whenever the app publishes an
@@ -326,28 +350,6 @@ export function CatalogConnectorPage({
     </Button>
   ) : undefined;
 
-  // The catalogue page narrates ITS OWN flow — add here, connect on the
-  // connector's page — never the connector page's tabs, which do not exist
-  // here. Live: the steps check off as the project's real state advances.
-  const needsAuth = requestAuthType !== 'none';
-  const catalogSteps = [
-    {
-      title: `Add ${entry.name} to the project`,
-      description: `Click ${entry.source === 'easy-connect' ? 'Add and connect' : 'Add connector'} — pick how it connects and name it.`,
-    },
-    {
-      title: 'Connect it',
-      description: needsAuth
-        ? 'Its page opens with the connect dialog ready — one-click OAuth where the server supports it, otherwise the exact credential it names.'
-        : 'No sign-in needed — it is ready the moment it is added.',
-    },
-    {
-      title: 'Use it in a session',
-      description: 'Ask an agent to use it; every call runs through the connector’s tools and rules.',
-    },
-  ];
-  const catalogCurrentStep = anyReady ? catalogSteps.length : alreadyAdded ? 1 : 0;
-
   return (
     /* The add panel is a SPLIT column, not an overlay: opening it narrows the
        page and the catalogue stays readable beside the form. Only discover
@@ -393,7 +395,13 @@ export function CatalogConnectorPage({
             {projectMatches.map((match) => (
               <li key={match.slug}>
                 <Link
-                  href={connectedConnectorHref(projectId, match.slug)}
+                  href={
+                    entry.source === 'discover'
+                      ? appConnectorHref(projectId, entry.slug, match.slug)
+                      : entry.source === 'easy-connect'
+                        ? `${appConnectorHref(projectId, entry.slug, match.slug)}?src=apps`
+                        : connectedConnectorHref(projectId, match.slug)
+                  }
                   className="group bg-popover hover:bg-accent flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
                 >
                   <span className="min-w-0 flex-1">
@@ -412,7 +420,6 @@ export function CatalogConnectorPage({
         </section>
       ) : null}
 
-      <ConnectorSetupGuide steps={catalogSteps} currentStep={catalogCurrentStep} />
 
 
       <ConnectorDocumentationLinks links={documentationLinks} />
@@ -448,6 +455,7 @@ export function CatalogConnectorPage({
       {entry.source === 'discover' ? (
         <DiscoverAddSheet
           projectId={projectId}
+          initialStrategy={installFor ?? undefined}
           connector={entry.connector}
           existingSlugs={existingSlugs}
           canWrite={canWrite}

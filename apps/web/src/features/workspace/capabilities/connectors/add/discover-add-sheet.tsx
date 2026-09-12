@@ -7,13 +7,11 @@ import {
   type ConnectorAuthorizationStrategy,
   type DiscoverConnector,
 } from '@kortix/sdk';
-import { CaretDownIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -36,7 +34,6 @@ import {
   createOnlyConnectorDraft,
   proposeConnectorConnectionSlug,
 } from '@/features/workspace/customize/sections/connector-connection-form';
-import { AuthorizationStrategyField } from '@/features/workspace/customize/sections/connector-connection-modal';
 
 import { surfacesRecommendedFirst } from '../detail/connector-detail-copy';
 
@@ -52,7 +49,8 @@ import { surfacesRecommendedFirst } from '../detail/connector-detail-copy';
  * This replaced a two-modal chain (surface picker → name/slug modal). The
  * whole decision lives on one surface: the recommended way in (MCP where
  * addable) is preselected, the connection is prenamed, and the choices most
- * people never change sit under one Advanced disclosure.
+ * people never change stay one glance away — including WHO the install is
+ * for, a level-1 choice with its access spelled out.
  */
 export function DiscoverAddSheet({
   projectId,
@@ -60,6 +58,7 @@ export function DiscoverAddSheet({
   existingSlugs,
   canWrite,
   onAdded,
+  initialStrategy,
 }: {
   projectId: string;
   /** The catalogue entry this page shows. Fixed for the page's lifetime. */
@@ -68,6 +67,9 @@ export function DiscoverAddSheet({
   canWrite: boolean;
   /** Slug omitted when the manifest write succeeded but sync did not. */
   onAdded: (slug?: string) => void;
+  /** Preselected Install-for scope — the card's Install dropdown passes the
+   *  choice the user already made so the panel does not re-ask. */
+  initialStrategy?: ConnectorAuthorizationStrategy;
 }) {
   const detailQuery = useQuery({
     // Same key the catalogue page uses — one fetch, shared cache.
@@ -82,7 +84,15 @@ export function DiscoverAddSheet({
 
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
-  const [strategy, setStrategy] = useState<ConnectorAuthorizationStrategy>('project');
+  const [strategy, setStrategy] = useState<ConnectorAuthorizationStrategy>(
+    initialStrategy ?? 'project',
+  );
+  // The sheet mounts before the choice arrives (the panel is persistent);
+  // adopt a LATER preselection, but never fight an explicit in-panel pick —
+  // the prop only changes when a fresh Install dropdown choice lands.
+  useEffect(() => {
+    if (initialStrategy) setStrategy(initialStrategy);
+  }, [initialStrategy]);
 
   const selected = addable.find((variant) => variant.id === pickedId) ?? recommended;
   const name = nameDraft ?? connector.name;
@@ -123,8 +133,12 @@ export function DiscoverAddSheet({
     },
     onSuccess: (result) => {
       if (result.syncError) {
+        // The connector EXISTS — sync failing (usually missing auth, an HTTP
+        // 401) is exactly what its page's connect dialog fixes. Hand the slug
+        // over so the caller still opens it (Jay: "whatever slug is created,
+        // it should open that slug").
         warningToast(`${result.name} was added, but synchronization failed: ${result.syncError}`);
-        onAdded();
+        onAdded(result.slug);
         return;
       }
       successToast(`${result.name} added`);
@@ -233,27 +247,66 @@ export function DiscoverAddSheet({
               </fieldset>
             ) : null}
 
-            <Disclosure variant="outline">
-              <DisclosureTrigger variant="outline">
-                <Button
-                  variant="popover"
-                  className="group/trigger flex w-full items-center justify-between rounded-none px-3.5 py-2.5"
+            {/* WHO the install is for — a level-1 decision, never buried in
+                an Advanced fold. The two options ARE the two authorization
+                owners; the copy spells out exactly who gets access. */}
+            {strategyEditable ? (
+              <fieldset className="space-y-2">
+                <legend className="text-foreground text-sm font-medium">Install for</legend>
+                <RadioGroup
+                  value={strategy}
+                  onValueChange={(next) => setStrategy(next as ConnectorAuthorizationStrategy)}
+                  className="gap-2"
                 >
-                  <span className="text-sm font-medium">Advanced</span>
-                  <CaretDownIcon className="size-4 shrink-0 group-aria-expanded/trigger:rotate-180" />
-                </Button>
-              </DisclosureTrigger>
-              <DisclosureContent variant="outline" contentClassName="border-border border-t">
-                <div className="px-3.5 py-4">
-                  <AuthorizationStrategyField
-                    idPrefix="discover-add-sheet"
-                    value={strategyEditable ? strategy : 'project'}
-                    onChange={setStrategy}
-                    disabled={!strategyEditable || add.isPending}
-                  />
-                </div>
-              </DisclosureContent>
-            </Disclosure>
+                  <label
+                    htmlFor="install-for-project"
+                    className="bg-popover hover:bg-accent flex cursor-pointer items-start gap-3 rounded-md border px-3.5 py-2.5 transition-colors"
+                  >
+                    <RadioGroupItem
+                      id="install-for-project"
+                      value="project"
+                      className="mt-0.5"
+                      disabled={add.isPending}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-foreground block text-sm font-medium">
+                        The whole project
+                      </span>
+                      <span className="text-muted-foreground block text-xs text-pretty">
+                        One shared connection. Every member of this project — and agents in their
+                        sessions — uses the same {connector.name} account. A project manager
+                        connects it once.
+                      </span>
+                    </span>
+                  </label>
+                  <label
+                    htmlFor="install-for-me"
+                    className="bg-popover hover:bg-accent flex cursor-pointer items-start gap-3 rounded-md border px-3.5 py-2.5 transition-colors"
+                  >
+                    <RadioGroupItem
+                      id="install-for-me"
+                      value="user"
+                      className="mt-0.5"
+                      disabled={add.isPending}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-foreground block text-sm font-medium">Just me</span>
+                      <span className="text-muted-foreground block text-xs text-pretty">
+                        Your own connection, used only in sessions you start. Nothing is shared —
+                        each teammate who wants {connector.name} connects their own account here.
+                      </span>
+                    </span>
+                  </label>
+                </RadioGroup>
+              </fieldset>
+            ) : (
+              // The provider fixes the owner — state it instead of rendering
+              // a dead control.
+              <p className="text-muted-foreground text-xs text-pretty">
+                Installs for the whole project: one shared connection that every member and their
+                agents use.
+              </p>
+            )}
           </>
         )}
       </SplitSheetBody>

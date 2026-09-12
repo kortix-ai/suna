@@ -38,3 +38,17 @@ export function composioConnectionIsAuthorized(
   const accountId = metadata.connected_account_id;
   return typeof accountId === 'string' && accountId.trim().length > 0;
 }
+
+/**
+ * The card-subtitle sibling of {@link catalogEntryKindLabel} for PROJECT
+ * connectors — same vocabulary, keyed by provider, so the Connected grid and
+ * the catalogue grids describe connectors in one language.
+ */
+export function connectorKindLabel(p: AdminConnector['provider']): string {
+  if (p === 'mcp') return 'MCP';
+  if (p === 'graphql') return 'GraphQL';
+  if (isManagedConnectorProvider(p)) return 'App';
+  if (p === 'channel') return 'Channel';
+  if (p === 'computer') return 'Native';
+  return 'API';
+}

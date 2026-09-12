@@ -3,7 +3,7 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ConnectedConnectorPage } from '@/features/workspace/capabilities/connectors/detail/connected-connector-page';
+import { ConnectorSlugPage } from '@/features/workspace/capabilities/connectors/detail/connector-slug-resolver';
 import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 
 export default function ProjectConnectorDetailPage() {
@@ -12,7 +12,7 @@ export default function ProjectConnectorDetailPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <Suspense fallback={<CapabilitiesSkeleton />}>
-        <ConnectedConnectorPage projectId={projectId} slug={slug} />
+        <ConnectorSlugPage projectId={projectId} slug={decodeURIComponent(slug)} />
       </Suspense>
     </div>
   );

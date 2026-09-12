@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   connectorConnectionIsReady,
-  connectorSetupSteps,
   recommendedSurfaceVariant,
   surfacesRecommendedFirst,
 } from './connector-detail-copy';
@@ -30,98 +29,6 @@ describe('connectorConnectionIsReady', () => {
     expect(connectorConnectionIsReady({ ...connector, status: 'disabled' }, true)).toBe(false);
     expect(connectorConnectionIsReady({ ...connector, status: 'error' }, true)).toBe(false);
     expect(connectorConnectionIsReady({ ...connector, status: 'needs_auth' }, true)).toBe(false);
-  });
-});
-
-describe('connectorSetupSteps', () => {
-  test('a managed project connector names the Connect button and the Accounts tab', () => {
-    expect(
-      connectorSetupSteps({
-        provider: 'composio',
-        authorizationStrategy: 'project',
-        connected: false,
-        requestAuthType: 'oauth2',
-      }),
-    ).toEqual([
-      {
-        title: 'Click Connect',
-        description: 'The Connect button above opens the provider’s own sign-in window.',
-      },
-      {
-        title: 'Approve OAuth access',
-        description: 'Sign in to the provider and approve the requested account or workspace.',
-      },
-      {
-        title: 'Check the account under Accounts',
-        description:
-          'You land back on this page. The account appears in the Accounts tab below, and the shared project account reports Connected.',
-      },
-    ]);
-  });
-
-  test('a user-strategy managed connector names the button that actually exists', () => {
-    const steps = connectorSetupSteps({
-      provider: 'pipedream',
-      authorizationStrategy: 'user',
-      connected: false,
-      requestAuthType: 'oauth2',
-    });
-    expect(steps[0]?.title).toBe('Click Add my own');
-    expect(steps[2]?.description).toContain('your account for private sessions');
-  });
-
-  test('a direct connector says where the credential comes from', () => {
-    const steps = connectorSetupSteps({
-      provider: 'openapi',
-      authorizationStrategy: 'project',
-      connected: false,
-      requestAuthType: 'api_key',
-    });
-    // Titles name the button as labelled on the page — the primary CTA says
-    // Connect for every provider kind now, never "Add credential".
-    expect(steps[1]?.title).toBe('Click Connect');
-    expect(steps[1]?.description).toContain('developer or API settings');
-    expect(steps[1]?.description).toContain('agents never see it');
-  });
-
-  test('the MCP script leads with one-click OAuth, not with pasting a key', () => {
-    const steps = connectorSetupSteps({
-      provider: 'mcp',
-      authorizationStrategy: 'project',
-      connected: false,
-      requestAuthType: 'bearer',
-    });
-    expect(steps[1]?.title).toBe('Click Connect');
-    expect(steps[1]?.description).toContain('one click');
-  });
-
-  test('describes direct MCP credential setup', () => {
-    const steps = connectorSetupSteps({
-      provider: 'mcp',
-      authorizationStrategy: 'project',
-      connected: false,
-      requestAuthType: 'bearer',
-    });
-
-    expect(steps[0]?.description).toContain('MCP endpoint');
-    expect(steps[1]?.description).toContain('paste the token');
-    expect(steps[2]?.description).toContain('Connected');
-  });
-
-  test('describes the operational checks after connection', () => {
-    const steps = connectorSetupSteps({
-      provider: 'openapi',
-      authorizationStrategy: 'user',
-      connected: true,
-      requestAuthType: 'api_key',
-    });
-
-    expect(steps.map((step) => step.title)).toEqual([
-      'Review the active account',
-      'Review tool access',
-      'Use the connector',
-    ]);
-    expect(steps[0]?.description).toContain('private sessions');
   });
 });
 

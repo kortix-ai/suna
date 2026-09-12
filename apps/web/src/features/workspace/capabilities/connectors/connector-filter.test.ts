@@ -42,7 +42,7 @@ describe('connectorNeedsAttention', () => {
   });
 });
 
-describe('the landing tab is Discovery, unconditionally', () => {
+describe('the landing tab is All, unconditionally', () => {
   const page = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '');
@@ -56,17 +56,17 @@ describe('the landing tab is Discovery, unconditionally', () => {
   //
   // `catalogueAvailable` is not a return of that: it is not derived from the
   // project's connectors but from the DEPLOYMENT, and it does not pick between
-  // tabs — it decides whether Discovery and All exist at all. On a self-host
-  // with no Pipedream credentials the catalogue they show answers `501`, so
-  // both are removed and Connected is the only tab left to land on. See
+  // tabs — it decides whether All exists at all. On a self-host with no
+  // Pipedream credentials the catalogue it shows answers `501`, so it is
+  // removed and Connected is the only tab left to land on. See
   // `connectors-page.pipedream-unconfigured.test.ts`.
   test('the default scope is a constant, not derived from the project', () => {
     // The scope moved into `?scope=` so Channels could be linked to. The
-    // landing tab did not move: an absent or unrecognised param is Discovery,
-    // for every project, before any query resolves — unless the deployment
-    // has no catalogue to land on, in which case it falls back to Connected.
+    // landing tab did not move: an absent or unrecognised param is All, for
+    // every project, before any query resolves — unless the deployment has
+    // no catalogue to land on, in which case it falls back to Connected.
     expect(page).toContain(
-      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';",
+      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'all';",
     );
     expect(page).toContain(
       "catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'",
@@ -75,9 +75,9 @@ describe('the landing tab is Discovery, unconditionally', () => {
     expect(page).not.toContain('connectors.length ?');
   });
 
-  test('Discovery writes no param, so the bare page URL stays bare', () => {
+  test('All writes no param, so the bare page URL stays bare', () => {
     expect(page).toContain(
-      "next === 'discover' ? params.delete('scope') : params.set('scope', next),",
+      "next === 'all' ? params.delete('scope') : params.set('scope', next),",
     );
   });
 

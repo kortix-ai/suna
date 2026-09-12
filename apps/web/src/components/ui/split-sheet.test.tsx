@@ -25,7 +25,8 @@ import {
   type SplitSheetProps,
 } from './split-sheet';
 
-const TWO_COLUMNS = '@3xl/split-sheet:grid-cols-[minmax(0,1fr)_min(var(--split-sheet-width),50%)]';
+const TWO_COLUMNS =
+  '@3xl/split-sheet:grid-cols-[minmax(0,1fr)_min(var(--split-sheet-width),var(--split-sheet-max,50%))]';
 
 function render(
   props: Pick<SplitSheetProps, 'open' | 'defaultOpen' | 'size'> = {},
@@ -136,6 +137,9 @@ describe('SplitSheet markup', () => {
 
   test('size sets the column width from the container scale', () => {
     expect(tag(render(), 'split-sheet')).toContain('[--split-sheet-width:var(--container-sm)]');
+    expect(tag(render({ size: 'xs' }), 'split-sheet')).toContain(
+      '[--split-sheet-width:var(--container-2xs)]',
+    );
     expect(tag(render({ size: 'sm' }), 'split-sheet')).toContain(
       '[--split-sheet-width:var(--container-xs)]',
     );

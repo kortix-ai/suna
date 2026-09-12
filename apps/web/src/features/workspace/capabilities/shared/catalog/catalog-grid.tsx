@@ -24,7 +24,8 @@ export interface CatalogGridProps {
    *  own empty copy — agents, connectors, and skills each know what their
    *  own "nothing here" invitation should say. */
   empty: ReactNode;
-  children: ReactNode;
+  children: ReactNode;  /** Override the layout — the connectors grids pass `DENSE_GRID_CLASSNAME`. */
+  gridClassName?: string;
 }
 
 // Layout tokens live in `./catalog-grid-tokens` so this module exports only
@@ -90,6 +91,7 @@ export function CatalogGrid({
   isEmpty,
   empty,
   children,
+  gridClassName = GRID_CLASSNAME,
 }: CatalogGridProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (isLoading) {
@@ -120,5 +122,5 @@ export function CatalogGrid({
     return <>{empty}</>;
   }
 
-  return <div className={GRID_CLASSNAME}>{children}</div>;
+  return <div className={gridClassName}>{children}</div>;
 }

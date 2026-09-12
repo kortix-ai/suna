@@ -43,12 +43,11 @@ import {
   providerLabel,
 } from '../provider-label';
 import { ConnectorCredentialRow } from './connector-credential-row';
-import { connectorConnectionIsReady, connectorSetupSteps } from './connector-detail-copy';
+import { connectorConnectionIsReady } from './connector-detail-copy';
 import {
   ConnectorDetailLayout,
   ConnectorDetailSkeleton,
   ConnectorDocumentationLinks,
-  ConnectorSetupGuide,
 } from './connector-detail-layout';
 import { connectorDocLinks } from './connector-doc-links';
 import { ConnectorHeaderName } from './connector-header-name';
@@ -83,16 +82,31 @@ function ConnectorSectionFallback() {
   );
 }
 
-function ConnectedConnectorSkeleton({ projectId }: { projectId: string }) {
-  return (
-    <ConnectorDetailSkeleton
-      backHref={`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`}
-      iconClassName="size-14"
-    />
-  );
+function ConnectedConnectorSkeleton() {
+  return <ConnectorDetailSkeleton iconClassName="size-14" />;
 }
 
-export function ConnectedConnectorPage({ projectId, slug }: { projectId: string; slug: string }) {
+export function ConnectedConnectorPage({
+  projectId,
+  slug,
+  backHref,
+  hideBackButton = false,
+  hideDocumentation = false,
+}: {
+  projectId: string;
+  slug: string;
+  /** Where Go back and post-remove navigation land. Defaults to the
+   *  Connected list; the app-split view passes its app page instead. */
+  backHref?: string;
+  /** The split view's right pane: the column IS the exit, so no Go back. */
+  hideBackButton?: boolean;
+  /** Also the right pane: the app page beside it already carries the same
+   *  documentation links, so the pane skips its copy. */
+  hideDocumentation?: boolean;
+}) {
+  const resolvedBackHref =
+    backHref ?? `/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`;
+  const layoutBackHref = hideBackButton ? null : resolvedBackHref;
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const pathname = usePathname();
   const search = useSearchParams();
@@ -147,7 +161,7 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
     );
   }, [invalidate, oauth2Error, oauth2Result, pathname, search, tI18nComplete]);
 
-  if (connectorsQuery.isLoading) return <ConnectedConnectorSkeleton projectId={projectId} />;
+  if (connectorsQuery.isLoading) return <ConnectedConnectorSkeleton />;
 
   if (connectorsQuery.isError) {
     return (
@@ -179,7 +193,7 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
     // landed. Hold the skeleton while a fetch is in flight; only a settled
     // list may declare the connector missing.
     if (connectorsQuery.isFetching) {
-      return <ConnectedConnectorSkeleton projectId={projectId} />;
+      return <ConnectedConnectorSkeleton />;
     }
     return (
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-12">
@@ -189,7 +203,7 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
           description={`No connector with slug “${slug}” exists in this project.`}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`}>
+              <Link href={resolvedBackHref}>
                 Return to connectors
               </Link>
             </Button>
@@ -201,6 +215,9 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
 
   return (
     <ConnectedConnectorContent
+      backHref={resolvedBackHref}
+      layoutBackHref={layoutBackHref}
+      hideDocumentation={hideDocumentation}
       projectId={projectId}
       connector={connector}
       canWrite={canWrite}
@@ -212,6 +229,9 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
 }
 
 function ConnectedConnectorContent({
+  backHref,
+  layoutBackHref,
+  hideDocumentation = false,
   projectId,
   connector,
   canWrite,
@@ -219,6 +239,9 @@ function ConnectedConnectorContent({
   invalidate,
   autoConnectRequested = false,
 }: {
+  backHref: string;
+  layoutBackHref: string | null;
+  hideDocumentation?: boolean;
   projectId: string;
   connector: AdminConnector;
   canWrite: boolean;
@@ -406,12 +429,6 @@ function ConnectedConnectorContent({
       ? 'Connect one account or credential that every authorized project session can use.'
       : 'Each member connects a separate account from the Accounts tab.';
 
-  const setupSteps = connectorSetupSteps({
-    provider: connector.provider,
-    authorizationStrategy: connector.authorizationStrategy,
-    connected: false,
-    requestAuthType: connector.requestAuthType,
-  });
   // Curated: the Kortix guide anchored to this provider's section, the app's
   // own developer docs when we know them (that is where the API key or server
   // URL comes from), plus whatever URL the connector config itself carries.
@@ -421,8 +438,13 @@ function ConnectedConnectorContent({
       ? [{ label: 'Official connector URL', href: configQuery.data.url, external: true }]
       : []),
   ];
-  const returnToConnected = () =>
-    router.replace(`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`);
+  // Removal must invalidate BEFORE navigating: in the split view the app page
+  // (left pane) stays mounted on `qk.project.connectors` — without the
+  // invalidation its "In this project" list keeps showing the deleted slug.
+  const returnToConnected = () => {
+    invalidate();
+    router.replace(backHref);
+  };
 
   return (
     /* The Connect dialog is a SPLIT column of this page, not an overlay: the
@@ -431,7 +453,7 @@ function ConnectedConnectorContent({
     <SplitSheet open={credOpen} onOpenChange={setCredOpen} size="lg" className="min-h-0 flex-1">
       <SplitSheetMain className="flex flex-col">
         <ConnectorDetailLayout
-          backHref={`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`}
+          backHref={layoutBackHref}
           icon={<ConnectorAppIcon connector={connector} size="xl" />}
           title={
             <ConnectorHeaderName
@@ -452,6 +474,23 @@ function ConnectedConnectorContent({
             ) : (
               <ConnectorStatusBadge connector={connector} />
             )
+          }
+          headerAction={
+            // The page-level verb: a session that starts with THIS connector
+            // required, so what was just added is usable in one click. Only a
+            // CONNECTED connector gets it — a session requiring a connector
+            // that cannot run would open straight onto a failure.
+            connected ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1.5"
+                onClick={startPrivateSession}
+              >
+                <PlusIcon className="size-4 shrink-0" />
+                New session
+              </Button>
+            ) : undefined
           }
           primaryTitle={primaryTitle}
           primaryDescription={primaryDescription}
@@ -476,10 +515,6 @@ function ConnectedConnectorContent({
             />
           ) : null}
 
-          {/* Always the SETUP script, never a swapped "review" variant — the
-          stepper is live, so connecting is what flips the steps to green
-          checks instead of replacing the text under the user. */}
-          <ConnectorSetupGuide steps={setupSteps} currentStep={connected ? setupSteps.length : 0} />
 
           <ConnectorManagementTabs
             projectId={projectId}
@@ -505,7 +540,7 @@ function ConnectedConnectorContent({
           />
 
     
-          <ConnectorDocumentationLinks links={docsLinks} />
+          {hideDocumentation ? null : <ConnectorDocumentationLinks links={docsLinks} />}
         </ConnectorDetailLayout>
       </SplitSheetMain>
 

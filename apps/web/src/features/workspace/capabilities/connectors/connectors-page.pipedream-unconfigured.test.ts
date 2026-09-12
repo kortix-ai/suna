@@ -42,7 +42,6 @@ describe('connectors page without a Connect provider', () => {
     expect(catalog).toContain('const connectStatus = useConnectProviderStatus(');
     expect(catalog).toContain('const easyConnectRunnable =');
     expect(catalog).toContain('enabled: opts.enabled && easyConnectRunnable,');
-    expect(catalog).toContain("easyConnectProvider === 'pipedream'");
     expect(catalog).not.toContain("enabled: opts.enabled && source === 'easy-connect'");
   });
 
@@ -114,32 +113,31 @@ describe('connectors page without a Connect provider', () => {
     expect(page).toContain('visibleScopes.length > 1 ? (');
     expect(page).toContain(') : undefined');
     expect(page).toContain(
-      "const visibleScopes = catalogueAvailable\n    ? SCOPES\n    : SCOPES.filter((s) => s !== 'discover' && s !== 'all');",
+      "const visibleScopes = catalogueAvailable ? SCOPES : SCOPES.filter((s) => s !== 'all');",
     );
     expect(page).not.toContain('disabled={!catalogueAvailable}');
   });
 
   test('scope is forced to Connected, not defaulted to it', () => {
     // The `?scope=` param outlives the answer it was read under: the user can
-    // click Discovery in the beat before the probe lands, and an OAuth return
+    // click All in the beat before the probe lands, and an OAuth return
     // brings them back to this page with that param still in the URL. Reading
     // it blindly would strand them on a tab the strip no longer renders — the
     // catalogue would mount, fire, and 501 with nothing to switch away to.
     // Connected and Channels never need the catalogue, so they are exempt
     // from the force.
     expect(page).toContain(
-      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';",
+      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'all';",
     );
     expect(page).toContain(
       "catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'",
     );
-    expect(page).not.toContain("const scope: ConnectorScope = scopeChoice ?? 'discover';");
+    expect(page).not.toContain("const scope: ConnectorScope = scopeChoice ?? 'all';");
     // `catalogActive` is what mounts `ConnectorBrowse`, and it is derived from
     // the forced `scope` — so the forcing above is also what keeps the
-    // catalogue unmounted. It names the two catalogue scopes explicitly now
-    // rather than `!== 'connected'`, since Channels is also not-connected but
-    // must not mount the catalogue either.
-    expect(page).toContain("const catalogActive = scope === 'discover' || scope === 'all';");
+    // catalogue unmounted. All is the only catalogue scope since Discovery
+    // was removed (2026-09-13).
+    expect(page).toContain("const catalogActive = scope === 'all';");
   });
 
   test('the Connected empty state offers no tab that is not there', () => {
