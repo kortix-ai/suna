@@ -10,12 +10,13 @@ import * as React from 'react';
 import { View, Pressable, Alert, Platform, ActivityIndicator } from 'react-native';
 import { useLanguage } from '@/contexts';
 import { formatConversationDate } from '@/lib/utils/date';
-import { ThreadAvatar } from '@/components/ui/ThreadAvatar';
+import { ThreadAvatar } from '@/components/kortix/ThreadAvatar';
 import { Text } from '@/components/ui/text';
 import * as Haptics from 'expo-haptics';
 import type { Conversation } from './types';
 import { useColorScheme } from 'nativewind';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 // Only import ContextMenu on native platforms (iOS/Android)
 let ContextMenu: React.ComponentType<any> | null = null;
@@ -51,6 +52,7 @@ export function ConversationItem({
   const { currentLanguage, t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
+  const c = isDarkMode ? THEME.dark : THEME.light;
 
   const formattedDate = React.useMemo(
     () => formatConversationDate(conversation.timestamp, currentLanguage),
@@ -89,23 +91,23 @@ export function ConversationItem({
       {/* Avatar or Loading Indicator */}
       {isDeleting ? (
         <View
+          className="bg-muted"
           style={{
             width: 48,
             height: 48,
             borderRadius: 24,
-            backgroundColor: isDarkMode ? '#1C1D20' : '#ECECEC',
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <ActivityIndicator size="small" color={isDarkMode ? '#f8f8f8' : '#121215'} />
+          <ActivityIndicator size="small" color={c.foreground} />
         </View>
       ) : (
         <ThreadAvatar
           title={conversation.title}
           icon={conversation.iconName || conversation.icon}
           size={48}
-          backgroundColor={isDarkMode ? '#1C1D20' : '#ECECEC'}
+          backgroundColor={c.muted}
           className="flex-row items-center justify-center"
           style={{
             borderWidth: 0,
@@ -116,18 +118,15 @@ export function ConversationItem({
       {/* Text Content */}
       <View className="flex-1">
         <Text
-          style={{ color: isDarkMode ? '#f8f8f8' : '#121215' }}
-          className="font-roobert-medium text-base"
+          className="font-roobert-medium text-base text-foreground"
           numberOfLines={1}
         >
           {conversation.title}
         </Text>
         {conversation.preview && (
           <Text
-            style={{
-              color: isDarkMode ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-            }}
-            className="mt-0.5 font-roobert text-xs"
+            className="mt-0.5 font-roobert text-muted-foreground"
+            style={{ fontSize: 12, lineHeight: 16 }}
             numberOfLines={1}
           >
             {conversation.preview}
@@ -138,10 +137,8 @@ export function ConversationItem({
       {/* Meta (date) */}
       {formattedDate && (
         <Text
-          style={{
-            color: isDarkMode ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-          }}
-          className="ml-2 font-roobert-medium text-xs"
+          className="ml-2 font-roobert-medium text-muted-foreground"
+          style={{ fontSize: 12, lineHeight: 16 }}
         >
           {formattedDate}
         </Text>

@@ -105,7 +105,10 @@ export function ProfileSection({ profile, onPress }: ProfileSectionProps) {
           {isGuest ? t('auth.signIn') : userName}
         </Text>
         {isGuest && (
-          <Text className="text-xs font-roobert text-muted-foreground">
+          <Text
+            className="font-roobert text-muted-foreground"
+            style={{ fontSize: 12, lineHeight: 16 }}
+          >
             {t('auth.tapToContinue')}
           </Text>
         )}

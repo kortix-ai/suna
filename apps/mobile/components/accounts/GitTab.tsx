@@ -5,16 +5,18 @@
  */
 
 import React, { useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, RefreshControl } from 'react-native';
+import { View, ScrollView, ActivityIndicator, Alert, Linking, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Github, ExternalLink, Unplug, Shield } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { listGitHubInstallations, deleteGitHubInstallation } from '@/lib/projects/projects-client';
 import type { AccountDetail } from '@/lib/accounts/accounts-client';
-import { accountColors, SkeletonRow, type AccountCaps } from './account-shared';
+import { accountColors, destructiveColor, SkeletonRow, type AccountCaps } from './account-shared';
 
 function permissionLabel(value: unknown): string | null {
   if (typeof value !== 'string' || !value) return null;
@@ -91,10 +93,16 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
         <View style={countBadge}><Text style={countText}>{installations.length}</Text></View>
         <View style={{ flex: 1 }} />
         {canManage && (
-          <TouchableOpacity onPress={handleConnect} disabled={connecting} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: theme.primary }}>
+          <Button
+            size="sm"
+            onPress={handleConnect}
+            disabled={connecting}
+            className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
+            style={{ backgroundColor: theme.primary }}
+          >
             {connecting ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Github size={14} color={theme.primaryForeground} />}
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>{connecting ? 'Connecting' : 'Connect'}</Text>
-          </TouchableOpacity>
+            <Text>{connecting ? 'Connecting' : 'Connect'}</Text>
+          </Button>
         )}
       </View>
       <Text style={{ fontSize: 12, color: c.muted, marginTop: 4 }}>Connect one or more GitHub users or organizations to import repositories.</Text>
@@ -103,9 +111,9 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
         {installationsQuery.isLoading ? (
           <View><SkeletonRow isDark={isDark} /><SkeletonRow isDark={isDark} /></View>
         ) : installationsQuery.isError ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 12, backgroundColor: 'rgba(217,119,6,0.08)' }}>
-            <Github size={15} color="#d97706" />
-            <Text style={{ flex: 1, fontSize: 12.5, color: '#d97706' }}>GitHub status unavailable: {(installationsQuery.error as Error)?.message}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 12, backgroundColor: withAlpha(THEME.accent.orange, 0.08) }}>
+            <Github size={15} color={THEME.accent.orange} />
+            <Text style={{ flex: 1, fontSize: 12.5, color: THEME.accent.orange }}>GitHub status unavailable: {(installationsQuery.error as Error)?.message}</Text>
           </View>
         ) : installations.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 30, gap: 12 }}>
@@ -128,8 +136,8 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{inst.owner_login ?? 'GitHub App'}</Text>
-                        <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: 'rgba(34,197,94,0.12)' }}>
-                          <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: '#16a34a' }}>Connected</Text>
+                        <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: withAlpha(THEME.accent.green, 0.12) }}>
+                          <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: THEME.accent.green }}>Connected</Text>
                         </View>
                       </View>
                       {!!meta && <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 2 }} numberOfLines={1}>{meta}</Text>}
@@ -137,16 +145,29 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
                   </View>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                     {inst.installation_url && (
-                      <TouchableOpacity onPress={() => { haptics.tap(); Linking.openURL(inst.installation_url!); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onPress={() => { haptics.tap(); Linking.openURL(inst.installation_url!); }}
+                        className="h-8 flex-row items-center gap-1.5 rounded-full px-3"
+                        style={{ borderWidth: 1, borderColor: c.border }}
+                      >
                         <ExternalLink size={13} color={c.muted} />
-                        <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Configure</Text>
-                      </TouchableOpacity>
+                        <Text style={{ color: c.fg }}>Configure</Text>
+                      </Button>
                     )}
                     {canManage && id && (
-                      <TouchableOpacity onPress={() => { haptics.tap(); confirmDisconnect(id, inst.owner_login); }} disabled={disconnect.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
-                        {disconnect.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Unplug size={13} color="#ef4444" />}
-                        <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Disconnect</Text>
-                      </TouchableOpacity>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onPress={() => { haptics.tap(); confirmDisconnect(id, inst.owner_login); }}
+                        disabled={disconnect.isPending}
+                        className="h-8 flex-row items-center gap-1.5 rounded-full px-3"
+                        style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.4) }}
+                      >
+                        {disconnect.isPending ? <ActivityIndicator size="small" color={destructiveColor(isDark)} /> : <Unplug size={13} color={destructiveColor(isDark)} />}
+                        <Text style={{ color: destructiveColor(isDark) }}>Disconnect</Text>
+                      </Button>
                     )}
                   </View>
                 </View>

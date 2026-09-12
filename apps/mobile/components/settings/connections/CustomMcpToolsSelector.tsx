@@ -11,7 +11,6 @@ import {
   Search
 } from 'lucide-react-native';
 import { log } from '@/lib/logger';
-import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import Animated, {
@@ -40,7 +39,6 @@ export function CustomMcpToolsContent({
   noPadding = false
 }: CustomMcpToolsContentProps) {
   const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
   const [selectedTools, setSelectedTools] = React.useState<Set<string>>(new Set(tools.map(tool => tool.name)));
   const [isSaving, setIsSaving] = React.useState(false);
 
@@ -94,23 +92,14 @@ export function CustomMcpToolsContent({
             onPress={onBack}
             className="flex-row items-center active:opacity-70"
           >
-            <ArrowLeft
-              size={20}
-              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-            />
+            <Icon as={ArrowLeft} size={20} className="text-foreground" />
           </Pressable>
         )}
         <View className="flex-1 ml-3">
-          <Text
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="text-xl font-roobert-semibold"
-          >
+          <Text className="text-xl font-roobert-semibold text-foreground">
             {serverName}
           </Text>
-          <Text
-            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-            className="text-sm font-roobert"
-          >
+          <Text className="text-sm font-roobert text-muted-foreground">
             {displayUrl}
           </Text>
         </View>
@@ -248,7 +237,7 @@ export function CustomMcpToolsSelector({
         onPress={handleClose}
         className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
       >
-        <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
+        <Icon as={ArrowLeft} size={24} className="text-foreground" strokeWidth={2} />
       </Pressable>
 
       <View className="mb-8">
@@ -369,7 +358,7 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
               {parameterCount} parameter{parameterCount !== 1 ? 's' : ''}
             </Text>
             {requiredCount > 0 && (
-              <Text className="text-xs font-roobert text-orange-600">
+              <Text className="text-xs font-roobert text-kortix-orange">
                 {requiredCount} required
               </Text>
             )}
@@ -422,7 +411,7 @@ const ContinueButton = React.memo(({
         }`}
     >
       <View className="flex-row items-center gap-2">
-        {isLoading && <ActivityIndicator size="small" color="#fff" />}
+        {isLoading && <ActivityIndicator size="small" color="white" />}
         <Text className={`text-base font-roobert-semibold ${disabled ? 'text-muted-foreground' : 'text-background'
           }`}>
           {label}

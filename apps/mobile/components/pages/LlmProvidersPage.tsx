@@ -11,7 +11,7 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   Alert,
   RefreshControl,
@@ -19,7 +19,10 @@ import {
   Platform,
   LayoutAnimation,
 } from 'react-native';
+import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
 import {
   Plus,
   Unplug,
@@ -33,15 +36,7 @@ import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetTextInput,
-  BottomSheetScrollView,
-  TouchableOpacity as BottomSheetTouchable,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetTextInput, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -58,11 +53,19 @@ import {
   type CustomProviderFormValues,
 } from '@/lib/kortix/custom-provider-config';
 import { Globe } from 'lucide-react-native';
-import { SearchBar } from '@/components/ui/SearchBar';
+import { SearchBar } from '@/components/kortix/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { useThemeColors, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+
+// `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
+// legacy touchable, which itself just proxies react-native-gesture-handler's
+// touchable on Android (and RN's own on iOS) for correct gesture arbitration
+// inside a BottomSheetModal. Use the gesture-handler `Pressable` directly.
+const BottomSheetTouchable = GestureHandlerPressable;
 
 // ─── Provider branding ───────────────────────────────────────────────────────
 
@@ -142,9 +145,10 @@ function ProviderRow({
   onDisconnect: (provider: ProviderInfo) => void;
 }) {
   const [showModels, setShowModels] = useState(false);
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#71717a' : '#a1a1aa';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const borderColor = withAlpha(fgColor, 0.06);
   const themeColors = useThemeColors();
   const modelCount = Object.keys(provider.models).length;
   const label = getProviderLabel(provider.id, provider.name);
@@ -173,43 +177,43 @@ function ProviderRow({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fgColor }}>{label}</Text>
             {isConnected && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 }}>
-                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#10b981', marginRight: 4 }} />
-                <Text style={{ fontSize: 9, fontFamily: 'Roobert-Medium', color: '#10b981' }}>connected</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: withAlpha(THEME.accent.green, isDark ? 0.12 : 0.08), borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: THEME.accent.green, marginRight: 4 }} />
+                <Text style={{ fontSize: 9, fontFamily: 'Roobert-Medium', color: THEME.accent.green }}>connected</Text>
               </View>
             )}
           </View>
-          <TouchableOpacity onPress={toggleModels} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+          <Pressable onPress={toggleModels} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor }}>{modelCount} models</Text>
             {modelCount > 0 && (
               showModels
                 ? <ChevronUp size={12} color={mutedColor} style={{ marginLeft: 4 }} />
                 : <ChevronDown size={12} color={mutedColor} style={{ marginLeft: 4 }} />
             )}
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         {/* Actions */}
         {isConnected ? (
-          <TouchableOpacity
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
             onPress={() => onDisconnect(provider)}
-            style={{ padding: 8 }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Unplug size={16} color={isDark ? '#f87171' : '#dc2626'} />
-          </TouchableOpacity>
+            <Icon as={Unplug} size={16} color={destructiveColor} />
+          </Button>
         ) : (
-          <TouchableOpacity
+          <Button
             onPress={() => onConnect(provider)}
-            style={{
-              flexDirection: 'row', alignItems: 'center',
-              backgroundColor: themeColors.primary, borderRadius: 9999,
-              paddingHorizontal: 12, paddingVertical: 6,
-            }}
+            size="sm"
+            className="rounded-full"
+            style={{ backgroundColor: themeColors.primary }}
           >
-            <Plus size={12} color={themeColors.primaryForeground} style={{ marginRight: 3 }} />
+            <Icon as={Plus} size={12} color={themeColors.primaryForeground} />
             <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: themeColors.primaryForeground }}>Connect</Text>
-          </TouchableOpacity>
+          </Button>
         )}
       </View>
 
@@ -245,12 +249,13 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   const sheetPadding = useSheetBottomPadding();
   const { sandboxUrl } = useSandboxContext();
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#71717a' : '#a1a1aa';
-  const bgColor = isDark ? '#121215' : '#F8F8F8';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const sheetBg = getSheetBg(isDark);
-  const inputBorder = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const borderColor = withAlpha(fgColor, 0.06);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const sheetBg = useSheetBackground();
+  const inputBorder = withAlpha(fgColor, isDark ? 0.1 : 0.08);
   const themeColors = useThemeColors();
 
   const { data: providers, isLoading, refetch } = useOpenCodeProviders(sandboxUrl);
@@ -275,16 +280,10 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   const [customForm, setCustomForm] = useState<CustomProviderFormValues>(EMPTY_CUSTOM_FORM);
   const [isCustomSaving, setIsCustomSaving] = useState(false);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} pressBehavior="close" />
-    ),
-    [],
-  );
 
   const sheetStyles = useMemo(() => ({
     backgroundStyle: { backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-    handleIndicatorStyle: { backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 },
+    handleIndicatorStyle: sheetHandleIndicatorStyle(isDark),
   }), [sheetBg, isDark]);
 
   // Derived data
@@ -447,7 +446,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
 
   // Section header
   const SectionHeader = ({ title }: { title: string }) => (
-    <View style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)' }}>
+    <View style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: withAlpha(fgColor, isDark ? 0.02 : 0.015) }}>
       <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: mutedColor, textTransform: 'uppercase', letterSpacing: 1 }}>{title}</Text>
     </View>
   );
@@ -486,7 +485,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           ]).map((tab) => {
             const active = activeTab === tab.id;
             return (
-              <TouchableOpacity
+              <Pressable
                 key={tab.id}
                 onPress={() => { haptics.selection(); setActiveTab(tab.id); setSearchQuery(''); }}
                 style={{
@@ -497,7 +496,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
                 <Text style={{ fontSize: 12, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? fgColor : mutedColor }}>
                   {tab.label}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             );
           })}
         </View>
@@ -529,30 +528,32 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           <>
             {/* Custom Provider — add any OpenAI-compatible endpoint (matches web) */}
             {(!searchQuery || 'custom'.includes(searchQuery.toLowerCase())) && (
-              <TouchableOpacity
+              <Pressable
                 onPress={openCustomSheet}
-                activeOpacity={0.7}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingHorizontal: 16,
-                  paddingVertical: 14,
-                  borderBottomWidth: 1,
-                  borderBottomColor: borderColor,
-                  gap: 12,
-                }}
+                style={({ pressed }) => [
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: 16,
+                    paddingVertical: 14,
+                    borderBottomWidth: 1,
+                    borderBottomColor: borderColor,
+                    gap: 12,
+                  },
+                  pressed && { opacity: 0.7 },
+                ]}
               >
                 <View
                   style={{
                     width: 36,
                     height: 36,
                     borderRadius: 10,
-                    backgroundColor: isDark ? 'rgba(96,165,250,0.12)' : 'rgba(37,99,235,0.08)',
+                    backgroundColor: withAlpha(THEME.accent.blue, isDark ? 0.12 : 0.08),
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <Globe size={18} color={isDark ? '#60a5fa' : '#2563eb'} />
+                  <Globe size={18} color={THEME.accent.blue} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fgColor }}>
@@ -563,7 +564,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
                   </Text>
                 </View>
                 <Plus size={18} color={themeColors.primary} />
-              </TouchableOpacity>
+              </Pressable>
             )}
 
             {popularProviders.length > 0 && (
@@ -641,8 +642,8 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
                       </View>
                       <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                         {m.reasoning ? (
-                          <View style={{ backgroundColor: isDark ? 'rgba(139,92,246,0.12)' : 'rgba(139,92,246,0.08)', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
-                            <Text style={{ fontSize: 8, fontFamily: 'Roobert-Medium', color: '#8b5cf6' }}>reasoning</Text>
+                          <View style={{ backgroundColor: withAlpha(THEME.accent.purple, isDark ? 0.12 : 0.08), borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 8, fontFamily: 'Roobert-Medium', color: THEME.accent.purple }}>reasoning</Text>
                           </View>
                         ) : null}
                         {m.contextWindow ? (
@@ -677,7 +678,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         ref={connectSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -721,7 +722,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             onPress={handleConnect}
             disabled={!apiKey.trim() || isSaving}
             style={{
-              backgroundColor: apiKey.trim() ? themeColors.primary : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
+              backgroundColor: apiKey.trim() ? themeColors.primary : withAlpha(fgColor, isDark ? 0.08 : 0.06),
               borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
               opacity: apiKey.trim() && !isSaving ? 1 : 0.5,
             }}
@@ -738,14 +739,14 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         ref={disconnectSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         onDismiss={() => setDisconnectTarget(null)}
         {...sheetStyles}
       >
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Unplug size={20} color={isDark ? '#f87171' : '#dc2626'} />
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: withAlpha(destructiveColor, isDark ? 0.1 : 0.06), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <Unplug size={20} color={destructiveColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>Disconnect Provider</Text>
@@ -769,9 +770,9 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             <BottomSheetTouchable
               onPress={handleDisconnect}
               disabled={isDisconnecting}
-              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDisconnecting ? 0.5 : 1 }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', backgroundColor: destructiveColor, opacity: isDisconnecting ? 0.5 : 1 }}
             >
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: '#FFFFFF' }}>
+              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: THEME.light.primaryForeground /* hex-allowlist: fixed near-white (hsl(60 0% 98%)) text on solid destructive red, matches Button's own destructive text-white */ }}>
                 {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
               </Text>
             </BottomSheetTouchable>
@@ -785,7 +786,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         snapPoints={['80%']}
         enableDynamicSizing={false}
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -798,8 +799,8 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         >
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(96,165,250,0.12)' : 'rgba(37,99,235,0.08)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Globe size={20} color={isDark ? '#60a5fa' : '#2563eb'} />
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: withAlpha(THEME.accent.blue, isDark ? 0.12 : 0.08), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <Globe size={20} color={THEME.accent.blue} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
@@ -920,7 +921,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             style={{
               backgroundColor: (customForm.providerID.trim() && customForm.name.trim() && customForm.baseURL.trim() && customForm.modelId.trim() && customForm.modelName.trim())
                 ? themeColors.primary
-                : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
+                : withAlpha(fgColor, isDark ? 0.08 : 0.06),
               borderRadius: 9999,
               paddingVertical: 15,
               alignItems: 'center',

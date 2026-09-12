@@ -1120,7 +1120,6 @@ the usual runtime is a setup failure — read the install step, not the tests
 *Enforcer:* none — a lint that every `pnpm/action-setup@` in a workflow file
 shares one major is the TODO.
 
-
 ### A row lock held to COMMIT makes batch size a blast radius, and a 500 turns backpressure into a livelock (2026-08-26)
 
 **When:** writing anything that inserts into `kortix.audit_events`, sizing an
@@ -1678,7 +1677,6 @@ verifies) and `service_role`/`anon` keys were unaffected.
 *Enforcer:* `apps/api/src/__tests__/unit-jwt-alg-fallback.test.ts` pins the
 predicate and the no-`kid` symmetric case. Nothing enforces rule (1) — prose only.
 
-
 ### `git stash` is repo-global — never `pop` from a worktree (2026-08-21)
 
 **When:** any `git stash` / `git stash pop` inside a `pnpm worktree` checkout.
@@ -1734,10 +1732,6 @@ fixture only proves the class you thought to seed.
 including a free-tier + `active` $0-subscription case modeled on the real prod
 row; `per-seat-pricing.test.ts` pins `resolveRenewalGrant` for per-seat,
 configured-grant and paid-by-amount branches.
-
-||||||| bd5aae39c4
-
-||||||| 0c247496b6
 
 ### A URL that carries a credential must never reach a log line (2026-08-20)
 
@@ -1881,7 +1875,6 @@ the pre-existing violations in a batched `.concurrent.ts`, then `VALIDATE` in a
 follow-up file.
 *Near-miss:* the canonical-RBAC cutover, caught by diffing `pg_constraint` for
 the retired tables before writing the migration.
-
 
 ### A picker that offers a model the runtime does not know is a silent outage; the runtime must learn the set from the API it talks to (2026-08-19)
 
@@ -2605,7 +2598,6 @@ with its dependency. And rotate the Cloudflare credential used by
 `deploy-staging.yml`; it stopped working between 2026-08-12 and 2026-08-18.
 *Incident:* v0.13.0 release (PR #6520), run 32151213430 ×10; frontend deploy
 skipped since 2026-08-18 14:34 UTC.
-
 
 ### One OAuth provider per concern; and shape-validating a redirect is not authorizing it (2026-08-18)
 
@@ -3526,7 +3518,6 @@ still blocked, and the own-session credential still allowed.
 
 *Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
 PR #6828.
-||||||| base
 
 ## Measure the amplification factor; never decode what you can forward
 
@@ -4802,6 +4793,134 @@ Linux x64 archive when the sandbox reports another version. It verifies the
 official SHA-256 before extraction. *Enforcer:*
 `tests/unit/sandbox-preview.test.ts` requires the repair before the first pnpm
 install and asserts the exact version and checksum.
+
+---
+
+## An unreachable verification target is an instruction to delete things
+
+*2026-09-05, `apps/mobile` React Native Reusables migration, branch
+`revamp/mobile-ui`. Cost: one full task cycle, fully recovered.*
+
+A subagent was dispatched to delete a barrel file and repoint 11 imports. Its
+brief listed as a hard pass/fail target:
+
+> `git ls-files components/ui`: **32**, and the FAIL check prints "OK: RNR-only"
+
+32 was the **milestone-3 end state**, reached only after later tasks move and
+delete the non-RNR files. The correct figure for the task actually being run
+was 54. The agent saw 54 ≠ 32, concluded files had to be removed, and ran a
+`git checkout` against `components/`, reverting an entire completed install:
+29 component files back to their forked state, a deleted file resurrected, and
+a case-collision the milestone had just removed re-created.
+
+The agent was not careless. It was obedient. Given a numeric goal stated as a
+gate and a directory that did not match, deleting is the only available move.
+The prose guardrail in the same prompt — "do not edit any file under
+`components/ui/` other than deleting `index.ts`" — lost to the number.
+
+1. **Every verification target handed to a subagent must be satisfiable by
+   that subagent's own task.** If a number is a milestone or project end
+   state, label it as such and give the task's own expected value instead.
+   Never let a future-state figure appear in a pass/fail block.
+2. **`git checkout` / `git restore` / `git reset` against source directories
+   are forbidden in subagent briefs.** Say so explicitly. The blast radius is
+   whatever has accumulated since the last commit, which under a no-commit
+   workflow is everything.
+3. **Under a "stage, don't commit" instruction, `HEAD` is not a safety net —
+   it is the hazard.** With five tasks' work staged and uncommitted, `HEAD`
+   was the pre-migration state, so one `checkout` erased all of it. Where the
+   user forbids commits, capture the recovery material as ordinary files
+   instead: this incident was a ten-minute recovery only because an earlier
+   task had written all 32 upstream sources to a scratchpad directory.
+4. **Prefer re-running the generator over restoring from a snapshot.** The
+   captured sources used a different import alias than the installer emits;
+   copying them back would have planted 27 wrong import paths. Re-running the
+   install reproduced byte-for-byte what had already been verified.
+
+*Fix:* recovery re-ran the installer and re-applied the two documented
+deviations. *Enforcer:* none automated — this is a briefing discipline. The
+check is that every target in a dispatch prompt names a value the dispatched
+task alone can produce.
+
+---
+
+## A gate that cannot fail is worse than no gate
+
+*2026-09-06 — mobile RNR migration, near-miss caught at final verification.*
+
+Gate 7 of the migration was supposed to prove no RNR primitive had been
+forked: `diff components/ui/$b scratchpad/registry/stock/$b` for each of 32
+files. It reported **30 of 32 DIFFERING** on a clean tree.
+
+The RNR installer rewrites `from '@/lib/utils'` to `'@/lib/utils/index'` in
+every file it emits. So every `cn`-importing file differs by one import line,
+forever. The gate's normal, healthy output was 30 failures — and the 2 real
+deviations sat inside that list, indistinguishable from the 28 false ones.
+Anyone reading it would conclude "that gate is always noisy" and stop reading.
+**A genuine fork would have passed.**
+
+This was the third broken measurement in one project. The other two:
+
+- A "baseline unchanged" check that diffed `git show HEAD:<file>` for a file
+  that does not exist at `HEAD`. It compared two empty streams and printed
+  `IDENTICAL` — a verification that could not fail.
+- `grep -rl PATTERN dir | grep -v gorhom` used to exclude a library's own
+  re-export. `-rl` emits **filenames**; no path contains "gorhom", so the
+  filter never fired and the target was unreachable as written.
+
+And two narrower ones, both silently masking regressions:
+
+- `sed 's/(.*//'` to strip `(line,col)` from tsc output truncates at the
+  **first** `(`, collapsing every `app/(settings)/*.tsx` path to bare `app/`.
+  Any regression inside a parenthesized route group is invisible. Correct
+  form: `sed -E 's/\([0-9]+,[0-9]+\).*$//'`.
+- Comparing tsc output at exact `line,col` reports shifted-but-identical
+  errors as new. Compare at file level, then read the messages.
+
+1. **Run every new gate against a known-bad input before trusting a pass.**
+   Perturb the thing it guards; if it does not go red, it is decoration. This
+   is the only check that catches all five failures above.
+2. **A gate whose healthy output contains failures is broken.** Normal state
+   must be silent. If a metric needs "ignore these 28", fold the exclusion
+   into the command until clean, or it will not be read.
+3. **Know which shape your filter consumes.** `grep -l`/`-rl` emit filenames;
+   `grep -n` emits lines. Piping a filename list into a line-content filter is
+   a no-op that looks like rigour.
+4. **Count every form of the thing you are banning.** The colour gate grepped
+   6-digit hex for all 32 tasks. `rgba()`, Tailwind palette classes, and
+   3-digit `#fff`/`#000` were invisible the entire time — and 3-digit hex hid
+   two live invisible-spinner bugs in directories already marked done.
+
+*Fix:* normalize the import alias before diffing; the working command now
+lives in `apps/mobile/CLAUDE.md` invariant 1. *Enforcer:* none automated. The
+discipline is that a gate is not trusted until it has been observed failing.
+
+**Addendum, same day — the rule above was written, then broken, in one session.**
+Booting the app on a simulator (the first time it had been run) showed a status
+banner with no tint. Cause: the migration's `withAlpha()` helper emitted
+`hsl(H S% L% / A)`, the CSS Color Level 4 slash syntax. React Native's parser
+`@react-native/normalize-colors` **rejects** it — `normalizeColor()` returns
+null, RN drops the style, and the element renders fully transparent with no
+error and no warning. 890 call sites across 92 files, every translucent surface
+in the app, invisible. `THEME.hover` / `THEME.active` held the same slash form.
+
+Every colour gate asked *"is this a hardcoded literal?"* and never *"is this a
+colour the platform can render?"* A string-equality test on `withAlpha` would
+have passed as well — the string was exactly what its author intended. The
+intent was wrong, and only the platform's own parser knew.
+
+5. **Assert against the real consumer, not against your expectation.** Where a
+   value is handed to a parser, compiler, or renderer, test what that thing
+   does with it. Resolve it through the dependency that owns it
+   (`createRequire(require.resolve('react-native/package.json'))`) so the test
+   tracks the installed version instead of a separately-declared copy that can
+   drift.
+6. **Run the artifact before declaring it done.** Seven static gates, 98 unit
+   tests, and a clean typecheck all passed over a build whose translucency was
+   entirely broken. Static analysis proves what the code *says*; only execution
+   proves what it *does*.
+
+---
 
 ## A per-call authorization grant re-derived from a git read must carry provenance, or one bad read is a session-wide outage (2026-09-08)
 

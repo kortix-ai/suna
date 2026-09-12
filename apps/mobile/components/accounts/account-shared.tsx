@@ -5,9 +5,12 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { View, TouchableOpacity, ActivityIndicator, Animated, Easing, type ViewStyle } from 'react-native';
+import { View, ActivityIndicator, Animated, Easing, type ViewStyle } from 'react-native';
+import { X } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { AccountRole } from '@/lib/projects/projects-client';
 import type { AccountCapability } from '@/lib/accounts/hooks';
 
@@ -19,16 +22,33 @@ export const ACCOUNT_ROLE_LABEL: Record<AccountRole, string> = {
   member: 'Member',
 };
 
+/**
+ * `fg`/`muted` reuse the same THEME mapping as `useThemeColors().primary` /
+ * `--muted-foreground` (see `lib/theme-colors.ts`'s header comment — dark
+ * `fg` intentionally reads `THEME.dark.foreground`, not `--primary`, to
+ * avoid a 7.5pp dark-mode dimming). The alpha-tinted fields
+ * (`border`/`inputBorder`/`inputBg`/`cardBg`/`avatarBg`) were literal
+ * black-at-alpha (light) / white-at-alpha (dark) overlays —
+ * `withAlpha(THEME.x.foreground, X)` reproduces the same base color
+ * (near-black light / near-white dark) at the same alpha, so every field
+ * below renders pixel-identical to its old literal.
+ */
 export function accountColors(isDark: boolean) {
   return {
-    fg: isDark ? '#F8F8F8' : '#121215',
-    muted: isDark ? '#9b9b9b' : '#6e6e6e',
-    border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-    inputBorder: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)',
-    inputBg: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-    cardBg: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
-    avatarBg: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    fg: isDark ? THEME.dark.foreground : THEME.light.primary,
+    muted: isDark ? THEME.dark.foregroundWeak : THEME.light.foregroundWeak,
+    border: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.08),
+    inputBorder: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.1 : 0.12),
+    inputBg: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.05 : 0.03),
+    cardBg: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.02 : 0.015),
+    avatarBg: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.08 : 0.06),
   };
+}
+
+/** Theme-aware destructive red — replaces the hardcoded Tailwind-red-500 hex
+ *  literal every destructive action/icon/error-text in these tabs used. */
+export function destructiveColor(isDark: boolean) {
+  return isDark ? THEME.dark.destructive : THEME.light.destructive;
 }
 
 export function InitialsAvatar({ label, isDark, size = 36 }: { label: string | null; isDark: boolean; size?: number }) {
@@ -44,8 +64,8 @@ export function InitialsAvatar({ label, isDark, size = 36 }: { label: string | n
 export function Pill({ label, isDark, tone = 'neutral' }: { label: string; isDark: boolean; tone?: 'neutral' | 'amber' | 'emerald' | 'primary' }) {
   const c = accountColors(isDark);
   const theme = useThemeColors();
-  const color = tone === 'amber' ? '#d97706' : tone === 'emerald' ? '#16a34a' : tone === 'primary' ? theme.primary : c.muted;
-  const bg = tone === 'amber' ? 'rgba(217,119,6,0.12)' : tone === 'emerald' ? 'rgba(34,197,94,0.12)' : tone === 'primary' ? theme.primaryLight : c.avatarBg;
+  const color = tone === 'amber' ? THEME.accent.orange : tone === 'emerald' ? THEME.accent.green : tone === 'primary' ? theme.primary : c.muted;
+  const bg = tone === 'amber' ? withAlpha(THEME.accent.orange, 0.12) : tone === 'emerald' ? withAlpha(THEME.accent.green, 0.12) : tone === 'primary' ? theme.primaryLight : c.avatarBg;
   return (
     <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: bg }}>
       <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color }}>{label}</Text>
@@ -56,7 +76,7 @@ export function Pill({ label, isDark, tone = 'neutral' }: { label: string; isDar
 export function RolePill({ role, isDark }: { role: AccountRole; isDark: boolean }) {
   const c = accountColors(isDark);
   return (
-    <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1, borderColor: role === 'owner' ? (isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)') : c.inputBorder }}>
+    <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1, borderColor: role === 'owner' ? withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.4) : c.inputBorder }}>
       <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.fg }}>{ACCOUNT_ROLE_LABEL[role]}</Text>
     </View>
   );
@@ -75,9 +95,10 @@ export function Card({ title, description, count, tone, isDark, action, children
   flat?: boolean;
 }) {
   const c = accountColors(isDark);
-  const borderColor = tone === 'destructive' ? 'rgba(239,68,68,0.3)' : c.border;
-  const bg = tone === 'destructive' ? 'rgba(239,68,68,0.04)' : c.cardBg;
-  const titleColor = tone === 'destructive' ? '#ef4444' : c.fg;
+  const destructive = destructiveColor(isDark);
+  const borderColor = tone === 'destructive' ? withAlpha(destructive, 0.3) : c.border;
+  const bg = tone === 'destructive' ? withAlpha(destructive, 0.04) : c.cardBg;
+  const titleColor = tone === 'destructive' ? destructive : c.fg;
   const inner = (
     <>
       {(title || action) && (
@@ -146,7 +167,7 @@ function useShimmer() {
 
 export function Skeleton({ w, h, r = 8, isDark, style }: { w: number | string; h: number; r?: number; isDark: boolean; style?: ViewStyle }) {
   const opacity = useShimmer();
-  const bg = isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.07)';
+  const bg = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.09 : 0.07);
   return <Animated.View style={[{ width: w as any, height: h, borderRadius: r, backgroundColor: bg, opacity }, style]} />;
 }
 
@@ -182,6 +203,23 @@ export function SkeletonList({ count = 3, isDark, avatar = true, bare = false }:
   );
 }
 
+/** Round 30×30 sheet-header dismiss button (the "X" every account sheet uses). */
+export function SheetCloseButton({ onPress, isDark }: { onPress: () => void; isDark: boolean }) {
+  const c = accountColors(isDark);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onPress={onPress}
+      hitSlop={8}
+      className="h-[30px] w-[30px] rounded-full"
+      style={{ backgroundColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.05 : 0.04) }}
+    >
+      <X size={17} color={c.muted} />
+    </Button>
+  );
+}
+
 export function PrimaryButton({ label, onPress, disabled, pending, icon, isDark }: {
   label: string;
   onPress: () => void;
@@ -192,9 +230,14 @@ export function PrimaryButton({ label, onPress, disabled, pending, icon, isDark 
 }) {
   const theme = useThemeColors();
   return (
-    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 16, height: 44, borderRadius: 9999, backgroundColor: theme.primary, opacity: disabled ? 0.5 : 1 }}>
+    <Button
+      onPress={onPress}
+      disabled={disabled}
+      className="h-11 flex-row items-center justify-center gap-1.5 rounded-full px-4"
+      style={{ backgroundColor: theme.primary, opacity: disabled ? 0.5 : 1 }}
+    >
       {pending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : icon}
-      <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>{label}</Text>
-    </TouchableOpacity>
+      <Text>{label}</Text>
+    </Button>
   );
 }

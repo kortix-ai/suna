@@ -7,21 +7,22 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { Brain, Wrench, Server, Zap, X, ArrowLeft } from 'lucide-react-native';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';
 import { InstructionsScreen } from './screens/InstructionsScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { ConnectionsScreen } from './screens/ConnectionsScreen';
 import { TriggersScreen } from './screens/TriggersScreen';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME } from '@/lib/utils/theme';
 
 interface WorkerConfigDrawerProps {
   visible: boolean;
@@ -49,6 +50,7 @@ export function WorkerConfigDrawer({
   initialView = 'instructions',
   onUpgradePress,
 }: WorkerConfigDrawerProps) {
+  const sheetBg = useSheetBackground();
   const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   // Initialize activeView with initialView, and update it whenever initialView changes
@@ -86,12 +88,6 @@ export function WorkerConfigDrawer({
   }, [onClose]);
 
   // Backdrop component
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    []
-  );
 
   // Use BottomSheetModal to render above everything (hamburger menu, credits, etc.)
   return (
@@ -100,27 +96,24 @@ export function WorkerConfigDrawer({
       snapPoints={snapPoints}
       onDismiss={handleDismiss}
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       backgroundStyle={{
-        backgroundColor: getSheetBg(colorScheme === 'dark'),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      handleIndicatorStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}>
+      handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}>
       <View className="flex-1">
         {/* Header */}
         <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
           <View className="flex-row items-center gap-3">
-            <BottomSheetTouchable
+            <Button
+              variant="ghost"
+              size="icon"
               onPress={onClose}
-              style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }}>
+              className="h-10 w-10 rounded-xl">
               <Icon as={ArrowLeft} size={20} className="text-foreground" />
-            </BottomSheetTouchable>
+            </Button>
             <View>
               {isLoading || !agent ? (
                 <>
@@ -137,11 +130,13 @@ export function WorkerConfigDrawer({
               )}
             </View>
           </View>
-          <BottomSheetTouchable
+          <Button
+            variant="ghost"
+            size="icon"
             onPress={onClose}
-            style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }}>
+            className="h-10 w-10 rounded-xl">
             <Icon as={X} size={20} className="text-muted-foreground" />
-          </BottomSheetTouchable>
+          </Button>
         </View>
 
         {/* Tab Menu */}
@@ -156,19 +151,20 @@ export function WorkerConfigDrawer({
               const isActive = activeView === item.id;
 
               return (
-                <BottomSheetTouchable
+                <Pressable
                   key={item.id}
                   onPress={() => {
                     setActiveView(item.id);
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
+                  className="active:opacity-70"
                   style={{
                     alignItems: 'center',
                     justifyContent: 'center',
                     paddingHorizontal: 16,
                     paddingVertical: 12,
                     borderBottomWidth: 2,
-                    borderBottomColor: isActive ? '#10b981' : 'transparent',
+                    borderBottomColor: isActive ? THEME.accent.green : 'transparent',
                   }}>
                   <View className="flex-row items-center gap-2">
                     <Icon
@@ -183,7 +179,7 @@ export function WorkerConfigDrawer({
                       {item.label}
                     </Text>
                   </View>
-                </BottomSheetTouchable>
+                </Pressable>
               );
             })}
           </ScrollView>

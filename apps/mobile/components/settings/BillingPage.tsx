@@ -398,10 +398,10 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
             <View className="gap-3">
               {/* Daily Credits - Only show if daily refresh is enabled */}
               {dailyRefreshInfo?.enabled && (
-                <View className="bg-card border border-blue-500/20 rounded-[18px] p-5">
+                <View className="bg-card border border-kortix-blue/20 rounded-[18px] p-5">
                   <View className="flex-row items-center gap-2 mb-3">
-                    <View className="w-8 h-8 rounded-full bg-blue-500/10 items-center justify-center">
-                      <Icon as={Clock} size={16} className="text-blue-500" strokeWidth={2} />
+                    <View className="w-8 h-8 rounded-full bg-kortix-blue/10 items-center justify-center">
+                      <Icon as={Clock} size={16} className="text-kortix-blue" strokeWidth={2} />
                     </View>
                     <Text className="text-xs font-roobert-medium text-muted-foreground uppercase">
                       {t('billing.daily', 'Daily')}
@@ -411,7 +411,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                     {formatCredits(dailyCredits)}
                   </Text>
                   {dailyRefreshTime && (
-                    <Text className="text-xs font-roobert-medium text-blue-500">
+                    <Text className="text-xs font-roobert-medium text-kortix-blue">
                       {dailyRefreshTime}
                     </Text>
                   )}
@@ -420,10 +420,10 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
 
               {/* Monthly Credits */}
               {(!dailyRefreshInfo?.enabled || monthlyCredits > 0) && (
-                <View className="bg-card border border-orange-500/20 rounded-[18px] p-5">
+                <View className="bg-card border border-kortix-orange/20 rounded-[18px] p-5">
                   <View className="flex-row items-center gap-2 mb-3">
-                    <View className="w-8 h-8 rounded-full bg-orange-500/10 items-center justify-center">
-                      <Icon as={Clock} size={16} className="text-orange-500" strokeWidth={2} />
+                    <View className="w-8 h-8 rounded-full bg-kortix-orange/10 items-center justify-center">
+                      <Icon as={Clock} size={16} className="text-kortix-orange" strokeWidth={2} />
                     </View>
                     <Text className="text-xs font-roobert-medium text-muted-foreground uppercase">
                       {t('billing.monthly', 'Monthly')}
@@ -433,7 +433,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                     {formatCredits(monthlyCredits)}
                   </Text>
                   {monthlyRefreshTime && (
-                    <Text className="text-xs font-roobert-medium text-orange-500">
+                    <Text className="text-xs font-roobert-medium text-kortix-orange">
                       {monthlyRefreshTime}
                     </Text>
                   )}
@@ -443,8 +443,8 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
               {/* Extra Credits */}
               <View className="bg-card border border-border rounded-[18px] p-5">
                 <View className="flex-row items-center gap-2 mb-3">
-                  <View className="w-8 h-8 rounded-full bg-blue-500/10 items-center justify-center">
-                    <Icon as={Infinity} size={16} className="text-blue-500" strokeWidth={2} />
+                  <View className="w-8 h-8 rounded-full bg-kortix-blue/10 items-center justify-center">
+                    <Icon as={Infinity} size={16} className="text-kortix-blue" strokeWidth={2} />
                   </View>
                   <Text className="text-xs font-roobert-medium text-muted-foreground uppercase">
                     {t('billing.extra', 'Extra')}

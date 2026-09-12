@@ -11,7 +11,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
@@ -29,14 +29,16 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { SearchListHeader } from '@/components/ui/search-list-header';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { SearchListHeader } from '@/components/kortix/search-list-header';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
 import type { ProjectAgentEntry } from '@/lib/projects/projects-client';
 import { newConfigPrompt, editConfigPrompt } from '@/lib/projects/configure-prompts';
 import { haptics } from '@/lib/haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface PageTabLike {
   id: string;
@@ -94,9 +96,10 @@ function AgentDetail({
     [fileQuery.data?.content],
   );
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = withAlpha(fg, 0.08);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   const mode = modeLabel(agent.mode);
 
   const handleCopy = useCallback(async () => {
@@ -110,14 +113,13 @@ function AgentDetail({
   return (
     <View style={{ flex: 1 }}>
       {/* Back row */}
-      <TouchableOpacity
+      <Pressable
         onPress={() => { haptics.tap(); onBack(); }}
-        activeOpacity={0.6}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4 }}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4, opacity: pressed ? 0.6 : 1 })}
       >
         <ChevronLeft size={18} color={muted} />
         <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>Agents</Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Title + meta */}
       <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
@@ -125,34 +127,29 @@ function AgentDetail({
           <Text style={{ flex: 1, fontSize: 19, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
             {agent.name}
           </Text>
-          <TouchableOpacity
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
             onPress={handleCopy}
             disabled={!fileQuery.data?.content}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 5,
-              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
-              borderWidth: 1, borderColor: border,
-              opacity: fileQuery.data?.content ? 1 : 0.4,
-            }}
+            style={{ borderColor: border, opacity: fileQuery.data?.content ? 1 : 0.4 }}
           >
-            {copied ? <Check size={13} color="#22C55E" /> : <Copy size={13} color={muted} />}
+            {copied ? <Check size={13} color={THEME.accent.green} /> : <Copy size={13} color={muted} />}
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>
               {copied ? 'Copied' : 'Copy'}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
             onPress={() => { haptics.tap(); onConfigure(editConfigPrompt('agent', agent.name, agent.path)); }}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 5,
-              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
-              borderWidth: 1, borderColor: border,
-            }}
+            style={{ borderColor: border }}
           >
             <Pencil size={13} color={muted} />
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>Edit</Text>
-          </TouchableOpacity>
+          </Button>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
@@ -182,7 +179,7 @@ function AgentDetail({
             <ActivityIndicator size="small" color={muted} />
           </View>
         ) : fileQuery.isError ? (
-          <Text style={{ fontSize: 13, color: '#ef4444' }}>
+          <Text style={{ fontSize: 13, color: destructiveColor }}>
             {(fileQuery.error as Error)?.message ?? 'Failed to read agent source'}
           </Text>
         ) : body ? (
@@ -196,11 +193,14 @@ function AgentDetail({
 }
 
 function Badge({ label, icon, isDark }: { label: string; icon?: 'star'; isDark: boolean }) {
-  const muted = isDark ? '#cfcfcf' : '#444';
-  const bg = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)';
+  // Collapsed to the standard mutedForeground token (was a bespoke
+  // mid-contrast grey with no exact THEME equivalent) — same narrowing
+  // precedent as other chip/badge label colors across this migration.
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const bg = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.07 : 0.05);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: bg }}>
-      {icon === 'star' && <Star size={10} color="#F59E0B" fill="#F59E0B" />}
+      {icon === 'star' && <Star size={10} color={THEME.accent.orange} fill={THEME.accent.orange} />}
       <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted }}>{label}</Text>
     </View>
   );
@@ -219,16 +219,15 @@ function AgentRow({
   onPress: () => void;
   isDark: boolean;
 }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const iconBg = withAlpha(fg, isDark ? 0.06 : 0.04);
   const mode = modeLabel(agent.mode);
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
-      activeOpacity={0.6}
-      style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, opacity: pressed ? 0.6 : 1 })}
     >
       {/* Square "thing" avatar */}
       <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
@@ -240,7 +239,7 @@ function AgentRow({
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
             {agent.name}
           </Text>
-          {isDefault && <Star size={12} color="#F59E0B" fill="#F59E0B" />}
+          {isDefault && <Star size={12} color={THEME.accent.orange} fill={THEME.accent.orange} />}
           {mode && (
             <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>· {mode}</Text>
           )}
@@ -253,7 +252,7 @@ function AgentRow({
       </View>
 
       <ChevronRight size={18} color={muted} />
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -276,10 +275,10 @@ export function AgentsPage({
 
   const { data, isLoading, isError, error, refetch } = useProjectDetail(projectId);
 
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = withAlpha(fg, 0.08);
 
   const agents = data?.config?.agents ?? [];
   const defaultAgent = data?.config?.open_code_default_agent ?? null;
@@ -337,9 +336,9 @@ export function AgentsPage({
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                   {(error as Error)?.message ?? 'Failed to load agents'}
                 </Text>
-                <TouchableOpacity onPress={() => { haptics.tap(); refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); refetch(); }} style={{ borderColor: border }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-                </TouchableOpacity>
+                </Button>
               </View>
             ) : filtered.length === 0 ? (
               <View style={{ padding: 40, alignItems: 'center', gap: 14 }}>
@@ -347,14 +346,16 @@ export function AgentsPage({
                   {agents.length === 0 ? 'No agents in this project yet.' : 'No agents match your search.'}
                 </Text>
                 {agents.length === 0 && (
-                  <TouchableOpacity
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
                     onPress={() => { haptics.tap(); onConfigure(newConfigPrompt('agent')); }}
-                    activeOpacity={0.7}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}
+                    style={{ borderColor: border }}
                   >
                     <Plus size={15} color={fg} />
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>New agent</Text>
-                  </TouchableOpacity>
+                  </Button>
                 )}
               </View>
             ) : (

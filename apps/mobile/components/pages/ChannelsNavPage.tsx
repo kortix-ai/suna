@@ -11,7 +11,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   View,
-  TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   Alert,
@@ -20,12 +19,7 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
   Check,
   Copy,
@@ -37,9 +31,12 @@ import {
 } from 'lucide-react-native';
 import { SlackIcon } from '@/components/icons/slack-icon';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useSlackInstallation,
   useSlackMode,
@@ -48,6 +45,7 @@ import {
 } from '@/lib/projects/hooks';
 import { API_URL } from '@/api/config';
 import { haptics } from '@/lib/haptics';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -66,7 +64,7 @@ interface ChannelsNavPageProps {
 
 const MONO = 'Menlo';
 const SLACK_APPS_URL = 'https://api.slack.com/apps?new_app=1';
-const SLACK = '#611f69';
+const SLACK = '#611f69'; // hex-allowlist: Slack's own brand purple, not a Kortix design token
 
 function buildSlackManifest(projectId: string): string {
   const root = API_URL.replace(/\/v1\/?$/, '');
@@ -75,7 +73,7 @@ function buildSlackManifest(projectId: string): string {
     display_information: {
       name: 'Kortix',
       description: 'Run a Kortix project from Slack',
-      background_color: '#0a0a0a',
+      background_color: '#0a0a0a', // hex-allowlist: Slack app manifest field, sent to Slack's API as literal config data
     },
     features: { bot_user: { display_name: 'kortix', always_online: true } },
     oauth_config: {
@@ -128,11 +126,12 @@ function ByoSlackSheet({
 
   const manifest = useMemo(() => buildSlackManifest(projectId), [projectId]);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
-  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const border = withAlpha(fg, isDark ? 0.1 : 0.12);
+  const inputBg = withAlpha(fg, isDark ? 0.05 : 0.03);
+  const closeBg = withAlpha(fg, isDark ? 0.05 : 0.04);
 
   const copyManifest = async () => {
     haptics.tap();
@@ -158,11 +157,18 @@ function ByoSlackSheet({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: withAlpha(fg, 0.08) }}>
         <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Bring your own Slack app</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
-          <X size={17} color={muted} />
-        </TouchableOpacity>
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={() => { haptics.tap(); onClose(); }}
+          hitSlop={8}
+          className="h-[30px] w-[30px] rounded-full"
+          style={{ backgroundColor: closeBg }}
+        >
+          <Icon as={X} size={17} color={muted} />
+        </Button>
       </View>
 
       {/* Step indicator */}
@@ -179,23 +185,24 @@ function ByoSlackSheet({
               1. Copy this app manifest. 2. Open Slack and create an app “from a manifest”, paste it, and install to your workspace.
             </Text>
 
-            <TouchableOpacity
+            <Button
               onPress={copyManifest}
-              activeOpacity={0.8}
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, borderRadius: 9999, backgroundColor: theme.primary, marginBottom: 10 }}
+              className="h-11 flex-row items-center justify-center gap-2 rounded-full mb-2.5"
+              style={{ backgroundColor: theme.primary }}
             >
-              {copied ? <CircleCheck size={16} color={theme.primaryForeground} /> : <Copy size={16} color={theme.primaryForeground} />}
+              <Icon as={copied ? CircleCheck : Copy} size={16} color={theme.primaryForeground} />
               <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>{copied ? 'Copied' : 'Copy manifest'}</Text>
-            </TouchableOpacity>
+            </Button>
 
-            <TouchableOpacity
+            <Button
+              variant="outline"
               onPress={() => { haptics.tap(); WebBrowser.openBrowserAsync(SLACK_APPS_URL); }}
-              activeOpacity={0.8}
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: border, marginBottom: 16 }}
+              className="h-11 flex-row items-center justify-center gap-2 rounded-full mb-4"
+              style={{ borderColor: border }}
             >
-              <ExternalLink size={16} color={fg} />
+              <Icon as={ExternalLink} size={16} color={fg} />
               <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: fg }}>Open Slack apps</Text>
-            </TouchableOpacity>
+            </Button>
 
             <View style={{ borderRadius: 12, borderWidth: 1, borderColor: border, backgroundColor: inputBg, padding: 12 }}>
               <Text style={{ fontSize: 11.5, lineHeight: 17, fontFamily: MONO, color: muted }}>{manifest}</Text>
@@ -231,38 +238,39 @@ function ByoSlackSheet({
             />
 
             {errMsg && (
-              <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
-                <Text style={{ fontSize: 13, color: '#ef4444' }}>{errMsg}</Text>
+              <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: withAlpha(destructiveColor, 0.08), borderWidth: 1, borderColor: withAlpha(destructiveColor, 0.3) }}>
+                <Text style={{ fontSize: 13, color: destructiveColor }}>{errMsg}</Text>
               </View>
             )}
           </>
         )}
       </BottomSheetScrollView>
 
-      <View style={{ flexDirection: 'row', gap: 10, padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ flexDirection: 'row', gap: 10, padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: withAlpha(fg, 0.08) }}>
         {step === 'tokens' && (
-          <TouchableOpacity
+          <Button
+            variant="outline"
             onPress={() => { haptics.tap(); setStep('manifest'); }}
-            activeOpacity={0.8}
-            style={{ paddingHorizontal: 20, height: 48, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}
+            className="h-12 rounded-full px-5"
+            style={{ borderColor: border }}
           >
             <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
-          </TouchableOpacity>
+          </Button>
         )}
-        <TouchableOpacity
+        <Button
           onPress={() => {
             if (step === 'manifest') { haptics.tap(); setStep('tokens'); }
             else handleConnect();
           }}
           disabled={step === 'tokens' && !canConnect}
-          activeOpacity={0.85}
-          style={{ flex: 1, height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: step === 'tokens' && !canConnect ? 0.5 : 1 }}
+          className="h-12 flex-1 flex-row items-center justify-center gap-2 rounded-full"
+          style={{ backgroundColor: theme.primary, opacity: step === 'tokens' && !canConnect ? 0.5 : 1 }}
         >
           {connectMut.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
             {step === 'manifest' ? 'I installed it — next' : 'Connect Slack'}
           </Text>
-        </TouchableOpacity>
+        </Button>
       </View>
     </View>
   );
@@ -271,9 +279,9 @@ function ByoSlackSheet({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function InfoRow({ label, value, mono, isDark }: { label: string; value: string; mono?: boolean; isDark: boolean }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = withAlpha(fg, 0.08);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: border }}>
       <Text style={{ fontSize: 13, color: muted }}>{label}</Text>
@@ -290,6 +298,7 @@ export function ChannelsNavPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: ChannelsNavPageProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -299,11 +308,12 @@ export function ChannelsNavPage({
   const mode = useSlackMode(projectId);
   const disconnectMut = useDisconnectSlack(projectId);
 
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const cardBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = withAlpha(fg, 0.08);
+  const cardBg = withAlpha(fg, isDark ? 0.04 : 0.02);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   const installed = install.data ?? null;
   const oauth = mode.data?.oauth_available ?? false;
@@ -363,17 +373,17 @@ export function ChannelsNavPage({
           ) : installed ? (
             <>
               {/* Connected */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)', backgroundColor: 'rgba(34,197,94,0.08)' }}>
-                <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: withAlpha(THEME.accent.green, 0.3), backgroundColor: withAlpha(THEME.accent.green, 0.08) }}>
+                <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: withAlpha(fg, isDark ? 0.06 : 0.04), alignItems: 'center', justifyContent: 'center' }}>
                   <SlackIcon width={20} height={20} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
                     Connected to {installed.workspaceName ?? installed.workspaceId}
                   </Text>
-                  <Text style={{ fontSize: 12.5, color: '#16a34a', marginTop: 2 }}>Slack is receiving events</Text>
+                  <Text style={{ fontSize: 12.5, color: THEME.accent.green, marginTop: 2 }}>Slack is receiving events</Text>
                 </View>
-                <CircleCheck size={20} color="#16a34a" />
+                <Icon as={CircleCheck} size={20} color={THEME.accent.green} />
               </View>
 
               <View style={{ marginTop: 16, borderRadius: 14, borderWidth: 1, borderColor: border, paddingHorizontal: 14 }}>
@@ -389,21 +399,22 @@ export function ChannelsNavPage({
                 </Text>
               </View>
 
-              <TouchableOpacity
+              <Button
+                variant="outline"
                 onPress={handleDisconnect}
                 disabled={disconnectMut.isPending}
-                activeOpacity={0.7}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 22, height: 48, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', opacity: disconnectMut.isPending ? 0.5 : 1 }}
+                className="mt-[22px] h-12 flex-row items-center justify-center gap-2 rounded-full"
+                style={{ borderColor: withAlpha(destructiveColor, 0.4), opacity: disconnectMut.isPending ? 0.5 : 1 }}
               >
-                {disconnectMut.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Disconnect Slack</Text>
-              </TouchableOpacity>
+                {disconnectMut.isPending ? <ActivityIndicator size="small" color={destructiveColor} /> : <Icon as={Trash2} size={15} color={destructiveColor} />}
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: destructiveColor }}>Disconnect Slack</Text>
+              </Button>
             </>
           ) : (
             <>
               {/* Disconnected */}
               <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 20 }}>
-                <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: withAlpha(fg, isDark ? 0.06 : 0.04), alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
                   <SlackIcon width={28} height={28} />
                 </View>
                 <Text style={{ fontSize: 17, fontFamily: 'Roobert-Medium', color: fg }}>Connect Slack</Text>
@@ -413,14 +424,14 @@ export function ChannelsNavPage({
               </View>
 
               {oauth && (
-                <TouchableOpacity
+                <Button
                   onPress={handleAddToSlack}
-                  activeOpacity={0.85}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 50, borderRadius: 9999, backgroundColor: SLACK }}
+                  className="h-[50px] flex-row items-center justify-center gap-2 rounded-full"
+                  style={{ backgroundColor: SLACK }}
                 >
                   <SlackIcon width={18} height={18} />
-                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: '#fff' }}>Add to Slack</Text>
-                </TouchableOpacity>
+                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: THEME.light.primaryForeground /* hex-allowlist: fixed near-white (hsl(60 0% 98%)) text on Slack's solid brand purple */ }}>Add to Slack</Text>
+                </Button>
               )}
 
               {oauth && (
@@ -431,14 +442,15 @@ export function ChannelsNavPage({
                 </View>
               )}
 
-              <TouchableOpacity
+              <Button
+                variant="outline"
                 onPress={() => { haptics.tap(); byoSheetRef.current?.present(); }}
-                activeOpacity={0.85}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 50, borderRadius: 9999, borderWidth: 1, borderColor: border, marginTop: oauth ? 0 : 4 }}
+                className="h-[50px] flex-row items-center justify-center gap-2 rounded-full"
+                style={{ borderColor: border, marginTop: oauth ? 0 : 4 }}
               >
-                <Plug size={17} color={fg} />
+                <Icon as={Plug} size={17} color={fg} />
                 <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>Bring your own Slack app</Text>
-              </TouchableOpacity>
+              </Button>
 
               <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, textAlign: 'center', marginTop: 14 }}>
                 {oauth
@@ -454,11 +466,11 @@ export function ChannelsNavPage({
         ref={byoSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         <ByoSlackSheet projectId={projectId} onClose={() => byoSheetRef.current?.dismiss()} isDark={isDark} />
       </BottomSheetModal>

@@ -4,6 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ArrowRight } from 'lucide-react-native';
+import { useThemeColors } from '@/lib/theme-colors';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -32,6 +33,7 @@ export function AuthButton({
   variant = 'primary',
   showArrow = true,
 }: AuthButtonProps) {
+  const theme = useThemeColors();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -67,7 +69,7 @@ export function AuthButton({
           {isLoading && (
             <ActivityIndicator
               size="small"
-              color={isPrimary ? '#FFFFFF' : undefined}
+              color={isPrimary ? theme.primaryForeground : undefined}
               style={{ marginRight: 2 }}
             />
           )}

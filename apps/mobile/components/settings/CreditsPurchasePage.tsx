@@ -71,8 +71,8 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
         <View className="px-6">
           <View className="mb-4 items-center pt-4">
             <View className="flex-row items-center gap-3">
-              <View className="h-10 -mt-2 w-10 items-center justify-center rounded-full bg-green-500">
-                <Icon as={Wallet} size={20} className="text-white" />
+              <View className="h-10 -mt-2 w-10 items-center justify-center rounded-full bg-kortix-green">
+                <Icon as={Wallet} size={20} className="text-white" /> {/* hex-allowlist: icon on a fixed kortix-green tile, never themed */}
               </View>
               <Text className="text-5xl font-roobert-semibold text-foreground tracking-tight">
                 {formatCredits(totalCredits)}

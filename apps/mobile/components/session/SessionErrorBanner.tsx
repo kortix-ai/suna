@@ -12,6 +12,7 @@ import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { CircleAlert, CreditCard } from 'lucide-react-native';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ── Detection helpers ──────────────────────────────────────────────────────
 
@@ -64,14 +65,15 @@ function InsufficientCreditsCard({
         paddingVertical: 10,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: isDark ? 'rgba(245, 158, 11, 0.3)' : 'rgba(245, 158, 11, 0.3)',
-        backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.05)',
+        borderColor: withAlpha(THEME.accent.orange, 0.3),
+        backgroundColor: isDark ? withAlpha(THEME.accent.orange, 0.08) : withAlpha(THEME.accent.orange, 0.05),
       }}
     >
       <Icon
         as={CreditCard}
         size={14}
-        style={{ marginTop: 2, color: isDark ? '#f59e0b' : '#d97706' }}
+        color={THEME.accent.orange}
+        style={{ marginTop: 2 }}
       />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text

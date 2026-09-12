@@ -5,7 +5,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { View, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { haptics } from '@/lib/haptics';
 import { listAccountMembers, probeEffectivePermissions } from '@/lib/accounts/accounts-client';
 import { listMemberGroups, listMemberProjectAccess, setMemberSuperAdmin } from '@/lib/accounts/iam-client';
 import { accountColors, Card, InitialsAvatar, Pill } from '@/components/accounts/account-shared';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const CAPABILITY_GROUPS: { heading: string; items: { label: string; action: string }[] }[] = [
   { heading: 'Account', items: [
@@ -89,7 +90,7 @@ export default function MemberDetailScreen() {
     }
   };
 
-  const bg = isDark ? '#0D0D0D' : '#FFFFFF';
+  const bg = isDark ? THEME.dark.background : THEME.light.background;
   const groups = groupsQuery.data ?? [];
   const access = accessQuery.data ?? [];
 
@@ -97,10 +98,10 @@ export default function MemberDetailScreen() {
     <View style={{ flex: 1, backgroundColor: bg }}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={() => { haptics.tap(); router.back(); }} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 10 }}>
+        <Pressable onPress={() => { haptics.tap(); router.back(); }} hitSlop={10} className="active:opacity-70" style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 10 }}>
           <ChevronLeft size={18} color={c.muted} />
           <Text style={{ fontSize: 13.5, color: c.muted }}>Members</Text>
-        </TouchableOpacity>
+        </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <InitialsAvatar label={label} isDark={isDark} size={44} />
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -117,15 +118,15 @@ export default function MemberDetailScreen() {
         {/* Super-admin */}
         <Card isDark={isDark}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Shield size={16} color={isSuper ? '#d97706' : c.muted} />
+            <Shield size={16} color={isSuper ? THEME.accent.orange : c.muted} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Super-admin</Text>
               <Text style={{ fontSize: 12, lineHeight: 17, color: c.muted, marginTop: 2 }}>Bypasses every IAM check on this account. Use sparingly.</Text>
             </View>
-            <TouchableOpacity onPress={toggleSuper} disabled={setSuper.isPending} activeOpacity={0.8} style={{ paddingHorizontal: 14, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: isSuper ? 'rgba(239,68,68,0.4)' : c.inputBorder, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}>
-              {setSuper.isPending && <ActivityIndicator size="small" color={isSuper ? '#ef4444' : c.fg} />}
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isSuper ? '#ef4444' : c.fg }}>{isSuper ? 'Revoke' : 'Grant'}</Text>
-            </TouchableOpacity>
+            <Pressable onPress={toggleSuper} disabled={setSuper.isPending} className="active:opacity-80" style={{ paddingHorizontal: 14, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: isSuper ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.4) : c.inputBorder, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}>
+              {setSuper.isPending && <ActivityIndicator size="small" color={isSuper ? (isDark ? THEME.dark.destructive : THEME.light.destructive) : c.fg} />}
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isSuper ? (isDark ? THEME.dark.destructive : THEME.light.destructive) : c.fg }}>{isSuper ? 'Revoke' : 'Grant'}</Text>
+            </Pressable>
           </View>
         </Card>
 
@@ -144,8 +145,8 @@ export default function MemberDetailScreen() {
                         {capsQuery.isLoading ? (
                           <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: c.avatarBg }} />
                         ) : (
-                          <View style={{ width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: allowed ? 'rgba(34,197,94,0.12)' : c.avatarBg }}>
-                            {allowed ? <Check size={12} color="#16a34a" /> : <X size={12} color={c.muted} />}
+                          <View style={{ width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: allowed ? withAlpha(THEME.accent.green, 0.12) : c.avatarBg }}>
+                            {allowed ? <Check size={12} color={THEME.accent.green} /> : <X size={12} color={c.muted} />}
                           </View>
                         )}
                       </View>
@@ -167,11 +168,11 @@ export default function MemberDetailScreen() {
             {groupsQuery.isLoading ? <ActivityIndicator size="small" color={c.muted} /> : groups.length === 0 ? (
               <Text style={{ fontSize: 12.5, color: c.muted }}>Not in any group.</Text>
             ) : groups.map((g, i) => (
-              <TouchableOpacity key={g.group_id} onPress={() => { haptics.tap(); router.push(`/accounts/${accountId}/groups/${g.group_id}`); }} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+              <Pressable key={g.group_id} onPress={() => { haptics.tap(); router.push(`/accounts/${accountId}/groups/${g.group_id}`); }} className="active:opacity-60" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                 <Users size={14} color={c.muted} />
                 <Text style={{ flex: 1, fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.name}</Text>
                 <ChevronRight size={16} color={c.muted} />
-              </TouchableOpacity>
+              </Pressable>
             ))}
           </View>
         </Card>

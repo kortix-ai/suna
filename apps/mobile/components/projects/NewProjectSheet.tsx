@@ -8,20 +8,16 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, ActivityIndicator, Linking } from 'react-native';
-import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Sparkles, Github, Plus, Check, GitBranch, ExternalLink } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { SheetTextInput } from '@/components/ui/SheetInput';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
-import { useToast } from '@/components/ui/toast-provider';
+import { useToast } from '@/components/kortix/toast-provider';
 import { starterTemplateForManagedProject } from './project-starter-template';
 import {
   useGitHubInstallations,
@@ -30,6 +26,8 @@ import {
   useProvisionProject,
 } from '@/lib/projects/hooks';
 import type { KortixProject } from '@/lib/projects/projects-client';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255)).
 const PROJECT_NAME_MAX_LENGTH = 120;
@@ -42,6 +40,7 @@ interface NewProjectSheetProps {
 }
 
 export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProjectSheetProps) {
+  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -67,13 +66,13 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
   const repos = reposQuery.data?.repositories ?? [];
   const submitting = provision.isPending || link.isPending;
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const fieldBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const amberBg = isDark ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.08)';
-  const amberBorder = isDark ? 'rgba(245,158,11,0.28)' : 'rgba(245,158,11,0.30)';
-  const amberIcon = isDark ? '#fbbf24' : '#d97706';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
+  const fieldBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const amberBg = isDark ? withAlpha(THEME.accent.orange, 0.10) : withAlpha(THEME.accent.orange, 0.08);
+  const amberBorder = isDark ? withAlpha(THEME.accent.orange, 0.28) : withAlpha(THEME.accent.orange, 0.30);
+  const amberIcon = THEME.accent.orange;
 
   useEffect(() => {
     if (!open) {
@@ -111,12 +110,6 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
     onClose();
   }, [reset, onClose]);
 
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    [],
-  );
 
   const handleCreateManaged = useCallback(async () => {
     if (!accountId) return toast.error('Select an account first');
@@ -195,9 +188,9 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={handleDismiss}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      backdropComponent={SheetBackdrop}
+      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 24 }}
@@ -295,7 +288,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
                     borderRadius: 10,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: isDark ? 'rgba(245,158,11,0.16)' : 'rgba(245,158,11,0.14)',
+                    backgroundColor: isDark ? withAlpha(THEME.accent.orange, 0.16) : withAlpha(THEME.accent.orange, 0.14),
                   }}
                 >
                   <Icon as={Github} size={17} color={amberIcon} />

@@ -32,7 +32,7 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
   const [themePreference, setThemePreference] = React.useState<ThemePreference | null>(null);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
   const isMountedRef = React.useRef(true);
-  const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const transitionTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     isMountedRef.current = true;

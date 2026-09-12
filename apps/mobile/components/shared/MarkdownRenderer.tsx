@@ -54,11 +54,14 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
               className="bg-card border border-border rounded-xl overflow-hidden mb-4"
             >
               <View className="px-4 py-2 border-b border-border">
-                <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
+                <Text
+                  className="font-roobert-medium text-primary opacity-50 uppercase tracking-wider"
+                  style={{ fontSize: 12, lineHeight: 16 }}
+                >
                   {codeBlockLang || 'Code Block'}
                 </Text>
               </View>
-              <Text className="text-xs font-roobert-mono text-primary leading-5 p-4">
+              <Text className="font-roobert-mono text-primary leading-5 p-4" style={{ fontSize: 12 }}>
                 {codeBlockContent.join('\n')}
               </Text>
             </View>,
@@ -142,11 +145,14 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           className="bg-card border border-border rounded-xl overflow-hidden mb-4"
         >
           <View className="px-4 py-2 border-b border-border">
-            <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
+            <Text
+              className="font-roobert-medium text-primary opacity-50 uppercase tracking-wider"
+              style={{ fontSize: 12, lineHeight: 16 }}
+            >
               {codeBlockLang || 'Code Block'}
             </Text>
           </View>
-          <Text className="text-xs font-roobert-mono text-primary leading-5 p-4">
+          <Text className="font-roobert-mono text-primary leading-5 p-4" style={{ fontSize: 12 }}>
             {codeBlockContent.join('\n')}
           </Text>
         </View>,

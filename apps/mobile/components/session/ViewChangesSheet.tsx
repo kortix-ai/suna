@@ -11,19 +11,13 @@ import React, { forwardRef, useMemo, useState, useCallback, useEffect } from 're
 import {
   View,
   Text,
-  TouchableOpacity,
   Platform,
   LayoutAnimation,
   ScrollView,
   ActivityIndicator,
   useWindowDimensions,
 } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import {
   X,
@@ -42,7 +36,9 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { opencodeFetch } from '@/lib/opencode/hooks/use-opencode-data';
 import { extractDiffsFromMessages, type FileDiffData } from '@/lib/opencode/extract-diffs';
 import { generateLineDiff, type DiffLine } from '@/lib/opencode/diff-utils';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { Button } from '@/components/ui/button';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -115,14 +111,18 @@ function getExtFromPath(filePath: string): string {
   return filePath.slice(dot + 1).toLowerCase();
 }
 
-/** Syntax token colors — same as web's Shiki-style highlighting */
+/**
+ * Syntax token colors — same as web's Shiki-style highlighting.
+ * hex-allowlist: syntax highlighting palette — no semantic token exists for
+ * code token colours; parsed as hex by getTokenColor() below.
+ */
 const SYNTAX_COLORS = {
-  keyword: (d: boolean) => d ? '#c4b5fd' : '#7c3aed',      // purple
-  string: (d: boolean) => d ? '#86efac' : '#16a34a',        // green
-  comment: (d: boolean) => d ? '#6b7280' : '#9ca3af',       // gray
-  number: (d: boolean) => d ? '#fdba74' : '#ea580c',        // orange
-  operator: (d: boolean) => d ? '#a1a1aa' : '#71717a',      // muted
-  plain: (d: boolean) => d ? '#e4e4e7' : '#27272a',         // near fg
+  keyword: (d: boolean) => d ? '#c4b5fd' : '#7c3aed',      // hex-allowlist: syntax highlighting palette — no semantic token exists for code token colours; parsed as hex by getTokenColor() — purple
+  string: (d: boolean) => d ? '#86efac' : '#16a34a',        // hex-allowlist: syntax highlighting palette — no semantic token exists for code token colours; parsed as hex by getTokenColor() — green
+  comment: (d: boolean) => d ? '#6b7280' : '#9ca3af',       // hex-allowlist: syntax highlighting palette — no semantic token exists for code token colours; parsed as hex by getTokenColor() — gray
+  number: (d: boolean) => d ? '#fdba74' : '#ea580c',        // hex-allowlist: syntax highlighting palette — no semantic token exists for code token colours; parsed as hex by getTokenColor() — orange
+  operator: (d: boolean) => d ? '#a1a1aa' : '#71717a',      // hex-allowlist: syntax highlighting palette — no semantic token exists for code token colours; parsed as hex by getTokenColor() — muted
+  plain: (d: boolean) => d ? '#e4e4e7' : '#27272a',         // hex-allowlist: syntax highlighting palette — no semantic token exists for code token colours; parsed as hex by getTokenColor() — near fg
 };
 
 /** Get syntax color — full brightness for changed lines, dimmed for context */
@@ -132,9 +132,9 @@ function getTokenColor(tokenType: CodeTokenType, lineType: DiffLine['type'], isD
     // Dim context lines
     return isDark
       ? base.replace(/^#/, '') // keep color but add opacity via rgba
-        ? `rgba(${parseInt(base.slice(1, 3), 16)},${parseInt(base.slice(3, 5), 16)},${parseInt(base.slice(5, 7), 16)},0.45)`
+        ? `rgba(${parseInt(base.slice(1, 3), 16)},${parseInt(base.slice(3, 5), 16)},${parseInt(base.slice(5, 7), 16)},0.45)` // hex-allowlist: syntax highlighting palette — no semantic token exists for code token colours; parsed as hex by getTokenColor()
         : base
-      : `rgba(${parseInt(base.slice(1, 3), 16)},${parseInt(base.slice(3, 5), 16)},${parseInt(base.slice(5, 7), 16)},0.5)`;
+      : `rgba(${parseInt(base.slice(1, 3), 16)},${parseInt(base.slice(3, 5), 16)},${parseInt(base.slice(5, 7), 16)},0.5)`; // hex-allowlist: syntax highlighting palette — no semantic token exists for code token colours; parsed as hex by getTokenColor()
   }
   return base;
 }
@@ -142,25 +142,29 @@ function getTokenColor(tokenType: CodeTokenType, lineType: DiffLine['type'], isD
 // ─── Colors ─────────────────────────────────────────────────────────────────
 
 const colors = {
-  bg: (d: boolean) => (d ? '#121215' : '#FFFFFF'),
-  cardBg: (d: boolean) => (d ? '#1a1a1f' : '#F9F9FA'),
-  cardBorder: (d: boolean) => (d ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'),
-  fg: (d: boolean) => (d ? '#e4e4e7' : '#18181b'),
-  muted: (d: boolean) => (d ? '#71717a' : '#a1a1aa'),
-  mutedStrong: (d: boolean) => (d ? '#a1a1aa' : '#71717a'),
-  divider: (d: boolean) => (d ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
-  addedBg: (d: boolean) => (d ? 'rgba(34,197,94,0.10)' : 'rgba(34,197,94,0.07)'),
-  addedBorder: (d: boolean) => (d ? '#4ade80' : '#22c55e'),
-  addedText: (d: boolean) => (d ? '#bbf7d0' : '#15803d'),
-  addedSign: (d: boolean) => (d ? '#4ade80' : '#16a34a'),
-  removedBg: (d: boolean) => (d ? 'rgba(239,68,68,0.10)' : 'rgba(239,68,68,0.07)'),
-  removedBorder: (d: boolean) => (d ? '#f87171' : '#ef4444'),
-  removedText: (d: boolean) => (d ? '#fca5a5' : '#b91c1c'),
-  removedSign: (d: boolean) => (d ? '#f87171' : '#dc2626'),
-  unchangedText: (d: boolean) => (d ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'),
-  emerald: (d: boolean) => (d ? '#34d399' : '#059669'),
-  red: (d: boolean) => (d ? '#f87171' : '#dc2626'),
-  blue: (d: boolean) => (d ? '#60a5fa' : '#2563eb'),
+  bg: (d: boolean) => (d ? THEME.dark.popover : THEME.light.popover),
+  cardBg: (d: boolean) => (d ? THEME.dark.card : THEME.light.card),
+  cardBorder: (d: boolean) => (d ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06)),
+  fg: (d: boolean) => (d ? THEME.dark.foreground : THEME.light.foreground),
+  // Original literals had the light/dark branches swapped relative to their
+  // own lightness (dark was the darker gray, light the lighter one) —
+  // `mutedStrong` below is the same pair with the correct direction, so this
+  // is the inverse of that, matching the intended muted-foreground role.
+  muted: (d: boolean) => (d ? THEME.light.mutedForeground : THEME.dark.mutedForeground),
+  mutedStrong: (d: boolean) => (d ? THEME.dark.mutedForeground : THEME.light.mutedForeground),
+  divider: (d: boolean) => (d ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.05)),
+  addedBg: (d: boolean) => (d ? withAlpha(THEME.accent.green, 0.1) : withAlpha(THEME.accent.green, 0.07)),
+  addedBorder: (d: boolean) => THEME.accent.green,
+  addedText: (d: boolean) => THEME.accent.green,
+  addedSign: (d: boolean) => THEME.accent.green,
+  removedBg: (d: boolean) => (d ? withAlpha(THEME.dark.destructive, 0.1) : withAlpha(THEME.light.destructive, 0.07)),
+  removedBorder: (d: boolean) => (d ? THEME.dark.destructive : THEME.light.destructive),
+  removedText: (d: boolean) => (d ? THEME.dark.destructive : THEME.light.destructive),
+  removedSign: (d: boolean) => (d ? THEME.dark.destructive : THEME.light.destructive),
+  unchangedText: (d: boolean) => (d ? withAlpha(THEME.dark.foreground, 0.35) : withAlpha(THEME.light.foreground, 0.3)),
+  emerald: (d: boolean) => THEME.accent.green,
+  red: (d: boolean) => (d ? THEME.dark.destructive : THEME.light.destructive),
+  blue: (d: boolean) => THEME.accent.blue,
 };
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -225,9 +229,9 @@ function UnifiedDiffView({
             style={{
               flexDirection: 'row',
               backgroundColor: isRemoved
-                ? (isDark ? 'rgba(239,68,68,0.06)' : 'rgba(239,68,68,0.05)')
+                ? (isDark ? withAlpha(THEME.dark.destructive, 0.06) : withAlpha(THEME.light.destructive, 0.05))
                 : isAdded
-                ? (isDark ? 'rgba(34,197,94,0.06)' : 'rgba(34,197,94,0.05)')
+                ? (isDark ? withAlpha(THEME.accent.green, 0.06) : withAlpha(THEME.accent.green, 0.05))
                 : 'transparent',
             }}
           >
@@ -334,9 +338,9 @@ function SplitDiffView({
   const ext = getExtFromPath(filename);
 
   const getSideBg = (type: string) => {
-    if (type === 'removed') return isDark ? 'rgba(239,68,68,0.06)' : 'rgba(239,68,68,0.05)';
-    if (type === 'added') return isDark ? 'rgba(34,197,94,0.06)' : 'rgba(34,197,94,0.05)';
-    if (type === 'empty') return isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)';
+    if (type === 'removed') return isDark ? withAlpha(THEME.dark.destructive, 0.06) : withAlpha(THEME.light.destructive, 0.05);
+    if (type === 'added') return isDark ? withAlpha(THEME.accent.green, 0.06) : withAlpha(THEME.accent.green, 0.05);
+    if (type === 'empty') return isDark ? withAlpha(THEME.dark.foreground, 0.02) : withAlpha(THEME.light.foreground, 0.015);
     return 'transparent';
   };
 
@@ -452,21 +456,21 @@ function FileDiffCard({
           icon: FilePlus2,
           label: 'Added',
           color: colors.emerald(isDark),
-          badgeBg: isDark ? 'rgba(52,211,153,0.12)' : 'rgba(5,150,105,0.08)',
+          badgeBg: isDark ? withAlpha(THEME.accent.green, 0.12) : withAlpha(THEME.accent.green, 0.08),
         };
       case 'deleted':
         return {
           icon: FileX2,
           label: 'Deleted',
           color: colors.red(isDark),
-          badgeBg: isDark ? 'rgba(248,113,113,0.12)' : 'rgba(220,38,38,0.08)',
+          badgeBg: isDark ? withAlpha(THEME.dark.destructive, 0.12) : withAlpha(THEME.light.destructive, 0.08),
         };
       default:
         return {
           icon: FileEdit,
           label: 'Modified',
           color: colors.blue(isDark),
-          badgeBg: isDark ? 'rgba(96,165,250,0.12)' : 'rgba(37,99,235,0.08)',
+          badgeBg: isDark ? withAlpha(THEME.accent.blue, 0.12) : withAlpha(THEME.accent.blue, 0.08),
         };
     }
   }, [diff.status, isDark]);
@@ -485,12 +489,11 @@ function FileDiffCard({
       }}
     >
       {/* File header */}
-      <TouchableOpacity
-        activeOpacity={hasDiffContent ? 0.7 : 1}
+      <Button
+        variant="ghost"
         onPress={handlePress}
+        className={`h-auto w-auto flex-row items-center justify-start rounded-none active:bg-transparent ${hasDiffContent ? 'active:opacity-70' : 'active:opacity-100'}`}
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
           paddingHorizontal: 12,
           paddingVertical: 10,
           gap: 6,
@@ -544,7 +547,7 @@ function FileDiffCard({
             <Text style={{ fontSize: 10, fontFamily: monoFont, color: colors.red(isDark) }}>-{diff.deletions}</Text>
           )}
         </View>
-      </TouchableOpacity>
+      </Button>
 
       {/* Expanded diff content — fills available space */}
       {expanded && lineDiff && (
@@ -608,13 +611,15 @@ function SummaryHeader({
   const ViewModeButton = ({ mode, icon: Icon }: { mode: ViewMode; icon: typeof Rows3 }) => {
     const active = viewMode === mode;
     return (
-      <TouchableOpacity
+      <Button
+        variant="ghost"
         onPress={() => onViewModeChange(mode)}
+        className="h-auto w-auto active:bg-transparent active:opacity-70"
         style={{
           padding: 5,
           borderRadius: 6,
           backgroundColor: active
-            ? (isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)')
+            ? (isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08))
             : 'transparent',
         }}
       >
@@ -622,7 +627,7 @@ function SummaryHeader({
           size={14}
           color={active ? colors.fg(isDark) : colors.muted(isDark)}
         />
-      </TouchableOpacity>
+      </Button>
     );
   };
 
@@ -682,7 +687,7 @@ function SummaryHeader({
           flexDirection: 'row',
           alignItems: 'center',
           gap: 2,
-          backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+          backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04),
           borderRadius: 8,
           padding: 2,
           marginRight: 10,
@@ -693,20 +698,21 @@ function SummaryHeader({
       </View>
 
       {/* Close button */}
-      <TouchableOpacity
+      <Button
+        variant="ghost"
+        size="icon"
         onPress={onClose}
         hitSlop={12}
+        className="h-auto w-auto items-center justify-center p-0 active:bg-transparent active:opacity-70"
         style={{
           width: 28,
           height: 28,
           borderRadius: 14,
-          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-          alignItems: 'center',
-          justifyContent: 'center',
+          backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.05),
         }}
       >
         <X size={14} color={colors.muted(isDark)} />
-      </TouchableOpacity>
+      </Button>
     </View>
   );
 }
@@ -721,7 +727,7 @@ function EmptyState({ isDark }: { isDark: boolean }) {
           width: 56,
           height: 56,
           borderRadius: 28,
-          backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+          backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
           alignItems: 'center',
           justifyContent: 'center',
           marginBottom: 12,
@@ -754,6 +760,7 @@ interface ApiFileDiff {
 
 export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetProps>(
   function ViewChangesSheet({ sessionId }, ref) {
+    const sheetBg = useSheetBackground();
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
     const { sandboxUrl } = useSandboxContext();
@@ -803,12 +810,6 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
     // Use API diffs if available, else fall back to message extraction
     const diffs = (apiDiffs && apiDiffs.length > 0) ? apiDiffs : messageDiffs;
 
-    const renderBackdrop = useMemo(
-      () => (props: BottomSheetBackdropProps) => (
-        <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-      ),
-      [],
-    );
 
     const handleClose = useCallback(() => {
       (ref as React.RefObject<BottomSheetModal>)?.current?.dismiss();
@@ -833,18 +834,13 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
         enableOverDrag={false}
         enablePanDownToClose
         onChange={handleSheetChange}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        backdropComponent={renderBackdrop}
+        backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
       >
         {/* Header */}
         <SummaryHeader

@@ -15,15 +15,10 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, Pressable, ScrollView, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
   Users,
   UserPlus,
@@ -37,9 +32,12 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useProject,
   useProjectAccess,
@@ -63,6 +61,7 @@ import type {
   ProjectRole,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 const MONO = 'Menlo';
 const ROLES: ProjectRole[] = ['member', 'manager'];
@@ -111,14 +110,16 @@ function inheritedSummary(m: ProjectAccessMember): string | null {
 }
 
 function useColors(isDark: boolean) {
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   return {
-    fg: isDark ? '#F8F8F8' : '#121215',
-    muted: isDark ? '#9b9b9b' : '#6e6e6e',
-    border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-    inputBorder: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)',
-    inputBg: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-    cardBg: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
-    avatarBg: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    fg,
+    muted: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
+    destructive: isDark ? THEME.dark.destructive : THEME.light.destructive,
+    border: withAlpha(fg, 0.08),
+    inputBorder: withAlpha(fg, isDark ? 0.1 : 0.12),
+    inputBg: withAlpha(fg, isDark ? 0.05 : 0.03),
+    cardBg: withAlpha(fg, isDark ? 0.02 : 0.015),
+    avatarBg: withAlpha(fg, isDark ? 0.08 : 0.06),
   };
 }
 
@@ -172,9 +173,16 @@ function RolePills({ value, onChange, isDark, disabled }: { value: ProjectRole; 
       {ROLES.map((r) => {
         const active = value === r;
         return (
-          <TouchableOpacity key={r} onPress={() => { if (disabled) return; haptics.tap(); onChange(r); }} activeOpacity={0.8} style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 9999, borderWidth: 1, borderColor: active ? theme.primary : c.border, backgroundColor: active ? theme.primaryLight : 'transparent', opacity: disabled ? 0.5 : 1 }}>
+          <Button
+            key={r}
+            variant="ghost"
+            onPress={() => { if (disabled) return; haptics.tap(); onChange(r); }}
+            disabled={disabled}
+            className="flex-1 rounded-full"
+            style={{ borderWidth: 1, borderColor: active ? theme.primary : c.border, backgroundColor: active ? theme.primaryLight : 'transparent', opacity: disabled ? 0.5 : 1 }}
+          >
             <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: active ? c.fg : c.muted }}>{ROLE_DESC[r].label}</Text>
-          </TouchableOpacity>
+          </Button>
         );
       })}
     </View>
@@ -225,10 +233,10 @@ function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean 
         />
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 14, marginBottom: 8 }}>Role</Text>
         <RolePills value={role} onChange={setRole} isDark={isDark} disabled={invite.isPending} />
-        <TouchableOpacity onPress={submit} disabled={!canSubmit} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, backgroundColor: theme.primary, marginTop: 14, opacity: canSubmit ? 1 : 0.5 }}>
-          {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <UserPlus size={15} color={theme.primaryForeground} />}
+        <Button onPress={submit} disabled={!canSubmit} className="mt-3.5 h-[46px] flex-row items-center justify-center gap-2 rounded-full" style={{ backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
+          {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Icon as={UserPlus} size={15} color={theme.primaryForeground} />}
           <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Invite</Text>
-        </TouchableOpacity>
+        </Button>
       </View>
     </View>
   );
@@ -277,8 +285,8 @@ function PendingInvitesCard({ projectId, isDark }: { projectId: string; isDark: 
             const busy = busyId === inv.invite_id;
             return (
               <View key={inv.invite_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center' }}>
-                  <Mail size={16} color="#d97706" />
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: withAlpha(THEME.accent.orange, 0.14), alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon as={Mail} size={16} color={THEME.accent.orange} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -286,10 +294,10 @@ function PendingInvitesCard({ projectId, isDark }: { projectId: string; isDark: 
                     <RoleBadge role={inv.project_role} isDark={isDark} />
                   </View>
                   {inv.invite_expired ? (
-                    <Text style={{ fontSize: 11.5, color: '#d97706', marginTop: 3 }}>Invite link expired — ask them to request a fresh one</Text>
+                    <Text style={{ fontSize: 11.5, color: THEME.accent.orange, marginTop: 3 }}>Invite link expired — ask them to request a fresh one</Text>
                   ) : (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
-                      <Clock size={11} color={c.muted} />
+                      <Icon as={Clock} size={11} color={c.muted} />
                       <Text style={{ fontSize: 11.5, color: c.muted }}>Link expires {formatDate(inv.invite_expires_at)}</Text>
                     </View>
                   )}
@@ -298,12 +306,12 @@ function PendingInvitesCard({ projectId, isDark }: { projectId: string; isDark: 
                   <ActivityIndicator size="small" color={c.muted} />
                 ) : (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity onPress={() => onResend(inv.invite_id)} hitSlop={6} style={{ width: 34, height: 34, borderRadius: 9999, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-                      <RefreshCw size={14} color={c.muted} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => onRevoke(inv.invite_id, inv.email)} hitSlop={6} style={{ width: 34, height: 34, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)', alignItems: 'center', justifyContent: 'center' }}>
-                      <X size={14} color="#ef4444" />
-                    </TouchableOpacity>
+                    <Button variant="outline" size="icon" className="h-[34px] w-[34px] rounded-full" onPress={() => onResend(inv.invite_id)} hitSlop={6} style={{ borderColor: c.border }}>
+                      <Icon as={RefreshCw} size={14} color={c.muted} />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-[34px] w-[34px] rounded-full" onPress={() => onRevoke(inv.invite_id, inv.email)} hitSlop={6} style={{ borderColor: withAlpha(c.destructive, 0.35) }}>
+                      <Icon as={X} size={14} color={c.destructive} />
+                    </Button>
                   </View>
                 )}
               </View>
@@ -335,10 +343,10 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
         <View style={{ paddingVertical: 24, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
       ) : accessQuery.isError ? (
         <View style={{ paddingVertical: 12, gap: 10 }}>
-          <Text style={{ fontSize: 13, color: '#ef4444' }}>{(accessQuery.error as Error)?.message || 'Failed to load access'}</Text>
-          <TouchableOpacity onPress={() => accessQuery.refetch()} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}>
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text>
-          </TouchableOpacity>
+          <Text style={{ fontSize: 13, color: c.destructive }}>{(accessQuery.error as Error)?.message || 'Failed to load access'}</Text>
+          <Button variant="outline" size="sm" className="self-start rounded-full" onPress={() => accessQuery.refetch()} style={{ borderColor: c.border }}>
+            <Text style={{ fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text>
+          </Button>
         </View>
       ) : (
         <View style={{ marginTop: 8 }}>
@@ -355,12 +363,14 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
                   ? `Granted ${formatDate(m.granted_at)}`
                   : 'No project access';
             return (
-              <TouchableOpacity
+              <Pressable
                 key={m.user_id}
                 disabled={!tappable}
-                activeOpacity={0.6}
                 onPress={() => { haptics.tap(); onSelectMember(m); }}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}
+                style={({ pressed }) => [
+                  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border },
+                  pressed && tappable && { opacity: 0.6 },
+                ]}
               >
                 <Avatar email={m.email} isDark={isDark} />
                 <View style={{ flex: 1, minWidth: 0 }}>
@@ -369,7 +379,7 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
                     <RoleBadge role={m.account_role} isDark={isDark} />
                     {(m.group_sources ?? []).map((g) => (
                       <View key={g.group_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, borderWidth: 1, borderColor: c.border }}>
-                        <Users size={10} color={c.muted} />
+                        <Icon as={Users} size={10} color={c.muted} />
                         <Text style={{ fontSize: 10.5, color: c.muted }}>{g.group_name}</Text>
                       </View>
                     ))}
@@ -381,10 +391,10 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     {effRole && <RoleBadge role={effRole} isDark={isDark} withShield={inheritedOnly} />}
-                    {tappable && <ChevronRight size={16} color={c.muted} />}
+                    {tappable && <Icon as={ChevronRight} size={16} color={c.muted} />}
                   </View>
                 )}
-              </TouchableOpacity>
+              </Pressable>
             );
           })}
         </View>
@@ -409,10 +419,10 @@ function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, on
         count={grants.length}
         isDark={isDark}
         action={canManage ? (
-          <TouchableOpacity onPress={() => { haptics.tap(); onAttach(); }} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 34, borderRadius: 9999, borderWidth: 1, borderColor: theme.primary }}>
-            <UserPlus size={13} color={theme.primary} />
+          <Button variant="outline" size="sm" className="h-[34px] flex-row items-center gap-1.5 rounded-full" onPress={() => { haptics.tap(); onAttach(); }} style={{ borderColor: theme.primary }}>
+            <Icon as={UserPlus} size={13} color={theme.primary} />
             <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primary }}>Attach</Text>
-          </TouchableOpacity>
+          </Button>
         ) : undefined}
       />
       {grantsQuery.isLoading ? (
@@ -422,15 +432,17 @@ function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, on
       ) : (
         <View style={{ marginTop: 8 }}>
           {grants.map((g, i) => (
-            <TouchableOpacity
+            <Pressable
               key={g.group_id}
               disabled={!canManage}
-              activeOpacity={0.6}
               onPress={() => { haptics.tap(); onSelectGrant(g); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}
+              style={({ pressed }) => [
+                { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border },
+                pressed && canManage && { opacity: 0.6 },
+              ]}
             >
               <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}>
-                <Users size={16} color={c.muted} />
+                <Icon as={Users} size={16} color={c.muted} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.group_name}</Text>
@@ -440,8 +452,8 @@ function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, on
                 </Text>
               </View>
               <RoleBadge role={g.role} isDark={isDark} />
-              {canManage && <ChevronRight size={16} color={c.muted} />}
-            </TouchableOpacity>
+              {canManage && <Icon as={ChevronRight} size={16} color={c.muted} />}
+            </Pressable>
           ))}
         </View>
       )}
@@ -453,14 +465,14 @@ function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, on
 
 function SheetHeader({ title, onClose, isDark, leading }: { title: string; onClose: () => void; isDark: boolean; leading?: React.ReactNode }) {
   const c = useColors(isDark);
-  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const closeBg = withAlpha(c.fg, isDark ? 0.05 : 0.04);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
       {leading}
       <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{title}</Text>
-      <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
-        <X size={17} color={c.muted} />
-      </TouchableOpacity>
+      <Button variant="ghost" size="icon" className="h-[30px] w-[30px] rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ backgroundColor: closeBg }}>
+        <Icon as={X} size={17} color={c.muted} />
+      </Button>
     </View>
   );
 }
@@ -469,7 +481,7 @@ function RoleRadioRow({ role, selected, onPress, isDark }: { role: ProjectRole; 
   const c = useColors(isDark);
   const theme = useThemeColors();
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13 }}>
+    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13 }}>
       <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: selected ? theme.primary : c.inputBorder, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
         {selected && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: theme.primary }} />}
       </View>
@@ -477,7 +489,7 @@ function RoleRadioRow({ role, selected, onPress, isDark }: { role: ProjectRole; 
         <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>{ROLE_DESC[role].label}</Text>
         <Text style={{ fontSize: 12, lineHeight: 17, color: c.muted, marginTop: 2 }}>{ROLE_DESC[role].blurb}</Text>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -540,19 +552,19 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
             {(member.group_sources ?? []).map((g) => (
               <View key={g.group_id} style={{ marginBottom: 14, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <Users size={14} color={c.muted} />
+                  <Icon as={Users} size={14} color={c.muted} />
                   <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>{g.group_name}</Text>
                   <RoleBadge role={g.role} isDark={isDark} />
                 </View>
-                <TouchableOpacity onPress={() => doDetach(g.group_id, g.group_name)} disabled={busy} activeOpacity={0.7} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
+                <Pressable onPress={() => doDetach(g.group_id, g.group_name)} disabled={busy} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
                   <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Detach from this project</Text>
                   <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>Removes access for everyone in this group, here only</Text>
-                </TouchableOpacity>
+                </Pressable>
                 {accountId && (
-                  <TouchableOpacity onPress={() => doRemoveFromGroup(g.group_id, g.group_name)} disabled={busy} activeOpacity={0.7} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
-                    <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove from group</Text>
+                  <Pressable onPress={() => doRemoveFromGroup(g.group_id, g.group_name)} disabled={busy} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
+                    <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.destructive }}>Remove from group</Text>
                     <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>Affects every project this group can access</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 )}
               </View>
             ))}
@@ -567,10 +579,10 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
                 </View>
               ))}
             </View>
-            <TouchableOpacity onPress={doRevoke} disabled={busy} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', marginTop: 16 }}>
-              {revoke.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Revoke access</Text>
-            </TouchableOpacity>
+            <Button variant="outline" onPress={doRevoke} disabled={busy} className="mt-4 h-[46px] flex-row items-center justify-center gap-2 rounded-full" style={{ borderColor: withAlpha(c.destructive, 0.4) }}>
+              {revoke.isPending ? <ActivityIndicator size="small" color={c.destructive} /> : <Icon as={Trash2} size={15} color={c.destructive} />}
+              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.destructive }}>Revoke access</Text>
+            </Button>
           </>
         )}
       </BottomSheetScrollView>
@@ -600,7 +612,7 @@ function AttachGroupSheet({ projectId, accountId, attachedIds, onClose, isDark }
 
   return (
     <View style={{ flex: 1 }}>
-      <SheetHeader title="Attach a group" onClose={onClose} isDark={isDark} leading={<Users size={18} color={c.fg} />} />
+      <SheetHeader title="Attach a group" onClose={onClose} isDark={isDark} leading={<Icon as={Users} size={18} color={c.fg} />} />
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }} showsVerticalScrollIndicator={false}>
         {groupsQuery.isLoading ? (
           <View style={{ paddingVertical: 24, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
@@ -615,11 +627,11 @@ function AttachGroupSheet({ projectId, accountId, attachedIds, onClose, isDark }
               {available.map((g, i) => {
                 const sel = groupId === g.group_id;
                 return (
-                  <TouchableOpacity key={g.group_id} onPress={() => { haptics.tap(); setGroupId(g.group_id); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border, backgroundColor: sel ? theme.primaryLight : 'transparent' }}>
-                    <Users size={15} color={sel ? theme.primary : c.muted} />
+                  <Pressable key={g.group_id} onPress={() => { haptics.tap(); setGroupId(g.group_id); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border, backgroundColor: sel ? theme.primaryLight : 'transparent' }}>
+                    <Icon as={Users} size={15} color={sel ? theme.primary : c.muted} />
                     <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.name}</Text>
-                    {sel && <Check size={16} color={theme.primary} />}
-                  </TouchableOpacity>
+                    {sel && <Icon as={Check} size={16} color={theme.primary} />}
+                  </Pressable>
                 );
               })}
             </View>
@@ -630,10 +642,10 @@ function AttachGroupSheet({ projectId, accountId, attachedIds, onClose, isDark }
       </BottomSheetScrollView>
       {available.length > 0 && (
         <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
-          <TouchableOpacity onPress={submit} disabled={!canSubmit} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 48, borderRadius: 9999, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
+          <Button onPress={submit} disabled={!canSubmit} className="h-12 flex-row items-center justify-center gap-2 rounded-full" style={{ backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
             {attach.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
             <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Attach group</Text>
-          </TouchableOpacity>
+          </Button>
         </View>
       )}
     </View>
@@ -667,7 +679,7 @@ function GrantSheet({ projectId, grant, onClose, isDark }: { projectId: string; 
 
   return (
     <View style={{ flex: 1 }}>
-      <SheetHeader title={grant.group_name} onClose={onClose} isDark={isDark} leading={<View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}><Users size={16} color={c.muted} /></View>} />
+      <SheetHeader title={grant.group_name} onClose={onClose} isDark={isDark} leading={<View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}><Icon as={Users} size={16} color={c.muted} /></View>} />
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }} showsVerticalScrollIndicator={false}>
         <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Role for the group</Text>
         <View>
@@ -677,10 +689,10 @@ function GrantSheet({ projectId, grant, onClose, isDark }: { projectId: string; 
             </View>
           ))}
         </View>
-        <TouchableOpacity onPress={doDetach} disabled={busy} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', marginTop: 16 }}>
-          {detach.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Detach group</Text>
-        </TouchableOpacity>
+        <Button variant="outline" onPress={doDetach} disabled={busy} className="mt-4 h-[46px] flex-row items-center justify-center gap-2 rounded-full" style={{ borderColor: withAlpha(c.destructive, 0.4) }}>
+          {detach.isPending ? <ActivityIndicator size="small" color={c.destructive} /> : <Icon as={Trash2} size={15} color={c.destructive} />}
+          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.destructive }}>Detach group</Text>
+        </Button>
       </BottomSheetScrollView>
     </View>
   );
@@ -702,6 +714,7 @@ export function MembersNavPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: MembersNavPageProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -720,7 +733,7 @@ export function MembersNavPage({
   useEffect(() => { if (sheet) sheetRef.current?.present(); }, [sheet]);
 
   const attachedIds = useMemo(() => new Set((grantsQuery.data?.grants ?? []).map((g) => g.group_id)), [grantsQuery.data]);
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
@@ -764,11 +777,11 @@ export function MembersNavPage({
         snapPoints={sheet?.kind === 'grant' ? ['62%'] : sheet?.kind === 'member' ? ['78%'] : ['82%']}
         enableDynamicSizing={false}
         onDismiss={() => setSheet(null)}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         {sheet?.kind === 'member' ? (
           <MemberSheet projectId={projectId} accountId={accountId} member={sheet.member} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />

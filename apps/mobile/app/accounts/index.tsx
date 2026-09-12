@@ -5,7 +5,7 @@
  */
 
 import * as React from 'react';
-import { View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +18,7 @@ import { useAuthContext } from '@/contexts';
 import { useAccounts } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { NewAccountSheet } from '@/components/accounts/NewAccountSheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 function roleLabel(account: { account_role?: string }): string {
   const r = account.account_role;
@@ -35,11 +36,11 @@ export default function AccountsListScreen() {
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [showNewAccount, setShowNewAccount] = React.useState(false);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const avatarBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const bg = isDark ? '#0D0D0D' : '#FFFFFF';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const avatarBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
+  const bg = isDark ? THEME.dark.background : THEME.light.background;
 
   const accounts = accountsQuery.data ?? [];
 
@@ -53,19 +54,19 @@ export default function AccountsListScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 10 }}>
-        <TouchableOpacity onPress={() => { haptics.tap(); router.back(); }} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 10 }}>
+        <Pressable onPress={() => { haptics.tap(); router.back(); }} hitSlop={10} className="active:opacity-70" style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 10 }}>
           <ChevronLeft size={18} color={muted} />
           <Text style={{ fontSize: 13.5, color: muted }}>Back</Text>
-        </TouchableOpacity>
+        </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 24, fontFamily: 'Roobert-Semibold', color: fg }}>Accounts</Text>
             <Text style={{ fontSize: 13, color: muted, marginTop: 2 }}>Accounts you belong to.</Text>
           </View>
-          <TouchableOpacity onPress={handleNewAccount} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 12, paddingRight: 14, height: 36, borderRadius: 9999, backgroundColor: theme.primary }}>
+          <Pressable onPress={handleNewAccount} className="active:opacity-85" style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 12, paddingRight: 14, height: 36, borderRadius: 9999, backgroundColor: theme.primary }}>
             <Plus size={15} color={theme.primaryForeground} />
             <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New account</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
 
@@ -79,10 +80,10 @@ export default function AccountsListScreen() {
             {accounts.map((a, i) => {
               const active = a.account_id === selectedAccountId;
               return (
-                <TouchableOpacity
+                <Pressable
                   key={a.account_id}
                   onPress={() => { haptics.tap(); router.push(`/accounts/${a.account_id}`); }}
-                  activeOpacity={0.6}
+                  className="active:opacity-60"
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}
                 >
                   <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: avatarBg, alignItems: 'center', justifyContent: 'center' }}>
@@ -101,7 +102,7 @@ export default function AccountsListScreen() {
                     <Text style={{ fontSize: 12, color: muted, marginTop: 1 }}>{roleLabel(a)}</Text>
                   </View>
                   <ChevronRight size={17} color={muted} />
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>

@@ -150,7 +150,10 @@ export function PromptExamples({
   return (
     <View className={className}>
       {showTitle && (
-        <Text className="text-xs font-roobert text-muted-foreground/60 mb-2">
+        <Text
+          className="font-roobert text-muted-foreground/60 mb-2"
+          style={{ fontSize: 12, lineHeight: 16 }}
+        >
           {title}
         </Text>
       )}

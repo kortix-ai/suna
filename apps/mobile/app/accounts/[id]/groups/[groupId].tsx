@@ -5,19 +5,15 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { ChevronLeft, Users, UserPlus, Trash2, Check, X, FolderGit2 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { useAuthContext } from '@/contexts';
 import {
@@ -30,6 +26,8 @@ import {
 import { listAccountMembers, addGroupMembers } from '@/lib/accounts/accounts-client';
 import { detachGroupFromProject, removeGroupMember } from '@/lib/projects/projects-client';
 import { accountColors, InitialsAvatar, Pill, PrimaryButton } from '@/components/accounts/account-shared';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
@@ -38,6 +36,7 @@ function formatDate(input: string | null | undefined) {
 }
 
 export default function GroupDetailScreen() {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -93,7 +92,8 @@ export default function GroupDetailScreen() {
   const candidates = useMemo(() => (accountMembersQuery.data ?? []).filter((m) => !memberIds.has(m.user_id)), [accountMembersQuery.data, memberIds]);
 
   const dirty = !!group && (name.trim() !== group.name || (description.trim() || '') !== (group.description ?? ''));
-  const bg = isDark ? '#0D0D0D' : '#FFFFFF';
+  const bg = isDark ? THEME.dark.background : THEME.light.background;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
   const sectionTitle = { fontSize: 15.5, fontFamily: 'Roobert-Medium' as const, color: c.fg };
   const divider = { height: 1, backgroundColor: c.border, marginVertical: 22 } as const;
@@ -114,10 +114,10 @@ export default function GroupDetailScreen() {
     <View style={{ flex: 1, backgroundColor: bg }}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={() => { haptics.tap(); router.back(); }} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 8 }}>
+        <Pressable onPress={() => { haptics.tap(); router.back(); }} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 8 }}>
           <ChevronLeft size={18} color={c.muted} />
           <Text style={{ fontSize: 13.5, color: c.muted }}>Groups</Text>
-        </TouchableOpacity>
+        </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 22, fontFamily: 'Roobert-Semibold', color: c.fg }} numberOfLines={1}>{group?.name ?? 'Group'}</Text>
           {group && <Pill label={group.source} isDark={isDark} />}
@@ -128,8 +128,8 @@ export default function GroupDetailScreen() {
         <View style={{ paddingVertical: 60, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
       ) : groupQuery.isError ? (
         <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-          <Text style={{ fontSize: 14, color: '#ef4444', textAlign: 'center' }}>{(groupQuery.error as Error)?.message || 'Failed to load group'}</Text>
-          <TouchableOpacity onPress={() => { haptics.tap(); groupQuery.refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
+          <Text style={{ fontSize: 14, color: destructiveColor, textAlign: 'center' }}>{(groupQuery.error as Error)?.message || 'Failed to load group'}</Text>
+          <Pressable onPress={() => { haptics.tap(); groupQuery.refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></Pressable>
         </View>
       ) : (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -141,10 +141,10 @@ export default function GroupDetailScreen() {
           <TextInput value={description} onChangeText={setDescription} maxLength={256} placeholder="Optional" placeholderTextColor={c.muted} style={input} />
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
             <Text style={{ flex: 1, fontSize: 11.5, color: c.muted }}>Created {formatDate(group?.created_at)}</Text>
-            <TouchableOpacity onPress={() => { if (dirty) { haptics.tap(); update.mutate(); } }} disabled={!dirty || update.isPending} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}>
+            <Pressable onPress={() => { if (dirty) { haptics.tap(); update.mutate(); } }} disabled={!dirty || update.isPending} className="active:opacity-85" style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}>
               {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           <View style={divider} />
@@ -155,10 +155,10 @@ export default function GroupDetailScreen() {
             <Text style={sectionTitle}>Members</Text>
             <View style={countBadge}><Text style={countText}>{members.length}</Text></View>
             <View style={{ flex: 1 }} />
-            <TouchableOpacity onPress={() => { haptics.tap(); addRef.current?.present(); }} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: theme.primary }}>
+            <Pressable onPress={() => { haptics.tap(); addRef.current?.present(); }} className="active:opacity-85" style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: theme.primary }}>
               <UserPlus size={13} color={theme.primary} />
               <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primary }}>Add</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
           <View style={{ marginTop: 6 }}>
             {membersQuery.isLoading ? (
@@ -169,7 +169,7 @@ export default function GroupDetailScreen() {
               <View key={m.user_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                 <InitialsAvatar label={emailByUserId.get(m.user_id) ?? m.user_id} isDark={isDark} size={32} />
                 <Text style={{ flex: 1, fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{emailByUserId.get(m.user_id) ?? m.user_id}</Text>
-                <TouchableOpacity onPress={() => { haptics.tap(); confirmRemove(m.user_id); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
+                <Pressable onPress={() => { haptics.tap(); confirmRemove(m.user_id); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color={destructiveColor} /></Pressable>
               </View>
             ))}
           </View>
@@ -195,7 +195,7 @@ export default function GroupDetailScreen() {
                   <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>Attached {formatDate(g.created_at)}</Text>
                 </View>
                 <Pill label={g.role.charAt(0).toUpperCase() + g.role.slice(1)} isDark={isDark} />
-                <TouchableOpacity onPress={() => { haptics.tap(); confirmDetach(g.project_id, g.project_name); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><X size={15} color="#ef4444" /></TouchableOpacity>
+                <Pressable onPress={() => { haptics.tap(); confirmDetach(g.project_id, g.project_name); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><X size={15} color={destructiveColor} /></Pressable>
               </View>
             ))}
           </View>
@@ -203,10 +203,10 @@ export default function GroupDetailScreen() {
           <View style={divider} />
 
           {/* ── Danger ── */}
-          <TouchableOpacity onPress={() => { haptics.tap(); confirmDelete(); }} disabled={del.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
-            {del.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete group</Text>
-          </TouchableOpacity>
+          <Pressable onPress={() => { haptics.tap(); confirmDelete(); }} disabled={del.isPending} className="active:opacity-70" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: withAlpha(destructiveColor, 0.4) }}>
+            {del.isPending ? <ActivityIndicator size="small" color={destructiveColor} /> : <Trash2 size={15} color={destructiveColor} />}
+            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: destructiveColor }}>Delete group</Text>
+          </Pressable>
           <Text style={{ fontSize: 11.5, color: c.muted, textAlign: 'center', marginTop: 8 }}>Removes the group and any policies attached to it.</Text>
         </ScrollView>
       )}
@@ -215,9 +215,9 @@ export default function GroupDetailScreen() {
         ref={addRef}
         snapPoints={['72%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
+        backdropComponent={SheetBackdrop}
       >
         <AddMembersSheet
           candidates={candidates.map((m) => ({ user_id: m.user_id, email: m.email }))}
@@ -246,7 +246,7 @@ function AddMembersSheet({ candidates, onAdd, onClose, isDark }: { candidates: {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
         <UserPlus size={18} color={c.fg} />
         <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }}>Add members</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></TouchableOpacity>
+        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></Pressable>
       </View>
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
         {candidates.length === 0 ? (
@@ -256,11 +256,11 @@ function AddMembersSheet({ candidates, onAdd, onClose, isDark }: { candidates: {
             {candidates.map((m, i) => {
               const sel = selected.has(m.user_id);
               return (
-                <TouchableOpacity key={m.user_id} onPress={() => { haptics.tap(); toggle(m.user_id); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border, backgroundColor: sel ? theme.primaryLight : 'transparent' }}>
+                <Pressable key={m.user_id} onPress={() => { haptics.tap(); toggle(m.user_id); }} className="active:opacity-70" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border, backgroundColor: sel ? theme.primaryLight : 'transparent' }}>
                   <InitialsAvatar label={m.email} isDark={isDark} size={30} />
                   <Text style={{ flex: 1, fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{m.email ?? m.user_id}</Text>
                   {sel && <Check size={17} color={theme.primary} />}
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>

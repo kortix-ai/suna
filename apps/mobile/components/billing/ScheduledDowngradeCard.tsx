@@ -72,15 +72,15 @@ export function ScheduledDowngradeCard({
   if (variant === 'compact') {
   return (
     <>
-        <View className="flex-row items-center gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
-          <Icon as={CalendarClock} size={16} className="text-amber-500" strokeWidth={2} />
+        <View className="flex-row items-center gap-3 p-3 rounded-xl border border-kortix-orange/20 bg-kortix-orange/5">
+          <Icon as={CalendarClock} size={16} className="text-kortix-orange" strokeWidth={2} />
           <View className="flex-1 flex-row items-center gap-2 flex-wrap">
             <PricingTierBadge planName={currentTierName} size="sm" />
             <Icon as={ArrowRight} size={12} className="text-muted-foreground" strokeWidth={2} />
               <View className="opacity-60">
               <PricingTierBadge planName={targetTierName} size="sm" />
               </View>
-            <Text className="text-xs text-muted-foreground">
+            <Text className="text-muted-foreground" style={{ fontSize: 12, lineHeight: 16 }}>
               on {formatDate(effectiveDate)}
             </Text>
             </View>
@@ -88,8 +88,11 @@ export function ScheduledDowngradeCard({
               onPress={() => setShowConfirmDialog(true)}
             className="h-7 px-2 rounded-lg flex-row items-center"
             >
-            <Icon as={Undo2} size={12} className={isDark ? 'text-amber-400' : 'text-amber-600'} strokeWidth={2} />
-            <Text className={`text-xs font-roobert-medium ml-1 ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+            <Icon as={Undo2} size={12} className="text-kortix-orange" strokeWidth={2} />
+            <Text
+              className="font-roobert-medium ml-1 text-kortix-orange"
+              style={{ fontSize: 12, lineHeight: 16 }}
+            >
               Undo
             </Text>
             </Pressable>
@@ -111,17 +114,20 @@ export function ScheduledDowngradeCard({
   // Default variant - matches frontend exactly
   return (
     <>
-      <View className="border border-amber-500/20 bg-amber-500/5 rounded-[18px] p-4">
+      <View className="border border-kortix-orange/20 bg-kortix-orange/5 rounded-[18px] p-4">
         {/* Header */}
         <View className="flex-row items-start justify-between gap-3 mb-4">
           <View className="flex-row items-center gap-2">
-            <Icon as={CalendarClock} size={20} className="text-amber-500" strokeWidth={2} />
+            <Icon as={CalendarClock} size={20} className="text-kortix-orange" strokeWidth={2} />
             <Text className="text-sm font-roobert-semibold text-foreground">
               Scheduled Plan Change
             </Text>
           </View>
-          <View className="px-2 py-0.5 rounded-full bg-amber-500/10">
-            <Text className={`text-xs font-roobert-medium ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+          <View className="px-2 py-0.5 rounded-full bg-kortix-orange/10">
+            <Text
+              className="font-roobert-medium text-kortix-orange"
+              style={{ fontSize: 12, lineHeight: 16 }}
+            >
               {daysRemaining === 0 ? 'Today' : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`}
             </Text>
           </View>
@@ -146,12 +152,13 @@ export function ScheduledDowngradeCard({
           </View>
           <Pressable
             onPress={() => setShowConfirmDialog(true)}
-            className={`h-8 px-3 rounded-xl flex-row items-center border ${
-              isDark ? 'border-amber-500/30' : 'border-amber-500/30'
-            }`}
+            className="h-8 px-3 rounded-xl flex-row items-center border border-kortix-orange/30"
           >
-            <Icon as={Undo2} size={14} className={isDark ? 'text-amber-400' : 'text-amber-600'} strokeWidth={2} />
-            <Text className={`text-xs font-roobert-medium ml-1.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+            <Icon as={Undo2} size={14} className="text-kortix-orange" strokeWidth={2} />
+            <Text
+              className="font-roobert-medium ml-1.5 text-kortix-orange"
+              style={{ fontSize: 12, lineHeight: 16 }}
+            >
               Keep Current Plan
             </Text>
           </Pressable>

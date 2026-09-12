@@ -2,16 +2,16 @@ import * as React from 'react';
 import { View, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import * as Haptics from 'expo-haptics';
 import { UsageContent } from './UsageContent';
 import { useLanguage } from '@/contexts';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { log } from '@/lib/logger';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 interface UsageDrawerProps {
   visible: boolean;
@@ -21,9 +21,10 @@ interface UsageDrawerProps {
 }
 
 export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }: UsageDrawerProps) {
+  const sheetBg = useSheetBackground();
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const isOpeningRef = React.useRef(false);
-  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapPoints = React.useMemo(() => ['85%'], []);
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
@@ -61,18 +62,6 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
     onThreadPress?.(threadId, projectId);
   }, [onClose, onThreadPress]);
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-        pressBehavior="close"
-      />
-    ),
-    []
-  );
 
   const handleSheetChange = React.useCallback((index: number) => {
     log.log('📳 [UsageDrawer] Sheet index changed:', index);
@@ -95,18 +84,11 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
       snapPoints={snapPoints}
       enablePanDownToClose
       onChange={handleSheetChange}
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       backgroundStyle={{
-        backgroundColor: getSheetBg(colorScheme === 'dark')
+        backgroundColor: sheetBg
       }}
-      handleIndicatorStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-        marginTop: 8,
-        marginBottom: 0
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
       enableDynamicSizing={false}
       style={{
         borderTopLeftRadius: 24,
@@ -121,9 +103,11 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
         showsVerticalScrollIndicator={false}
       >
         <View className="px-6 pt-4 pb-6 flex-row items-center gap-3">
-          <BottomSheetTouchable
+          <Button
+            variant="ghost"
+            size="icon"
             onPress={handleClose}
-            style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16 }}
+            className="h-8 w-8 rounded-full"
           >
             <Icon
               as={X}
@@ -131,7 +115,7 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
               className="text-foreground"
               strokeWidth={2}
             />
-          </BottomSheetTouchable>
+          </Button>
 
           <Text className="text-xl font-roobert-medium text-foreground tracking-tight">
             {t('usage.title')}

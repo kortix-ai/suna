@@ -11,12 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -32,22 +27,24 @@ import {
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
-import { KortixLogo } from '@/components/ui/KortixLogo';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
+import { useThemeColors } from '@/lib/theme-colors';
 import type { ChangelogEntry } from '@/lib/platform/client';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 type DialogStep = 'confirm' | 'updating' | 'done' | 'failed';
 
 // ── Change type config ───────────────────────────────────────────────────
 
 const CHANGE_TYPE_CONFIG: Record<string, { icon: typeof Sparkles; color: string }> = {
-  feature:     { icon: Sparkles,      color: '#10B981' },
-  fix:         { icon: Bug,           color: '#F87171' },
-  improvement: { icon: Zap,           color: '#60A5FA' },
-  breaking:    { icon: AlertTriangle, color: '#F59E0B' },
-  upstream:    { icon: RefreshCw,     color: '#A78BFA' },
-  security:    { icon: Shield,        color: '#FB7185' },
-  deprecation: { icon: AlertTriangle, color: '#FB923C' },
+  feature:     { icon: Sparkles,      color: THEME.accent.green },
+  fix:         { icon: Bug,           color: THEME.accent.red },
+  improvement: { icon: Zap,           color: THEME.accent.blue },
+  breaking:    { icon: AlertTriangle, color: THEME.accent.orange },
+  upstream:    { icon: RefreshCw,     color: THEME.accent.purple },
+  security:    { icon: Shield,        color: THEME.accent.red },
+  deprecation: { icon: AlertTriangle, color: THEME.accent.orange },
 };
 
 // ── Phase labels ─────────────────────────────────────────────────────────
@@ -105,6 +102,7 @@ export function UpdateDialog({
   onConfirm,
   onRetry,
 }: UpdateDialogProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -143,18 +141,6 @@ export function UpdateDialog({
     dismissingRef.current = false;
   }, [onClose, isConfirm]);
 
-  const renderBackdrop = useMemo(
-    () => (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.5}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   const isFailed = phase === 'failed';
   const isComplete = phase === 'complete';
@@ -208,7 +194,7 @@ export function UpdateDialog({
   const visibleChanges = expanded ? changes : changes.slice(0, 4);
   const hasMore = changes.length > 4 && !expanded;
 
-  const bgColor = isDark ? '#0D0D0D' : '#FFFFFF';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
 
   return (
     <>
@@ -220,25 +206,20 @@ export function UpdateDialog({
         enablePanDownToClose
         enableOverDrag={false}
         onDismiss={handleSheetDismiss}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
       >
         <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
           <View>
             {/* Header */}
             <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 }}>
               <View className="flex-row items-center" style={{ gap: 8 }}>
-                <Icon as={ArrowDownToLine} size={18} style={{ color: themeColors.primary }} strokeWidth={2.5} />
+                <Icon as={ArrowDownToLine} size={18} color={themeColors.primary} strokeWidth={2.5} />
                 <Text className="font-roobert-semibold text-[17px] text-foreground">
                   Update to {formatVersion(latestVersion)}
                 </Text>
@@ -258,8 +239,8 @@ export function UpdateDialog({
                   marginHorizontal: 20,
                   borderRadius: 12,
                   borderWidth: 1,
-                  borderColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.06)',
-                  backgroundColor: isDark ? 'rgba(248,248,248,0.02)' : 'rgba(18,18,21,0.015)',
+                  borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06),
+                  backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.02) : withAlpha(THEME.light.foreground, 0.015),
                   overflow: 'hidden',
                 }}
               >
@@ -273,7 +254,7 @@ export function UpdateDialog({
                     return (
                       <View key={i} className="flex-row items-start" style={{ paddingVertical: 3, gap: 8 }}>
                         <View style={{ marginTop: 2 }}>
-                          <Icon as={config.icon} size={13} style={{ color: config.color }} strokeWidth={2.2} />
+                          <Icon as={config.icon} size={13} color={config.color} strokeWidth={2.2} />
                         </View>
                         <Text className="flex-1 font-roobert text-[13px] text-foreground/80" style={{ lineHeight: 18 }}>
                           {change.text}
@@ -287,7 +268,7 @@ export function UpdateDialog({
                     onPress={() => { haptics.selection(); setExpanded(true); }}
                     style={{
                       borderTopWidth: 1,
-                      borderTopColor: isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.04)',
+                      borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.04),
                       paddingVertical: 8,
                       alignItems: 'center',
                     }}
@@ -306,7 +287,7 @@ export function UpdateDialog({
                 <Text className="font-roobert-medium text-foreground">Cancel</Text>
               </Button>
               <Button onPress={handleConfirm} style={{ backgroundColor: themeColors.primary }}>
-                <Icon as={ArrowDownToLine} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+                <Icon as={ArrowDownToLine} size={16} color={themeColors.primaryForeground} strokeWidth={2.5} />
                 <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                   Update now
                 </Text>
@@ -358,12 +339,12 @@ export function UpdateDialog({
                   width: 40,
                   height: 40,
                   borderRadius: 20,
-                  backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
+                  backgroundColor: isDark ? withAlpha(THEME.dark.destructive, 0.15) : withAlpha(THEME.light.destructive, 0.1),
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Icon as={XCircle} size={20} style={{ color: '#EF4444' }} strokeWidth={2} />
+                <Icon as={XCircle} size={20} color={isDark ? THEME.dark.destructive : THEME.light.destructive} strokeWidth={2} />
               </View>
               <Text className="font-roobert-medium text-[13px] text-foreground/90 mt-5 tracking-tight">
                 Update failed
@@ -378,7 +359,7 @@ export function UpdateDialog({
                     maxHeight: 128,
                     width: '100%',
                     borderRadius: 8,
-                    backgroundColor: isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.03)',
+                    backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
                     padding: 10,
                   }}
                   nestedScrollEnabled
@@ -393,7 +374,7 @@ export function UpdateDialog({
                   <Text className="font-roobert-medium text-foreground">Close</Text>
                 </Button>
                 <Button size="sm" onPress={handleRetry} style={{ backgroundColor: themeColors.primary }}>
-                  <Icon as={RotateCw} size={14} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+                  <Icon as={RotateCw} size={14} color={themeColors.primaryForeground} strokeWidth={2.5} />
                   <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                     Retry
                   </Text>
@@ -442,8 +423,8 @@ function UpdatingSplash({
   }, [pct, widthAnim]);
 
   const trackWidth = 240;
-  const trackColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.1)';
-  const fillColor = isDark ? '#f8f8f8' : '#121215';
+  const trackColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1);
+  const fillColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   return (
     <Animated.View style={{ alignItems: 'center', opacity: fadeAnim }}>
@@ -528,7 +509,7 @@ function SuccessCheckmark() {
           width: 64,
           height: 64,
           borderRadius: 32,
-          backgroundColor: 'rgba(16,185,129,0.2)',
+          backgroundColor: withAlpha(THEME.accent.green, 0.2),
           opacity: pulseOpacity,
           transform: [{ scale: pulseScale }],
         }}
@@ -539,10 +520,10 @@ function SuccessCheckmark() {
           width: 56,
           height: 56,
           borderRadius: 28,
-          backgroundColor: '#10B981',
+          backgroundColor: THEME.accent.green,
           alignItems: 'center',
           justifyContent: 'center',
-          shadowColor: '#10B981',
+          shadowColor: THEME.accent.green,
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.25,
           shadowRadius: 12,
@@ -550,7 +531,7 @@ function SuccessCheckmark() {
         }}
       >
         <Animated.View style={{ transform: [{ scale }] }}>
-          <Icon as={Check} size={28} style={{ color: '#FFFFFF' }} strokeWidth={3} />
+          <Icon as={Check} size={28} color="#FFFFFF" strokeWidth={3} />{/* hex-allowlist: icon on a fixed kortix-green badge, never themed */}
         </Animated.View>
       </View>
     </View>

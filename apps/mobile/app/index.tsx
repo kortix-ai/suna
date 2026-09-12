@@ -1,7 +1,7 @@
 /**
  * Splash/Decision Screen
  *
- * For self-hosted Computer: simply checks auth and routes to /auth or /home.
+ * For self-hosted Computer: simply checks auth and routes to /auth or /projects.
  * No billing, no onboarding, no subscription checks.
  */
 
@@ -13,6 +13,7 @@ import { useAuthContext } from '@/contexts';
 import { log } from '@/lib/logger';
 import { ActivityIndicator } from 'react-native';
 import { useColorScheme } from 'nativewind';
+import { THEME } from '@/lib/utils/theme';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -48,20 +49,12 @@ export default function SplashScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <View
-        className={`flex-1 items-center justify-center ${
-          isDark ? 'bg-black' : 'bg-white'
-        }`}
-      >
+      <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator
           size="large"
-          color={isDark ? '#a1a1aa' : '#71717a'}
+          color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
         />
-        <Text
-          className={`text-sm mt-4 ${
-            isDark ? 'text-zinc-500' : 'text-zinc-400'
-          }`}
-        >
+        <Text className="text-sm mt-4 text-muted-foreground">
           {authLoading ? 'Checking session...' : 'Redirecting...'}
         </Text>
       </View>

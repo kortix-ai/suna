@@ -8,16 +8,17 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   View,
-  TouchableOpacity,
   TextInput,
   Pressable,
   ScrollView,
   ActivityIndicator,
   Alert,
-  Switch,
   Linking,
 } from 'react-native';
-import { Text as RNText } from 'react-native';
+import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { Switch } from '@/components/ui/switch';
 import {
   Settings,
   Zap,
@@ -37,13 +38,10 @@ import {
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useOpenCodeConfig,
@@ -60,6 +58,7 @@ import {
   type OpenCodeConfig,
   type McpStatus,
 } from '@/lib/opencode/hooks/use-opencode-data';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -94,19 +93,27 @@ export interface WorkspaceSettingsSheetRef {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(function WorkspaceSettingsSheet(_, ref) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
   const { sandboxUrl } = useSandboxContext();
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const bg = isDark ? '#121215' : '#F8F8F8';
-  const muted = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
-  const cardBg = isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const bg = isDark ? THEME.dark.background : THEME.light.background;
+  const muted = withAlpha(fg, 0.4);
+  const inputBg = withAlpha(fg, isDark ? 0.04 : 0.03);
+  const cardBg = isDark ? withAlpha(fg, 0.03) : THEME.light.background;
+  const borderColor = withAlpha(fg, 0.06);
+  const chipBg = withAlpha(fg, isDark ? 0.06 : 0.04);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  // Fixed light text over solid saturated status pills (green/amber/red,
+  // Slack purple, etc.) — matches Button's own destructive text-white.
+  // `THEME.light.primaryForeground` is the near-white value (hsl(60 0% 98%));
+  // `THEME.dark.primaryForeground` is near-black (it's the foreground FOR
+  // dark-mode's near-white `primary` fill) and would be wrong here.
+  const onAccent = THEME.light.primaryForeground;
 
   const sheetRef = useRef<BottomSheetModal>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
@@ -280,10 +287,6 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
     },
   }));
 
-  const renderBackdrop = useCallback(
-    (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />,
-    [],
-  );
 
   // ─── Tab bar ──────────────────────────────────────────────────────
   const TABS: Array<{ id: SettingsTab; label: string; Icon: React.ComponentType<any> }> = [
@@ -295,7 +298,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
 
   // ─── Permission pill ──────────────────────────────────────────────
   const PermPill = ({ mode, active, onPress }: { mode: PermissionMode; active: boolean; onPress: () => void }) => {
-    const colors: Record<PermissionMode, string> = { allow: '#22C55E', ask: '#F59E0B', deny: '#EF4444' };
+    const colors: Record<PermissionMode, string> = { allow: THEME.accent.green, ask: THEME.accent.orange, deny: destructiveColor };
     const color = colors[mode];
     return (
       <Pressable
@@ -306,21 +309,21 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           opacity: active ? 1 : 0.6,
         }}
       >
-        <RNText style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: active ? '#FFFFFF' : fg, textTransform: 'capitalize' }}>
+        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: active ? onAccent : fg, textTransform: 'capitalize' }}>
           {mode}
-        </RNText>
+        </Text>
       </Pressable>
     );
   };
 
   // ─── Status dot ───────────────────────────────────────────────────
   const StatusDot = ({ status }: { status: string }) => {
-    const color = status === 'connected' ? '#22C55E' : status === 'failed' ? '#EF4444' : status === 'needs_auth' || status === 'needs_client_registration' ? '#F59E0B' : muted;
+    const color = status === 'connected' ? THEME.accent.green : status === 'failed' ? destructiveColor : status === 'needs_auth' || status === 'needs_client_registration' ? THEME.accent.orange : muted;
     const label = status === 'connected' ? 'Connected' : status === 'failed' ? 'Error' : status === 'needs_auth' || status === 'needs_client_registration' ? 'Needs auth' : status === 'disabled' ? 'Disconnected' : 'Pending';
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
         <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
-        <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>{label}</RNText>
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>{label}</Text>
       </View>
     );
   };
@@ -330,16 +333,16 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
       ref={sheetRef}
       snapPoints={['92%']}
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)', width: 36 }}
+      backdropComponent={SheetBackdrop}
+      backgroundStyle={{ backgroundColor: sheetBg, borderRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <View style={{ flex: 1 }}>
         {/* Header */}
         <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <Settings size={18} color={fg} />
-            <RNText style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fg }}>Settings</RNText>
+            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fg }}>Settings</Text>
           </View>
 
           {/* Tab bar */}
@@ -355,13 +358,13 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999,
                     backgroundColor: isActive ? theme.primaryLight : 'transparent',
                     borderWidth: isActive ? 1 : 0,
-                    borderColor: isActive ? theme.primary + '30' : 'transparent',
+                    borderColor: isActive ? withAlpha(theme.primary, 0.19) : 'transparent',
                   }}
                 >
                   <tab.Icon size={14} color={isActive ? theme.primary : muted} />
-                  <RNText style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isActive ? theme.primary : muted }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isActive ? theme.primary : muted }}>
                     {tab.label}
-                  </RNText>
+                  </Text>
                 </Pressable>
               );
             })}
@@ -375,17 +378,17 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'general' && (
             <View>
               {/* Custom Instructions */}
-              <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
                 Custom Instructions
-              </RNText>
-              <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginBottom: 8 }}>
+              </Text>
+              <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginBottom: 8 }}>
                 Additional instruction file paths, one per line
-              </RNText>
+              </Text>
               <TextInput
                 value={draftInstructions}
                 onChangeText={(t) => { setDraftInstructions(t); markDirty(); }}
                 placeholder="docs/rules.md"
-                placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
+                placeholderTextColor={withAlpha(fg, 0.2)}
                 multiline
                 style={{
                   backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor,
@@ -395,9 +398,9 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
               />
 
               {/* Default Model */}
-              <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginTop: 20, marginBottom: 8 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginTop: 20, marginBottom: 8 }}>
                 Default Model
-              </RNText>
+              </Text>
               <View style={{ backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor }}>
                 <Pressable
                   onPress={() => {
@@ -413,9 +416,9 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                   }}
                   style={{ padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
                 >
-                  <RNText style={{ fontSize: 13, fontFamily: 'Roobert', color: draftModel ? fg : muted }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: draftModel ? fg : muted }}>
                     {draftModel || 'Auto-detect'}
-                  </RNText>
+                  </Text>
                   <ChevronDown size={14} color={muted} />
                 </Pressable>
               </View>
@@ -423,18 +426,16 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
               {/* Snapshots */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 }}>
                 <View style={{ flex: 1 }}>
-                  <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
                     Snapshots
-                  </RNText>
-                  <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>
                     Git snapshot at each agentic step
-                  </RNText>
+                  </Text>
                 </View>
                 <Switch
-                  value={draftSnapshot}
-                  onValueChange={(v) => { haptics.selection(); setDraftSnapshot(v); markDirty(); }}
-                  trackColor={{ false: chipBg, true: theme.primary }}
-                  thumbColor="#FFFFFF"
+                  checked={draftSnapshot}
+                  onCheckedChange={(v) => { haptics.selection(); setDraftSnapshot(v); markDirty(); }}
                 />
               </View>
             </View>
@@ -443,12 +444,12 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {/* ──── PROVIDERS TAB ──── */}
           {activeTab === 'providers' && (
             <View>
-              <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>
                 Connected Providers ({connectedProviders.length})
-              </RNText>
+              </Text>
               {connectedProviders.length === 0 ? (
                 <View style={{ padding: 24, alignItems: 'center' }}>
-                  <RNText style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>No providers connected</RNText>
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>No providers connected</Text>
                 </View>
               ) : (
                 connectedProviders.map((provider) => {
@@ -463,16 +464,16 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                       }}
                     >
                       <View>
-                        <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
+                        <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
                           {PROVIDER_LABELS[provider.id] || provider.name || provider.id}
-                        </RNText>
-                        <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>
+                        </Text>
+                        <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>
                           {modelCount} model{modelCount !== 1 ? 's' : ''}
-                        </RNText>
+                        </Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' }} />
-                        <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: '#22C55E' }}>Connected</RNText>
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: THEME.accent.green }} />
+                        <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: THEME.accent.green }}>Connected</Text>
                       </View>
                     </View>
                   );
@@ -485,9 +486,9 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'permissions' && (
             <View>
               {/* Global permission mode */}
-              <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
                 Permission Mode
-              </RNText>
+              </Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
                 {(['allow', 'ask', 'deny'] as PermissionMode[]).map((mode) => (
                   <PermPill
@@ -505,22 +506,22 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                   }}
                   style={{
                     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999,
-                    backgroundColor: isPerTool ? '#3B82F6' : chipBg,
+                    backgroundColor: isPerTool ? THEME.accent.blue : chipBg,
                     opacity: isPerTool ? 1 : 0.6,
                   }}
                 >
-                  <RNText style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: isPerTool ? '#FFFFFF' : fg }}>
+                  <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: isPerTool ? onAccent : fg }}>
                     Per-tool
-                  </RNText>
+                  </Text>
                 </Pressable>
               </View>
 
               {/* Per-tool permissions */}
               {isPerTool && (
                 <View style={{ marginBottom: 20 }}>
-                  <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
                     Tool Permissions
-                  </RNText>
+                  </Text>
                   {PERMISSION_TOOLS.map((tool) => {
                     const current = getToolPermission(tool.key);
                     return (
@@ -532,7 +533,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                           borderRadius: 12, padding: 12, marginBottom: 6,
                         }}
                       >
-                        <RNText style={{ fontSize: 13, fontFamily: 'Roobert', color: fg, flex: 1 }}>{tool.label}</RNText>
+                        <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: fg, flex: 1 }}>{tool.label}</Text>
                         <View style={{ flexDirection: 'row', gap: 4 }}>
                           {(['allow', 'ask', 'deny'] as PermissionMode[]).map((mode) => (
                             <Pressable
@@ -546,13 +547,13 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                               style={{
                                 paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
                                 backgroundColor: current === mode
-                                  ? (mode === 'allow' ? '#22C55E' : mode === 'ask' ? '#F59E0B' : '#EF4444')
+                                  ? (mode === 'allow' ? THEME.accent.green : mode === 'ask' ? THEME.accent.orange : destructiveColor)
                                   : chipBg,
                               }}
                             >
-                              <RNText style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: current === mode ? '#FFFFFF' : muted, textTransform: 'capitalize' }}>
+                              <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: current === mode ? onAccent : muted, textTransform: 'capitalize' }}>
                                 {mode}
-                              </RNText>
+                              </Text>
                             </Pressable>
                           ))}
                         </View>
@@ -563,9 +564,9 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
               )}
 
               {/* Tool overrides */}
-              <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
                 Tool Overrides
-              </RNText>
+              </Text>
               {builtinTools.map((toolId) => {
                 const enabled = draftTools[toolId] !== false;
                 return (
@@ -577,18 +578,16 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                       borderRadius: 12, padding: 12, marginBottom: 6,
                     }}
                   >
-                    <RNText style={{ fontSize: 13, fontFamily: 'monospace', color: fg, flex: 1 }} numberOfLines={1}>{toolId}</RNText>
+                    <Text style={{ fontSize: 13, fontFamily: 'monospace', color: fg, flex: 1 }} numberOfLines={1}>{toolId}</Text>
                     <Switch
-                      value={enabled}
-                      onValueChange={(v) => {
+                      checked={enabled}
+                      onCheckedChange={(v) => {
                         haptics.selection();
                         const newTools = { ...draftTools };
                         if (v) { delete newTools[toolId]; } else { newTools[toolId] = false; }
                         setDraftTools(newTools);
                         markDirty();
                       }}
-                      trackColor={{ false: chipBg, true: theme.primary }}
-                      thumbColor="#FFFFFF"
                     />
                   </View>
                 );
@@ -600,15 +599,15 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'mcp' && mcpView === 'list' && (
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
                   MCP Servers ({mcpStatus ? Object.keys(mcpStatus).length : 0})
-                </RNText>
+                </Text>
                 <Pressable
                   onPress={() => { haptics.tap(); setMcpView('add'); }}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.primary, borderRadius: 9999, paddingHorizontal: 14, paddingVertical: 6 }}
                 >
                   <Plus size={14} color={theme.primaryForeground} />
-                  <RNText style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add</RNText>
+                  <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add</Text>
                 </Pressable>
               </View>
 
@@ -623,22 +622,25 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     <View style={{ padding: 14 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                         <View style={{ flex: 1 }}>
-                          <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{name}</RNText>
+                          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{name}</Text>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
                             <StatusDot status={status.status} />
                             {tools.length > 0 && (
-                              <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>{tools.length} tools</RNText>
+                              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>{tools.length} tools</Text>
                             )}
                           </View>
                         </View>
 
                         <View style={{ flexDirection: 'row', gap: 8 }}>
                           {(status.status === 'needs_auth' || status.status === 'needs_client_registration') && (
-                            <TouchableOpacity onPress={() => handleMcpAuth(name)} style={{ padding: 6 }}>
-                              <Plug size={16} color="#F59E0B" />
-                            </TouchableOpacity>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onPress={() => handleMcpAuth(name)}>
+                              <Icon as={Plug} size={16} color={THEME.accent.orange} />
+                            </Button>
                           )}
-                          <TouchableOpacity
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
                             onPress={() => {
                               haptics.medium();
                               if (status.status === 'connected') {
@@ -647,30 +649,31 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                                 connectMcp.mutate(name);
                               }
                             }}
-                            style={{ padding: 6 }}
                           >
-                            <Power size={16} color={status.status === 'connected' ? '#22C55E' : muted} />
-                          </TouchableOpacity>
+                            <Icon as={Power} size={16} color={status.status === 'connected' ? THEME.accent.green : muted} />
+                          </Button>
                           {tools.length > 0 && (
-                            <TouchableOpacity
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
                               onPress={() => {
                                 haptics.selection();
                                 const next = new Set(expandedServers);
                                 isExpanded ? next.delete(name) : next.add(name);
                                 setExpandedServers(next);
                               }}
-                              style={{ padding: 6 }}
                             >
-                              {isExpanded ? <ChevronDown size={16} color={muted} /> : <ChevronRight size={16} color={muted} />}
-                            </TouchableOpacity>
+                              <Icon as={isExpanded ? ChevronDown : ChevronRight} size={16} color={muted} />
+                            </Button>
                           )}
                         </View>
                       </View>
 
                       {status.status === 'failed' && status.error && (
-                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8, backgroundColor: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: 10 }}>
-                          <AlertCircle size={12} color="#EF4444" style={{ marginTop: 1 }} />
-                          <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: '#EF4444', flex: 1 }}>{status.error}</RNText>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8, backgroundColor: withAlpha(destructiveColor, 0.08), borderRadius: 8, padding: 10 }}>
+                          <Icon as={AlertCircle} size={12} color={destructiveColor} style={{ marginTop: 1 }} />
+                          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: destructiveColor, flex: 1 }}>{status.error}</Text>
                         </View>
                       )}
                     </View>
@@ -679,7 +682,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     {isExpanded && tools.length > 0 && (
                       <View style={{ borderTopWidth: 1, borderTopColor: borderColor, paddingHorizontal: 14, paddingVertical: 10 }}>
                         {tools.map((tool) => (
-                          <RNText key={tool} style={{ fontSize: 12, fontFamily: 'monospace', color: muted, paddingVertical: 2 }}>{tool}</RNText>
+                          <Text key={tool} style={{ fontSize: 12, fontFamily: 'monospace', color: muted, paddingVertical: 2 }}>{tool}</Text>
                         ))}
                       </View>
                     )}
@@ -689,8 +692,8 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
 
               {(!mcpStatus || Object.keys(mcpStatus).length === 0) && (
                 <View style={{ padding: 24, alignItems: 'center' }}>
-                  <Server size={24} color={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'} />
-                  <RNText style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginTop: 8 }}>No MCP servers configured</RNText>
+                  <Icon as={Server} size={24} color={withAlpha(fg, isDark ? 0.15 : 0.12)} />
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginTop: 8 }}>No MCP servers configured</Text>
                 </View>
               )}
             </View>
@@ -700,28 +703,28 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'mcp' && mcpView === 'add' && (
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                <TouchableOpacity onPress={() => { haptics.tap(); setMcpView('list'); setMcpError(''); }} style={{ marginRight: 12, padding: 4 }}>
-                  <X size={18} color={fg} />
-                </TouchableOpacity>
-                <RNText style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Add MCP Server</RNText>
+                <Button variant="ghost" size="icon" className="h-7 w-7 mr-3" onPress={() => { haptics.tap(); setMcpView('list'); setMcpError(''); }}>
+                  <Icon as={X} size={18} color={fg} />
+                </Button>
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Add MCP Server</Text>
               </View>
 
               {/* Name */}
-              <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
                 Server Name
-              </RNText>
+              </Text>
               <TextInput
                 value={mcpName}
                 onChangeText={setMcpName}
                 placeholder="my-server"
-                placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
+                placeholderTextColor={withAlpha(fg, 0.2)}
                 style={{ backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor, padding: 14, fontSize: 13, fontFamily: 'Roobert', color: fg, marginBottom: 16 }}
               />
 
               {/* Transport */}
-              <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
                 Transport
-              </RNText>
+              </Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
                 {(['local', 'remote'] as const).map((t) => (
                   <Pressable
@@ -730,12 +733,12 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     style={{
                       flex: 1, paddingVertical: 10, borderRadius: 9999, alignItems: 'center',
                       backgroundColor: mcpTransport === t ? theme.primaryLight : chipBg,
-                      borderWidth: 1, borderColor: mcpTransport === t ? theme.primary + '40' : borderColor,
+                      borderWidth: 1, borderColor: mcpTransport === t ? withAlpha(theme.primary, 0.25) : borderColor,
                     }}
                   >
-                    <RNText style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: mcpTransport === t ? theme.primary : fg }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: mcpTransport === t ? theme.primary : fg }}>
                       {t === 'local' ? 'Stdio' : 'HTTP'}
-                    </RNText>
+                    </Text>
                   </Pressable>
                 ))}
               </View>
@@ -743,27 +746,27 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
               {/* Command or URL */}
               {mcpTransport === 'local' ? (
                 <>
-                  <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
                     Command
-                  </RNText>
+                  </Text>
                   <TextInput
                     value={mcpCommand}
                     onChangeText={setMcpCommand}
                     placeholder="npx -y @my/server"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
+                    placeholderTextColor={withAlpha(fg, 0.2)}
                     style={{ backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor, padding: 14, fontSize: 13, fontFamily: 'monospace', color: fg, marginBottom: 16 }}
                   />
                 </>
               ) : (
                 <>
-                  <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
                     URL
-                  </RNText>
+                  </Text>
                   <TextInput
                     value={mcpUrl}
                     onChangeText={setMcpUrl}
                     placeholder="https://..."
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
+                    placeholderTextColor={withAlpha(fg, 0.2)}
                     autoCapitalize="none"
                     keyboardType="url"
                     style={{ backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor, padding: 14, fontSize: 13, fontFamily: 'Roobert', color: fg, marginBottom: 16 }}
@@ -773,12 +776,12 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
 
               {/* Env vars */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
                   Environment Variables
-                </RNText>
-                <TouchableOpacity onPress={() => { haptics.tap(); setMcpEnvPairs([...mcpEnvPairs, { key: '', value: '' }]); }}>
-                  <Plus size={16} color={theme.primary} />
-                </TouchableOpacity>
+                </Text>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onPress={() => { haptics.tap(); setMcpEnvPairs([...mcpEnvPairs, { key: '', value: '' }]); }}>
+                  <Icon as={Plus} size={16} color={theme.primary} />
+                </Button>
               </View>
               {mcpEnvPairs.map((pair, i) => (
                 <View key={i} style={{ flexDirection: 'row', gap: 8, marginBottom: 8, alignItems: 'center' }}>
@@ -786,7 +789,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     value={pair.key}
                     onChangeText={(t) => { const n = [...mcpEnvPairs]; n[i] = { ...n[i], key: t }; setMcpEnvPairs(n); }}
                     placeholder="KEY"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
+                    placeholderTextColor={withAlpha(fg, 0.2)}
                     autoCapitalize="characters"
                     style={{ flex: 1, backgroundColor: inputBg, borderRadius: 10, borderWidth: 1, borderColor, padding: 10, fontSize: 12, fontFamily: 'monospace', color: fg }}
                   />
@@ -794,21 +797,21 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     value={pair.value}
                     onChangeText={(t) => { const n = [...mcpEnvPairs]; n[i] = { ...n[i], value: t }; setMcpEnvPairs(n); }}
                     placeholder="value"
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
+                    placeholderTextColor={withAlpha(fg, 0.2)}
                     secureTextEntry
                     style={{ flex: 1, backgroundColor: inputBg, borderRadius: 10, borderWidth: 1, borderColor, padding: 10, fontSize: 12, fontFamily: 'Roobert', color: fg }}
                   />
-                  <TouchableOpacity onPress={() => { haptics.medium(); setMcpEnvPairs(mcpEnvPairs.filter((_, j) => j !== i)); }} style={{ padding: 4 }}>
-                    <Trash2 size={14} color="#EF4444" />
-                  </TouchableOpacity>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onPress={() => { haptics.medium(); setMcpEnvPairs(mcpEnvPairs.filter((_, j) => j !== i)); }}>
+                    <Icon as={Trash2} size={14} color={destructiveColor} />
+                  </Button>
                 </View>
               ))}
 
               {/* Error */}
               {mcpError ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, backgroundColor: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: 10 }}>
-                  <AlertCircle size={12} color="#EF4444" />
-                  <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: '#EF4444', flex: 1 }}>{mcpError}</RNText>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, backgroundColor: withAlpha(destructiveColor, 0.08), borderRadius: 8, padding: 10 }}>
+                  <Icon as={AlertCircle} size={12} color={destructiveColor} />
+                  <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: destructiveColor, flex: 1 }}>{mcpError}</Text>
                 </View>
               ) : null}
 
@@ -825,7 +828,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                 {addMcpServer.isPending ? (
                   <ActivityIndicator color={theme.primaryForeground} size="small" />
                 ) : (
-                  <RNText style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: theme.primaryForeground }}>Add Server</RNText>
+                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: theme.primaryForeground }}>Add Server</Text>
                 )}
               </Pressable>
             </View>
@@ -835,40 +838,40 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'mcp' && mcpView === 'auth' && (
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                <TouchableOpacity onPress={() => { haptics.tap(); setMcpView('list'); }} style={{ marginRight: 12, padding: 4 }}>
-                  <X size={18} color={fg} />
-                </TouchableOpacity>
-                <RNText style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Authorize: {mcpAuthName}</RNText>
+                <Button variant="ghost" size="icon" className="h-7 w-7 mr-3" onPress={() => { haptics.tap(); setMcpView('list'); }}>
+                  <Icon as={X} size={18} color={fg} />
+                </Button>
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Authorize: {mcpAuthName}</Text>
               </View>
 
               {mcpAuthStart.isPending ? (
                 <View style={{ padding: 24, alignItems: 'center' }}>
                   <ActivityIndicator color={theme.primary} />
-                  <RNText style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginTop: 8 }}>Starting authorization...</RNText>
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginTop: 8 }}>Starting authorization...</Text>
                 </View>
               ) : mcpAuthUrl ? (
                 <>
-                  <RNText style={{ fontSize: 13, fontFamily: 'Roobert', color: fg, marginBottom: 12 }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: fg, marginBottom: 12 }}>
                     Open this URL to authorize, then paste the redirect URL below:
-                  </RNText>
+                  </Text>
                   <Pressable
                     onPress={() => { haptics.tap(); Linking.openURL(mcpAuthUrl); }}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.primaryLight, borderRadius: 10, padding: 12, marginBottom: 16 }}
                   >
                     <ExternalLink size={14} color={theme.primary} />
-                    <RNText style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary, flex: 1 }} numberOfLines={1}>
+                    <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary, flex: 1 }} numberOfLines={1}>
                       Open authorization URL
-                    </RNText>
+                    </Text>
                   </Pressable>
 
-                  <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
                     Redirect URL or Code
-                  </RNText>
+                  </Text>
                   <TextInput
                     value={mcpAuthCode}
                     onChangeText={setMcpAuthCode}
                     placeholder="Paste localhost redirect URL..."
-                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
+                    placeholderTextColor={withAlpha(fg, 0.2)}
                     autoCapitalize="none"
                     style={{ backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor, padding: 14, fontSize: 13, fontFamily: 'Roobert', color: fg, marginBottom: 16 }}
                   />
@@ -885,7 +888,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     {mcpAuthCallback.isPending ? (
                       <ActivityIndicator color={theme.primaryForeground} size="small" />
                     ) : (
-                      <RNText style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: theme.primaryForeground }}>Complete Authorization</RNText>
+                      <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: theme.primaryForeground }}>Complete Authorization</Text>
                     )}
                   </Pressable>
                 </>
@@ -917,7 +920,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
               }}
               style={{ flex: 1, paddingVertical: 12, borderRadius: 9999, alignItems: 'center', backgroundColor: chipBg }}
             >
-              <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Discard</RNText>
+              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Discard</Text>
             </Pressable>
             <Pressable
               onPress={handleSave}
@@ -927,7 +930,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
               {updateConfig.isPending ? (
                 <ActivityIndicator color={theme.primaryForeground} size="small" />
               ) : (
-                <RNText style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: theme.primaryForeground }}>Save</RNText>
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: theme.primaryForeground }}>Save</Text>
               )}
             </Pressable>
           </View>

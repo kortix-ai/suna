@@ -41,8 +41,7 @@ import {
 import type { TriggerConfiguration } from '@/api/types';
 import { useComposioConnections } from '@/hooks/useComposio';
 import type { ComposioApp, ComposioConnection } from '@/hooks/useComposio';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
 import { AppSelectionStep } from './AppSelectionStep';
@@ -53,7 +52,8 @@ import type { TriggerApp, ComposioTriggerType } from '@/api/types';
 import { SvgUri } from 'react-native-svg';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { log } from '@/lib/logger';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -102,17 +102,18 @@ function TypeCard({ icon: IconComponent, title, subtitle, onPress }: TypeCardPro
   const { colorScheme } = useColorScheme();
 
   return (
-    <BottomSheetTouchable
+    <Pressable
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onPress();
       }}
+      className="active:opacity-70"
       style={{
         marginBottom: 12,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: colorScheme === 'dark' ? '#3f3f46' : '#e4e4e7',
-        backgroundColor: colorScheme === 'dark' ? '#27272a' : '#ffffff',
+        borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
+        backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
         padding: 16,
       }}>
       <View className="flex-row items-center gap-3">
@@ -125,7 +126,7 @@ function TypeCard({ icon: IconComponent, title, subtitle, onPress }: TypeCardPro
         </View>
         <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
       </View>
-    </BottomSheetTouchable>
+    </Pressable>
   );
 }
 
@@ -154,6 +155,7 @@ export function TriggerCreationDrawer({
   agentId: propAgentId,
   onUpgradePress,
 }: TriggerCreationDrawerProps) {
+  const sheetBg = useSheetBackground();
   const bottomSheetModalRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   const router = useRouter();
@@ -730,12 +732,6 @@ export function TriggerCreationDrawer({
     }
   };
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    []
-  );
 
   // Check if we should show action buttons
   const showActionButtons =
@@ -760,18 +756,11 @@ export function TriggerCreationDrawer({
       snapPoints={snapPoints}
       enablePanDownToClose
       onDismiss={handleDismiss}
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       backgroundStyle={{
-        backgroundColor: getSheetBg(colorScheme === 'dark'),
+        backgroundColor: sheetBg,
       }}
-      handleIndicatorStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-        marginTop: 8,
-        marginBottom: 0,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
       enableDynamicSizing={shouldUseDynamicSizing}
       style={{
         borderTopLeftRadius: 24,
@@ -976,7 +965,7 @@ export function TriggerCreationDrawer({
                     style={{
                       fontSize: 14,
                       fontWeight: '600',
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                       marginBottom: 8,
                     }}>
                     {t('triggers.nameRequired')}
@@ -985,15 +974,15 @@ export function TriggerCreationDrawer({
                     value={triggerName}
                     onChangeText={setTriggerName}
                     placeholder={t('triggers.dailyAt9Am')}
-                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                    placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                     style={{
                       padding: 12,
                       borderRadius: 12,
                       borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                      borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
+                      backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
                       fontSize: 16,
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                     }}
                   />
                 </View>
@@ -1004,7 +993,7 @@ export function TriggerCreationDrawer({
                     style={{
                       fontSize: 14,
                       fontWeight: '600',
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                       marginBottom: 8,
                     }}>
                     {t('triggers.scheduleRequired')}
@@ -1099,16 +1088,16 @@ export function TriggerCreationDrawer({
                           placeholder="09"
                           keyboardType="number-pad"
                           maxLength={2}
-                          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                          placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                           style={{
                             width: 80,
                             padding: 12,
                             borderRadius: 12,
                             borderWidth: 1.5,
-                            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                            borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
+                            backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
                             fontSize: 18,
-                            color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                            color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                             textAlign: 'center',
                           }}
                         />
@@ -1119,16 +1108,16 @@ export function TriggerCreationDrawer({
                           placeholder="00"
                           keyboardType="number-pad"
                           maxLength={2}
-                          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                          placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                           style={{
                             width: 80,
                             padding: 12,
                             borderRadius: 12,
                             borderWidth: 1.5,
-                            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                            borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
+                            backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
                             fontSize: 18,
-                            color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                            color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                             textAlign: 'center',
                           }}
                         />
@@ -1172,15 +1161,15 @@ export function TriggerCreationDrawer({
                       value={cronExpression}
                       onChangeText={setCronExpression}
                       placeholder="0 9 * * 1-5"
-                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                       style={{
                         padding: 12,
                         borderRadius: 12,
                         borderWidth: 1.5,
-                        borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                        backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                        borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
+                        backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
                         fontSize: 16,
-                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                         fontFamily: 'monospace',
                         marginTop: 16,
                       }}
@@ -1194,7 +1183,7 @@ export function TriggerCreationDrawer({
                     style={{
                       fontSize: 14,
                       fontWeight: '600',
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                       marginBottom: 8,
                     }}>
                     {t('triggers.descriptionOptional')}
@@ -1206,8 +1195,8 @@ export function TriggerCreationDrawer({
                     style={{
                       borderRadius: 12,
                       borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                      borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
+                      backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
                       maxHeight: 150,
                     }}
                     contentContainerStyle={{
@@ -1217,13 +1206,13 @@ export function TriggerCreationDrawer({
                       value={description}
                       onChangeText={setDescription}
                       placeholder={t('triggers.describePlaceholder')}
-                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                       multiline
                       scrollEnabled={false}
                       style={{
                         minHeight: 100,
                         fontSize: 16,
-                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                         textAlignVertical: 'top',
                       }}
                     />
@@ -1236,7 +1225,7 @@ export function TriggerCreationDrawer({
                     style={{
                       fontSize: 14,
                       fontWeight: '600',
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                       marginBottom: 8,
                     }}>
                     {t('triggers.instructionsRequired')}
@@ -1248,8 +1237,8 @@ export function TriggerCreationDrawer({
                     style={{
                       borderRadius: 12,
                       borderWidth: 1.5,
-                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                      borderColor: colorScheme === 'dark' ? THEME.dark.border : THEME.light.border,
+                      backgroundColor: colorScheme === 'dark' ? THEME.dark.card : THEME.light.card,
                       maxHeight: 200,
                     }}
                     contentContainerStyle={{
@@ -1259,13 +1248,13 @@ export function TriggerCreationDrawer({
                       value={agentPrompt}
                       onChangeText={setAgentPrompt}
                       placeholder={t('triggers.instructionsLabel')}
-                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                       multiline
                       scrollEnabled={false}
                       style={{
                         minHeight: 120,
                         fontSize: 16,
-                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        color: colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground,
                         textAlignVertical: 'top',
                       }}
                     />
@@ -1325,12 +1314,17 @@ export function TriggerCreationDrawer({
                         <View
                           className="mb-4 h-16 w-16 items-center justify-center rounded-2xl"
                           style={{
-                            backgroundColor:
-                              colorScheme === 'dark'
-                                ? 'rgba(239, 68, 68, 0.1)'
-                                : 'rgba(239, 68, 68, 0.05)',
+                            backgroundColor: withAlpha(
+                              colorScheme === 'dark' ? THEME.dark.destructive : THEME.light.destructive,
+                              colorScheme === 'dark' ? 0.1 : 0.05
+                            ),
                           }}>
-                          <Icon as={Info} size={32} color="#ef4444" strokeWidth={2} />
+                          <Icon
+                            as={Info}
+                            size={32}
+                            color={colorScheme === 'dark' ? THEME.dark.destructive : THEME.light.destructive}
+                            strokeWidth={2}
+                          />
                         </View>
                         <Text className="mb-2 text-center font-roobert-semibold text-lg text-foreground">
                           {t('triggers.failedToLoadTrigger')}

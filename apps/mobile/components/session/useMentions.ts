@@ -62,7 +62,7 @@ export function useMentions({
   const [mentions, setMentions] = useState<TrackedMention[]>([]);
   const [fileResults, setFileResults] = useState<string[]>([]);
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
-  const fileSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const fileSearchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fileSearchSeq = useRef(0);
   const fileResultsCache = useRef<Set<string>>(new Set());
 

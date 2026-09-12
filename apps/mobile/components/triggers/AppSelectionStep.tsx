@@ -14,7 +14,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
-import { SearchBar } from '@/components/ui/SearchBar';
+import { SearchBar } from '@/components/kortix/SearchBar';
 import { Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import type { TriggerApp } from '@/api/types';
@@ -106,15 +106,15 @@ function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
           <View className="flex-row items-center gap-1.5 border-t border-border pt-2">
             {connectionStatus.isConnected ? (
               <>
-                <View className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                <Text className="font-roobert-medium text-xs text-green-600 dark:text-green-400">
+                <View className="h-1.5 w-1.5 rounded-full bg-kortix-green" />
+                <Text className="font-roobert-medium text-xs text-kortix-green">
                   {t('triggers.connected')}
                 </Text>
               </>
             ) : connectionStatus.hasConnections ? (
               <>
-                <View className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
-                <Text className="font-roobert-medium text-xs text-yellow-600 dark:text-yellow-400">
+                <View className="h-1.5 w-1.5 rounded-full bg-kortix-orange" />
+                <Text className="font-roobert-medium text-xs text-kortix-orange">
                   {t('triggers.notConnected')}
                 </Text>
               </>

@@ -8,16 +8,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
-  TouchableOpacity,
   ScrollView,
   TextInput,
   Keyboard,
   Text as RNText,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import type {
   QuestionRequest,
   QuestionInfo,
@@ -232,14 +233,14 @@ export function QuestionPrompt({
   // Colors
   // -----------------------------------------------------------------------
 
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const mutedColor = isDark ? '#888' : '#777';
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const themeColors = useThemeColors();
-  const pillActiveBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-  const pillActiveBorder = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
-  const selectedBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const selectedBorder = isDark ? 'rgba(248,248,248,0.15)' : 'rgba(18,18,21,0.12)';
+  const pillActiveBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
+  const pillActiveBorder = isDark ? withAlpha(THEME.dark.foreground, 0.15) : withAlpha(THEME.light.foreground, 0.12);
+  const selectedBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const selectedBorder = isDark ? withAlpha(THEME.dark.foreground, 0.15) : withAlpha(THEME.light.foreground, 0.12);
 
   // -----------------------------------------------------------------------
   // Render
@@ -254,7 +255,7 @@ export function QuestionPrompt({
         overflow: 'hidden',
         marginHorizontal: 16,
         marginBottom: 6,
-        backgroundColor: isDark ? '#1a1a1d' : '#ffffff',
+        backgroundColor: isDark ? THEME.dark.popover : THEME.light.popover,
       }}
     >
       {/* ── Header ── */}
@@ -276,18 +277,20 @@ export function QuestionPrompt({
           numberOfLines={1}
         >
           {!isSingle && `${questions.length} questions \u00B7 `}
-          <RNText style={{ color: isDark ? '#ccc' : '#444', fontFamily: 'Roobert-Medium', fontSize: 11 }}>
+          <RNText style={{ color: isDark ? THEME.dark.foreground : THEME.light.foreground, fontFamily: 'Roobert-Medium', fontSize: 11 }}>
             {headerSummary}
           </RNText>
         </RNText>
-        <TouchableOpacity
+        <Button
+          variant="ghost"
+          size="icon"
           onPress={reject}
           hitSlop={10}
-          style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}
-          activeOpacity={0.6}
+          className="h-auto w-auto items-center justify-center p-0 active:bg-transparent active:opacity-70"
+          style={{ width: 22, height: 22 }}
         >
           <Ionicons name="close" size={13} color={mutedColor} />
-        </TouchableOpacity>
+        </Button>
       </View>
 
       {/* ── Body ── */}
@@ -309,8 +312,9 @@ export function QuestionPrompt({
                 const isAnswered = (answers[i]?.length ?? 0) > 0;
                 const isActive = tab === i;
                 return (
-                  <TouchableOpacity
+                  <Button
                     key={i}
+                    variant="ghost"
                     onPress={() => { setTab(i); setEditing(false); }}
                     onLayout={(e) => {
                       tabLayouts.current[i] = {
@@ -318,10 +322,8 @@ export function QuestionPrompt({
                         width: e.nativeEvent.layout.width,
                       };
                     }}
-                    activeOpacity={0.7}
+                    className="h-auto w-auto flex-row items-center active:bg-transparent active:opacity-80"
                     style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
                       paddingHorizontal: 8,
                       paddingVertical: 3,
                       borderRadius: 6,
@@ -337,8 +339,8 @@ export function QuestionPrompt({
                         height: 12,
                         borderRadius: 2.5,
                         borderWidth: 1.5,
-                        borderColor: isAnswered ? fgColor : (isActive ? mutedColor : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)')),
-                        backgroundColor: isAnswered ? (isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.06)') : 'transparent',
+                        borderColor: isAnswered ? fgColor : (isActive ? mutedColor : (isDark ? withAlpha(THEME.dark.foreground, 0.15) : withAlpha(THEME.light.foreground, 0.15))),
+                        backgroundColor: isAnswered ? (isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.06)) : 'transparent',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
@@ -357,11 +359,12 @@ export function QuestionPrompt({
                     >
                       {q.header || `Q${i + 1}`}
                     </RNText>
-                  </TouchableOpacity>
+                  </Button>
                 );
               })}
 
-              <TouchableOpacity
+              <Button
+                variant="ghost"
                 onPress={() => { setTab(questions.length); setEditing(false); }}
                 onLayout={(e) => {
                   tabLayouts.current[questions.length] = {
@@ -369,7 +372,7 @@ export function QuestionPrompt({
                     width: e.nativeEvent.layout.width,
                   };
                 }}
-                activeOpacity={0.7}
+                className="h-auto w-auto active:bg-transparent active:opacity-80"
                 style={{
                   paddingHorizontal: 8,
                   paddingVertical: 3,
@@ -388,7 +391,7 @@ export function QuestionPrompt({
                 >
                   Confirm
                 </RNText>
-              </TouchableOpacity>
+              </Button>
             </ScrollView>
           </View>
         )}
@@ -402,13 +405,12 @@ export function QuestionPrompt({
                 const ans = answers[i] ?? [];
                 const done = ans.length > 0;
                 return (
-                  <TouchableOpacity
+                  <Button
                     key={i}
+                    variant="ghost"
                     onPress={() => setTab(i)}
-                    activeOpacity={0.6}
+                    className="h-auto w-auto flex-row items-center justify-start rounded-none active:opacity-70"
                     style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
                       paddingVertical: 4,
                       opacity: done ? 1 : 0.4,
                     }}
@@ -419,8 +421,8 @@ export function QuestionPrompt({
                         height: 12,
                         borderRadius: 2.5,
                         borderWidth: 1.5,
-                        borderColor: done ? fgColor : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'),
-                        backgroundColor: done ? (isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.06)') : 'transparent',
+                        borderColor: done ? fgColor : (isDark ? withAlpha(THEME.dark.foreground, 0.15) : withAlpha(THEME.light.foreground, 0.15)),
+                        backgroundColor: done ? (isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.06)) : 'transparent',
                         alignItems: 'center',
                         justifyContent: 'center',
                         marginRight: 7,
@@ -440,14 +442,15 @@ export function QuestionPrompt({
                     >
                       {ans.length > 0 ? ans.join(', ') : '\u2014'}
                     </RNText>
-                  </TouchableOpacity>
+                  </Button>
                 );
               })}
 
               <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
-                <TouchableOpacity
+                <Button
+                  variant="ghost"
                   onPress={submit}
-                  activeOpacity={0.8}
+                  className="h-auto w-auto active:bg-transparent active:opacity-80"
                   style={{
                     backgroundColor: themeColors.primary,
                     paddingHorizontal: 16,
@@ -464,7 +467,7 @@ export function QuestionPrompt({
                   >
                     Submit
                   </RNText>
-                </TouchableOpacity>
+                </Button>
               </View>
             </View>
           ) : currentQuestion ? (
@@ -492,13 +495,12 @@ export function QuestionPrompt({
               {options.map((opt, i) => {
                 const isPicked = currentAnswers.includes(opt.label);
                 return (
-                  <TouchableOpacity
+                  <Button
                     key={i}
+                    variant="ghost"
                     onPress={() => selectOption(i)}
-                    activeOpacity={0.7}
+                    className="h-auto w-auto flex-row items-center justify-start active:bg-transparent active:opacity-80"
                     style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
                       paddingHorizontal: 4,
                       paddingVertical: 3,
                       borderRadius: 6,
@@ -514,8 +516,8 @@ export function QuestionPrompt({
                         height: 12,
                         borderRadius: isMulti ? 2.5 : 6,
                         borderWidth: 1,
-                        borderColor: isPicked ? fgColor : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'),
-                        backgroundColor: isPicked ? (isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.06)') : 'transparent',
+                        borderColor: isPicked ? fgColor : (isDark ? withAlpha(THEME.dark.foreground, 0.2) : withAlpha(THEME.light.foreground, 0.15)),
+                        backgroundColor: isPicked ? (isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.06)) : 'transparent',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
@@ -528,7 +530,7 @@ export function QuestionPrompt({
                         <RNText
                           style={{
                             fontFamily: 'Roobert-Medium',
-                            color: isPicked ? fgColor : (isDark ? 'rgba(248,248,248,0.8)' : 'rgba(18,18,21,0.8)'),
+                            color: isPicked ? fgColor : (isDark ? withAlpha(THEME.dark.foreground, 0.8) : withAlpha(THEME.light.foreground, 0.8)),
                           }}
                         >
                           {opt.label}
@@ -540,18 +542,17 @@ export function QuestionPrompt({
                         )}
                       </RNText>
                     </View>
-                  </TouchableOpacity>
+                  </Button>
                 );
               })}
 
               {/* Type your own answer */}
               {showCustom && !editing && (
-                <TouchableOpacity
+                <Button
+                  variant="ghost"
                   onPress={() => selectOption(options.length)}
-                  activeOpacity={0.7}
+                  className="h-auto w-auto flex-row items-center justify-start active:bg-transparent active:opacity-70"
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
                     paddingHorizontal: 4,
                     paddingVertical: 3,
                     gap: 6,
@@ -560,12 +561,12 @@ export function QuestionPrompt({
                   <Ionicons
                     name="pencil-outline"
                     size={10}
-                    color={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'}
+                    color={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.2)}
                   />
                   <RNText style={{ fontSize: 14, color: mutedColor, fontFamily: 'Roobert' }}>
                     Type your own answer
                   </RNText>
-                </TouchableOpacity>
+                </Button>
               )}
 
               {/* Custom input */}
@@ -589,54 +590,55 @@ export function QuestionPrompt({
                       paddingHorizontal: 10,
                       fontSize: 13,
                       color: fgColor,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                      backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03),
                       borderWidth: 1,
-                      borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                      borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08),
                       borderRadius: 7,
                     }}
                   />
-                  <TouchableOpacity
+                  <Button
+                    variant="ghost"
                     onPress={() => handleCustomSubmit(customInputs[tab])}
-                    activeOpacity={0.8}
+                    className="h-auto w-auto items-center justify-center active:bg-transparent active:opacity-80"
                     style={{
                       height: 32,
                       paddingHorizontal: 10,
                       backgroundColor: themeColors.primary,
                       borderRadius: 7,
-                      alignItems: 'center',
-                      justifyContent: 'center',
                     }}
                   >
                     <RNText style={{ color: themeColors.primaryForeground, fontSize: 12, fontFamily: 'Roobert-Medium' }}>
                       {isMulti ? 'Add' : 'Go'}
                     </RNText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onPress={() => { setEditing(false); Keyboard.dismiss(); }}
                     hitSlop={8}
-                    style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
-                    activeOpacity={0.6}
+                    className="h-auto w-auto items-center justify-center p-0 active:bg-transparent active:opacity-70"
+                    style={{ width: 32, height: 32 }}
                   >
                     <Ionicons name="close" size={14} color={mutedColor} />
-                  </TouchableOpacity>
+                  </Button>
                 </View>
               )}
 
               {/* Next button for multi-select */}
               {!isSingle && isMulti && !editing && (
                 <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6 }}>
-                  <TouchableOpacity
+                  <Button
+                    variant="ghost"
                     onPress={() => { setTab(tab + 1); setEditing(false); }}
                     disabled={currentAnswers.length === 0}
-                    activeOpacity={0.8}
+                    className="h-auto w-auto active:bg-transparent active:opacity-80"
                     style={{
                       paddingHorizontal: 14,
                       paddingVertical: 6,
                       borderRadius: 7,
                       backgroundColor: currentAnswers.length > 0
-                        ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)')
-                        : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                      opacity: currentAnswers.length > 0 ? 1 : 0.4,
+                        ? (isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05))
+                        : (isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02)),
                     }}
                   >
                     <RNText
@@ -648,7 +650,7 @@ export function QuestionPrompt({
                     >
                       Next
                     </RNText>
-                  </TouchableOpacity>
+                  </Button>
                 </View>
               )}
             </View>

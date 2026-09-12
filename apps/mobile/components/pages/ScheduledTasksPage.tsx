@@ -8,17 +8,16 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import {
   View,
   FlatList,
-  TextInput,
   Pressable,
   Alert,
   ActivityIndicator,
-  Switch,
   StyleSheet,
   Keyboard,
-  TouchableOpacity,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { Text as RNText } from 'react-native';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   Search,
   X,
@@ -47,15 +46,16 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
-import { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
-import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
-import { SearchListHeader } from '@/components/ui/search-list-header';
+import { useThemeColors, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { SearchListHeader } from '@/components/kortix/search-list-header';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import {
   useScheduledTasks,
   useCreateScheduledTask,
@@ -73,6 +73,7 @@ import {
   type UpdateTriggerData,
   type ExecutionStatus,
 } from '@/hooks/useScheduledTasks';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // ─── Tab Page Wrapper ────────────────────────────────────────────────────────
 
@@ -96,10 +97,10 @@ export function ScheduledTasksTabPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? THEME.light.foreground : THEME.dark.foreground }}>
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}
@@ -138,9 +139,9 @@ function ScheduledTasksContent() {
   const createSheetRef = useRef<BottomSheetModal>(null);
 
   // Colors
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
 
   // Filter + sort triggers
   const filteredTriggers = useMemo(() => {
@@ -233,12 +234,6 @@ function ScheduledTasksContent() {
     createSheetRef.current?.present();
   }, []);
 
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    [],
-  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -271,7 +266,7 @@ function ScheduledTasksContent() {
             </View>
           ) : error ? (
             <View style={{ padding: 40, alignItems: 'center' }}>
-              <Text style={{ color: '#ef4444', fontSize: 14, fontFamily: 'Roobert', textAlign: 'center' }}>
+              <Text style={{ color: (isDark ? THEME.dark.destructive : THEME.light.destructive), fontSize: 14, fontFamily: 'Roobert', textAlign: 'center' }}>
                 Failed to load tasks
               </Text>
             </View>
@@ -282,7 +277,7 @@ function ScheduledTasksContent() {
                   width: 64,
                   height: 64,
                   borderRadius: 20,
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginBottom: 16,
@@ -323,7 +318,6 @@ function ScheduledTasksContent() {
         sheetRef={createSheetRef}
         isDark={isDark}
         theme={theme}
-        renderBackdrop={renderBackdrop}
       />
     </View>
   );
@@ -346,8 +340,8 @@ function TaskListItem({
   onToggle: () => void;
   onDelete: () => void;
 }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
   const isWebhook = trigger.type === 'webhook';
 
   return (
@@ -390,15 +384,15 @@ function TaskListItem({
               paddingVertical: 2,
               borderRadius: 6,
               backgroundColor: trigger.isActive
-                ? (isDark ? 'rgba(52,211,153,0.12)' : 'rgba(52,211,153,0.1)')
-                : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                ? (isDark ? withAlpha(THEME.accent.green, 0.12) : withAlpha(THEME.accent.green, 0.1))
+                : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
             }}
           >
             <Text
               style={{
                 fontSize: 10,
                 fontFamily: 'Roobert-Medium',
-                color: trigger.isActive ? '#34d399' : muted,
+                color: trigger.isActive ? THEME.accent.green : muted,
               }}
             >
               {trigger.isActive ? 'Active' : 'Paused'}
@@ -410,7 +404,7 @@ function TaskListItem({
               paddingHorizontal: 7,
               paddingVertical: 2,
               borderRadius: 6,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
             }}
           >
             <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: muted }}>
@@ -441,7 +435,7 @@ function TaskListItem({
         </View>
       )}
 
-      <ChevronRight size={16} color={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'} />
+      <ChevronRight size={16} color={isDark ? withAlpha(THEME.dark.foreground, 0.2) : withAlpha(THEME.light.foreground, 0.15)} />
     </Pressable>
   );
 }
@@ -459,7 +453,7 @@ function TaskDetailSheet({
   onRunNow,
   onOpenSession,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   trigger: Trigger | null;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
@@ -469,6 +463,7 @@ function TaskDetailSheet({
   onRunNow: () => void;
   onOpenSession: (sessionId: string) => void;
 }) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'settings' | 'executions'>('settings');
   const [isRunning, setIsRunning] = useState(false);
@@ -539,10 +534,10 @@ function TaskDetailSheet({
     onToggle();
   }, [effectiveIsActive, onToggle]);
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const subtleBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
 
   const snapPoints = useMemo(() => ['65%', '90%'], []);
 
@@ -556,12 +551,6 @@ function TaskDetailSheet({
     [onDismiss],
   );
 
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    [],
-  );
 
   // Reset tab when trigger changes
   useEffect(() => {
@@ -574,9 +563,9 @@ function TaskDetailSheet({
       snapPoints={snapPoints}
       enablePanDownToClose
       onChange={handleSheetChange}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
+      backdropComponent={SheetBackdrop}
+      backgroundStyle={{ backgroundColor: sheetBg }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 20 }}
@@ -590,7 +579,7 @@ function TaskDetailSheet({
                   width: 44,
                   height: 44,
                   borderRadius: 14,
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
@@ -603,19 +592,12 @@ function TaskDetailSheet({
               </View>
               <View style={{ flex: 1 }}>
                 {isEditing && trigger.editable ? (
-                  <TextInput
+                  <Input
                     value={editName}
                     onChangeText={setEditName}
                     autoFocus
-                    style={{
-                      fontSize: 18,
-                      fontFamily: 'Roobert-Medium',
-                      color: fg,
-                      paddingVertical: 0,
-                      paddingHorizontal: 0,
-                      borderBottomWidth: 1,
-                      borderBottomColor: theme.primary,
-                    }}
+                    className="h-auto rounded-none border-0 border-b border-primary bg-transparent p-0 shadow-none"
+                    style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}
                     placeholder="Trigger name"
                     placeholderTextColor={muted}
                   />
@@ -626,12 +608,7 @@ function TaskDetailSheet({
                   {trigger.type === 'webhook' ? 'Webhook' : describeCron(trigger.cronExpr)}
                 </Text>
               </View>
-              <Switch
-                value={effectiveIsActive}
-                onValueChange={handleToggle}
-                trackColor={{ false: isDark ? '#333' : '#ddd', true: theme.primary }}
-                thumbColor="#fff"
-              />
+              <Switch checked={effectiveIsActive} onCheckedChange={handleToggle} />
             </View>
 
             {/* Tabs — same segmented toggle as the rest of the app */}
@@ -690,24 +667,20 @@ function TaskDetailSheet({
                       Prompt
                     </Text>
                     {isEditing && trigger.editable ? (
-                      <TextInput
+                      <Textarea
                         value={editPrompt}
                         onChangeText={setEditPrompt}
-                        multiline
                         placeholder="Instruction sent to the agent..."
                         placeholderTextColor={muted}
+                        className="rounded-[10px] border-primary shadow-none"
                         style={{
                           padding: 12,
-                          borderRadius: 10,
                           backgroundColor: subtleBg,
-                          borderWidth: 1,
-                          borderColor: theme.primary,
                           fontSize: 13,
                           fontFamily: 'Roobert',
                           color: fg,
                           lineHeight: 20,
                           minHeight: 96,
-                          textAlignVertical: 'top',
                         }}
                       />
                     ) : (
@@ -735,7 +708,7 @@ function TaskDetailSheet({
                           gap: 8,
                           paddingVertical: 13,
                           borderRadius: 12,
-                          backgroundColor: isDirty ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                          backgroundColor: isDirty ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
                           opacity: updateTask.isPending ? 0.7 : 1,
                         }}
                       >
@@ -757,7 +730,7 @@ function TaskDetailSheet({
                           gap: 8,
                           paddingVertical: 13,
                           borderRadius: 12,
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                          backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                         }}
                       >
                         <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>Cancel</Text>
@@ -802,7 +775,7 @@ function TaskDetailSheet({
                         gap: 8,
                         paddingVertical: 13,
                         borderRadius: 9999,
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                        backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
                       }}
                     >
                       {effectiveIsActive ? (
@@ -829,7 +802,7 @@ function TaskDetailSheet({
                         gap: 8,
                         paddingVertical: 13,
                         borderRadius: 9999,
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                        backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                       }}
                     >
                       <Pencil size={16} color={fg} />
@@ -849,11 +822,11 @@ function TaskDetailSheet({
                         gap: 8,
                         paddingVertical: 13,
                         borderRadius: 9999,
-                        backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)',
+                        backgroundColor: isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.1) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.06),
                       }}
                     >
-                      <Trash2 size={16} color="#ef4444" />
-                      <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>
+                      <Trash2 size={16} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />
+                      <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>
                         Delete Task
                       </Text>
                     </Pressable>
@@ -873,8 +846,8 @@ function TaskDetailSheet({
 // ─── Info Row ────────────────────────────────────────────────────────────────
 
 function InfoRow({ label, value, isDark }: { label: string; value: string; isDark: boolean }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
 
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -934,7 +907,7 @@ function WebhookUrlBlock({
         <Pressable
           onPress={() => onCopy(fullUrl, 'url')}
           hitSlop={6}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03) }}
         >
           {copiedField === 'url' ? <Check size={12} color={fg} /> : <Copy size={12} color={muted} />}
           <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: copiedField === 'url' ? fg : muted }}>
@@ -957,7 +930,7 @@ function WebhookUrlBlock({
         <Pressable
           onPress={() => onCopy(curlExample, 'curl')}
           hitSlop={6}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03) }}
         >
           {copiedField === 'curl' ? <Check size={12} color={fg} /> : <Copy size={12} color={muted} />}
           <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: copiedField === 'curl' ? fg : muted }}>
@@ -965,7 +938,7 @@ function WebhookUrlBlock({
           </Text>
         </Pressable>
       </View>
-      <Text selectable style={{ fontSize: 10.5, fontFamily: 'Menlo', color: isDark ? 'rgba(248,248,248,0.7)' : 'rgba(18,18,21,0.7)', lineHeight: 15 }}>
+      <Text selectable style={{ fontSize: 10.5, fontFamily: 'Menlo', color: isDark ? withAlpha(THEME.dark.foreground, 0.7) : withAlpha(THEME.light.foreground, 0.7), lineHeight: 15 }}>
         {curlExample}
       </Text>
 
@@ -981,8 +954,8 @@ function WebhookUrlBlock({
 
 function ExecutionsTab({ triggerId, isDark, onOpenSession }: { triggerId: string; isDark: boolean; onOpenSession: (sessionId: string) => void }) {
   const { data: executions, isLoading } = useTaskExecutions(triggerId);
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
 
   if (isLoading) {
     return (
@@ -1010,16 +983,16 @@ function ExecutionsTab({ triggerId, isDark, onOpenSession }: { triggerId: string
 }
 
 function ExecutionRow({ execution, isDark, onOpenSession }: { execution: Execution; isDark: boolean; onOpenSession: (sessionId: string) => void }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const subtleBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02);
 
   const statusConfig: Record<ExecutionStatus, { color: string; icon: typeof CheckCircle2 }> = {
-    completed: { color: '#34d399', icon: CheckCircle2 },
-    failed: { color: '#ef4444', icon: XCircle },
-    timeout: { color: '#f59e0b', icon: AlertTriangle },
+    completed: { color: THEME.accent.green, icon: CheckCircle2 },
+    failed: { color: (isDark ? THEME.dark.destructive : THEME.light.destructive), icon: XCircle },
+    timeout: { color: THEME.accent.orange, icon: AlertTriangle },
     skipped: { color: muted, icon: SkipForward },
-    running: { color: '#3b82f6', icon: Loader2 },
+    running: { color: THEME.accent.blue, icon: Loader2 },
     pending: { color: muted, icon: Clock },
   };
 
@@ -1078,7 +1051,7 @@ function ExecutionRow({ execution, isDark, onOpenSession }: { execution: Executi
 
       {/* Error message */}
       {execution.errorMessage && (
-        <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: '#ef4444' }} numberOfLines={3}>
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }} numberOfLines={3}>
           {execution.errorMessage}
         </Text>
       )}
@@ -1182,23 +1155,22 @@ function CreateTaskSheet({
   sheetRef,
   isDark,
   theme,
-  renderBackdrop,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
-  renderBackdrop: (props: any) => React.ReactElement;
 }) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const createTask = useCreateScheduledTask();
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
-  const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const chipActiveBg = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
+  const chipBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const chipActiveBg = isDark ? withAlpha(THEME.dark.foreground, 0.15) : withAlpha(THEME.light.foreground, 0.1);
 
   // Step: 'source' = pick type + configure schedule/webhook, 'config' = name + prompt
   const [step, setStep] = useState<'source' | 'config'>('source');
@@ -1303,22 +1275,17 @@ function CreateTaskSheet({
       ref={sheetRef}
       snapPoints={['85%']}
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{
@@ -1353,7 +1320,7 @@ function CreateTaskSheet({
               style={{
                 flex: 1, paddingVertical: 14, paddingHorizontal: 14, borderRadius: 14, borderWidth: 2, alignItems: 'center', gap: 6,
                 borderColor: sourceType === 'cron' ? theme.primary : borderColor,
-                backgroundColor: sourceType === 'cron' ? (isDark ? 'rgba(190,24,93,0.06)' : 'rgba(190,24,93,0.04)') : 'transparent',
+                backgroundColor: sourceType === 'cron' ? (isDark ? withAlpha(theme.primary, 0.06) : withAlpha(theme.primary, 0.04)) : 'transparent',
               }}
             >
               <Timer size={20} color={sourceType === 'cron' ? theme.primary : muted} />
@@ -1365,7 +1332,7 @@ function CreateTaskSheet({
               style={{
                 flex: 1, paddingVertical: 14, paddingHorizontal: 14, borderRadius: 14, borderWidth: 2, alignItems: 'center', gap: 6,
                 borderColor: sourceType === 'webhook' ? theme.primary : borderColor,
-                backgroundColor: sourceType === 'webhook' ? (isDark ? 'rgba(190,24,93,0.06)' : 'rgba(190,24,93,0.04)') : 'transparent',
+                backgroundColor: sourceType === 'webhook' ? (isDark ? withAlpha(theme.primary, 0.06) : withAlpha(theme.primary, 0.04)) : 'transparent',
               }}
             >
               <Webhook size={20} color={sourceType === 'webhook' ? theme.primary : muted} />
@@ -1400,7 +1367,7 @@ function CreateTaskSheet({
                   <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginBottom: 8 }}>Every</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                     {MINUTE_INTERVALS.map((v) => (
-                      <Pressable key={v} onPress={() => { haptics.selection(); setInterval(v); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: interval === v ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: interval === v ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
+                      <Pressable key={v} onPress={() => { haptics.selection(); setInterval(v); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: interval === v ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: interval === v ? (isDark ? withAlpha(THEME.dark.foreground, 0.15) : withAlpha(THEME.light.foreground, 0.1)) : 'transparent' }}>
                         <Text style={{ fontSize: 13, fontFamily: interval === v ? 'Roobert-Medium' : 'Roobert', color: interval === v ? fg : muted }}>{v} min</Text>
                       </Pressable>
                     ))}
@@ -1412,7 +1379,7 @@ function CreateTaskSheet({
                   <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginBottom: 8 }}>Every</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
                     {HOUR_INTERVALS.map((v) => (
-                      <Pressable key={v} onPress={() => { haptics.selection(); setInterval(v); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: interval === v ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: interval === v ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
+                      <Pressable key={v} onPress={() => { haptics.selection(); setInterval(v); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: interval === v ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: interval === v ? (isDark ? withAlpha(THEME.dark.foreground, 0.15) : withAlpha(THEME.light.foreground, 0.1)) : 'transparent' }}>
                         <Text style={{ fontSize: 13, fontFamily: interval === v ? 'Roobert-Medium' : 'Roobert', color: interval === v ? fg : muted }}>{v}h</Text>
                       </Pressable>
                     ))}
@@ -1420,7 +1387,7 @@ function CreateTaskSheet({
                   <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginBottom: 6 }}>At minute</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                     {[0, 15, 30, 45].map((m) => (
-                      <Pressable key={m} onPress={() => { haptics.selection(); setMinute(m); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: minute === m ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: minute === m ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
+                      <Pressable key={m} onPress={() => { haptics.selection(); setMinute(m); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: minute === m ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: minute === m ? (isDark ? withAlpha(THEME.dark.foreground, 0.15) : withAlpha(THEME.light.foreground, 0.1)) : 'transparent' }}>
                         <Text style={{ fontSize: 13, fontFamily: minute === m ? 'Roobert-Medium' : 'Roobert', color: minute === m ? fg : muted }}>:{String(m).padStart(2, '0')}</Text>
                       </Pressable>
                     ))}
@@ -1446,7 +1413,7 @@ function CreateTaskSheet({
                     {WEEKDAY_BUTTONS.map((day) => {
                       const active = weekdays.includes(day.value);
                       return (
-                        <Pressable key={day.value} onPress={() => { haptics.selection(); toggleWeekday(day.value); }} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 9999, backgroundColor: active ? getToggleActiveBg(isDark) : 'transparent', borderWidth: 1, borderColor: active ? 'transparent' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') }}>
+                        <Pressable key={day.value} onPress={() => { haptics.selection(); toggleWeekday(day.value); }} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 9999, backgroundColor: active ? getToggleActiveBg(isDark) : 'transparent', borderWidth: 1, borderColor: active ? 'transparent' : (isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06)) }}>
                           <Text style={{ fontSize: 12, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? fg : muted }}>{day.label}</Text>
                         </Pressable>
                       );
@@ -1520,7 +1487,7 @@ function CreateTaskSheet({
               value={webhookPath}
               onChangeText={setWebhookPath}
               placeholder="/hooks/my-endpoint"
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
               autoCapitalize="none"
               autoCorrect={false}
               style={{ ...inputStyle, marginBottom: 12 }}
@@ -1532,7 +1499,7 @@ function CreateTaskSheet({
               value={webhookSecret}
               onChangeText={setWebhookSecret}
               placeholder="shared-secret"
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
               autoCapitalize="none"
               autoCorrect={false}
               secureTextEntry
@@ -1551,13 +1518,13 @@ function CreateTaskSheet({
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                 paddingVertical: 14, borderRadius: 9999,
-                backgroundColor: canProceedToConfig ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'),
+                backgroundColor: canProceedToConfig ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06)),
               }}
             >
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: canProceedToConfig ? theme.primaryForeground : (isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.25)') }}>
+              <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: canProceedToConfig ? theme.primaryForeground : (isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.25)) }}>
                 Next
               </Text>
-              <ChevronRight size={18} color={canProceedToConfig ? theme.primaryForeground : (isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.25)')} />
+              <ChevronRight size={18} color={canProceedToConfig ? theme.primaryForeground : (isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.25))} />
             </Pressable>
           </View>
         </>)}
@@ -1581,7 +1548,7 @@ function CreateTaskSheet({
             value={name}
             onChangeText={setName}
             placeholder="e.g. Daily report"
-            placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
             autoFocus
             style={{ ...inputStyle, marginBottom: 16 }}
           />
@@ -1592,7 +1559,7 @@ function CreateTaskSheet({
             value={prompt}
             onChangeText={setPrompt}
             placeholder="What should the agent do?"
-            placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
             multiline
             numberOfLines={3}
             style={{ ...inputStyle, height: 80, textAlignVertical: 'top', marginBottom: 20 }}
@@ -1604,7 +1571,7 @@ function CreateTaskSheet({
               onPress={() => { haptics.tap(); setStep('source'); }}
               style={{
                 flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06),
               }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
@@ -1614,13 +1581,13 @@ function CreateTaskSheet({
               disabled={!isValid || createTask.isPending}
               style={{
                 flex: 2, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999,
-                backgroundColor: isValid ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'),
+                backgroundColor: isValid ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06)),
               }}
             >
               {createTask.isPending ? (
                 <ActivityIndicator size="small" color={isValid ? theme.primaryForeground : muted} />
               ) : (
-                <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: isValid ? theme.primaryForeground : (isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.25)') }}>
+                <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: isValid ? theme.primaryForeground : (isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.25)) }}>
                   Create Trigger
                 </Text>
               )}

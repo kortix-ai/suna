@@ -7,6 +7,7 @@ import React, { useState, memo } from 'react';
 import { View, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface AppIconProps {
   name: string;
@@ -46,14 +47,14 @@ export const AppIcon = memo(function AppIcon({ name, imgSrc, size = 36 }: AppIco
         borderRadius: radius,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        backgroundColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.08 : 0.06),
       }}
     >
       <Text
         style={{
           fontSize,
           fontFamily: 'Roobert-Medium',
-          color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
+          color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.5 : 0.4),
         }}
       >
         {letter}

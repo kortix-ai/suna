@@ -7,7 +7,7 @@
  */
 
 import * as React from 'react';
-import { View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +23,7 @@ import { GroupsTab } from '@/components/accounts/GroupsTab';
 import { GitTab } from '@/components/accounts/GitTab';
 import { AuditTab } from '@/components/accounts/AuditTab';
 import { AccountSettingsTab } from '@/components/accounts/AccountSettingsTab';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 type TabKey = 'members' | 'groups' | 'git' | 'audit' | 'settings';
 
@@ -55,10 +56,10 @@ export default function AccountSettingsScreen() {
 
   const [tab, setTab] = React.useState<TabKey>('members');
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const bg = isDark ? '#0D0D0D' : '#FFFFFF';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const bg = isDark ? THEME.dark.background : THEME.light.background;
   const theme = useThemeColors();
 
   const tabs = React.useMemo(() => {
@@ -83,16 +84,17 @@ export default function AccountSettingsScreen() {
 
       {/* Header */}
       <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <TouchableOpacity
+        <Pressable
           onPress={() => { haptics.tap(); router.back(); }}
           hitSlop={10}
+          className="active:opacity-70"
           style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 10 }}
         >
           <ChevronLeft size={18} color={muted} />
           <Text style={{ fontSize: 13.5, color: muted }}>Accounts</Text>
-        </TouchableOpacity>
+        </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ width: 44, height: 44, borderRadius: 13, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 44, height: 44, borderRadius: 13, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06), alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 19, fontFamily: 'Roobert-Semibold', color: fg }}>{(account?.name?.trim()?.[0] ?? 'A').toUpperCase()}</Text>
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -110,15 +112,15 @@ export default function AccountSettingsScreen() {
           {tabs.map((t) => {
             const on = tab === t.key;
             return (
-              <TouchableOpacity
+              <Pressable
                 key={t.key}
                 onPress={() => { haptics.selection(); setTab(t.key); }}
-                activeOpacity={0.7}
+                className="active:opacity-70"
                 style={{ paddingHorizontal: 14, paddingVertical: 13, position: 'relative' }}
               >
                 <Text style={{ fontSize: 14.5, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? fg : muted }}>{t.label}</Text>
                 {on && <View style={{ position: 'absolute', left: 14, right: 14, bottom: -1, height: 2.5, borderTopLeftRadius: 2, borderTopRightRadius: 2, backgroundColor: theme.primary }} />}
-              </TouchableOpacity>
+              </Pressable>
             );
           })}
         </ScrollView>
@@ -128,10 +130,10 @@ export default function AccountSettingsScreen() {
       {accountQuery.isLoading || !account ? (
         accountQuery.isError ? (
           <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-            <Text style={{ fontSize: 14, color: '#ef4444', textAlign: 'center' }}>{(accountQuery.error as Error)?.message || 'Failed to load account'}</Text>
-            <TouchableOpacity onPress={() => { haptics.tap(); accountQuery.refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+            <Text style={{ fontSize: 14, color: isDark ? THEME.dark.destructive : THEME.light.destructive, textAlign: 'center' }}>{(accountQuery.error as Error)?.message || 'Failed to load account'}</Text>
+            <Pressable onPress={() => { haptics.tap(); accountQuery.refetch(); }} className="active:opacity-80" style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
               <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         ) : (
           <View style={{ paddingVertical: 60, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>

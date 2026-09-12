@@ -15,7 +15,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert, Switch, Linking, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { View, Pressable, ScrollView, ActivityIndicator, TextInput, Alert, Linking, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -29,9 +29,12 @@ import {
   Check,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useProject,
   useUpdateProject,
@@ -77,21 +80,23 @@ function githubRepoWebUrl(repoUrl: string | null | undefined): string | null {
 // ─── reusable bits ────────────────────────────────────────────────────────────
 
 function useColors(isDark: boolean) {
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   return {
-    fg: isDark ? '#F8F8F8' : '#121215',
-    muted: isDark ? '#9b9b9b' : '#6e6e6e',
-    border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-    inputBorder: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)',
-    inputBg: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-    cardBg: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+    fg,
+    muted: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
+    border: withAlpha(fg, 0.08),
+    inputBorder: withAlpha(fg, isDark ? 0.1 : 0.12),
+    inputBg: withAlpha(fg, isDark ? 0.05 : 0.03),
+    cardBg: withAlpha(fg, isDark ? 0.02 : 0.015),
   };
 }
 
 function Card({ title, description, tone, isDark, children }: { title?: string; description?: string; tone?: 'destructive'; isDark: boolean; children: React.ReactNode }) {
   const c = useColors(isDark);
-  const borderColor = tone === 'destructive' ? 'rgba(239,68,68,0.3)' : c.border;
-  const bg = tone === 'destructive' ? 'rgba(239,68,68,0.04)' : c.cardBg;
-  const titleColor = tone === 'destructive' ? '#ef4444' : c.fg;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const borderColor = tone === 'destructive' ? withAlpha(destructiveColor, 0.3) : c.border;
+  const bg = tone === 'destructive' ? withAlpha(destructiveColor, 0.04) : c.cardBg;
+  const titleColor = tone === 'destructive' ? destructiveColor : c.fg;
   return (
     <View style={{ borderRadius: 16, borderWidth: 1, borderColor, backgroundColor: bg, padding: 16 }}>
       {title && <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: titleColor }}>{title}</Text>}
@@ -108,10 +113,10 @@ function FieldLabel({ children, color }: { children: React.ReactNode; color: str
 function SaveButton({ onPress, disabled, pending }: { onPress: () => void; disabled: boolean; pending: boolean }) {
   const theme = useThemeColors();
   return (
-    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: disabled ? 0.5 : 1 }}>
+    <Button onPress={onPress} disabled={disabled} className="self-end flex-row items-center gap-1.5 rounded-full px-[18px]">
       {pending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
       <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
-    </TouchableOpacity>
+    </Button>
   );
 }
 
@@ -185,10 +190,16 @@ function RepositoryCard({ project, canManage, isDark }: { project: KortixProject
         {githubUrl ? <Github size={15} color={c.muted} /> : <GitBranch size={15} color={c.muted} />}
         <Text style={{ flex: 1, fontSize: 13, fontFamily: MONO, color: c.fg }} numberOfLines={1}>{repoLabel}</Text>
         {githubUrl && (
-          <TouchableOpacity onPress={() => { haptics.tap(); Linking.openURL(githubUrl); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onPress={() => { haptics.tap(); Linking.openURL(githubUrl); }}
+            style={{ borderColor: c.border }}
+          >
             <ExternalLink size={13} color={c.muted} />
             <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.fg }}>GitHub</Text>
-          </TouchableOpacity>
+          </Button>
         )}
       </View>
 
@@ -240,20 +251,28 @@ function RepoCollaboratorInvite({ projectId, isDark }: { projectId: string; isDa
           <Github size={15} color={c.muted} />
           <TextInput value={username} onChangeText={setUsername} placeholder="GitHub username" placeholderTextColor={c.muted} autoCapitalize="none" autoCorrect={false} spellCheck={false} style={{ flex: 1, fontSize: 14, color: c.fg, fontFamily: 'Roobert', padding: 0 }} />
         </View>
-        <TouchableOpacity onPress={() => invite.mutate()} disabled={!canSubmit} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 44, borderRadius: 9999, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
+        <Button
+          onPress={() => invite.mutate()}
+          disabled={!canSubmit}
+          className="flex-row items-center gap-1.5 rounded-full px-3.5 h-11"
+        >
           {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <UserPlus size={14} color={theme.primaryForeground} />}
           <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add</Text>
-        </TouchableOpacity>
+        </Button>
       </View>
       {/* Permission toggle */}
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
         {(['write', 'read'] as const).map((p) => {
           const active = permission === p;
           return (
-            <TouchableOpacity key={p} onPress={() => { haptics.tap(); setPermission(p); }} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: active ? theme.primary : c.border, backgroundColor: active ? theme.primaryLight : 'transparent' }}>
+            <Pressable
+              key={p}
+              onPress={() => { haptics.tap(); setPermission(p); }}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: active ? theme.primary : c.border, backgroundColor: active ? theme.primaryLight : 'transparent', opacity: pressed ? 0.8 : 1 })}
+            >
               {active && <Check size={13} color={theme.primary} />}
               <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: active ? c.fg : c.muted }}>{p === 'write' ? 'Can edit' : 'Can view'}</Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
@@ -279,7 +298,10 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
 
   return (
     <View style={{ borderRadius: 16, borderWidth: 1, borderStyle: 'dashed', borderColor: c.border, backgroundColor: c.cardBg, padding: 16 }}>
-      <TouchableOpacity onPress={toggle} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+      <Pressable
+        onPress={toggle}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'flex-start', gap: 10, opacity: pressed ? 0.7 : 1 })}
+      >
         <FlaskConical size={16} color={c.muted} style={{ marginTop: 1 }} />
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>
@@ -293,7 +315,7 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
           )}
         </View>
         <ChevronDown size={17} color={c.muted} style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }} />
-      </TouchableOpacity>
+      </Pressable>
 
       {expanded && (
         <View style={{ marginTop: 12 }}>
@@ -313,33 +335,30 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
 
 function ExperimentalRow({ projectId, feature, canManage, isDark }: { projectId: string; feature: ExperimentalFeatureView; canManage: boolean; isDark: boolean }) {
   const c = useColors(isDark);
-  const { colorScheme } = useColorScheme();
   const update = useUpdateExperimentalFeature(projectId);
   const isBeta = feature.stability === 'beta';
+  const badgeColor = isBeta ? THEME.accent.blue : THEME.accent.purple;
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: c.border }}>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>{feature.name}</Text>
-          <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: isBeta ? 'rgba(59,130,246,0.14)' : 'rgba(139,92,246,0.14)' }}>
-            <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: isBeta ? '#3b82f6' : '#8b5cf6' }}>{isBeta ? 'Beta' : 'Experimental'}</Text>
+          <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: withAlpha(badgeColor, 0.14) }}>
+            <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: badgeColor }}>{isBeta ? 'Beta' : 'Experimental'}</Text>
           </View>
         </View>
         <Text style={{ fontSize: 12, lineHeight: 17, color: c.muted, marginTop: 3 }}>{feature.description}</Text>
       </View>
       <Switch
-        value={feature.enabled}
+        checked={feature.enabled}
         disabled={!canManage || update.isPending}
-        onValueChange={(v) => {
+        onCheckedChange={(v) => {
           haptics.tap();
           update.mutate({ feature: feature.key, enabled: v }, {
             onError: (e: any) => Alert.alert('Failed', e?.message || `Failed to update ${feature.name}.`),
           });
         }}
-        trackColor={{ false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7', true: '#34C759' }}
-        thumbColor="#FFFFFF"
-        ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
       />
     </View>
   );
@@ -349,6 +368,7 @@ function ExperimentalRow({ projectId, feature, canManage, isDark }: { projectId:
 
 function DangerCard({ project, isDark }: { project: KortixProject; isDark: boolean }) {
   const c = useColors(isDark);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   const archive = useArchiveProject();
 
   const confirm = () => {
@@ -371,10 +391,17 @@ function DangerCard({ project, isDark }: { project: KortixProject; isDark: boole
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>Archive project</Text>
           <Text style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Hide this project from the active project list.</Text>
         </View>
-        <TouchableOpacity onPress={confirm} disabled={archive.isPending} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 38, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
-          {archive.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={14} color="#ef4444" />}
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Archive</Text>
-        </TouchableOpacity>
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-full"
+          onPress={confirm}
+          disabled={archive.isPending}
+          style={{ borderColor: withAlpha(destructiveColor, 0.4) }}
+        >
+          {archive.isPending ? <ActivityIndicator size="small" color={destructiveColor} /> : <Trash2 size={14} color={destructiveColor} />}
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: destructiveColor }}>Archive</Text>
+        </Button>
       </View>
     </Card>
   );
@@ -397,7 +424,7 @@ export function SettingsNavPage({
 
   const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
   const canManage = project?.effective_project_role === 'manager';
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
@@ -415,9 +442,15 @@ export function SettingsNavPage({
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
           ) : isError ? (
             <Card title="Failed to load project" description={(error as Error)?.message} tone="destructive" isDark={isDark}>
-              <TouchableOpacity onPress={() => refetch()} style={{ alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="self-start mt-3 rounded-full"
+                onPress={() => refetch()}
+                style={{ borderColor: c.border }}
+              >
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text>
-              </TouchableOpacity>
+              </Button>
             </Card>
           ) : project ? (
             <>

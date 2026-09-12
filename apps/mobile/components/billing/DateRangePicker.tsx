@@ -155,7 +155,10 @@ export function DateRangePicker({
         className="bg-muted/30 rounded-xl px-3 py-2 flex-row items-center gap-2"
       >
         <Icon as={Calendar} size={14} className="text-foreground" strokeWidth={2} />
-        <Text className="text-xs font-roobert-medium text-foreground flex-1">
+        <Text
+          className="font-roobert-medium text-foreground flex-1"
+          style={{ fontSize: 12, lineHeight: 16 }}
+        >
           {displayText}
         </Text>
         <Icon as={ChevronDown} size={14} className="text-muted-foreground" strokeWidth={2} />

@@ -6,19 +6,20 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Pressable } from 'react-native';
-import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowUpRight, Check, Plus, Settings } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Avatar } from '@/components/ui/Avatar';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { Avatar } from '@/components/kortix/avatar';
+import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
 import { NewAccountSheet } from '@/components/accounts/NewAccountSheet';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface AccountSwitcherSheetProps {
   open: boolean;
@@ -35,6 +36,7 @@ export function AccountSwitcherSheet({
   onSelect,
   onClose,
 }: AccountSwitcherSheetProps) {
+  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const router = useRouter();
   const { colorScheme } = useColorScheme();
@@ -43,7 +45,7 @@ export function AccountSwitcherSheet({
   const theme = useThemeColors();
   const [showNewAccount, setShowNewAccount] = useState(false);
 
-  const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const dividerColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
 
   useEffect(() => {
     if (!open) {
@@ -56,12 +58,6 @@ export function AccountSwitcherSheet({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    [],
-  );
 
   const go = useCallback((fn: () => void) => {
     sheetRef.current?.dismiss();
@@ -79,9 +75,9 @@ export function AccountSwitcherSheet({
       enableDynamicSizing
       enablePanDownToClose
       onDismiss={onClose}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      backdropComponent={SheetBackdrop}
+      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 12 }}>
         <Text className="px-2 pb-1.5 font-roobert-medium text-xs uppercase tracking-wider text-muted-foreground">

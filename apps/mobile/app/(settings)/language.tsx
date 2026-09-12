@@ -8,6 +8,7 @@ import { Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const LANGUAGE_FLAGS: Record<string, string> = {
   en: '🇺🇸',
@@ -25,7 +26,7 @@ export default function LanguageScreen() {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const selectedBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.06)';
+  const selectedBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06);
 
   const handleLanguageSelect = async (languageCode: string) => {
     log.log('🌍 Language selected:', languageCode);

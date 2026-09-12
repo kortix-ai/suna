@@ -5,12 +5,14 @@
  */
 
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import { View, TouchableOpacity, Animated, StyleSheet, LayoutAnimation, Platform, UIManager, ScrollView, Image } from 'react-native';
+import { View, Animated, StyleSheet, LayoutAnimation, Platform, UIManager, ScrollView, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/session/SandboxPreviewCard';
 import { GroupedReasoningCard } from '@/components/session/GroupedReasoningCard';
 import { SessionErrorBanner } from './SessionErrorBanner';
@@ -153,9 +155,9 @@ function SandboxImage({
 
   if (loading) {
     return (
-      <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+      <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02) }}>
         <ReAnimated.View>
-          <Loader2 size={20} color={isDark ? '#52525b' : '#a1a1aa'} />
+          <Loader2 size={20} color={muted(isDark)} />
         </ReAnimated.View>
       </View>
     );
@@ -164,7 +166,7 @@ function SandboxImage({
   if (error || !imageUri) {
     return (
       <View style={{ height: 60, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 12, color: isDark ? '#71717a' : '#a1a1aa' }}>
+        <Text style={{ fontSize: 12, color: muted(isDark) }}>
           Failed to load image
         </Text>
       </View>
@@ -200,8 +202,11 @@ function ShimmerStatusText({ text, size = 'sm' }: { text: string; size?: 'sm' | 
     return { transform: [{ translateX }] };
   });
 
-  const textColor = isDark ? '#a1a1aa' : '#71717a';
-  const shimmerColor = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.35)';
+  const textColor = mutedStrong(isDark);
+  // Both themes want the same white highlight sweeping across textColor —
+  // only the alpha differs, so the base stays fixed at the near-white
+  // foreground token instead of inverting per theme.
+  const shimmerColor = withAlpha(THEME.dark.foreground, isDark ? 0.2 : 0.35);
   const fontSize = size === 'xs' ? 12 : 14;
   const lineHeight = size === 'xs' ? 16 : 20;
 
@@ -214,7 +219,11 @@ function ShimmerStatusText({ text, size = 'sm' }: { text: string; size?: 'sm' | 
               fontSize,
               lineHeight,
               fontFamily: 'Roobert',
-              color: '#000',
+              // MaskedView mask element: only alpha (opacity) is read from
+              // this Text to build the reveal mask — the hue is discarded,
+              // so any opaque color works. Uses the foreground token instead
+              // of a raw literal for consistency.
+              color: THEME.light.foreground,
             }}
           >
             {text}
@@ -310,22 +319,29 @@ function getToolLucideIcon(iconName: string): LucideIcon {
 const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
 function cardBorder(isDark: boolean) {
-  return isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  return withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);
 }
 function cardBg(isDark: boolean) {
-  return isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.8)';
+  // Light branch keeps a near-white card fill (not the transparent
+  // light.foreground-alpha shape used elsewhere) — matches the original
+  // white-at-80%-alpha value exactly.
+  return isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.primaryForeground, 0.8);
 }
 function mutedBg(isDark: boolean) {
-  return isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)';
+  return withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.04 : 0.025);
 }
 function fg(isDark: boolean) {
-  return isDark ? '#F8F8F8' : '#121215';
+  return isDark ? THEME.dark.foreground : THEME.light.foreground;
 }
+// Deliberately swaps which theme gets which mutedForeground shade vs.
+// mutedStrong() below: dark mode uses the *lighter*-appearing token here
+// (mapped by value, not by theme name — see Trap 2) for the more
+// de-emphasized/low-contrast muted color, matching the original hex pair.
 function muted(isDark: boolean) {
-  return isDark ? '#71717a' : '#a1a1aa';
+  return isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
 }
 function mutedStrong(isDark: boolean) {
-  return isDark ? '#a1a1aa' : '#71717a';
+  return isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 }
 
 // ─── MonoBlock — reusable monospace code block ───────────────────────────────
@@ -375,7 +391,7 @@ function OutputSection({
         marginBottom: 10,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+        borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04),
         backgroundColor: mutedBg(isDark),
         overflow: 'hidden',
       }}
@@ -387,7 +403,7 @@ function OutputSection({
             width: 5,
             height: 5,
             borderRadius: 2.5,
-            backgroundColor: isError ? (isDark ? '#ef4444' : '#dc2626') : muted(isDark),
+            backgroundColor: isError ? (isDark ? THEME.dark.destructive : THEME.light.destructive) : muted(isDark),
             marginRight: 6,
           }}
         />
@@ -397,7 +413,7 @@ function OutputSection({
       </View>
       {/* Content */}
       <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
-        <MonoBlock isDark={isDark} color={isError ? (isDark ? '#f87171' : '#dc2626') : undefined} maxLines={30}>
+        <MonoBlock isDark={isDark} color={isError ? (isDark ? THEME.dark.destructive : THEME.light.destructive) : undefined} maxLines={30}>
           {displayOutput}
         </MonoBlock>
       </View>
@@ -528,13 +544,13 @@ function HighlightedBashCommand({ command, isDark }: { command: string; isDark: 
   const tokens = useMemo(() => tokenizeBash(command), [command]);
 
   const colors: Record<BashToken['type'], string> = {
-    prompt: isDark ? '#71717a' : '#a1a1aa',
-    command: isDark ? '#c4b5fd' : '#7c3aed', // purple
-    flag: isDark ? '#93c5fd' : '#2563eb',     // blue
-    string: isDark ? '#86efac' : '#16a34a',   // green
-    operator: isDark ? '#fca5a5' : '#dc2626', // red
-    redirect: isDark ? '#fca5a5' : '#dc2626', // red
-    path: isDark ? '#e2e8f0' : '#334155',     // slate (near-white/dark)
+    prompt: muted(isDark),
+    command: THEME.accent.purple, // purple
+    flag: THEME.accent.blue,     // blue
+    string: THEME.accent.green,   // green
+    operator: THEME.accent.red, // red
+    redirect: THEME.accent.red, // red
+    path: fg(isDark),     // slate (near-white/dark)
     plain: fg(isDark),
   };
 
@@ -698,17 +714,17 @@ function HighlightedCode({
   const ext = getExtFromPath(filePath);
 
   const colors: Record<CodeTokenType, string> = {
-    keyword: isDark ? '#c4b5fd' : '#7c3aed',     // purple
-    string: isDark ? '#86efac' : '#16a34a',       // green
-    comment: isDark ? '#6b7280' : '#9ca3af',      // gray
-    number: isDark ? '#fdba74' : '#ea580c',       // orange
-    heading: isDark ? '#93c5fd' : '#2563eb',      // blue
-    bold: isDark ? '#e2e8f0' : '#1e293b',         // strong fg
-    bullet: isDark ? '#fdba74' : '#ea580c',       // orange
-    operator: isDark ? '#a1a1aa' : '#71717a',     // muted
-    property: isDark ? '#93c5fd' : '#2563eb',     // blue
-    tag: isDark ? '#fca5a5' : '#dc2626',          // red
-    attr: isDark ? '#fdba74' : '#ea580c',         // orange
+    keyword: THEME.accent.purple,     // purple
+    string: THEME.accent.green,       // green
+    comment: muted(isDark),      // gray
+    number: THEME.accent.orange,       // orange
+    heading: THEME.accent.blue,      // blue
+    bold: fg(isDark),         // strong fg
+    bullet: THEME.accent.orange,       // orange
+    operator: mutedStrong(isDark),     // muted
+    property: THEME.accent.blue,     // blue
+    tag: THEME.accent.red,          // red
+    attr: THEME.accent.orange,         // orange
     plain: mutedStrong(isDark),
   };
 
@@ -801,34 +817,35 @@ function DiffCodeLine({ text, lineType, ext, isDark, fs, lh }: {
 
   const getColor = (tokenType: CodeTokenType): string => {
     const syntaxMap: Record<CodeTokenType, string> = {
-      keyword: isDark ? '#c4b5fd' : '#7c3aed',
-      string: isDark ? '#86efac' : '#16a34a',
-      comment: isDark ? '#6b7280' : '#9ca3af',
-      number: isDark ? '#fdba74' : '#ea580c',
-      heading: isDark ? '#93c5fd' : '#2563eb',
-      bold: isDark ? '#e2e8f0' : '#1e293b',
-      bullet: isDark ? '#fdba74' : '#ea580c',
-      operator: isDark ? '#a1a1aa' : '#71717a',
-      property: isDark ? '#93c5fd' : '#2563eb',
-      tag: isDark ? '#fca5a5' : '#dc2626',
-      attr: isDark ? '#fdba74' : '#ea580c',
-      plain: isDark ? '#e4e4e7' : '#27272a',
+      keyword: THEME.accent.purple,
+      string: THEME.accent.green,
+      comment: muted(isDark),
+      number: THEME.accent.orange,
+      heading: THEME.accent.blue,
+      bold: fg(isDark),
+      bullet: THEME.accent.orange,
+      operator: mutedStrong(isDark),
+      property: THEME.accent.blue,
+      tag: THEME.accent.red,
+      attr: THEME.accent.orange,
+      plain: fg(isDark),
     };
     const base = syntaxMap[tokenType];
     if (lineType === 'unchanged') {
-      const r = parseInt(base.slice(1, 3), 16);
-      const g = parseInt(base.slice(3, 5), 16);
-      const b = parseInt(base.slice(5, 7), 16);
-      return `rgba(${r},${g},${b},0.45)`;
+      // base is now a THEME `hsl(...)` string, not hex — hex-slicing it
+      // would silently break (this is the concatenation trap called out
+      // for MENTION_COLORS; withAlpha is the correct token-safe way to
+      // dim a THEME color for the "unchanged" diff line tint).
+      return withAlpha(base, 0.45);
     }
     return base;
   };
 
   const prefixChar = lineType === 'removed' ? '− ' : lineType === 'added' ? '+ ' : '  ';
   const prefixColor = lineType === 'removed'
-    ? (isDark ? '#f87171' : '#dc2626')
+    ? THEME.accent.red
     : lineType === 'added'
-    ? (isDark ? '#4ade80' : '#16a34a')
+    ? THEME.accent.green
     : 'transparent';
 
   return (
@@ -882,9 +899,9 @@ function WriteEditExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
                   key={i}
                   style={{
                     backgroundColor: isRemoved
-                      ? (isDark ? 'rgba(239,68,68,0.06)' : 'rgba(239,68,68,0.05)')
+                      ? withAlpha(THEME.accent.red, isDark ? 0.06 : 0.05)
                       : isAdded
-                      ? (isDark ? 'rgba(34,197,94,0.06)' : 'rgba(34,197,94,0.05)')
+                      ? withAlpha(THEME.accent.green, isDark ? 0.06 : 0.05)
                       : 'transparent',
                   }}
                 >
@@ -943,8 +960,8 @@ function TodosExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolea
   if (todos.length === 0) return null;
 
   const statusIcons: Record<string, { icon: string; color: string }> = {
-    completed: { icon: 'checkmark-circle', color: isDark ? '#4ade80' : '#16a34a' },
-    in_progress: { icon: 'ellipsis-horizontal-circle', color: isDark ? '#60a5fa' : '#2563eb' },
+    completed: { icon: 'checkmark-circle', color: THEME.accent.green },
+    in_progress: { icon: 'ellipsis-horizontal-circle', color: THEME.accent.blue },
     pending: { icon: 'ellipse-outline', color: muted(isDark) },
     cancelled: { icon: 'close-circle-outline', color: muted(isDark) },
   };
@@ -961,7 +978,7 @@ function TodosExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolea
               alignItems: 'flex-start',
               paddingVertical: 5,
               borderBottomWidth: i < todos.length - 1 ? 1 : 0,
-              borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
             }}
           >
             <Ionicons
@@ -1193,7 +1210,7 @@ function WebSearchSourceRow({ source, isDark }: { source: WebSearchSource; isDar
       {/* Favicon */}
       <View style={{
         width: 20, height: 20, borderRadius: 4,
-        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+        backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
         alignItems: 'center', justifyContent: 'center',
         marginRight: 10, marginTop: 1,
       }}>
@@ -1255,13 +1272,14 @@ function WebSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
             key={qi}
             style={{
               borderTopWidth: qi > 0 ? 1 : 0,
-              borderTopColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
             }}
           >
             {/* Query header (batch mode only) */}
             {isMulti && (
-              <TouchableOpacity
-                activeOpacity={0.7}
+              <Button
+                variant="ghost"
+                className="h-auto w-auto gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
                 onPress={() => {
                   LayoutAnimation.configureNext({
                     duration: 200,
@@ -1279,7 +1297,7 @@ function WebSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
                 </Text>
                 {qr.sources.length > 0 && (
                   <View style={{
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                    backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                     width: 20, height: 20, borderRadius: 10,
                     alignItems: 'center', justifyContent: 'center', marginLeft: 6,
                   }}>
@@ -1293,7 +1311,7 @@ function WebSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
                   color={muted(isDark)}
                   style={{ marginLeft: 4, transform: [{ rotate: isExpanded ? '90deg' : '0deg' }] }}
                 />
-              </TouchableOpacity>
+              </Button>
             )}
 
             {/* Answer + Sources */}
@@ -1321,7 +1339,7 @@ function WebSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
                         key={si}
                         style={{
                           borderTopWidth: si > 0 ? 1 : 0,
-                          borderTopColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                          borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
                         }}
                       >
                         <WebSearchSourceRow source={src} isDark={isDark} />
@@ -1365,7 +1383,7 @@ function GlobGrepExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boo
                 flexDirection: 'row',
                 paddingVertical: 4,
                 borderBottomWidth: i < Math.min(lines.length, 30) - 1 ? 1 : 0,
-                borderBottomColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02),
               }}
             >
               <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: monoFont, color: fg(isDark) }}>
@@ -1506,7 +1524,7 @@ function GenericExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bool
 
   return (
     <View style={{ paddingHorizontal: 12, paddingVertical: 10, maxHeight: 250 }}>
-      <MonoBlock isDark={isDark} color={tool.state.status === 'error' ? (isDark ? '#f87171' : '#dc2626') : undefined} maxLines={30}>
+      <MonoBlock isDark={isDark} color={tool.state.status === 'error' ? (isDark ? THEME.dark.destructive : THEME.light.destructive) : undefined} maxLines={30}>
         {output.length > 3000 ? output.slice(0, 3000) + '\n...' : output}
       </MonoBlock>
     </View>
@@ -1562,12 +1580,16 @@ function GetMemExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boole
 
   if (!parsed && !output) return null;
 
-  const tagColor = isDark ? { bg: 'rgba(16,185,129,0.12)', text: '#34d399', border: 'rgba(16,185,129,0.2)' }
-                          : { bg: 'rgba(16,185,129,0.08)', text: '#059669', border: 'rgba(16,185,129,0.2)' };
-  const headerBg = isDark ? 'rgba(245,158,11,0.06)' : 'rgba(245,158,11,0.04)';
-  const badgeBg = isDark ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.08)';
-  const badgeText = isDark ? '#fbbf24' : '#b45309';
-  const sectionBorder = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const tagColor = {
+    bg: withAlpha(THEME.accent.green, isDark ? 0.12 : 0.08),
+    text: THEME.accent.green,
+    // Identical in both branches in the original — border alpha never varied by theme.
+    border: withAlpha(THEME.accent.green, 0.2),
+  };
+  const headerBg = withAlpha(THEME.accent.orange, isDark ? 0.06 : 0.04);
+  const badgeBg = withAlpha(THEME.accent.orange, isDark ? 0.12 : 0.08);
+  const badgeText = THEME.accent.orange;
+  const sectionBorder = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
 
   if (!parsed) {
     return (
@@ -1646,7 +1668,7 @@ function GetMemExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boole
               <Text style={{ fontSize: 9, fontFamily: 'Roobert-Medium', color: muted(isDark), textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Facts</Text>
               {parsed.facts.map((fact, i) => (
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 3 }}>
-                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: isDark ? '#34d399' : '#059669', marginTop: 5, marginRight: 6 }} />
+                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: THEME.accent.green, marginTop: 5, marginRight: 6 }} />
                   <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: fg(isDark), lineHeight: 17, flex: 1 }}>{fact}</Text>
                 </View>
               ))}
@@ -1704,7 +1726,7 @@ function LtmSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
     );
   }
 
-  const sectionBorder = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const sectionBorder = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
 
   return (
     <ScrollView style={{ maxHeight: 350 }} nestedScrollEnabled showsVerticalScrollIndicator contentContainerStyle={{ padding: 10 }}>
@@ -1713,12 +1735,12 @@ function LtmSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
           key={i}
           style={{
             borderRadius: 8, borderWidth: 1, borderColor: sectionBorder,
-            padding: 10, marginBottom: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+            padding: 10, marginBottom: 6, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.02) : withAlpha(THEME.light.foreground, 0.01),
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <View style={{
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
               borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1,
             }}>
               <Text style={{ fontSize: 9, fontFamily: 'Roobert-Medium', color: mutedStrong(isDark) }}>
@@ -1817,7 +1839,7 @@ function QuestionExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boo
           style={{
             paddingVertical: 6,
             borderBottomWidth: i < qaPairs.length - 1 ? 1 : 0,
-            borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
           }}
         >
           {!!qa.question && (
@@ -1979,8 +2001,8 @@ function SessionGetExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: b
             style={{
               borderRadius: 8,
               borderWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-              backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+              borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06),
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.02) : withAlpha(THEME.light.foreground, 0.015),
               padding: 10,
               gap: 6,
             }}
@@ -1998,22 +2020,22 @@ function SessionGetExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: b
                     borderWidth: 1.5,
                     marginTop: 1,
                     borderColor: todo.status === 'completed'
-                      ? (isDark ? '#4ade80' : '#16a34a')
+                      ? (THEME.accent.green)
                       : todo.status === 'in_progress'
-                      ? (isDark ? '#60a5fa' : '#2563eb')
-                      : (isDark ? '#52525b' : '#d4d4d8'),
+                      ? (THEME.accent.blue)
+                      : (isDark ? THEME.dark.border : THEME.light.border),
                     backgroundColor: todo.status === 'completed'
-                      ? (isDark ? 'rgba(74,222,128,0.15)' : 'rgba(22,163,74,0.1)')
+                      ? (isDark ? withAlpha(THEME.accent.green, 0.15) : withAlpha(THEME.accent.green, 0.1))
                       : 'transparent',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
                   {todo.status === 'completed' && (
-                    <Text style={{ fontSize: 9, color: isDark ? '#4ade80' : '#16a34a', fontWeight: '700' }}>✓</Text>
+                    <Text style={{ fontSize: 9, color: THEME.accent.green, fontWeight: '700' }}>✓</Text>
                   )}
                   {todo.status === 'in_progress' && (
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isDark ? '#60a5fa' : '#2563eb' }} />
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: THEME.accent.blue }} />
                   )}
                 </View>
                 <Text
@@ -2041,10 +2063,10 @@ function SessionGetExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: b
                 paddingHorizontal: 6,
                 paddingVertical: 2,
                 borderRadius: 4,
-                backgroundColor: isDark ? 'rgba(52,211,153,0.12)' : 'rgba(5,150,105,0.08)',
+                backgroundColor: isDark ? withAlpha(THEME.accent.green, 0.12) : withAlpha(THEME.accent.green, 0.08),
               }}
             >
-              <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: isDark ? '#34d399' : '#059669' }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: THEME.accent.green }}>
                 Compressed
               </Text>
             </View>
@@ -2247,8 +2269,8 @@ function ShowToolCard({
   }, [hasExpandableContent]);
 
   const borderColor = isError
-    ? (isDark ? 'rgba(239,68,68,0.2)' : 'rgba(220,38,38,0.15)')
-    : (isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)');
+    ? (isDark ? withAlpha(THEME.dark.destructive, 0.2) : withAlpha(THEME.light.destructive, 0.15))
+    : (isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08));
 
   return (
     <View
@@ -2276,7 +2298,7 @@ function ShowToolCard({
             width: 32,
             height: 32,
             borderRadius: 8,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+            backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
             alignItems: 'center',
             justifyContent: 'center',
             marginRight: 10,
@@ -2324,8 +2346,9 @@ function ShowToolCard({
 
         {/* Open button — for URLs, localhost, and file paths */}
         {!isRunning && canOpen && (
-          <TouchableOpacity
-            activeOpacity={0.7}
+          <Button
+            variant="ghost"
+            className="h-auto w-auto gap-0 rounded-lg p-0 active:bg-transparent active:opacity-70"
             onPress={handleOpen}
             style={{
               flexDirection: 'row',
@@ -2333,7 +2356,7 @@ function ShowToolCard({
               paddingHorizontal: 10,
               paddingVertical: 6,
               borderRadius: 8,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
               marginLeft: 8,
             }}
           >
@@ -2341,7 +2364,7 @@ function ShowToolCard({
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg(isDark) }}>
               {openLabel}
             </Text>
-          </TouchableOpacity>
+          </Button>
         )}
       </View>
 
@@ -2353,8 +2376,9 @@ function ShowToolCard({
       {/* ── Expand toggle for non-image content ── */}
       {hasExpandableContent && !isRunning && !(type === 'image' && path && isImagePath(path)) && (
         <>
-          <TouchableOpacity
-            activeOpacity={0.7}
+          <Button
+            variant="ghost"
+            className="h-auto w-auto gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
             onPress={handleToggle}
             style={{
               flexDirection: 'row',
@@ -2362,7 +2386,7 @@ function ShowToolCard({
               paddingHorizontal: 14,
               paddingVertical: 8,
               borderTopWidth: 1,
-              borderTopColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+              borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04),
             }}
           >
             <ReAnimated.View style={chevronStyle}>
@@ -2378,13 +2402,13 @@ function ShowToolCard({
             >
               {expanded ? 'Hide Content' : 'Show Content'}
             </Text>
-          </TouchableOpacity>
+          </Button>
 
           {expanded && (
             <View
               style={{
                 borderTopWidth: 1,
-                borderTopColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04),
               }}
             >
               <ShowExpandedContent tool={tool} isDark={isDark} />
@@ -2518,8 +2542,9 @@ function ToolCard({
       {/* Inline trigger row — compact "thinking-stream" style (web parity:
           tool-renderers.tsx BasicTool). No bordered card, flush-left so the
           icon aligns with the reasoning rows. */}
-      <TouchableOpacity
-        activeOpacity={hasExpandable || projectNavTarget ? 0.7 : 1}
+      <Button
+        variant="ghost"
+        className={`h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent ${hasExpandable || projectNavTarget ? 'active:opacity-70' : 'active:opacity-100'}`}
         onPress={handlePress}
         style={{
           flexDirection: 'row',
@@ -2570,12 +2595,12 @@ function ToolCard({
         {diffStats && !isRunning && (diffStats.additions > 0 || diffStats.deletions > 0) && (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 8, gap: 4 }}>
             {diffStats.additions > 0 && (
-              <Text style={{ fontSize: 11, fontFamily: monoFont, color: isDark ? '#4ade80' : '#16a34a' }}>
+              <Text style={{ fontSize: 11, fontFamily: monoFont, color: THEME.accent.green }}>
                 +{diffStats.additions}
               </Text>
             )}
             {diffStats.deletions > 0 && (
-              <Text style={{ fontSize: 11, fontFamily: monoFont, color: isDark ? '#f87171' : '#dc2626' }}>
+              <Text style={{ fontSize: 11, fontFamily: monoFont, color: THEME.accent.red }}>
                 -{diffStats.deletions}
               </Text>
             )}
@@ -2587,18 +2612,18 @@ function ToolCard({
           {isRunning ? (
             <SpinningLoader size={14} color={muted(isDark)} />
           ) : isError ? (
-            <CircleAlert size={14} color={isDark ? '#ef4444' : '#dc2626'} />
+            <CircleAlert size={14} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />
           ) : projectNavTarget ? (
-            <ChevronRight size={14} color={isDark ? '#52525b' : '#a1a1aa'} />
+            <ChevronRight size={14} color={muted(isDark)} />
           ) : hasExpandable ? (
             <ReAnimated.View style={chevronStyle}>
-              <ChevronRight size={14} color={isDark ? '#52525b' : '#a1a1aa'} />
+              <ChevronRight size={14} color={muted(isDark)} />
             </ReAnimated.View>
           ) : (
-            <Check size={14} color={isDark ? '#4ade80' : '#16a34a'} />
+            <Check size={14} color={THEME.accent.green} />
           )}
         </View>
-      </TouchableOpacity>
+      </Button>
 
       {/* Expanded content — tool-specific. The collapsed trigger is inline, so
           the detail gets its own light container when opened. */}
@@ -2682,9 +2707,16 @@ interface TextSegment {
 }
 
 const MENTION_COLORS: Record<MentionType, string> = {
-  file: '#3b82f6',    // blue
-  agent: '#a855f7',   // purple
-  session: '#10b981', // emerald
+  file: THEME.accent.blue,
+  agent: THEME.accent.purple,
+  session: THEME.accent.green,
+};
+
+// Fixed third-party channel brand marks — neither is a Kortix semantic/brand
+// token, and both must render identically regardless of app theme.
+const CHANNEL_BRAND_COLORS: Record<'telegram' | 'other', string> = {
+  telegram: '#29B6F6', // hex-allowlist: Telegram's official blue, near hsl(198.7 91.9% 56.3%)
+  other: '#E91E63', // hex-allowlist: generic "other channel" pink, hsl(339.6 82.2% 51.6%)
 };
 
 function HighlightMentions({
@@ -2768,7 +2800,12 @@ function HighlightMentions({
             style={{
               color: MENTION_COLORS[seg.type],
               fontFamily: 'Roobert-Medium',
-              ...(isClickable ? { textDecorationLine: 'underline' as const, textDecorationColor: `${MENTION_COLORS[seg.type]}40` } : {}),
+              // MENTION_COLORS is now a THEME hsl(...) string, not hex — the
+              // historical trick of suffixing a two-digit hex alpha directly
+              // onto the color string would silently produce an invalid
+              // color. withAlpha is the token-safe equivalent of that old
+              // suffix (roughly 0.25 alpha).
+              ...(isClickable ? { textDecorationLine: 'underline' as const, textDecorationColor: withAlpha(MENTION_COLORS[seg.type], 0.25) } : {}),
             }}
             onPress={
               isClickable
@@ -2967,8 +3004,8 @@ export function SessionTurn({
             style={{
               borderRadius: 16,
               borderWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
               paddingHorizontal: 16,
               paddingVertical: 10,
               maxWidth: '85%',
@@ -2979,13 +3016,13 @@ export function SessionTurn({
               <Ionicons
                 name={channelMessageInfo.platform === 'Telegram' ? 'paper-plane-outline' : 'logo-slack'}
                 size={14}
-                color={channelMessageInfo.platform === 'Telegram' ? '#29B6F6' : '#E91E63'}
+                color={channelMessageInfo.platform === 'Telegram' ? CHANNEL_BRAND_COLORS.telegram : CHANNEL_BRAND_COLORS.other}
               />
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: channelMessageInfo.platform === 'Telegram' ? '#29B6F6' : '#E91E63' }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: channelMessageInfo.platform === 'Telegram' ? CHANNEL_BRAND_COLORS.telegram : CHANNEL_BRAND_COLORS.other }}>
                 {channelMessageInfo.platform}
               </Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: isDark ? '#71717a' : '#a1a1aa' }}>·</Text>
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted(isDark) }}>·</Text>
+              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg(isDark) }}>
                 {channelMessageInfo.userName}
               </Text>
             </View>
@@ -2995,7 +3032,7 @@ export function SessionTurn({
                 style={{
                   fontSize: 14,
                   fontFamily: 'Roobert',
-                  color: isDark ? '#F8F8F8' : '#121215',
+                  color: fg(isDark),
                   lineHeight: 20,
                 }}
               >
@@ -3008,8 +3045,8 @@ export function SessionTurn({
             style={{
               borderRadius: 16,
               borderWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
               paddingHorizontal: 16,
               paddingVertical: 10,
               maxWidth: '85%',
@@ -3019,20 +3056,20 @@ export function SessionTurn({
               <Ionicons
                 name="timer-outline"
                 size={14}
-                color={isDark ? '#a1a1aa' : '#71717a'}
+                color={mutedStrong(isDark)}
               />
               <Text
                 style={{
                   fontSize: 14,
                   fontFamily: 'Roobert-Medium',
-                  color: isDark ? '#F8F8F8' : '#121215',
+                  color: fg(isDark),
                 }}
               >
                 {triggerEventInfo.data?.trigger || 'Scheduled Task'}
               </Text>
               {triggerEventInfo.data?.data?.manual && (
-                <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
-                  <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: isDark ? '#a1a1aa' : '#71717a' }}>Manual</Text>
+                <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04) }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: mutedStrong(isDark) }}>Manual</Text>
                 </View>
               )}
             </View>
@@ -3042,7 +3079,7 @@ export function SessionTurn({
                 style={{
                   fontSize: 12,
                   fontFamily: 'Roobert',
-                  color: isDark ? '#71717a' : '#a1a1aa',
+                  color: muted(isDark),
                   marginTop: 4,
                   paddingLeft: 22,
                 }}
@@ -3056,8 +3093,8 @@ export function SessionTurn({
             style={{
               borderRadius: 16,
               borderWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
               paddingHorizontal: 16,
               paddingVertical: 10,
               maxWidth: '85%',
@@ -3067,13 +3104,13 @@ export function SessionTurn({
               <Ionicons
                 name="terminal-outline"
                 size={14}
-                color={isDark ? '#a1a1aa' : '#71717a'}
+                color={mutedStrong(isDark)}
               />
               <Text
                 style={{
                   fontSize: 14,
                   fontFamily: 'Roobert-Medium',
-                  color: isDark ? '#F8F8F8' : '#121215',
+                  color: fg(isDark),
                 }}
               >
                 /{commandInfo.name}
@@ -3085,7 +3122,7 @@ export function SessionTurn({
                 style={{
                   fontSize: 12,
                   fontFamily: 'Roobert',
-                  color: isDark ? '#71717a' : '#a1a1aa',
+                  color: muted(isDark),
                   marginTop: 4,
                   paddingLeft: 22,
                 }}
@@ -3215,13 +3252,13 @@ export function SessionTurn({
             <View
               className="rounded-lg border mb-2 px-3 py-2"
               style={{
-                backgroundColor: isDark ? 'rgba(248,248,248,0.03)' : 'rgba(18,18,21,0.02)',
-                borderColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.06)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02),
+                borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06),
               }}
             >
               <View className="flex-row items-start">
                 <View className="mt-0.5 mr-2">
-                  <SpinningLoader size={14} color={isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)'} />
+                  <SpinningLoader size={14} color={isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4)} />
                 </View>
                 <View className="flex-1">
                   <Text className="text-xs text-muted-foreground" style={{ lineHeight: 16 }}>
@@ -3317,8 +3354,8 @@ function UserFileCard({ file, isDark }: { file: { path: string; mime: string; fi
       style={{
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+        borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+        backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02),
         overflow: 'hidden',
         marginBottom: 6,
       }}
@@ -3336,7 +3373,7 @@ function UserFileCard({ file, isDark }: { file: { path: string; mime: string; fi
         <Ionicons
           name={isImage ? 'image-outline' : file.mime === 'application/pdf' ? 'document-text-outline' : 'document-outline'}
           size={16}
-          color={isDark ? '#71717a' : '#a1a1aa'}
+          color={muted(isDark)}
         />
         <Text
           numberOfLines={1}
@@ -3344,7 +3381,7 @@ function UserFileCard({ file, isDark }: { file: { path: string; mime: string; fi
             flex: 1,
             fontSize: 12,
             fontFamily: monoFont,
-            color: isDark ? '#a1a1aa' : '#71717a',
+            color: mutedStrong(isDark),
           }}
         >
           {file.filename || file.path.split('/').pop() || 'File'}
@@ -3368,8 +3405,8 @@ function UserMessageActions({
   onCopy: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const mutedColor = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)';
-  const copiedColor = isDark ? '#4ade80' : '#16a34a';
+  const mutedColor = isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.25);
+  const copiedColor = THEME.accent.green;
 
   const handleCopy = useCallback(async () => {
     await Clipboard.setStringAsync(userText);
@@ -3380,9 +3417,10 @@ function UserMessageActions({
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 3, gap: 0 }}>
       {/* Copy */}
-      <TouchableOpacity
+      <Button
+        variant="ghost"
+        className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-60"
         onPress={handleCopy}
-        activeOpacity={0.6}
         hitSlop={6}
         style={{ padding: 5, borderRadius: 6 }}
       >
@@ -3391,7 +3429,7 @@ function UserMessageActions({
           size={13}
           color={copied ? copiedColor : mutedColor}
         />
-      </TouchableOpacity>
+      </Button>
     </View>
   );
 }
@@ -3431,7 +3469,7 @@ function TurnActions({
     setTimeout(() => setCopied(false), 2000);
   }, [response]);
 
-  const mutedColor = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)';
+  const mutedColor = isDark ? withAlpha(THEME.dark.foreground, 0.35) : withAlpha(THEME.light.foreground, 0.3);
   const durationClassName = tightToResponse
     ? 'text-xs text-muted-foreground/50 mr-2 mt-0.5'
     : 'text-xs text-muted-foreground/50 mr-2';
@@ -3464,18 +3502,19 @@ function TurnActions({
       })()}
 
       {/* Copy */}
-      <TouchableOpacity
+      <Button
+        variant="ghost"
+        className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-60"
         onPress={handleCopy}
-        activeOpacity={0.6}
         hitSlop={6}
         style={{ padding: 5, borderRadius: 6 }}
       >
         <Ionicons
           name={copied ? 'checkmark' : 'copy-outline'}
           size={14}
-          color={copied ? (isDark ? '#4ade80' : '#16a34a') : mutedColor}
+          color={copied ? THEME.accent.green : mutedColor}
         />
-      </TouchableOpacity>
+      </Button>
     </Animated.View>
   );
 }

@@ -12,12 +12,11 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   ActivityIndicator,
   Alert,
   Image,
-  TextInput,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -26,12 +25,7 @@ import { SvgUri } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
   Zap,
   Boxes,
@@ -49,10 +43,12 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { SearchListHeader } from '@/components/ui/search-list-header';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { SearchListHeader } from '@/components/kortix/search-list-header';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useConnectors,
   useSyncConnectors,
@@ -80,6 +76,7 @@ import type {
   PolicyDefaultMode,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -118,16 +115,16 @@ function providerLabel(provider: ConnectorProvider): string {
 }
 
 const STATUS_META: Record<AdminConnector['status'], { label: string; color: string }> = {
-  active: { label: 'Active', color: '#22C55E' },
-  disabled: { label: 'Disabled', color: '#9CA3AF' },
-  needs_auth: { label: 'Needs auth', color: '#F59E0B' },
-  error: { label: 'Error', color: '#EF4444' },
+  active: { label: 'Active', color: THEME.accent.green },
+  disabled: { label: 'Disabled', color: THEME.light.mutedForeground },
+  needs_auth: { label: 'Needs auth', color: THEME.accent.orange },
+  error: { label: 'Error', color: THEME.accent.red },
 };
 
 const RISK_COLOR: Record<ConnectorAction['risk'], string> = {
-  read: '#9CA3AF',
-  write: '#F59E0B',
-  destructive: '#EF4444',
+  read: THEME.light.mutedForeground,
+  write: THEME.accent.orange,
+  destructive: THEME.accent.red,
 };
 
 /** "google_drive" → "Google Drive" — a friendly fallback name from a slug. */
@@ -155,8 +152,8 @@ function AppLogo({
   size?: number;
   isDark: boolean;
 }) {
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const iconBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
   const [stage, setStage] = useState<'img' | 'svg' | 'fallback'>('img');
   // Reset when the source changes (logo can resolve after an async lookup).
   useEffect(() => { setStage('img'); }, [imgSrc]);
@@ -208,11 +205,11 @@ function ConnectorDetail({
   const disconnectMut = useDisconnectConnector(projectId);
   const [connecting, setConnecting] = useState(false);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const iconBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const closeBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
 
   const Icon = providerIcon(connector.provider);
   const status = STATUS_META[connector.status];
@@ -313,22 +310,22 @@ function ConnectorDetail({
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>{status.label}</Text>
           </View>
         </View>
-        <TouchableOpacity
+        <Pressable
           onPress={() => { haptics.tap(); onClose(); }}
           hitSlop={8}
           style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}
         >
           <X size={17} color={muted} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Top action — connect / set credential when the connector isn't ready */}
       {showTopAction && (
         <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
-          <TouchableOpacity
+          <Pressable
             onPress={needsConnect ? handleReconnect : () => { haptics.tap(); onSetCredential(); }}
             disabled={connecting}
-            activeOpacity={0.85}
+            className="active:opacity-[85%]"
             style={{ height: 46, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.primary, opacity: connecting ? 0.6 : 1 }}
           >
             {connecting ? (
@@ -339,7 +336,7 @@ function ConnectorDetail({
             <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
               {needsConnect ? 'Connect' : 'Set credential'}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
           <Text style={{ fontSize: 12.5, color: muted, marginTop: 8, textAlign: 'center' }}>
             {needsConnect
               ? 'Connect an account before this connector can run.'
@@ -369,7 +366,7 @@ function ConnectorDetail({
                   <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
                     {toolTitle}
                   </Text>
-                  <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: `${RISK_COLOR[action.risk]}22` }}>
+                  <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: withAlpha(RISK_COLOR[action.risk], 0.13) }}>
                     <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: RISK_COLOR[action.risk] }}>{action.risk}</Text>
                   </View>
                 </View>
@@ -387,25 +384,25 @@ function ConnectorDetail({
       {/* Sticky footer — always visible: disconnect (keep connector) + remove */}
       <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: border }}>
         {isConnected && (
-          <TouchableOpacity
+          <Pressable
             onPress={handleDisconnect}
             disabled={disconnectMut.isPending}
-            activeOpacity={0.7}
+            className="active:opacity-70"
             style={{ flex: 1, height: 40, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: border, opacity: disconnectMut.isPending ? 0.5 : 1 }}
           >
             {disconnectMut.isPending ? <ActivityIndicator size="small" color={muted} /> : <Unplug size={14} color={muted} />}
             <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: muted }}>Disconnect</Text>
-          </TouchableOpacity>
+          </Pressable>
         )}
-        <TouchableOpacity
+        <Pressable
           onPress={onDelete}
           disabled={deleting}
-          activeOpacity={0.7}
-          style={{ flex: 1, height: 40, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', opacity: deleting ? 0.5 : 1 }}
+          className="active:opacity-70"
+          style={{ flex: 1, height: 40, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.4), opacity: deleting ? 0.5 : 1 }}
         >
-          {deleting ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={14} color="#ef4444" />}
-          <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove</Text>
-        </TouchableOpacity>
+          {deleting ? <ActivityIndicator size="small" color={isDark ? THEME.dark.destructive : THEME.light.destructive} /> : <Trash2 size={14} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />}
+          <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>Remove</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -424,9 +421,9 @@ function ConnectorRow({
   onPress: () => void;
   isDark: boolean;
 }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const iconBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
   const Icon = providerIcon(connector.provider);
   const status = STATUS_META[connector.status];
   const showStatusDot = connector.status !== 'active';
@@ -446,9 +443,9 @@ function ConnectorRow({
         : connector.name || connector.slug);
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
-      activeOpacity={0.6}
+      className="active:opacity-60"
       style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}
     >
       {isPipedream ? (
@@ -472,13 +469,13 @@ function ConnectorRow({
       </View>
 
       {needsSetup ? (
-        <View style={{ paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(217,119,6,0.12)' }}>
-          <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: '#d97706' }}>{needsConnect ? 'Connect' : 'Set up'}</Text>
+        <View style={{ paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, backgroundColor: withAlpha(THEME.accent.orange, 0.12) }}>
+          <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: THEME.accent.orange }}>{needsConnect ? 'Connect' : 'Set up'}</Text>
         </View>
       ) : (
         <ChevronRight size={18} color={muted} />
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -495,9 +492,9 @@ function AppCard({
   onConnect: () => void;
   isDark: boolean;
 }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}>
@@ -508,16 +505,16 @@ function AppCard({
           <Text style={{ fontSize: 13, lineHeight: 18, color: muted, marginTop: 2 }} numberOfLines={2}>{app.description}</Text>
         ) : null}
       </View>
-      <TouchableOpacity
+      <Pressable
         onPress={onConnect}
         disabled={connecting}
-        activeOpacity={0.7}
+        className="active:opacity-70"
         style={{ minWidth: 78, alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: border, opacity: connecting ? 0.6 : 1 }}
       >
         {connecting ? <ActivityIndicator size="small" color={muted} /> : (
           <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Connect</Text>
         )}
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 }
@@ -540,10 +537,10 @@ function AddConnectorView({
   const { data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     usePipedreamApps(projectId, appSearch);
 
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const searchBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const searchBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
 
   const apps = useMemo(() => (data?.pages ?? []).flatMap((p) => p.apps), [data]);
 
@@ -592,13 +589,13 @@ function AddConnectorView({
       {/* Sheet header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12 }}>
         <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Add a connector</Text>
-        <TouchableOpacity
+        <Pressable
           onPress={() => { haptics.tap(); onClose(); }}
           hitSlop={8}
           style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: searchBg, alignItems: 'center', justifyContent: 'center' }}
         >
           <X size={17} color={muted} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Easy Connect (Pipedream catalogue) vs Custom (MCP / OpenAPI / Postman / GraphQL / HTTP) */}
@@ -655,9 +652,9 @@ function AddConnectorView({
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                   {(error as Error)?.message ?? 'Failed to load apps'}
                 </Text>
-                <TouchableOpacity onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                <Pressable onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             ) : apps.length === 0 ? (
               <View style={{ padding: 40, alignItems: 'center' }}>
@@ -703,23 +700,23 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
   isDark: boolean;
 }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const bg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
-  const onBg = isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const bg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
+  const onBg = isDark ? withAlpha(THEME.dark.foreground, 0.12) : THEME.light.background;
   return (
     <View style={{ flexDirection: 'row', backgroundColor: bg, borderRadius: 9999, padding: 3 }}>
       {options.map((o) => {
         const on = o.value === value;
         return (
-          <TouchableOpacity
+          <Pressable
             key={o.value}
             onPress={() => { haptics.selection(); onChange(o.value); }}
-            activeOpacity={0.7}
+            className="active:opacity-70"
             style={{ flex: 1, paddingVertical: 8, borderRadius: 9999, alignItems: 'center', backgroundColor: on ? onBg : 'transparent' }}
           >
             <Text style={{ fontSize: 13, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? fg : muted }}>{o.label}</Text>
-          </TouchableOpacity>
+          </Pressable>
         );
       })}
     </View>
@@ -727,7 +724,7 @@ function Segmented<T extends string>({
 }
 
 function FormField({ label, optional, children, isDark }: { label: string; optional?: boolean; children: React.ReactNode; isDark: boolean }) {
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   return (
     <View style={{ marginBottom: 14 }}>
       <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>
@@ -762,10 +759,10 @@ function CustomConnectorForm({
   const [authName, setAuthName] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.12);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03);
   const inputStyle = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: fg, fontFamily: 'Roobert' as const };
 
   const providerValid =
@@ -895,16 +892,16 @@ function CustomConnectorForm({
         </Text>
       </BottomSheetScrollView>
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
-        <TouchableOpacity
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
+        <Pressable
           onPress={handleSave}
           disabled={!canSave}
-          activeOpacity={0.8}
+          className="active:opacity-80"
           style={{ height: 42, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
         >
           {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add connector</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -929,10 +926,10 @@ function SetCredentialView({
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.12);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03);
 
   const handleSave = async () => {
     if (!value.trim() || saving) return;
@@ -951,7 +948,7 @@ function SetCredentialView({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
         <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Set credential</Text>
       </View>
 
@@ -976,16 +973,16 @@ function SetCredentialView({
         <Text style={{ fontSize: 12.5, color: muted }}>It's encrypted at rest and never shown again.</Text>
       </BottomSheetScrollView>
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
-        <TouchableOpacity
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
+        <Pressable
           onPress={handleSave}
           disabled={!value.trim() || saving}
-          activeOpacity={0.8}
+          className="active:opacity-80"
           style={{ height: 42, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: value.trim() && !saving ? 1 : 0.5 }}
         >
           {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save credential</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -994,9 +991,9 @@ function SetCredentialView({
 // ─── Policies (tool-approval rules) ──────────────────────────────────────────
 
 const POLICY_ACTION_META: Record<PolicyAction, { label: string; color: string }> = {
-  always_run: { label: 'Allow', color: '#22c55e' },
-  require_approval: { label: 'Ask first', color: '#f59e0b' },
-  block: { label: 'Block', color: '#ef4444' },
+  always_run: { label: 'Allow', color: THEME.accent.green },
+  require_approval: { label: 'Ask first', color: THEME.accent.orange },
+  block: { label: 'Block', color: THEME.accent.red },
 };
 const POLICY_ACTION_ORDER: PolicyAction[] = ['always_run', 'require_approval', 'block'];
 
@@ -1015,18 +1012,18 @@ function PolicyActionSelector({
   onChange: (v: PolicyAction) => void;
   isDark: boolean;
 }) {
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const ring = isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.22)';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const ring = isDark ? withAlpha(THEME.dark.foreground, 0.28) : withAlpha(THEME.light.foreground, 0.22);
   return (
     <View style={{ flexDirection: 'row', gap: 18 }}>
       {POLICY_ACTION_ORDER.map((a) => {
         const meta = POLICY_ACTION_META[a];
         const on = value === a;
         return (
-          <TouchableOpacity
+          <Pressable
             key={a}
             onPress={() => { haptics.selection(); onChange(a); }}
-            activeOpacity={0.7}
+            className="active:opacity-70"
             hitSlop={6}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
           >
@@ -1034,7 +1031,7 @@ function PolicyActionSelector({
               {on && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: meta.color }} />}
             </View>
             <Text style={{ fontSize: 13.5, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? meta.color : muted }}>{meta.label}</Text>
-          </TouchableOpacity>
+          </Pressable>
         );
       })}
     </View>
@@ -1067,10 +1064,10 @@ function PoliciesView({ projectId }: { projectId: string }) {
     setServerSig(JSON.stringify({ policies: query.data.policies, defaultMode: query.data.defaultMode }));
   }, [query.data]);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.12);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03);
 
   const cleaned = useMemo(
     () => rules.map((r) => ({ match: r.match.trim(), action: r.action })).filter((p) => p.match.length > 0),
@@ -1102,9 +1099,9 @@ function PoliciesView({ projectId }: { projectId: string }) {
     return (
       <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
         <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(query.error as Error)?.message ?? 'Failed to load policies'}</Text>
-        <TouchableOpacity onPress={() => query.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+        <Pressable onPress={() => query.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
           <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     );
   }
@@ -1117,10 +1114,10 @@ function PoliciesView({ projectId }: { projectId: string }) {
           const on = defaultMode === opt.value;
           const OptIcon = opt.icon;
           return (
-            <TouchableOpacity
+            <Pressable
               key={opt.value}
               onPress={() => { haptics.selection(); setDefaultMode(opt.value); }}
-              activeOpacity={0.7}
+              className="active:opacity-70"
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 13, borderRadius: 14, marginBottom: 8, borderWidth: 1.5, borderColor: on ? theme.primary : border, backgroundColor: on ? theme.primaryLight : 'transparent' }}
             >
               <OptIcon size={19} color={on ? theme.primary : muted} />
@@ -1129,9 +1126,11 @@ function PoliciesView({ projectId }: { projectId: string }) {
                 <Text style={{ fontSize: 12.5, lineHeight: 16, color: muted, marginTop: 1 }}>{opt.desc}</Text>
               </View>
               <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: on ? 0 : 1.5, borderColor: border, backgroundColor: on ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                {on && <Check size={13} color="#fff" strokeWidth={3} />}
+                {/* was hardcoded white — invisible against theme.primary's near-white
+                    dark-mode fill; primaryForeground is built to contrast it */}
+                {on && <Check size={13} color={theme.primaryForeground} strokeWidth={3} />}
               </View>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
 
@@ -1149,18 +1148,19 @@ function PoliciesView({ projectId }: { projectId: string }) {
             <View key={rule.id}>
               <View style={{ paddingVertical: 14 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <TextInput
+                  <Input
                     value={rule.match}
                     onChangeText={(t) => patchRule(rule.id, { match: t })}
                     placeholder="gmail.*"
                     placeholderTextColor={muted}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    style={{ flex: 1, height: 40, borderRadius: 10, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, fontFamily: MONO, color: fg }}
+                    className="h-10 shadow-none"
+                    style={{ flex: 1, borderRadius: 10, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, fontFamily: MONO, color: fg }}
                   />
-                  <TouchableOpacity onPress={() => { haptics.medium(); removeRule(rule.id); }} hitSlop={8} style={{ padding: 4 }}>
+                  <Pressable onPress={() => { haptics.medium(); removeRule(rule.id); }} hitSlop={8} style={{ padding: 4 }}>
                     <X size={17} color={muted} />
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
                 <View style={{ marginTop: 12, paddingLeft: 2 }}>
                   <PolicyActionSelector value={rule.action} onChange={(v) => patchRule(rule.id, { action: v })} isDark={isDark} />
@@ -1171,26 +1171,26 @@ function PoliciesView({ projectId }: { projectId: string }) {
           ))
         )}
 
-        <TouchableOpacity
+        <Pressable
           onPress={() => { haptics.tap(); addRule(); }}
-          activeOpacity={0.7}
+          className="active:opacity-70"
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderStyle: 'dashed', borderColor: border, marginTop: 10 }}
         >
           <Plus size={15} color={theme.primary} />
           <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primary }}>Add rule</Text>
-        </TouchableOpacity>
+        </Pressable>
       </ScrollView>
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
-        <TouchableOpacity
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
+        <Pressable
           onPress={handleSave}
           disabled={!dirty || saveMutation.isPending}
-          activeOpacity={0.8}
+          className="active:opacity-80"
           style={{ height: 44, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: dirty && !saveMutation.isPending ? 1 : 0.5 }}
         >
           {saveMutation.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save policies</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -1206,6 +1206,7 @@ export function ConnectorsPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: ConnectorsPageProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -1220,10 +1221,10 @@ export function ConnectorsPage({
   const syncMutation = useSyncConnectors(projectId);
   const deleteMutation = useDeleteConnector(projectId);
 
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
 
   const connectors = data?.connectors ?? [];
   const selected = connectors.find((c) => c.slug === selectedSlug) ?? null;
@@ -1278,13 +1279,13 @@ export function ConnectorsPage({
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           pageTab === 'connectors' ? (
-            <TouchableOpacity onPress={handleSync} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Pressable onPress={handleSync} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               {syncMutation.isPending ? (
                 <ActivityIndicator size="small" color={muted} />
               ) : (
-                <RefreshCw size={18} color={isDark ? '#F8F8F8' : '#121215'} />
+                <RefreshCw size={18} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
               )}
-            </TouchableOpacity>
+            </Pressable>
           ) : undefined
         }
       />
@@ -1320,9 +1321,9 @@ export function ConnectorsPage({
                   <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                     {(error as Error)?.message ?? 'Failed to load connectors'}
                   </Text>
-                  <TouchableOpacity onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                  <Pressable onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               ) : filtered.length === 0 ? (
                 <View style={{ padding: 40, alignItems: 'center', gap: 10 }}>
@@ -1356,13 +1357,11 @@ export function ConnectorsPage({
         ref={addSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => (
-          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-        )}
+        backdropComponent={SheetBackdrop}
       >
         <AddConnectorView projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} />
       </BottomSheetModal>
@@ -1372,13 +1371,11 @@ export function ConnectorsPage({
         snapPoints={['92%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedSlug(null)}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => (
-          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-        )}
+        backdropComponent={SheetBackdrop}
       >
         {selected ? (
           <ConnectorDetail
@@ -1399,13 +1396,11 @@ export function ConnectorsPage({
         ref={credentialSheetRef}
         snapPoints={['70%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => (
-          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-        )}
+        backdropComponent={SheetBackdrop}
       >
         {selected ? (
           <SetCredentialView

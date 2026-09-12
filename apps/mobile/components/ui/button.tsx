@@ -1,15 +1,11 @@
 import { TextClassContext } from '@/components/ui/text';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/utils/index';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Platform, Pressable } from 'react-native';
-import * as React from 'react';
-
-// Android hit slop for better touch targets
-const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 8, bottom: 8, left: 8, right: 8 } : undefined;
 
 const buttonVariants = cva(
   cn(
-    'group shrink-0 flex-row items-center justify-center gap-2 rounded-2xl shadow-none',
+    'group shrink-0 flex-row items-center justify-center gap-2 rounded-md shadow-none',
     Platform.select({
       web: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
     })
@@ -18,23 +14,23 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: cn(
-          'bg-primary active:bg-primary/90',
+          'bg-primary active:bg-primary/90 shadow-sm shadow-black/5',
           Platform.select({ web: 'hover:bg-primary/90' })
         ),
         destructive: cn(
-          'bg-destructive active:bg-destructive/90 dark:bg-destructive/60',
+          'bg-destructive active:bg-destructive/90 dark:bg-destructive/60 shadow-sm shadow-black/5',
           Platform.select({
             web: 'hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
           })
         ),
         outline: cn(
-          'border-[1px] border-border bg-card active:bg-accent dark:bg-card dark:border-border dark:active:bg-input/50',
+          'border-border bg-background active:bg-accent dark:bg-input/30 dark:border-input dark:active:bg-input/50 border shadow-sm shadow-black/5',
           Platform.select({
             web: 'hover:bg-accent dark:hover:bg-input/50',
           })
         ),
         secondary: cn(
-          'bg-secondary active:bg-secondary/80',
+          'bg-secondary active:bg-secondary/80 shadow-sm shadow-black/5',
           Platform.select({ web: 'hover:bg-secondary/80' })
         ),
         ghost: cn(
@@ -44,11 +40,10 @@ const buttonVariants = cva(
         link: '',
       },
       size: {
-        default: 'h-12 rounded-full px-5', // Standard mobile button: 48px height, pill shape (matches web)
-        sm: 'h-9 rounded-full px-4 gap-1.5', // Small button: 36px height, pill shape
-        lg: 'h-14 rounded-full px-7', // Large button: 56px height, pill shape
-        icon: 'h-12 w-12 rounded-full', // Icon button: 48px square, pill shape
-        figma: 'h-12 rounded-full px-5 gap-[6px]', // Alias for default (kept for compatibility)
+        default: cn('h-10 px-4 py-2 sm:h-9', Platform.select({ web: 'has-[>svg]:px-3' })),
+        sm: cn('h-9 gap-1.5 rounded-md px-3 sm:h-8', Platform.select({ web: 'has-[>svg]:px-2.5' })),
+        lg: cn('h-11 rounded-md px-6 sm:h-10', Platform.select({ web: 'has-[>svg]:px-4' })),
+        icon: 'h-10 w-10 sm:h-9 sm:w-9',
       },
     },
     defaultVariants: {
@@ -60,7 +55,7 @@ const buttonVariants = cva(
 
 const buttonTextVariants = cva(
   cn(
-    'text-foreground font-roobert-medium',
+    'text-foreground text-sm font-medium',
     Platform.select({ web: 'pointer-events-none transition-colors' })
   ),
   {
@@ -80,11 +75,10 @@ const buttonTextVariants = cva(
         ),
       },
       size: {
-        default: 'text-[15px]', // 15px text for standard buttons (matches app style)
-        sm: 'text-sm', // 14px for small buttons
-        lg: 'text-[16px]', // 16px for large buttons
-        figma: 'text-[16px]', // Alias for lg (kept for compatibility)
-        icon: '', // No text for icon-only buttons
+        default: '',
+        sm: '',
+        lg: '',
+        icon: '',
       },
     },
     defaultVariants: {
@@ -94,34 +88,14 @@ const buttonTextVariants = cva(
   }
 );
 
-type ButtonProps = React.ComponentProps<typeof Pressable> &
-  React.RefAttributes<typeof Pressable> &
-  VariantProps<typeof buttonVariants>;
+type ButtonProps = React.ComponentProps<typeof Pressable> & React.RefAttributes<typeof Pressable> & VariantProps<typeof buttonVariants>;
 
 function Button({ className, variant, size, ...props }: ButtonProps) {
-  // Memoize computed values to prevent re-computation during render
-  const textClassValue = React.useMemo(
-    () => buttonTextVariants({ variant, size }),
-    [variant, size]
-  );
-
-  const buttonClassName = React.useMemo(
-    () => cn(buttonVariants({ variant, size }), className),
-    [variant, size, className]
-  );
-
   return (
-    <TextClassContext.Provider value={textClassValue}>
+    <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
       <Pressable
-        className={buttonClassName}
+        className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
         role="button"
-        style={props.disabled ? { opacity: 0.5 } : undefined}
-        hitSlop={ANDROID_HIT_SLOP}
-        android_ripple={{ 
-          color: 'rgba(0, 0, 0, 0.1)', 
-          borderless: false,
-          foreground: true 
-        }}
         {...props}
       />
     </TextClassContext.Provider>
