@@ -390,13 +390,12 @@ async function drainPendingPushedRefs(
       const complete = scheduled === names.length;
       const lastPage = names.length < BRANCH_PAGE_SIZE;
       if (complete) {
+        const metadataExpr = lastPage
+          ? clearPendingOverflowExpr(project)
+          : advanceOverflowCursorExpr(project, page + 1, overflowSeq);
         await db
           .update(projects)
-          .set({
-            metadata: lastPage
-              ? clearPendingOverflowExpr(project)
-              : advanceOverflowCursorExpr(project, page + 1, overflowSeq),
-          })
+          .set({ metadata: metadataExpr })
           .where(
             and(eq(projects.projectId, project.projectId), pendingOverflowUnchanged(project, overflowSeq)),
           )
