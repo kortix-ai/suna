@@ -42,6 +42,12 @@ export interface SessionRuntimeEnvInput {
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
   compiledAgentConfig?: string | null;
+  /**
+   * `KORTIX_REPO_SNAPSHOT_*` for the ONE revision this session pinned — see
+   * `repo-snapshots/descriptor.ts`. Empty when the feature is off or the
+   * revision is not prepared, which leaves the sandbox env unchanged.
+   */
+  repoSnapshotEnv?: Record<string, string>;
 }
 
 /**
@@ -122,9 +128,15 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     allowsFullRepository && input.restoreSessionBranch
       ? { KORTIX_SESSION_BRANCH_RESTORE: '1' }
       : {};
+  // Snapshot transport applies to a fresh full-repository session only: a
+  // restricted workspace keeps its existing limited delivery path, and a resume
+  // keeps its own workspace.
+  const repoSnapshotEnv: Record<string, string> =
+    allowsFullRepository && input.freshSession ? (input.repoSnapshotEnv ?? {}) : {};
   return {
     ...projectGitEnv,
     ...fastGitBootEnv,
+    ...repoSnapshotEnv,
     ...opencodeConfigDirHintEnv,
     ...restoreGitEnv,
     ...auditRelayEnvPassthrough(),

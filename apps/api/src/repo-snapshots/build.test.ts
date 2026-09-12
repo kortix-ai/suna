@@ -90,10 +90,10 @@ async function extract(archivePath: string, compression: 'gzip' | 'zstd'): Promi
     await tar.x({ file: archivePath, cwd: out });
     return out;
   }
-  const { createReadStream, createWriteStream } = await import('node:fs');
-  const { createZstdDecompress } = await import('node:zlib');
+  const { createReadStream } = await import('node:fs');
+  const { createDecompressor } = await import('./codec');
   const { pipeline } = await import('node:stream/promises');
-  await pipeline(createReadStream(archivePath), createZstdDecompress(), tar.x({ cwd: out }));
+  await pipeline(createReadStream(archivePath), createDecompressor('zstd'), tar.x({ cwd: out }));
   return out;
 }
 

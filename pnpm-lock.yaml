@@ -335,6 +335,9 @@ importers:
       node-forge:
         specifier: ^1.4.0
         version: 1.4.0
+      tar:
+        specifier: 7.5.21
+        version: 7.5.21
       zod:
         specifier: ^3.23.8
         version: 3.25.76

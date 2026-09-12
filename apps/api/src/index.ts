@@ -42,6 +42,10 @@ import { accountsRouter } from './accounts';
 import { accountInvitesRouter } from './accounts/invites';
 import { adminApp } from './admin';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
+import {
+  startRepoSnapshotWorker,
+  stopRepoSnapshotWorker,
+} from './repo-snapshots/worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
 import {
   startPiWorkerPoolMaintenance,
@@ -1511,6 +1515,10 @@ async function startSingletonWorkers() {
   // activating converges instead of stranding. Safe across replicas (lease CAS).
   startProviderTransitionWorker();
   startAppDeploymentWorker();
+  // Config Provider v1: publish queued repository revisions to S3 and
+  // re-resolve refs whose pushes no webhook delivered. No-op until
+  // KORTIX_REPO_SNAPSHOT_BUCKET is configured.
+  startRepoSnapshotWorker();
   startAppIdleReaper();
   // Pi worker pool (P1.8): keep parked worker boxes at target so pi session
   // creates claim instead of cold-creating. No-op unless
@@ -1533,6 +1541,7 @@ async function stopSingletonWorkers() {
   stopSunaMigrationWorker();
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
+  stopRepoSnapshotWorker();
   stopAppIdleReaper();
   stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();

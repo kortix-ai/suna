@@ -69,6 +69,7 @@ import {
 } from './compile-agent-config';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
+import type { FastBootGitHint } from '../git/commits';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
@@ -117,6 +118,12 @@ import {
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
+import {
+  logSnapshotOutcome,
+  pinSessionSnapshot,
+  resolveOpencodeConfigDirFromSnapshot,
+  type SessionSnapshotPin,
+} from '../../repo-snapshots/session-pin';
 
 export type SessionCreateError = {
   status: number;
@@ -455,6 +462,8 @@ export async function buildSessionSandboxEnvVars(input: {
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
   workspaceMode?: WorkspaceModeV2 | null;
+  /** `KORTIX_REPO_SNAPSHOT_*` for the pinned revision; see repo-snapshots. */
+  repoSnapshotEnv?: Record<string, string>;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -668,6 +677,7 @@ export async function buildSessionSandboxEnvVars(input: {
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
       gitDeltaBundleRemote: input.gitDeltaBundleRemote,
       opencodeConfigDir: input.opencodeConfigDir,
+      repoSnapshotEnv: input.repoSnapshotEnv,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -987,9 +997,16 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+  // Agent discovery reads the manifest at the revision this session will boot.
+  // With a prepared snapshot that read comes from the archive, which is what
+  // removes `forceRefresh: true`'s mirror refresh from the create path. Without
+  // one the Git-backed reader runs exactly as before.
+  const createSnapshotPin = await pinSessionSnapshot({ project, ref: baseRef }).catch(() => null);
+  const pinnedSnapshotRow = createSnapshotPin?.pinned ? createSnapshotPin.pin.row : null;
   const loadedAgents = await loadProjectAgents(project, {
-    forceRefresh: true,
+    forceRefresh: !pinnedSnapshotRow,
     rethrowReadErrors: true,
+    snapshot: pinnedSnapshotRow,
   });
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
@@ -1699,6 +1716,19 @@ export async function createProjectSession(input: {
       // Best-effort + timeout-guarded (never block create): on failure/timeout
       // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
       // with gitAuth (folded into the env-build chain, not awaited inline).
+      // ── Repository snapshot pin (Config Provider v1) ────────────────────
+      // A prepared revision replaces the whole fresh-session Git hint: no
+      // `ls-remote`, no mirror refresh, no `git show`, no GitHub token. When
+      // nothing is prepared this resolves to a miss and the existing hint path
+      // below runs exactly as before.
+      const snapshotPinPromise: Promise<SessionSnapshotPin | null> = (async () => {
+        if (piWorkerBoot || platformMetaAgent || !createSnapshotPin) return null;
+        logSnapshotOutcome(createSnapshotPin, { projectId, sessionId, ref: baseRef });
+        if (!createSnapshotPin.pinned) return null;
+        tl.mark('snapshot-pin');
+        return createSnapshotPin.pin;
+      })();
+
       let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
       // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
       // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
@@ -1708,31 +1738,41 @@ export async function createProjectSession(input: {
       // deploy-dev pins to an explicit `false`.
       // The worker path never clones: the scaffold/delta hint is pure waste
       // there, and the hint alone holds the env build for up to 2 s.
-      const fastBootGitHintPromise =
-        !piWorkerBoot && config.KORTIX_FAST_GIT_BOOT_ENABLED
-        ? Promise.race([
-            projectWithGitAuthPromise
-              .then((projectWithGitAuth) =>
-                resolveFastBootGitHintWithCache(
-                  projectWithGitAuth,
-                  baseRef,
-                  project.metadata,
-                ),
-              )
-              .catch(() => undefined),
-            new Promise<undefined>((resolve) => {
-              fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
-            }),
-          ]).finally(() => {
-            if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
-          })
-        : Promise.resolve(undefined);
+      const fastBootGitHintPromise: Promise<FastBootGitHint | undefined> = snapshotPinPromise.then((pin) => {
+        // A pinned snapshot supplies the base SHA and the config-dir hint from
+        // the archive. Running the Git hint as well would put back the exact
+        // `ls-remote` + mirror refresh this feature removes.
+        if (pin) {
+          return resolveOpencodeConfigDirFromSnapshot(pin.row, project.manifestPath)
+            .then<FastBootGitHint>((opencodeConfigDir) => ({ baseSha: pin.commitSha, opencodeConfigDir }))
+            .catch<FastBootGitHint>(() => ({ baseSha: pin.commitSha }));
+        }
+        if (piWorkerBoot || !config.KORTIX_FAST_GIT_BOOT_ENABLED) return undefined;
+        return Promise.race([
+          projectWithGitAuthPromise
+            .then((projectWithGitAuth) =>
+              resolveFastBootGitHintWithCache(
+                projectWithGitAuth,
+                baseRef,
+                project.metadata,
+              ),
+            )
+            .catch(() => undefined),
+          new Promise<undefined>((resolve) => {
+            fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
+          }),
+        ]).finally(() => {
+          if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
+        });
+      });
       // OpenCode compiled-boot artifacts serve the daemon path only; a worker
       // boot fetches its own per-commit pi artifact instead.
       if (!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
-        void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise])
-          .then(([projectWithGitAuth, hint]) =>
-            hint?.baseSha
+        void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise, snapshotPinPromise])
+          .then(([projectWithGitAuth, hint, pin]) =>
+            // A pinned snapshot already delivers the checkout. Compiling a
+            // second artifact would refresh the mirror for no consumer.
+            !pin && hint?.baseSha
               ? prebuildCompiledBootArtifacts(
                   projectWithGitAuth,
                   baseRef,
@@ -1791,8 +1831,9 @@ export async function createProjectSession(input: {
             return envVars;
           })
         : fastBootGitHintPromise
-        .then((fastBootGitHint) =>
-          buildSessionSandboxEnvVars({
+        .then(async (fastBootGitHint) => {
+          const pin = await snapshotPinPromise;
+          return buildSessionSandboxEnvVars({
             accountId,
             projectId,
             sessionId,
@@ -1813,8 +1854,9 @@ export async function createProjectSession(input: {
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             workspaceMode,
-          }),
-        )
+            repoSnapshotEnv: pin?.env,
+          });
+        })
         .then((envVars) => {
           tl.mark('env-vars');
           return envVars;

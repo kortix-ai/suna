@@ -354,8 +354,31 @@ export interface LoadedTriggers {
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
+  opts?: {
+    forceRefresh?: boolean;
+    rethrowReadErrors?: boolean;
+    /**
+     * A prepared repository snapshot for the revision this read is pinned to.
+     * When present the manifest comes from the archive and NO Git command runs:
+     * no mirror refresh, no `ls-tree`, no `git show`. Same bytes, same parse,
+     * same verdicts — only the I/O source differs.
+     */
+    snapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null;
+  },
 ): Promise<ParsedManifest | null> {
+  if (opts?.snapshot) {
+    const { readManifestFromSnapshot } = await import('../repo-snapshots/session-pin');
+    const pinned = await readManifestFromSnapshot(opts.snapshot, project.manifestPath);
+    if (!pinned) return null;
+    return parseManifestString(
+      pinned.content,
+      manifestFormatForPath(pinned.path),
+      pinned.path,
+      pinned.sha,
+      pinned.candidatePaths,
+      pinned.commit,
+    );
+  }
   let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
   try {
     // manifest_path can still say kortix.toml (an older project, or a stale

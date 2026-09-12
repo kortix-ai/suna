@@ -277,7 +277,12 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
  */
 export async function loadProjectAgents(
   project: GitBackedProject,
-  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
+  opts?: {
+    forceRefresh?: boolean;
+    rethrowReadErrors?: boolean;
+    /** Pinned snapshot source; see `readManifest`. No Git command runs. */
+    snapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null;
+  },
 ): Promise<LoadedAgents> {
   const { readManifest, synthesizeBlankManifest } = await import('./triggers');
   let manifest: ParsedManifest | null;

@@ -75,6 +75,12 @@ import {
   buildCompiledRuntimeArtifact,
 } from './compiled-runtime-artifact';
 import {
+  repoSnapshotMode,
+  resolveSnapshotForRevision,
+  serializeBootDescriptor,
+} from '../repo-snapshots/descriptor';
+import { readRepoSnapshotRepository } from '../repo-snapshots/identity';
+import {
   COMPILED_RUNTIME_CONTENT_TYPE,
   COMPILED_RUNTIME_FORMAT,
 } from './compiled-runtime';
@@ -674,6 +680,63 @@ gitProxyApp.openapi(
       console.warn('[git-proxy] fast-boot bundle unavailable', { projectId, ref, tip, parent, error: message });
       return c.text('fast-boot bundle unavailable', 503);
     }
+  },
+);
+
+gitProxyApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{project}/repo-snapshot',
+    tags: ['git'],
+    summary: 'Resolve the object-scoped capability for a prepared repository snapshot',
+    description:
+      'Returns a short-lived, object-scoped GET for the snapshot of one EXACT revision. ' +
+      'Never builds, never resolves a ref, and never substitutes a different revision: a ' +
+      'revision that is not prepared answers 409 so the caller can apply its own miss policy.',
+    request: {
+      params: projectParam,
+      query: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/) }),
+    },
+    responses: {
+      200: { description: 'Boot descriptor for the requested revision' },
+      400: { description: 'Invalid project id or source SHA' },
+      401: gitResponses[401],
+      403: gitResponses[403],
+      404: gitResponses[404],
+      409: { description: 'The revision is not prepared; retry after preparation' },
+      501: { description: 'Repository snapshots are not enabled for this deployment' },
+    },
+  }),
+  async (c) => {
+    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
+    if (projectId instanceof Response) return projectId;
+    const auth = await authorize(c, projectId, 'read');
+    if (!auth.ok) {
+      if (auth.status === 401) return unauthorized(c, auth.message);
+      return c.text(auth.message, auth.status === 404 ? 404 : 403);
+    }
+    const mode = repoSnapshotMode();
+    if (mode === 'off') return c.json({ error: 'repository snapshots are disabled' }, 501);
+    const { sha } = c.req.valid('query');
+    // Identity comes from the AUTHORIZED project row, never from the request:
+    // a caller must not be able to name someone else's repository id.
+    const identity = readRepoSnapshotRepository(auth.project);
+    if (!identity.repository) {
+      return c.json(
+        { error: 'project has no snapshot identity', detail: identity.unsupportedReason },
+        409,
+      );
+    }
+    const resolved = await resolveSnapshotForRevision({
+      repositoryId: identity.repository.repositoryId,
+      commitSha: sha,
+    });
+    if (!resolved.ok) {
+      return c.json({ error: 'snapshot is not prepared', ...resolved.miss }, 409);
+    }
+    // `no-store`: the body carries a short-lived signed capability.
+    c.header('cache-control', 'no-store');
+    return c.json(serializeBootDescriptor(resolved.descriptor), 200);
   },
 );
 

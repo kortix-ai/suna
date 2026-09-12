@@ -19,8 +19,8 @@ import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { createGzip, createZstdCompress } from 'node:zlib';
 import * as tar from 'tar';
+import { createCompressor } from './codec';
 import { logger } from '../lib/logger';
 import { validateSha } from '../projects/git-ref';
 import { refreshMirror, runGit, runGitCapture } from '../projects/git/mirror';
@@ -249,12 +249,6 @@ async function countNotes(
   };
 }
 
-function compressor(compression: RepoSnapshotCompression) {
-  // Node's gzip header writes MTIME 0, so two runs over identical bytes
-  // produce identical output. zstd carries no timestamp at all.
-  return compression === 'zstd' ? createZstdCompress() : createGzip({ level: 9 });
-}
-
 /**
  * Produce the archive plus its manifest. The caller publishes them; this
  * function performs no network I/O beyond the mirror it already needs.
@@ -350,7 +344,7 @@ export async function buildRepoSnapshot(
         archiveEntries,
       ),
       expansion,
-      compressor(options.compression),
+      createCompressor(options.compression),
       digest,
       createWriteStream(archivePath, { mode: 0o600 }),
     );

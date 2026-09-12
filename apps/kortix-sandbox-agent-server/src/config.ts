@@ -21,6 +21,10 @@ const BoolFlag = z.preprocess((v) => {
 export const CompiledBootModeSchema = z.enum(['off', 'shadow', 'prefer', 'required'])
 export type CompiledBootMode = z.infer<typeof CompiledBootModeSchema>
 
+/** Repository-snapshot transport policy. Independent of compiled boot. */
+export const RepoSnapshotModeSchema = z.enum(['off', 'shadow', 'prefer', 'required'])
+export type RepoSnapshotMode = z.infer<typeof RepoSnapshotModeSchema>
+
 const Schema = z.object({
   KORTIX_SERVICE_PORT: z.coerce.number().int().positive().default(8000),
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
@@ -63,6 +67,19 @@ const Schema = z.object({
   KORTIX_GIT_DELTA_BUNDLE_REMOTE: z.string().optional(),
   KORTIX_OPENCODE_CONFIG_DIR_HINT: z.string().optional(),
   KORTIX_COMPILED_BOOT_MODE: CompiledBootModeSchema.default('off'),
+  // ── Repository snapshot (Config Provider v1) ──────────────────────────────
+  // The API pins ONE revision per session and hands over an object-scoped
+  // descriptor. Every field is verified against the archive before activation;
+  // none of them is trusted on its own.
+  KORTIX_REPO_SNAPSHOT_MODE: RepoSnapshotModeSchema.default('off'),
+  KORTIX_REPO_SNAPSHOT_URL: z.string().optional(),
+  KORTIX_REPO_SNAPSHOT_SHA256: z.string().optional(),
+  KORTIX_REPO_SNAPSHOT_COMPRESSION: z.enum(['gzip', 'zstd']).optional(),
+  KORTIX_REPO_SNAPSHOT_COMMIT_SHA: z.string().optional(),
+  KORTIX_REPO_SNAPSHOT_REPOSITORY_ID: z.string().optional(),
+  KORTIX_REPO_SNAPSHOT_COMPRESSED_BYTES: z.coerce.number().int().nonnegative().optional(),
+  KORTIX_REPO_SNAPSHOT_EXPANDED_BYTES: z.coerce.number().int().nonnegative().optional(),
+  KORTIX_REPO_SNAPSHOT_ENTRY_COUNT: z.coerce.number().int().nonnegative().optional(),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
@@ -137,6 +154,19 @@ export type Config = {
    */
   opencodeConfigDirHint?: string
   compiledBootMode: CompiledBootMode
+  /** Repository-snapshot transport policy; see RepoSnapshotModeSchema.
+   *  Optional so a hand-built Config (tests, monitor mode) means `off`. */
+  repoSnapshotMode?: RepoSnapshotMode
+  /** Object-scoped, short-lived GET for this session's pinned archive. Its
+   *  query string carries a credential: never log it, never echo it. */
+  repoSnapshotUrl?: string
+  repoSnapshotSha256?: string
+  repoSnapshotCompression?: 'gzip' | 'zstd'
+  repoSnapshotCommitSha?: string
+  repoSnapshotRepositoryId?: string
+  repoSnapshotCompressedBytes?: number
+  repoSnapshotExpandedBytes?: number
+  repoSnapshotEntryCount?: number
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
@@ -178,6 +208,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_GIT_DELTA_BUNDLE_REMOTE: env.KORTIX_GIT_DELTA_BUNDLE_REMOTE,
     KORTIX_OPENCODE_CONFIG_DIR_HINT: env.KORTIX_OPENCODE_CONFIG_DIR_HINT,
     KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
+    KORTIX_REPO_SNAPSHOT_MODE: env.KORTIX_REPO_SNAPSHOT_MODE,
+    KORTIX_REPO_SNAPSHOT_URL: env.KORTIX_REPO_SNAPSHOT_URL,
+    KORTIX_REPO_SNAPSHOT_SHA256: env.KORTIX_REPO_SNAPSHOT_SHA256,
+    KORTIX_REPO_SNAPSHOT_COMPRESSION: env.KORTIX_REPO_SNAPSHOT_COMPRESSION,
+    KORTIX_REPO_SNAPSHOT_COMMIT_SHA: env.KORTIX_REPO_SNAPSHOT_COMMIT_SHA,
+    KORTIX_REPO_SNAPSHOT_REPOSITORY_ID: env.KORTIX_REPO_SNAPSHOT_REPOSITORY_ID,
+    KORTIX_REPO_SNAPSHOT_COMPRESSED_BYTES: env.KORTIX_REPO_SNAPSHOT_COMPRESSED_BYTES,
+    KORTIX_REPO_SNAPSHOT_EXPANDED_BYTES: env.KORTIX_REPO_SNAPSHOT_EXPANDED_BYTES,
+    KORTIX_REPO_SNAPSHOT_ENTRY_COUNT: env.KORTIX_REPO_SNAPSHOT_ENTRY_COUNT,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
@@ -213,6 +252,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gitDeltaBundleRemote: parsed.KORTIX_GIT_DELTA_BUNDLE_REMOTE === '1',
     opencodeConfigDirHint: parsed.KORTIX_OPENCODE_CONFIG_DIR_HINT,
     compiledBootMode: parsed.KORTIX_COMPILED_BOOT_MODE,
+    repoSnapshotMode: parsed.KORTIX_REPO_SNAPSHOT_MODE,
+    repoSnapshotUrl: parsed.KORTIX_REPO_SNAPSHOT_URL,
+    repoSnapshotSha256: parsed.KORTIX_REPO_SNAPSHOT_SHA256,
+    repoSnapshotCompression: parsed.KORTIX_REPO_SNAPSHOT_COMPRESSION,
+    repoSnapshotCommitSha: parsed.KORTIX_REPO_SNAPSHOT_COMMIT_SHA,
+    repoSnapshotRepositoryId: parsed.KORTIX_REPO_SNAPSHOT_REPOSITORY_ID,
+    repoSnapshotCompressedBytes: parsed.KORTIX_REPO_SNAPSHOT_COMPRESSED_BYTES,
+    repoSnapshotExpandedBytes: parsed.KORTIX_REPO_SNAPSHOT_EXPANDED_BYTES,
+    repoSnapshotEntryCount: parsed.KORTIX_REPO_SNAPSHOT_ENTRY_COUNT,
     sandboxToken: parsed.KORTIX_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,

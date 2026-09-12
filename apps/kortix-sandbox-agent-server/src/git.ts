@@ -7,6 +7,11 @@ import { pipeline } from 'node:stream/promises'
 
 import type { Config } from './config'
 import { materializeCompiledCheckoutToStage } from './compiled-checkout'
+import {
+  buildDescriptorRefresher,
+  materializeRepoSnapshotToStage,
+  readRepoSnapshotDescriptor,
+} from './repo-snapshot'
 import { logger } from './logger'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
@@ -705,6 +710,60 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     await clearDirContents(target)
   }
   {
+    // ── Repository snapshot (Config Provider v1) ────────────────────────────
+    // Tried BEFORE the compiled-checkout experiment and the clone path: when a
+    // revision is already published, this is the only branch that needs no Git
+    // network at all. `off` and an absent descriptor both fall straight
+    // through, so a project with no published snapshot behaves exactly as
+    // before.
+    const repoSnapshotMode = cfg.repoSnapshotMode ?? 'off'
+    if (repoSnapshotMode !== 'off' && cfg.sessionFresh) {
+      const descriptor = readRepoSnapshotDescriptor(cfg)
+      if (!descriptor && repoSnapshotMode === 'required') {
+        throw new Error('repo snapshot mode is `required` but the session carries no snapshot descriptor')
+      }
+      if (descriptor) {
+        const stage = await createStagePath(target, 'snapshot')
+        try {
+          const metrics = await materializeRepoSnapshotToStage(descriptor, stage, {
+            refreshDescriptor: buildDescriptorRefresher(cfg, descriptor),
+          })
+          if (repoSnapshotMode === 'shadow') {
+            // Verified and then discarded: shadow must never mutate the live
+            // workspace or gate readiness.
+            logger.info('[git] repo snapshot verified in shadow mode; using existing path', metrics)
+            await rm(stage, { recursive: true, force: true })
+          } else {
+            await swapStageIntoTarget(stage, target)
+            // The archive is project-NEUTRAL and ships no origin, so this
+            // session installs its own. `set-url` alone would fail on a repo
+            // that has no remote yet.
+            const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', cfg.repoUrl])
+            if (setUrl.code !== 0) {
+              const addRemote = await execGit(['-C', target, 'remote', 'add', 'origin', cfg.repoUrl])
+              if (addRemote.code !== 0) {
+                throw new Error(`git remote add origin failed: ${addRemote.stderr || setUrl.stderr}`)
+              }
+            }
+            if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
+            await configureRepoGitIdentity(cfg, target)
+            await markSessionCheckoutAdopted(target, cfg.branchName)
+            logger.info('[git] repo materialized from snapshot', metrics)
+            return
+          }
+        } catch (error) {
+          await rm(stage, { recursive: true, force: true }).catch(() => {})
+          // `required` never silently serves a different revision.
+          if (repoSnapshotMode === 'required') throw error
+          logger.warn('[git] repo snapshot unavailable; using existing path', {
+            mode: repoSnapshotMode,
+            commitSha: descriptor.commitSha,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+    }
+
     if (cfg.compiledBootMode !== 'off' && cfg.sessionFresh) {
       const stage = await createStagePath(target, 'compiled')
       try {

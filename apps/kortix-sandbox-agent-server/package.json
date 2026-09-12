@@ -1,7 +1,7 @@
 {
   "name": "kortixd",
   "version": "0.1.0",
-  "description": "kortixd — the Kortix sandbox agent daemon and its self-update manager (single compiled binary).",
+  "description": "kortixd \u2014 the Kortix sandbox agent daemon and its self-update manager (single compiled binary).",
   "type": "module",
   "main": "src/main.ts",
   "engines": {
@@ -21,6 +21,7 @@
   "dependencies": {
     "hono": "^4.12.25",
     "node-forge": "^1.4.0",
+    "tar": "7.5.21",
     "zod": "^3.23.8"
   },
   "devDependencies": {
