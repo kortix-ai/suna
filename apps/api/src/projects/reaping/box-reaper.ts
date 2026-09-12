@@ -204,7 +204,31 @@ async function redeliverAbandonedPrompt(
   }
 }
 
-/** Release one durable queue row after terminal evidence removed turn authority. */
+/**
+ * Release one durable queue row after terminal evidence removed turn authority.
+ *
+ * `promoteNextInboxRow` now makes the row due `INBOX_TURN_SETTLE_MS` from now,
+ * not immediately (store.ts), so the immediate kick below can race that window
+ * and claim nothing — unlike `routes/r4.ts`'s relay, this recovery path does
+ * NOT re-schedule the kick after the settle delay, because this function's
+ * timing is asserted synchronously in `sandbox-reaper.test.ts`.
+ *
+ * Accepted here, and cheap: this only runs once the daemon's own terminal
+ * relay is already known lost, and the row is picked up ~1s later regardless.
+ * The trigger scheduler runs `drainSessionLifecycleQueue({ limit: 10 })`
+ * UNCONDITIONALLY every tick (`projects/lib/triggers.ts:1323` — the
+ * `isLeader()` call above it gates a stall log, not the drain), on a
+ * `triggerSchedulerIntervalMs()` cadence that defaults to 1_000ms
+ * (`projects/lib/triggers.ts:414-417`, `config.ts:665`; no
+ * `KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS` in any `apps/api/.env*`). So the cost
+ * of the missing kick is ~1s, not a minute — and NOT the reaper's own cadence:
+ * the 20s `active-turn-renewal.ts` pass is scoped `activeTurnsOnly`
+ * (`box-queries.ts:44` -> `activeTurnAuthorityPredicate`) and this row has just
+ * lost turn authority, so only the unscoped maintenance sweep would revisit it
+ * — every 5 min (`DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000`,
+ * `projects/maintenance.ts:26`, no env override). What this path gives up is
+ * only the sub-second targeted claim the happy path gets.
+ */
 async function releaseQueuedPromptAfterTerminalTurn(
   dependencies: SandboxReaperDependencies,
   row: { sessionId: string | null; sandboxId: string },

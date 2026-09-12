@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 635,
+  "count": 636,
   "routes": [
     {
       "method": "GET",
@@ -2069,6 +2069,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/hold"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/reorder"
     },
     {
       "method": "GET",

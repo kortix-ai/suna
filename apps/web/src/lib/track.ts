@@ -20,6 +20,21 @@ export const PANEL_EVENTS = [
   'image_copied',
   'panel_mode_switched',
   'conversation_density_switched',
+  // The parked queue (Cmd/Ctrl+Enter, above the composer). A queue is nothing
+  // but user text, so these carry counts, kinds and sources ONLY — never a
+  // prompt, a file name, or a title. `depth_after` is how many rows the parked
+  // list holds once the action lands; `mode` is which key made the row
+  // (`auto` = Enter, `parked` = Cmd/Ctrl+Enter); `run_state` is the turn state
+  // the action happened under, which is what separates a queue paused by Stop
+  // from one halted by a failed run.
+  'queue_item_added',
+  'queue_item_edited',
+  'queue_item_deleted',
+  'queue_item_reordered',
+  'queue_item_dispatched',
+  'queue_paused',
+  'queue_cleared',
+  'queue_double_send_prevented',
 ] as const;
 
 export type PanelEvent = (typeof PANEL_EVENTS)[number];

@@ -9,6 +9,8 @@ import {
   applyInboxObservation,
   inboxDrained,
   optimisticSessionPrompt,
+  OPTIMISTIC_PROMPT_PREFIX,
+  serverReorderPromptIds,
   reconcileOptimisticPrompts,
   removeOptimisticPrompt,
   settleOptimisticPrompt,
@@ -19,6 +21,11 @@ import {
   sessionPromptsPollMs,
   startSessionWithPrompt,
 } from './use-session-prompts';
+import {
+  clearPromptTombstones,
+  isPromptTombstoned,
+  notePromptRemoved,
+} from '../core/session/prompt-removals';
 
 /**
  * The polling cadence is a CORRECTNESS decision, not a performance one.
@@ -404,6 +411,74 @@ describe('readSessionPromptsInbox', () => {
   });
 });
 
+/**
+ * THE REMOVE RACE, at the seam where it actually bites.
+ *
+ * `DELETE .../prompts/:promptId` carries no `observed_at`, so a poll issued a
+ * few hundred milliseconds BEFORE the delete lands after it with a strictly
+ * newer server stamp. `inboxObservationSupersedes` accepts it — it is the
+ * newest reading anyone has — and the deleted row is written back onto the
+ * screen. The next click on its X is the 404 the user reads as "That prompt is
+ * no longer in the queue" (reported 2026-09-07, three toasts on screen at once).
+ */
+describe('readSessionPromptsInbox and a row this tab removed', () => {
+  const listing = (prompts: unknown[]) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      Response.json({ prompts, observed_at: '2026-09-08T00:00:05.000Z' })) as unknown as typeof fetch;
+    return () => void (globalThis.fetch = original);
+  };
+  const row = {
+    prompt_id: 'p1',
+    client_message_id: 'c1',
+    message_id: 'msg_01',
+    state: 'queued',
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-09-08T00:00:00.000Z',
+    available_at: '2026-09-08T00:00:00.000Z',
+  };
+
+  beforeEach(() => {
+    clearPromptTombstones();
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+  });
+
+  test('a snapshot taken before the delete cannot put the row back', async () => {
+    const restore = listing([row]);
+    try {
+      notePromptRemoved('sess-1', row as never, Date.now());
+      // The cached list is non-empty, so this is a POLL, not the open burst.
+      expect(await readSessionPromptsInbox('proj-1', 'sess-1', [row as never])).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('the SERVER agreeing retires the tombstone, so the row can come back', async () => {
+    const restore = listing([]);
+    try {
+      notePromptRemoved('sess-1', row as never, Date.now());
+      expect(await readSessionPromptsInbox('proj-1', 'sess-1', [row as never])).toEqual([]);
+      expect(isPromptTombstoned('sess-1', 'p1')).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a row this tab never removed is untouched', async () => {
+    const restore = listing([row]);
+    try {
+      const out = await readSessionPromptsInbox('proj-1', 'sess-1', [row as never]);
+      expect(out.map((p) => p.prompt_id)).toEqual(['p1']);
+    } finally {
+      restore();
+    }
+  });
+});
+
 // ── The session-open bundle seam ────────────────────────────────────────────
 
 describe('readSessionPromptsInbox and the open bundle', () => {
@@ -641,5 +716,34 @@ describe('the drain stamp survives the readings that follow it', () => {
     applyInboxObservation('sess_1', [], [prompt({ prompt_id: 'p2' })], 700);
 
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 1, atMs: 700 });
+  });
+});
+
+/**
+ * A REORDER MUST NOT CARRY THIS TAB'S OWN UN-ACKNOWLEDGED ROWS.
+ *
+ * The queue list hands over its WHOLE order, optimistic rows included — they
+ * are on screen and draggable. Their ids are `optimistic:<clientMessageId>`,
+ * and `POST .../prompts/reorder` validates every id against `UUID_V4_REGEX`:
+ * one of them fails the WHOLE request with `400 Invalid prompt id`. So a drag
+ * while any park's POST was still in flight lost the entire reorder and raised
+ * an error toast.
+ */
+describe('serverReorderPromptIds', () => {
+  test('drops the optimistic rows and keeps the server order intact', () => {
+    expect(
+      serverReorderPromptIds(['p-1', `${OPTIMISTIC_PROMPT_PREFIX}q_7`, 'p-2']),
+    ).toEqual(['p-1', 'p-2']);
+  });
+
+  test('an order of nothing BUT optimistic rows sends no ids at all', () => {
+    // The caller must not POST this: the route answers 400 to an empty list.
+    expect(
+      serverReorderPromptIds([`${OPTIMISTIC_PROMPT_PREFIX}q_1`, `${OPTIMISTIC_PROMPT_PREFIX}q_2`]),
+    ).toEqual([]);
+  });
+
+  test('an all-server order is passed through unchanged', () => {
+    expect(serverReorderPromptIds(['p-1', 'p-2', 'p-3'])).toEqual(['p-1', 'p-2', 'p-3']);
   });
 });

@@ -43,10 +43,12 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   if (row.status === 'failed' || row.status === 'dead_lettered') {
     return { state: 'failed', reason: null };
   }
-  // Then HELD: a held row is waiting on the USER, not on the session — the stop
-  // button put it there, and only an explicit send or "send now" takes it out.
-  // It outranks the markers below: a held row is not in line at all, and that
-  // is true of a forwarded row Stop paused just as much as of a queued one.
+  // Then HELD: a held row is waiting on the USER, not on the session. TWO
+  // things put it there — the stop button, and the user parking it with
+  // Cmd/Ctrl+Enter — and `stop_held` below is what tells them apart. Either
+  // way only an explicit send or "send now" takes it out. It outranks the
+  // markers below: a held row is not in line at all, and that is true of a
+  // forwarded row Stop paused just as much as of a queued one.
   if (result.held === true) return { state: 'waiting', reason: 'held' };
   // Then FORWARDED, above `running`: this is a `succeeded` row, so every branch
   // below would otherwise fall through to `queued` and show a prompt that is
@@ -127,6 +129,26 @@ export function serializePrompt(row: PromptRow) {
     wire_message_id: typeof payload.wireMessageId === 'string' ? payload.wireMessageId : '',
     client_sent_at_ms:
       typeof payload.clientSentAtMs === 'number' ? payload.clientSentAtMs : null,
+    /** The user pressed Cmd/Ctrl+Enter: this row is PARKED. It waits in the
+     *  composer's reorderable queue list rather than as a dimmed transcript
+     *  bubble, and — unlike an Enter row, which drains FIFO at the next turn
+     *  boundary — it is born held and never dispatches until the user releases
+     *  it. Absent on rows written before the field existed, which read as
+     *  Enter. */
+    queued_by_user: payload.queuedByUser === true,
+    /**
+     * The STOP BUTTON is what holds this row — not the user parking it.
+     *
+     * `reason: 'held'` cannot tell the two apart: parking reuses the per-row
+     * hold, so a parked prompt on an idle session reads as held too. A client
+     * that treated `held` as "stopped" lit "Queue paused — Resume" the first
+     * time anyone parked a prompt; a client that answered it by excluding
+     * `queued_by_user` rows then went blind to a real Stop on a queue where
+     * every row is parked, which is this feature's normal state. This flag is
+     * written only by `holdInboxPrompts(sessionId, true)` and cleared by every
+     * release, so it means exactly "the session is stop-held".
+     */
+    stop_held: result.stop_held === true,
     state,
     reason,
     text: (typeof payload.text === 'string' ? payload.text : '').slice(

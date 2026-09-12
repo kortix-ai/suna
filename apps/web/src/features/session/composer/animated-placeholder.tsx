@@ -46,6 +46,7 @@ const FADE_SWAP = {
  *  - Tab              → `cycleAgent` in composer.tsx
  *  - ⌘, / Ctrl+,      → `useSettingsKeyboardShortcut` (settings/use-settings-shortcut.ts)
  *  - Shift+Enter      → hard break in editor/extensions.ts
+ *  - ⌘⏎ / Ctrl+Enter  → `createSubmitOnEnterHandler` (editor/composer-editor.tsx)
  *  - drag & drop      → `handleDropFiles` in composer.tsx
  *
  * `base` is always index 0. That is what makes the platform-aware shortcuts
@@ -62,6 +63,8 @@ export interface ComposerPlaceholderCopy {
   attachFiles: string;
   changed: string;
   newLine: string;
+  /** Enter runs the prompt; this key queues it — see `send-intent.ts`. */
+  queuePrompt: (modifier: string) => string;
   settings: (modifier: string) => string;
   compact: string;
 }
@@ -75,6 +78,7 @@ const ENGLISH_PLACEHOLDER_COPY: ComposerPlaceholderCopy = {
   attachFiles: 'Drag and drop files to attach them',
   changed: "Ask what's changed in your project",
   newLine: 'Press Shift+Enter for a new line',
+  queuePrompt: (modifier) => `Press ${modifier}Enter to queue a prompt instead of running it`,
   settings: (modifier) => `Press ${modifier}, to open settings`,
   compact: 'Ask to compact the session when it gets long',
 };
@@ -95,6 +99,7 @@ export function buildPlaceholderVariants(
     copy.attachFiles,
     copy.changed,
     copy.newLine,
+    copy.queuePrompt(mod),
     copy.settings(mod),
     copy.compact,
   ];
@@ -143,6 +148,7 @@ export function AnimatedComposerPlaceholder({
         attachFiles: t('hintAttachFiles'),
         changed: t('hintChanged'),
         newLine: t('hintNewLine'),
+        queuePrompt: (modifier) => t('hintQueuePrompt', { modifier }),
         settings: (modifier) => t('hintSettings', { modifier }),
         compact: t('hintCompact'),
       }),

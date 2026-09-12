@@ -30,6 +30,7 @@ import {
 import { requeueAbandonedPrompt } from '../projects/session-lifecycle/redelivery';
 import { acceptSandboxTurn } from '../projects/sandbox-turn-lifecycle';
 import {
+  INBOX_TURN_SETTLE_MS,
   LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
   type SessionLifecycleCommandRow,
   claimDueLifecycleCommands,
@@ -49,7 +50,12 @@ const WIRE_ID = 'msg_0198f3a1b2c4AbCdEfGhIjKlMn';
 
 async function enqueue(
   clientMessageId: string,
-  overrides: { wireMessageId?: string; createdAt?: string; clientSentAtMs?: number } = {},
+  overrides: {
+    wireMessageId?: string;
+    createdAt?: string;
+    clientSentAtMs?: number;
+    queuedByUser?: boolean;
+  } = {},
 ): Promise<SessionLifecycleCommandRow> {
   const { row } = await enqueueContinueSessionCommand({
     source: 'ui',
@@ -62,6 +68,7 @@ async function enqueue(
     clientMessageId,
     wireMessageId: overrides.wireMessageId ?? WIRE_ID,
     clientSentAtMs: overrides.clientSentAtMs,
+    ...(overrides.queuedByUser ? { queuedByUser: true } : {}),
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: null, variant: null, directory: '/workspace' },
   });
@@ -197,6 +204,42 @@ describe('the inbox row', () => {
              result = '{"admission_reason":"turn_active"}'::jsonb
        WHERE command_id IN (${first.commandId}::uuid, ${second.commandId}::uuid)`);
     expect(await promoteNextInboxRow(SESSION_ID)).toBe(first.idempotencyKey);
+  });
+
+  test('terminal promotion settles the row INBOX_TURN_SETTLE_MS out, not immediately', async () => {
+    // The completed turn's own UI has to land before the next prompt's does —
+    // see store.ts's comment on `INBOX_TURN_SETTLE_MS`. Promotion must not
+    // hand the row straight back to `admitInboxPrompt` as already-due.
+    const before = Date.now();
+    const row = await enqueue('q_settle');
+    await setBox('stopped', {});
+
+    expect(await promoteNextInboxRow(SESSION_ID)).toBe(row.idempotencyKey);
+
+    const result = await db.execute(sql`
+      SELECT available_at FROM kortix.session_lifecycle_commands
+       WHERE command_id = ${row.commandId}::uuid`);
+    const rows = ((result as { rows?: Array<Record<string, unknown>> }).rows ??
+      result) as Array<Record<string, unknown>>;
+    const availableAt = new Date(rows[0].available_at as string).getTime();
+
+    // Not immediately due: strictly after `before`, and at least most of the
+    // settle window ahead of it (allow scheduling jitter, never the full gap
+    // eaten away).
+    expect(availableAt).toBeGreaterThan(before + INBOX_TURN_SETTLE_MS / 2);
+    // Not stuck behind some OTHER unrelated delay either — comfortably inside
+    // one settle window plus generous test-run slop.
+    expect(availableAt).toBeLessThan(before + INBOX_TURN_SETTLE_MS + 5_000);
+
+    // And the row is genuinely NOT admissible yet — `admitInboxPrompt` reads
+    // `hasOlderPendingPrompt`/claim timing off this same `available_at`, so a
+    // row due in the future must not be claimable right now.
+    const claimedNow = await claimDueLifecycleCommands({
+      workerId: 'settle-test',
+      limit: 10,
+      idempotencyKey: row.idempotencyKey ?? undefined,
+    });
+    expect(claimedNow).toEqual([]);
   });
 });
 
@@ -605,7 +648,9 @@ describe('holding the queue — what the Stop button now writes', () => {
     expect(await holdInboxPrompts(SESSION_ID, true)).toBe(1);
 
     const after = await readRow(held.commandId);
-    expect(after.result).toEqual({ held: true });
+    // `stop_held` rides beside `held` because `held` alone cannot say WHICH
+    // hold this is — a parked row (Cmd/Ctrl+Enter) is held too.
+    expect(after.result).toEqual({ held: true, stop_held: true });
 
     // The whole point: a prompt sent AFTER the stop is not queued behind a row
     // that is, by construction, never due.
@@ -644,6 +689,45 @@ describe('holding the queue — what the Stop button now writes', () => {
     expect(await admitInboxPrompt(promoted!)).toEqual({ admit: true });
     // And the rest of the queue is released, to drain at the next boundary.
     expect((await readRow(first.commandId)).result).toEqual({});
+  });
+
+  /**
+   * A STOP IS VISIBLE EVEN WHEN EVERY ROW IS PARKED — and a park is still
+   * never a stop.
+   *
+   * Both facts live in one `result` object, which is why they need two keys.
+   * `held` says "not due"; a parked row (Cmd/Ctrl+Enter) is born with it and
+   * so is a stopped one. `stop_held` says "the SESSION is stopped", which is
+   * what the composer's "Queue paused — Resume" reports.
+   */
+  test('Stop stamps stop_held on a PARKED row too — the pause is session-wide', async () => {
+    const parked = await enqueue('q_parked', { queuedByUser: true });
+    // The row is born held, so `holdInboxPrompts` finds it already not-due.
+    expect((await readRow(parked.commandId)).result).toEqual({ held: true });
+
+    await holdInboxPrompts(SESSION_ID, true);
+
+    // Without `stop_held` this row is byte-identical before and after the
+    // Stop: a queue of nothing but parked rows — this feature's normal state —
+    // gave the client no way at all to see that the session was stopped.
+    expect((await readRow(parked.commandId)).result).toEqual({
+      held: true,
+      stop_held: true,
+    });
+  });
+
+  test('releasing clears stop_held from a parked row but LEAVES it parked', async () => {
+    const parked = await enqueue('q_parked_release', { queuedByUser: true });
+    await holdInboxPrompts(SESSION_ID, true);
+
+    // `releaseInboxHold` runs on every `POST .../prompts`: sending something
+    // new ends a stop. It must not end a PARK — "hold this one until I say" is
+    // not undone by sending an unrelated message.
+    await releaseInboxHold(SESSION_ID);
+
+    // The stop is over (no Resume banner on an idle session), the park is not
+    // (the row still never drains on its own).
+    expect((await readRow(parked.commandId)).result).toEqual({ held: true });
   });
 });
 

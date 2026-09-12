@@ -255,7 +255,7 @@ export interface QueuedPromptBubblesProps {
   failed?: QueuedPromptRow[];
   /** Rows the server already handed to OpenCode: rendered, inert. */
   inFlightIds?: ReadonlySet<string> | string[];
-  /** The queue is held by a stop — reveals "send now". */
+  /** The queue is held by a stop or by a failed turn — reveals "send now". */
   held?: boolean;
   onRemove?: (id: string) => void;
   onSendNow?: (id: string) => void;

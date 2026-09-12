@@ -1,8 +1,8 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { inboxOrderBy } from './inbox-order';
-import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
+import { inboxOrderBy, inboxSendOrderMs } from './inbox-order';
+import { INBOX_HOLD_MS, type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
 /**
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
@@ -28,15 +28,10 @@ export function inboxScope(sessionId: string) {
   );
 }
 
-/**
- * How long a HELD prompt stays out of the drain's way.
- *
- * A hold is released by an action, never by this timer — the user sending
- * anything new, or pressing "send now" on a row. The horizon exists only so a
- * held row cannot outlive a browser that never comes back: a day later the
- * queue drains rather than holding a prompt for ever.
- */
-export const INBOX_HOLD_MS = 24 * 60 * 60 * 1000;
+/** Re-exported so the historic import path keeps working. Defined in `store.ts`
+ *  because a park (`buildContinueSessionCommandValues`) uses the SAME horizon
+ *  and this module already imports from there — see `PARKED_PROMPT_HOLD_MS`. */
+export { INBOX_HOLD_MS };
 
 /** Is this row on the wire at OpenCode, waiting for a turn to consume it?
  *  See `markCommandForwarded` for why that is not the same as finished. */
@@ -150,6 +145,14 @@ export async function deleteInboxPrompt(
  * is what the admission gate reads to let it past the ordering rule
  * (`older_prompt_pending`). An in-flight sibling still binds a promoted row
  * because two concurrent network deliveries can reverse their arrival order.
+ *
+ * `payload.queuedByUser` IS LEFT ON THE ROW, and the flag is a one-way latch:
+ * nothing anywhere clears it. Releasing a parked prompt does not un-park it as
+ * a fact about the row — it stays in the composer's queue list, and if a later
+ * failure requeues it, it is a `queued_by_user` row again. That is deliberate:
+ * the flag records WHERE the user chose to watch this message, which a single
+ * "send now" does not revoke. What the promote clears is the HOLD, by replacing
+ * `result` wholesale.
  *
  * `payload.remintOnDelivery` is stamped because this row did NOT go out on its
  * first claim: whatever the session did in the meantime has written HIGHER wire
@@ -279,7 +282,17 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
       .update(sessionLifecycleCommands)
       .set({
         availableAt: new Date(Date.now() + INBOX_HOLD_MS),
-        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
+        // `stop_held` BESIDE `held`, and this is the whole reason it exists.
+        //
+        // Cmd/Ctrl+Enter parks a row by holding it too, so `held` alone cannot
+        // say WHY a row is not due. On a queue of nothing but parked rows —
+        // the feature's normal state — Stop therefore changed nothing a client
+        // could see: no "Queue paused — Resume", and a header still promising
+        // "runs after this turn". This key is set by the stop button and by a
+        // failed turn's error halt, and cleared by every release, parked rows
+        // included, so a client can report the SESSION as held without
+        // reporting a parked row as one.
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true, "stop_held": true}'::jsonb`,
         // A held row is by definition one that did not go out on its first
         // claim — see `retryInboxPrompt` for why this lives in the payload.
         payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
@@ -296,7 +309,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         // message — and every reader of "is this row on the wire"
         // (`isForwardedInboxRow`, the confirmation, the sweep) must keep saying
         // yes. What changed is only who is waiting on it: the user.
-        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"stop_paused": true, "held": true}'::jsonb`,
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"stop_paused": true, "held": true, "stop_held": true}'::jsonb`,
         payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
         updatedAt: new Date(),
       })
@@ -325,6 +338,19 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
     return queued.length + forwarded.length + running.length;
   }
 
+  // A ROW THE USER PARKED IS NOT RELEASED HERE.
+  //
+  // This runs on every `POST .../prompts` — "sending anything new lifts the
+  // hold the stop button left". That is right for a STOP hold, which is a
+  // session-wide pause the next send is a decision to end. It is wrong for a
+  // prompt the user parked with Cmd/Ctrl+Enter: parking means "hold this one
+  // until I say", and sending an unrelated message is not saying. Without this
+  // exclusion the next Enter emptied the whole parked queue into the runtime.
+  //
+  // `payload.queuedByUser` is the flag, not a second `result` key — see
+  // `buildContinueSessionCommandValues`.
+  const notUserParked = sql`COALESCE(${sessionLifecycleCommands.payload}->>'queuedByUser', '') <> 'true'`;
+
   // FIRST, so nothing below can be undone by it: a delivery that lands after
   // this clear is an ordinary forwarded row (the user released the hold), and
   // one that landed before it is stop-paused and caught by the requeue arm at
@@ -349,6 +375,28 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
       ),
     );
 
+  // THE STOP IS OVER FOR EVERY ROW, INCLUDING THE PARKED ONES.
+  //
+  // `stop_held` says "the session is stopped", which is a fact about the
+  // session, not about the row — so the release clears it everywhere, with no
+  // `notUserParked`. A parked row keeps its own `held` (the update below skips
+  // it, deliberately: parking means "until I say"), and without this clear it
+  // would keep announcing a stop that ended, for ever: the composer would show
+  // "Queue paused — Resume" on an idle session whose queue is simply parked,
+  // which is the exact bug the flag was introduced to avoid re-creating.
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'stop_held'`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        inboxScope(sessionId),
+        sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_held', '') = 'true'`,
+      ),
+    );
+
   const released = await db
     .update(sessionLifecycleCommands)
     .set({
@@ -361,6 +409,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         inboxScope(sessionId),
         eq(sessionLifecycleCommands.status, 'queued'),
         sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'`,
+        notUserParked,
       ),
     )
     .returning({ commandId: sessionLifecycleCommands.commandId });
@@ -503,4 +552,95 @@ export async function claimDueSessionInboxSiblings(input: {
     if (locked) claimed.push(locked as SessionLifecycleCommandRow);
   }
   return claimed;
+}
+
+/**
+ * Rewrite the SEND ORDER of a session's parked prompts.
+ *
+ * The inbox has exactly one ordering key — `inboxSentAtSql`, i.e. the payload's
+ * `clientSentAtMs`, falling back to `created_at` — and every reader, admission
+ * predicate, batch and promotion is required to use that same tuple. So a
+ * reorder is not a new concept: it is a rewrite of that one field, and nothing
+ * else in the system needs to learn about it.
+ *
+ * The new stamps are packed into the span the reordered rows ALREADY occupy —
+ * from the earliest of their own current stamps, one millisecond apart. That
+ * keeps them exactly where they were relative to every row NOT being reordered
+ * (a prompt sent from another device, a redelivered row), so dragging inside
+ * the composer's list can never jump the whole list ahead of, or behind,
+ * something the user was not looking at.
+ *
+ * `running` rows are excluded: a prompt already on the wire has left the queue
+ * and its position is no longer a question. Rows are matched inside the
+ * session's own inbox scope, so naming another session's prompt does nothing.
+ */
+export async function reorderInboxPrompts(
+  sessionId: string,
+  promptIds: string[],
+): Promise<SessionLifecycleCommandRow[]> {
+  if (promptIds.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        inboxScope(sessionId),
+        inArray(sessionLifecycleCommands.commandId, promptIds),
+        // `running` — inside `continueSession` right now. Not reorderable, and
+        // not an error either: the list renders it inert.
+        //
+        // NOT every row on the wire, and the difference is worth knowing. A
+        // FORWARDED row is `status: 'succeeded'` (see `markCommandForwarded`),
+        // so it passes this filter and can still trade stamps — harmlessly,
+        // because OpenCode already holds that message and the stamp no longer
+        // decides anything for it. What the filter actually protects is the
+        // one row a delivery is mid-flight for.
+        ne(sessionLifecycleCommands.status, 'running'),
+      ),
+    );
+  if (rows.length === 0) return [];
+
+  // The order the CALLER asked for, restricted to rows that actually exist in
+  // this session's inbox. An id the caller made up, or one that has since been
+  // delivered, drops out here rather than shifting everything after it.
+  const byId = new Map(rows.map((row) => [row.commandId, row] as const));
+  const ordered = promptIds.map((id) => byId.get(id)).filter((row): row is typeof rows[number] => !!row);
+  if (ordered.length === 0) return [];
+
+  // THE ROWS TRADE THEIR OWN STAMPS. Take the send stamps these rows already
+  // hold, sorted, and deal them out in the new order.
+  //
+  // Not `base + index`: that packs the new order into consecutive milliseconds
+  // from the earliest stamp, which COLLIDES with any row in between that is not
+  // being reordered. With a=100, b=101, c=102 and a drag producing [c, a], the
+  // packed form writes c=100 and a=101 — tying `a` with `b`, whose position the
+  // user never touched, and leaving the tie to be broken by wire id.
+  //
+  // Reusing the set means the reordered rows land on exactly the slots they
+  // already occupied, so a row NOT named here cannot move, and no two rows can
+  // end up on one stamp. `inboxSendOrderMs` is the same reader the drain uses,
+  // so a row with no `clientSentAtMs` yet contributes its `created_at`.
+  const stamps = ordered.map((row) => inboxSendOrderMs(row)).sort((a, b) => a - b);
+
+  const updated: SessionLifecycleCommandRow[] = [];
+  for (const [index, row] of ordered.entries()) {
+    const [next] = await db
+      .update(sessionLifecycleCommands)
+      .set({
+        payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({
+          clientSentAtMs: stamps[index],
+        })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sessionLifecycleCommands.commandId, row.commandId),
+          inboxScope(sessionId),
+          ne(sessionLifecycleCommands.status, 'running'),
+        ),
+      )
+      .returning();
+    if (next) updated.push(next);
+  }
+  return updated;
 }

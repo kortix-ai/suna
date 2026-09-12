@@ -46,6 +46,21 @@ describe('audit HTTP route registry', () => {
     }
   });
 
+  test('names every prompt-queue route, including the newest one', () => {
+    // A route with no `ROUTE_LABEL_OVERRIDES` entry still "maps" — the
+    // generic humanizer derives one from the path — so the sweep above passes
+    // while the audit log reads "Ran reorder" in raw English beside localized
+    // siblings. Every override is also a key in
+    // `audit-title-translation-keys.generated.ts`; a missing one is what makes
+    // the row untranslated, and only a named assertion catches it.
+    const label = (path: string) =>
+      describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}${path}`, testUiTranslator)
+        .title;
+    expect(label('/prompts/reorder')).toBe('Reordered the session prompt queue');
+    expect(label('/prompts/hold')).toBe('Held or released the session prompt queue');
+    expect(label('/prompts')).toBe('Queued a session prompt');
+  });
+
   test('uses specific labels for common audit routes', () => {
     expect(
       describeAuditAction(`GET /v1/accounts/${UID}/audit/webhooks`, testUiTranslator).title,

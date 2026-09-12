@@ -13,11 +13,23 @@ import {
   deleteSessionPrompt,
   holdSessionPrompts,
   listSessionPrompts,
+  reorderSessionPrompts,
   retrySessionPrompt,
 } from '../core/rest/projects-client/sessions';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { countLiveInboxPrompts, inboxObservationSupersedes } from '../core/session/working';
 import { claimOpenBundle, openBundleQueue } from '../core/session/open-bundle';
+import {
+  applyPromptOrder,
+  applyPromptTombstones,
+  clearPromptTombstones,
+  isPromptTombstoned,
+  notePromptRemoved,
+  planPromptRemoval,
+  prunePromptTombstones,
+  removeSessionPromptRow,
+  restoreSessionPromptRow,
+} from '../core/session/prompt-removals';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
 import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
@@ -202,6 +214,11 @@ export function optimisticSessionPrompt(
     text,
     attempts: 0,
     last_error: null,
+    // CARRIED ON THE OPTIMISTIC ROW TOO. Without it a Cmd+Enter prompt paints
+    // into the transcript for the POST's round trip and then jumps into the
+    // composer's queue list when the server row replaces it — the surface
+    // swap the whole intent exists to avoid.
+    queued_by_user: input.queuedByUser === true,
     created_at: at,
     available_at: at,
   };
@@ -235,6 +252,25 @@ export function removeOptimisticPrompt(
   return prompts.filter(
     (p) => !(p.client_message_id === clientMessageId && isOptimisticSessionPrompt(p)),
   );
+}
+
+/**
+ * THE IDS A REORDER MAY PUT ON THE WIRE.
+ *
+ * The list hands over its WHOLE order, this tab's not-yet-acknowledged rows
+ * included — they are on screen and draggable, so leaving them out of the
+ * order the user sees would be a different list. But their ids are
+ * `optimistic:<clientMessageId>`, and `POST .../prompts/reorder` validates
+ * every id against `UUID_V4_REGEX`: one of them fails the WHOLE request with
+ * `400 Invalid prompt id`. So dragging any row while another park's POST was
+ * still in flight lost the entire reorder and raised an error toast — a window
+ * measured on this branch at up to 9s under load.
+ *
+ * The optimistic row has no server position to rewrite yet. It takes the one
+ * its POST gives it, and the next reorder (or the next drag) places it.
+ */
+export function serverReorderPromptIds(promptIds: readonly string[]): string[] {
+  return promptIds.filter((promptId) => !isOptimisticSessionPrompt({ prompt_id: promptId }));
 }
 
 /**
@@ -307,10 +343,13 @@ export async function readSessionPromptsInbox(
       // Ordering keeps the server's own stamp, ranked only against other
       // server stamps.
       const observedAtMs = Date.parse(bundle!.observed_at);
+      // The bundle is a snapshot like any other — a session reopened seconds
+      // after a removal can carry the removed row in it.
+      prunePromptTombstones(sessionId, bundled, Date.now());
       return applyInboxObservation(
         sessionId,
         cached,
-        bundled,
+        applyPromptTombstones(sessionId, bundled, Date.now()),
         Date.now(),
         Number.isFinite(observedAtMs) ? observedAtMs : undefined,
       );
@@ -321,12 +360,22 @@ export async function readSessionPromptsInbox(
   const atMs = Date.now();
   const { prompts, observed_at } = await listSessionPrompts(projectId, sessionId);
   const serverAtMs = observed_at ? Date.parse(observed_at) : Number.NaN;
+  // A ROW THIS TAB REMOVED IS GONE, whatever this snapshot says.
+  //
+  // The delete carries no `observed_at`, so a poll issued before it lands after
+  // it with a strictly NEWER server stamp — and the freshness rule accepts it,
+  // correctly by its own lights. Without this the deleted row is written back
+  // onto the screen and the next click on its X answers 404 for a prompt the
+  // server destroyed seconds ago. Pruned FIRST, so a snapshot that already
+  // agrees the row is gone retires the tombstone in the same pass.
+  prunePromptTombstones(sessionId, prompts, atMs);
+  const visible = applyPromptTombstones(sessionId, prompts, atMs);
   // Keep this tab's not-yet-confirmed rows on screen across a poll that landed
   // before their POST returned.
   return applyInboxObservation(
     sessionId,
     cached,
-    prompts,
+    visible,
     atMs,
     Number.isFinite(serverAtMs) ? serverAtMs : undefined,
   );
@@ -346,6 +395,19 @@ export interface UseSessionPromptsResult {
   /** Hold, or release, the whole queue. The Stop button holds; any new send,
    *  and `retry`, release. */
   hold: (held: boolean) => Promise<{ prompts: SessionPrompt[] }>;
+  /** Rewrite the send order of the parked prompts — `promptIds` top first.
+   *  Applied to the cache in the same frame as the drop. */
+  reorder: (promptIds: string[]) => Promise<{ prompts: SessionPrompt[] }>;
+  /**
+   * Has THIS tab already removed the row behind this handle?
+   *
+   * The removal takes the row off screen on the click, so a second click should
+   * be impossible — but any render path that lags the cache by a frame can
+   * still offer one, and the server answers 404 for a row it destroyed.
+   * A host asks this before issuing a `remove` so the duplicate is refused
+   * silently instead of surfacing "That prompt is no longer in the queue".
+   */
+  isRemoved: (promptId: string) => boolean;
   refetch: () => Promise<unknown>;
 }
 
@@ -405,6 +467,11 @@ export function useSessionPrompts(
     [queryClient, projectId, sessionId],
   );
 
+  const isRemovedHere = useCallback(
+    (promptId: string) => (sessionId ? isPromptTombstoned(sessionId, promptId) : false),
+    [sessionId],
+  );
+
   const enqueueMutation = useMutation({
     // Enter paints the row NOW. The queue is server-side; the only client-side
     // job left is to not make the user wait a round-trip to see their own
@@ -414,6 +481,11 @@ export function useSessionPrompts(
     // comes before anything awaited, so the row is on screen in the same frame
     // as the keypress.
     onMutate: async (input: CreateSessionPromptInput) => {
+      // UNDO re-POSTs the ORIGINAL `clientMessageId`, so the row the server
+      // hands back is precisely the one this tab tombstoned when the user
+      // pressed the X. Lifting it first is what stops the restored prompt being
+      // filtered off the screen under a button labelled "Undo".
+      if (sessionId) clearPromptTombstones(sessionId, input.clientMessageId);
       queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
         applyOptimisticPrompt(prev ?? [], input, Date.now()),
       );
@@ -457,14 +529,109 @@ export function useSessionPrompts(
   // and without one TanStack falls back to the app-global default `onError`
   // IN ADDITION — a second, generic "Failed to perform action: …" for every
   // expected refusal (e.g. removing a prompt a step just started answering).
+  // THE ROW LEAVES ON THE CLICK, NOT ON THE ROUND-TRIP.
+  //
+  // This mutation used to carry no `onMutate` at all — the one write path on
+  // this key that did not paint optimistically. The row therefore stayed fully
+  // rendered, and fully clickable, for the whole `DELETE` (measured up to 9s
+  // for a `POST .../prompts` under load; the same API serves both). A second
+  // click inside that window is the 404 behind "That prompt is no longer in
+  // the queue", stacked under the "Removed from queue" toast the first click
+  // earned — which is exactly the three-toast screenshot from 2026-09-07.
+  //
+  // The tombstone is the other half: see `prompt-removals.ts` for why an
+  // optimistic write alone cannot survive a poll that was already in the air.
   const removeMutation = useMutation({
-    mutationFn: (promptId: string) => deleteSessionPrompt(projectId!, sessionId!, promptId),
-    onError: () => {},
+    onMutate: async (promptId: string) => {
+      const previous = queryClient.getQueryData<SessionPrompt[]>(key) ?? [];
+      // The tombstone is written for the handle EITHER WAY — see
+      // `planPromptRemoval`. A miss used to write none, so a second click on a
+      // bubble whose row the cache never held repeated the same impossible
+      // request, and each repeat earned another toast.
+      const plan = planPromptRemoval(previous, promptId, sessionId, Date.now());
+      if (plan.removed) queryClient.setQueryData<SessionPrompt[]>(key, plan.prompts);
+      // AFTER the write, never before: `cancelQueries` awaits the in-flight
+      // read, and a read that resolves first would re-seed the row this call is
+      // removing.
+      await queryClient.cancelQueries({ queryKey: key });
+      return { removed: plan.removed, index: plan.index, request: plan.request };
+    },
+    // NOTHING GOES TO THE WIRE FOR THIS TAB'S OWN OPTIMISTIC ROW. Its
+    // `prompt_id` is `optimistic:<clientMessageId>`, which fails the route's id
+    // regex and answers 400 `Invalid prompt id` — for a prompt the server has
+    // never seen. The cancel is purely local. The id ITSELF says which case
+    // this is, so no state has to be carried from `onMutate`.
+    mutationFn: async (promptId: string): Promise<RemovedSessionPrompt> => {
+      if (isOptimisticSessionPrompt({ prompt_id: promptId })) {
+        return {
+          prompt_id: promptId,
+          client_message_id: promptId.slice(OPTIMISTIC_PROMPT_PREFIX.length),
+          message_id: '',
+          parts: [],
+          overrides: null,
+        };
+      }
+      return deleteSessionPrompt(projectId!, sessionId!, promptId);
+    },
+    // A REFUSED delete puts the row back where it was — not a wholesale
+    // rollback, which would also discard whatever a poll landed in between.
+    onError: (_error, _promptId, context) => {
+      const restored = context?.removed;
+      if (!restored) return;
+      if (sessionId) clearPromptTombstones(sessionId, restored.prompt_id);
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
+        restoreSessionPromptRow(prev ?? [], restored, context?.index ?? 0),
+      );
+    },
     onSettled: invalidate,
   });
   const retryMutation = useMutation({
     mutationFn: (promptId: string) => retrySessionPrompt(projectId!, sessionId!, promptId),
     onError: () => {},
+    onSettled: invalidate,
+  });
+  // THE DRAG IS APPLIED IN THE SAME FRAME AS THE DROP. The server rewrites the
+  // send stamps and answers with the whole list, but that is a round trip, and
+  // a row that snaps back to its old slot for the duration reads as the drag
+  // having failed.
+  const reorderMutation = useMutation({
+    onMutate: async (promptIds: string[]) => {
+      const previous = queryClient.getQueryData<SessionPrompt[]>(key) ?? [];
+      queryClient.setQueryData<SessionPrompt[]>(key, applyPromptOrder(previous, promptIds));
+      await queryClient.cancelQueries({ queryKey: key });
+      return { previous };
+    },
+    mutationFn: async (promptIds: string[]) => {
+      // This tab's own un-acknowledged rows never go to the wire — see
+      // `serverReorderPromptIds`. With nothing left there is no order to
+      // persist, and the route answers 400 to an empty list, so the optimistic
+      // arrangement above stands until the POSTs land.
+      const serverIds = serverReorderPromptIds(promptIds);
+      if (serverIds.length === 0) {
+        return { prompts: queryClient.getQueryData<SessionPrompt[]>(key) ?? [] };
+      }
+      return reorderSessionPrompts(projectId!, sessionId!, serverIds);
+    },
+    // The server's answer IS the list — it has just rewritten the ordering key,
+    // so patching a cached copy would re-derive an order it already decided.
+    //
+    // Through the same two filters every other read goes through, though. Raw,
+    // this answer resurrects a row THIS TAB has already deleted (the response
+    // carries no `observed_at` the tombstone rule can rank) and drops the
+    // optimistic rows it deliberately never received — so a drag during a park
+    // made that park's row vanish until the next poll healed it.
+    onSuccess: (result) => {
+      const cached = queryClient.getQueryData<SessionPrompt[]>(key);
+      const visible = sessionId
+        ? applyPromptTombstones(sessionId, result.prompts, Date.now())
+        : result.prompts;
+      queryClient.setQueryData<SessionPrompt[]>(key, reconcileOptimisticPrompts(cached, visible));
+    },
+    // A refused reorder puts the old order back rather than leaving the user
+    // looking at an arrangement the server never accepted.
+    onError: (_error, _ids, context) => {
+      if (context?.previous) queryClient.setQueryData<SessionPrompt[]>(key, context.previous);
+    },
     onSettled: invalidate,
   });
   const holdMutation = useMutation({
@@ -480,6 +647,8 @@ export function useSessionPrompts(
     remove: removeMutation.mutateAsync,
     retry: retryMutation.mutateAsync,
     hold: holdMutation.mutateAsync,
+    reorder: reorderMutation.mutateAsync,
+    isRemoved: isRemovedHere,
     refetch,
   };
 }

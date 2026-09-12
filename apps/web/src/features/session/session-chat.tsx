@@ -6,6 +6,7 @@ import { SessionApprovalPrompt } from '@/features/session/session-approval-promp
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
+import { useTranslations } from '@/i18n/use-translations';
 import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
 import {
   type SandboxLifecycle,
@@ -28,7 +29,6 @@ import {
   PlayIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -43,7 +43,7 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
-import { projectQueueRows } from './queue-projection';
+import { countHaltableInboxPrompts, projectQueueRows, promptIsOnScreen } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
 import {
@@ -72,23 +72,34 @@ import { resolveWorkingTurn } from './turn/working-turn';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
-import { Composer as SessionChatInput } from '@/features/session/composer/composer';
+import {
+  COMPOSER_INPUT_SLOT_CLASS,
+  Composer as SessionChatInput,
+} from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
+import type { ComposerSubmitIntent } from '@/features/session/composer/editor/composer-editor';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
+import {
+  nextQueueOrderAfterMoveToTop,
+  queueIsAtCap,
+  type QueueRunState,
+} from '@/features/session/composer/queue-gates';
+import { canDuplicateRow } from '@/features/session/composer/queued-messages-logic';
+import { QueuedMessages } from '@/features/session/composer/queued-messages';
+import { isQueuedSubmission } from '@/features/session/composer/send-intent';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
+import {
+  resolveFirstPromptHandover,
+  transcriptCarriesFirstPrompt,
+} from '@/features/session/first-prompt-handover';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
+import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
 import {
   ConnectProviderDialog,
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
-import {
-  resolveFirstPromptHandover,
-  transcriptCarriesFirstPrompt,
-} from '@/features/session/first-prompt-handover';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '@/features/session/outcomes/session-outcomes-provider';
@@ -105,6 +116,7 @@ import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { useSessionBaseRef } from './session-changes-shared';
 import { resolveEffectiveBusy } from './session-chat-busy';
@@ -492,100 +504,22 @@ const STOP_HOLD_DEADLINE_MS = 1500;
 /** After this long on one status the working label shows elapsed time. */
 const STATUS_STALL_AFTER_MS = 20_000;
 
-/** Dependencies `stopThenSendNow` needs, injected so the ordering logic is
- *  directly testable without React or a DOM. */
-export interface StopThenSendNowDeps {
-  /** True when a turn is currently running and must be stopped first. */
-  isRunning: () => boolean;
-  /** The still-pending `AbortSettlement` for a stop already issued by someone
-   *  else (e.g. a direct click on the Stop button), if one exists. Checked
-   *  BEFORE `isRunning()`: the abort receipt makes the projection `isRunning`
-   *  reads answer idle before that earlier stop's settlement arrives, so
-   *  `isRunning()` alone cannot see an in-flight stop issued outside this
-   *  call. Returns `undefined` when no stop is currently pending for this
-   *  session. */
-  pendingSettlement: () => Promise<AbortSettlement> | undefined;
-  /** Issue the stop and resolve with its `AbortSettlement`, or `null` if this
-   *  stop produced no trackable settlement. Called only when
-   *  `pendingSettlement()` is `undefined` and `isRunning()` is true. Never
-   *  expected to reject — `AbortSettlement`-producing paths
-   *  (`sessionState.cancel()`, `awaitAbortSettlement`) never do. A `null`
-   *  settlement means there is nothing to wait for, so the dispatch follows
-   *  at once. */
-  stop: () => Promise<AbortSettlement | null>;
-  /** The actual send-now dispatch: `POST .../prompts/:id/retry`, which
-   *  promotes the row the user pointed at and releases the session's inbox
-   *  hold ITSELF, in that order. Nothing here may release the hold first —
-   *  see `stopThenSendNow`'s doc. */
-  dispatch: () => Promise<void>;
-}
-
 /**
- * Orchestrates "Stop & send": end the current turn (if one is running), wait
- * for that to actually settle, then dispatch.
+ * `stopThenSendNow` LIVED HERE, and it is gone deliberately.
  *
- * T10: waits for the SERVER-confirmed `AbortSettlement` `stop()`
- * returns — never a raw status slot. (There used to be a `waitForSessionIdle`
- * fallback that polled the sync-store slot; the abort's own optimistic idle
- * frame flipped that slot synchronously, so the poll resolved on its first
- * check at every reachable call site and its 5s timer was unreachable. C4
- * deleted the frame, which made the predicate constant the other way. Gone.)
- * `stop()`'s settlement is already bounded (~5s, see
- * `awaitAbortSettlement`), never rejects, and a
- * `{status:'failed'}` or `{status:'timed-out'}` result still lets `dispatch()`
- * proceed once that bound elapses: whichever cancel path produced the
- * settlement already cancelled any local in-flight delivery
- * (`abortInFlightDeliveries`) before returning it, so there is nothing left on
- * the client to race even without a server acknowledgement.
+ * It orchestrated "stop the running turn, wait for the abort to settle, then
+ * dispatch" for the queue's per-row "send now". That is not what "send
+ * immediately" means: the row jumps the LINE, and it goes out when the current
+ * answer finishes, like every other prompt. Aborting the live turn threw away
+ * the work the user was waiting for in order to jump a queue that was about to
+ * drain anyway.
  *
- * When nothing is running and no stop is pending, `stop()` is never called
- * and the send is not delayed at all.
+ * `handleQueueSendNow` is now `promptInbox.retry(id)` and nothing else —
+ * `retryInboxPrompt` promotes the row past the ordering gate and then releases
+ * the session's hold, in that order, which is the whole dispatch.
  *
- * IT DOES NOT LIFT THE INBOX HOLD. Stop holds every queued row
- * (`available_at = now + 24h`); "send now" is `POST .../prompts/:id/retry`,
- * and `retryInboxPrompt` promotes THAT row and only then releases the hold.
- * Lifting it here first made all held rows due at one instant and kicked a
- * drain that claims by `available_at, created_at` — so the oldest prompt ran
- * and the one the user clicked queued behind its turn. `dispatch()` owns the
- * whole ordering.
- *
- * T10 (settlement race): a stop can already be in flight when this runs —
- * e.g. the user clicked Stop directly, whose `noteAbortReceipt` makes the
- * projection `isRunning()` reads answer idle well before that stop's
- * `AbortSettlement` arrives from the server. Gating on `isRunning()` alone
- * would then see "idle" and dispatch immediately, racing the still-in-flight
- * abort. `pendingSettlement()` is consulted
- * FIRST for exactly this reason: if a settlement is already pending for this
- * session, it is awaited (and `stop()` is NOT called again — a stop was
- * already issued) before resuming/dispatching, regardless of what
- * `isRunning()` reports.
+ * The session still has exactly one interrupt, and it is the Stop button.
  */
-export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> {
-  const pending = deps.pendingSettlement();
-  if (pending) {
-    await pending;
-  } else if (deps.isRunning()) {
-    await deps.stop();
-  }
-  await deps.dispatch();
-}
-
-// ============================================================================
-// Notification-only turn detection
-// ============================================================================
-
-/** True when a turn's user message contains only system notification XML
- *  with no real user-authored text. */
-function isNotificationOnlyMessage(parts: Part[]): boolean {
-  if (parts.length === 0) return false;
-  const textParts = parts.filter(
-    (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-  ) as TextPart[];
-  if (textParts.length === 0) return false;
-  const raw = textParts.map((p) => p.text || '').join('\n');
-  const { cleanText, notifications } = parseSystemNotifications(stripKortixSystemTags(raw));
-  return notifications.length > 0 && !cleanText.trim();
-}
 
 // ============================================================================
 // NotificationTurn — lightweight turn for system notification messages
@@ -648,6 +582,75 @@ export function deriveTurnErrorAbortState(turn: {
     return { isAbort: isAbortError(err) };
   }
   return { isAbort: false };
+}
+
+/**
+ * The id of the newest turn that FAILED, or `null` if the newest answered turn
+ * came out fine.
+ *
+ * An errored turn ENDS: the session goes idle, the admission gate sees no live
+ * turn, and every parked prompt drains straight into the session that just
+ * broke — a burst of prompts spent against a dead provider key or a sandbox
+ * that lost its runtime, with nothing on screen saying why. This is what the
+ * queue's error hold keys on, so it returns the turn's ID rather than a
+ * boolean: the hold must fire once per failed turn, and only an identity can
+ * say whether the failure on screen is the one already held for.
+ *
+ * ABORTS ARE NOT FAILURES. A user's Stop ends the turn with an error too, and
+ * holding for it would put "last run failed" over a queue the user paused on
+ * purpose — `deriveTurnErrorAbortState` is the same classifier the transcript
+ * uses to decide a stop renders nothing.
+ *
+ * Only the newest turn WITH an answer is read. A parked prompt that has not run
+ * yet is a turn with no assistant message; letting it hide the failure under it
+ * would release the hold at the exact moment the queue is about to drain.
+ */
+export function newestFailedTurnId(
+  turns: ReadonlyArray<{
+    userMessage: { info: { id: string } };
+    assistantMessages: ReadonlyArray<{ info: unknown }>;
+  }>,
+): string | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (turn.assistantMessages.length === 0) continue;
+    const carriesError = turn.assistantMessages.some((msg) => {
+      const err = (msg.info as { error?: unknown }).error;
+      return !!err && typeof err === 'object';
+    });
+    if (!carriesError) return null;
+    return deriveTurnErrorAbortState(turn).isAbort ? null : turn.userMessage.info.id;
+  }
+  return null;
+}
+
+/**
+ * What the turn underneath the parked queue is doing, as `queue-gates.ts` needs
+ * to hear it.
+ *
+ * The ranking is the point. `stopping` outranks everything because a stop in
+ * flight has not ended the turn yet, and a header that switches to "queued"
+ * mid-abort promises a drain that is about to be held. `awaiting_input` outranks
+ * `error` and `running` because an open permission or question is the one state
+ * the user can act on right now. `error` outranks `running` because a session
+ * that failed and then took a new turn is no longer failed — the newest turn is
+ * what `lastRunFailed` reads.
+ *
+ * NOTE `awaiting_input` gates NOTHING here. A permission keeps the turn alive,
+ * so the server already refuses every queued row with `turn_active`; this state
+ * exists to change the header's words, never to hold anything back.
+ */
+export function deriveQueueRunState(input: {
+  stopping: boolean;
+  awaitingInput: boolean;
+  lastRunFailed: boolean;
+  running: boolean;
+}): QueueRunState {
+  if (input.stopping) return 'stopping';
+  if (input.awaitingInput) return 'awaiting_input';
+  if (input.lastRunFailed) return 'error';
+  if (input.running) return 'running';
+  return 'idle';
 }
 
 interface SessionTurnProps {
@@ -938,17 +941,31 @@ function SessionTurnImpl({
   // inbox row is already closed (the runtime holds the message, the agent has
   // not reached it): the dim alone reads as "something is wrong".
   const statusState: QueuedPromptState | null = queueState ?? (pending ? 'queued' : null);
+  // AN IN-FLIGHT ROW IS INERT. This tab painted the bubble on Enter, before
+  // `POST .../prompts` returned, so the row's only id is
+  // `optimistic:<clientMessageId>` — which fails the DELETE route's id regex
+  // (a uuid or `msg_…`) and answers 400 for a prompt the server has never
+  // seen. `projectQueueRows` has always collected these into `inFlightIds` for
+  // exactly this reason, but that list only ever reached the standalone strip,
+  // which `SessionChat` renders with `queued={[]}` — so the protection was
+  // unreachable, and the transcript path that replaced the strip never carried
+  // it over. This is that rule, where the bubble actually lives.
+  const rowIsInFlight = !!queueRow && isOptimisticSessionPrompt(queueRow);
   // What the X removes: the row while it is listed, the message's own wire id
   // after the row left the list (the DELETE route resolves `msg_…` handles) —
   // for any bubble the agent has not reached.
   const queueRemovalId =
-    onQueueRemove && statusState && statusState !== 'interrupted' && statusState !== 'failed'
+    onQueueRemove &&
+    !rowIsInFlight &&
+    statusState &&
+    statusState !== 'interrupted' &&
+    statusState !== 'failed'
       ? (queueRow?.prompt_id ?? turn.userMessage.info.id)
       : null;
   // Send-now / retry / remove all live in `UserMessageActions` (`leading`).
   // A pending bubble can outlive its inbox row; the X still has to work, so
   // the action id falls back to the user message's own wire id.
-  const queueActionId = queueRemovalId ?? queueRow?.prompt_id ?? null;
+  const queueActionId = queueRemovalId ?? (rowIsInFlight ? null : (queueRow?.prompt_id ?? null));
   const showQueueActions =
     Boolean(queueActionId) &&
     (Boolean(queueRemovalId) || Boolean(queueRow && queueState && queueState !== 'interrupted'));
@@ -2280,11 +2297,11 @@ export function SessionChat({
       : { state: 'uploading' };
   }, [promptInbox.prompts]);
 
-  // T10: the most recently issued stop/cancel's `AbortSettlement`
-  // promise for this session, so `stopThenSendNow` (used by
-  // `handleQueueSendNow`) can await the SERVER-confirmed settlement instead
-  // of racing the optimistic idle flip `applyOptimisticAbort` makes
-  // synchronously. Keyed by sessionId even though this component instance is
+  // The most recently issued stop/cancel's `AbortSettlement` promise for this
+  // session. Nothing gates a SEND on it any more — "send immediately" promotes
+  // a row and never aborts — but `issueSessionCancel` still needs somewhere to
+  // hand a settlement so two stops in flight cannot be confused for one.
+  // Keyed by sessionId even though this component instance is
   // 1:1 with a session, matching the sessionId-keyed conventions used
   // elsewhere in this file (e.g. the zustand stores) rather than assuming the
   // prop never changes across this instance's lifetime.
@@ -2294,9 +2311,8 @@ export function SessionChat({
    * The one place that issues a stop/cancel for this session's run, whether
    * through the mounted `sessionState` hook or the fallback raw mutation.
    * Both branches resolve a real `AbortSettlement` (never throwing — see
-   * `awaitAbortSettlement`) and stash it in `pendingAbortSettlementRef` for
-   * `stopThenSendNow` to await. Cleared once it settles so a stale settlement
-   * never gates an unrelated future send.
+   * `awaitAbortSettlement`) and stash it in `pendingAbortSettlementRef`.
+   * Cleared once it settles so a stale settlement never outlives its stop.
    */
   const issueSessionCancel = useCallback((): Promise<AbortSettlement> => {
     // The stop's own receipt, taken before the cancel goes out and settled
@@ -2412,11 +2428,38 @@ export function SessionChat({
   useEffect(() => {
     if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
   }, [sessionPrefill, sessionId]);
+  /**
+   * The parked row ArrowUp just pulled back out of the queue.
+   *
+   * Stamped with `Date.now()` rather than a counter: the other prefill sources
+   * mint small independent counters, and two sources landing on the same `id`
+   * is a prefill the composer's id-keyed effect would skip — the user's message
+   * would be deleted from the queue and appear nowhere.
+   */
+  const [queuePullBack, setQueuePullBack] = useState<{
+    text: string;
+    id: number;
+    files?: AttachedFile[];
+  } | null>(null);
   // WHICH held draft the composer is handed right now, in priority order, in
   // ONE place. The four sources mint their ids from four independent counters,
   // so `prefill.id` alone cannot say which one the composer just applied — and
   // the carried draft's handshake below has to know exactly that.
   const composerPrefill = useMemo(() => {
+    // FIRST, because this one is a keystroke and the row it came from is
+    // already deleted. Anything that outranked it would strand the text.
+    // `replace`, not `merge`: ArrowUp only fires on an EMPTY composer, so
+    // there is nothing to merge with, and merge would leave the pulled-back
+    // prompt appended under whatever a later source adds.
+    if (queuePullBack) {
+      return {
+        source: 'queue-pull-back' as const,
+        text: queuePullBack.text,
+        id: queuePullBack.id,
+        mode: 'replace' as const,
+        ...(queuePullBack.files?.length ? { files: queuePullBack.files } : {}),
+      };
+    }
     if (sessionPrefill) {
       return {
         source: 'session' as const,
@@ -2426,7 +2469,7 @@ export function SessionChat({
       };
     }
     return null;
-  }, [sessionPrefill]);
+  }, [queuePullBack, sessionPrefill]);
   // "Add context" (Task 5) — the empty Context card's button asks the
   // composer to open its attach flow. Same held/id-keyed handoff as the
   // prefill above, cleared the same way once the composer's own id-keyed
@@ -2979,99 +3022,84 @@ export function SessionChat({
     [promptInbox.prompts],
   );
 
-  // Removing used to be a local-store delete with an undo toast that restored
-  // the entry into that store. The row is durable now, so a removal is a real
-  // DELETE and the undo has to re-create it — which the inbox makes exact,
-  // because re-POSTing the SAME `clientMessageId` is idempotent by unique
-  // index rather than by a client-side latch.
-  const handleRemoveQueuedMessage = useCallback(
-    async (id: string) => {
-      // The DELETE hands back what it destroyed, and that is the only lossless
-      // undo: the row is hard-deleted, and the list view carries a 2000-char
-      // text preview with no parts at all. Restoring from the list dropped
-      // every attachment and the model/agent picks — silently, under a button
-      // that says "Undo".
-      let removed: Awaited<ReturnType<typeof promptInbox.remove>>;
-      try {
-        removed = await promptInbox.remove(id);
-      } catch (error) {
-        // Branch on the STATUS, and say what the server said.
+  /**
+   * THE COMPOSER'S QUEUE LIST — every row the user parked with Cmd/Ctrl+Enter.
+   *
+   * A separate lane from the transcript's dimmed bubbles. `queued_by_user` is
+   * what puts a row in THIS list; it is not the only thing that differs. A
+   * parked row is also born HELD, with a 24h horizon, and never dispatches on
+   * its own — the drain steps over it and `releaseInboxHold` skips it, so only
+   * the row's own "Send now" releases it. A transcript row drains FIFO at the
+   * next turn boundary. Same server, same actions, different schedule.
+   *
+   * The flag lives on the row (so the arrangement survives a reload and shows
+   * on a second tab) rather than in this component.
+   *
+   * In-flight rows are listed but inert — see `QueuedMessagesProps.inFlightIds`.
+   */
+  const parkedQueue = useMemo(() => {
+    const live: { id: string; text: string; attachmentCount?: number; parked?: boolean }[] = [];
+    const failedRows: { id: string; text: string; attachmentCount?: number; lastError?: string }[] =
+      [];
+    const inFlight: string[] = [];
+    for (const prompt of promptInbox.prompts) {
+      if (!prompt.queued_by_user) continue;
+      // The count, not the files. `attachments` is names + mime types only
+      // (`session-prompt-view.ts`), and the only thing the list does with it
+      // is refuse a Duplicate that would drop them — see `canDuplicateRow`.
+      const attachmentCount = prompt.attachments?.length ?? 0;
+      const row = {
+        id: prompt.prompt_id,
+        text: prompt.text,
+        ...(attachmentCount > 0 ? { attachmentCount } : {}),
+        // HELD OUT OF THE DRAIN — the flag the list draws a pin for, and the
+        // one `runsNextId` steps over.
         //
-        // This used to test `/409/` against `error.message` — but `ApiError`
-        // carries the server's prose in `message` and the code in `status`, so
-        // that regex could never match. Every failure rendered the same
-        // "Could not remove that prompt", including the 409 that has a precise
-        // explanation ("Prompt is already being answered") and the 404 that
-        // means something entirely different. Two unrelated causes behind one
-        // dead-end string is why this looked like the button simply never
-        // worked.
-        const status = (error as { status?: number } | null)?.status;
-        const detail = error instanceof Error && error.message.trim() ? error.message.trim() : null;
-        errorToast(
-          status === 409
-            ? (detail ?? tHardcodedUi.raw('i18nComplete.text3e739b3b4329'))
-            : status === 404
-              ? tHardcodedUi.raw('i18nComplete.text128773c76940')
-              : (detail ?? tHardcodedUi.raw('i18nComplete.text42fcd9dda5f6')),
-        );
-        return;
+        // Read from `reason`, not from `queued_by_user`: those are different
+        // questions. Every row here is `queued_by_user` (that is the filter
+        // above), but "Send now" releases a row while leaving the flag on it,
+        // and that row IS next. Without this the whole list rendered as
+        // ordinary numbered rows and the top of an all-parked queue was
+        // labelled "Runs next" — a promise the drain does not keep, and the
+        // exact statement `runsNextId` exists to prevent.
+        ...(prompt.reason === 'held' ? { parked: true } : {}),
+      };
+      if (prompt.state === 'failed') {
+        failedRows.push({ ...row, ...(prompt.last_error ? { lastError: prompt.last_error } : {}) });
+        continue;
       }
-      if (!removed) return;
-      // The bubble IS the queue entry: the row is gone, so every copy of the
-      // message goes with it — the optimistic bubble, a confirmed echo, and
-      // the ownership marks that would otherwise resurrect it when the
-      // runtime relays the deletion.
-      const store = useSessionStateStore.getState();
-      store.optimisticRemove(sessionId, removed.message_id);
-      for (const id of removed.removed_message_ids ?? [removed.message_id]) {
-        store.forgetControlPlaneMessage(sessionId, id);
+      // On the wire, or this tab's own un-acknowledged echo: rendered, but
+      // every action the list offers is refused for it.
+      if (prompt.state === 'delivering' || isOptimisticSessionPrompt(prompt)) {
+        inFlight.push(prompt.prompt_id);
       }
+      live.push(row);
+    }
+    return { live, failed: failedRows, inFlight };
+  }, [promptInbox.prompts]);
 
-      // Undo rather than a confirm dialog. A queue is something you curate —
-      // gating every removal behind a modal would make it unusable, and the
-      // thing being removed is a draft, not data. Reversible beats guarded.
-      const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
-      infoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
-        id: undoToastId,
-        duration: 5000,
-        button: (
-          <Button
-            size="sm"
-            variant="outline"
-            // The SAME `clientMessageId`, so an undo re-creates ONE row and a
-            // double-click cannot create two. A FRESH wire id, because
-            // OpenCode orders by id and the original one was minted before the
-            // turn that has been writing higher ids since. The parts and
-            // overrides are the ORIGINALS, straight from the delete's own
-            // response — see `createQueueUndoAction`.
-            onClick={createQueueUndoAction({
-              removed,
-              mintMessageId: () => mintSessionWireMessageId(sessionId),
-              enqueue: promptInbox.enqueue,
-              dismiss: () => dismissToast(undoToastId),
-              onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
-            })}
-          >
-            {tHardcodedUi.raw('i18nComplete.texta737e54996f8')}
-          </Button>
-        ),
-      });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, promptInbox.remove, promptInbox.enqueue],
+  /**
+   * EVERY PROMPT THE SESSION STILL OWES — both lanes, not just the parked one.
+   *
+   * The error halt below is what stops a queue draining into a session whose
+   * last turn failed, and it used to gate on `parkedQueue.live.length`. That is
+   * `queued_by_user` rows only: a turn that errored with nothing but
+   * ENTER-queued rows behind it held nothing, and those rows went straight into
+   * the broken session at the next boundary. There is no server-side gate
+   * either — `turnCompletionAllowsQueuePromotion` passes on `closed`, and an
+   * errored turn is closed.
+   *
+   * Both lanes are the same durable rows; only where the user watches them wait
+   * differs. So the halt counts rows, not lanes.
+   *
+   * `failed` is excluded: a row that already gave up is not going anywhere on
+   * its own, and it carries its own retry.
+   */
+  const liveInboxCount = useMemo(
+    () => countHaltableInboxPrompts(promptInbox.prompts),
+    [promptInbox.prompts],
   );
 
-  const handleRetryQueuedMessage = useCallback(
-    (id: string) => {
-      // Re-queued UNDER ITS ORIGINAL WIRE ID, so a delivery that actually
-      // landed is still absorbed by the proxy instead of running twice.
-      void promptInbox
-        .retry(id)
-        .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text4869b2a820dd')));
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [promptInbox.retry],
-  );
 
   // Associate stashed command info with the newest user message when messages
   // arrive, so `UserMessage` renders the command pill instead of raw template
@@ -3305,8 +3333,19 @@ export function SessionChat({
     for (const prompt of promptInbox.prompts) {
       if (prompt.state === 'failed') continue;
       if (!prompt.text.trim()) continue;
-      if (prompt.message_id && transcriptClaimedIds.has(prompt.message_id)) continue;
-      if (prompt.wire_message_id && transcriptClaimedIds.has(prompt.wire_message_id)) continue;
+      // THE SAME RULE `projectQueueRows` uses — one predicate, one answer.
+      // This reader used to match `message_id`/`wire_message_id` only, so a row
+      // whose wire ids had both been re-minted out from under it (a reload,
+      // after the drain placed the prompt) minted a synthetic turn BESIDE the
+      // very message it duplicates. The stable client id is the handle that
+      // survives that, and it was missing from exactly the reader that paints
+      // the bubbles.
+      // A PARKED ROW belongs to the composer's queue list, not the transcript.
+      // Both surfaces read the same inbox, so without this the Cmd+Enter
+      // prompt renders twice — once in the list the user put it in, once as a
+      // dimmed bubble they were avoiding.
+      if (prompt.queued_by_user) continue;
+      if (promptIsOnScreen(prompt, transcriptClaimedIds)) continue;
       if (isOptimisticSessionPrompt(prompt)) continue; // painted by this tab already
       const id = prompt.message_id || `queued-${prompt.prompt_id}`;
       const sentAt =
@@ -3358,6 +3397,545 @@ export function SessionChat({
   useEffect(() => {
     stableTurnsRef.current = turns;
   }, [turns]);
+
+  // ---- The parked queue's view of the run underneath it ----
+  //
+  // `queue-gates.ts` writes the header's words and decides its one action from
+  // `runState` + `paused`; nothing else in this file may phrase that state
+  // itself, or the header and the gate that holds the queue start disagreeing.
+  const queueFailedTurnId = useMemo(() => newestFailedTurnId(turns), [turns]);
+  const queueRunState = deriveQueueRunState({
+    stopping: abortSession.isPending,
+    // A permission or a question keeps the turn ALIVE, so the server is
+    // already refusing every queued row with `turn_active`. This changes the
+    // header's wording — "waiting on your approval" instead of "runs after
+    // this turn" — and holds nothing back on its own.
+    awaitingInput: pendingPermissions.length > 0 || pendingQuestions.length > 0,
+    lastRunFailed: queueFailedTurnId !== null,
+    running: serverHoldsOpenTurn(working),
+  });
+  /**
+   * The queue is held AND the reason is the user's own Stop.
+   *
+   * The server has one hold, and both a Stop and the error halt below set it —
+   * so `queueRows.held` alone cannot say which. `paused` outranks `error`
+   * inside `queue-gates.ts`, so passing the raw flag would put "paused ·
+   * Resume" over a queue halted by a failure and there would be no way to
+   * reach the Retry that releases it. The failed run owns the explanation
+   * while it is the newest turn; a Stop owns it the rest of the time.
+   */
+  const queuePausedByUser = queueRows.held && queueFailedTurnId === null;
+  /**
+   * ONE hold per failed turn — the ref is what makes it once.
+   *
+   * `queueFailedTurnId` is true for every render until the next turn starts, so
+   * an unguarded effect re-POSTs the hold on every poll tick. Keyed on the turn
+   * id rather than a boolean so the NEXT failure holds again, and so the
+   * header's Retry (which releases the hold while this turn is still the
+   * newest) is not immediately undone by this effect.
+   */
+  const queueErrorHoldTurnRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!queueFailedTurnId) return;
+    if (queueErrorHoldTurnRef.current === queueFailedTurnId) return;
+    // Nothing pending, nothing to protect. EVERY live row counts, not only the
+    // parked ones: an ENTER-queued row drains into the broken session just the
+    // same, and nothing on the server stops it. Not marking the ref here
+    // matters: a row queued a second after the failure still gets the hold.
+    if (liveInboxCount === 0) return;
+    queueErrorHoldTurnRef.current = queueFailedTurnId;
+    track('queue_paused', { depth_after: liveInboxCount, run_state: 'error' });
+    promptInbox.hold(true).catch((error) => {
+      // Surfaced, not swallowed: an unheld queue after a failed turn drains
+      // into the broken session on the next scheduler tick, and the user has
+      // to know that is what is about to happen.
+      console.warn('[session-chat] failed to hold the prompt inbox after a failed turn', error);
+      // The Stop path's SECOND line only. Its first ("Stopped, but the queue
+      // could not be paused") names a stop that did not happen here — nothing
+      // was stopped, the turn failed on its own. What is left is exactly true
+      // and carries the recovery: Stop holds the queue whether or not a turn
+      // is running.
+      errorToast(tHardcodedUi.raw('i18nComplete.text45eca4a01ff2'));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueFailedTurnId, liveInboxCount, promptInbox.hold]);
+  /**
+   * The header's Retry — release the halt and let the queue drain again.
+   *
+   * The ref keeps its turn id: the failed turn is still the newest one on
+   * screen at this moment, so clearing it would let the effect above re-hold
+   * the queue on the very next render and the button would read as broken.
+   */
+  const handleRetryQueueAfterError = useCallback(async () => {
+    try {
+      await promptInbox.hold(false);
+    } catch (error) {
+      console.warn('[session-chat] failed to release the prompt inbox hold', error);
+      errorToast(tHardcodedUi.raw('i18nComplete.text06619384104c'), {
+        description: tHardcodedUi.raw('i18nComplete.text29cc3339fce9'),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptInbox.hold]);
+
+  // Removing used to be a local-store delete with an undo toast that restored
+  // the entry into that store. The row is durable now, so a removal is a real
+  // DELETE and the undo has to re-create it — which the inbox makes exact,
+  // because re-POSTing the SAME `clientMessageId` is idempotent by unique
+  // index rather than by a client-side latch.
+  const handleRemoveQueuedMessage = useCallback(
+    async (id: string) => {
+      // The DELETE hands back what it destroyed, and that is the only lossless
+      // undo: the row is hard-deleted, and the list view carries a 2000-char
+      // text preview with no parts at all. Restoring from the list dropped
+      // every attachment and the model/agent picks — silently, under a button
+      // that says "Undo".
+      // ALREADY REMOVED BY THIS TAB — refuse it silently, before a request.
+      //
+      // The removal takes the row off screen on the click now, so a second
+      // click should be impossible; any render path that lags the cache by a
+      // frame can still offer one, and the server answers 404 for a row it
+      // destroyed. That 404 is the "That prompt is no longer in the queue"
+      // toast the user saw stacked under the "Removed from queue" one their
+      // first click earned (2026-09-07). Nothing is wrong here — the prompt IS
+      // gone, which is what they asked for — so there is nothing to say.
+      if (promptInbox.isRemoved(id)) return;
+      // Read BEFORE the delete: after it the row is gone from both lists, and
+      // the event could no longer say which lane the user was curating.
+      const wasParked = parkedQueue.live.some((row) => row.id === id);
+      let removed: Awaited<ReturnType<typeof promptInbox.remove>>;
+      try {
+        removed = await promptInbox.remove(id);
+      } catch (error) {
+        // Branch on the STATUS, and say what the server said.
+        //
+        // This used to test `/409/` against `error.message` — but `ApiError`
+        // carries the server's prose in `message` and the code in `status`, so
+        // that regex could never match. Every failure rendered the same
+        // "Could not remove that prompt", including the 409 that has a precise
+        // explanation ("Prompt is already being answered") and the 404 that
+        // means something entirely different. Two unrelated causes behind one
+        // dead-end string is why this looked like the button simply never
+        // worked.
+        const status = (error as { status?: number } | null)?.status;
+        const detail = error instanceof Error && error.message.trim() ? error.message.trim() : null;
+        errorToast(
+          status === 409
+            ? (detail ?? tHardcodedUi.raw('i18nComplete.text3e739b3b4329'))
+            : status === 404
+              ? tHardcodedUi.raw('i18nComplete.text128773c76940')
+              : (detail ?? tHardcodedUi.raw('i18nComplete.text42fcd9dda5f6')),
+        );
+        return;
+      }
+      if (!removed) return;
+      // The bubble IS the queue entry: the row is gone, so every copy of the
+      // message goes with it — the optimistic bubble, a confirmed echo, and
+      // the ownership marks that would otherwise resurrect it when the
+      // runtime relays the deletion.
+      const store = useSessionStateStore.getState();
+      store.optimisticRemove(sessionId, removed.message_id);
+      for (const id of removed.removed_message_ids ?? [removed.message_id]) {
+        store.forgetControlPlaneMessage(sessionId, id);
+      }
+      track('queue_item_deleted', {
+        mode: wasParked ? 'parked' : 'auto',
+        depth_after: wasParked ? parkedQueue.live.length - 1 : parkedQueue.live.length,
+        run_state: queueRunState,
+      });
+
+      // Undo rather than a confirm dialog. A queue is something you curate —
+      // gating every removal behind a modal would make it unusable, and the
+      // thing being removed is a draft, not data. Reversible beats guarded.
+      const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
+      infoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
+        id: undoToastId,
+        duration: 5000,
+        button: (
+          <Button
+            size="sm"
+            variant="outline"
+            // The SAME `clientMessageId`, so an undo re-creates ONE row and a
+            // double-click cannot create two. A FRESH wire id, because
+            // OpenCode orders by id and the original one was minted before the
+            // turn that has been writing higher ids since. The parts and
+            // overrides are the ORIGINALS, straight from the delete's own
+            // response — see `createQueueUndoAction`.
+            onClick={createQueueUndoAction({
+              removed,
+              mintMessageId: () => mintSessionWireMessageId(sessionId),
+              enqueue: promptInbox.enqueue,
+              dismiss: () => dismissToast(undoToastId),
+              onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
+            })}
+          >
+            {tHardcodedUi.raw('i18nComplete.texta737e54996f8')}
+          </Button>
+        ),
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      sessionId,
+      promptInbox.remove,
+      promptInbox.enqueue,
+      promptInbox.isRemoved,
+      // `wasParked` decides which lane the event reports; a stale list would
+      // file a parked removal as a transcript one.
+      parkedQueue.live,
+      queueRunState,
+    ],
+  );
+
+  /**
+   * The drop. `orderedIds` is the queue list's new order, top first.
+   *
+   * The list hands over the WHOLE parked order rather than a moved id and an
+   * index: the server rewrites the one ordering key from it, and a full order
+   * is the only form that cannot be misread halfway (an index means nothing
+   * without agreeing first on which rows are in the list and which of them are
+   * already on the wire).
+   */
+  /**
+   * EDIT A PARKED PROMPT — delete the row, re-queue the new text in its slot.
+   *
+   * A prompt is a durable server row, and there is no PATCH for one: the row's
+   * body is what the drain hands to the runtime, and rewriting it in place
+   * would mean editing a message that may already be on the wire. So an edit is
+   * a remove plus a fresh enqueue, which is also what makes it undoable by the
+   * same path as any other removal.
+   *
+   * TWO THINGS THE NAIVE VERSION LOSES, both restored here:
+   *  - the ATTACHMENTS. The delete's response carries the original parts (the
+   *    only lossless copy — the list view holds a 2000-char text preview and no
+   *    parts at all), so only the text part is replaced and every file rides
+   *    along.
+   *  - the POSITION. A new row is stamped with `Date.now()`, which puts it at
+   *    the BACK of a queue the user has just been arranging by hand. The order
+   *    is captured before the delete and replayed after the enqueue, with the
+   *    new id standing where the old one did.
+   */
+  const handleEditQueuedMessage = useCallback(
+    async (id: string, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const order = promptInbox.prompts
+        .filter((prompt) => prompt.queued_by_user)
+        .map((prompt) => prompt.prompt_id);
+      let removed: Awaited<ReturnType<typeof promptInbox.remove>>;
+      try {
+        removed = await promptInbox.remove(id);
+      } catch {
+        errorToast(tHardcodedUi.raw('i18nComplete.text42fcd9dda5f6'));
+        return;
+      }
+      if (!removed) return;
+      const store = useSessionStateStore.getState();
+      store.optimisticRemove(sessionId, removed.message_id);
+      for (const gone of removed.removed_message_ids ?? [removed.message_id]) {
+        store.forgetControlPlaneMessage(sessionId, gone);
+      }
+      // The ORIGINAL parts with only the text replaced — see the doc above.
+      let replacedText = false;
+      const parts = removed.parts.map((part) => {
+        if (part.type !== 'text' || replacedText) return part;
+        replacedText = true;
+        return { ...part, text: trimmed };
+      });
+      if (!replacedText) parts.unshift({ type: 'text', text: trimmed });
+      const clientMessageId = ascendingId('msg');
+      let created: Awaited<ReturnType<typeof promptInbox.enqueue>>;
+      try {
+        created = await promptInbox.enqueue({
+          clientMessageId,
+          messageId: mintSessionWireMessageId(sessionId, clientMessageId),
+          parts,
+          clientSentAtMs: Date.now(),
+          // The row's OWN lane, not a hardcoded one: "Send now" releases a
+          // parked row and leaves the flag on it, and re-parking a row the
+          // user has already released — because they corrected a typo in it —
+          // would take it back out of the drain behind their back.
+          ...(removed.queued_by_user ? { queuedByUser: true } : {}),
+          ...(removed.overrides ? { overrides: removed.overrides } : {}),
+        });
+      } catch {
+        // THE ORIGINAL IS STILL IN HAND. DO NOT THROW IT AWAY.
+        //
+        // The DELETE above already happened — hard, server-side — and `removed`
+        // is the only lossless copy of that prompt: its parts, its files, its
+        // agent/model picks. A bare toast here is a message DESTROYED BY AN
+        // EDIT, with no way back, when the plain remove path offers a 5s Undo
+        // for exactly the same destruction. The undo restores the ORIGINAL
+        // text, which is what "undo the edit" means.
+        //
+        // 10s rather than 5: this toast arrives unannounced, after a failure
+        // the user did not ask for, so it needs longer to be read than one that
+        // confirms something they just did.
+        const undoToastId = `queue-edit-undo-${sessionId}-${removed.prompt_id}`;
+        errorToast(tHardcodedUi.raw('i18nComplete.text5682796523e3'), {
+          id: undoToastId,
+          duration: 10000,
+          button: (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={createQueueUndoAction({
+                removed,
+                mintMessageId: () => mintSessionWireMessageId(sessionId),
+                enqueue: promptInbox.enqueue,
+                dismiss: () => dismissToast(undoToastId),
+                onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
+              })}
+            >
+              {tHardcodedUi.raw('i18nComplete.texta737e54996f8')}
+            </Button>
+          ),
+        });
+        return;
+      }
+      // THE ROW IS BACK; the position is the last thing to restore, and it is
+      // the one part that can fail on its own without losing anything. A fresh
+      // row is stamped `Date.now()`, so a refused reorder leaves the edited
+      // prompt at the BACK of a hand-arranged queue — worth saying, not worth
+      // an undo.
+      try {
+        const restored = order.map((promptId) =>
+          promptId === removed.prompt_id ? created.prompt_id : promptId,
+        );
+        if (restored.length > 1) await promptInbox.reorder(restored);
+      } catch {
+        errorToast(tHardcodedUi.raw('i18nComplete.text3674c4c553af'));
+      }
+      // An edit is a remove plus an enqueue, and both already fired their own
+      // event in the store — but neither says the queue is the same size and
+      // one row now reads differently. Reported once, after the row is back.
+      track('queue_item_edited', {
+        depth_after: parkedQueue.live.length,
+        run_state: queueRunState,
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      sessionId,
+      promptInbox.prompts,
+      promptInbox.remove,
+      promptInbox.enqueue,
+      promptInbox.reorder,
+      parkedQueue.live.length,
+      queueRunState,
+    ],
+  );
+
+  const handleReorderQueuedMessage = useCallback(
+    (orderedIds: string[]) => {
+      // NO `method`. The list fires this from both the drag release and the
+      // handle's ArrowUp/ArrowDown, and hands over an order — not which row
+      // moved, or what moved it. Guessing 'drag' here would be a fabricated
+      // property, which is worse than an absent one.
+      track('queue_item_reordered', {
+        depth_after: parkedQueue.live.length,
+        run_state: queueRunState,
+      });
+      void promptInbox
+        .reorder(orderedIds)
+        .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text4869b2a820dd')));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promptInbox.reorder, parkedQueue.live.length, queueRunState],
+  );
+
+  const handleRetryQueuedMessage = useCallback(
+    (id: string) => {
+      // Re-queued UNDER ITS ORIGINAL WIRE ID, so a delivery that actually
+      // landed is still absorbed by the proxy instead of running twice.
+      void promptInbox
+        .retry(id)
+        .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text4869b2a820dd')));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promptInbox.retry],
+  );
+
+  /**
+   * DUPLICATE A PARKED ROW — a second prompt with the same words, at the back.
+   *
+   * A FRESH `clientMessageId`, and this is the whole trick. That value is the
+   * inbox's idempotency key: re-POSTing the row's own key dedupes straight into
+   * the row it came from, so the "copy" would create nothing at all and the
+   * menu would read as broken.
+   *
+   * TEXT ONLY, because text is all the row has. A listed prompt carries a
+   * 2000-char preview and its attachments by NAME (`SessionPrompt.text` /
+   * `.attachments`) — the parts themselves live only in the DELETE response,
+   * and a duplicate must not destroy the original to read them.
+   *
+   * That is why the action is REFUSED rather than approximated for a row this
+   * path cannot reproduce exactly (`canDuplicateRow`): a copy of a capped row
+   * is the first 2000 characters of the message, a copy of a row with files
+   * has no files, and neither says so. The menu disables the item with the
+   * reason on it; the guard below is the same refusal at the only place that
+   * can actually create the row, and is unreachable through the UI.
+   */
+  const handleDuplicateQueuedMessage = useCallback(
+    async (id: string) => {
+      const row = parkedQueue.live.find((entry) => entry.id === id);
+      if (!row) return;
+      // The menu already disables Duplicate at the cap; this is the same refusal
+      // said again at the only place that can actually create the row.
+      if (queueIsAtCap(parkedQueue.live.length)) {
+        errorToast(tHardcodedUi.raw('i18nComplete.textd7c6dee0138e'));
+        return;
+      }
+      // Silent, because the menu item is already disabled with the reason on
+      // it — this is reachable only by calling the handler directly, and a
+      // toast for a click that cannot happen is noise.
+      if (!canDuplicateRow(row)) return;
+      const clientMessageId = ascendingId('msg');
+      try {
+        await promptInbox.enqueue({
+          clientMessageId,
+          messageId: mintSessionWireMessageId(sessionId, clientMessageId),
+          parts: [{ type: 'text', text: row.text }],
+          clientSentAtMs: Date.now(),
+          queuedByUser: true,
+        });
+        track('queue_item_added', {
+          mode: 'parked',
+          method: 'menu',
+          depth_after: parkedQueue.live.length + 1,
+          run_state: queueRunState,
+        });
+      } catch {
+        // "Could not queue your message" — the copy never became a row. NOT
+        // the edit path's "Could not restore that prompt": nothing was taken
+        // away here, so there is nothing to restore.
+        errorToast(tHardcodedUi.raw('i18nComplete.text8cea8af247c2'));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, promptInbox.enqueue, parkedQueue.live, queueRunState],
+  );
+
+  /**
+   * MOVE TO TOP — the menu's counterpart to dragging a row to the first slot.
+   *
+   * The new order comes from `nextQueueOrderAfterMoveToTop`, which is also what
+   * the menu item asks whether to render at all (`canMoveToTop`). One function
+   * for both, so the item can never be offered for a move that fires a reorder
+   * the server has nothing to persist — a drag that appears to re-trigger
+   * itself.
+   */
+  const handleMoveQueuedMessageToTop = useCallback(
+    (id: string) => {
+      const next = nextQueueOrderAfterMoveToTop(
+        parkedQueue.live.map((entry) => entry.id),
+        id,
+      );
+      if (!next) return;
+      track('queue_item_reordered', {
+        method: 'menu',
+        position: 1,
+        depth_after: parkedQueue.live.length,
+        run_state: queueRunState,
+      });
+      void promptInbox
+        .reorder(next)
+        .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text4869b2a820dd')));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promptInbox.reorder, parkedQueue.live, queueRunState],
+  );
+
+  /**
+   * ARROW-UP ON AN EMPTY COMPOSER — take the last parked row back for editing.
+   *
+   * The shell convention, and the fastest correction there is: the row leaves
+   * the queue and its words land in the composer, caret ready. Returns whether
+   * it took the keypress, so the composer only swallows ArrowUp when there was
+   * something to pull back (otherwise the key still belongs to the editor).
+   *
+   * NOT `handleEditQueuedMessage`: that one re-queues the text in the row's own
+   * slot, which is the opposite of this — here the row is meant to leave the
+   * queue and sit in the composer until the user presses Enter again.
+   *
+   * NO UNDO TOAST either, unlike `handleRemoveQueuedMessage`. The undo IS the
+   * composer: the message is on screen, in full, with its attachments, and
+   * pressing Enter puts it back. A toast offering to restore a prompt the user
+   * is looking at would be a second copy waiting to happen.
+   */
+  const handlePullBackLastQueued = useCallback((): boolean => {
+    const last = parkedQueue.live.at(-1);
+    if (!last) return false;
+    // On the wire, or already deleted by this tab: the server refuses the
+    // DELETE (409/404), so taking the keypress would eat an ArrowUp and give
+    // nothing back.
+    if (parkedQueue.inFlight.includes(last.id)) return false;
+    if (promptInbox.isRemoved(last.id)) return false;
+    void (async () => {
+      let removed: Awaited<ReturnType<typeof promptInbox.remove>>;
+      try {
+        removed = await promptInbox.remove(last.id);
+      } catch (error) {
+        const detail = error instanceof Error && error.message.trim() ? error.message.trim() : null;
+        errorToast(detail ?? tHardcodedUi.raw('i18nComplete.text42fcd9dda5f6'));
+        return;
+      }
+      if (!removed) return;
+      const store = useSessionStateStore.getState();
+      store.optimisticRemove(sessionId, removed.message_id);
+      for (const gone of removed.removed_message_ids ?? [removed.message_id]) {
+        store.forgetControlPlaneMessage(sessionId, gone);
+      }
+      // The DELETE's parts, not the row's `text`: the listed text is a
+      // server-capped preview, so a long prompt pulled back through the list
+      // would come back silently truncated — and the files would be gone.
+      //
+      // KNOWN GAP: `removed.overrides` (the agent / model / variant picks) is
+      // NOT restored. The composer prefill channel carries text and files only
+      // (`composerPrefill`), and the picks live in their own store with no
+      // prefill-side setter — so a pulled-back prompt re-sends under whatever
+      // the composer is currently set to. `handleEditQueuedMessage` does not
+      // have this problem: it hands the overrides straight back to `enqueue`
+      // without ever passing through the composer. Fixing it means teaching the
+      // prefill contract about picks, which is a change to a shared surface
+      // rather than to this handler.
+      const textPart = removed.parts.find((part) => part.type === 'text');
+      const files = removed.parts.flatMap((part) =>
+        part.type === 'file' && part.url
+          ? [
+              {
+                kind: 'remote' as const,
+                url: part.url,
+                filename: part.filename ?? '',
+                mime: part.mime ?? '',
+                isImage: (part.mime ?? '').startsWith('image/'),
+              },
+            ]
+          : [],
+      );
+      setQueuePullBack({
+        text: textPart?.text ?? last.text,
+        id: Date.now(),
+        ...(files.length ? { files } : {}),
+      });
+      track('queue_item_deleted', {
+        mode: 'parked',
+        method: 'keyboard',
+        depth_after: parkedQueue.live.length - 1,
+        run_state: queueRunState,
+      });
+    })();
+    return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sessionId,
+    promptInbox.remove,
+    promptInbox.isRemoved,
+    parkedQueue.live,
+    parkedQueue.inFlight,
+    queueRunState,
+  ]);
+
   // Outcomes anchor to the SAME id `TurnViewport` receives as `turnId`
   // (`turn.userMessage.info.id`) — never `turnRenderKeys`, which re-aliases a
   // turn to its optimistic origin id on an id swap, so anchoring to it would
@@ -3413,10 +3991,7 @@ export function SessionChat({
   // the real bubble with no tiles for those seconds. Until then the preview's
   // file NAMES are handed to the real turn to draw as pending tiles, so the
   // strip never blinks out. See `first-prompt-handover.ts`.
-  const transcriptShowsFirstPrompt = useMemo(
-    () => transcriptCarriesFirstPrompt(turns, 0),
-    [turns],
-  );
+  const transcriptShowsFirstPrompt = useMemo(() => transcriptCarriesFirstPrompt(turns, 0), [turns]);
   const previewAttachmentCount = firstPromptPreview?.files.length ?? 0;
   const transcriptCarriesFirstPromptFiles = useMemo(
     () => transcriptCarriesFirstPrompt(turns, previewAttachmentCount),
@@ -3483,24 +4058,28 @@ export function SessionChat({
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
     if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
-  }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
+  }, [
+    projectSessionId,
+    firstPromptPreview,
+    transcriptCarriesFirstPromptFiles,
+    clearFirstPromptPreview,
+  ]);
 
   /** What the real first turn is handed once the stand-in has stepped aside:
    *  the prompt's text and its files' names, so it keeps drawing the bubble
    *  and the pending tiles through any frame where its own parts are still
    *  streaming. Nothing once the transcript carries the files itself. */
-  const firstTurnHandover = useMemo(
-    (): { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> } | undefined => {
-      if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
-      const attachments = firstPromptSource.files.map((file) =>
-        file.kind === 'local'
-          ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
-          : { filename: file.filename, mime: file.mime },
-      );
-      return { text: firstPromptSource.text, attachments };
-    },
-    [firstPromptSource, handover.handOverToRealTurn],
-  );
+  const firstTurnHandover = useMemo(():
+    | { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> }
+    | undefined => {
+    if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
+    const attachments = firstPromptSource.files.map((file) =>
+      file.kind === 'local'
+        ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
+        : { filename: file.filename, mime: file.mime },
+    );
+    return { text: firstPromptSource.text, attachments };
+  }, [firstPromptSource, handover.handOverToRealTurn]);
 
   /**
    * Which turn, if any, draws the plan.
@@ -3874,8 +4453,30 @@ export function SessionChat({
          */
         clientMessageId?: string;
       },
+      /**
+       * Which key sent this. `queue` (Cmd/Ctrl+Enter) parks the prompt in the
+       * composer's reorderable queue list; `run` (Enter) lets it wait in the
+       * transcript as the dimmed bubble it is about to become. NEITHER
+       * interrupts the running turn — see `composer/send-intent.ts`.
+       */
+      intent: ComposerSubmitIntent = 'run',
     ) => {
       setCommandError(null);
+
+      // THE PARKED LIST HAS A CEILING, and this is where it is enforced.
+      //
+      // Refused BEFORE anything else happens — before the send sound, before
+      // the draft is consumed, before a durable row exists — so the composer
+      // still holds every character the user typed and the eleventh prompt is
+      // one keystroke away from being sent instead of parked.
+      //
+      // The cap is the PARKED list only. A plain Enter is not a row in this
+      // list; it waits in the transcript, where depth is not something the
+      // user has to manage.
+      if (isQueuedSubmission(intent) && queueIsAtCap(parkedQueue.live.length)) {
+        errorToast(tHardcodedUi.raw('i18nComplete.textd7c6dee0138e'));
+        return;
+      }
 
       // Wrap reply context in XML if present, then clear it
       let text = rawText;
@@ -3974,7 +4575,15 @@ export function SessionChat({
       // waiting prompt's turn renders dimmed (`pending`, see
       // `resolveWorkingTurn`) and comes up to full opacity when the agent
       // reaches it; nothing else changes about it, ever.
-      beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
+      // A PARKED PROMPT DOES NOT ENTER THE TRANSCRIPT. Cmd/Ctrl+Enter means
+      // "hold this in the queue list", so painting an optimistic bubble here
+      // would put it on the very surface the user chose to keep it off, for
+      // the length of the POST, and then move it. Its optimistic row lands in
+      // the inbox cache instead (`optimisticSessionPrompt` carries
+      // `queued_by_user`), which is what the composer's list renders — so the
+      // row is on screen in the same frame either way.
+      const parked = isQueuedSubmission(intent);
+      if (!parked) beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
       // Inbox-backed from THIS tick, before the first `await` below: the row it
       // becomes is durable, and this send's own failure paths
       // (`abandonOptimisticSend`, `recoverFromSendFailure`) are the ONLY things
@@ -3983,7 +4592,7 @@ export function SessionChat({
       // attachment build below used to sweep the bubble as "unconfirmed" — it
       // vanished, and came back seconds later under the echo, beside a queued
       // row that no longer had a transcript twin to hide behind.
-      markOptimisticSendInboxBacked(sessionId, messageID);
+      if (!parked) markOptimisticSendInboxBacked(sessionId, messageID);
       const sendingIntoRunningTurn = isBusyRef.current;
       const receiptTurnId = sendingIntoRunningTurn ? workingTurnIdRef.current : messageID;
 
@@ -4136,7 +4745,7 @@ export function SessionChat({
       // early), so there is nothing for it to correlate on and the mark never
       // happened. The result was every message rendering twice for the whole
       // turn, until the session went idle and the optimistic sweep ran.
-      markOptimisticSendDispatched(sessionId, messageID);
+      if (!parked) markOptimisticSendDispatched(sessionId, messageID);
 
       const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
       const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
@@ -4173,6 +4782,9 @@ export function SessionChat({
             // Enter time, not POST time: uploads and a busy API sit between
             // the two, and the server orders racing sends by THIS.
             clientSentAtMs: sentAtMs,
+            // Durable, so the row still shows in the user's own arrangement
+            // after a reload or on a second device.
+            ...(intent === 'queue' ? { queuedByUser: true } : {}),
             overrides: {
               // Pass the session's directory so opencode resolves project-scoped
               // agents (.opencode/agent/*.md under the project) and applies them
@@ -4183,6 +4795,19 @@ export function SessionChat({
               ...(selectedVariant ? { variant: selectedVariant } : {}),
             },
           });
+          // THE SAME SUBMISSION TWICE. `deduped` means the POST named a row
+          // that already existed (the inbox's unique index on
+          // `clientMessageId`), so nothing was created — a second delivery of
+          // one prompt, refused by the server rather than by a client latch.
+          // Counted because that is the failure this key exists to prevent,
+          // and a client that starts hitting it is a client re-POSTing.
+          if (created.deduped) {
+            track('queue_double_send_prevented', {
+              mode: parked ? 'parked' : 'auto',
+              depth_after: parkedQueue.live.length,
+              run_state: queueRunState,
+            });
+          }
           // The server's admission verdict, not a guess. A `failed` row is a
           // real refusal wearing a 200: a re-POST of a `clientMessageId` whose
           // row already dead-lettered dedupes into that row, and discarding
@@ -4240,6 +4865,14 @@ export function SessionChat({
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
       }
 
+      // The row is durable, so the queue really did grow. `depth_after` counts
+      // the PARKED list either way — a plain Enter leaves it where it was,
+      // which is what makes the two modes comparable.
+      track('queue_item_added', {
+        mode: parked ? 'parked' : 'auto',
+        depth_after: parked ? parkedQueue.live.length + 1 : parkedQueue.live.length,
+        run_state: queueRunState,
+      });
       return messageID;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4248,6 +4881,10 @@ export function SessionChat({
       projectId,
       projectSessionId,
       promptInbox.enqueue,
+      // The cap gate reads this depth, so a stale copy would let an eleventh
+      // row through the frame after the tenth landed.
+      parkedQueue.live.length,
+      queueRunState,
       noteSendReceipt,
       acceptSendReceipt,
       clearSendReceipt,
@@ -4338,6 +4975,10 @@ export function SessionChat({
           if (gone) removed += 1;
         }
         if (removed > 0) {
+          // The whole inbox went, not one row — a rewind cannot leave prompts
+          // queued against a trajectory it just deleted. `depth_after` is 0 by
+          // construction: every non-delivering row was removed above.
+          track('queue_cleared', { depth_after: 0, run_state: queueRunState });
           infoToast(
             removed === 1
               ? tHardcodedUi.raw('i18nComplete.textcd165519e204')
@@ -4380,7 +5021,14 @@ export function SessionChat({
         setEditSendPending(false);
       }
     },
-    [sessionState, promptInbox.prompts, promptInbox.remove, handleSend, tHardcodedUi],
+    [
+      sessionState,
+      promptInbox.prompts,
+      promptInbox.remove,
+      handleSend,
+      tHardcodedUi,
+      queueRunState,
+    ],
   );
 
   const handleStop = useCallback(async () => {
@@ -4424,6 +5072,15 @@ export function SessionChat({
     // running, still calling tools and still spending tokens under a UI that
     // says it stopped. Past the bound the abort goes out anyway and the hold
     // finishes on its own — the ordering is a preference, the abort is not.
+    // Reported before the race, not after: the hold's own failure path is a
+    // toast the user acts on, and the event answers a different question —
+    // how often a Stop lands on a queue that had something in it.
+    if (promptInbox.prompts.length > 0) {
+      track('queue_paused', {
+        depth_after: parkedQueue.live.length,
+        run_state: 'stopping',
+      });
+    }
     await Promise.race([
       promptInbox.hold(true).catch((error) => {
         // Caught, never rethrown: a failed hold must not also cost the user
@@ -4443,12 +5100,18 @@ export function SessionChat({
       new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
     ]);
 
-    // Routed through `issueSessionCancel` (T10) so this stop's
-    // `AbortSettlement` is tracked for `handleQueueSendNow`'s
-    // `stopThenSendNow` to await — see that function's doc for why.
+    // Routed through `issueSessionCancel` so this stop's `AbortSettlement` is
+    // tracked and a second stop cannot be mistaken for the same one.
     issueSessionCancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, abortSession, issueSessionCancel, promptInbox.hold]);
+  }, [
+    sessionId,
+    abortSession,
+    issueSessionCancel,
+    promptInbox.hold,
+    promptInbox.prompts.length,
+    parkedQueue.live.length,
+  ]);
 
   // Release the Stop hold for the WHOLE queue at once — the composer-level
   // counterpart to the per-row "send now". `hold(false)` un-pauses every held
@@ -4469,47 +5132,48 @@ export function SessionChat({
   }, [promptInbox.hold]);
 
   /**
-   * The per-row action: end the current turn if one is running, then send that
-   * message. The only path that interrupts a running turn — automatic draining
-   * never does — which is why it is a deliberate click and says what it does.
+   * SEND IMMEDIATELY — run THIS message next, at the next turn boundary.
    *
-   * T10: waits for the real `AbortSettlement` the stop it just issued
-   * produces (via `stopThenSendNow`), not a guess and not the optimistic
-   * idle flip `handleStop` makes synchronously — so the prompt cannot race
-   * the abort still in flight on the server.
+   * "Immediately" is about QUEUE POSITION, not about the running turn. The row
+   * jumps to the front of the line and goes out the moment the current answer
+   * finishes — the same rule every other prompt obeys. It does not stop the
+   * agent, and it never has any business doing so.
+   *
+   * This used to route through `stopThenSendNow`, which ABORTED the live turn
+   * before dispatching. That threw away the answer the user was waiting for in
+   * order to jump a queue that was going to drain seconds later anyway. Same
+   * mistake the Enter key briefly made; the queue has one interrupt (Stop) and
+   * this is not it.
+   *
+   * `retry` is the whole dispatch: `retryInboxPrompt` promotes the row past the
+   * ordering gate and only THEN releases the session's hold, so the message the
+   * user pointed at is the one that runs. Releasing the hold separately first is
+   * what made the OLDEST row run instead.
+   *
+   * WHAT THE REST OF THE QUEUE DOES DEPENDS ON WHY IT WAS HELD, and only a
+   * STOP hold is lifted with it. `releaseInboxHold` deliberately skips
+   * `queuedByUser` rows, so on the ordinary parked queue this promotes exactly
+   * one row and leaves every other one parked — which is what parking means.
+   * A queue held by Stop drains behind it.
    */
   const handleQueueSendNow = useCallback(
     async (id: string) => {
-      await stopThenSendNow({
-        // The control plane's turn authority (`serverOpenTurnToken`), not the
-        // raw SSE slot. Both stale directions of the slot were real failures
-        // here: stale-idle dispatched into a live turn (OpenCode answers that
-        // by aborting it — the "Interrupted" symptom), and stale-busy issued a
-        // spurious Stop that held the whole inbox.
-        isRunning: () => serverHoldsOpenTurn(working),
-        pendingSettlement: () => pendingAbortSettlementRef.current.get(sessionId),
-        stop: async () => {
-          // AWAITED: `handleStop` holds the inbox before it issues the cancel,
-          // so the settlement this reads only exists once that has happened.
-          // Reading the ref synchronously would find nothing, and a null
-          // settlement dispatches at once — racing the abort still in flight.
-          await handleStop();
-          return pendingAbortSettlementRef.current.get(sessionId) ?? null;
-        },
-        // `retry` is the inbox's own "run this one next", and it is the WHOLE
-        // dispatch: it promotes the row past the ordering gate and only THEN
-        // releases the session's hold, so the prompt the user pointed at is
-        // the one that runs and the rest of the queue follows it. Releasing
-        // the hold separately first is what made the oldest row run instead.
-        dispatch: async () => {
-          await promptInbox
-            .retry(id)
-            .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text7f8b8908c573')));
-        },
+      // The ONE dispatch a client makes. The ordinary drain is server-side —
+      // `admitInboxPrompt` decides when a row goes out and this browser is not
+      // told — so this promote is the only queue departure with a call site
+      // here to report from.
+      track('queue_item_dispatched', {
+        mode: 'parked',
+        method: 'menu',
+        depth_after: parkedQueue.live.length,
+        run_state: queueRunState,
       });
+      await promptInbox
+        .retry(id)
+        .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text7f8b8908c573')));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, handleStop, promptInbox.retry, working],
+    [promptInbox.retry, parkedQueue.live.length, queueRunState],
   );
 
   // ---- Triple-ESC to stop ----
@@ -4960,34 +5624,39 @@ export function SessionChat({
     [projectId, projectSessionId, sessionScopeAgentName],
   );
 
+
   const chatInputSlot = useMemo(
     () => (
       <>
-        {/* Queue paused by a Stop hold. The per-row Resume is a hover-only icon
-            on each held bubble; this is the ONE control that is always visible
-            while the queue is stopped, so the paused state is never a surprise
-            and recovery is one click. Self-hides when nothing is held. */}
-        {queueRows.held && heldQueueCount > 0 ? (
-          <div className="border-border bg-muted/40 mb-2 flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
-            <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm">
-              <PauseIcon weight="fill" className="size-4 shrink-0" />
-              <span className="truncate">
-                {tHardcodedUi.raw('i18nComplete.text1dd1ec642eed')} {heldQueueCount}{' '}
-                {heldQueueCount === 1 ? 'prompt' : 'prompts'}{' '}
-                {tHardcodedUi.raw('i18nComplete.text80cfa3e7f28d')}
-              </span>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="shrink-0 gap-1.5"
-              onClick={() => void handleResumeQueue()}
-            >
-              <PlayIcon weight="fill" className="size-3.5" />
-              {tHardcodedUi.raw('i18nComplete.textd640c7421da0')}
-            </Button>
-          </div>
-        ) : null}
+        {/* THE QUEUE LIST — rows the user parked with Cmd/Ctrl+Enter, above the
+            composer, in the order they will run, draggable to change it.
+            Self-hides when empty. Prompts sent with plain Enter are NOT here:
+            they wait in the transcript as the dimmed bubble they are about to
+            become. */}
+        <QueuedMessages
+          messages={parkedQueue.live}
+          failed={parkedQueue.failed}
+          inFlightIds={parkedQueue.inFlight}
+          paused={queuePausedByUser}
+          // The control plane's turn authority, not the busy fade — it only
+          // decides whether the promote action reads "Send now" or "Run next".
+          isRunning={serverHoldsOpenTurn(working)}
+          // What the turn underneath is doing, in the header's own words. It
+          // gates nothing — `queue-gates.ts` phrases the label and picks the
+          // one action, and this is the only input it has for either.
+          runState={queueRunState}
+          onRemove={handleRemoveQueuedMessage}
+          onRetry={handleRetryQueuedMessage}
+          onSendNow={handleQueueSendNow}
+          onEdit={handleEditQueuedMessage}
+          onReorder={handleReorderQueuedMessage}
+          onResume={() => void handleResumeQueue()}
+          // The header's Retry releases the ERROR halt. Not `onRetry`, which
+          // re-sends one failed row — same word, two scopes.
+          onRetryQueue={() => void handleRetryQueueAfterError()}
+          onDuplicate={(id) => void handleDuplicateQueuedMessage(id)}
+          onMoveToTop={handleMoveQueuedMessageToTop}
+        />
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -5029,10 +5698,25 @@ export function SessionChat({
       handleQuestionReply,
       handleQuestionReject,
       handleQuestionActionChange,
-      queueRows.held,
-      heldQueueCount,
-      handleResumeQueue,
       tHardcodedUi,
+      // The queue strip's own inputs. They were absent while `sessionState`
+      // churned this memo on nearly every frame anyway — but the header now
+      // reads a DERIVED state (`queueRunState`), and a stale one says "runs
+      // after this turn" over a session that already failed.
+      parkedQueue,
+      queuePausedByUser,
+      heldQueueCount,
+      queueRunState,
+      working,
+      handleResumeQueue,
+      handleRetryQueueAfterError,
+      handleRemoveQueuedMessage,
+      handleRetryQueuedMessage,
+      handleQueueSendNow,
+      handleEditQueuedMessage,
+      handleReorderQueuedMessage,
+      handleDuplicateQueuedMessage,
+      handleMoveQueuedMessageToTop,
     ],
   );
 
@@ -5596,7 +6280,9 @@ export function SessionChat({
                                   isFirstTurn={turnIndex === 0}
                                   // Handed over only once the stand-in has stepped
                                   // aside — while it is up it draws these itself.
-                                  pendingText={turnIndex === 0 ? firstTurnHandover?.text : undefined}
+                                  pendingText={
+                                    turnIndex === 0 ? firstTurnHandover?.text : undefined
+                                  }
                                   pendingAttachments={
                                     turnIndex === 0 && firstTurnHandover?.attachments.length
                                       ? firstTurnHandover.attachments
@@ -5766,7 +6452,12 @@ export function SessionChat({
                         (`OptimisticTurn busy`), or the two would stack. */}
                     {isBusy &&
                       !someTurnDrawsBusyRow &&
-                      !(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0) && (
+                      !(
+                        showFirstPromptPreview &&
+                        firstPromptSource &&
+                        queuedMessages.length === 0 &&
+                        turns.length === 0
+                      ) && (
                         <SessionBusyIndicator
                           sessionId={sessionId}
                           // Matches the stand-in's row spacing under a bubble
@@ -5795,7 +6486,7 @@ export function SessionChat({
                   style={{
                     left: `${selectionPopup.x}px`,
                     top: `${selectionPopup.y}px`,
-                    transform: "translate(-50%, -100%)",
+                    transform: 'translate(-50%, -100%)',
                   }}
                 >
                   <Button
@@ -5823,12 +6514,12 @@ export function SessionChat({
                 )}
               >
                 <Button
-                  variant="transparent"
+                  variant="secondary-outline"
                   size="icon-md"
                   aria-hidden={!showScrollButton}
                   tabIndex={showScrollButton ? undefined : -1}
                   className={cn(
-                    'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
+                    'hit-area-2 rounded-full',
                     'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
                     showScrollButton
                       ? 'duration-normal scale-100 opacity-100'
@@ -5850,10 +6541,32 @@ export function SessionChat({
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
                 autoFocus={deferComposerFocus ? false : undefined}
-                onSend={async (text, files, mentions) => {
-                  await handleSend(text, files, mentions);
+                // ENTER SENDS, CMD/CTRL+ENTER QUEUES — see `send-intent.ts`.
+                //
+                // NEITHER INTERRUPTS. A prompt sent mid-turn is a durable inbox
+                // row, and the admission gate holds every row until the running
+                // turn is OVER (`inbox-admission.ts`: "A LIVE TURN HOLDS EVERY
+                // QUEUED PROMPT BACK"). So Enter already means "run this the
+                // moment the current answer finishes" — the turn completes, it
+                // is never aborted. An earlier build of this handler wired Enter
+                // to a stop-then-send helper, which KILLED the running turn;
+                // that is not what Enter has ever meant here.
+                //
+                // The difference the two keys make is WHERE the prompt waits:
+                // Enter puts it in the transcript as the dimmed bubble it is
+                // about to become; Cmd+Enter parks it in the composer's queue
+                // list, where it can be reordered before it runs.
+                onSend={async (text, files, mentions, intent = 'run') => {
+                  // `undefined` is the per-call OVERRIDES slot (agent / model /
+                  // variant / clientMessageId), which a composer send never
+                  // supplies — the intent is the argument AFTER it.
+                  await handleSend(text, files, mentions, undefined, intent);
                 }}
                 prefill={composerPrefill}
+                // ArrowUp on an empty composer takes the last parked row back
+                // for editing. Returns false when the queue is empty, so the
+                // key keeps its ordinary meaning there.
+                onEmptyArrowUp={handlePullBackLastQueued}
                 draftScope={composerDraftScope}
                 attachRequestId={attachRequestId}
                 isBusy={isBusy}

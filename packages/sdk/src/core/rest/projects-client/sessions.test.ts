@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
 import type {
@@ -1044,4 +1044,113 @@ test('getSessionOpenBundle asks for the transcript window it was given', async (
 test('getSessionOpenBundle throws when the response is unsuccessful', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(getSessionOpenBundle('P1', 'S1')).rejects.toBeTruthy();
+});
+
+/**
+ * ONE FAILED REQUEST, ONE TOAST.
+ *
+ * `makeRequest` defaults `showErrors` on (api-client.ts) and calls the PLATFORM
+ * error sink on every non-2xx, before any react-query callback can run. In
+ * `apps/web` that sink is `handleApiError` with no context, which toasts the
+ * server's RAW prose. So a failed `DELETE .../prompts/:id` produced TWO toasts:
+ * the transport's bare "Not found", and the call site's own, better-worded
+ * "That prompt is no longer in the queue" — which is two thirds of the
+ * three-toast screenshot reported on 2026-09-07.
+ *
+ * Every inbox call renders its own precise message at the call site, so none of
+ * them wants the generic one. `getSessionOpenBundle` already opts out for the
+ * same reason.
+ */
+describe('the prompt inbox never double-toasts a failure', () => {
+  const failing = (status: number, body: unknown) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => Response.json(body, { status })) as unknown as typeof fetch;
+    return () => void (globalThis.fetch = original);
+  };
+
+  async function sinkCallsFor(run: () => Promise<unknown>): Promise<number> {
+    let calls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        calls += 1;
+      },
+    });
+    try {
+      await run();
+    } catch {
+      // The refusal is the point; the call site renders it.
+    }
+    return calls;
+  }
+
+  test('a refused DELETE reaches the call site WITHOUT firing the platform sink', async () => {
+    const restore = failing(404, { error: 'Not found' });
+    try {
+      expect(await sinkCallsFor(() => deleteSessionPrompt('p', 's', 'x'))).toBe(0);
+    } finally {
+      restore();
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
+
+  test('a refused retry does not fire it either — "send now" has its own message', async () => {
+    const restore = failing(404, { error: 'Not found' });
+    try {
+      expect(await sinkCallsFor(() => retrySessionPrompt('p', 's', 'x'))).toBe(0);
+    } finally {
+      restore();
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
+
+  test('a refused list does not fire it — the queue just keeps its last rows', async () => {
+    const restore = failing(500, { error: 'boom' });
+    try {
+      expect(await sinkCallsFor(() => listSessionPrompts('p', 's'))).toBe(0);
+    } finally {
+      restore();
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
+
+  test('a refused hold does not fire it — Stop surfaces its own warning', async () => {
+    const restore = failing(500, { error: 'boom' });
+    try {
+      expect(await sinkCallsFor(() => holdSessionPrompts('p', 's', true))).toBe(0);
+    } finally {
+      restore();
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
+
+  /**
+   * CREATE IS THE EXCEPTION, and deliberately so.
+   *
+   * The platform sink is `handleApiError`, and that is the ONLY thing that
+   * turns a 402 into the upgrade dialog / credits panel (error-handler.tsx's
+   * `formatBillingErrorForUI` branch). Silencing the sink here would make a
+   * send that runs out of credits fail with no way to fix it — a far worse
+   * outcome than the duplicate toast this describe block exists to remove.
+   * `handleSend` still classifies and renders the refusal itself; for billing
+   * the two are complementary, not duplicates.
+   */
+  test('a refused create KEEPS the sink — 402 is how the upgrade dialog opens', async () => {
+    const restore = failing(402, { error: 'no credits' });
+    try {
+      expect(
+        await sinkCallsFor(() =>
+          createSessionPrompt('p', 's', {
+            clientMessageId: 'c1',
+            messageId: 'msg_1',
+            parts: [{ type: 'text', text: 'hi' }],
+          }),
+        ),
+      ).toBe(1);
+    } finally {
+      restore();
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
 });

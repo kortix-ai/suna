@@ -180,6 +180,7 @@ export {
   settleOptimisticPrompt,
   removeOptimisticPrompt,
   reconcileOptimisticPrompts,
+  serverReorderPromptIds,
   OPTIMISTIC_PROMPT_PREFIX,
   SESSION_PROMPTS_POLL_MS,
   SESSION_PROMPTS_IDLE_POLL_MS,

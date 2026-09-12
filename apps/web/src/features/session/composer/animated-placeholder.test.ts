@@ -33,3 +33,29 @@ describe('buildPlaceholderVariants', () => {
     expect(all).not.toContain('modes');
   });
 });
+
+/**
+ * The queue shortcut has to be DISCOVERABLE or it does not exist.
+ *
+ * Enter and Cmd/Ctrl+Enter are two different acts now — run this prompt, or
+ * queue it — and nothing else on the composer says so. This list is where the
+ * composer already teaches its shortcuts, and the rule at the top of
+ * `animated-placeholder.tsx` is that a line only enters it with its handler
+ * named: `createSubmitOnEnterHandler` in `editor/composer-editor.tsx`.
+ */
+describe('the queue shortcut is advertised', () => {
+  test('both platforms are told how to queue a prompt', () => {
+    expect(buildPlaceholderVariants('Ask anything...', true)).toContain(
+      'Press ⌘Enter to queue a prompt instead of running it',
+    );
+    expect(buildPlaceholderVariants('Ask anything...', false)).toContain(
+      'Press Ctrl+Enter to queue a prompt instead of running it',
+    );
+  });
+
+  /** The platform purity rule the whole list obeys still holds with it added. */
+  test('the queue hint does not leak the other platform’s modifier', () => {
+    expect(buildPlaceholderVariants('Ask anything...', true).join('\n')).not.toContain('Ctrl');
+    expect(buildPlaceholderVariants('Ask anything...', false).join('\n')).not.toContain('⌘');
+  });
+});

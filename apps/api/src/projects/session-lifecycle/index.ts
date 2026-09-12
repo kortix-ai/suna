@@ -10,6 +10,7 @@ export {
   holdInboxPrompts,
   listInboxPrompts,
   releaseInboxHold,
+  reorderInboxPrompts,
   retryInboxPrompt,
 } from './inbox-rows';
 export { deleteSession, restartSession } from './actions';

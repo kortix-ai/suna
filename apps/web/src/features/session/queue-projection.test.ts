@@ -1,6 +1,10 @@
 import type { SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { projectQueueRows } from './queue-projection';
+import {
+  countHaltableInboxPrompts,
+  projectQueueRows,
+  promptIsOnScreen,
+} from './queue-projection';
 
 function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
   return {
@@ -280,4 +284,174 @@ test('a queued row with a stale last_error is still uploading, not failed', () =
     ],
   });
   expect(queued[0]?.uploadStatus).toEqual({ state: 'uploading' });
+});
+
+/**
+ * ONE RULE FOR "IS THIS ROW ALREADY ON SCREEN", shared by both readers.
+ *
+ * The question was answered in two places with two different answers.
+ * `projectQueueRows` matched `message_id`, `wire_message_id` AND
+ * `client_message_id`; `queuedSyntheticMessages` (session-chat.tsx) — the
+ * reader that actually paints the bubbles — matched only the first two. So the
+ * exact case the client-id clause was added for (a re-minted wire id surviving
+ * a reload, where the stable client id is the only handle left that both sides
+ * still know) produced a synthetic turn BESIDE the message it duplicates.
+ *
+ * The predicate lives here, once, and both readers call it.
+ */
+describe('promptIsOnScreen', () => {
+  const base = {
+    prompt_id: 'p1',
+    client_message_id: 'cli_1',
+    message_id: 'msg_server',
+    state: 'queued' as const,
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-09-08T00:00:00.000Z',
+    available_at: '2026-09-08T00:00:00.000Z',
+  };
+
+  test('the id the drain re-minted it under counts', () => {
+    expect(promptIsOnScreen(base, new Set(['msg_server']))).toBe(true);
+  });
+
+  test('the id this tab painted its bubble under counts', () => {
+    expect(promptIsOnScreen({ ...base, wire_message_id: 'msg_client' }, new Set(['msg_client']))).toBe(
+      true,
+    );
+  });
+
+  /**
+   * The one that survives BOTH a re-mint and a reload. Without it the row
+   * renders a second bubble beside its own answer, and the "Queued" badge
+   * outlives a refresh.
+   */
+  test('the stable client id counts — it is what survives a re-mint AND a reload', () => {
+    expect(promptIsOnScreen(base, new Set(['cli_1']))).toBe(true);
+  });
+
+  test('a row the transcript has never heard of is not on screen', () => {
+    expect(promptIsOnScreen(base, new Set(['msg_someone_else']))).toBe(false);
+    expect(promptIsOnScreen(base, undefined)).toBe(false);
+  });
+});
+
+/**
+ * A PARKED ROW IS HELD, AND THAT IS NOT THE STOP BUTTON.
+ *
+ * Cmd/Ctrl+Enter parks a prompt by holding it server-side — the same `held`
+ * mechanism the Stop button uses, because "not due, and only the user releases
+ * it" is exactly what parking means. So a parked row arrives with
+ * `reason: 'held'` and is indistinguishable from a stop-paused one by that
+ * field alone.
+ *
+ * `queued_by_user` is what tells them apart. Without this the first Cmd+Enter
+ * on an idle session lit the "Queue paused — press Resume" banner and dimmed
+ * the whole list, telling the user their agent had been stopped when nothing
+ * had stopped.
+ */
+describe('parked rows versus a stopped queue', () => {
+  const base = {
+    client_message_id: 'cli_1',
+    message_id: 'msg_1',
+    state: 'waiting' as const,
+    reason: 'held',
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-09-09T00:00:00.000Z',
+    available_at: '2026-09-10T00:00:00.000Z',
+  };
+
+  test('a row the USER parked does not report the queue as stopped', () => {
+    const projection = projectQueueRows({
+      prompts: [{ ...base, prompt_id: 'p1', queued_by_user: true }],
+    });
+    expect(projection.held).toBe(false);
+  });
+
+  test('a row the STOP button held still does', () => {
+    const projection = projectQueueRows({
+      prompts: [{ ...base, prompt_id: 'p1', queued_by_user: false }],
+    });
+    expect(projection.held).toBe(true);
+  });
+
+  test('one stopped row among parked ones is still a stopped queue', () => {
+    const projection = projectQueueRows({
+      prompts: [
+        { ...base, prompt_id: 'p1', queued_by_user: true },
+        { ...base, prompt_id: 'p2', queued_by_user: false },
+      ],
+    });
+    expect(projection.held).toBe(true);
+  });
+
+  test('STOP on a queue of nothing but parked rows IS a stopped queue', () => {
+    // The other half of the rule, and the half `queued_by_user` alone got
+    // wrong. A parked-only queue is this feature's normal state: park two
+    // prompts, then press Stop. Every row is `queued_by_user`, so the clause
+    // above excluded all of them — `paused` never lit, no Resume was offered,
+    // and the header went on saying "runs after this turn" for a session the
+    // user had just stopped. `stop_held` is the server naming WHICH hold this
+    // is: written only by the stop button, cleared by every release.
+    const projection = projectQueueRows({
+      prompts: [
+        { ...base, prompt_id: 'p1', queued_by_user: true, stop_held: true },
+        { ...base, prompt_id: 'p2', queued_by_user: true, stop_held: true },
+      ],
+    });
+    expect(projection.held).toBe(true);
+  });
+
+  test('a parked row on an idle session carries no stop flag, so nothing reads stopped', () => {
+    // The direction the earlier fix protects, restated against the new field:
+    // parking must never, on its own, report the session as stopped.
+    const projection = projectQueueRows({
+      prompts: [{ ...base, prompt_id: 'p1', queued_by_user: true, stop_held: false }],
+    });
+    expect(projection.held).toBe(false);
+  });
+});
+
+/**
+ * THE ERROR HALT COUNTS ROWS, NOT LANES.
+ *
+ * A failed turn holds the inbox so the next prompt cannot be answered by the
+ * same broken session. The gate read the PARKED lane only, so a failure with
+ * ordinary Enter-queued rows behind it held nothing and they drained into the
+ * failure — the server does not stop them either
+ * (`turnCompletionAllowsQueuePromotion` passes on `closed`, and an errored turn
+ * is closed).
+ */
+describe('countHaltableInboxPrompts', () => {
+  test('counts an ENTER-queued row — the lane the halt used to miss entirely', () => {
+    expect(
+      countHaltableInboxPrompts([prompt({ prompt_id: 'a', queued_by_user: false })]),
+    ).toBe(1);
+  });
+
+  test('counts a parked row too — both lanes are the same durable rows', () => {
+    expect(
+      countHaltableInboxPrompts([
+        prompt({ prompt_id: 'a', queued_by_user: false }),
+        prompt({ prompt_id: 'b', queued_by_user: true, state: 'waiting', reason: 'held' }),
+        prompt({ prompt_id: 'c', state: 'delivering' }),
+      ]),
+    ).toBe(3);
+  });
+
+  test('a failed row is not counted — it has given up and carries its own retry', () => {
+    expect(
+      countHaltableInboxPrompts([
+        prompt({ prompt_id: 'a', state: 'failed', last_error: 'boom' }),
+      ]),
+    ).toBe(0);
+  });
+
+  test('an empty inbox protects nothing, so the halt never fires on it', () => {
+    expect(countHaltableInboxPrompts([])).toBe(0);
+  });
 });

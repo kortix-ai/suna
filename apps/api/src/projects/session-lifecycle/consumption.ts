@@ -110,7 +110,7 @@ const liveDeps: ConsumptionDeps = {
         // nothing about it is waiting on the user any more. Leaving
         // `stop_paused` behind is what let `releaseInboxHold` put a prompt a
         // turn had already answered back on the queue.
-        result: sql`(COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"status": "delivered"}'::jsonb) - 'stop_paused' - 'held'`,
+        result: sql`(COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"status": "delivered"}'::jsonb) - 'stop_paused' - 'held' - 'stop_held'`,
         updatedAt: new Date(),
       })
       .where(

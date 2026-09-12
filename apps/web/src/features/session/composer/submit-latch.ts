@@ -43,27 +43,38 @@
  * Framework-free on purpose so the ordering is unit-testable with real
  * promises instead of source-text assertions.
  */
-export function createSubmitLatch<Draft>(
+export function createSubmitLatch<Draft, Intent = void>(
   /**
-   * Run one submission. With no argument: read the live editor, as a direct
+   * Run one submission. With no draft: read the live editor, as a direct
    * submit always has. With a stashed draft: submit THAT, the editor having
-   * been cleared at stash time.
+   * been cleared at stash time. `intent` is the one the submission was made
+   * with — never the latest one, see below.
    */
-  dispatch: (stashed?: Draft) => Promise<void>,
+  dispatch: (stashed: Draft | undefined, intent: Intent) => Promise<void>,
   /**
    * Capture the CURRENT draft as its own submission — and clear it from the
    * editor — or return null when there is nothing distinct to submit (a
-   * cleared editor: the double-fire). Read at re-entrant-submit time.
+   * cleared editor: the double-fire). Read at re-entrant-submit time, and told
+   * which intent it is capturing so the draft can carry it.
    */
-  stashDeferrableDraft: () => Draft | null,
-): () => Promise<void> {
+  stashDeferrableDraft: (intent: Intent) => Draft | null,
+): (intent: Intent) => Promise<void> {
   let inFlight = false;
-  const stashed: Draft[] = [];
+  // THE INTENT IS STASHED WITH ITS DRAFT, not read again at dispatch time.
+  //
+  // Enter sends the prompt — never interrupting; the server holds it until the
+  // running turn ends — and Cmd+Enter PARKS it, held until the user releases
+  // it. Those are opposite answers to "does this run on its own?", so a stashed
+  // prompt must be dispatched with the intent its own keypress carried.
+  // Re-deriving it later (from the newest submit, or from whether the session
+  // is busy by then) sends a prompt the user deliberately set aside, one
+  // keystroke after they chose to set it aside.
+  const stashed: Array<{ draft: Draft; intent: Intent }> = [];
 
-  const run = async (draft?: Draft): Promise<void> => {
+  const run = async (draft: Draft | undefined, intent: Intent): Promise<void> => {
     inFlight = true;
     try {
-      await dispatch(draft);
+      await dispatch(draft, intent);
     } finally {
       // Everything stashed while this dispatch was in flight goes out NOW,
       // TOGETHER. The dispatches are invoked in stash order — their
@@ -74,23 +85,27 @@ export function createSubmitLatch<Draft>(
       // or the server's batch closes before the burst is even durable.
       const burst = stashed.splice(0);
       if (burst.length > 0) {
-        void Promise.allSettled(burst.map((next) => dispatch(next))).finally(() => {
-          inFlight = false;
-          const late = stashed.splice(0);
-          if (late.length > 0) void Promise.allSettled(late.map((next) => dispatch(next)));
-        });
+        void Promise.allSettled(burst.map((next) => dispatch(next.draft, next.intent))).finally(
+          () => {
+            inFlight = false;
+            const late = stashed.splice(0);
+            if (late.length > 0) {
+              void Promise.allSettled(late.map((next) => dispatch(next.draft, next.intent)));
+            }
+          },
+        );
         return;
       }
       inFlight = false;
     }
   };
 
-  return (): Promise<void> => {
+  return (intent: Intent): Promise<void> => {
     if (inFlight) {
-      const draft = stashDeferrableDraft();
-      if (draft !== null) stashed.push(draft);
+      const draft = stashDeferrableDraft(intent);
+      if (draft !== null) stashed.push({ draft, intent });
       return Promise.resolve();
     }
-    return run();
+    return run(undefined, intent);
   };
 }

@@ -47,7 +47,8 @@ import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue, resolveSessionOpencodeEndpoint } from './engine';
 import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, parsePlacementTip, strandedPlacement, tipIsBusy } from './forwarded-placement';
-import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
+import { promoteAndKickNextInboxRow } from './settled-drain-kick';
+import { withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
 
 const WORKSPACE = '/workspace';
@@ -191,9 +192,14 @@ const liveDeps: StrandReconcileDeps = {
     return 'requeued';
   },
   kickDrain(sessionId) {
-    void promoteNextInboxRow(sessionId)
-      .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
-      .catch(() => undefined);
+    // Same promote-then-delayed-kick pairing as the `routes/r4.ts` relay, and
+    // for the same reason: the promoted row is not claimable until
+    // `INBOX_TURN_SETTLE_MS` has elapsed, so a kick fired now claims nothing.
+    // Missing the kick leaves the repair to the scheduler's unconditional
+    // drain (~1s — see settled-drain-kick.ts), not to a minute-long tick.
+    void promoteAndKickNextInboxRow(sessionId, { drain: drainSessionLifecycleQueue }).catch(
+      () => undefined,
+    );
   },
 };
 

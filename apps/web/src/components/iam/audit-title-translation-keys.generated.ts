@@ -111,6 +111,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Removed a queued session prompt': 'text0d9b60fc21b9',
   'Removed member': 'text0704475d6978',
   'Removed member from group': 'text5ba18b8f3b74',
+  'Reordered the session prompt queue': 'texte191a0bd4614',
   'Replayed audit webhook delivery': 'textb5353c3c6be9',
   'Requested a password reset': 'texta3599aa9f51d',
   'Requested a sign-in link': 'text2fb99e8716bb',
