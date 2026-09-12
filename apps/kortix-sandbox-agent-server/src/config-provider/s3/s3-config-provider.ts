@@ -465,7 +465,15 @@ export interface S3Acquisition {
   metrics: S3AcquisitionMetrics
 }
 
-function precondition(req: MaterializeRequest): { sha: string; pin: ProjectSnapshotPin } {
+/**
+ * Is this boot eligible for an S3 attempt at all? Throws a `precondition`
+ * ConfigProviderError naming why not. The coordinator treats these as
+ * SKIPS (a Git-only start with a recorded reason), never as S3 failures: a
+ * resumed/replacement session (`not-fresh`) must keep its remote-branch
+ * restore semantics, and a session the API could not pin (`no-pin` = cache
+ * miss) was never a pinned S3 attempt.
+ */
+export function checkS3Eligibility(req: MaterializeRequest): { sha: string; pin: ProjectSnapshotPin } {
   const cfg = req.cfg
   if (!cfg.sessionFresh) throw new ConfigProviderError('precondition', 'not-fresh', 'only a fresh session may materialize from a snapshot')
   if (!req.expectedSha) throw new ConfigProviderError('precondition', 'no-sha', 'no trusted base SHA (KORTIX_BASE_SHA) for this session')
@@ -485,7 +493,7 @@ export async function materializeFromS3(
   req: MaterializeRequest,
   options: { fetchImpl?: typeof fetch; inactivityTimeoutMs?: number } = {},
 ): Promise<S3Acquisition> {
-  const { sha, pin } = precondition(req)
+  const { sha, pin } = checkS3Eligibility(req)
   const deadline = Date.now() + req.deadlineMs
   let attempts = 0
   let lastError: ConfigProviderError | null = null

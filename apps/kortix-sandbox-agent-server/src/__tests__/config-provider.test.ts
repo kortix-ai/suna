@@ -418,14 +418,41 @@ describe('materializeProject — prefer-s3', () => {
     expect(result.fallback).toMatchObject({ stage: 'download', reason: 'expired-authorization', attempts: 1 })
   })
 
-  test('no pin (cache miss) skips S3 entirely and records the reason', async () => {
+  test('no pin (cache miss) is a Git-only start with the reason recorded — not an S3 attempt, not a fallback', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_PIN: '' })
-    const result = await materializeProject(cfg)
+    const marks: string[] = []
+    const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
     expect(result.provider).toBe('git')
-    expect(result.fallback).toMatchObject({ stage: 'precondition', reason: 'no-pin' })
+    expect(result.fallback).toBeUndefined()
+    expect(result.summary).toMatchObject({ s3_attempted: false, s3_failed: false, s3_skipped: true, s3_stage: 'precondition', s3_reason: 'no-pin', fallback: false })
+    expect(marks).toContain('config-provider:s3:skipped:no-pin')
     expect(api.requests).toHaveLength(0)
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
+  })
+
+  test('a resumed/replacement (not fresh) session never attempts S3, in every mode', async () => {
+    for (const mode of ['prefer-s3', 'require-s3'] as const) {
+      const target = join(root, `ws-${mode}`)
+      const cfg = makeConfig(api, target, archive.sha, {
+        KORTIX_PROJECT_SNAPSHOT_MODE: mode,
+        KORTIX_SESSION_FRESH: '0',
+        // Not fresh → the Git path fetches the session branch from the remote,
+        // which this fake API cannot serve; a scaffold-rooted base still lets
+        // the checkout land, and the failure to fetch the branch is the
+        // existing (tolerated) behaviour of checkoutSessionBranch.
+      })
+      const result = await materializeProject(cfg).catch((err) => ({ error: err as Error }))
+      // Either the Git path completes (scaffold) or it fails for a Git reason —
+      // never an S3 attempt and never an S3 failure.
+      if ('error' in result) {
+        expect(result.error).not.toBeInstanceOf(ConfigProviderError)
+      } else {
+        expect(result.provider).toBe('git')
+        expect(result.summary).toMatchObject({ s3_attempted: false, s3_skipped: true, s3_reason: 'not-fresh' })
+      }
+      expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot'))).toHaveLength(0)
+    }
   })
 
   test('authorization denial on the descriptor is a denial: no fallback, nothing materialized', async () => {

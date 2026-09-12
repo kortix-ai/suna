@@ -22,7 +22,7 @@ import type { Config, ProjectSnapshotMode } from '../config'
 import { adoptOrClearBakedCheckout, clearDirContents, finalizeSnapshotStage, readRepoInfo } from '../git'
 import { logger } from '../logger'
 import { materializeViaGit } from './git/git-config-provider'
-import { materializeFromS3 } from './s3/s3-config-provider'
+import { checkS3Eligibility, materializeFromS3 } from './s3/s3-config-provider'
 import {
   ConfigProviderError,
   S3_NO_FALLBACK_REASONS,
@@ -58,7 +58,12 @@ function summarize(
   mode: ProjectSnapshotMode,
   started: number,
   result: Partial<MaterializedProject> & { timings: Record<string, number> },
-  s3: { attempted: boolean; attempts: number; error: ConfigProviderError | null },
+  s3: {
+    attempted: boolean
+    attempts: number
+    error: ConfigProviderError | null
+    skipped: ConfigProviderError | null
+  },
   outcome: { ok: true } | { ok: false; error: string },
 ): ConfigProviderSummary {
   const expected = trustedSha(cfg)
@@ -72,8 +77,9 @@ function summarize(
     s3_attempted: s3.attempted,
     s3_attempts: s3.attempts,
     s3_failed: s3.error !== null,
-    s3_stage: s3.error?.stage ?? null,
-    s3_reason: s3.error?.reason ?? null,
+    s3_skipped: s3.skipped !== null,
+    s3_stage: s3.error?.stage ?? s3.skipped?.stage ?? null,
+    s3_reason: s3.error?.reason ?? s3.skipped?.reason ?? null,
     fallback: result.fallback !== undefined,
     total_ms: Date.now() - started,
     timings: result.timings,
@@ -99,7 +105,12 @@ export async function materializeProject(
     signal: opts.signal,
     deadlineMs: opts.deadlineMs ?? DEFAULT_S3_DEADLINE_MS,
   }
-  const s3State = { attempted: false, attempts: 0, error: null as ConfigProviderError | null }
+  const s3State = {
+    attempted: false,
+    attempts: 0,
+    error: null as ConfigProviderError | null,
+    skipped: null as ConfigProviderError | null,
+  }
 
   const finish = (result: MaterializedProject): MaterializeProjectResult => {
     const summary = summarize(cfg, mode, started, result, s3State, { ok: true })
@@ -153,7 +164,31 @@ export async function materializeProject(
       return finish({ ...git, timings: { ...timings, ...git.timings } })
     }
 
-    // prefer-s3 / require-s3
+    // prefer-s3 / require-s3 — eligibility first. An ineligible boot is a
+    // Git-only start with a RECORDED reason, never "a failed S3 attempt": a
+    // resumed/replacement runtime (`not-fresh`) keeps its remote-branch restore
+    // path in every mode; a session the API could not pin (`no-pin`, a cache
+    // miss) never becomes a pinned S3 attempt and is fatal only under
+    // require-s3, where "no prepared archive" is exactly what must surface.
+    try {
+      checkS3Eligibility(req)
+    } catch (err) {
+      const skip =
+        err instanceof ConfigProviderError
+          ? err
+          : new ConfigProviderError('precondition', 'not-configured', (err as Error)?.message ?? String(err))
+      if (mode === 'require-s3' && skip.reason !== 'not-fresh') throw skip
+      s3State.skipped = skip
+      logger.info('[config-provider] s3 skipped; git-only start', {
+        event: 'config_provider_s3_skipped',
+        mode,
+        reason: skip.reason,
+        expectedSha,
+      })
+      mark(`config-provider:s3:skipped:${skip.reason}`)
+      const git = await materializeViaGit(req)
+      return finish({ ...git, timings: { ...timings, ...git.timings } })
+    }
     s3State.attempted = true
     const s3Started = Date.now()
     try {

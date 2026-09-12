@@ -118,6 +118,8 @@ export interface ConfigProviderSummary {
   s3_attempted: boolean
   s3_attempts: number
   s3_failed: boolean
+  /** Ineligible for S3 (not fresh, no pin, …): a Git-only start with the reason recorded, not a failure. */
+  s3_skipped: boolean
   s3_stage: S3Stage | null
   s3_reason: S3FailureReason | null
   fallback: boolean
