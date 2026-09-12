@@ -437,8 +437,8 @@ the same leaf the Review Center uses, not `gitops.push`.
 The project's review inbox — everything waiting on a human decision: change
 requests, connector tool calls a policy gated for approval, and the outputs,
 decisions, and batches agents submit for sign-off. Mirrors the dashboard's
-Review Center. Gated by the `review_center` feature flag; turn it on with
-`kortix projects features enable review_center`.
+Review Center. On for every project; `project.review.read` and
+`project.review.act` gate reading and acting.
 
 | Command | Effect |
 | --- | --- |

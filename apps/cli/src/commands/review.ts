@@ -1,5 +1,3 @@
-import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
-
 import {
   emitJson,
   resolveProjectContext,
@@ -61,10 +59,7 @@ const HELP = help`Usage: kortix review <subcommand> [options]
 The project's review inbox — everything waiting on a human decision: change
 requests, connector tool calls a policy gated for approval, and the outputs,
 decisions and batches agents submit for sign-off. Mirrors the dashboard's
-Review Center.
-
-Gated by the \`review_center\` feature flag. Turn it on with
-\`kortix projects features enable review_center\`.
+Review Center. On for every project.
 
 Subcommands:
   ls [--segment <s>] [--kind <k>]   List inbox items. Default: every segment.
@@ -201,7 +196,7 @@ async function reviewLs(
       `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
     );
   } catch (err) {
-    return reviewApiError(err);
+    return surfaceApiError(err);
   }
 
   if (json) {
@@ -263,7 +258,7 @@ async function reviewShow(
       item = resp.review_item;
     }
   } catch (err) {
-    return reviewApiError(err);
+    return surfaceApiError(err);
   }
 
   if (json) {
@@ -415,7 +410,7 @@ async function reviewAct(
     );
     return 0;
   } catch (err) {
-    return reviewApiError(err);
+    return surfaceApiError(err);
   }
 }
 
@@ -447,7 +442,7 @@ async function reviewBulk(
       updated = resp.updated;
       items = resp.review_items;
     } catch (err) {
-      return reviewApiError(err);
+      return surfaceApiError(err);
     }
   }
 
@@ -523,7 +518,7 @@ async function reviewSubmit(
       ...(sessionId ? { session_id: sessionId } : {}),
     });
   } catch (err) {
-    return reviewApiError(err);
+    return surfaceApiError(err);
   }
 
   if (json) {
@@ -573,22 +568,6 @@ export function planBulk(ids: Iterable<string>): BulkPlan {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Surface an API error, adding the one command that clears a `feature_disabled`
- * 403. The server's prose points at the dashboard's Settings → Feature flags;
- * a CLI caller needs the CLI verb.
- */
-function reviewApiError(err: unknown): number {
-  const code = (err as { body?: { code?: unknown } } | null)?.body?.code;
-  const exit = surfaceApiError(err);
-  if (code === FEATURE_DISABLED_CODE) {
-    process.stderr.write(
-      `  ${C.dim}Turn it on: ${C.reset}${C.cyan}kortix projects features enable review_center${C.reset}\n`,
-    );
-  }
-  return exit;
-}
 
 function riskCell(risk: string): string {
   if (risk === 'high') return `${C.red}high${C.reset}`;

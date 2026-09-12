@@ -29,6 +29,9 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 const basicAuth = require('./basic-auth');
+const { openInstanceChooser, focusInstanceChooser } = require('./instance-chooser');
+const { explainNetError, hostOf, normalizeInstanceUrl } = require('./instance-rules');
+const { createInstanceStore } = require('./instance-store');
 const { isConfiguredAppUrl, isTrustedAppSender } = require('./native-sender');
 const {
   DESKTOP_CHROME_JS,
@@ -86,50 +89,21 @@ const UA_TOKEN = 'KortixDesktop/0.1.0';
 // here it's the native window background.
 const BG_COLOR = '#0a0a0a';
 
-/* ─── Frontend URL override (self-hosting) ────────────────────────────────
-   Persisted as a single line in userData/frontend_url — same contract as the
-   Tauri shell's app-config-dir file. A persisted override wins over the
-   env/compile-time default. */
+// net::ERR_ABORTED — a navigation replaced by another one, not a failure.
+const ERR_ABORTED = -3;
 
-function overridePath() {
-  return path.join(app.getPath('userData'), 'frontend_url');
-}
+/* ─── Kortix instance (frontend URL) ──────────────────────────────────────
+   instance-store.js owns userData/frontend_url (the self-hosting override),
+   the first-launch marker, and URL precedence: saved URL → KORTIX_DESKTOP_URL
+   → DEFAULT_URL. A new profile is marked HERE, at module load, because the
+   single-instance lock at the bottom of this file writes into userData. */
 
-function readUrlOverride() {
-  try {
-    const raw = fs.readFileSync(overridePath(), 'utf8').trim();
-    return raw || null;
-  } catch {
-    return null;
-  }
-}
-
-function writeUrlOverride(url) {
-  try {
-    fs.mkdirSync(path.dirname(overridePath()), { recursive: true });
-    fs.writeFileSync(overridePath(), url, 'utf8');
-  } catch (e) {
-    return String(e);
-  }
-  return null;
-}
-
-function clearUrlOverride() {
-  try {
-    fs.rmSync(overridePath(), { force: true });
-  } catch {
-    /* already gone */
-  }
-}
-
-function appBaseUrl() {
-  return process.env.KORTIX_DESKTOP_URL || DEFAULT_URL;
-}
-
-/** Effective URL the window should load — persisted override beats the default. */
-function resolveAppUrl() {
-  return readUrlOverride() || appBaseUrl();
-}
+const instanceStore = createInstanceStore({
+  dir: app.getPath('userData'),
+  envUrl: process.env.KORTIX_DESKTOP_URL,
+  defaultUrl: DEFAULT_URL,
+});
+instanceStore.markIfNewProfile();
 
 /**
  * Is this auth challenge coming from the exact origin we load the app from?
@@ -140,7 +114,7 @@ function resolveAppUrl() {
 function isAppOriginChallenge(authInfo) {
   let target;
   try {
-    target = new URL(resolveAppUrl());
+    target = new URL(instanceStore.appUrl());
   } catch {
     return false;
   }
@@ -238,7 +212,7 @@ function shouldLoadInApp(urlStr) {
   const host = u.hostname;
   if (isPreviewHost(host)) return true;
   // Navigation and native commands share the configured frontend origin.
-  if (isConfiguredAppUrl(urlStr, resolveAppUrl()) && isAppPath(u.pathname)) return true;
+  if (isConfiguredAppUrl(urlStr, instanceStore.appUrl()) && isAppPath(u.pathname)) return true;
   return false;
 }
 
@@ -259,7 +233,7 @@ function translateDeepLink(deepLink) {
 
   let target;
   try {
-    target = new URL(resolveAppUrl());
+    target = new URL(instanceStore.appUrl());
   } catch {
     return null;
   }
@@ -476,20 +450,58 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
+  // Electron ships no network error page: a dead app origin paints only the
+  // window background. Offer to retry or pick another instance instead. Only
+  // the main frame on the configured origin counts — a failing sandbox preview
+  // is not an instance problem. ERR_ABORTED is a navigation replaced by another.
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || errorCode === ERR_ABORTED) return;
+      if (!isConfiguredAppUrl(validatedURL, instanceStore.appUrl())) return;
+      console.warn(`[kortix] ${validatedURL} did not load: ${errorDescription} (${errorCode}).`);
+      dismissSplash();
+      if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
+      void changeInstance('unreachable', explainNetError(hostOf(validatedURL), errorDescription));
+    },
+  );
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 
-  mainWindow.loadURL(resolveAppUrl());
+  // did-fail-load reports failures; the rejected promise carries nothing more.
+  mainWindow.loadURL(instanceStore.appUrl()).catch(() => {});
 }
 
-/** Full-page reload of the main window onto `url` (used by the menu/IPC). */
+/**
+ * Full-page load of the main window onto `url` (menu, IPC, instance chooser).
+ * loadURL, not location.replace(): a window whose last load failed has no
+ * document to run script in. History is cleared after the load — Back must not
+ * return to the previous instance.
+ */
 function navigateMainWindow(url) {
   if (!mainWindow) return;
-  mainWindow.webContents.executeJavaScript(
-    `window.location.replace(${JSON.stringify(url)})`,
-  );
+  const wc = mainWindow.webContents;
+  wc.loadURL(url)
+    .then(() => wc.navigationHistory.clear())
+    .catch(() => {}); // did-fail-load reports failures
   mainWindow.focus();
+}
+
+/** Save a choice (menu, web bridge) and load the app onto it. Returns the save error, or null. */
+function switchInstance(choice) {
+  const error = instanceStore.save(choice);
+  if (!error) navigateMainWindow(instanceStore.appUrl());
+  return error;
+}
+
+/** The instance chooser over the running app; a saved choice reloads the app. */
+async function changeInstance(mode, error = null) {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  if (await openInstanceChooser({ mode, error, parent, store: instanceStore })) {
+    navigateMainWindow(instanceStore.appUrl());
+  }
 }
 
 /* ─── HTTP Basic credentials (dev/staging environment password) ────────────
@@ -571,7 +583,7 @@ function forgetBasicCredential(host) {
 function forgetBasicCredentialForAppHost() {
   let host;
   try {
-    host = new URL(resolveAppUrl()).hostname;
+    host = new URL(instanceStore.appUrl()).hostname;
   } catch {
     return;
   }
@@ -718,51 +730,22 @@ function buildMenu() {
 
   // Hidden, nested dev switcher so the backend the app points at can change
   // without a rebuild — mirrors the Tauri "Frontend URL" submenu.
+  const preset = (label, url) => ({ label, click: () => switchInstance({ kind: 'custom', url }) });
   const frontendSubmenu = {
     label: 'Frontend URL',
     submenu: [
-      {
-        label: 'Production (kortix.com)',
-        click: () => {
-          writeUrlOverride(PRESET_PROD);
-          navigateMainWindow(PRESET_PROD);
-        },
-      },
-      {
-        label: 'Dev (dev.kortix.com)',
-        click: () => {
-          writeUrlOverride(PRESET_DEV);
-          navigateMainWindow(PRESET_DEV);
-        },
-      },
-      {
-        label: 'Local (localhost:3000)',
-        click: () => {
-          writeUrlOverride(PRESET_LOCAL);
-          navigateMainWindow(PRESET_LOCAL);
-        },
-      },
+      preset('Production (kortix.com)', PRESET_PROD),
+      preset('Dev (dev.kortix.com)', PRESET_DEV),
+      preset('Local (localhost:3000)', PRESET_LOCAL),
       { type: 'separator' },
       {
         label: 'Custom URL…',
-        // Native menus can't take text input — ask the web layer to pop the
-        // same tiny prompt the Tauri shell uses, which calls back via the
-        // set_frontend_url IPC.
-        click: () => {
-          if (!mainWindow) return;
-          mainWindow.webContents.executeJavaScript(
-            "window.dispatchEvent(new CustomEvent('kortix-open-frontend-url'))",
-          );
-          mainWindow.focus();
-        },
+        // The native instance chooser, not the web app's prompt: it also
+        // works when the current page failed to load. (Older shells dispatch
+        // `kortix-open-frontend-url`; the web prompt stays for them.)
+        click: () => void changeInstance('change'),
       },
-      {
-        label: 'Reset to Default',
-        click: () => {
-          clearUrlOverride();
-          navigateMainWindow(appBaseUrl());
-        },
-      },
+      { label: 'Reset to Default', click: () => switchInstance({ kind: 'default' }) },
       { type: 'separator' },
       {
         // Drops the HTTP Basic credential remembered for the current app host
@@ -838,7 +821,7 @@ function buildMenu() {
 // may call it; embedded previews and other windows do not inherit that trust.
 function isTrustedSender(event) {
   try {
-    return isTrustedAppSender(event, mainWindow?.webContents, resolveAppUrl());
+    return isTrustedAppSender(event, mainWindow?.webContents, instanceStore.appUrl());
   } catch {
     return false;
   }
@@ -868,22 +851,13 @@ function registerIpc() {
         return null;
       }
       case 'get_frontend_url':
-        return resolveAppUrl();
+        return instanceStore.appUrl();
       case 'set_frontend_url': {
-        const raw = String(args.url || '').trim();
-        if (!raw) throw new Error('URL is empty');
-        const candidate = raw.includes('://') ? raw : `https://${raw}`;
-        let parsed;
-        try {
-          parsed = new URL(candidate);
-        } catch (e) {
-          throw new Error(`Invalid URL: ${e}`);
-        }
-        if (!/^https?:$/.test(parsed.protocol)) {
-          throw new Error('URL must use http or https');
-        }
-        writeUrlOverride(candidate);
-        navigateMainWindow(candidate);
+        // Same URL rules as the instance chooser.
+        const normalized = normalizeInstanceUrl(String(args.url || ''));
+        if (!normalized.ok) throw new Error(normalized.error);
+        const saveError = switchInstance({ kind: 'custom', url: normalized.url });
+        if (saveError) throw new Error(`Kortix could not save the URL: ${saveError}`);
         return null;
       }
       default:
@@ -980,6 +954,8 @@ if (!gotLock) {
       mainWindow.show();
       mainWindow.focus();
     }
+    // First launch: the chooser is the only window.
+    focusInstanceChooser();
   });
 
   // macOS delivers deep links via open-url.
@@ -989,7 +965,7 @@ if (!gotLock) {
     else pendingDeepLink = url; // arrived before the window existed
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     // Register kortix:// so the OS routes auth callbacks back to the app.
     if (process.defaultApp && process.argv.length >= 2) {
       app.setAsDefaultProtocolClient(URL_SCHEME, process.execPath, [
@@ -1003,6 +979,12 @@ if (!gotLock) {
     registerIpc();
     buildMenu();
     nativeTheme.themeSource = 'dark';
+
+    // First launch of a new profile: choose the instance before anything loads.
+    if (instanceStore.needsSetup() && !(await openInstanceChooser({ mode: 'setup', store: instanceStore }))) {
+      app.quit();
+      return;
+    }
 
     createSplash();
     createMainWindow();

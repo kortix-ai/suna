@@ -314,11 +314,11 @@ test('isFeatureDisabledError reads the flag key from the body when `feature` is 
   const err = new ApiError('nope', {
     status: 403,
     code: 'feature_disabled',
-    data: { error: 'nope', code: 'feature_disabled', feature: 'review_center' },
+    data: { error: 'nope', code: 'feature_disabled', feature: 'teams' },
   });
 
   expect(isFeatureDisabledError(err)).toBe(true);
-  expect(featureDisabledKey(err)).toBe('review_center');
+  expect(featureDisabledKey(err)).toBe('teams');
 });
 
 test('isFeatureDisabledError rejects other errors', () => {

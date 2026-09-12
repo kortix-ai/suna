@@ -29,8 +29,6 @@ import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
-import { ProjectFilesProvider } from '@/features/project-files/context';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
@@ -77,7 +75,7 @@ import {
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -209,7 +207,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   );
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
-  const [selectedChangeRequestId, setSelectedChangeRequestId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: qk.project.sessions(projectId),
@@ -228,7 +225,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   });
 
   // The brief is a session record, not a Review Center inbox. It therefore
-  // loads every CR state even when the Review Center feature flag is disabled.
+  // loads every CR state, not only the ones awaiting review.
   const { data: changeRequestData } = useQuery({
     queryKey: changeRequestKeys.list(projectId, 'all'),
     queryFn: () => listChangeRequests(projectId, 'all'),
@@ -238,11 +235,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   });
 
   // Review Center is one coherent system: the per-session row indicators, the
-  // footer "Review" pill, and the Customize rail all read the SAME inbox summary
-  // and gate on the SAME flag. When the flag is off the summary query never runs,
-  // so no indicators render and nothing polls.
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
+  // footer "Review" pill, and the Customize rail all read the SAME inbox summary.
+  const reviewSummary = useReviewSessionSummary(projectId);
 
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
@@ -410,8 +404,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
             changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
             canShowHoverCard={canShowSessionHoverCard}
-            reviewEnabled={reviewEnabled}
-            onOpenChangeRequest={setSelectedChangeRequestId}
             onDelete={(id, label) => setSessionToDelete({ id, label })}
             onShare={(s) => setSessionToShare(s)}
             onRename={(id, name) => setSessionToRename({ id, name })}
@@ -515,15 +507,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
-
-      {!reviewEnabled && (
-        <ProjectFilesProvider value={{ projectId, ref: '' }}>
-          <ChangeRequestDetailDialog
-            crId={selectedChangeRequestId}
-            onClose={() => setSelectedChangeRequestId(null)}
-          />
-        </ProjectFilesProvider>
-      )}
     </div>
   );
 }
@@ -748,8 +731,6 @@ interface ProjectSessionRowProps {
   reviewCount?: number;
   changeRequests: readonly ChangeRequest[];
   canShowHoverCard: boolean;
-  reviewEnabled: boolean;
-  onOpenChangeRequest: (changeRequestId: string) => void;
   /** Rendered indented under its coordinator — the indent already conveys the
    *  spawn link, so the right-side spawned-by icon is omitted. */
   nested?: boolean;
@@ -773,8 +754,6 @@ function ProjectSessionRow({
   reviewCount = 0,
   changeRequests,
   canShowHoverCard,
-  reviewEnabled,
-  onOpenChangeRequest,
   nested = false,
 }: ProjectSessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -847,6 +826,72 @@ function ProjectSessionRow({
           {childCount}
         </Badge>
       )}
+
+      {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
+          and whatever markers get added here later. These are ambient state,
+          readable at rest; the `⋯` is the action. They occupy the SAME slot,
+          so hovering the row (or leaving its menu open) hands the slot to the
+          trigger and hides the strip.
+
+          Inside the link, not after it. The link is the hover card's trigger,
+          and HoverCard exports no `Anchor`, so the card positions against the
+          link's right edge. As a sibling, the strip shortened the link by its
+          own width plus the row's `gap-2`: a Slack or shared session's card
+          opened 24-56px inside the sidebar while a plain chat session's card
+          cleared it. In here, every row's link ends at the row's `px-2` edge.
+
+          Hidden with `opacity-0`, never `hidden`/`w-0`: the strip stays in
+          flow at its natural width, so the title's truncation point is fixed
+          and the text cannot reflow as the pointer crosses the row. It goes
+          `pointer-events-none` at the same time — an invisible icon must not
+          swallow a click meant for the trigger above it.
+
+          The trade: those icons' tooltips are unreachable, because reaching
+          an icon means hovering the row, which hides it. Accepted — they are
+          markers to be glanced at, not controls.
+
+          No transition, matching the trigger: the `⋯` appears instantly, and
+          a fade would leave both drawn on top of each other mid-cross. */}
+      {hasIndicators && (
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-0 transition-none',
+            'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
+            'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
+            'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
+          )}
+          data-session-indicators="true"
+        >
+          {showSpawnedBy && spawnedBy && (
+            <Hint
+              side="top"
+              label={tI18nComplete('text4d67694a7607', { value0: spawnedBy.slice(0, 8) })}
+            >
+              <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
+                <SpawnedBy className="size-3" />
+              </span>
+            </Hint>
+          )}
+          {SourceIcon && (
+            <span
+              className="flex size-4 shrink-0 items-center justify-center"
+              data-session-source="true"
+            >
+              <Hint
+                side="top"
+                label={
+                  source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
+                }
+              >
+                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                  <SourceIcon className="size-3" />
+                </span>
+              </Hint>
+            </span>
+          )}
+          <SessionSharedIcon session={session} />
+        </div>
+      )}
     </HoverPrefetchLink>
   );
 
@@ -882,8 +927,6 @@ function ProjectSessionRow({
             source={source}
             changeRequests={changeRequests}
             projectId={session.project_id}
-            reviewEnabled={reviewEnabled}
-            onOpenChangeRequest={onOpenChangeRequest}
           >
             {sessionLink}
           </SessionBriefHoverCard>
@@ -899,67 +942,8 @@ function ProjectSessionRow({
           changeRequests={changeRequests}
         />
 
-        {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
-            and whatever markers get added here later. These are ambient state,
-            readable at rest; the `⋯` is the action. They occupy the SAME slot,
-            so hovering the row (or leaving its menu open) hands the slot to the
-            trigger and hides the strip.
-
-            Hidden with `opacity-0`, never `hidden`/`w-0`: the strip stays in
-            flow at its natural width, so the title's truncation point is fixed
-            and the text cannot reflow as the pointer crosses the row. It goes
-            `pointer-events-none` at the same time — an invisible icon must not
-            swallow a click meant for the trigger underneath it.
-
-            The trade: those icons' tooltips are unreachable, because reaching
-            an icon means hovering the row, which hides it. Accepted — they are
-            markers to be glanced at, not controls.
-
-            No transition, matching the trigger: the `⋯` appears instantly, and
-            a fade would leave both drawn on top of each other mid-cross. */}
-        {hasIndicators && (
-          <div
-            className={cn(
-              'flex shrink-0 items-center gap-0 transition-none',
-              'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
-              'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
-              'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
-            )}
-            data-session-indicators="true"
-          >
-            {showSpawnedBy && spawnedBy && (
-              <Hint
-                side="top"
-                label={tI18nComplete('text4d67694a7607', { value0: spawnedBy.slice(0, 8) })}
-              >
-                <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
-                  <SpawnedBy className="size-3" />
-                </span>
-              </Hint>
-            )}
-            {SourceIcon && (
-              <span
-                className="flex size-4 shrink-0 items-center justify-center"
-                data-session-source="true"
-              >
-                <Hint
-                  side="top"
-                  label={
-                    source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
-                  }
-                >
-                  <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
-                    <SourceIcon className="size-3" />
-                  </span>
-                </Hint>
-              </span>
-            )}
-            <SessionSharedIcon session={session} />
-          </div>
-        )}
-
-        {/* Out of flow on purpose. This trigger is a sibling of the link and of
-            the indicator strip, absolutely positioned against the row itself —
+        {/* Out of flow on purpose. This trigger is a sibling of the link (which
+            holds the indicator strip), absolutely positioned against the row —
             it reserves NO width, so the title measures against the full row and
             truncates only at the real edge. It used to sit inside a `relative`
             wrapper at the end of the indicator strip; that wrapper was still a

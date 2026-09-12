@@ -407,5 +407,69 @@ for (const runtime of runtimes) {
         await deleteAuthUser(user.id, authOptions);
       }
     });
+
+    test("a frame without product navigation keeps a way back", async ({
+      page,
+      baseURL,
+      desktopApp,
+    }) => {
+      test.setTimeout(180_000);
+      await page.addInitScript(() =>
+        Object.defineProperty(navigator, "platform", { get: () => "MacIntel" }),
+      );
+      const email = `e2e-desktop-back-${randomUUID()}@example.test`;
+      const user = await createAuthUser(email, authOptions);
+      const session = await signIn(email, authOptions);
+      try {
+        // No request_id: the OAuth consent page resolves to a status screen
+        // with no action. The desktop shell has no browser toolbar, so before
+        // the frame drew Back this screen was a dead end there.
+        const deadEnd = `${baseURL}/oauth/authorize`;
+        const heading = (target: typeof page) =>
+          target.getByRole("heading", {
+            name: "Invalid authorization request",
+          });
+        await installBrowserSessionDirect(page, session, deadEnd, authOptions);
+        await expect(heading(page)).toBeVisible({ timeout: 60_000 });
+        const back = page.getByRole("button", { name: "Back", exact: true });
+        if (!desktop) {
+          // The web keeps the browser's own Back. The frame draws none.
+          await expect(back).toHaveCount(0);
+          return;
+        }
+        await expect(back).toBeVisible();
+        const box = await back.boundingBox();
+        expect(
+          box!.x,
+          "Back must clear the macOS traffic lights",
+        ).toBeGreaterThanOrEqual(62);
+        expect(
+          box!.y + box!.height,
+          "Back must sit inside the title-bar band",
+        ).toBeLessThanOrEqual(43);
+        // installBrowserSessionDirect lands on /favicon.png first, so an
+        // in-app entry is behind the dead end and Back is history.back().
+        await back.click();
+        await expect(page).not.toHaveURL(/\/oauth\/authorize/);
+        if (desktopApp) return;
+        // A window opened straight onto the dead end has no in-app entry
+        // behind it (about:blank is another origin), so Back goes home.
+        const fresh = await page.context().newPage();
+        try {
+          await fresh.goto(deadEnd);
+          await expect(heading(fresh)).toBeVisible({ timeout: 60_000 });
+          await fresh
+            .getByRole("button", { name: "Back", exact: true })
+            .click();
+          await expect(fresh).not.toHaveURL(/\/oauth\/authorize/, {
+            timeout: 60_000,
+          });
+        } finally {
+          await fresh.close();
+        }
+      } finally {
+        await deleteAuthUser(user.id, authOptions);
+      }
+    });
   });
 }

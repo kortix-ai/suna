@@ -22,6 +22,13 @@ import {
  * dependency-light, and importing `@kortix/api-contract` would drag zod into
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
+ *
+ * `review_center` is deprecated. Review Center graduated out of the flag
+ * system: it is on for every project, and the API no longer lists, resolves,
+ * or accepts the key. It stays in this union so code written against the older
+ * union still compiles, and `useFeatureFlag(id, 'review_center')` reports
+ * `enabled: true`. It is absent from {@link FEATURE_FLAG_KEYS} and from
+ * `KortixProject.experimental`. Removed in the next major.
  */
 export type FeatureFlagKey =
   | 'agent_tunnel'
@@ -30,6 +37,7 @@ export type FeatureFlagKey =
   | 'agentmail_email'
   | 'teams'
   | 'llm_gateway'
+  /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
   | 'meta_agent'
   | 'apps'
@@ -39,9 +47,9 @@ export type FeatureFlagKey =
   | 'pi_worker';
 
 /**
- * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
- * union above. Cross-package drift tests compare this against the API's
- * `FEATURE_FLAG_KEYS`.
+ * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
+ * order as the union above, minus deprecated graduated keys. Cross-package
+ * drift tests compare this against the API's `FEATURE_FLAG_KEYS`.
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agent_tunnel',
@@ -50,7 +58,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agentmail_email',
   'teams',
   'llm_gateway',
-  'review_center',
   'meta_agent',
   'apps',
   'monitors',
@@ -108,7 +115,8 @@ export interface KortixProject {
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
   /** Effective on/off for each feature flag for THIS project. The field name is
-   *  a stable wire detail — the system is called "Feature flags". */
+   *  a stable wire detail — the system is called "Feature flags". Deprecated
+   *  graduated keys (`review_center`) are absent from the wire. */
   experimental?: Record<FeatureFlagKey, boolean>;
   /** Full feature-flag catalog (drives Customize → Feature flags).
    *  Self-describing so the UI never hard-codes the list. */

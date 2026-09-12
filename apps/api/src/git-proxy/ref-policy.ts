@@ -70,7 +70,14 @@ import { isDelete, type RefUpdate } from './receive-pack';
  */
 export type GitPrincipal =
   /** A session's sandbox token, or an account token scoped to that session. */
-  | { kind: 'session'; sessionId: string; branch: string }
+  | {
+      kind: 'session';
+      sessionId: string;
+      branch: string;
+      /** Identity and credential used for the IAM ceiling on wider ref access. */
+      userId?: string | null;
+      tokenId?: string | null;
+    }
   /** A monitor box's sandbox token — no session row by design. */
   | { kind: 'monitor' }
   /**

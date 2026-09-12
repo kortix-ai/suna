@@ -969,10 +969,6 @@
           "name": "Passerelle LLM",
           "description": "Acheminez ce projet via la passerelle LLM gérée de Kortix pour les modèles, la mesure et les budgets."
         },
-        "review_center": {
-          "name": "Centre de révision",
-          "description": "Examinez les demandes de modification, validations et résultats d’agents dans une boîte unique sur le Web ou dans Slack."
-        },
         "meta_agent": {
           "name": "Méta-agent",
           "description": "Ajoutez un coordinateur qui gère les sessions spécialisées et les travaux en plusieurs étapes du projet."
@@ -1251,8 +1247,6 @@
     "metaCoordinator": "Coordinateur Meta",
     "files": "Fichiers",
     "retry": "Réessayer",
-    "proposedChanges": "Modifications proposées",
-    "untitledChange": "Modification sans titre",
     "review": "Examiner",
     "connectGpt": "Connecter l'abonnement GPT",
     "upgradePlan": "Mettre le forfait à niveau",

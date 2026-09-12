@@ -2,7 +2,7 @@
  * Feature flags — the unified per-project flag surface. Maps to spec §EXP-*.
  *
  * `PATCH /v1/projects/:projectId/features {feature, enabled}` is the canonical
- * write path for opting a project into a flag (agent_tunnel, review_center, …);
+ * write path for opting a project into a flag (agent_tunnel, apps, …);
  * `PATCH /v1/projects/:projectId/experimental` is the deprecated alias published
  * SDKs still call, registered on the SAME handler. State is DB-only
  * (projects.metadata.experimental — a stable storage detail). The response is

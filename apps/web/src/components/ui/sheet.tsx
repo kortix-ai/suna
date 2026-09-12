@@ -6,17 +6,27 @@ import * as React from 'react';
 
 import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
-import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
+import {
+  DialogDepthProvider,
+  dialogContentZ,
+  dialogOverlayZ,
+  useDialogDepth,
+  useDialogRootLayer,
+} from '@/lib/z-stack';
 import { buttonVariants } from './button';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
-const Sheet = ({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) => {
-  const parentDepth = useDialogDepth();
-  const depth = parentDepth + 1;
+const Sheet = ({
+  open,
+  defaultOpen,
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Root>) => {
+  const layer = useDialogRootLayer({ open, defaultOpen, onOpenChange });
 
   return (
-    <DialogDepthProvider depth={depth}>
-      <SheetPrimitive.Root {...props} />
+    <DialogDepthProvider depth={layer.depth}>
+      <SheetPrimitive.Root {...props} open={layer.open} onOpenChange={layer.onOpenChange} />
     </DialogDepthProvider>
   );
 };
