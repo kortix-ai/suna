@@ -67,6 +67,97 @@ let lastPruneAt = 0;
 let pruning: Promise<void> | null = null;
 
 /**
+ * Trees a reader is inside RIGHT NOW, by path.
+ *
+ * A timestamp is not a lease. However recently a directory was touched, a
+ * prune that has already decided to remove it will still remove it, and the
+ * reader then reads a tree that is being deleted underneath it. So reads take
+ * an actual lease: they register here for as long as they are using the path,
+ * eviction refuses to touch anything registered, and a read that arrives while
+ * a prune is running waits for it rather than racing it.
+ *
+ * In-process, because the prune is in-process: it is scheduled by this module
+ * after its own materializations. Two API processes sharing one cache directory
+ * would not coordinate — they do not, the cache lives in each container's own
+ * filesystem — and the TTL and minimum age remain the backstop if they ever did.
+ */
+const activeReaders = new Map<string, number>();
+/**
+ * Trees whose removal has already been DECIDED, until the removal finishes.
+ *
+ * Checking "is anyone reading this" and then awaiting a delete leaves a window:
+ * a reader can arrive after the check and be inside the tree when the delete
+ * lands. So the decision is published synchronously — no `await` between the
+ * check and the mark — and a reader that sees it waits for the removal and
+ * materializes again rather than reading a tree that is going away.
+ *
+ * Both sequences are synchronous up to their first await, and this runtime is
+ * single-threaded, so exactly one of them wins: either the reader is registered
+ * before eviction looks, or eviction is marked before the reader looks.
+ */
+const evicting = new Map<string, Promise<unknown>>();
+/** Longest a read waits for an in-flight eviction before materializing again. */
+const EVICTION_WAIT_MS = 10_000;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function acquireTree(path: string): void {
+  activeReaders.set(path, (activeReaders.get(path) ?? 0) + 1);
+}
+
+function releaseTree(path: string): void {
+  const count = (activeReaders.get(path) ?? 0) - 1;
+  if (count > 0) activeReaders.set(path, count);
+  else activeReaders.delete(path);
+}
+
+/**
+ * Materialize, then hold the tree for as long as `fn` is reading it.
+ *
+ * Lock-free on purpose: a reader never waits for eviction, because a prune that
+ * stalls would then stall every session boot behind it. The ordering is made
+ * safe by CONFIRMING the tree after taking the lease — the one window eviction
+ * could still slip through is between materialization and registration, and a
+ * tree deleted in that window no longer has its marker, which is detectable.
+ * The read then materializes again, from the object store, and succeeds.
+ */
+async function withCachedTree<T>(row: RepoSnapshotRow, fn: (root: string) => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const root = await materializeSnapshotLocally(row);
+    // Register FIRST, then look — synchronously, with no await in between, so
+    // this either happens entirely before eviction's own check or entirely
+    // after its mark.
+    acquireTree(root);
+    const removal = evicting.get(root);
+    if (removal) {
+      releaseTree(root);
+      // Wait for the removal, but never forever: a read is on a session's boot
+      // path, and a delete that does not finish must degrade into another
+      // materialization rather than into a hung boot. Extraction stages into a
+      // temporary directory and renames, so racing a slow delete costs a
+      // re-extract, not a corrupt tree.
+      await Promise.race([removal.catch(() => {}), sleep(EVICTION_WAIT_MS)]);
+      continue;
+    }
+    try {
+      // And confirm the tree is still there. The `evicting` check above covers a
+      // removal still in flight; this covers one that STARTED AND FINISHED
+      // while this read was inside `materializeSnapshotLocally`, which then
+      // returned a path to a directory that no longer exists. Together the two
+      // cover every ordering: in-flight removals are waited for, completed ones
+      // are detected, and a removal cannot begin while the lease is held.
+      const marker = join(root, '.git', 'kortix-project-snapshot.json');
+      if (await stat(marker).then(() => true).catch(() => false)) return await fn(root);
+    } finally {
+      releaseTree(root);
+    }
+  }
+  throw new RepoSnapshotReadError(
+    'the extracted snapshot kept being evicted while it was being read',
+    'read_failed',
+  );
+}
+
+/**
  * Drop extracted snapshots nobody has used recently.
  *
  * Best-effort and bounded: it walks the two-level cache layout once, never
@@ -110,8 +201,18 @@ export async function pruneSnapshotCache(now = Date.now()): Promise<number> {
     if (!current) continue;
     const usedAt = Math.max(current.mtimeMs, current.atimeMs);
     if (usedAt !== entry.usedAt || Date.now() - usedAt <= CACHE_MIN_AGE_MS) continue;
-    if (inFlight.has(entry.path)) continue;
-    await rm(entry.path, { recursive: true, force: true }).catch(() => {});
+    // The lease is the authority; the timestamps above are only a heuristic for
+    // trees no reader in this process is holding. This check and the mark below
+    // are one synchronous step — a reader arriving between them would otherwise
+    // be inside the tree when it is removed.
+    if (inFlight.has(entry.path) || activeReaders.has(entry.path) || evicting.has(entry.path)) continue;
+    const removal = rm(entry.path, { recursive: true, force: true }).catch(() => {});
+    evicting.set(entry.path, removal);
+    try {
+      await removal;
+    } finally {
+      evicting.delete(entry.path);
+    }
     removed += 1;
   }
   if (removed > 0) {
@@ -303,28 +404,45 @@ export async function readSnapshotFile(
   row: RepoSnapshotRow,
   relativePath: string,
 ): Promise<{ content: string; bytes: number } | null> {
-  const root = await materializeSnapshotLocally(row);
-  const absolute = assertInsideSnapshot(root, relativePath);
-  try {
-    const content = await readFile(absolute, 'utf8');
-    return { content, bytes: Buffer.byteLength(content) };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
-    throw new RepoSnapshotReadError(
-      `snapshot read failed for ${relativePath}: ${(error as Error).message}`,
-      'read_failed',
-    );
-  }
+  return withCachedTree(row, async (root) => {
+    const absolute = assertInsideSnapshot(root, relativePath);
+    try {
+      const content = await readFile(absolute, 'utf8');
+      return { content, bytes: Buffer.byteLength(content) };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
+      throw new RepoSnapshotReadError(
+        `snapshot read failed for ${relativePath}: ${(error as Error).message}`,
+        'read_failed',
+      );
+    }
+  });
 }
 
 export async function snapshotDirectoryExists(row: RepoSnapshotRow, relativePath: string): Promise<boolean> {
-  const root = await materializeSnapshotLocally(row);
-  const absolute = assertInsideSnapshot(root, relativePath);
-  return stat(absolute).then((info) => info.isDirectory()).catch(() => false);
+  return withCachedTree(row, async (root) => {
+    const absolute = assertInsideSnapshot(root, relativePath);
+    return stat(absolute).then((info) => info.isDirectory()).catch(() => false);
+  });
 }
 
 export async function listSnapshotDirectory(row: RepoSnapshotRow, relativePath: string): Promise<string[]> {
-  const root = await materializeSnapshotLocally(row);
-  const absolute = assertInsideSnapshot(root, relativePath);
-  return readdir(absolute).catch(() => []);
+  return withCachedTree(row, async (root) => {
+    const absolute = assertInsideSnapshot(root, relativePath);
+    return readdir(absolute).catch(() => []);
+  });
+}
+
+/**
+ * Hold a materialized tree for a caller that will read it directly.
+ *
+ * For anything that takes the PATH out of this module — the benchmark harness,
+ * a caller that hands the directory to a child process — and must not have it
+ * deleted underneath while it works.
+ */
+export async function withSnapshotTree<T>(
+  row: RepoSnapshotRow,
+  fn: (root: string) => Promise<T>,
+): Promise<T> {
+  return withCachedTree(row, fn);
 }

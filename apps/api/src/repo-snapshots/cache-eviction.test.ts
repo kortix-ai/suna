@@ -9,7 +9,7 @@
  * Run:
  *   cd apps/api && bun test --isolate src/repo-snapshots/cache-eviction.test.ts
  */
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -93,6 +93,39 @@ describe('pruneSnapshotCache', () => {
     utimesSync(path, touched, touched);
     expect(await prune).toBe(0);
     expect(existsSync(path)).toBe(true);
+  });
+
+  test('a tree being read is not evicted, however old it looks', async () => {
+    const { pruneSnapshotCache, withSnapshotTree } = await import('./source-reader');
+    const path = seed('500', 'e'.repeat(40), 'd1', 24 * 60 * 60_000);
+    const row = {
+      status: 'ready',
+      archiveSha256: 'd1',
+      compression: 'gzip',
+      repositoryId: '500',
+      owner: 'kortix-ai',
+      repo: 'lease-fixture',
+      commitSha: 'e'.repeat(40),
+      payloadKey: null,
+    } as never;
+
+    // The reader holds the tree while a prune runs against it. Age alone would
+    // condemn it — it looks a day old — and the lease is what saves it.
+    let removed = -1;
+    const read = withSnapshotTree(row, async (root) => {
+      removed = await pruneSnapshotCache();
+      return readFileSync(join(root, '.git', 'kortix-project-snapshot.json'), 'utf8');
+    });
+    expect(await read).toBe('{}');
+    expect(removed).toBe(0);
+    expect(existsSync(path)).toBe(true);
+
+    // Released — and the read renewed its lease, so it is genuinely young now.
+    // Age it again and the next pass takes it.
+    const old = new Date(Date.now() - 24 * 60 * 60_000);
+    utimesSync(path, old, old);
+    expect(await pruneSnapshotCache()).toBe(1);
+    expect(existsSync(path)).toBe(false);
   });
 
   test('a missing cache directory is not an error', async () => {

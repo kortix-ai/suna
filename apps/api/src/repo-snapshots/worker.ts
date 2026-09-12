@@ -15,7 +15,7 @@ import { projects } from '@kortix/db';
 import { and, asc, eq, ne, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
-import { getBranchCommitSha, parseGitHubRepoUrl } from '../projects/github';
+import { getBranchCommitSha, listRepositoryBranches, parseGitHubRepoUrl } from '../projects/github';
 import { withProjectGitAuth } from '../projects/lib/git';
 import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
 import { confirmBranchDeleted } from './prepare';
@@ -30,14 +30,17 @@ import {
 import { type RepoSnapshotCompression, normalizeRepoSnapshotIdentity } from './format';
 import type { RepoSnapshotRepository } from './identity';
 import {
-  clearPendingPushedRefsFields,
   discoveryMarkerSql,
+  effectiveGitSubtreeSql,
   ensureRepoSnapshotRepository,
   githubBackedProjectsSql,
   gitMetadataSubtree,
   pendingPushedRefs,
+  clearPendingOverflowExpr,
+  pendingPushedRefsOverflowed,
   readRepoSnapshotRepository,
   recordedRepositoryIdSql,
+  removePendingPushedRefsExpr,
   withCommit,
 } from './identity';
 import { publishRepoSnapshot } from './publish';
@@ -334,35 +337,142 @@ export async function discoverUnregisteredProjects(limit: number): Promise<numbe
     });
     // Branches a push parked while this project had no identity. Now it has
     // one, so they get real ref rows and the parking slot is released.
-    const parked = pendingPushedRefs(project);
-    if (parked.length > 0) {
+    await drainPendingPushedRefs(project, resolved.repository);
+  }
+  return discovered;
+}
+
+/**
+ * Give parked branches real ref rows, and release exactly those.
+ *
+ * Releasing the whole list would drop a branch a push parked while these were
+ * being scheduled, and would release refs a partial failure never scheduled.
+ */
+async function drainPendingPushedRefs(
+  project: ProjectRow,
+  repository: RepoSnapshotRepository,
+): Promise<number> {
+  // More branches were pushed than the parking slot holds, so the parked list
+  // is not the accepted set. Ask the provider for the authoritative one — the
+  // truncated names are a hint, the repository's own branch list is the answer.
+  if (pendingPushedRefsOverflowed(project)) {
+    const enumerated = await enumerateBranches(project, repository).catch((error) => {
+      logger.warn('[repo-snapshot] could not enumerate branches for an overflowed push', {
+        projectId: project.projectId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
+    if (enumerated) {
       const at = new Date();
-      let replayed = 0;
-      for (const ref of parked) {
-        await ensureRefReconcileScheduled({ identity: resolved.repository, ref, at }).then(
+      let scheduled = 0;
+      for (const ref of enumerated) {
+        await ensureRefReconcileScheduled({ identity: repository, ref, at }).then(
           () => {
-            replayed += 1;
+            scheduled += 1;
           },
           () => {},
         );
       }
-      if (replayed === parked.length) {
+      if (scheduled === enumerated.length) {
         await db
           .update(projects)
-          .set({
-            metadata: metadataMergeSubtree(gitMetadataSubtree(project), clearPendingPushedRefsFields()),
-          })
+          .set({ metadata: clearPendingOverflowExpr(project) })
+          .where(eq(projects.projectId, project.projectId))
+          .catch(() => {});
+        await db
+          .update(projects)
+          .set({ metadata: removePendingPushedRefsExpr(project, pendingPushedRefs(project)) })
           .where(eq(projects.projectId, project.projectId))
           .catch(() => {});
       }
-      logger.info('[repo-snapshot] replayed parked pushed refs', {
+      logger.info('[repo-snapshot] enumerated branches after an overflowed push', {
         projectId: project.projectId,
-        refs: parked.length,
-        replayed,
+        branches: enumerated.length,
+        scheduled,
       });
+      return scheduled;
     }
   }
-  return discovered;
+
+  const parked = pendingPushedRefs(project);
+  if (parked.length === 0) return 0;
+  const at = new Date();
+  const scheduled: string[] = [];
+  for (const ref of parked) {
+    await ensureRefReconcileScheduled({ identity: repository, ref, at }).then(
+      () => {
+        scheduled.push(ref);
+      },
+      () => {},
+    );
+  }
+  if (scheduled.length > 0) {
+    await db
+      .update(projects)
+      .set({ metadata: removePendingPushedRefsExpr(project, scheduled) })
+      .where(eq(projects.projectId, project.projectId))
+      .catch(() => {});
+  }
+  logger.info('[repo-snapshot] replayed parked pushed refs', {
+    projectId: project.projectId,
+    parked: parked.length,
+    scheduled: scheduled.length,
+  });
+  return scheduled.length;
+}
+
+/** Every branch the repository actually has, as the provider reports it. */
+async function enumerateBranches(
+  project: ProjectRow,
+  repository: RepoSnapshotRepository,
+): Promise<string[]> {
+  const authed = await withProjectGitAuth(project);
+  const coordinates = parseGitHubRepoUrl(authed.repoUrl) ?? {
+    owner: repository.owner,
+    repo: repository.repo,
+  };
+  const branches = await listRepositoryBranches({
+    owner: coordinates.owner,
+    repo: coordinates.repo,
+    auth: { token: authed.gitAuthToken ?? '' },
+  });
+  return branches.map((branch) => branch.name).filter(Boolean);
+}
+
+/**
+ * Projects that are REGISTERED and still carry parked branches.
+ *
+ * The discovery scan only sees unregistered projects, so a list parked by a
+ * push whose identity lookup failed — and whose project was registered by
+ * something else afterwards — would never be drained by anything.
+ */
+export async function drainRegisteredPendingRefs(limit: number): Promise<number> {
+  const candidates = await db
+    .select()
+    .from(projects)
+    .where(
+      and(
+        ne(projects.status, 'archived'),
+        githubBackedProjectsSql,
+        sql`${recordedRepositoryIdSql} ~ '^[0-9]{1,20}$'`,
+        sql`(
+          (jsonb_typeof(${effectiveGitSubtreeSql} -> 'snapshot_pending_refs') = 'array'
+           and jsonb_array_length(${effectiveGitSubtreeSql} -> 'snapshot_pending_refs') > 0)
+          or coalesce((${effectiveGitSubtreeSql} ->> 'snapshot_pending_overflow')::boolean, false)
+        )`,
+      ),
+    )
+    .orderBy(asc(projects.updatedAt))
+    .limit(Math.max(1, limit));
+
+  let drained = 0;
+  for (const project of candidates) {
+    const repository = readRepoSnapshotRepository(project).repository;
+    if (!repository) continue;
+    drained += await drainPendingPushedRefs(project, repository);
+  }
+  return drained;
 }
 
 /**
@@ -481,19 +591,38 @@ const workerState = globalThis as unknown as {
 let workerRunning = false;
 let workerKickScheduled = false;
 let workerRerunRequested = false;
+let workerStopped = false;
+/** The tick a trigger started, so a caller can wait for it to finish. */
+let workerTick: Promise<unknown> | null = null;
 
 function scheduleTriggeredTick(): void {
-  if (workerRunning || workerKickScheduled) return;
+  if (workerRunning || workerKickScheduled || workerStopped) return;
   workerKickScheduled = true;
   queueMicrotask(() => {
     workerKickScheduled = false;
     workerRerunRequested = false;
-    void runRepoSnapshotTick().catch((error) => {
+    if (workerStopped) return;
+    workerTick = runRepoSnapshotTick().catch((error) => {
       logger.error('[repo-snapshot] worker tick failed', {
         error: error instanceof Error ? error.message : String(error),
       });
     });
   });
+}
+
+/**
+ * Wait for whatever the worker is doing right now.
+ *
+ * A triggered tick is scheduled on a microtask and runs detached, so a caller
+ * that stops the worker has no way to know the last one has finished — a
+ * shutdown, or a test, otherwise races writes it can no longer see.
+ */
+export async function awaitRepoSnapshotWorkerIdle(): Promise<void> {
+  for (let attempt = 0; attempt < 50 && (workerTick || workerKickScheduled || workerRunning); attempt += 1) {
+    await workerTick?.catch(() => {});
+    if (!workerKickScheduled && !workerRunning) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }
 
 export function triggerRepoSnapshotWorker(): void {
@@ -539,6 +668,11 @@ export async function runRepoSnapshotTick(): Promise<{
         error: error instanceof Error ? error.message : String(error),
       });
     });
+    await drainRegisteredPendingRefs(batch).catch((error) => {
+      logger.warn('[repo-snapshot] parked-ref drain failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     return { published, reconciled, discovered };
   } finally {
     workerRunning = false;
@@ -549,6 +683,7 @@ export async function runRepoSnapshotTick(): Promise<{
 export function startRepoSnapshotWorker(): void {
   if (!repoSnapshotWorkerEnabled()) return;
   stopRepoSnapshotWorker();
+  workerStopped = false;
   const interval = Math.max(1_000, config.KORTIX_REPO_SNAPSHOT_WORKER_INTERVAL_MS ?? 5_000);
   triggerRepoSnapshotWorker();
   workerState.__kortixRepoSnapshotWorkerTimer = setInterval(() => {
@@ -557,6 +692,10 @@ export function startRepoSnapshotWorker(): void {
 }
 
 export function stopRepoSnapshotWorker(): void {
+  // Stops EVERYTHING it started: the interval, and any triggered tick that has
+  // not begun. A tick already running finishes; `awaitRepoSnapshotWorkerIdle`
+  // is how a caller waits for it.
+  workerStopped = true;
   if (workerState.__kortixRepoSnapshotWorkerTimer) {
     clearInterval(workerState.__kortixRepoSnapshotWorkerTimer);
     workerState.__kortixRepoSnapshotWorkerTimer = null;

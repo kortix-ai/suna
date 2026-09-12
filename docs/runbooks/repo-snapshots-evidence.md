@@ -599,6 +599,34 @@ a second connection holds the branch lock, renames the row and records a newer
 SHA while a delayed observation waits on it; the observation then returns the
 canonical row and creates nothing.
 
+### Materialization, rerun after the fixes
+
+`docs/benchmarks/repo-snapshots-2026-09-12-after-auth/` — 960 samples, 0 errors,
+same fixtures, revisions, runtime, endpoint and rounds as the preserved
+baseline in `docs/benchmarks/repo-snapshots/` (also 960 samples, untouched).
+`versus-baseline.md` compares them arm by arm.
+
+Every arm moved +2% to +10% between the two runs, INCLUDING the two Git arms
+this feature never touches — host load between runs, not a change in either
+path. The component ratio is unchanged: a local snapshot read is 42–53% faster
+than a local synthetic Git clone of the same revision.
+
+This harness never acquires a GitHub token and never provisions a session, so it
+cannot measure the startup authentication that was removed. Its purpose here is
+the negative result: the readiness, ordering and image work did not regress
+materialization.
+
+### What is still unfixable by a bound alone
+
+A push can name more branches than any bounded parking slot on the project row
+should hold. Raising the bound is not a fix — a row every session start reads
+cannot grow without limit. So the truncation is RECORDED
+(`snapshot_pending_overflow`), and recovery does not trust the truncated list:
+it enumerates the repository's branches from the provider, which is the
+authoritative set, and schedules all of them. A 1500-branch push during an
+identity outage parks 1000 names, flags the overflow, and recovers all 1500 ref
+rows. Proved in `integration-repo-snapshot-discovery.test.ts`.
+
 ### Outstanding
 
 Real HTTP GitHub-App and custom-image startup with Git blocked on both sides,

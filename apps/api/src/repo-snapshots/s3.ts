@@ -104,6 +104,11 @@ let cachedCredentials: { value: S3Credentials; expiresAt: number } | null = null
  * Chain credentials are cached for 5 minutes: they are refreshed by the
  * provider itself and the publisher signs many requests per build.
  */
+/** Longest a resolved credential is reused, whatever its own expiry says. */
+const CREDENTIAL_CACHE_MAX_MS = 5 * 60_000;
+/** Margin before a credential's own expiry; covers signing and flight time. */
+const CREDENTIAL_EXPIRY_SKEW_MS = 60_000;
+
 export async function resolveS3Credentials(now = Date.now()): Promise<S3Credentials> {
   const accessKeyId = (config.KORTIX_REPO_SNAPSHOT_ACCESS_KEY_ID ?? '').trim();
   const secretAccessKey = (config.KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY ?? '').trim();
@@ -115,7 +120,23 @@ export async function resolveS3Credentials(now = Date.now()): Promise<S3Credenti
     secretAccessKey: resolved.secretAccessKey,
     ...(resolved.sessionToken ? { sessionToken: resolved.sessionToken } : {}),
   };
-  cachedCredentials = { value, expiresAt: now + 5 * 60_000 };
+  // Honour the credential's OWN expiry, minus a skew for the time between
+  // signing and the request reaching S3. A fixed window would keep serving a
+  // role credential that expires in 60 seconds for five minutes, and every
+  // signature made with it is a 403 — the failure looks like a permissions
+  // problem and is a clock problem.
+  const ceiling = now + CREDENTIAL_CACHE_MAX_MS;
+  const own = resolved.expiration ? resolved.expiration.getTime() - CREDENTIAL_EXPIRY_SKEW_MS : ceiling;
+  if (own <= now) {
+    // Already expired, or expiring inside the flight time. Signing with it
+    // produces a 403 that reads like a permissions failure; saying so here
+    // names the actual problem — the credential source is handing out
+    // credentials it should have refreshed.
+    throw new Error(
+      `resolved AWS credentials are already expired (expiry ${resolved.expiration?.toISOString() ?? 'unknown'})`,
+    );
+  }
+  cachedCredentials = { value, expiresAt: Math.min(ceiling, own) };
   return value;
 }
 

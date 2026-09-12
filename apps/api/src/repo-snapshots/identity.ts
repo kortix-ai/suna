@@ -7,7 +7,7 @@
  * GitHub API call back on the critical path this feature exists to remove.
  */
 import { projects } from '@kortix/db';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { getProjectGitRemote, resolveUpstreamUrl, withProjectGitAuth } from '../projects/lib/git';
 import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
@@ -237,11 +237,15 @@ export async function ensureRepoSnapshotRepository(
  * on the PROJECT instead, which is the only key that exists at that moment, and
  * replayed as soon as an identity is known.
  *
- * Bounded, because this is metadata on a hot row: a bulk push parks its first
- * `MAX_PENDING_REFS` branches and the rest are covered by the next push or the
- * default-branch repair.
+ * Bounded, because this is metadata on a hot row. The bound is deliberately far
+ * above any real push — a branch name is tens of bytes, so a thousand of them
+ * is a few tens of kilobytes — and the union is computed in SQL against the
+ * CURRENT value, so several pushes during one outage accumulate rather than
+ * overwrite. Past the bound the oldest names by sort order are dropped and the
+ * caller says so; the alternative is unbounded metadata on a row every session
+ * start reads.
  */
-const MAX_PENDING_REFS = 100;
+const MAX_PENDING_REFS = 1000;
 
 export function pendingPushedRefs(project: ProjectRow): string[] {
   const meta = (project.metadata ?? {}) as Record<string, any>;
@@ -251,20 +255,81 @@ export function pendingPushedRefs(project: ProjectRow): string[] {
   return raw.filter((ref): ref is string => typeof ref === 'string' && ref.length > 0);
 }
 
-/** The sub-patch that parks these branches, merged with anything already parked. */
-export function pendingPushedRefsFields(
-  project: ProjectRow,
-  refs: string[],
-): Record<string, unknown> {
-  const merged = [
-    ...new Set([...pendingPushedRefs(project), ...refs.map((ref) => ref.replace(/^refs\/heads\//, ''))]),
-  ].slice(0, MAX_PENDING_REFS);
-  return { snapshot_pending_refs: merged };
+/**
+ * ADD these branches to whatever is already parked, in SQL.
+ *
+ * Merging in JavaScript reads the array off the `ProjectRow` the caller was
+ * handed, which is a snapshot from before the previous push wrote its own — so
+ * two pushes arriving during the same outage each wrote their own list and the
+ * second erased the first. The union is computed against the CURRENT row value,
+ * under that row's write lock, so concurrent pushes accumulate instead of
+ * overwriting.
+ */
+export function addPendingPushedRefsExpr(project: ProjectRow, refs: string[]): SQL {
+  const key = gitMetadataSubtree(project);
+  const additions = [...new Set(refs.map((ref) => ref.replace(/^refs\/heads\//, '')))].filter(Boolean);
+  const subtree = sql`coalesce(${projects.metadata} -> ${key}, '{}'::jsonb)`;
+  const union = sql`(
+    select ref from (
+      select jsonb_array_elements_text(
+        case when jsonb_typeof(${subtree} -> 'snapshot_pending_refs') = 'array'
+             then ${subtree} -> 'snapshot_pending_refs' else '[]'::jsonb end) as ref
+      union
+      select jsonb_array_elements_text(${JSON.stringify(additions)}::jsonb) as ref
+    ) all_refs
+  )`;
+  const merged = sql`(
+    select coalesce(jsonb_agg(ref order by ref), '[]'::jsonb)
+    from (select ref from ${union} u order by ref limit ${MAX_PENDING_REFS}) bounded
+  )`;
+  // Past the bound the names are dropped, and THAT is recorded: the drain then
+  // re-enumerates the repository's branches from the provider, which is the
+  // authoritative list, instead of trusting a truncated one. Nothing accepted is
+  // lost, and the hot row stays bounded.
+  const overflowed = sql`(
+    (select count(*) from ${union} u) > ${MAX_PENDING_REFS}
+    or coalesce((${subtree} ->> 'snapshot_pending_overflow')::boolean, false)
+  )`;
+  return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
+    ${subtree} || jsonb_build_object('snapshot_pending_refs', ${merged})
+               || jsonb_build_object('snapshot_pending_overflow', ${overflowed}))`;
 }
 
-/** The sub-patch that clears them, once they have somewhere durable to live. */
-export function clearPendingPushedRefsFields(): Record<string, unknown> {
-  return { snapshot_pending_refs: null };
+/** Did a push park more branches than the bound allows? */
+export function pendingPushedRefsOverflowed(project: ProjectRow): boolean {
+  const meta = (project.metadata ?? {}) as Record<string, any>;
+  return meta[gitMetadataSubtree(project)]?.snapshot_pending_overflow === true;
+}
+
+/**
+ * REMOVE exactly these branches from the parked list, in SQL.
+ *
+ * Clearing the whole key would drop branches a push parked while these were
+ * being scheduled, and would also clear on a partial success.
+ */
+export function removePendingPushedRefsExpr(project: ProjectRow, refs: string[]): SQL {
+  const key = gitMetadataSubtree(project);
+  const removals = [...new Set(refs.map((ref) => ref.replace(/^refs\/heads\//, '')))].filter(Boolean);
+  const subtree = sql`coalesce(${projects.metadata} -> ${key}, '{}'::jsonb)`;
+  const remaining = sql`(
+    select coalesce(jsonb_agg(ref order by ref), '[]'::jsonb)
+    from (
+      select jsonb_array_elements_text(
+        case when jsonb_typeof(${subtree} -> 'snapshot_pending_refs') = 'array'
+             then ${subtree} -> 'snapshot_pending_refs' else '[]'::jsonb end) as ref
+    ) parked
+    where ref <> all (array(select jsonb_array_elements_text(${JSON.stringify(removals)}::jsonb)))
+  )`;
+  return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
+    ${subtree} || jsonb_build_object('snapshot_pending_refs', ${remaining}))`;
+}
+
+/** Clear the overflow marker, once the authoritative enumeration has run. */
+export function clearPendingOverflowExpr(project: ProjectRow): SQL {
+  const key = gitMetadataSubtree(project);
+  const subtree = sql`coalesce(${projects.metadata} -> ${key}, '{}'::jsonb)`;
+  return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
+    ${subtree} - 'snapshot_pending_overflow')`;
 }
 
 export function withCommit(

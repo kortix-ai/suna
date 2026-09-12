@@ -64,6 +64,8 @@ const legacyAppRepoId = String(930000000 + Math.floor(Math.random() * 9000000));
 const pushRepoId = String(920000000 + Math.floor(Math.random() * 9000000));
 /** A project whose first push arrives while GitHub is failing. */
 const parkedRepoId = String(925000000 + Math.floor(Math.random() * 9000000));
+/** A project whose push exceeds the parking bound. */
+const overflowRepoId = String(935000000 + Math.floor(Math.random() * 9000000));
 /** Registered, but its ref row never got written. Nothing else can find it. */
 const orphanRepoId = String(950000000 + Math.floor(Math.random() * 9000000));
 /** A legacy project that already carries its id under `github.repo_id`. */
@@ -74,6 +76,8 @@ let githubHealthy = false;
 const fixtureSha = 'c'.repeat(39) + '7';
 /** Flipped by the parked-push test to fail the identity lookup on demand. */
 let parkedProjectFails = false;
+/** How many branches the stub says the repository has. */
+let overflowBranchCount = 0;
 const lookups: string[] = [];
 /** Any GitHub path outside the fixture namespace. Must stay empty. */
 const foreignCalls: string[] = [];
@@ -91,6 +95,7 @@ const ownedRepositoryIds = new Set<string>([
   legacyAppRepoId,
   pushRepoId,
   parkedRepoId,
+  overflowRepoId,
   orphanRepoId,
   legacyDoneRepoId,
 ]);
@@ -182,6 +187,19 @@ beforeAll(async () => {
       if (!githubHealthy || /discovery-broken/.test(path) || parkedProjectFails) {
         return new Response('{"message":"Server Error"}', { status: 500 });
       }
+      // The repository's authoritative branch list, paged like GitHub's.
+      const branchList = path.match(/^\/repos\/kortix-ai\/([^/]+)\/branches$/);
+      if (branchList) {
+        const url = new URL(request.url);
+        const perPage = Number(url.searchParams.get('per_page') ?? '100');
+        const page = Number(url.searchParams.get('page') ?? '1');
+        const names = Array.from({ length: overflowBranchCount }, (_, index) => `bulk-${index}`);
+        const slice = names.slice((page - 1) * perPage, page * perPage);
+        return new Response(JSON.stringify(slice.map((name) => ({ name }))), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       const refMatch = path.match(/^\/repos\/kortix-ai\/([^/]+)\/git\/ref\/heads\/(.+)$/);
       if (refMatch) {
         // One branch that always fails, to prove one bad ref cannot take the
@@ -200,7 +218,9 @@ beforeAll(async () => {
             ? pushRepoId
             : slug === 'discovery-parked'
               ? parkedRepoId
-              : goodRepoId;
+              : slug === 'discovery-overflow'
+                ? overflowRepoId
+                : goodRepoId;
       return new Response(JSON.stringify({ id: Number(id), full_name: `kortix-ai/${slug}` }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -277,6 +297,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // `prepareRevision` triggers the background worker on a timer. Stop it and
+  // let anything already in flight finish, or a tick lands after cleanup and
+  // writes a row for a project this suite has just deleted.
+  const { awaitRepoSnapshotWorkerIdle, stopRepoSnapshotWorker } = await import('../repo-snapshots/worker');
+  stopRepoSnapshotWorker();
+  await awaitRepoSnapshotWorkerIdle();
   globalThis.fetch = realFetch;
   server?.stop(true);
   for (const id of created) {
@@ -286,8 +312,13 @@ afterAll(async () => {
       .catch(() => {});
     await db.execute(sql`delete from kortix.projects where project_id = ${id}`).catch(() => {});
   }
-  // Only ids this test created. Deleting whatever appeared since beforeAll
+  // Fixture-scoped, two ways: the ids this test generated, and rows carrying a
+  // fixture repository NAME — which only this suite creates, and which catches
+  // a row written under an id the stub chose. Never a before/after diff: that
   // would take a concurrent writer's rows with it.
+  await db
+    .execute(sql`delete from kortix.repo_snapshot_refs where owner = 'kortix-ai' and repo like 'discovery-%'`)
+    .catch(() => {});
   for (const repositoryId of ownedRepositoryIds) {
     await db
       .execute(sql`delete from kortix.repo_snapshots where repository_id = ${repositoryId}`)
@@ -500,6 +531,49 @@ describe('a failed first preparation recovers without another webhook', () => {
       where repository_id = ${parkedRepoId}`)) as unknown as Array<{ n: number }>;
     expect(stored[0]?.n).toBe(25);
     expect(pendingPushedRefs((await projectRow(projectId)) as never)).toEqual([]);
+  });
+
+  test('a push past the parking bound recovers from the repository itself', async () => {
+    if (!guard()) return;
+    githubHealthy = true;
+    const { prepareRevisionsForPush } = await import('../repo-snapshots/prepare');
+    const { pendingPushedRefs, pendingPushedRefsOverflowed } = await import('../repo-snapshots/identity');
+    const { drainRegisteredPendingRefs } = await import('../repo-snapshots/worker');
+    const projectId = await seedProject('discovery-overflow');
+    overflowBranchCount = 1500;
+    const refs = Array.from({ length: overflowBranchCount }, (_, index) => `refs/heads/bulk-${index}`);
+
+    // The identity lookup fails, so all 1500 branches have to be remembered
+    // somewhere — and 1500 names on a row every session start reads is not a
+    // place to remember them.
+    parkedProjectFails = true;
+    await prepareRevisionsForPush((await projectRow(projectId)) as never, refs);
+    parkedProjectFails = false;
+
+    const parked = await projectRow(projectId);
+    expect(pendingPushedRefs(parked as never).length).toBeLessThanOrEqual(1000);
+    // The truncation is RECORDED, which is what makes it recoverable.
+    expect(pendingPushedRefsOverflowed(parked as never)).toBe(true);
+
+    // Registration, then the drain: because the list was truncated, recovery
+    // asks the repository for its branches rather than trusting what fitted.
+    await resetRepoSnapshotDiscoveryBackoff(created);
+    for (let pass = 0; pass < 12; pass += 1) {
+      if (readRepoSnapshotRepository((await projectRow(projectId)) as never).repository) break;
+      await discoverUnregisteredProjects(1);
+    }
+    const repositoryId = readRepoSnapshotRepository((await projectRow(projectId)) as never).repository
+      ?.repositoryId;
+    expect(repositoryId).toBeTruthy();
+    ownedRepositoryIds.add(repositoryId as string);
+    await drainRegisteredPendingRefs(50);
+
+    const stored = (await db.execute(sql`
+      select count(*)::int as n from kortix.repo_snapshot_refs
+      where repository_id = ${repositoryId}`)) as unknown as Array<{ n: number }>;
+    expect(stored[0]?.n).toBe(overflowBranchCount);
+    expect(pendingPushedRefsOverflowed((await projectRow(projectId)) as never)).toBe(false);
+    overflowBranchCount = 0;
   });
 
   test('the worker tick runs both scans', async () => {

@@ -17,12 +17,11 @@ import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
 import {
-  clearPendingPushedRefsFields,
+  addPendingPushedRefsExpr,
   ensureRepoSnapshotRepository,
-  gitMetadataSubtree,
   pendingPushedRefs,
-  pendingPushedRefsFields,
   readRepoSnapshotRepository,
+  removePendingPushedRefsExpr,
 } from './identity';
 import { beginRefObservation, ensureRefReconcileScheduled, observeRepoRef } from './store';
 import { prepareRevision, repoSnapshotWorkerEnabled, triggerRepoSnapshotWorker } from './worker';
@@ -231,12 +230,7 @@ export async function prepareRevisionsForPush(
   if (!alreadyRegistered) {
     await db
       .update(projects)
-      .set({
-        metadata: metadataMergeSubtree(
-          gitMetadataSubtree(project),
-          pendingPushedRefsFields(project, branches),
-        ),
-      })
+      .set({ metadata: addPendingPushedRefsExpr(project, branches) })
       .where(eq(projects.projectId, project.projectId))
       .catch((error) => {
         logger.warn('[repo-snapshot] could not park pushed refs', {
@@ -256,9 +250,17 @@ export async function prepareRevisionsForPush(
     return { prepared: 0, scheduled: 0 };
   }
 
-  // Anything parked by an earlier push that could not be recorded.
-  const replayed = pendingPushedRefs(project).map((ref) => `refs/heads/${ref}`);
+  // Anything parked by an earlier push that could not be recorded — read back
+  // from the row, not from the one this call was handed, so a push that landed
+  // in between is included rather than lost.
+  const [current] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.projectId, project.projectId))
+    .limit(1);
+  const replayed = pendingPushedRefs((current ?? project) as ProjectRow).map((ref) => `refs/heads/${ref}`);
   const all = [...new Set([...branches, ...replayed])];
+  const scheduledRefs: string[] = [];
 
   const at = new Date();
   let scheduled = 0;
@@ -266,6 +268,7 @@ export async function prepareRevisionsForPush(
     await ensureRefReconcileScheduled({ identity: context.repository, ref, at }).then(
       () => {
         scheduled += 1;
+        scheduledRefs.push(ref);
       },
       (error) => {
         logger.warn('[repo-snapshot] could not record a pushed ref', {
@@ -277,13 +280,13 @@ export async function prepareRevisionsForPush(
     );
   }
 
-  if (!alreadyRegistered && scheduled > 0) {
-    // They have ref rows now, which is a better home than project metadata.
+  if (scheduledRefs.length > 0) {
+    // Release exactly what now has a ref row. Clearing the whole list would
+    // drop a branch parked by a push that arrived while these were being
+    // scheduled, and would release refs a partial failure never scheduled.
     await db
       .update(projects)
-      .set({
-        metadata: metadataMergeSubtree(gitMetadataSubtree(project), clearPendingPushedRefsFields()),
-      })
+      .set({ metadata: removePendingPushedRefsExpr(project, scheduledRefs) })
       .where(eq(projects.projectId, project.projectId))
       .catch(() => {});
   }

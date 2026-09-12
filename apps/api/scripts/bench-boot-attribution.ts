@@ -36,20 +36,48 @@
  *   BENCH_API       API base origin (default https://api.kortix.com).
  *   BENCH_TOKEN     kortix_pat_… Required. Read from env only, never from a
  *                   config file — see the comment on TOKEN below.
- *   BENCH_ROUNDS    boots per target (default 3).
+ *   BENCH_ROUNDS    boots per target (default 30; 3 is a smoke run, not a sample).
  *   BENCH_TIMEOUT_S per-boot ceiling (default 180).
  *   BENCH_KEEP      "1" to leave the sessions behind (default: delete them).
  *   BENCH_OUT       write the raw JSON here (default: stdout only).
+ *   BENCH_BODY      JSON body for the session create (default `{}`). A target
+ *                   may override it with its own `body`.
+ *   BENCH_ARM_BUILD label for the API build under test, recorded with every
+ *                   boot — the only way a three-arm comparison across builds is
+ *                   attributable after the fact.
+ *   BENCH_PAIRED    "0" to run targets in parallel (the old behaviour). The
+ *                   default interleaves them round by round.
  *
- * Boots are sequential per target and targets run in parallel, so the two
- * providers see comparable control-plane load without self-contention.
+ * ARMS. A target carries an `expect` of `snapshot` or `git`, which the harness
+ * VERIFIES per boot instead of trusting: a `snapshot` boot must report a
+ * repository snapshot, a `git` boot must not. A boot that disagrees with its
+ * label is counted as a mis-armed boot and fails the run, because a
+ * three-arm comparison whose arms silently collapsed into one is worse than no
+ * measurement at all. With `KORTIX_REPO_SNAPSHOT_COHORT` the two arms can be
+ * two projects on ONE running API, which removes the restart confound; the
+ * third arm (an older build) is a second API process, labelled through
+ * `BENCH_ARM_BUILD`.
+ *
+ * EXIT STATUS is non-zero when any boot failed, timed out, or was mis-armed,
+ * and the raw JSON is written BEFORE exiting so a failed run still leaves its
+ * evidence behind.
+ *
+ * Boots are interleaved across targets round by round (paired order), so a
+ * drift in provider or control-plane load lands on every arm equally instead of
+ * on whichever arm ran second.
  */
 import { writeFileSync } from 'node:fs';
 import { SQL } from 'bun';
 import { classifyBootImage, type BootImageKind } from './boot-image-kind';
 
 const API = (process.env.BENCH_API ?? 'https://api.kortix.com').replace(/\/+$/, '');
-const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 3);
+const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 30);
+/** Poll resolution, reported with the results: no measurement is finer than this. */
+const DB_POLL_MS = Number(process.env.BENCH_DB_POLL_MS ?? 100);
+const HEALTH_POLL_MS = Number(process.env.BENCH_HEALTH_POLL_MS ?? 200);
+const ARM_BUILD = process.env.BENCH_ARM_BUILD ?? 'unspecified';
+const PAIRED = process.env.BENCH_PAIRED !== '0';
+const DEFAULT_BODY = process.env.BENCH_BODY ?? '{}';
 const TIMEOUT_MS = Number(process.env.BENCH_TIMEOUT_S ?? 180) * 1000;
 const KEEP = process.env.BENCH_KEEP === '1';
 const DB_URL = process.env.BENCH_DB_URL ?? '';
@@ -65,7 +93,20 @@ const DB_URL = process.env.BENCH_DB_URL ?? '';
 //      js/file-data-in-outbound-request), rather than suppressing the alert.
 const TOKEN = (process.env.BENCH_TOKEN ?? '').trim();
 
-interface Target { label: string; projectId: string }
+interface Target {
+  label: string;
+  projectId: string;
+  /**
+   * What this arm is supposed to exercise. Verified per boot, never assumed:
+   * `snapshot` requires the boot to report a repository snapshot, `git`
+   * requires it not to. Omit to record whatever happens without judging it.
+   */
+  expect?: 'snapshot' | 'git';
+  /** Session-create body for this arm. Overrides `BENCH_BODY`. */
+  body?: Record<string, unknown>;
+  /** Free-form, recorded with every boot: the pinned SHA, the mode, the image. */
+  meta?: Record<string, unknown>;
+}
 const TARGETS: Target[] = JSON.parse(process.env.BENCH_TARGETS ?? '[]');
 
 if (!TARGETS.length || !DB_URL || !TOKEN) {
@@ -115,6 +156,10 @@ interface Boot {
   } | null;
   gitNetworkOps: number | null;
   error?: string;
+  /** The arm this boot belongs to, and the build it ran against. */
+  arm: { label: string; expect?: 'snapshot' | 'git'; build: string; meta?: Record<string, unknown> };
+  /** Set when the boot did not exercise the arm it was labelled with. */
+  misArmed?: string;
 }
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
@@ -132,6 +177,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
     apiCreateMs: null, vmCreatedMs: null, rowActiveMs: null,
     daemonReachableMs: null, runtimeReadyMs: null, hostMarks: null, bootTimeline: null,
     repoSnapshot: null, gitNetworkOps: null,
+    arm: { label: target.label, expect: target.expect, build: ARM_BUILD, meta: target.meta },
   };
   const t0 = performance.now();
   const at = () => Math.round(performance.now() - t0);
@@ -139,7 +185,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
   try {
     const res = await api(`/v1/projects/${target.projectId}/sessions`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: target.body ? JSON.stringify(target.body) : DEFAULT_BODY,
     });
     boot.apiCreateMs = at();
     const body: any = await res.json().catch(() => null);
@@ -170,7 +216,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
             if (hb?.runtimeReady) { boot.runtimeReadyMs = at(); return; }
           }
         } catch { /* daemon not up yet */ }
-        await sleep(200);
+        await sleep(HEALTH_POLL_MS);
       }
     };
 
@@ -197,7 +243,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
       // Stop DB polling once the host side is fully settled; the health poll owns
       // the rest of the wall clock.
       if (boot.rowActiveMs !== null && externalId) { await healthPolling; break; }
-      await sleep(100);
+      await sleep(DB_POLL_MS);
     }
     if (healthPolling) await healthPolling;
     if (boot.runtimeReadyMs === null) boot.error = 'timeout before runtimeReady';
@@ -320,24 +366,90 @@ function report(boots: Boot[]): void {
   }
 }
 
-async function main() {
-  console.error(`session-boot attribution — API ${API}, ${ROUNDS} rounds/target`);
-  console.error(`targets: ${TARGETS.map((t) => `${t.label}(${t.projectId.slice(0, 8)})`).join(', ')}\n`);
+/**
+ * Did this boot exercise the arm it was labelled with?
+ *
+ * Returns the reason it did not, or null. A `snapshot` arm whose boots quietly
+ * fell back to Git measures Git twice and reports it as a comparison.
+ */
+function armMismatch(boot: Boot): string | null {
+  if (!boot.arm.expect || boot.error) return null;
+  const used = boot.repoSnapshot?.used === true;
+  if (boot.arm.expect === 'snapshot') {
+    if (!boot.repoSnapshot) return 'expected a snapshot boot; the daemon reported none';
+    if (!used) return `expected a snapshot boot; fell back (${boot.repoSnapshot.fallbackReason ?? 'no reason given'})`;
+    return null;
+  }
+  return used ? 'expected a Git boot; the session used a snapshot' : null;
+}
 
-  const results = await Promise.all(
-    TARGETS.map(async (t) => {
-      const out: Boot[] = [];
-      for (let r = 1; r <= ROUNDS; r++) {
-        console.error(`[${t.label}] round ${r}/${ROUNDS} …`);
-        out.push(await measureBoot(t, r));
-      }
-      return out;
-    }),
+async function main() {
+  console.error(`session-boot attribution — API ${API}, ${ROUNDS} rounds/target, build ${ARM_BUILD}`);
+  console.error(
+    `targets: ${TARGETS.map((t) => `${t.label}(${t.projectId.slice(0, 8)}${t.expect ? `, expect ${t.expect}` : ''})`).join(', ')}`,
   );
-  const boots = results.flat();
+  console.error(
+    `poll resolution: db ${DB_POLL_MS}ms, health ${HEALTH_POLL_MS}ms — no stage is measured finer than this\n`,
+  );
+
+  const boots: Boot[] = [];
+  if (PAIRED) {
+    // Interleaved: every round runs one boot per arm, in order. Provider and
+    // control-plane drift then lands on all arms equally instead of on
+    // whichever one happened to run second.
+    for (let r = 1; r <= ROUNDS; r++) {
+      for (const t of TARGETS) {
+        console.error(`[${t.label}] round ${r}/${ROUNDS} …`);
+        boots.push(await measureBoot(t, r));
+      }
+    }
+  } else {
+    const results = await Promise.all(
+      TARGETS.map(async (t) => {
+        const out: Boot[] = [];
+        for (let r = 1; r <= ROUNDS; r++) {
+          console.error(`[${t.label}] round ${r}/${ROUNDS} …`);
+          out.push(await measureBoot(t, r));
+        }
+        return out;
+      }),
+    );
+    boots.push(...results.flat());
+  }
+
+  for (const boot of boots) {
+    const mismatch = armMismatch(boot);
+    if (mismatch) boot.misArmed = mismatch;
+  }
   report(boots);
 
-  const json = JSON.stringify({ api: API, rounds: ROUNDS, boots }, null, 1);
+  const failed = boots.filter((b) => b.error);
+  const misArmed = boots.filter((b) => b.misArmed);
+  const incomplete = boots.filter((b) => !b.error && b.runtimeReadyMs === null);
+  if (failed.length || misArmed.length || incomplete.length) {
+    console.error(
+      `\nNOT A CLEAN RUN: ${failed.length} failed, ${incomplete.length} never reached runtimeReady, ` +
+        `${misArmed.length} mis-armed of ${boots.length} boots`,
+    );
+    for (const b of misArmed.slice(0, 10)) console.error(`  mis-armed ${b.target} r${b.round}: ${b.misArmed}`);
+    for (const b of failed.slice(0, 10)) console.error(`  failed ${b.target} r${b.round}: ${b.error}`);
+  }
+
+  const json = JSON.stringify(
+    {
+      api: API,
+      rounds: ROUNDS,
+      build: ARM_BUILD,
+      paired: PAIRED,
+      pollMs: { db: DB_POLL_MS, health: HEALTH_POLL_MS },
+      timeoutMs: TIMEOUT_MS,
+      arms: TARGETS.map((t) => ({ label: t.label, expect: t.expect, meta: t.meta })),
+      counts: { boots: boots.length, failed: failed.length, incomplete: incomplete.length, misArmed: misArmed.length },
+      boots,
+    },
+    null,
+    1,
+  );
   if (process.env.BENCH_OUT) {
     writeFileSync(process.env.BENCH_OUT, json);
     console.error(`\nraw → ${process.env.BENCH_OUT}`);
@@ -345,6 +457,9 @@ async function main() {
     console.log(json);
   }
   await sql.close();
+  // Evidence is written FIRST, then the status: a run with failed or mis-armed
+  // boots must not look successful, and must not lose what it did measure.
+  if (failed.length || misArmed.length || incomplete.length) process.exit(2);
 }
 
 main().catch(async (err) => {
