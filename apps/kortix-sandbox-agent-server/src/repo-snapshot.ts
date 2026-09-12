@@ -42,6 +42,27 @@ const TRANSFER_TIMEOUT_MS = 180_000
 const GIT_CHECK_TIMEOUT_MS = 20_000
 const MAX_ATTEMPTS = 3
 
+/**
+ * Verification Git invocations run with the repository's smudge filters
+ * DISABLED.
+ *
+ * `.gitattributes` is archive-supplied content and a filter is a command, so
+ * letting `git status` run one here would execute code the archive chose — the
+ * same thing the hook check below refuses. It is also what makes an LFS
+ * repository unverifiable on an image with no `git-lfs`: the status call fails
+ * with "git-lfs: command not found" and a perfectly good snapshot is rejected.
+ *
+ * This is scoped to VERIFICATION. The session's own Git, and the agent's, read
+ * the repository config normally afterwards, so LFS behaves exactly as it does
+ * on the clone path.
+ */
+const VERIFY_GIT_FILTER_OVERRIDES = [
+  '-c', 'filter.lfs.required=false',
+  '-c', 'filter.lfs.smudge=cat',
+  '-c', 'filter.lfs.clean=cat',
+  '-c', 'filter.lfs.process=',
+]
+
 export type RepoSnapshotCompression = 'gzip' | 'zstd'
 
 export interface RepoSnapshotDescriptor {
@@ -467,7 +488,11 @@ async function verifyStage(stage: string, descriptor: RepoSnapshotDescriptor): P
   const hooks = await lstat(`${stage}/.git/hooks`).catch(() => null)
   if (hooks) throw new RepoSnapshotError('snapshot archive carries Git hooks', 'unsafe_archive', false)
 
-  const head = await runProcess('git', ['-C', stage, 'rev-parse', '--verify', 'HEAD'], GIT_CHECK_TIMEOUT_MS)
+  const head = await runProcess(
+    'git',
+    ['-C', stage, ...VERIFY_GIT_FILTER_OVERRIDES, 'rev-parse', '--verify', 'HEAD'],
+    GIT_CHECK_TIMEOUT_MS,
+  )
   if (head.stdout.trim() !== descriptor.commitSha) {
     throw new RepoSnapshotError(
       `snapshot HEAD is ${head.stdout.trim() || 'unreadable'}, expected ${descriptor.commitSha}`,
@@ -475,7 +500,11 @@ async function verifyStage(stage: string, descriptor: RepoSnapshotDescriptor): P
       false,
     )
   }
-  const status = await runProcess('git', ['-C', stage, 'status', '--porcelain'], GIT_CHECK_TIMEOUT_MS)
+  const status = await runProcess(
+    'git',
+    ['-C', stage, ...VERIFY_GIT_FILTER_OVERRIDES, 'status', '--porcelain'],
+    GIT_CHECK_TIMEOUT_MS,
+  )
   if (status.stdout.trim() !== '') {
     throw new RepoSnapshotError('snapshot working tree is not clean after extraction', 'dirty_checkout', false)
   }

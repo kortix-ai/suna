@@ -261,6 +261,103 @@ describe('buildRepoSnapshot', () => {
     }
   }, 120_000);
 
+  test('preserves current LFS-pointer and submodule semantics, and reports them', async () => {
+    useIsolatedMirror();
+    const root = mkdtempSync(join(tmpdir(), 'kortix-lfs-source-'));
+    roots.push(root);
+
+    // A real submodule needs a real second repository.
+    const inner = join(root, 'inner');
+    mkdirSync(inner);
+    git(['init', '-b', 'main'], inner);
+    writeFileSync(join(inner, 'inner.txt'), 'inner\n');
+    git(['add', '-A'], inner);
+    git(['commit', '-m', 'inner'], inner);
+
+    const source = join(root, 'source');
+    mkdirSync(source);
+    git(['init', '-b', 'main'], source);
+    writeFileSync(join(source, 'kortix.yaml'), 'kortix_version: 2\n');
+    // An LFS POINTER, which is what a checkout without git-lfs installed
+    // contains. The producer must ship the pointer verbatim: replacing it with
+    // the real object, or dropping it, would both change what the session sees
+    // relative to the Git path this replaces.
+    writeFileSync(join(source, '.gitattributes'), '*.psd filter=lfs diff=lfs merge=lfs -text\n');
+    writeFileSync(
+      join(source, 'art.psd'),
+      'version https://git-lfs.github.com/spec/v1\noid sha256:' + 'a'.repeat(64) + '\nsize 1234\n',
+    );
+    git(['-c', 'protocol.file.allow=always', 'submodule', 'add', '--quiet', inner, 'vendor/inner'], source);
+    // Stage with the LFS filter neutralised. That is not a workaround: it is
+    // exactly the state of a machine with no `git-lfs` binary, which is the
+    // environment the producer runs in and the reason the working tree holds a
+    // POINTER rather than the object. With the filter live, `git add` fails
+    // with "git-lfs: command not found" before anything can be committed.
+    const lfsOff = [
+      '-c', 'filter.lfs.required=false',
+      '-c', 'filter.lfs.clean=cat',
+      '-c', 'filter.lfs.smudge=cat',
+      '-c', 'filter.lfs.process=',
+    ];
+    git([...lfsOff, 'add', '-A'], source);
+    git([...lfsOff, 'commit', '-m', 'lfs pointer + submodule'], source);
+    const headSha = git(['rev-parse', 'HEAD'], source);
+
+    const project: GitBackedProject = {
+      projectId: crypto.randomUUID(),
+      repoUrl: `file://${source}`,
+      defaultBranch: 'main',
+      manifestPath: 'kortix.yaml',
+      gitAuthToken: null,
+    };
+    const identity = normalizeRepoSnapshotIdentity({
+      repositoryId: '606060',
+      owner: 'kortix-ai',
+      repo: 'binary-fixture',
+      commitSha: headSha,
+    });
+    const built = await buildRepoSnapshot(project, identity, { compression: 'gzip' });
+    try {
+      // Reported for the coverage report, not smuggled into the shared manifest.
+      expect(built.notes.lfsPointerCount).toBeGreaterThan(0);
+      expect(built.notes.submoduleCount).toBe(1);
+      // Operational facts stay out of the repository-SHARED manifest: two
+      // projects read the same document and it must describe the revision, not
+      // the producer's observations about it.
+      const manifestJson = JSON.stringify(built.manifest);
+      expect(manifestJson).not.toContain('lfs_pointer');
+      expect(manifestJson).not.toContain('submodule');
+      expect(manifestJson).not.toMatch(/git-lfs|\.gitmodules/);
+
+      const out = await extract(built.archivePath, 'gzip');
+      // The pointer travels byte-for-byte.
+      const pointer = readFileSync(join(out, 'art.psd'), 'utf8');
+      expect(pointer.startsWith('version https://git-lfs.github.com/spec/v1')).toBe(true);
+      expect(pointer).toContain('size 1234');
+      expect(readFileSync(join(out, '.gitattributes'), 'utf8')).toContain('filter=lfs');
+
+      // A shallow single-commit checkout does not populate submodule CONTENT —
+      // the same thing the daemon's `git clone --depth 1` produces today. The
+      // gitlink and `.gitmodules` survive, so `git submodule update` still works
+      // once the session has network. This is parity, not a regression, and it
+      // is the documented unsupported case.
+      expect(readFileSync(join(out, '.gitmodules'), 'utf8')).toContain('vendor/inner');
+      const listed = git([...lfsOff, 'ls-files', '--stage'], out);
+      expect(listed).toContain('160000');
+      // Filter-neutral, exactly as the sandbox's verification runs it: a
+      // repository whose `.gitattributes` names a filter must not need that
+      // binary present just to be verified.
+      expect(git([...lfsOff, 'status', '--porcelain'], out)).toBe('');
+
+      // No LFS smudge ran during packaging: no filter, no hook, no network.
+      const gitConfig = readFileSync(join(out, '.git/config'), 'utf8');
+      expect(gitConfig).not.toContain('filter');
+      expect(gitConfig).not.toContain('lfs');
+    } finally {
+      await discardBuiltRepoSnapshot(built);
+    }
+  }, 180_000);
+
   test('refuses a commit the mirror cannot produce', async () => {
     useIsolatedMirror();
     const fixture = makeFixture();

@@ -51,6 +51,32 @@ const GIT_FETCH_TIMEOUT_MS = 180_000;
 const UPLOAD_PACK_ANY_SHA = 'git -c uploadpack.allowAnySHA1InWant=true upload-pack';
 
 /**
+ * Check out WITHOUT running the repository's declared smudge filters.
+ *
+ * A `.gitattributes` entry is content the repository controls, and a filter is
+ * a command. Letting `git checkout` run one during packaging would execute
+ * repo-supplied code on the producer — the same thing the brief forbids for
+ * hooks and config includes — and it is also what breaks LFS repositories
+ * outright: without a `git-lfs` binary the checkout fails with
+ * "git-lfs: command not found" and no snapshot can be produced at all.
+ *
+ * Disabling the LFS filter reproduces exactly what a checkout on a machine with
+ * no `git-lfs` produces: the POINTER file, byte for byte. That is the current
+ * behaviour this feature must preserve, not a degradation of it.
+ *
+ * A repository declaring some OTHER custom filter still fails the checkout when
+ * that binary is absent. That failure is loud and reported, which is the right
+ * outcome — silently packaging differently-transformed content would not be.
+ */
+const NO_SMUDGE_FILTERS = [
+  '-c', 'filter.lfs.required=false',
+  '-c', 'filter.lfs.smudge=cat',
+  '-c', 'filter.lfs.clean=cat',
+  '-c', 'filter.lfs.process=',
+];
+const NO_SMUDGE_ENV = { GIT_LFS_SKIP_SMUDGE: '1' };
+
+/**
  * Everything Git needs to operate on the extracted tree, and nothing the
  * producing machine contributed. No origin (the session installs its own), no
  * credential helper, no hooks path, no alternates, no filters, no includes.
@@ -172,6 +198,7 @@ async function checkoutExactCommit(
     [
       '-C',
       checkout,
+      ...NO_SMUDGE_FILTERS,
       'fetch',
       '--quiet',
       '--depth',
@@ -186,11 +213,17 @@ async function checkoutExactCommit(
     undefined,
     false,
     undefined,
-    undefined,
+    NO_SMUDGE_ENV,
     undefined,
     GIT_FETCH_TIMEOUT_MS,
   );
-  await runGit(['-C', checkout, 'checkout', '--quiet', '--detach', commitSha], undefined, false);
+  await runGit(
+    ['-C', checkout, ...NO_SMUDGE_FILTERS, 'checkout', '--quiet', '--detach', commitSha],
+    undefined,
+    false,
+    undefined,
+    NO_SMUDGE_ENV,
+  );
   const head = (await runGit(['-C', checkout, 'rev-parse', '--verify', 'HEAD'], undefined, false)).stdout.trim();
   if (head !== commitSha) throw new RepoSnapshotSourceMovedError(commitSha, head);
 }
@@ -212,8 +245,15 @@ async function sanitizeGitMetadata(checkout: string): Promise<void> {
   await writeFile(join(gitDir, 'config'), SANITIZED_GIT_CONFIG, { mode: 0o644 });
   // A fresh index with zeroed stat data: deterministic across producers, and
   // `git status` still answers "clean" because it falls back to content
-  // comparison for entries whose stat cache is empty.
-  await runGit(['-C', checkout, 'read-tree', 'HEAD'], undefined, false);
+  // comparison for entries whose stat cache is empty. Filters stay disabled
+  // here too — `read-tree` must not re-run one the checkout just bypassed.
+  await runGit(
+    ['-C', checkout, ...NO_SMUDGE_FILTERS, 'read-tree', 'HEAD'],
+    undefined,
+    false,
+    undefined,
+    NO_SMUDGE_ENV,
+  );
   // `git fetch` records the local mirror path here; it is a producer detail.
   await rm(join(gitDir, 'refs', 'remotes'), { recursive: true, force: true });
   await writeFile(join(gitDir, 'packed-refs.lock'), '', { flag: 'w' }).catch(() => {});

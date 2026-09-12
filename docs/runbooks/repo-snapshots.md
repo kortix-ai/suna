@@ -160,6 +160,35 @@ OBSERVED". Startup cannot prove an unobserved GitHub HEAD without a remote
 lookup. The pin records when the ref was observed and through which path, and an
 explicit-SHA request stays exact.
 
+## 6b. LFS and submodules
+
+Both are preserved exactly as the current clone path leaves them. Neither is
+"supported" in the sense of being materialized — that is the status quo, and
+this feature does not change it.
+
+**LFS.** The archive carries the POINTER file byte for byte, which is what a
+checkout on a machine with no `git-lfs` produces. Packaging never runs the
+repository's declared smudge filter, and neither does the sandbox's
+verification: a `.gitattributes` entry is repository-controlled content and a
+filter is a command, so running one would execute repo-supplied code on the
+producer and in the verification path. It is also what used to break packaging
+outright — without a `git-lfs` binary the checkout failed with
+`git-lfs: command not found` and no snapshot could be produced at all. The
+session's own Git reads the repository config normally afterwards, so LFS
+behaves as it does on the clone path.
+
+A repository declaring some OTHER custom filter still fails the checkout when
+that binary is absent. That failure is loud and recorded on the snapshot row;
+silently packaging differently-transformed content would be worse.
+
+**Submodules.** A shallow single-commit checkout does not populate submodule
+CONTENT, which is what `git clone --depth 1` already produces today. The gitlink
+(`160000` in the index) and `.gitmodules` both survive, so `git submodule update`
+works once the session has network. Counts for both appear on the
+`[repo-snapshot] built` log line and feed the coverage report; they are
+deliberately NOT in the shared manifest, which describes the revision rather
+than the producer's observations about it.
+
 ## 7. Metrics to watch
 
 Structured log lines, repo/SHA in the payload rather than in metric labels:
