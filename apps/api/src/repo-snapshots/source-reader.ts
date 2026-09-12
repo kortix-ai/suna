@@ -100,6 +100,17 @@ export async function pruneSnapshotCache(now = Date.now()): Promise<number> {
   for (const [index, entry] of evictable.entries()) {
     const tooOld = now - entry.usedAt > ttl;
     if (!tooOld && index >= overflow) continue;
+    // Re-read the timestamp immediately before removing. The scan above can be
+    // several seconds old by now, and every read of a cached snapshot touches
+    // its directory first (`materializeSnapshotLocally`) — so a hit that landed
+    // since the scan means a reader is working inside this tree right now, and
+    // the entry is no longer evictable. The touch IS the lease; its term is
+    // `CACHE_MIN_AGE_MS`, renewed by every read.
+    const current = await stat(entry.path).catch(() => null);
+    if (!current) continue;
+    const usedAt = Math.max(current.mtimeMs, current.atimeMs);
+    if (usedAt !== entry.usedAt || Date.now() - usedAt <= CACHE_MIN_AGE_MS) continue;
+    if (inFlight.has(entry.path)) continue;
     await rm(entry.path, { recursive: true, force: true }).catch(() => {});
     removed += 1;
   }
@@ -182,7 +193,10 @@ export async function materializeSnapshotLocally(row: RepoSnapshotRow): Promise<
   const target = cacheDir(identity, row.archiveSha256);
   const marker = join(target, '.git', 'kortix-project-snapshot.json');
   if (await stat(marker).then(() => true).catch(() => false)) {
-    // Mark it used, so eviction sees a hot entry as hot.
+    // Renew the lease BEFORE handing the path back. Every read of a cached
+    // snapshot comes through here, so a reader that is about to spend seconds
+    // in this tree has just marked it as in use, and `pruneSnapshotCache`
+    // re-checks that mark immediately before it removes anything.
     const now = new Date();
     await utimes(target, now, now).catch(() => {});
     return target;

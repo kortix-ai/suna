@@ -16,9 +16,11 @@
  * TWO MODES, and the difference matters for what the result proves:
  *
  *   `KORTIX_REPO_SNAPSHOT_TEST_MODE=local` (default) — the local MinIO defaults
- *   above. Skipped, not failed, when no endpoint answers, so the hermetic unit
- *   gate stays runnable on a laptop with no Docker. A pass here says the S3
- *   PROTOCOL works; it says nothing about AWS.
+ *   above. SKIPPED, not passed and not failed, when no endpoint answers, so the
+ *   hermetic unit gate stays runnable on a laptop with no Docker. A pass here
+ *   says the S3 PROTOCOL works; it says nothing about AWS. Set
+ *   `KORTIX_REPO_SNAPSHOT_TEST_STRICT=1` to make a missing local endpoint a
+ *   failure, which is what CI wants once the endpoint is expected to exist.
  *
  *   `KORTIX_REPO_SNAPSHOT_TEST_MODE=aws` — no defaults are injected at all. The
  *   bucket, the region and the credential chain are whatever the environment
@@ -59,7 +61,6 @@ const {
   S3RequestError,
 } = await import('./s3');
 
-let live = false;
 let liveReason = '';
 const roots: string[] = [];
 
@@ -73,7 +74,9 @@ const roots: string[] = [];
  */
 async function storageReachable(): Promise<boolean> {
   try {
-    await s3PutObject(requireRepoSnapshotBucket(), `preflight/${crypto.randomUUID()}`, Buffer.from('ok'));
+    // Under the configured prefix, like every other key this feature writes, so
+    // the probe needs no permission the documented role does not already grant.
+    await s3PutObject(requireRepoSnapshotBucket(), `itest/preflight/${crypto.randomUUID()}`, Buffer.from('ok'));
     return true;
   } catch (error) {
     liveReason = error instanceof Error ? error.message : String(error);
@@ -81,13 +84,25 @@ async function storageReachable(): Promise<boolean> {
   }
 }
 
-beforeAll(async () => {
-  live = await storageReachable();
-  if (!live && AWS_MODE) {
+/**
+ * Resolved at module scope so the suite can SKIP rather than pass vacuously.
+ *
+ * `if (!live) return` inside a test reports a pass, which is the one outcome a
+ * missing prerequisite must never produce: a run against an endpoint that is
+ * not there looked identical to a run that proved something.
+ */
+const live = await storageReachable();
+/** Missing setup FAILS here rather than skipping. Always on for AWS. */
+const STRICT = AWS_MODE || process.env.KORTIX_REPO_SNAPSHOT_TEST_STRICT === '1';
+
+beforeAll(() => {
+  if (!live && STRICT) {
     throw new Error(
-      `KORTIX_REPO_SNAPSHOT_TEST_MODE=aws but the configured storage is unusable: ${liveReason}`,
+      `${AWS_MODE ? 'KORTIX_REPO_SNAPSHOT_TEST_MODE=aws' : 'KORTIX_REPO_SNAPSHOT_TEST_STRICT=1'}` +
+        ` but the configured storage is unusable: ${liveReason}`,
     );
   }
+  if (!live) console.warn(`[s3-publish] SKIPPED — storage is unreachable: ${liveReason}`);
 });
 
 afterAll(() => {
@@ -128,12 +143,20 @@ function isolatedMirror(): void {
   process.env.KORTIX_GIT_CACHE_DIR = cache;
 }
 
-describe('repo snapshot S3 publication (live endpoint)', () => {
+describe.skipIf(!live)('repo snapshot S3 publication (live endpoint)', () => {
   test('signs GET/PUT/HEAD and enforces If-None-Match against a real server', async () => {
-    if (!live) return;
     const bucket = requireRepoSnapshotBucket();
     const key = `itest/${crypto.randomUUID()}/object.txt`;
-    expect(await s3HeadObject(bucket, key)).toBeNull();
+    // A HEAD on a missing key answers 404 only when the caller may LIST the
+    // bucket. The documented role grants GetObject and PutObject and nothing
+    // else, so on AWS this is a 403 — which is exactly why publication leads
+    // with a conditional PUT and never treats 403 as absence.
+    if (AWS_MODE) {
+      const absent = await s3HeadObject(bucket, key).catch((error) => error);
+      expect(absent === null || (absent as { status?: number })?.status === 403).toBe(true);
+    } else {
+      expect(await s3HeadObject(bucket, key)).toBeNull();
+    }
 
     await s3PutObject(bucket, key, Buffer.from('first\n'), {
       contentType: 'text/plain',
@@ -156,7 +179,6 @@ describe('repo snapshot S3 publication (live endpoint)', () => {
   }, 60_000);
 
   test('a presigned GET reads exactly one object and nothing else', async () => {
-    if (!live) return;
     const bucket = requireRepoSnapshotBucket();
     const key = `itest/${crypto.randomUUID()}/presigned.txt`;
     const other = `itest/${crypto.randomUUID()}/other.txt`;
@@ -176,7 +198,6 @@ describe('repo snapshot S3 publication (live endpoint)', () => {
   }, 60_000);
 
   test('publishes archive before manifest and adopts a concurrent winner', async () => {
-    if (!live) return;
     isolatedMirror();
     const source = makeSource();
     const identity = normalizeRepoSnapshotIdentity({
@@ -231,7 +252,6 @@ describe('repo snapshot S3 publication (live endpoint)', () => {
   }, 120_000);
 
   test('rejects a manifest whose identity does not match the request', async () => {
-    if (!live) return;
     const bucket = requireRepoSnapshotBucket();
     const real = normalizeRepoSnapshotIdentity({
       repositoryId: '424242',

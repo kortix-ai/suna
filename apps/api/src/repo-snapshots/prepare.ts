@@ -12,7 +12,18 @@ import { getBranchCommitSha, getRepo, parseGitHubRepoUrl } from '../projects/git
 import type { GitHubApiError } from '../projects/github';
 import { withProjectGitAuth } from '../projects/lib/git';
 import type { ProjectRow } from '../projects/lib/serializers';
-import { ensureRepoSnapshotRepository } from './identity';
+import { projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { db } from '../shared/db';
+import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
+import {
+  clearPendingPushedRefsFields,
+  ensureRepoSnapshotRepository,
+  gitMetadataSubtree,
+  pendingPushedRefs,
+  pendingPushedRefsFields,
+  readRepoSnapshotRepository,
+} from './identity';
 import { beginRefObservation, ensureRefReconcileScheduled, observeRepoRef } from './store';
 import { prepareRevision, repoSnapshotWorkerEnabled, triggerRepoSnapshotWorker } from './worker';
 
@@ -213,9 +224,31 @@ export async function prepareRevisionsForPush(
   const branches = [...new Set(refs.filter((ref) => ref.startsWith('refs/heads/')))];
   if (branches.length === 0) return { prepared: 0, scheduled: 0 };
 
+  // Park the branches BEFORE the identity lookup. It reaches GitHub, and a 503
+  // there used to take every branch of the push with it: no repository id means
+  // no ref rows, and nothing else remembered the push had happened.
+  const alreadyRegistered = readRepoSnapshotRepository(project).repository !== null;
+  if (!alreadyRegistered) {
+    await db
+      .update(projects)
+      .set({
+        metadata: metadataMergeSubtree(
+          gitMetadataSubtree(project),
+          pendingPushedRefsFields(project, branches),
+        ),
+      })
+      .where(eq(projects.projectId, project.projectId))
+      .catch((error) => {
+        logger.warn('[repo-snapshot] could not park pushed refs', {
+          projectId: project.projectId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
   const context = await prepareContext(project);
   if ('prepared' in context) {
-    logger.info('[repo-snapshot] pushed refs not recorded', {
+    logger.info('[repo-snapshot] pushed refs parked until the project has an identity', {
       projectId: project.projectId,
       refs: branches.length,
       reason: context.reason,
@@ -223,9 +256,13 @@ export async function prepareRevisionsForPush(
     return { prepared: 0, scheduled: 0 };
   }
 
+  // Anything parked by an earlier push that could not be recorded.
+  const replayed = pendingPushedRefs(project).map((ref) => `refs/heads/${ref}`);
+  const all = [...new Set([...branches, ...replayed])];
+
   const at = new Date();
   let scheduled = 0;
-  for (const ref of branches) {
+  for (const ref of all) {
     await ensureRefReconcileScheduled({ identity: context.repository, ref, at }).then(
       () => {
         scheduled += 1;
@@ -238,6 +275,17 @@ export async function prepareRevisionsForPush(
         });
       },
     );
+  }
+
+  if (!alreadyRegistered && scheduled > 0) {
+    // They have ref rows now, which is a better home than project metadata.
+    await db
+      .update(projects)
+      .set({
+        metadata: metadataMergeSubtree(gitMetadataSubtree(project), clearPendingPushedRefsFields()),
+      })
+      .where(eq(projects.projectId, project.projectId))
+      .catch(() => {});
   }
 
   let prepared = 0;

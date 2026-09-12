@@ -409,9 +409,9 @@ Object store: the existing MinIO on `127.0.0.1:19000`, bucket
 
 | Suite | Result |
 | --- | --- |
-| `apps/api` full unit suite (`bash scripts/test.sh`) | 9024 pass, 79 skip, 1 fail |
+| `apps/api` full unit suite (`bash scripts/test.sh`) | 9025 pass, 79 skip, 1 fail |
 | `src/repo-snapshots/` + `src/snapshots/` + metadata-merge guard | 384 pass, 5 skip, 0 fail |
-| 6 repo-snapshot integration suites (real DB + MinIO) | 53 pass, 0 fail |
+| 6 repo-snapshot integration suites (real DB + MinIO) | 54 pass, 0 fail |
 | `apps/api` `tsc --noEmit` | clean |
 | `packages/db` migration lint | 209 files pass |
 
@@ -525,6 +525,19 @@ inline budget had no key to be stored under and was dropped. Proved in
 `integration-repo-snapshot-discovery.test.ts` with a 25-branch first push at an
 unregistered project — 25 stored, 20 prepared inline, identity persisted.
 
+### A push survives an outage of the thing that names it
+
+Parking the branches before the identity lookup is what makes the whole push
+durable. The lookup reaches GitHub; a 503 there used to take every branch with
+it, because no repository id means no ref rows and nothing else remembered the
+push happened. The branches are now parked on the PROJECT — the only key that
+exists at that moment, bounded at 100 — and replayed the moment an identity is
+known, by the same push or by the worker's discovery pass. No second push is
+needed. Proved end to end in `integration-repo-snapshot-discovery.test.ts`: a
+25-branch push during a simulated GitHub outage parks 25 refs and writes no ref
+rows; discovery then registers the project, creates all 25 rows, and clears the
+parking slot.
+
 ### Operational limits that were missing
 
 - **`--dry-run` writes nothing.** The backfill resolved — and PERSISTED — a
@@ -533,19 +546,27 @@ unregistered project — 25 stored, 20 prepared inline, identity persisted.
   reports an unregistered project as exactly that.
 - **The extracted-snapshot cache forgets.** It is content-addressed, so it only
   ever grew: every revision of every project added a tree. Entries are now
-  evicted by last use (a cache hit touches the directory) with a TTL of
-  `KORTIX_REPO_SNAPSHOT_CACHE_TTL_MINUTES` (default 360) and a cap of
-  `KORTIX_REPO_SNAPSHOT_CACHE_MAX_ENTRIES` (default 200). Nothing younger than
-  10 minutes is ever evicted, so a boot storm cannot delete a tree another
-  session is reading. `cache-eviction.test.ts` covers idle expiry, size
-  pressure, and the boot-storm case where nothing may be removed.
-- **The AWS test mode is explicit.** `s3-publish.integration.test.ts` defaulted
-  a MinIO endpoint and a static key pair even when the intent was AWS, and used
-  `/minio/health/live` as its probe — an endpoint AWS does not have. With
-  `KORTIX_REPO_SNAPSHOT_TEST_MODE=aws` nothing is defaulted, the probe is a
-  signed PUT to the configured bucket, and missing or unusable setup FAILS
-  instead of skipping. Local mode still skips, and its pass is evidence about
-  the S3 protocol only.
+  evicted by last use with a TTL of `KORTIX_REPO_SNAPSHOT_CACHE_TTL_MINUTES`
+  (default 360) and a cap of `KORTIX_REPO_SNAPSHOT_CACHE_MAX_ENTRIES` (default
+  200). The touch IS a lease: every read of a cached snapshot goes through
+  `materializeSnapshotLocally`, which renews it before handing back the path,
+  and the prune re-reads the timestamp immediately before removing anything —
+  so a read that starts after the scan began keeps its tree. Nothing younger
+  than 10 minutes is evicted at all. `cache-eviction.test.ts` covers idle
+  expiry, size pressure, the boot-storm case where nothing may be removed, and
+  a read that arrives mid-prune.
+- **The AWS test mode is explicit, and a missing endpoint no longer passes.**
+  `s3-publish.integration.test.ts` defaulted a MinIO endpoint and a static key
+  pair even when the intent was AWS, used `/minio/health/live` as its probe — an
+  endpoint AWS does not have — and, worst of all, reported four PASSES when no
+  endpoint answered at all. Now: reachability is resolved at module scope and
+  the suite SKIPS (`0 pass, 4 skip`, verified against a dead port), the probe is
+  a signed PUT under the configured prefix, `KORTIX_REPO_SNAPSHOT_TEST_MODE=aws`
+  defaults nothing and fails rather than skips, and
+  `KORTIX_REPO_SNAPSHOT_TEST_STRICT=1` does the same for local mode. In AWS
+  mode the absent-key HEAD accepts a 403, because the documented role grants no
+  `s3:ListBucket` — which is exactly why publication leads with a conditional
+  PUT and never reads 403 as absence.
 
 ### The cohort control the runbook promised
 

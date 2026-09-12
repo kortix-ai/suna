@@ -228,6 +228,45 @@ export async function ensureRepoSnapshotRepository(
   }
 }
 
+/**
+ * Branches a push touched before this project had a repository id.
+ *
+ * The ref table is keyed by repository id, so until one is recorded there is
+ * nowhere to store a pushed branch — and a transient failure of that very
+ * lookup dropped every non-default branch of the push with it. They are parked
+ * on the PROJECT instead, which is the only key that exists at that moment, and
+ * replayed as soon as an identity is known.
+ *
+ * Bounded, because this is metadata on a hot row: a bulk push parks its first
+ * `MAX_PENDING_REFS` branches and the rest are covered by the next push or the
+ * default-branch repair.
+ */
+const MAX_PENDING_REFS = 100;
+
+export function pendingPushedRefs(project: ProjectRow): string[] {
+  const meta = (project.metadata ?? {}) as Record<string, any>;
+  const subtree = meta[gitMetadataSubtree(project)];
+  const raw = subtree?.snapshot_pending_refs;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((ref): ref is string => typeof ref === 'string' && ref.length > 0);
+}
+
+/** The sub-patch that parks these branches, merged with anything already parked. */
+export function pendingPushedRefsFields(
+  project: ProjectRow,
+  refs: string[],
+): Record<string, unknown> {
+  const merged = [
+    ...new Set([...pendingPushedRefs(project), ...refs.map((ref) => ref.replace(/^refs\/heads\//, ''))]),
+  ].slice(0, MAX_PENDING_REFS);
+  return { snapshot_pending_refs: merged };
+}
+
+/** The sub-patch that clears them, once they have somewhere durable to live. */
+export function clearPendingPushedRefsFields(): Record<string, unknown> {
+  return { snapshot_pending_refs: null };
+}
+
 export function withCommit(
   repository: RepoSnapshotRepository,
   commitSha: string,

@@ -79,6 +79,22 @@ describe('pruneSnapshotCache', () => {
     expect(paths.slice(4).map((path) => existsSync(path))).toEqual([true, true]);
   });
 
+  test('a read that starts during a prune keeps its tree', async () => {
+    const { pruneSnapshotCache } = await import('./source-reader');
+    const path = seed('400', 'c'.repeat(40), 'd1', 24 * 60 * 60_000);
+
+    // The scan is already several seconds old when the reader arrives: it
+    // renews the lease (as every cached read does) and starts working inside
+    // the tree. The prune must notice and leave it alone.
+    const touched = new Date();
+    const prune = pruneSnapshotCache(Date.now()).then(async (removed) => {
+      return removed;
+    });
+    utimesSync(path, touched, touched);
+    expect(await prune).toBe(0);
+    expect(existsSync(path)).toBe(true);
+  });
+
   test('a missing cache directory is not an error', async () => {
     const { pruneSnapshotCache } = await import('./source-reader');
     process.env.KORTIX_REPO_SNAPSHOT_CACHE_DIR = join(root, 'does-not-exist');

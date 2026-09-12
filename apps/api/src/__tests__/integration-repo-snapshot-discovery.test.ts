@@ -62,6 +62,8 @@ const goodRepoId = String(940000000 + Math.floor(Math.random() * 9000000));
 const legacyAppRepoId = String(930000000 + Math.floor(Math.random() * 9000000));
 /** A project that is still unregistered when its first push arrives. */
 const pushRepoId = String(920000000 + Math.floor(Math.random() * 9000000));
+/** A project whose first push arrives while GitHub is failing. */
+const parkedRepoId = String(925000000 + Math.floor(Math.random() * 9000000));
 /** Registered, but its ref row never got written. Nothing else can find it. */
 const orphanRepoId = String(950000000 + Math.floor(Math.random() * 9000000));
 /** A legacy project that already carries its id under `github.repo_id`. */
@@ -70,6 +72,8 @@ const legacyDoneRepoId = String(960000000 + Math.floor(Math.random() * 9000000))
 let githubHealthy = false;
 /** The commit every fixture ref resolves to. */
 const fixtureSha = 'c'.repeat(39) + '7';
+/** Flipped by the parked-push test to fail the identity lookup on demand. */
+let parkedProjectFails = false;
 const lookups: string[] = [];
 /** Any GitHub path outside the fixture namespace. Must stay empty. */
 const foreignCalls: string[] = [];
@@ -86,6 +90,7 @@ const ownedRepositoryIds = new Set<string>([
   goodRepoId,
   legacyAppRepoId,
   pushRepoId,
+  parkedRepoId,
   orphanRepoId,
   legacyDoneRepoId,
 ]);
@@ -174,7 +179,7 @@ beforeAll(async () => {
         return new Response('{"message":"not a fixture repository"}', { status: 599 });
       }
       // Broken for the whole test: they must never block the projects behind them.
-      if (!githubHealthy || /discovery-broken/.test(path)) {
+      if (!githubHealthy || /discovery-broken/.test(path) || parkedProjectFails) {
         return new Response('{"message":"Server Error"}', { status: 500 });
       }
       const refMatch = path.match(/^\/repos\/kortix-ai\/([^/]+)\/git\/ref\/heads\/(.+)$/);
@@ -193,7 +198,9 @@ beforeAll(async () => {
           ? legacyAppRepoId
           : slug === 'discovery-push'
             ? pushRepoId
-            : goodRepoId;
+            : slug === 'discovery-parked'
+              ? parkedRepoId
+              : goodRepoId;
       return new Response(JSON.stringify({ id: Number(id), full_name: `kortix-ai/${slug}` }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -456,6 +463,43 @@ describe('a failed first preparation recovers without another webhook', () => {
       select count(*)::int as n from kortix.repo_snapshot_refs
       where repository_id = ${pushRepoId}`)) as unknown as Array<{ n: number }>;
     expect(stored[0]?.n).toBe(refs.length);
+  });
+
+  test('a push during a GitHub outage parks its refs and replays them', async () => {
+    if (!guard()) return;
+    githubHealthy = true;
+    const { prepareRevisionsForPush } = await import('../repo-snapshots/prepare');
+    const { pendingPushedRefs } = await import('../repo-snapshots/identity');
+    const projectId = await seedProject('discovery-parked');
+    const refs = Array.from({ length: 25 }, (_, index) => `refs/heads/parked-${index}`);
+
+    // The identity lookup itself fails. Until this project has a repository id
+    // there is nowhere to put a ref row, so the push has to be remembered
+    // somewhere else or it is lost entirely.
+    parkedProjectFails = true;
+    const outcome = await prepareRevisionsForPush((await projectRow(projectId)) as never, refs);
+    parkedProjectFails = false;
+
+    expect(outcome).toEqual({ prepared: 0, scheduled: 0 });
+    expect(readRepoSnapshotRepository((await projectRow(projectId)) as never).repository).toBeNull();
+    expect(pendingPushedRefs((await projectRow(projectId)) as never)).toHaveLength(25);
+
+    // Recovery needs no second push: the discovery pass registers the project
+    // and replays what the push parked.
+    await resetRepoSnapshotDiscoveryBackoff(created);
+    let found = 0;
+    for (let pass = 0; pass < 12 && found === 0; pass += 1) {
+      found = readRepoSnapshotRepository((await projectRow(projectId)) as never).repository ? 1 : 0;
+      if (found === 0) await discoverUnregisteredProjects(1);
+    }
+    expect(readRepoSnapshotRepository((await projectRow(projectId)) as never).repository?.repositoryId).toBe(
+      parkedRepoId,
+    );
+    const stored = (await db.execute(sql`
+      select count(*)::int as n from kortix.repo_snapshot_refs
+      where repository_id = ${parkedRepoId}`)) as unknown as Array<{ n: number }>;
+    expect(stored[0]?.n).toBe(25);
+    expect(pendingPushedRefs((await projectRow(projectId)) as never)).toEqual([]);
   });
 
   test('the worker tick runs both scans', async () => {

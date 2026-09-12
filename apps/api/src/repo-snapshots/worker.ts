@@ -30,10 +30,12 @@ import {
 import { type RepoSnapshotCompression, normalizeRepoSnapshotIdentity } from './format';
 import type { RepoSnapshotRepository } from './identity';
 import {
+  clearPendingPushedRefsFields,
   discoveryMarkerSql,
   ensureRepoSnapshotRepository,
   githubBackedProjectsSql,
   gitMetadataSubtree,
+  pendingPushedRefs,
   readRepoSnapshotRepository,
   recordedRepositoryIdSql,
   withCommit,
@@ -330,6 +332,35 @@ export async function discoverUnregisteredProjects(limit: number): Promise<numbe
       projectId: project.projectId,
       repositoryId: resolved.repository.repositoryId,
     });
+    // Branches a push parked while this project had no identity. Now it has
+    // one, so they get real ref rows and the parking slot is released.
+    const parked = pendingPushedRefs(project);
+    if (parked.length > 0) {
+      const at = new Date();
+      let replayed = 0;
+      for (const ref of parked) {
+        await ensureRefReconcileScheduled({ identity: resolved.repository, ref, at }).then(
+          () => {
+            replayed += 1;
+          },
+          () => {},
+        );
+      }
+      if (replayed === parked.length) {
+        await db
+          .update(projects)
+          .set({
+            metadata: metadataMergeSubtree(gitMetadataSubtree(project), clearPendingPushedRefsFields()),
+          })
+          .where(eq(projects.projectId, project.projectId))
+          .catch(() => {});
+      }
+      logger.info('[repo-snapshot] replayed parked pushed refs', {
+        projectId: project.projectId,
+        refs: parked.length,
+        replayed,
+      });
+    }
   }
   return discovered;
 }
