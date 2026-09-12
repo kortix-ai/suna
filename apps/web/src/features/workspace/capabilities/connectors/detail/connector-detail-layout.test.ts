@@ -1,21 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const here = import.meta.dir;
 
 describe('connector detail layout', () => {
-  test('keeps the primary action outside the collapsed technical disclosure', () => {
+  test('exports the layout, live stepper, and docs sections', () => {
     const layout = readFileSync(join(here, 'connector-detail-layout.tsx'), 'utf8');
-    const advanced = readFileSync(join(here, 'connector-advanced.tsx'), 'utf8');
 
     expect(layout).toContain('export function ConnectorDetailLayout');
     expect(layout).toContain('primaryAction');
     expect(layout).toContain('export function ConnectorSetupGuide');
     expect(layout).toContain('export function ConnectorDocumentationLinks');
-    expect(advanced).toContain('export function ConnectorAdvanced');
-    expect(advanced).toContain('<Disclosure');
-    expect(advanced).toContain('Advanced');
-    expect(advanced).not.toContain('primaryAction');
+  });
+
+  test('the Advanced technical disclosure stays removed', () => {
+    // Jay 2026-09-12: the Surface/Transport/Endpoint/Access panel was noise on
+    // every detail page and was cut. If it comes back, it comes back as a
+    // product decision, not a leftover import.
+    expect(existsSync(join(here, 'connector-advanced.tsx'))).toBe(false);
   });
 });

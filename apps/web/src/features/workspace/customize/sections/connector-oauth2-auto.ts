@@ -62,6 +62,23 @@ export function autoConnectPlan(
   };
 }
 
+/**
+ * Whether the credential dialog should offer OAuth 2.0 at all.
+ *
+ * True exactly when the server itself demands authorization: it advertised
+ * full metadata (`register`), endpoints without dynamic registration
+ * (`client_id_required`), or answered 401 with nothing actionable (`manual` —
+ * still a server requiring OAuth, just one we must configure by hand). It is
+ * false for `no_authorization` (the server answered open) and `unknown` (no
+ * probe result) — showing a grant flow the server never asked for is how an
+ * API-key connector ended up opening on an OAuth 2.0 tab that could only
+ * error. The dialog keeps a manual escape hatch for servers that require
+ * OAuth without advertising it in any way the probe can see.
+ */
+export function oauth2CredentialOffered(plan: AutoConnectPlan): boolean {
+  return plan.kind === 'register' || plan.kind === 'client_id_required' || plan.kind === 'manual';
+}
+
 export function buildClientRegistrationInput(
   discovery: OAuth2ResourceDiscovery,
 ): OAuth2ClientRegistrationInput {

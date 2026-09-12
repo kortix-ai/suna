@@ -9,7 +9,7 @@ import {
   type DiscoverConnectorDetail,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -19,31 +19,36 @@ import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SplitSheet, SplitSheetMain, SplitSheetTrigger } from '@/components/ui/split-sheet';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
 import {
+  catalogEntryConnectors,
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
   computersCatalogEntry,
   foldKey,
   type CatalogEntry,
 } from '../catalog/catalog-entry';
+import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
 import { connectedConnectorHref, parseCatalogSource } from '../connector-routes';
-import { ConnectorAdvanced } from './connector-advanced';
-import { connectorSetupSteps, type ConnectorTechnicalRow } from './connector-detail-copy';
+import { connectorStatusLine } from '../connector-status-line';
+import { providerLabel } from '../provider-label';
+import { recommendedSurfaceVariant } from './connector-detail-copy';
+import { connectorDocLinks } from './connector-doc-links';
 import {
   ConnectorDetailLayout,
+  ConnectorDetailSkeleton,
   ConnectorDocumentationLinks,
   ConnectorSetupGuide,
   type ConnectorDocumentationLink,
 } from './connector-detail-layout';
 
-const DiscoverAddFlow = dynamic(
-  () => import('../add/discover-add-flow').then((module) => module.DiscoverAddFlow),
+const DiscoverAddSheet = dynamic(
+  () => import('../add/discover-add-sheet').then((module) => module.DiscoverAddSheet),
   { ssr: false },
 );
 const EasyConnectAddFlow = dynamic(
@@ -84,27 +89,7 @@ function CatalogDetailIcon({ entry }: { entry: CatalogEntry }) {
 
 function CatalogConnectorSkeleton({ projectId }: { projectId: string }) {
   return (
-    <ConnectorDetailLayout
-      backHref={`/projects/${encodeURIComponent(projectId)}/connectors`}
-      icon={<Skeleton className="size-10 shrink-0 rounded-md" />}
-      title={<Skeleton className="h-7 w-52 rounded-sm" />}
-      primaryTitle="Loading connector"
-      primaryDescription="Reading catalogue metadata and connection requirements."
-    >
-      <Skeleton className="h-44 rounded-md" />
-    </ConnectorDetailLayout>
-  );
-}
-
-function exactConnectorMatch(
-  connectors: readonly AdminConnector[],
-  entry: CatalogEntry,
-): AdminConnector | null {
-  const keys = new Set([foldKey(entry.slug), foldKey(entry.name)]);
-  return (
-    connectors.find(
-      (connector) => keys.has(foldKey(connector.slug)) || keys.has(foldKey(connector.name)),
-    ) ?? null
+    <ConnectorDetailSkeleton backHref={`/projects/${encodeURIComponent(projectId)}/connectors`} />
   );
 }
 
@@ -134,8 +119,19 @@ export function CatalogConnectorPage({
   const discoverQuery = useQuery({
     queryKey: ['catalog-connector-route', 'discover', projectId, slug],
     queryFn: async () => {
+      const bySlug = <T extends { slug: string }>(items: T[]): T | null =>
+        items.find((item) => foldKey(item.slug) === foldKey(slug)) ?? null;
       const page = await listDiscoverConnectors(projectId, slug);
-      return page.items.find((item) => foldKey(item.slug) === foldKey(slug)) ?? null;
+      const hit = bySlug(page.items);
+      if (hit) return hit;
+      // An API predating the slug-in-search-haystack fix answers zero rows
+      // for a slug like "deepwiki-com" — its only other spelling in the index
+      // is the DOMAIN, "deepwiki.com". Retry with the domain spelling before
+      // declaring the entry gone.
+      const domainSpelling = slug.replace(/-/g, '.');
+      if (domainSpelling === slug) return null;
+      const fallback = await listDiscoverConnectors(projectId, domainSpelling);
+      return bySlug(fallback.items);
     },
     enabled: source === 'discover',
     staleTime: 15 * 60_000,
@@ -247,25 +243,43 @@ export function CatalogConnectorPage({
     );
   }
 
-  const connectedConnector = exactConnectorMatch(connectors, entry);
+  const projectMatches = catalogEntryConnectors(connectors, entry);
+  const alreadyAdded = projectMatches.length > 0;
+  const anyReady = projectMatches.some((match) => {
+    const status = connectorSetupStatus(match);
+    return status === 'connected' || status === 'no_auth';
+  });
   const discoverDetail = discoverDetailQuery.data ?? null;
   const added = (addedSlug?: string) => {
     setActionOpen(false);
     void queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
-    if (addedSlug) router.push(connectedConnectorHref(projectId, addedSlug));
+    // `?connect=1`: the connector page opens straight into its connect dialog
+    // when a credential is still needed, so adding flows into connecting
+    // without hunting for the next button. The page ignores it when nothing
+    // is left to connect (managed flows authorize during add).
+    if (addedSlug) router.push(`${connectedConnectorHref(projectId, addedSlug)}?connect=1`);
   };
 
+  // The surface this page leads with. MCP wins whenever the app publishes an
+  // addable MCP surface (COR-17) — the entry's own `kind` only describes the
+  // catalogue row, not the best way in.
+  const firstVariant = discoverDetail ? recommendedSurfaceVariant(discoverDetail.variants) : null;
+  const discoverKind =
+    firstVariant?.kind ?? (entry.source === 'discover' ? entry.connector.kind : null);
   const provider =
     entry.source === 'easy-connect'
       ? (entry.app.provider ?? 'pipedream')
       : entry.source === 'computer'
         ? 'computer'
-        : entry.connector.kind === 'mcp'
+        : discoverKind === 'mcp'
           ? 'mcp'
-          : entry.connector.kind === 'graphql'
+          : discoverKind === 'graphql'
             ? 'graphql'
-            : 'openapi';
-  const firstVariant = discoverDetail?.variants[0] ?? null;
+            : discoverKind === 'postman'
+              ? 'postman'
+              : discoverKind === 'http'
+                ? 'http'
+                : 'openapi';
   const requestAuthType =
     entry.source === 'easy-connect'
       ? entry.app.authType === 'oauth'
@@ -274,146 +288,192 @@ export function CatalogConnectorPage({
           ? 'none'
           : 'custom'
       : (firstVariant?.connector?.auth?.type ?? (firstVariant?.requiresAuth ? 'custom' : 'none'));
-  const technicalRows = catalogTechnicalRows(entry, discoverDetail);
-  const documentationLinks = catalogDocumentationLinks(entry, discoverDetail);
+  const documentationLinks = catalogDocumentationLinks(entry, discoverDetail, provider);
 
-  const primaryAction = connectedConnector ? (
-    <Button asChild className="max-sm:w-full">
-      <Link href={connectedConnectorHref(projectId, connectedConnector.slug)}>
-        Open project connector
-      </Link>
-    </Button>
-  ) : canWrite ? (
-    <Button className="gap-1.5 max-sm:w-full" onClick={() => setActionOpen(true)}>
-      <PlusIcon className="size-4 shrink-0" />
-      {entry.source === 'easy-connect'
-        ? 'Add and connect'
-        : entry.source === 'computer'
-          ? 'Create profile'
-          : 'Add connector'}
+  // Adding is ALWAYS on the table for writers — one app can back many
+  // connections (Canva, Canva 2, …), so "already added" never hides the way
+  // to add another. The already-added connectors get their own direct links
+  // in the "In this project" list below.
+  const addLabel =
+    entry.source === 'easy-connect'
+      ? alreadyAdded
+        ? 'Connect another'
+        : 'Add and connect'
+      : entry.source === 'computer'
+        ? 'Create profile'
+        : alreadyAdded
+          ? 'Add another'
+          : 'Add connector';
+  const primaryAction = canWrite ? (
+    entry.source === 'discover' ? (
+      // The split column's own trigger: it toggles the panel AND moves focus
+      // into it, and closing returns focus here.
+      <SplitSheetTrigger asChild>
+        <Button className="gap-1.5 max-sm:w-full">
+          <PlusIcon className="size-4 shrink-0" />
+          {addLabel}
+        </Button>
+      </SplitSheetTrigger>
+    ) : (
+      <Button className="gap-1.5 max-sm:w-full" onClick={() => setActionOpen(true)}>
+        <PlusIcon className="size-4 shrink-0" />
+        {addLabel}
+      </Button>
+    )
+  ) : alreadyAdded ? (
+    <Button asChild variant="outline" className="max-sm:w-full">
+      <Link href={connectedConnectorHref(projectId, projectMatches[0].slug)}>Open connector</Link>
     </Button>
   ) : undefined;
 
+  // The catalogue page narrates ITS OWN flow — add here, connect on the
+  // connector's page — never the connector page's tabs, which do not exist
+  // here. Live: the steps check off as the project's real state advances.
+  const needsAuth = requestAuthType !== 'none';
+  const catalogSteps = [
+    {
+      title: `Add ${entry.name} to the project`,
+      description: `Click ${entry.source === 'easy-connect' ? 'Add and connect' : 'Add connector'} — pick how it connects and name it.`,
+    },
+    {
+      title: 'Connect it',
+      description: needsAuth
+        ? 'Its page opens with the connect dialog ready — one-click OAuth where the server supports it, otherwise the exact credential it names.'
+        : 'No sign-in needed — it is ready the moment it is added.',
+    },
+    {
+      title: 'Use it in a session',
+      description: 'Ask an agent to use it; every call runs through the connector’s tools and rules.',
+    },
+  ];
+  const catalogCurrentStep = anyReady ? catalogSteps.length : alreadyAdded ? 1 : 0;
+
   return (
-    <ConnectorDetailLayout
-      backHref={`/projects/${encodeURIComponent(projectId)}/connectors`}
-      icon={<CatalogDetailIcon entry={entry} />}
+    /* The add panel is a SPLIT column, not an overlay: opening it narrows the
+       page and the catalogue stays readable beside the form. Only discover
+       entries split — the other sources keep their own modal flows, so the
+       grid must not open an empty second column for them. */
+    <SplitSheet
+      open={entry.source === 'discover' && actionOpen}
+      onOpenChange={setActionOpen}
+      size="lg"
+      className="min-h-0 flex-1"
+    >
+      <SplitSheetMain className="flex flex-col">
+        <ConnectorDetailLayout
+          backHref={`/projects/${encodeURIComponent(projectId)}/connectors`}
+          icon={<CatalogDetailIcon entry={entry} />}
       title={entry.name}
       description={entry.description}
       status={
-        connectedConnector ? (
+        alreadyAdded ? (
           <Badge variant="success" size="sm">
-            Added
+            {projectMatches.length === 1 ? 'Added' : `Added ×${projectMatches.length}`}
           </Badge>
         ) : undefined
       }
-      primaryTitle={connectedConnector ? 'Already added to this project' : 'Add to this project'}
+      primaryTitle={alreadyAdded ? 'Added to this project' : 'Add to this project'}
       primaryDescription={
-        connectedConnector
-          ? 'Open the project connector to manage its account, tools, and configuration.'
+        alreadyAdded
+          ? 'Open a connector below, or add another — each connection gets its own name.'
           : canWrite
-            ? 'Create the connector first. Complete authorization or credential setup next.'
+            ? 'One click here, then connect it on its own page.'
             : 'You can review this connector, but a project manager must add it.'
       }
       primaryAction={primaryAction}
     >
-      <ConnectorSetupGuide
-        steps={connectorSetupSteps({
-          provider,
-          authorizationStrategy: 'project',
-          connected: Boolean(connectedConnector),
-          requestAuthType,
-        })}
-      />
+      {/* Direct links to every connector already created from this entry —
+          the shortcut Jay asked for: card → its live page, no re-adding. */}
+      {alreadyAdded ? (
+        <section className="space-y-2" aria-labelledby="connector-matches-title">
+          <h2 id="connector-matches-title" className="text-foreground text-sm font-medium">
+            In this project
+          </h2>
+          <ul className="space-y-2">
+            {projectMatches.map((match) => (
+              <li key={match.slug}>
+                <Link
+                  href={connectedConnectorHref(projectId, match.slug)}
+                  className="group bg-popover hover:bg-accent flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="text-foreground block truncate text-sm font-medium">
+                      {match.name?.trim() || match.slug}
+                    </span>
+                    <span className="text-muted-foreground block text-xs">
+                      {connectorStatusLine(match, providerLabel(match.provider))}
+                    </span>
+                  </span>
+                  <CaretRightIcon className="text-muted-foreground/60 size-4 shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <ConnectorSetupGuide steps={catalogSteps} currentStep={catalogCurrentStep} />
+
 
       <ConnectorDocumentationLinks links={documentationLinks} />
 
+      {/* Modal flows for the non-discover sources, mounted PERSISTENTLY with
+          open driven by props — never `{actionOpen ? <Flow/> : null}`. These
+          flows hold multi-step internal state, and a conditional mount
+          destroys it mid-hand-off (the "Add connector does nothing, no
+          request" bug). Discover entries use the split column instead — see
+          the DiscoverAddSheet sibling under <SplitSheet>. */}
+      {entry.source === 'easy-connect' ? (
+        <EasyConnectAddFlow
+          projectId={projectId}
+          app={actionOpen ? entry.app : null}
+          existingSlugs={existingSlugs}
+          canWrite={canWrite}
+          onClose={() => setActionOpen(false)}
+          onAdded={added}
+        />
+      ) : entry.source === 'computer' ? (
+        <ComputersAddFlow
+          projectId={projectId}
+          open={actionOpen}
+          existingSlugs={existingSlugs}
+          canWrite={canWrite}
+          onClose={() => setActionOpen(false)}
+          onAdded={added}
+        />
+      ) : null}
+        </ConnectorDetailLayout>
+      </SplitSheetMain>
+
       {entry.source === 'discover' ? (
-        <AvailableSurfaces detail={discoverDetail} loading={discoverDetailQuery.isLoading} />
+        <DiscoverAddSheet
+          projectId={projectId}
+          connector={entry.connector}
+          existingSlugs={existingSlugs}
+          canWrite={canWrite}
+          onAdded={added}
+        />
       ) : null}
-
-      <ConnectorAdvanced rows={technicalRows} />
-
-      {actionOpen ? (
-        entry.source === 'discover' ? (
-          <DiscoverAddFlow
-            projectId={projectId}
-            connector={entry.connector}
-            existingSlugs={existingSlugs}
-            canWrite={canWrite}
-            onClose={() => setActionOpen(false)}
-            onAdded={added}
-          />
-        ) : entry.source === 'easy-connect' ? (
-          <EasyConnectAddFlow
-            projectId={projectId}
-            app={entry.app}
-            existingSlugs={existingSlugs}
-            canWrite={canWrite}
-            onClose={() => setActionOpen(false)}
-            onAdded={added}
-          />
-        ) : (
-          <ComputersAddFlow
-            projectId={projectId}
-            open
-            existingSlugs={existingSlugs}
-            canWrite={canWrite}
-            onClose={() => setActionOpen(false)}
-            onAdded={added}
-          />
-        )
-      ) : null}
-    </ConnectorDetailLayout>
+    </SplitSheet>
   );
-}
-
-function catalogTechnicalRows(
-  entry: CatalogEntry,
-  detail: DiscoverConnectorDetail | null,
-): ConnectorTechnicalRow[] {
-  if (entry.source === 'computer') {
-    return [
-      { label: 'Transport', value: 'Kortix Agent Tunnel' },
-      { label: 'Authentication', value: 'Paired machine identity' },
-      { label: 'Access', value: 'Selected machines in this profile' },
-    ];
-  }
-  if (entry.source === 'easy-connect') {
-    return [
-      { label: 'Transport', value: 'Managed app connection' },
-      { label: 'Authentication', value: entry.app.authType ?? 'Provider-defined' },
-      { label: 'Access', value: 'Project · one shared connection' },
-    ];
-  }
-
-  const variant = detail?.variants[0];
-  const endpoint = variant?.connector?.endpoint ?? variant?.connector?.url ?? variant?.url;
-  const transports = variant?.transports.length
-    ? variant.transports.map((transport) => transport.toUpperCase()).join(', ')
-    : variant?.connector?.transport?.toUpperCase();
-  return [
-    ...(variant ? [{ label: 'Surface', value: variant.kind.toUpperCase() }] : []),
-    ...(transports ? [{ label: 'Transport', value: transports }] : []),
-    ...(endpoint ? [{ label: 'Endpoint', value: endpoint }] : []),
-    {
-      label: 'Authentication',
-      value: variant?.requiresAuth
-        ? (variant.connector?.auth?.type ?? 'Credential required')
-        : 'None',
-    },
-    { label: 'Access', value: 'Project · one shared connection' },
-  ];
 }
 
 function catalogDocumentationLinks(
   entry: CatalogEntry,
   detail: DiscoverConnectorDetail | null,
+  provider: AdminConnector['provider'],
 ): ConnectorDocumentationLink[] {
+  // Seeded from the curated map: the Kortix guide anchored to this provider's
+  // section, plus the app's own developer docs when we know them — the same
+  // links the connected page shows, so the story does not change after Add.
   const links: ConnectorDocumentationLink[] = [
-    { label: 'Kortix connector docs', href: '/docs/connect/connectors' },
+    ...connectorDocLinks({ provider, slug: entry.slug, name: entry.name }),
   ];
-  if (entry.source === 'discover' && entry.connector.url?.startsWith('http')) {
+  if (
+    entry.source === 'discover' &&
+    entry.connector.url?.startsWith('http') &&
+    !links.some((link) => link.href === entry.connector.url)
+  ) {
     links.push({ label: 'Official website', href: entry.connector.url, external: true });
   }
   for (const variant of detail?.variants ?? []) {
@@ -421,55 +481,7 @@ function catalogDocumentationLinks(
     if (links.some((link) => link.href === variant.docs)) continue;
     links.push({ label: `${variant.name} docs`, href: variant.docs, external: true });
   }
-  return links.slice(0, 5);
-}
-
-function AvailableSurfaces({
-  detail,
-  loading,
-}: {
-  detail: DiscoverConnectorDetail | null;
-  loading: boolean;
-}) {
-  if (loading) return <Skeleton className="h-28 rounded-md" />;
-  if (!detail?.variants.length) return null;
-  return (
-    <section className="space-y-3" aria-labelledby="connector-surfaces-title">
-      <h2 id="connector-surfaces-title" className="text-foreground text-sm font-medium">
-        Available surfaces
-      </h2>
-      <ul role="list" className="space-y-2">
-        {detail.variants.map((variant) => (
-          <li
-            key={`${variant.kind}:${variant.id}`}
-            className="bg-popover rounded-md border px-4 py-3"
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <p className="text-foreground min-w-0 flex-1 text-base font-medium sm:text-sm">
-                {variant.name}
-              </p>
-              <Badge variant="outline" size="sm">
-                {variant.kind.toUpperCase()}
-              </Badge>
-              {variant.transports.map((transport) => (
-                <Badge key={transport} variant="secondary" size="sm">
-                  {transport.toUpperCase()}
-                </Badge>
-              ))}
-              <Badge variant={variant.requiresAuth ? 'info' : 'success'} size="sm">
-                {variant.requiresAuth ? 'Authentication required' : 'No authentication'}
-              </Badge>
-            </div>
-            {variant.description ? (
-              <p className="text-muted-foreground pt-1 text-base text-pretty sm:text-sm">
-                {variant.description}
-              </p>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
+  return links.slice(0, 6);
 }
 
 function CatalogNotFound({

@@ -34,6 +34,7 @@ import {
   type EasyConnectConnectionInput,
 } from '@/features/workspace/customize/sections/connector-connection-form';
 import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
+import { surfacesRecommendedFirst } from '@/features/workspace/capabilities/connectors/detail/connector-detail-copy';
 
 /**
  * Add one catalog connector to the project: pick a published surface, name
@@ -193,8 +194,13 @@ export function DiscoverAddFlow({
               </InfoBanner>
             ) : detailQuery.data?.variants.length ? (
               <ul className="space-y-2">
-                {detailQuery.data.variants.map((variant) => {
+                {/* Recommended surface first (MCP where addable — COR-17);
+                    the rest keep feed order. Same rule as the catalogue
+                    detail page, so the two pickers never disagree. */}
+                {surfacesRecommendedFirst(detailQuery.data.variants).map((variant, index) => {
                   const href = variant.docs ?? variant.url;
+                  const recommended =
+                    index === 0 && (detailQuery.data?.variants.length ?? 0) > 1;
                   return (
                     <li
                       key={`${variant.kind}:${variant.id}`}
@@ -212,6 +218,11 @@ export function DiscoverAddFlow({
                           {variant.name}
                         </p>
                         <div className="mt-1 flex items-center gap-1.5">
+                          {recommended ? (
+                            <Badge variant="kortix" size="xs">
+                              Recommended
+                            </Badge>
+                          ) : null}
                           <Badge variant="outline" size="xs">
                             {variant.kind === 'openapi' ? 'OpenAPI' : variant.kind.toUpperCase()}
                           </Badge>

@@ -28,7 +28,7 @@ import {
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { PoliciesPanel } from '@/components/projects/policies-panel';
@@ -68,6 +68,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  SplitSheetBody,
+  SplitSheetContent,
+  SplitSheetDescription,
+  SplitSheetFooter,
+  SplitSheetHeader,
+  SplitSheetTitle,
+} from '@/components/ui/split-sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
@@ -169,6 +177,7 @@ import {
   autoConnectPlan,
   buildClientRegistrationInput,
   mergeResourceDiscoveryIntoForm,
+  oauth2CredentialOffered,
 } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
@@ -4818,6 +4827,7 @@ export function SetCredentialModal({
   open,
   onOpenChange,
   onSaved,
+  shell = 'modal',
 }: {
   projectId: string;
   connector: AdminConnector | null;
@@ -4826,6 +4836,13 @@ export function SetCredentialModal({
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
+  /**
+   * Which surface hosts the dialog. `modal` floats it (the default, used by
+   * legacy callers); `split` renders `SplitSheetContent` for a caller that
+   * wraps its page in `<SplitSheet>` — the connector page's Connect opens as
+   * an inline column instead of an overlay. One body, one footer, two shells.
+   */
+  shell?: 'modal' | 'split';
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   /**
@@ -4884,6 +4901,12 @@ export function SetCredentialModal({
   const [device, setDevice] = useState<OAuth2DeviceAuthorizationStartResult | null>(null);
   const [deviceConnectionId, setDeviceConnectionId] = useState<string | null>(null);
   const [manualSetup, setManualSetup] = useState(false);
+  /**
+   * The user explicitly asked for OAuth 2.0 on a connector whose server never
+   * advertised it. Kept separate from `credentialTypeChoice` so closing the
+   * modal forgets it — the next open starts from what discovery says again.
+   */
+  const [oauth2Requested, setOauth2Requested] = useState(false);
   useEffect(() => {
     if (!device || !deviceConnectionId) return;
     let stopped = false;
@@ -4991,12 +5014,45 @@ export function SetCredentialModal({
   const credentialType: 'static' | 'oauth2' =
     credentialTypeChoice ??
     (plan.kind === 'register' || plan.kind === 'client_id_required' ? 'oauth2' : 'static');
+  /**
+   * Whether OAuth 2.0 is on the table AT ALL. It used to be a permanent
+   * second tab on every connector — an API-key connector opened onto a
+   * selector between its real credential and a grant flow its server does not
+   * speak (the probe just 400s into a warning banner). Now the tab strip
+   * appears only when discovery says the server actually requires OAuth
+   * (`oauth2CredentialOffered`), or when the user asks for it via the escape
+   * hatch under the credential field.
+   */
+  const showOAuth2Tabs =
+    oauth2CredentialOffered(plan) || oauth2Requested || credentialTypeChoice === 'oauth2';
   const showManualOAuth2Fields =
     manualSetup || plan.kind === 'unknown' || plan.kind === 'client_id_required';
   const oauth2Valid =
     application.grant === 'client_credentials'
       ? oauth2CredentialFormValid(oauth2)
       : oauth2ApplicationFormValid(effectiveApplication);
+  /**
+   * The static tab names the thing the server actually wants, read off the
+   * connector's declared auth shape. A generic "Credential" label is the
+   * fallback, not the norm — "API key" vs "OAuth 2.0" is the distinction the
+   * whole dialog exists to make.
+   */
+  const staticTabLabel =
+    requestAuth === 'api_key'
+      ? 'API key'
+      : requestAuth === 'bearer'
+        ? 'Bearer token'
+        : requestAuth === 'basic'
+          ? 'Username & password'
+          : requestAuth === 'oauth1'
+            ? 'OAuth 1.0 keys'
+            : requestAuth === 'hmac'
+              ? 'HMAC keys'
+              : requestAuth === 'aws_sigv4'
+                ? 'AWS keys'
+                : requestAuth === 'mtls'
+                  ? 'mTLS certificate'
+                  : 'Credential';
   /**
    * One click: register Kortix with the authorization server (RFC 7591), then
    * start Authorization Code + PKCE. No client id, no secret, no endpoints.
@@ -5094,53 +5150,46 @@ export function SetCredentialModal({
     onError: (err: Error) =>
       errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text2c07997249ab')),
   });
-  return (
-    <Modal
-      open={open}
-      onOpenChange={(o) => {
-        if (save.isPending) return;
-        if (!o) {
-          setManualSetup(false);
-          setCredentialTypeChoice(null);
-        }
-        onOpenChange(o);
-      }}
-    >
-      <ModalContent className="lg:max-w-3xl">
-        <ModalHeader>
-          <ModalTitle>
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetCredential5e9704a8',
-            )}
-            {connector?.slug}
-          </ModalTitle>
-          <ModalDescription>{tI18nHardcoded.raw('i18nComplete.text8e5a984b8a84')}</ModalDescription>
-        </ModalHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (
-              (credentialType === 'static' && staticValid) ||
-              (credentialType === 'oauth2' && oauth2Valid)
-            ) {
-              save.mutate();
-            }
-          }}
-        >
-          <ModalBody>
+  const handleShellOpenChange = (o: boolean) => {
+    if (save.isPending) return;
+    if (!o) {
+      setManualSetup(false);
+      setCredentialTypeChoice(null);
+      setOauth2Requested(false);
+    }
+    onOpenChange(o);
+  };
+  const handleDialogSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (
+      (credentialType === 'static' && staticValid) ||
+      (credentialType === 'oauth2' && oauth2Valid)
+    ) {
+      save.mutate();
+    }
+  };
+  /* Named for the outcome, not the mechanism. "Set credential <slug>" plus a
+     two-tab strip left three controls in one journey all talking about
+     credentials with nothing distinguishing them. The title says what
+     finishing this dialog achieves; the tab labels below name the specific
+     thing the server wants. */
+  const dialogTitle = `Connect ${connector ? connector.name?.trim() || connector.slug : 'connector'}`;
+  const dialogDescription =
+    'Kortix stores what you enter encrypted and attaches it to every call. Agents and the sandbox never see it.';
+  const credentialBody = (
             <Tabs
               value={credentialType}
               onValueChange={(next) => setCredentialTypeChoice(next as 'static' | 'oauth2')}
               className="gap-4"
             >
-              <TabsList>
-                <TabsTrigger value="static">
-                  {tI18nHardcoded.raw('i18nComplete.text8f0b0d462a16')}
-                </TabsTrigger>
-                <TabsTrigger value="oauth2">
-                  {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
-                </TabsTrigger>
-              </TabsList>
+              {showOAuth2Tabs ? (
+                <TabsList>
+                  <TabsTrigger value="static">{staticTabLabel}</TabsTrigger>
+                  <TabsTrigger value="oauth2">
+                    {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
+                  </TabsTrigger>
+                </TabsList>
+              ) : null}
               <TabsContent value="static">
                 <Field>
                   <FieldLabel htmlFor="connector-static-credential">
@@ -5175,6 +5224,23 @@ export function SetCredentialModal({
                     </FieldDescription>
                   )}
                 </Field>
+                {/* The escape hatch for the hidden tab: a server can require
+                    OAuth 2.0 without advertising it in any way discovery can
+                    see. One quiet text action instead of a permanent tab. */}
+                {!showOAuth2Tabs ? (
+                  <Button
+                    type="button"
+                    variant="text"
+                    size="sm"
+                    className="text-muted-foreground mt-3 h-auto px-0 text-xs"
+                    onClick={() => {
+                      setOauth2Requested(true);
+                      setCredentialTypeChoice('oauth2');
+                    }}
+                  >
+                    Use OAuth 2.0 instead
+                  </Button>
+                ) : null}
               </TabsContent>
               <TabsContent value="oauth2" className="space-y-4">
                 {discoveryPending ? (
@@ -5340,33 +5406,59 @@ export function SetCredentialModal({
                 )}
               </TabsContent>
             </Tabs>
-          </ModalBody>
-          <ModalFooter className="sm:justify-between">
-            <Button
-              type="button"
-              variant="outline-ghost"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-              disabled={save.isPending}
-            >
-              {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={
-                save.isPending || (credentialType === 'static' ? !staticValid : !oauth2Valid)
-              }
-              className="gap-1.5"
-            >
-              {save.isPending && <Loading className="size-4 shrink-0" />}
-              {credentialType === 'oauth2' && application.grant === 'authorization_code'
-                ? tI18nHardcoded.raw('i18nComplete.text0c814b60fca5')
-                : credentialType === 'oauth2' && application.grant === 'device_authorization'
-                  ? tI18nHardcoded.raw('i18nComplete.text55e970c35216')
-                  : 'Save'}
-            </Button>
-          </ModalFooter>
+  );
+  const footerActions = (
+    <>
+      <Button
+        type="button"
+        variant="outline-ghost"
+        size="sm"
+        onClick={() => handleShellOpenChange(false)}
+        disabled={save.isPending}
+      >
+        {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
+      </Button>
+      <Button
+        type="submit"
+        size="sm"
+        disabled={save.isPending || (credentialType === 'static' ? !staticValid : !oauth2Valid)}
+        className="gap-1.5"
+      >
+        {save.isPending && <Loading className="size-4 shrink-0" />}
+        {credentialType === 'oauth2' && application.grant === 'authorization_code'
+          ? tI18nHardcoded.raw('i18nComplete.text0c814b60fca5')
+          : credentialType === 'oauth2' && application.grant === 'device_authorization'
+            ? tI18nHardcoded.raw('i18nComplete.text55e970c35216')
+            : 'Save credential'}
+      </Button>
+    </>
+  );
+
+  if (shell === 'split') {
+    return (
+      <SplitSheetContent>
+        <SplitSheetHeader>
+          <SplitSheetTitle>{dialogTitle}</SplitSheetTitle>
+          <SplitSheetDescription>{dialogDescription}</SplitSheetDescription>
+        </SplitSheetHeader>
+        <form onSubmit={handleDialogSubmit} className="flex min-h-0 flex-1 flex-col">
+          <SplitSheetBody>{credentialBody}</SplitSheetBody>
+          <SplitSheetFooter className="justify-between">{footerActions}</SplitSheetFooter>
+        </form>
+      </SplitSheetContent>
+    );
+  }
+
+  return (
+    <Modal open={open} onOpenChange={handleShellOpenChange}>
+      <ModalContent className="lg:max-w-3xl">
+        <ModalHeader>
+          <ModalTitle>{dialogTitle}</ModalTitle>
+          <ModalDescription>{dialogDescription}</ModalDescription>
+        </ModalHeader>
+        <form onSubmit={handleDialogSubmit}>
+          <ModalBody>{credentialBody}</ModalBody>
+          <ModalFooter className="sm:justify-between">{footerActions}</ModalFooter>
         </form>
       </ModalContent>
     </Modal>

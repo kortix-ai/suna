@@ -1,7 +1,6 @@
 import type {
   AdminConnector,
   ConnectorAuthorizationStrategy,
-  ConnectorConfig,
   ConnectorRequestAuthType,
 } from '@kortix/sdk';
 
@@ -16,16 +15,6 @@ interface ConnectorSetupInput {
   connected: boolean;
   requestAuthType?: ConnectorRequestAuthType | 'oauth2' | null;
 }
-
-export interface ConnectorTechnicalRow {
-  label: string;
-  value: string;
-}
-
-type ConnectorTechnicalInput = Pick<
-  ConnectorConfig,
-  'transport' | 'endpoint' | 'url' | 'baseUrl' | 'auth' | 'authorizationStrategy' | 'headers'
->;
 
 const MANAGED_PROVIDERS = new Set<AdminConnector['provider']>(['composio', 'pipedream']);
 
@@ -94,85 +83,79 @@ export function connectorSetupSteps(input: ConnectorSetupInput): ConnectorSetupS
   }
 
   if (MANAGED_PROVIDERS.has(input.provider)) {
+    const cta = input.authorizationStrategy === 'project' ? 'Connect' : 'Add my own';
     return [
       {
-        title: 'Start the connection',
-        description: 'Open the provider authorization flow from Kortix.',
+        title: `Click ${cta}`,
+        description: `The ${cta} button above opens the provider’s own sign-in window.`,
       },
       {
         title: 'Approve OAuth access',
         description: 'Sign in to the provider and approve the requested account or workspace.',
       },
       {
-        title: 'Verify the project connection',
-        description: 'Return to Kortix and confirm that the shared account reports Connected.',
+        title: 'Check the account under Accounts',
+        description: `You land back on this page. The account appears in the Accounts tab below, and ${access} reports Connected.`,
       },
     ];
   }
 
   const target = input.provider === 'mcp' ? 'MCP endpoint' : 'API endpoint';
+  const credentialSource =
+    input.provider === 'mcp'
+      ? 'The server URL comes from the provider’s docs — see Documentation below.'
+      : 'Create it in the app’s developer or API settings — see Documentation below.';
   return [
     {
       title: 'Review the endpoint',
-      description: `Confirm the ${target}, transport, and authentication method.`,
+      description: `Open the Accounts tab below and confirm the ${target}, transport, and authentication method.`,
     },
     {
-      title: 'Add authentication',
-      description: `Store the ${credentialLabel(input.requestAuthType)} that Kortix sends with requests.`,
+      // The step names the button as it is labelled — the page's primary CTA
+      // says Connect, and the dialog it opens names the specific credential.
+      title: 'Click Connect',
+      description:
+        input.provider === 'mcp'
+          ? `Servers that support OAuth 2.0 connect in one click — no key to create. Otherwise, paste the token. ${credentialSource}`
+          : `${credentialSource} Kortix stores the ${credentialLabel(input.requestAuthType)} encrypted and sends it with every request — agents never see it.`,
     },
     {
       title: 'Verify the connection',
-      description: 'Confirm that the connector reports Connected, then review its available tools.',
+      description:
+        'The status above reports Connected. Then open the Tools tab and choose what agents may call.',
     },
   ];
 }
 
-function authenticationLabel(type: ConnectorRequestAuthType): string {
-  const labels: Record<ConnectorRequestAuthType, string> = {
-    none: 'None',
-    bearer: 'Bearer token',
-    basic: 'Basic authentication',
-    custom: 'Custom credential',
-    api_key: 'API key',
-    oauth1: 'OAuth 1.0',
-    hmac: 'HMAC signature',
-    aws_sigv4: 'AWS Signature Version 4',
-    mtls: 'Mutual TLS',
-  };
-  return labels[type];
+/**
+ * Which of an app's published surfaces to lead with.
+ *
+ * MCP wins whenever it is addable (COR-17): its auth chain — OAuth discovery
+ * plus RFC 7591 dynamic client registration — connects in one click on
+ * servers that support it, which no other surface kind can offer. A surface
+ * without a `connector` template cannot be added from here at all, so it
+ * never wins over one that can. Falls back to the first addable surface,
+ * then the first surface, preserving feed order.
+ */
+export function recommendedSurfaceVariant<
+  V extends { kind: string; connector: unknown | null },
+>(variants: readonly V[]): V | null {
+  return (
+    variants.find((variant) => variant.kind === 'mcp' && variant.connector) ??
+    variants.find((variant) => variant.connector) ??
+    variants[0] ??
+    null
+  );
 }
 
-function credentialLocation(config: ConnectorTechnicalInput): string | null {
-  if (config.auth.type === 'none') return null;
-  const location =
-    config.auth.in === 'header'
-      ? 'Request header'
-      : config.auth.in === 'query'
-        ? 'Query parameter'
-        : 'Cookie';
-  return config.auth.name ? `${location} · ${config.auth.name}` : location;
-}
-
-export function connectorTechnicalRows(config: ConnectorTechnicalInput): ConnectorTechnicalRow[] {
-  const rows: ConnectorTechnicalRow[] = [];
-  if (config.transport) rows.push({ label: 'Transport', value: config.transport.toUpperCase() });
-
-  const endpoint = config.endpoint ?? config.url ?? config.baseUrl;
-  if (endpoint) rows.push({ label: 'Endpoint', value: endpoint });
-
-  rows.push({ label: 'Authentication', value: authenticationLabel(config.auth.type) });
-  const location = credentialLocation(config);
-  if (location) rows.push({ label: 'Credential location', value: location });
-
-  rows.push({
-    label: 'Access',
-    value:
-      config.authorizationStrategy === 'project'
-        ? 'Project · one shared connection'
-        : 'Each member · separate connection',
-  });
-
-  const headers = Object.keys(config.headers);
-  if (headers.length > 0) rows.push({ label: 'Request headers', value: headers.join(', ') });
-  return rows;
+/**
+ * The full surface list with the recommended one first — a stable move-to-
+ * front, so everything else keeps its feed order.
+ */
+export function surfacesRecommendedFirst<
+  V extends { kind: string; connector: unknown | null },
+>(variants: readonly V[]): V[] {
+  const recommended = recommendedSurfaceVariant(variants);
+  if (!recommended) return [...variants];
+  return [recommended, ...variants.filter((variant) => variant !== recommended)];
 }

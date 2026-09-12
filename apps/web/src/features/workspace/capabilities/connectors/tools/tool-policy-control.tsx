@@ -71,7 +71,7 @@ export function ToolPolicyControl({
             }}
             className={cn(
               'px-2.5 text-xs font-medium',
-              'transition-[color,background-color,scale] duration-150 active:scale-[0.96]',
+              'transition-[color,background-color,scale] duration-normal active:scale-[0.96]',
               selected ? segment.tint : cn('text-muted-foreground', segment.hoverTint),
             )}
           >

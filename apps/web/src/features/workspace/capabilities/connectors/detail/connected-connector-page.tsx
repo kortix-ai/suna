@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -41,18 +42,15 @@ import {
   isManagedConnectorProvider,
   providerLabel,
 } from '../provider-label';
-import { ConnectorAdvanced } from './connector-advanced';
-import {
-  connectorConnectionIsReady,
-  connectorSetupSteps,
-  connectorTechnicalRows,
-  type ConnectorTechnicalRow,
-} from './connector-detail-copy';
+import { ConnectorCredentialRow } from './connector-credential-row';
+import { connectorConnectionIsReady, connectorSetupSteps } from './connector-detail-copy';
 import {
   ConnectorDetailLayout,
+  ConnectorDetailSkeleton,
   ConnectorDocumentationLinks,
   ConnectorSetupGuide,
 } from './connector-detail-layout';
+import { connectorDocLinks } from './connector-doc-links';
 import { ConnectorHeaderName } from './connector-header-name';
 import { CONNECTOR_TAB_LABEL, connectorTabs, type ConnectorTab } from './connector-tabs';
 
@@ -87,19 +85,10 @@ function ConnectorSectionFallback() {
 
 function ConnectedConnectorSkeleton({ projectId }: { projectId: string }) {
   return (
-    <ConnectorDetailLayout
+    <ConnectorDetailSkeleton
       backHref={`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`}
-      icon={<Skeleton className="size-10 shrink-0 rounded-md" />}
-      title={<Skeleton className="h-7 w-52 rounded-sm" />}
-      description={null}
-      primaryTitle="Loading connection"
-      primaryDescription="Reading connector status and authorization."
-    >
-      <div className="space-y-3">
-        <Skeleton className="h-32 rounded-md" />
-        <Skeleton className="h-40 rounded-md" />
-      </div>
-    </ConnectorDetailLayout>
+      iconClassName="size-14"
+    />
   );
 }
 
@@ -182,6 +171,16 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
   }
 
   if (!connector) {
+    // Absent from a list that is still (re)fetching is not "gone". The add
+    // flows invalidate `qk.project.connectors` and push here in the same
+    // tick, so the warm cache predates the new slug — `isLoading` is false,
+    // the record is missing, and this branch used to flash a full-page
+    // "Connector not found" on EVERY successful add until the refetch
+    // landed. Hold the skeleton while a fetch is in flight; only a settled
+    // list may declare the connector missing.
+    if (connectorsQuery.isFetching) {
+      return <ConnectedConnectorSkeleton projectId={projectId} />;
+    }
     return (
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-12">
         <ErrorState
@@ -207,6 +206,7 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
       canWrite={canWrite}
       canManageConnections={canManageConnections}
       invalidate={invalidate}
+      autoConnectRequested={search?.get('connect') === '1'}
     />
   );
 }
@@ -217,12 +217,16 @@ function ConnectedConnectorContent({
   canWrite,
   canManageConnections,
   invalidate,
+  autoConnectRequested = false,
 }: {
   projectId: string;
   connector: AdminConnector;
   canWrite: boolean;
   canManageConnections: boolean;
   invalidate: () => void;
+  /** `?connect=1` — an add flow just landed here; open the connect dialog if
+   *  a credential is still needed so adding flows straight into connecting. */
+  autoConnectRequested?: boolean;
 }) {
   const router = useRouter();
   const displayName = connectorDisplayName(connector);
@@ -254,6 +258,46 @@ function ConnectedConnectorContent({
       ? composioConnectionIsAuthorized(selectedConnection?.metadata)
       : Boolean(selectedConnection);
   const connected = connectorConnectionIsReady(connector, hasStrategyConnection);
+
+  // The `?connect=1` handoff from an add flow. Fires once, then strips the
+  // param so refresh and back do not re-open the dialog. Only for connectors
+  // whose credential is entered HERE: managed providers authorize during the
+  // add flow, channels connect through their platform install, and computer
+  // profiles have no credential dialog at all.
+  const [autoConnectConsumed, setAutoConnectConsumed] = useState(false);
+  useEffect(() => {
+    if (!autoConnectRequested || autoConnectConsumed) return;
+    setAutoConnectConsumed(true);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('connect');
+    const suffix = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      suffix ? `${window.location.pathname}?${suffix}` : window.location.pathname,
+    );
+    if (
+      canWrite &&
+      !connected &&
+      !isManagedProvider &&
+      !isChannel &&
+      !isComputer &&
+      usesProjectAuthorization &&
+      connector.authSecret
+    ) {
+      setCredOpen(true);
+    }
+  }, [
+    autoConnectConsumed,
+    autoConnectRequested,
+    canWrite,
+    connected,
+    connector.authSecret,
+    isChannel,
+    isComputer,
+    isManagedProvider,
+    usesProjectAuthorization,
+  ]);
 
   const configQuery = useQuery({
     queryKey: qk.project.connectorConfig(projectId, connector.slug),
@@ -325,7 +369,13 @@ function ConnectedConnectorContent({
       ) : (
         <PlusIcon className="size-4 shrink-0" />
       )}
-      {isManagedProvider ? 'Connect' : 'Add credential'}
+      {/* One verb for one job. This button used to say "Add credential" for
+          every non-managed connector — the same words as the dialog it opens
+          and the setup step that names it, so nothing distinguished the paths
+          (Marko: "every button had the same name"). The button connects; the
+          dialog it opens does the naming of HOW (one-click OAuth, or the
+          specific credential the server wants). */}
+      Connect
     </Button>
   ) : showReconnectCta ? (
     <Button
@@ -356,9 +406,17 @@ function ConnectedConnectorContent({
       ? 'Connect one account or credential that every authorized project session can use.'
       : 'Each member connects a separate account from the Accounts tab.';
 
-  const technicalRows = configQuery.data ? connectorTechnicalRows(configQuery.data) : [];
+  const setupSteps = connectorSetupSteps({
+    provider: connector.provider,
+    authorizationStrategy: connector.authorizationStrategy,
+    connected: false,
+    requestAuthType: connector.requestAuthType,
+  });
+  // Curated: the Kortix guide anchored to this provider's section, the app's
+  // own developer docs when we know them (that is where the API key or server
+  // URL comes from), plus whatever URL the connector config itself carries.
   const docsLinks = [
-    { label: 'Kortix connector docs', href: '/docs/connect/connectors' },
+    ...connectorDocLinks(connector),
     ...(configQuery.data?.url?.startsWith('http')
       ? [{ label: 'Official connector URL', href: configQuery.data.url, external: true }]
       : []),
@@ -367,77 +425,96 @@ function ConnectedConnectorContent({
     router.replace(`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`);
 
   return (
-    <ConnectorDetailLayout
-      backHref={`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`}
-      icon={<ConnectorAppIcon connector={connector} size="lg" />}
-      title={
-        <ConnectorHeaderName
-          projectId={projectId}
-          slug={connector.slug}
-          displayName={displayName}
-          canWrite={canWrite}
-          disabled={strategyUpdating}
-          onChanged={invalidate}
-        />
-      }
-      description={connectorSummary(connector, providerLabel(connector.provider))}
-      status={
-        connected ? (
-          <Badge variant="success" size="sm">
-            Connected
-          </Badge>
-        ) : (
-          <ConnectorStatusBadge connector={connector} />
-        )
-      }
-      primaryTitle={primaryTitle}
-      primaryDescription={primaryDescription}
-      primaryAction={primaryAction}
-    >
-      <ConnectorSetupGuide
-        steps={connectorSetupSteps({
-          provider: connector.provider,
-          authorizationStrategy: connector.authorizationStrategy,
-          connected,
-          requestAuthType: connector.requestAuthType,
-        })}
-      />
+    /* The Connect dialog is a SPLIT column of this page, not an overlay: the
+       connection panel, stepper, and accounts stay readable beside the form
+       while the user fills it. */
+    <SplitSheet open={credOpen} onOpenChange={setCredOpen} size="lg" className="min-h-0 flex-1">
+      <SplitSheetMain className="flex flex-col">
+        <ConnectorDetailLayout
+          backHref={`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`}
+          icon={<ConnectorAppIcon connector={connector} size="xl" />}
+          title={
+            <ConnectorHeaderName
+              projectId={projectId}
+              slug={connector.slug}
+              displayName={displayName}
+              canWrite={canWrite}
+              disabled={strategyUpdating}
+              onChanged={invalidate}
+            />
+          }
+          description={connectorSummary(connector, providerLabel(connector.provider))}
+          status={
+            connected ? (
+              <Badge variant="success" size="sm">
+                Connected
+              </Badge>
+            ) : (
+              <ConnectorStatusBadge connector={connector} />
+            )
+          }
+          primaryTitle={primaryTitle}
+          primaryDescription={primaryDescription}
+          primaryAction={primaryAction}
+        >
+          {/* Where the credential actually lives, and the two-way door to the
+          Secrets page. Directly under the primary Connection panel — before
+          any tab — because "is this a pasted value or the project secret
+          LINEAR_API_KEY?" is connection state, not a settings detail. Only
+          connectors with a project-owned declared credential have a source to
+          name. */}
+          {!isManagedProvider &&
+          !isChannel &&
+          !isComputer &&
+          usesProjectAuthorization &&
+          connector.authSecret ? (
+            <ConnectorCredentialRow
+              projectId={projectId}
+              connector={connector}
+              canWrite={canWrite}
+              onChanged={invalidate}
+            />
+          ) : null}
 
-      <ConnectorDocumentationLinks links={docsLinks} />
+          {/* Always the SETUP script, never a swapped "review" variant — the
+          stepper is live, so connecting is what flips the steps to green
+          checks instead of replacing the text under the user. */}
+          <ConnectorSetupGuide steps={setupSteps} currentStep={connected ? setupSteps.length : 0} />
 
-      <ConnectorManagementTabs
-        projectId={projectId}
-        connector={connector}
-        displayName={displayName}
-        tabs={tabs}
-        selectedTab={tab}
-        canWrite={canWrite}
-        canManageConnections={canManageConnections}
-        strategyUpdating={strategyUpdating}
-        connectionsError={connectionsQuery.isError ? connectionsQuery.error : null}
-        onRetryConnections={() => void connectionsQuery.refetch()}
-        onTabChange={setSelectedTab}
-        onChanged={invalidate}
-        onRemoved={returnToConnected}
-        onStartSession={startPrivateSession}
-        onSetCredential={() => setCredOpen(true)}
-        onAuthorizationStrategyChange={(next) => {
-          setCredOpen(false);
-          setAuthorizationStrategyAwaitingRefresh(next);
-          updateAuthorizationStrategy.mutate(next);
-        }}
-      />
+          <ConnectorManagementTabs
+            projectId={projectId}
+            connector={connector}
+            displayName={displayName}
+            tabs={tabs}
+            selectedTab={tab}
+            canWrite={canWrite}
+            canManageConnections={canManageConnections}
+            strategyUpdating={strategyUpdating}
+            connectionsError={connectionsQuery.isError ? connectionsQuery.error : null}
+            onRetryConnections={() => void connectionsQuery.refetch()}
+            onTabChange={setSelectedTab}
+            onChanged={invalidate}
+            onRemoved={returnToConnected}
+            onStartSession={startPrivateSession}
+            onSetCredential={() => setCredOpen(true)}
+            onAuthorizationStrategyChange={(next) => {
+              setCredOpen(false);
+              setAuthorizationStrategyAwaitingRefresh(next);
+              updateAuthorizationStrategy.mutate(next);
+            }}
+          />
 
-      <ConnectorAdvancedSection
-        loading={configQuery.isLoading}
-        error={configQuery.isError}
-        rows={technicalRows}
-        headers={configQuery.data?.headers}
-        onRetry={() => void configQuery.refetch()}
-      />
+    
+          <ConnectorDocumentationLinks links={docsLinks} />
+        </ConnectorDetailLayout>
+      </SplitSheetMain>
 
+      {/* Conditional mount is safe here — one panel, one submit, no chained
+          internal step to lose — and it keeps the connectors-view chunk off
+          this route until Connect is actually pressed. */}
       {credOpen ? (
         <SetCredentialModal
+          shell="split"
           projectId={projectId}
           connector={connector}
           connectionId={
@@ -451,7 +528,7 @@ function ConnectedConnectorContent({
           onSaved={invalidate}
         />
       ) : null}
-    </ConnectorDetailLayout>
+    </SplitSheet>
   );
 }
 
@@ -559,35 +636,4 @@ function ConnectorManagementTabs({
       </div>
     </Tabs>
   );
-}
-
-function ConnectorAdvancedSection({
-  loading,
-  error,
-  rows,
-  headers,
-  onRetry,
-}: {
-  loading: boolean;
-  error: boolean;
-  rows: readonly ConnectorTechnicalRow[];
-  headers?: Readonly<Record<string, string>>;
-  onRetry: () => void;
-}) {
-  if (loading) return <Skeleton className="h-12 rounded-md" />;
-  if (error) {
-    return (
-      <ErrorState
-        size="sm"
-        title="Couldn’t load advanced configuration"
-        description="Transport, endpoint, authentication, and request headers are unavailable."
-        action={
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
-  return <ConnectorAdvanced rows={rows} headers={headers} />;
 }

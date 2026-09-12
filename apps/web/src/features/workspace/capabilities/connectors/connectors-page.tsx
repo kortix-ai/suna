@@ -12,7 +12,7 @@ import { MagnifyingGlassIcon, PlugIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,13 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsList,
+  TabsListCompact,
+  TabsTrigger,
+  TabsTriggerCompact,
+} from '@/components/ui/tabs';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   connectorConnectionQueryKeys,
@@ -58,6 +64,7 @@ import { providerLabel } from './provider-label';
 import {
   connectedCatalogKeys,
   type CatalogEntry,
+  type CatalogSource,
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
 import { ALL_CATEGORIES } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
@@ -72,11 +79,11 @@ import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import {
   connectorDisplayName,
-  connectorSummary,
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
 import { catalogConnectorHref, connectedConnectorHref } from './connector-routes';
+import { connectorStatusLine } from './connector-status-line';
 
 /**
  * The custom-connector form is split out of this route's initial chunk.
@@ -273,6 +280,25 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [pathname, router, search],
   );
 
+  // Legacy `?c=<slug>` — the retired modal's selection param. It is still
+  // arriving: bookmarks taken while the modal existed, and OAuth 2.0 returns
+  // whose `success_redirect_uri` was minted before the detail became a route
+  // (the grant round trip can outlive a deploy). Forward it to the
+  // connector's page, carrying every OTHER param along so the `?oauth2=`
+  // outcome still lands where the toast for it lives.
+  const legacyDetailSlug = search?.get('c') ?? null;
+  useEffect(() => {
+    if (!legacyDetailSlug) return;
+    const params = new URLSearchParams(search?.toString() ?? '');
+    params.delete('c');
+    params.delete('scope');
+    const suffix = params.toString();
+    router.replace(
+      `${connectedConnectorHref(projectId, legacyDetailSlug)}${suffix ? `?${suffix}` : ''}`,
+      { scroll: false },
+    );
+  }, [legacyDetailSlug, projectId, router, search]);
+
   // Which scope the strip is on, held in the URL rather than in state.
   //
   // It has to be addressable: `/projects/<id>/channels` was a real route until
@@ -287,6 +313,19 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     (next: ConnectorScope) =>
       replaceParams((params) =>
         next === 'discover' ? params.delete('scope') : params.set('scope', next),
+      ),
+    [replaceParams],
+  );
+
+  // Which catalogue the Discovery/All grids read (COR-17, MCP-first). Discover
+  // ("MCP & APIs") is the default and writes no param; `?src=apps` switches to
+  // Easy Connect's OAuth apps. In the URL for the same reason `?scope=` is —
+  // a shared link or an OAuth return must land on the list the user was on.
+  const catalogSource: CatalogSource = search?.get('src') === 'apps' ? 'easy-connect' : 'discover';
+  const setCatalogSource = useCallback(
+    (next: CatalogSource) =>
+      replaceParams((params) =>
+        next === 'easy-connect' ? params.set('src', 'apps') : params.delete('src'),
       ),
     [replaceParams],
   );
@@ -318,9 +357,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const connectedKeys = useMemo(() => connectedCatalogKeys(connectors), [connectors]);
 
   // What the card actually shows, handed to the search so typing a word the
-  // user can read on screen matches the card carrying it.
+  // user can read on screen matches the card carrying it. The line LEADS with
+  // the state in words ("Connected", "Needs setup — connect an account") —
+  // the Connected grid's job is telling a non-technical reader what works and
+  // what to do next, not which protocol a connector speaks; the tool count
+  // and provider ride along as trailing meta.
   const describeConnector = useCallback(
-    (connector: AdminConnector) => connectorSummary(connector, providerLabel(connector.provider)),
+    (connector: AdminConnector) =>
+      connectorStatusLine(connector, providerLabel(connector.provider)),
     [],
   );
 
@@ -431,6 +475,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     enabled: catalogActive,
     discoverEnabled,
     focusCategory,
+    preferredSource: catalogSource,
   });
 
   // A category is a key in ONE catalogue's vocabulary. When `discoverEnabled`
@@ -585,16 +630,36 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
            one column, the one heading and the one scroll container now. */
         <ChannelsSection projectId={projectId} />
       ) : catalogActive ? (
-        <ConnectorBrowse
-          state={catalog}
-          connectedKeys={connectedKeys}
-          mode={scope === 'discover' ? 'sectioned' : 'flat'}
-          category={category}
-          onCategoryChange={setCategory}
-          getHref={getCatalogHref}
-          emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
-          emptyDescription={tI18nComplete.raw('textf652a621153e')}
-        />
+        <div className="space-y-4">
+          {/* The source switch (COR-17). MCP & APIs (Discover) leads; the
+              Easy Connect OAuth apps stay one click away instead of gone.
+              Only rendered when the deployment has both sources — with the
+              discover flag off there is nothing to switch between. Reads
+              `catalog.source`, not the requested param, so it shows the
+              source that actually answered. */}
+          {discoverEnabled ? (
+            <Tabs
+              value={catalog.source}
+              onValueChange={(value) => setCatalogSource(value as CatalogSource)}
+              className="w-fit"
+            >
+              <TabsListCompact type="default" aria-label="Catalogue source">
+                <TabsTriggerCompact value="discover">MCP &amp; APIs</TabsTriggerCompact>
+                <TabsTriggerCompact value="easy-connect">OAuth apps</TabsTriggerCompact>
+              </TabsListCompact>
+            </Tabs>
+          ) : null}
+          <ConnectorBrowse
+            state={catalog}
+            connectedKeys={connectedKeys}
+            mode={scope === 'discover' ? 'sectioned' : 'flat'}
+            category={category}
+            onCategoryChange={setCategory}
+            getHref={getCatalogHref}
+            emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+            emptyDescription={tI18nComplete.raw('textf652a621153e')}
+          />
+        </div>
       ) : (
         <CatalogGrid
           // `!settled`, not `connectorsQuery.isLoading`: the empty state's
@@ -665,7 +730,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 invalidate();
                 if (slug) {
                   setPanel(null);
-                  router.push(connectedConnectorHref(projectId, slug));
+                  // `?connect=1`: the connector page opens its connect dialog
+                  // when a credential is still needed. A custom connector
+                  // created with its credential in the same form arrives
+                  // already connected, and the page ignores the param.
+                  router.push(`${connectedConnectorHref(projectId, slug)}?connect=1`);
                 }
               }}
             />

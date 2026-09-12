@@ -23,17 +23,28 @@ describe('catalogue connector detail route', () => {
     expect(page).toContain('listPipedreamApps(projectId, slug)');
     expect(page).toContain('computersCatalogEntry(tI18nComplete)');
     expect(page).toContain('<ConnectorDetailLayout');
-    expect(page).toContain('<ConnectorAdvanced');
-    expect(page).toContain('Kortix connector docs');
+    // Docs come from the curated per-app map shared with the connected page.
+    expect(page).toContain('connectorDocLinks({ provider, slug: entry.slug, name: entry.name })');
     expect(page).not.toContain('ConnectorBrowse');
   });
 
-  test('loads add flows only after the primary action is selected', () => {
+  test('discover adds through the SPLIT column; modal flows stay prop-driven', () => {
     const page = readFileSync(join(feature, 'catalog-connector-page.tsx'), 'utf8');
-    expect(page).toContain('const DiscoverAddFlow = dynamic(');
+    // Discover entries add through an inline SplitSheet column — the page
+    // narrows, nothing overlays it. Other sources keep their modal flows.
+    expect(page).toContain('const DiscoverAddSheet = dynamic(');
+    expect(page).toContain('<SplitSheet');
+    expect(page).toContain("open={entry.source === 'discover' && actionOpen}");
+    expect(page).toContain('<SplitSheetMain');
+    expect(page).toContain('<SplitSheetTrigger asChild>');
     expect(page).toContain('const EasyConnectAddFlow = dynamic(');
     expect(page).toContain('const ComputersAddFlow = dynamic(');
-    expect(page).toContain('actionOpen ?');
+    // Modal flows are multi-step with internal state; gating their MOUNT on
+    // `actionOpen` destroys it mid-hand-off ("Add connector does nothing").
+    // Open must be a PROP:
+    expect(page).toContain('app={actionOpen ? entry.app : null}');
+    expect(page).toContain('open={actionOpen}');
+    expect(page).not.toContain('{actionOpen ? (');
     expect(page).toContain('connectedConnectorHref(projectId, addedSlug)');
   });
 });

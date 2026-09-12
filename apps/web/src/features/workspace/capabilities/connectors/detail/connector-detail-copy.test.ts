@@ -3,7 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   connectorConnectionIsReady,
   connectorSetupSteps,
-  connectorTechnicalRows,
+  recommendedSurfaceVariant,
+  surfacesRecommendedFirst,
 } from './connector-detail-copy';
 
 describe('connectorConnectionIsReady', () => {
@@ -33,7 +34,7 @@ describe('connectorConnectionIsReady', () => {
 });
 
 describe('connectorSetupSteps', () => {
-  test('keeps OAuth terminology for a managed project connector', () => {
+  test('a managed project connector names the Connect button and the Accounts tab', () => {
     expect(
       connectorSetupSteps({
         provider: 'composio',
@@ -43,18 +44,55 @@ describe('connectorSetupSteps', () => {
       }),
     ).toEqual([
       {
-        title: 'Start the connection',
-        description: 'Open the provider authorization flow from Kortix.',
+        title: 'Click Connect',
+        description: 'The Connect button above opens the provider’s own sign-in window.',
       },
       {
         title: 'Approve OAuth access',
         description: 'Sign in to the provider and approve the requested account or workspace.',
       },
       {
-        title: 'Verify the project connection',
-        description: 'Return to Kortix and confirm that the shared account reports Connected.',
+        title: 'Check the account under Accounts',
+        description:
+          'You land back on this page. The account appears in the Accounts tab below, and the shared project account reports Connected.',
       },
     ]);
+  });
+
+  test('a user-strategy managed connector names the button that actually exists', () => {
+    const steps = connectorSetupSteps({
+      provider: 'pipedream',
+      authorizationStrategy: 'user',
+      connected: false,
+      requestAuthType: 'oauth2',
+    });
+    expect(steps[0]?.title).toBe('Click Add my own');
+    expect(steps[2]?.description).toContain('your account for private sessions');
+  });
+
+  test('a direct connector says where the credential comes from', () => {
+    const steps = connectorSetupSteps({
+      provider: 'openapi',
+      authorizationStrategy: 'project',
+      connected: false,
+      requestAuthType: 'api_key',
+    });
+    // Titles name the button as labelled on the page — the primary CTA says
+    // Connect for every provider kind now, never "Add credential".
+    expect(steps[1]?.title).toBe('Click Connect');
+    expect(steps[1]?.description).toContain('developer or API settings');
+    expect(steps[1]?.description).toContain('agents never see it');
+  });
+
+  test('the MCP script leads with one-click OAuth, not with pasting a key', () => {
+    const steps = connectorSetupSteps({
+      provider: 'mcp',
+      authorizationStrategy: 'project',
+      connected: false,
+      requestAuthType: 'bearer',
+    });
+    expect(steps[1]?.title).toBe('Click Connect');
+    expect(steps[1]?.description).toContain('one click');
   });
 
   test('describes direct MCP credential setup', () => {
@@ -66,7 +104,7 @@ describe('connectorSetupSteps', () => {
     });
 
     expect(steps[0]?.description).toContain('MCP endpoint');
-    expect(steps[1]?.description).toContain('Bearer credential');
+    expect(steps[1]?.description).toContain('paste the token');
     expect(steps[2]?.description).toContain('Connected');
   });
 
@@ -87,42 +125,28 @@ describe('connectorSetupSteps', () => {
   });
 });
 
-describe('connectorTechnicalRows', () => {
-  test('returns exact protocol and request metadata', () => {
-    expect(
-      connectorTechnicalRows({
-        transport: 'sse',
-        endpoint: 'https://mcp.example.com/sse',
-        url: null,
-        baseUrl: null,
-        auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
-        authorizationStrategy: 'project',
-        headers: { Accept: 'application/json', 'X-Client': 'kortix' },
-      }),
-    ).toEqual([
-      { label: 'Transport', value: 'SSE' },
-      { label: 'Endpoint', value: 'https://mcp.example.com/sse' },
-      { label: 'Authentication', value: 'Bearer token' },
-      { label: 'Credential location', value: 'Request header · Authorization' },
-      { label: 'Access', value: 'Project · one shared connection' },
-      { label: 'Request headers', value: 'Accept, X-Client' },
-    ]);
+describe('recommendedSurfaceVariant — MCP-first surface pick (COR-17)', () => {
+  const mcp = { kind: 'mcp', connector: { provider: 'mcp' } };
+  const openapi = { kind: 'openapi', connector: { provider: 'openapi' } };
+  const docsOnly = { kind: 'graphql', connector: null };
+
+  test('an addable MCP surface wins regardless of feed position', () => {
+    expect(recommendedSurfaceVariant([openapi, docsOnly, mcp])).toBe(mcp);
   });
 
-  test('omits absent protocol values and states no authentication', () => {
-    expect(
-      connectorTechnicalRows({
-        transport: null,
-        endpoint: null,
-        url: null,
-        baseUrl: null,
-        auth: { type: 'none', in: 'header', name: null, prefix: null },
-        authorizationStrategy: 'user',
-        headers: {},
-      }),
-    ).toEqual([
-      { label: 'Authentication', value: 'None' },
-      { label: 'Access', value: 'Each member · separate connection' },
-    ]);
+  test('an MCP surface without a template cannot win over an addable one', () => {
+    const mcpDocsOnly = { kind: 'mcp', connector: null };
+    expect(recommendedSurfaceVariant([mcpDocsOnly, openapi])).toBe(openapi);
+  });
+
+  test('falls back to the first addable surface, then the first surface', () => {
+    expect(recommendedSurfaceVariant([docsOnly, openapi])).toBe(openapi);
+    expect(recommendedSurfaceVariant([docsOnly])).toBe(docsOnly);
+    expect(recommendedSurfaceVariant([])).toBe(null);
+  });
+
+  test('surfacesRecommendedFirst moves the pick to the front and keeps the rest stable', () => {
+    expect(surfacesRecommendedFirst([openapi, docsOnly, mcp])).toEqual([mcp, openapi, docsOnly]);
+    expect(surfacesRecommendedFirst([])).toEqual([]);
   });
 });

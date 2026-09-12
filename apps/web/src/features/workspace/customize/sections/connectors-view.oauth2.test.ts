@@ -48,6 +48,18 @@ describe('Custom connector OAuth2 onboarding', () => {
     }
   });
 
+  test('the credential dialog offers OAuth 2.0 only when the server requires it', () => {
+    // The tab strip is gated on discovery (`oauth2CredentialOffered`) — an
+    // API-key connector must open on its one real credential form, not a
+    // selector that includes a grant flow its server does not speak.
+    expect(connectorsSource).toContain('oauth2CredentialOffered(plan)');
+    expect(connectorsSource).toContain('{showOAuth2Tabs ? (');
+    // …and the hidden tab keeps a manual way in for servers that demand OAuth
+    // without advertising it.
+    expect(connectorsSource).toContain('Use OAuth 2.0 instead');
+    expect(connectorsSource).toContain('setOauth2Requested(true)');
+  });
+
   test('does not contain provider-specific OAuth examples', () => {
     expect(fieldsSource).not.toContain('microsoftonline.com');
     expect(fieldsSource).not.toContain('graph.microsoft.com');

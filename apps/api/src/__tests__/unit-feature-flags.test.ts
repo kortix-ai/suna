@@ -142,8 +142,10 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
-  test('connectors_api_discover is explicit opt-in', () => {
-    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
+  test('connectors_api_discover defaults ON — MCP-first marketplace (COR-17)', () => {
+    // The Discover catalogue is the default marketplace; a project opts OUT
+    // explicitly, never in.
+    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(true);
     expect(
       resolveFeatureFlag(
         { experimental: { connectors_api_discover: true } },

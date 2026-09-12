@@ -93,6 +93,29 @@ export function catalogEntryFromEasyConnect(
  * into one comparable token: `Google Sheets`, `google-sheets` and
  * `google_sheets` all become `googlesheets`.
  */
+/**
+ * The catalogue kind behind a card, or `null` when the source has none
+ * (Easy Connect apps and the native Computers card carry no kind).
+ */
+export function catalogEntryKind(entry: CatalogEntry): DiscoverConnector['kind'] | null {
+  return entry.source === 'discover' ? entry.connector.kind : null;
+}
+
+/**
+ * MCP servers first, everything else in its existing order — a stable
+ * partition, not a re-sort.
+ *
+ * This is the COR-17 editorial rule: MCP auth got good enough for one-click
+ * connect (OAuth discovery + dynamic client registration), so the marketplace
+ * leads with MCP. It applies to the sectioned Discovery browse only — the All
+ * tab keeps raw feed order on purpose, so one tab stays unopinionated.
+ */
+export function mcpFirst(entries: readonly CatalogEntry[]): CatalogEntry[] {
+  const mcp = entries.filter((entry) => catalogEntryKind(entry) === 'mcp');
+  if (mcp.length === 0) return [...entries];
+  return [...mcp, ...entries.filter((entry) => catalogEntryKind(entry) !== 'mcp')];
+}
+
 export function foldKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -145,12 +168,65 @@ export function connectedCatalogKeys(connectors: readonly AdminConnector[]): Rea
   return keys;
 }
 
+/**
+ * Does a connector token (folded slug or name) identify this entry token?
+ *
+ * Exact match, or the connector token EXTENDS the entry's — the default add
+ * flows propose names like "Canva MCP server" / "Canva MCP server 2", which
+ * fold to `canvamcpserver…` and share only a PREFIX with the entry's `canva`.
+ * Exact-only matching read every such connector as unrelated, so the Canva
+ * card offered `+` and the Canva page listed nothing while the project held
+ * two Canva servers. Prefix only counts for entry tokens of 4+ characters, so
+ * a short entry ("Git") cannot claim everything that merely starts with it
+ * (github, gitlab).
+ */
+function tokenIdentifiesEntry(connectorToken: string, entryToken: string): boolean {
+  if (!entryToken || !connectorToken) return false;
+  if (connectorToken === entryToken) return true;
+  return entryToken.length >= 4 && connectorToken.startsWith(entryToken);
+}
+
+function catalogEntryTokens(entry: CatalogEntry): string[] {
+  return [foldKey(entry.slug), foldKey(entry.name)].filter(Boolean);
+}
+
 export function isCatalogEntryConnected(
   entry: CatalogEntry,
   connectedKeys: ReadonlySet<string>,
 ): boolean {
   if (entry.source === 'computer') return connectedKeys.has('provider:computer');
-  return connectedKeys.has(foldKey(entry.slug)) || connectedKeys.has(foldKey(entry.name));
+  const tokens = catalogEntryTokens(entry);
+  // The set stays the cheap exact index; the prefix pass iterates it — two
+  // keys per connector, dozens of connectors, ~72 cards: trivial.
+  for (const token of tokens) {
+    if (connectedKeys.has(token)) return true;
+  }
+  for (const key of connectedKeys) {
+    if (tokens.some((token) => tokenIdentifiesEntry(key, token))) return true;
+  }
+  return false;
+}
+
+/**
+ * Every project connector created from this catalogue entry — the membership
+ * list behind a detail page's "In this project" section. Unlike
+ * {@link connectedCatalogKeys} it does NOT skip `needs_auth` rows: this is
+ * "what exists", not "what works" — a half-connected connector belongs in the
+ * list with its status line saying so.
+ */
+export function catalogEntryConnectors(
+  connectors: readonly AdminConnector[],
+  entry: CatalogEntry,
+): AdminConnector[] {
+  if (entry.source === 'computer') {
+    return connectors.filter((connector) => connector.provider === 'computer');
+  }
+  const tokens = catalogEntryTokens(entry);
+  return connectors.filter((connector) =>
+    [foldKey(connector.slug), foldKey(connector.name ?? '')].some((connectorToken) =>
+      tokens.some((token) => tokenIdentifiesEntry(connectorToken, token)),
+    ),
+  );
 }
 
 /** The synthetic first section. Not a catalogue category — see
@@ -192,23 +268,27 @@ export function catalogSections(
     rawCategoryKeys?: boolean;
   },
 ): Array<{ category: string; items: CatalogEntry[] }> {
-  const ranked = entries
-    .filter((entry) => entry.popularity !== null)
-    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
-    .slice(0, opts.popularCap);
+  const ranked = mcpFirst(
+    entries
+      .filter((entry) => entry.popularity !== null)
+      .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+      .slice(0, opts.popularCap),
+  );
 
   // Picks are applied HERE and nowhere else, which scopes them to the Discovery
   // tab: this is the only caller that builds sections. The All tab reads
   // `groupIntoSections` directly and keeps raw feed order, so the two tabs
   // never disagree about what "first" means — one is opinionated, one is not.
   //
-  // Popular is deliberately left alone. It is already ordered, by `popularity`,
-  // and re-sorting it by picks would replace a real ranking with a guess.
+  // `mcpFirst` rides on top of both orderings (COR-17): within Popular and
+  // within each section, MCP servers lead and the existing ranking (popularity,
+  // then picks) decides the order inside each half. A stable partition, so the
+  // real rankings survive intact on both sides of the split.
   const sections = groupIntoSections(entries, (entry) => entry.categories, {
     raw: opts.rawCategoryKeys,
   }).map((section) => ({
     category: section.category,
-    items: sortByPicks(section.category, section.items),
+    items: mcpFirst(sortByPicks(section.category, section.items)),
   }));
   return ranked.length > 0 ? [{ category: POPULAR_SECTION, items: ranked }, ...sections] : sections;
 }

@@ -3,12 +3,15 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  catalogEntryConnectors,
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
   catalogSections,
   computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
+  catalogEntryKind,
+  mcpFirst,
   POPULAR_SECTION,
 } from './catalog-entry';
 import { CATEGORY_ROW_CAP } from './connector-categories';
@@ -209,5 +212,92 @@ describe('catalogSections', () => {
     const sections = catalogSections(many, { popularCap: CATEGORY_ROW_CAP });
     expect(sections[0]?.category).toBe(POPULAR_SECTION);
     expect(sections[0]?.items.length).toBe(CATEGORY_ROW_CAP);
+  });
+});
+
+describe('mcpFirst — the COR-17 editorial rule', () => {
+  const mcpA = catalogEntryFromDiscover(connector({ id: 'a', slug: 'linear-mcp', kind: 'mcp' }));
+  const mcpB = catalogEntryFromDiscover(connector({ id: 'b', slug: 'attio-mcp', kind: 'mcp' }));
+  const api = catalogEntryFromDiscover(connector({ id: 'c', slug: 'stripe', kind: 'openapi' }));
+  const gql = catalogEntryFromDiscover(connector({ id: 'd', slug: 'shopify', kind: 'graphql' }));
+
+  test('kind resolves only for discover entries', () => {
+    expect(catalogEntryKind(mcpA)).toBe('mcp');
+    expect(catalogEntryKind(api)).toBe('openapi');
+    expect(catalogEntryKind(computersCatalogEntry(testUiTranslator))).toBe(null);
+  });
+
+  test('MCP servers move to the front; both halves keep their order', () => {
+    expect(mcpFirst([api, mcpA, gql, mcpB])).toEqual([mcpA, mcpB, api, gql]);
+  });
+
+  test('no MCP entries means no reordering at all', () => {
+    expect(mcpFirst([api, gql])).toEqual([api, gql]);
+  });
+
+  test('catalogSections leads every section with its MCP servers', () => {
+    const popular = catalogEntryFromDiscover(
+      connector({ id: 'e', slug: 'github', kind: 'openapi', popularity: 99 }),
+    );
+    const popularMcp = catalogEntryFromDiscover(
+      connector({ id: 'f', slug: 'github-mcp', kind: 'mcp', popularity: 5 }),
+    );
+    const sections = catalogSections([popular, popularMcp, api, mcpA], { popularCap: 6 });
+    const popularSection = sections.find((section) => section.category === POPULAR_SECTION);
+    // Less popular, but MCP — it still leads the Popular slice.
+    expect(popularSection?.items[0]).toBe(popularMcp);
+    // All four share the productivity category; both MCP entries lead it, in
+    // their pre-partition order.
+    const productivity = sections.find((section) => section.category === 'productivity');
+    expect(productivity?.items[0]).toBe(popularMcp);
+    expect(productivity?.items[1]).toBe(mcpA);
+  });
+});
+
+describe('catalogue membership join — prefix-aware (the Canva case)', () => {
+  const admin = (over: Partial<AdminConnector>): AdminConnector =>
+    ({
+      slug: 'x',
+      name: 'X',
+      provider: 'mcp',
+      status: 'active',
+      credentialMode: 'shared',
+      authorizationStrategy: 'project',
+      sensitive: false,
+      actions: [],
+      authSecret: null,
+      secretSet: false,
+      ...over,
+    }) as AdminConnector;
+
+  const canvaEntry = catalogEntryFromDiscover(
+    connector({ id: 'cv', slug: 'canva', name: 'Canva', kind: 'mcp' }),
+  );
+
+  test('default-named servers ("Canva MCP server", "…2") match the Canva entry', () => {
+    const one = admin({ slug: 'canva-mcp-server', name: 'Canva MCP server' });
+    const two = admin({ slug: 'canva-mcp-server-2', name: 'Canva MCP server 2' });
+    const other = admin({ slug: 'linear', name: 'Linear' });
+    expect(catalogEntryConnectors([other, one, two], canvaEntry)).toEqual([one, two]);
+  });
+
+  test('the card mark agrees with the page list', () => {
+    const keys = connectedCatalogKeys([admin({ slug: 'canva-mcp-server', name: 'Canva MCP server' })]);
+    expect(isCatalogEntryConnected(canvaEntry, keys)).toBe(true);
+  });
+
+  test('short entry tokens never claim by prefix — "Git" does not own GitHub', () => {
+    const gitEntry = catalogEntryFromDiscover(
+      connector({ id: 'g', slug: 'git', name: 'Git', kind: 'cli' }),
+    );
+    const github = admin({ slug: 'github', name: 'GitHub' });
+    expect(catalogEntryConnectors([github], gitEntry)).toEqual([]);
+    expect(isCatalogEntryConnected(gitEntry, connectedCatalogKeys([github]))).toBe(false);
+  });
+
+  test('membership lists needs_auth rows; the card mark still does not', () => {
+    const half = admin({ slug: 'canva-mcp-server', name: 'Canva MCP server', status: 'needs_auth' });
+    expect(catalogEntryConnectors([half], canvaEntry)).toEqual([half]);
+    expect(isCatalogEntryConnected(canvaEntry, connectedCatalogKeys([half]))).toBe(false);
   });
 });

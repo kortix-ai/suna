@@ -233,11 +233,21 @@ export function useCatalog(
     discoverEnabled: boolean;
     /** The category the grid is filtered to, or `null` for everything. */
     focusCategory?: string | null;
+    /**
+     * Which source the user asked for. With `connectors_api_discover` ON by
+     * default (COR-17, MCP-first marketplace) the Discover catalogue is the
+     * default source, and Easy Connect (Composio/Pipedream OAuth apps) is one
+     * switch away instead of gone — the two are still never merged (see "Why
+     * not merge them" above). Ignored when the flag is off: without the
+     * Discover routes there is only one source to offer.
+     */
+    preferredSource?: CatalogSource;
   },
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
-  const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
+  const source: CatalogSource =
+    opts.discoverEnabled && opts.preferredSource !== 'easy-connect' ? 'discover' : 'easy-connect';
   const category = opts.focusCategory ?? null;
   const searching = activeQuery.length > 0;
 

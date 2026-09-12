@@ -11,6 +11,17 @@ describe('connector card routes', () => {
     expect(page).toContain('href={connectedConnectorHref(projectId, connector.slug)}');
     expect(page).not.toContain("params.set('c'");
     expect(page).not.toContain('<ConnectorModal');
+    // Legacy `?c=<slug>` (modal-era bookmarks, and OAuth 2.0 returns whose
+    // redirect URI was minted before the detail became a route) must forward
+    // to the connector's page instead of dying silently on the list.
+    expect(page).toContain("search?.get('c')");
+    expect(page).toContain('connectedConnectorHref(projectId, legacyDetailSlug)');
+    // COR-17: Discover ("MCP & APIs") is the default catalogue source and the
+    // Easy Connect OAuth apps stay one switch away (`?src=apps`), never gone.
+    expect(page).toContain("search?.get('src') === 'apps'");
+    expect(page).toContain('preferredSource: catalogSource');
+    expect(page).toContain('MCP &amp; APIs');
+    expect(page).toContain('OAuth apps');
   });
 
   test('catalogue cards link to the source-specific catalogue route', () => {

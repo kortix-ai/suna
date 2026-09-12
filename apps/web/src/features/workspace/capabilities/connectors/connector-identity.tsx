@@ -46,7 +46,8 @@ const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   computer: Monitor,
 };
 
-function appIconTileClass(size: 'sm' | 'lg'): string {
+function appIconTileClass(size: 'sm' | 'lg' | 'xl'): string {
+  if (size === 'xl') return 'size-14 rounded-md';
   return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
 }
 
@@ -55,7 +56,8 @@ export function ConnectorAppIcon({
   size = 'lg',
 }: {
   connector: AdminConnector;
-  size?: 'sm' | 'lg';
+  /** `xl` is the detail-page header tile; grids stay on `lg`/`sm`. */
+  size?: 'sm' | 'lg' | 'xl';
 }) {
   const imgSrc = connector.iconUrl ?? null;
 
@@ -73,7 +75,7 @@ export function ConnectorAppIcon({
           alt=""
           referrerPolicy="no-referrer"
           fill
-          sizes={size === 'lg' ? '40px' : '28px'}
+          sizes={size === 'xl' ? '56px' : size === 'lg' ? '40px' : '28px'}
           className="object-contain"
           unoptimized
         />

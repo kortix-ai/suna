@@ -52,12 +52,23 @@ A connector uses one provider type:
 See [Slack and channels](/docs/connect/slack) and
 [Computers](/docs/connect/computers) for the managed provider flows.
 
+MCP is the recommended provider for a new connector. The Connectors catalogue
+lists MCP servers first, and a server that implements the MCP authorization
+specification connects in one click — no app to create, no client ID to paste
+(see [Connect an MCP server that uses OAuth 2.1](#connect-an-mcp-server-that-uses-oauth-21)).
+
 ## Authentication and policy
 
 A connection authenticates with:
 
 - OAuth through Pipedream, a channel install, or a native OAuth2 grant
 - an API key or token entered through the dashboard or SDK
+
+A project connector's credential can also come from a project secret. Bind an
+existing secret by its identifier from the **Credential source** row on the
+connector's page, or from the secret's own delivery settings on the Secrets
+page. The connector then follows the secret: rotating the secret value rotates
+what the connector sends, and the connector page names the bound identifier.
 
 Kortix encrypts connection data and resolves it server-side for each tool
 call. The agent requests an action. Kortix attaches the credential, checks the
@@ -126,9 +137,12 @@ After authorization, use the connector page tabs:
 
 ## Connect an MCP server that uses OAuth 2.1
 
-Kortix implements the MCP authorization specification. Open the connector,
-select **Add credential**, then select the **OAuth 2.0** tab. Kortix probes the
-server and reads its metadata:
+Kortix implements the MCP authorization specification. Open the connector's
+page and select **Add credential**. Kortix probes the server first: when the
+server requires OAuth 2.0, the dialog opens on the **OAuth 2.0** tab; when it
+uses a plain token, only the credential field appears (with a **Use OAuth 2.0
+instead** action for servers that require OAuth without advertising it). The
+probe reads the server's metadata:
 
 1. The unauthenticated probe returns `401` with
    `WWW-Authenticate: Bearer resource_metadata="…"`.

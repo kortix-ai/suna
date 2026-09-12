@@ -68,7 +68,9 @@ describe('connectors page error path', () => {
 
   test('custom creation navigates only when synchronization returns a slug', () => {
     expect(source).toContain('if (slug) {');
-    expect(source).toContain('router.push(connectedConnectorHref(projectId, slug))');
+    // `?connect=1` hands the arrival off to the connector page's connect
+    // dialog when a credential is still needed (COR-17 click-path).
+    expect(source).toContain('router.push(`${connectedConnectorHref(projectId, slug)}?connect=1`)');
   });
 
   test('the plus button opens the custom form only', () => {

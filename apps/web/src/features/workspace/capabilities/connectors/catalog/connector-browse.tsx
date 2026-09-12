@@ -18,7 +18,7 @@ import {
 } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 import { cn } from '@/lib/utils';
-import { isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
+import { catalogEntryKind, isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
 import { catalogFootSummary } from './catalog-foot';
 import { CategoryIcon } from './category-icon';
 import { ALL_CATEGORIES, OTHER } from './connector-categories';
@@ -34,18 +34,20 @@ import { useCatalogAutoload } from './use-catalog-autoload';
  * one badge's width and needs no decoding.
  */
 function CatalogAffordance({ connected }: { connected: boolean }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (connected) {
     return (
+      // "Added", not "Connected": a catalogue card marks membership, not
+      // health — the project may hold several connections from this entry,
+      // each with its own status, and more can always be added.
       <Badge variant="success" size="sm" data-testid="catalog-connected">
-        {tI18nComplete.raw('text22965568d22a')}
+        Added
       </Badge>
     );
   }
   return (
     <PlusIcon
       aria-hidden
-      className="text-muted-foreground/80 group-hover:text-foreground size-4 shrink-0 transition-colors duration-150 ease-out"
+      className="text-muted-foreground/80 group-hover:text-foreground size-4 shrink-0 transition-colors duration-normal ease-out"
       data-testid="catalog-add"
     />
   );
@@ -112,6 +114,15 @@ const CatalogEntryCard = memo(function CatalogEntryCard({
       leading={<ConnectorIcon icon={entry.icon} computer={entry.source === 'computer'} />}
       title={entry.name}
       description={entry.description}
+      badges={
+        // The promoted kind gets a name on the card (COR-17). Other kinds stay
+        // unlabelled — a chip on every card is a taxonomy, not a signal.
+        catalogEntryKind(entry) === 'mcp' ? (
+          <Badge variant="outline" size="xs">
+            MCP
+          </Badge>
+        ) : undefined
+      }
       trailing={<CatalogAffordance connected={isCatalogEntryConnected(entry, connectedKeys)} />}
       href={getHref(entry)}
     />
@@ -185,7 +196,7 @@ function CategorySection({
             // and bottom for 40.48px. Vertical only: the label already makes
             // the control ~64px wide, and widening it would push the target
             // toward the heading it sits opposite.
-            className="relative shrink-0 transition-transform duration-150 ease-out before:absolute before:-inset-y-1.5 before:content-[''] active:scale-[0.96]"
+            className="relative shrink-0 transition-transform duration-normal ease-out before:absolute before:-inset-y-1.5 before:content-[''] active:scale-[0.96]"
           >
             {tI18nComplete.raw('text30a64216eaea')}
           </Button>
@@ -237,7 +248,7 @@ function CategoryViewHeader({
         aria-label={tI18nComplete.raw('text74fc2cf3bb54')}
         // `-inset-1.5` on all sides here, unlike the section buttons: this
         // control sits at the row's left edge with nothing to its left.
-        className="text-muted-foreground hover:text-foreground relative -ml-2 transition-transform duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
+        className="text-muted-foreground hover:text-foreground relative -ml-2 transition-transform duration-normal ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
       >
         <ArrowLeftIcon className="size-3.5" />
         {tI18nComplete.raw('text76900f1bfd16')}
@@ -295,7 +306,7 @@ function CatalogFoot({
           variant="outline"
           size="sm"
           onClick={loadMore}
-          className="transition-transform duration-150 ease-out active:scale-[0.96]"
+          className="transition-transform duration-normal ease-out active:scale-[0.96]"
         >
           {tI18nComplete.raw('textac8991ef0101')}
         </Button>
@@ -452,7 +463,7 @@ export function ConnectorBrowse({
       // about to be replaced by a different one in the same position.
       aria-busy={state.isRefreshing || undefined}
       className={cn(
-        'space-y-6 transition-opacity duration-150 ease-out',
+        'space-y-6 transition-opacity duration-normal ease-out',
         state.isRefreshing && 'pointer-events-none opacity-60',
       )}
     >
