@@ -15,9 +15,10 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { loadConfig, type Config } from '../config'
-import type { Opencode } from '../opencode'
-import { buildOpencodeApp } from '../proxy'
+import { loadConfig } from '../config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/supervisor'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
 import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import {
@@ -71,7 +72,7 @@ function fakeOpencode(
   state: 'ok' | 'starting' | 'down' = 'starting',
   hooks: { restart?: () => void; internalUrl?: string } = {},
 ): Opencode {
-  // Loose cast — buildOpencodeApp only touches these three methods.
+  // Loose cast — buildOpenCodeTestApp only touches these three methods.
   return {
     getState: () => state,
     getPid: () => null,
@@ -980,7 +981,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('lets /kortix/health through with no header', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode(), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode(), Date.now())
     const res = await app.request('/kortix/health')
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
@@ -1003,7 +1004,7 @@ describe('daemon proxy auth gate', () => {
       const target = join(root, 'workspace')
       git(['init', '-b', 'main', target])
       writeFileSync(join(target, '.git', 'kortix-compiled-checkout.json'), '{}')
-      const app = buildOpencodeApp(
+      const app = buildOpenCodeTestApp(
         baseConfig({ projectTarget: target, compiledBootMode: 'prefer' }),
         fakeOpencode(),
         Date.now(),
@@ -1022,7 +1023,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('reports auth=unconfigured when the sandbox token is unset', async () => {
-    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode(), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig({ sandboxToken: undefined }), fakeOpencode(), Date.now())
     const res = await app.request('/kortix/health')
     const body = (await res.json()) as { auth: string }
     expect(body.auth).toBe('unconfigured')
@@ -1033,7 +1034,7 @@ describe('daemon proxy auth gate', () => {
     try {
       const target = join(root, 'workspace')
       mkdirSync(target)
-      const app = buildOpencodeApp(
+      const app = buildOpenCodeTestApp(
         baseConfig({ autoClone: true, projectTarget: target }),
         fakeOpencode('ok'),
         Date.now(),
@@ -1076,7 +1077,7 @@ describe('daemon proxy auth gate', () => {
       const target = join(root, 'workspace')
       mkdirSync(target)
       const timeline: { label: string; atMs: number }[] = [{ label: 'config-deps', atMs: 1 }]
-      const app = buildOpencodeApp(
+      const app = buildOpenCodeTestApp(
         baseConfig({ autoClone: false, projectTarget: target }),
         fakeOpencode('starting'),
         Date.now(),
@@ -1105,7 +1106,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('keeps runtime not ready until the boot OpenCode session is pinned', async () => {
-    const app = buildOpencodeApp(
+    const app = buildOpenCodeTestApp(
       baseConfig(),
       fakeOpencode('ok'),
       Date.now(),
@@ -1142,7 +1143,7 @@ describe('daemon proxy auth gate', () => {
   it('keeps OpenCode proxy disabled when auto-clone is enabled but no repo is present', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-empty-workspace-'))
     try {
-      const app = buildOpencodeApp(
+      const app = buildOpenCodeTestApp(
         baseConfig({ autoClone: true, projectTarget: root }),
         fakeOpencode('ok'),
         Date.now(),
@@ -1160,7 +1161,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('rejects proxied request without X-Kortix-User-Context → 401', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/session/anything')
     expect(res.status).toBe(401)
     const body = (await res.json()) as { error: string; reason: string }
@@ -1169,7 +1170,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('rejects bad-signature header → 401', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const tampered = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, 'wrong-secret')
     const res = await app.request('/session/anything', {
       headers: { [KORTIX_USER_CONTEXT_HEADER]: tampered },
@@ -1180,7 +1181,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('rejects expired token → 401', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const expired = signCtx(
       { userId: 'u', sandboxId: 's', sandboxRole: 'owner', ttl: -10 },
       TEST_TOKEN,
@@ -1194,7 +1195,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('refuses to proxy when the sandbox token is unset → 503 (never silently bypass)', async () => {
-    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig({ sandboxToken: undefined }), fakeOpencode('ok'), Date.now())
     const res = await app.request('/session/anything')
     expect(res.status).toBe(503)
     const body = (await res.json()) as { error: string; detail: string }
@@ -1203,7 +1204,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('passes valid token through to the reverse-proxy (which then returns 503 because opencode is starting)', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('starting'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('starting'), Date.now())
     const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
     const res = await app.request('/session/anything', {
       headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
@@ -1217,7 +1218,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('forwards valid token to upstream (502 because upstream unreachable, proves we got past the gate)', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
     const res = await app.request('/session/anything', {
       headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
@@ -1241,7 +1242,7 @@ describe('daemon proxy auth gate', () => {
         fetch: () => new Promise<Response>(() => {}),
       })
       try {
-        const app = buildOpencodeApp(
+        const app = buildOpenCodeTestApp(
           baseConfig(),
           fakeOpencode('ok', { internalUrl: `http://127.0.0.1:${hungUpstream.port}` }),
           Date.now(),
@@ -1267,7 +1268,7 @@ describe('daemon proxy auth gate', () => {
   )
 
   it('rejects /kortix/refresh without a signed user context', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/refresh', { method: 'POST' })
     expect(res.status).toBe(401)
     const body = (await res.json()) as { error: string; reason: string }
@@ -1279,7 +1280,7 @@ describe('daemon proxy auth gate', () => {
   // alone proves nothing about the hop: the preview proxy authenticates the
   // user traffic it relays with this very token. See KORTIX_SERVICE_CALL_HEADER.
   it('lets a direct API call reach /kortix/refresh?base=1', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/refresh?base=1&restart=0', {
       method: 'POST',
       headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
@@ -1291,7 +1292,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('rejects an invalid base_sha before Git execution', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/refresh?base=1&base_sha=main', {
       method: 'POST',
       headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
@@ -1303,7 +1304,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('rejects /kortix/abort without a signed user context', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/abort', { method: 'POST' })
     expect(res.status).toBe(401)
     const body = (await res.json()) as { error: string; reason: string }
@@ -1312,7 +1313,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('rejects /kortix/abort when the sandbox token is unset', async () => {
-    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig({ sandboxToken: undefined }), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/abort', { method: 'POST' })
     expect(res.status).toBe(503)
     const body = (await res.json()) as { error: string; detail: string }
@@ -1321,7 +1322,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('lets signed /kortix/abort reach the abort handler', async () => {
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
     const res = await app.request('/kortix/abort', {
       method: 'POST',
@@ -1356,7 +1357,7 @@ describe('daemon proxy auth gate', () => {
       git(['push', 'origin', 'main'], seed)
 
       let restartCalls = 0
-      const app = buildOpencodeApp(
+      const app = buildOpenCodeTestApp(
         baseConfig({
           projectTarget: worktree,
           repoUrl: remote,
@@ -1400,7 +1401,7 @@ describe('daemon proxy auth gate', () => {
       )
       const baseSha = gitOutput(['rev-parse', 'HEAD'], { cwd: worktree })
 
-      const app = buildOpencodeApp(
+      const app = buildOpenCodeTestApp(
         baseConfig({
           projectTarget: worktree,
           repoUrl: join(root, 'missing-remote.git'),
@@ -1460,7 +1461,7 @@ describe('daemon proxy auth gate', () => {
       git(['push', 'origin', 'main'], seed)
 
       let restartCalls = 0
-      const app = buildOpencodeApp(
+      const app = buildOpenCodeTestApp(
         baseConfig({
           projectTarget: worktree,
           repoUrl: remote,
@@ -1494,7 +1495,7 @@ describe('daemon proxy auth gate', () => {
       OLD_SECRET: 'old',
       REMOVED_SECRET: 'gone',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(
+    const app = buildOpenCodeTestApp(
       baseConfig(),
       fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
       Date.now(),
@@ -1563,7 +1564,7 @@ describe('daemon proxy auth gate', () => {
     delete process.env.KORTIX_LLM_BASE_URL
 
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(
+    const app = buildOpenCodeTestApp(
       baseConfig(),
       fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
       Date.now(),
@@ -1635,7 +1636,7 @@ describe('daemon proxy auth gate', () => {
     const previous = process.env.KORTIX_CONNECTORS_MCP_ENABLED
     delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(
+    const app = buildOpenCodeTestApp(
       baseConfig(),
       fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
       Date.now(),
@@ -1694,7 +1695,7 @@ describe('daemon proxy auth gate', () => {
       KORTIX_PROJECT_SECRET_NAMES: 'BOOT_SECRET',
       BOOT_SECRET: 'already-loaded',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(
+    const app = buildOpenCodeTestApp(
       baseConfig(),
       fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
       Date.now(),
@@ -1724,7 +1725,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('rejects /kortix/env without sandbox service bearer token', async () => {
-    const app = buildOpencodeApp(
+    const app = buildOpenCodeTestApp(
       baseConfig(),
       fakeOpencode('ok'),
       Date.now(),

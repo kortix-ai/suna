@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { buildOpencodeConfigContent } from '../opencode'
+import { buildOpencodeConfigContent } from '../harness/open-code/supervisor'
 
 // Native mode = the project's `llm_gateway` flag is OFF: no KORTIX_LLM_* env
 // reaches the box, provider API keys sit in the process env, and OpenCode's own

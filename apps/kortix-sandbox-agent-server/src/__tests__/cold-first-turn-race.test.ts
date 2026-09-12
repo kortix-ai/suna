@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { startOpencodeEventLoop } from '../opencode-events'
-import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../main'
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import { startOpencodeEventLoop } from '../harness/open-code/events'
+import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/supervisor'
 
 // Deterministic reproduction of the COLD-first-turn event-loss race using the
 // REAL daemon primitives (startOpencodeEventLoop + dispatch + relayTurnEndToApi +

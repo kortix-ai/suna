@@ -3,10 +3,10 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import { createOpencodeSupervisor } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpencodeSupervisor } from '../harness/open-code/supervisor'
 
-const MAIN = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+const MAIN = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
 
 let root: string
 let supervisor: ReturnType<typeof createOpencodeSupervisor> | null

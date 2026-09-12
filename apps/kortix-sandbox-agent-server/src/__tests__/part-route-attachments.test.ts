@@ -7,9 +7,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { OFFLOAD_PLACEHOLDER_URL } from '../attachment-offload'
-import type { Opencode } from '../opencode'
-import { createPartRouter, findAttachment } from '../routes/part'
+import { OFFLOAD_PLACEHOLDER_URL } from '../harness/open-code/attachment-offload'
+import type { Opencode } from '../harness/open-code/supervisor'
+import { createPartRouter, findAttachment } from '../harness/open-code/routes/part'
 
 let root: string
 let server: ReturnType<typeof Bun.serve> | null = null

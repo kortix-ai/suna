@@ -5,10 +5,10 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'bun:test'
 
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/supervisor'
 import { createProjectEnvStore } from '../project-env'
-import { buildOpencodeApp } from '../proxy'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
 
 const TEST_TOKEN = 'curl-test-kortix-token'
 const execFileAsync = promisify(execFile)
@@ -84,7 +84,7 @@ describe('project env sync curl e2e', () => {
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'old',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(
+    const app = buildOpenCodeTestApp(
       baseConfig(),
       fakeOpencode(() => { restarts += 1 }),
       Date.now(),

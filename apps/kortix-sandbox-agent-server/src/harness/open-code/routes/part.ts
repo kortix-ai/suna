@@ -18,8 +18,8 @@ import { readFileSync } from 'node:fs'
 import type { AttachmentLike } from '../attachment-offload'
 import { inlineAttachmentsOf, isOffloadPlaceholder, sidecarPathFor } from '../attachment-offload'
 import { existsSync } from 'node:fs'
-import { logger } from '../logger'
-import type { Opencode } from '../opencode'
+import { logger } from '../../../logger'
+import type { Opencode } from '../supervisor'
 
 export function findAttachment(
   parts: Array<Record<string, unknown>> | undefined,

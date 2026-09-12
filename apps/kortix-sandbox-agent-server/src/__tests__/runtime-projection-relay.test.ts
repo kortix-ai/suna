@@ -7,8 +7,8 @@ import {
   __setRuntimeProjectionStateReaderForTests,
   scheduleRuntimeProjectionPush,
   shedProjectionToFit,
-} from '../runtime-projection-relay'
-import { resetRuntimeStateForTests } from '../runtime-state-projection'
+} from '../harness/open-code/runtime-projection-relay'
+import { resetRuntimeStateForTests } from '../harness/open-code/runtime-state-projection'
 
 const BASE_ENV = {
   KORTIX_PROJECT_ID: 'proj-1',
@@ -413,19 +413,19 @@ describe('wiring', () => {
   // The relay is only worth anything if the daemon actually calls it. Pin the
   // four call sites so a refactor cannot silently drop the push.
   const main = new TextDecoder().decode(
-    new Uint8Array(require('node:fs').readFileSync(require('node:path').join(import.meta.dir, '..', 'main.ts'))),
+    new Uint8Array(require('node:fs').readFileSync(require('node:path').join(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'))),
   )
   const envRoute = require('node:fs').readFileSync(
-    require('node:path').join(import.meta.dir, '..', 'routes', 'env.ts'),
+    require('node:path').join(import.meta.dir, '..', 'harness', 'open-code', 'routes', 'env.ts'),
     'utf8',
   ) as string
 
-  test('main.ts pushes on both runtime-ready exits', () => {
+  test('native boot pushes on both runtime-ready exits', () => {
     const bootPushes = main.split("scheduleRuntimeProjectionPush('boot')").length - 1
     expect(bootPushes).toBe(2)
   })
 
-  test('main.ts pushes on the catalog-moving SSE frames', () => {
+  test('native boot pushes on the catalog-moving SSE frames', () => {
     expect(main).toContain("event.type === 'server.instance.disposed'")
     expect(main).toContain("event.type === 'mcp.tools.changed'")
     expect(main).toContain("event.type === 'plugin.added'")

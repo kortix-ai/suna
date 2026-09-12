@@ -22,7 +22,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-const SRC = await Bun.file(new URL('./main.ts', import.meta.url).pathname).text();
+const SRC = await Bun.file(new URL('./harness/open-code/boot.ts', import.meta.url).pathname).text();
 
 /** `relayQuestionToApi`'s body, up to the next top-level declaration. */
 function relayBody(): string {

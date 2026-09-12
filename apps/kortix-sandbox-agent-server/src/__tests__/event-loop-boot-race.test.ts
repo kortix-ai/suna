@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { startOpencodeEventLoop } from '../opencode-events'
-import type { Opencode } from '../opencode'
-import type { Config } from '../config'
+import { startOpencodeEventLoop } from '../harness/open-code/events'
+import type { Opencode } from '../harness/open-code/supervisor'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { createOpenCodeHarnessService } from '../harness/open-code/service'
 
 const loops: Array<{ stop(): void }> = []

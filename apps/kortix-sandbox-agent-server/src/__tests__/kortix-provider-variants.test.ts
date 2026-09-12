@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildOpencodeConfigContent, resetManagedModelsStateForTests } from '../opencode'
-import { resetManagedReconcileForTests } from '../main'
+import { buildOpencodeConfigContent, resetManagedModelsStateForTests } from '../harness/open-code/supervisor'
+import { resetManagedReconcileForTests } from '../harness/open-code/boot'
 
 // The composer's Thinking control lists `Object.keys(model.variants)` and sends
 // the pick as `variant` on the prompt. On-gateway the web derives those ids

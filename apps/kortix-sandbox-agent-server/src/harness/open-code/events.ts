@@ -1,5 +1,5 @@
 import { logger } from '../../logger'
-import type { Config } from '../../config'
+import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './supervisor'
 
 // opencode's QuestionInfo schema, mirrored from the v2 SDK. Anything richer

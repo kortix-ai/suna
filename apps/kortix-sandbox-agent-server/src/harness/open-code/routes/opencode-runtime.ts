@@ -1,3 +1,4 @@
+import { OPENCODE_EVENT_RECOVERY } from '../event-bus'
 /**
  * `/kortix/opencode/*` — the Kortix Runtime API, in-sandbox half.
  *
@@ -30,19 +31,19 @@
  */
 import { Hono, type Context } from 'hono'
 
-import type { Config } from '../config'
-import { logger } from '../logger'
-import type { Opencode } from '../opencode'
+import type { OpenCodeConfig as Config } from '../config'
+import { logger } from '../../../logger'
+import type { Opencode } from '../supervisor'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
-} from '../kortix-user-context'
+} from '../../../kortix-user-context'
 import type { OpencodeDb } from '../opencode-db'
 import { isSupportedOpencodeVersion } from '../opencode-db'
 import { projectTranscript } from '../opencode-projection'
 import type { RuntimeStateStore } from '../runtime-state-projection'
-import { kortixEventBus, type KortixEvent } from '../kortix-event-bus'
-import { etagMatches, notModified, timedJson } from '../kortix-http'
+import { kortixEventBus, type KortixEvent } from '../../../kortix-event-bus'
+import { etagMatches, notModified, timedJson } from '../../../kortix-http'
 import { observeRequestedTurn, resolveTurnObservationIdentity } from './health'
 import { readPinnedSessionId } from '../opencode-turn-state'
 
@@ -316,7 +317,7 @@ export function createOpencodeRuntimeRouter(cfg: Config, deps: OpencodeRuntimeDe
             if (replaying) pending.push(event)
             else send(event)
           },
-          { since, epoch },
+          { since, epoch, recover: OPENCODE_EVENT_RECOVERY },
         )
         unsubscribe = subscription.unsubscribe
 

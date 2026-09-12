@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { dispatch, type OpencodeTurnError } from '../opencode-events'
+import { dispatch, type OpencodeTurnError } from '../harness/open-code/events'
 
 describe('dispatch — session.error flattening', () => {
   test('flattens an APIError (out of credits) into name/message/statusCode', () => {

@@ -15,9 +15,9 @@ import {
   startManagedModelsPrefetch,
   withManagedOverlay,
   type Opencode,
-} from '../opencode'
-import { loadConfig } from '../config'
-import { reconcileManagedModels, resetManagedReconcileForTests } from '../main'
+} from '../harness/open-code/supervisor'
+import { loadOpenCodeConfig as loadConfig } from '../harness/open-code/config'
+import { reconcileManagedModels, resetManagedReconcileForTests } from '../harness/open-code/boot'
 
 // The 2026-08-19 outage in one sentence: the image-baked catalog is frozen at
 // template-build time, the managed lineup is deployment config, so a managed

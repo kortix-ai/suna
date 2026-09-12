@@ -15,13 +15,13 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
 
-import { finalizeOrphanedTurn } from '../main'
+import { finalizeOrphanedTurn } from '../harness/open-code/boot'
 import { TURN_PROBE_WINDOW, inspectOpencodeRoot,
   observeOpencodeDelivery,
   opencodeDeliveryInFlight,
   opencodeTurnInFlight,
-} from '../opencode-turn-state';
-import { createHealthRouter, observeRequestedTurn } from '../routes/health';
+} from '../harness/open-code/opencode-turn-state';
+import { createHealthRouter, observeRequestedTurn } from '../harness/open-code/routes/health';
 
 const BASE = 'http://127.0.0.1:4096';
 const WORKSPACE = '/workspace';

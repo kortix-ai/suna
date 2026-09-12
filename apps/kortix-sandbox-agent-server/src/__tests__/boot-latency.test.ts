@@ -14,7 +14,7 @@ import {
   hasKortixLlmGateway,
   scheduleCatalogWarmToPathForTests,
   resetManagedModelsStateForTests,
-} from '../opencode'
+} from '../harness/open-code/supervisor'
 
 const BASE_ENV = { KORTIX_WORKSPACE: '/workspace', KORTIX_REPO_URL: 'https://example.test/r.git' }
 

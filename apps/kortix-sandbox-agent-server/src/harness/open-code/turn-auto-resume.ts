@@ -1,7 +1,7 @@
-import type { Config } from './config';
-import { logger } from './logger';
-import type { Opencode } from './opencode';
-import type { OpencodeTurnError } from './opencode-events';
+import type { OpenCodeConfig as Config } from './config';
+import { logger } from '../../logger';
+import type { Opencode } from './supervisor';
+import type { OpencodeTurnError } from './events';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Turn-level auto-resume: when a ROOT turn dies from a TRANSIENT provider/stream

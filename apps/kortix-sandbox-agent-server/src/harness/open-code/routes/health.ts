@@ -2,10 +2,10 @@ import { Hono } from 'hono'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import { readRepoInfo } from '../git'
-import { runtimeConvergenceReport } from '../runtime-assets'
-import type { Opencode } from '../opencode'
+import type { OpenCodeConfig as Config } from '../config'
+import { readRepoInfo } from '../../../git'
+import { runtimeConvergenceReport } from '../../../runtime-assets'
+import type { Opencode } from '../supervisor'
 import {
   type OpencodeDeliveryObservation,
   inspectOpencodeRoot,
@@ -48,29 +48,8 @@ function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   }
 }
 
-export type BootMark = { label: string; atMs: number }
-
-export type SandboxBootState = {
-  repoMaterializationError: string | null
-  /** In-container boot timeline (ms since process start) for latency benchmarking. */
-  timeline: BootMark[]
-  /** True when boot must create a first OpenCode conversation before the UI is usable. */
-  initialOpenCodeSessionRequired?: boolean
-  /** OpenCode session id created during boot, if one was requested. */
-  initialOpenCodeSessionId?: string | null
-  /** Boot-time OpenCode session creation failure. */
-  initialOpenCodeSessionError?: string | null
-  /** Fatal local persistence failure in the OpenCode audit relay. */
-  auditRelayError?: string | null
-  /**
-   * False ONLY while the early-spawn boot path is still assembling the
-   * workspace (checkout + config-dir deps + injected skills). OpenCode builds
-   * a directory Instance — and caches its local-tool registry, imports
-   * included — on the first directory-scoped request, so nothing may reach it
-   * before this flips. Undefined on every other path: unchanged behaviour.
-   */
-  workspaceReady?: boolean
-}
+import type { OpenCodeBootState as SandboxBootState } from '../boot-state'
+export type { OpenCodeBootState as SandboxBootState } from '../boot-state'
 
 /**
  * Answer `?turn=1` for the identity the caller asked about.

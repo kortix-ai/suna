@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ensureOpencodeConfigDeps } from '../opencode-config-deps'
+import { ensureOpencodeConfigDeps } from '../harness/open-code/opencode-config-deps'
 
 async function exists(p: string): Promise<boolean> {
   try {

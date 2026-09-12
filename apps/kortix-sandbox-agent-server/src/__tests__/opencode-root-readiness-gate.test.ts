@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { waitForFastOpencodeRootReadiness } from '../main'
+import { waitForFastOpencodeRootReadiness } from '../harness/open-code/boot'
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void
@@ -78,7 +78,7 @@ describe('fast OpenCode root readiness gate', () => {
   })
 
   test('boot keeps subscribe-before-root ordering and uses only the existing fast flag', async () => {
-    const src = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+    const src = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
     const runtimeStart = src.indexOf('async function startSessionRuntime(')
     const runtimeEnd = src.indexOf('\n// Establish the session', runtimeStart)
     const runtime = src.slice(runtimeStart, runtimeEnd)
@@ -109,7 +109,7 @@ describe('fast OpenCode root readiness gate', () => {
   })
 
   test('initial prompt delivery never waits for the event stream handshake', async () => {
-    const src = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+    const src = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
     const initialStart = src.indexOf('async function maybeCreateInitialOpencodeSession(')
     const initialEnd = src.indexOf('\nasync function resolveExistingRoot', initialStart)
     const initial = src.slice(initialStart, initialEnd)

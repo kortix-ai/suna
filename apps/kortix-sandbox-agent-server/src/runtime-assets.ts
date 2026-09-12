@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   chmod,
@@ -11,21 +10,13 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { promisify } from 'node:util'
-import { resolveOpencodeConfigDir, type Config } from './config'
-import { ensureInjectedManagedSkills } from './injected-skills'
+import type { Config } from './config'
+import { resolveHarness, type HarnessAssetsCompatibilityResult } from './harness/harness'
+import type {
+  HarnessAssetOutcome,
+  HarnessAssetsService,
+} from './harness/assets'
 import { logger } from './logger'
-import {
-  captureProcessOutput,
-  OPENCODE_CURRENT_LINK,
-  publishOpencodeNativeLink,
-  resolveInstalledOpencodeNative,
-  type CaptureCommand,
-} from './opencode-binary'
-import { OPENCODE_CONFIG_DEPS_DIR } from './opencode-config-deps'
-import { opencodeTurnInFlight } from './opencode-turn-state'
-
-const execFileAsync = promisify(execFile)
 
 /**
  * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready
@@ -103,30 +94,26 @@ export const AGENT_SWAP_EXIT_CODE = 75
 
 const MANIFEST_TIMEOUT_MS = 15_000
 const DOWNLOAD_TIMEOUT_MS = 180_000
-/** opencode is ~167 MB from npm and installs on a 1-2 vCPU box. */
-const OPENCODE_INSTALL_TIMEOUT_MS = 600_000
-const OPENCODE_HEALTH_TIMEOUT_MS = 5_000
 
 /**
  * `staged` is agent-only: the bytes are verified and on disk, and the swap
  * happens in the supervisor at the next start — nothing has been replaced yet.
  */
-export type ReconcileOutcome = 'skipped' | 'current' | 'updated' | 'failed' | 'staged'
+export type ReconcileOutcome = HarnessAssetOutcome
 
 /** The components a v2 manifest can describe. */
-export type RuntimeComponent = 'cli' | 'skills' | 'agent' | 'opencode'
+export type RuntimeComponent = 'cli' | 'skills' | 'agent' | (string & {})
 
-export interface RuntimeAssetsResult {
+export interface RuntimeAssetsResult extends HarnessAssetsCompatibilityResult {
   cli: ReconcileOutcome
   skills: ReconcileOutcome
   /**
-   * Agent and opencode are OMITTED for a v1 manifest rather than reported as
-   * `skipped`. A manifest that predates `components` says nothing at all about
+   * Agent and harness components are OMITTED for a v1 manifest, not reported
+   * as `skipped`. A manifest that predates `components` says nothing at all about
    * them, and "we did not converge it" and "we were never told what it should
    * be" are different facts. It also keeps every existing caller's shape.
    */
   agent?: ReconcileOutcome
-  opencode?: ReconcileOutcome
   /** The manifest epoch this pass converged to; absent for a v1 manifest. */
   build?: number
   /** Why, when a half is `skipped` or `failed`. Logged, never thrown. */
@@ -141,33 +128,13 @@ export interface RuntimeAssetsResult {
   agentSwapPending?: boolean
 }
 
-/**
- * The live runtime this pass is allowed to touch.
- *
- * opencode convergence restarts opencode, so it needs the daemon's own
- * lifecycle owner (`src/opencode.ts`) and the one authoritative answer to "is a
- * turn running" (`src/opencode-turn-state.ts`). Both are passed in rather than
- * reached for: this module must stay runnable from a test with no runtime at
- * all, and a second source of truth for turn state is exactly the bug class the
- * turn-state module exists to prevent.
- */
-export interface RuntimeConvergenceSeam {
-  /** Live opencode base URL — `opencode.getInternalUrl()`, re-read per pass
-   *  because a verified reload moves the port. */
-  opencodeBaseUrl: () => string
-  /** The directory opencode serves — `cfg.workspace`. */
-  workspace: string
-  /** Restart through the supervisor that owns spawn/respawn/dispose. */
-  restartOpencode: () => Promise<void>
-}
-
 export interface RuntimeAssetsOptions {
   apiUrl?: string
   token?: string
   cliPath?: string
   managedSkillsDir?: string
   statePath?: string
-  /** Active opencode config dir; the overlay is re-applied into it after an update. */
+  /** Active harness config dir; the overlay is re-applied into it after an update. */
   configDir?: string
   fetchImpl?: typeof fetch
   /** Injected for tests; production uses the daemon's own overlay routine. */
@@ -178,18 +145,8 @@ export interface RuntimeAssetsOptions {
   agentBakedPath?: string
   /** Override "which binary is this process running from". Tests only. */
   runningAgentPath?: string
-  /** Present only when the daemon has a live runtime to converge. */
-  seam?: RuntimeConvergenceSeam
-  /** Test seams. The production installer also publishes the stable native link. */
-  installOpencode?: (version: string) => Promise<void>
-  readOpencodeVersion?: (baseUrl: string) => Promise<string | null>
-  /** Test seam for old snapshots that predate the managed OpenCode link. */
-  opencodeBinaryExists?: () => Promise<boolean>
-  turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
-  /** Baked dependency dir holding the `@opencode-ai/plugin` pin. */
-  opencodeDepsDir?: string
-  /** Test seam for the `bun install` that materializes a refreshed plugin pin. */
-  installPluginDeps?: (dir: string) => Promise<void>
+  /** Harness-owned installation and injection; live when registered at boot. */
+  assets?: HarnessAssetsService
 }
 
 /** One entry of the v2 `components` map. Every field is optional by contract. */
@@ -237,8 +194,6 @@ interface RuntimeAssetsState {
   agent_mtime_ms?: number
   /** Digest of the artifact currently staged at `agent.next`, if any. */
   staged_agent_sha256?: string
-  /** Last opencode version this box converged to. Diagnostic only. */
-  opencode_version?: string
 }
 
 /**
@@ -360,7 +315,7 @@ function optionalString(value: unknown): string | undefined {
 
 function manifestComponent(
   manifest: RuntimeAssetsManifest,
-  name: 'agent' | 'cli' | 'opencode' | 'managed-skills',
+  name: 'agent' | 'cli' | 'managed-skills',
 ): ManifestComponent | null {
   const components = manifest.components
   if (!components || typeof components !== 'object' || Array.isArray(components)) return null
@@ -597,144 +552,6 @@ async function writeOverlay(dir: string, files: OverlayFile[]): Promise<void> {
   }
 }
 
-// ── opencode ───────────────────────────────────────────────────────────────
-
-/**
- * A version string that is safe to hand to a package manager.
- *
- * The value comes off the manifest and becomes an ARGUMENT of an install
- * command run as the sandbox user. `execFile` (no shell) is the primary
- * control; this allowlist is the second, so a malformed or hostile value is
- * refused loudly instead of being executed at all.
- */
-const OPENCODE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/
-
-const OPENCODE_PLUGIN_PACKAGE = '@opencode-ai/plugin'
-
-/** The version opencode itself reports. `null` when it cannot be read — which
- *  is NOT the same as "mismatched", and never converges anything. */
-async function readOpencodeVersion(baseUrl: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${baseUrl}/global/health`, {
-      signal: AbortSignal.timeout(OPENCODE_HEALTH_TIMEOUT_MS),
-    })
-    if (!res.ok) return null
-    const body = (await res.json()) as { version?: unknown }
-    return optionalString(body?.version) ?? null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Install one exact opencode version, exactly the way the image does.
- *
- * `pnpm add -g --allow-build=opencode-ai` is not a stylistic choice — it is the
- * command in `dockerfile-layer.ts`, and the point of convergence is that a box
- * that updates itself ends up byte-identical to a box built fresh. A different
- * installer here would produce a second, subtly different runtime that only
- * ever exists on updated boxes, which is the hardest kind of drift to debug.
- */
-export interface InstallOpencodeVersionOptions {
-  installPackage?: (version: string) => Promise<void>
-  capture?: CaptureCommand
-  currentLinkPath?: string
-}
-
-export async function installOpencodeVersion(
-  version: string,
-  options: InstallOpencodeVersionOptions = {},
-): Promise<void> {
-  const installPackage = options.installPackage ?? (async (targetVersion: string) => {
-    await execFileAsync(
-      'pnpm',
-      ['add', '-g', '--allow-build=opencode-ai', `opencode-ai@${targetVersion}`],
-      { timeout: OPENCODE_INSTALL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
-    )
-  })
-  const capture = options.capture ?? captureProcessOutput
-
-  await installPackage(version)
-  const nativePath = await resolveInstalledOpencodeNative(capture)
-  const reportedVersion = (await capture(nativePath, ['--version'])).trim()
-  if (reportedVersion !== version) {
-    throw new Error(
-      `installed OpenCode native version mismatch: expected ${version}, got ${reportedVersion || '<empty>'}`,
-    )
-  }
-  await publishOpencodeNativeLink(
-    nativePath,
-    options.currentLinkPath ?? OPENCODE_CURRENT_LINK,
-  )
-}
-
-async function installPluginDeps(dir: string): Promise<void> {
-  await execFileAsync('bun', ['install'], {
-    cwd: dir,
-    timeout: OPENCODE_INSTALL_TIMEOUT_MS,
-    maxBuffer: 16 * 1024 * 1024,
-  })
-}
-
-/**
- * The `@opencode-ai/plugin` pin that must track the opencode BINARY version.
- *
- * opencode loads the plugin SDK matching its own binary and fetches it over the
- * network when it is absent — on every boot. That is the multi-second
- * `opencode-session-created` stall documented in
- * `packages/shared/src/sandbox/dockerfile-layer.ts`, and it is why a version
- * bump that moves the binary without the pin is worse than not bumping at all.
- *
- * Only the BAKED dependency dir is rewritten. The project's own config-dir
- * `package.json` is a tracked file in the user's repository; convergence
- * writing into a working tree would dirty it and show up as an unexplained
- * local change in their next `git status`.
- */
-async function readPluginPin(depsDir: string): Promise<string | null> {
-  try {
-    const pkg = JSON.parse(await readFile(join(depsDir, 'package.json'), 'utf8')) as {
-      dependencies?: Record<string, unknown>
-    }
-    return optionalString(pkg?.dependencies?.[OPENCODE_PLUGIN_PACKAGE]) ?? null
-  } catch {
-    return null
-  }
-}
-
-export async function refreshOpencodePluginPin(
-  depsDir: string,
-  version: string,
-): Promise<'updated' | 'current' | 'absent' | 'failed'> {
-  const pkgPath = join(depsDir, 'package.json')
-  let pkg: { dependencies?: Record<string, unknown> }
-  try {
-    pkg = JSON.parse(await readFile(pkgPath, 'utf8')) as { dependencies?: Record<string, unknown> }
-  } catch {
-    // No baked dependency dir on this image (self-host, an old snapshot). The
-    // binary still converges; opencode just pays its own plugin fetch.
-    return 'absent'
-  }
-  if (!pkg.dependencies || typeof pkg.dependencies[OPENCODE_PLUGIN_PACKAGE] !== 'string') {
-    return 'absent'
-  }
-  if (pkg.dependencies[OPENCODE_PLUGIN_PACKAGE] === version) return 'current'
-  pkg.dependencies[OPENCODE_PLUGIN_PACKAGE] = version
-  const tmpPath = `${pkgPath}.${process.pid}.${Math.random().toString(36).slice(2, 10)}.tmp`
-  try {
-    await writeFile(tmpPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
-    await rename(tmpPath, pkgPath)
-    return 'updated'
-  } catch (err) {
-    logger.warn('[runtime-assets] could not rewrite the opencode plugin pin', {
-      depsDir,
-      err: String(err),
-    })
-    return 'failed'
-  } finally {
-    await rm(tmpPath, { force: true }).catch(() => {})
-  }
-}
-
 async function fetchJson<T>(
   fetchImpl: typeof fetch,
   url: string,
@@ -763,9 +580,9 @@ export async function reconcileRuntimeAssets(
   const cliPath = options.cliPath ?? DEFAULT_CLI_PATH
   const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
   const statePath = options.statePath ?? DEFAULT_STATE_PATH
-  const inject =
-    options.injectSkills ??
-    ((configDir: string, bakedDir: string) => ensureInjectedManagedSkills(configDir, { bakedDir }))
+  const assets = options.assets ?? resolveHarness().assets
+  const inject = options.injectSkills ?? ((configDir: string, bakedDir: string) =>
+    assets.injectSkills(configDir, bakedDir))
   const token = (
     options.token ??
     process.env.KORTIX_TOKEN ??
@@ -1025,109 +842,11 @@ export async function reconcileRuntimeAssets(
     }
   }
 
-  // ── opencode — IDLE ONLY ───────────────────────────────────────────────────
-  // Installing opencode replaces the binary the live model call is running in,
-  // and applying it needs a restart. Both sever a turn in flight, so this half
-  // only ever acts when the daemon's own turn oracle says the box is idle.
-  // "Cannot tell" is treated as busy; a skipped pass costs nothing, because the
-  // next start reconciles again.
-  let opencode: ReconcileOutcome | undefined
-  if (v2) {
-    opencode = 'skipped'
-    try {
-      const component = manifestComponent(manifest, 'opencode')
-      const expected = optionalString(component?.version)
-      const seam = options.seam
-      const depsDir = options.opencodeDepsDir ?? OPENCODE_CONFIG_DEPS_DIR
-      if (!expected) {
-        reasons.opencode = 'manifest states no opencode version'
-      } else if (!OPENCODE_VERSION.test(expected)) {
-        // Refused, not sanitized: this value becomes an install argument.
-        logger.warn('[runtime-assets] refusing a malformed opencode version', { expected })
-        reasons.opencode = 'manifest opencode version is malformed'
-      } else if (!seam) {
-        // No live runtime in this process (monitor mode, a test, a pass fired
-        // before opencode exists). Nothing to read a version from.
-        reasons.opencode = 'no opencode runtime in this process'
-      } else {
-        const readVersion = options.readOpencodeVersion ?? readOpencodeVersion
-        const installed = await readVersion(seam.opencodeBaseUrl())
-        const pin = await readPluginPin(depsDir)
-        const binaryExists =
-          installed !== null ||
-          (await (options.opencodeBinaryExists ?? (async () => {
-            try {
-              await stat(OPENCODE_CURRENT_LINK)
-              return true
-            } catch {
-              return false
-            }
-          }))())
-        const binaryMissing = installed === null && !binaryExists
-        const binaryStale = installed !== null && installed !== expected
-        // The pin can drift from the binary on its own — a pass that installed
-        // the binary and then failed the pin refresh leaves exactly that — and
-        // a pin that does not match makes opencode refetch the plugin on every
-        // boot. It is worth one idle-only repair even when the binary is fine.
-        const pinStale = pin !== null && pin !== expected
-        if (installed === null && !binaryMissing) {
-          reasons.opencode = 'opencode did not report its version'
-        } else if (installed !== null && !binaryMissing && !binaryStale && !pinStale) {
-          opencode = 'current'
-          nextState.opencode_version = installed
-        } else {
-          const probe = options.turnProbe ?? opencodeTurnInFlight
-          // A missing managed binary cannot own a turn. Probing its absent
-          // runtime returns "unreadable" forever and previously prevented old
-          // snapshots from ever repairing themselves.
-          const turnInFlight = binaryMissing
-            ? false
-            : await probe(seam.opencodeBaseUrl(), seam.workspace)
-          if (turnInFlight !== false) {
-            reasons.opencode =
-              turnInFlight === null ? 'turn state unreadable' : 'a turn is in flight'
-            logger.info('[runtime-assets] opencode convergence deferred — box is busy', {
-              installed,
-              expected,
-              turnInFlight,
-            })
-          } else {
-            const install = options.installOpencode ?? installOpencodeVersion
-            if (binaryStale || binaryMissing) {
-              setRuntimeAssetsActivity(`installing-opencode@${expected}`)
-              try {
-                await install(expected)
-              } finally {
-                setRuntimeAssetsActivity(null)
-              }
-            }
-            // SAME STEP as the binary, always. A binary and a plugin that
-            // disagree is the state this whole block exists to avoid.
-            const pinResult = await refreshOpencodePluginPin(depsDir, expected)
-            if (pinResult === 'updated') {
-              await (options.installPluginDeps ?? installPluginDeps)(depsDir)
-            }
-            // Only a NEW BINARY needs the process replaced: the plugin is read
-            // when opencode boots, so a refreshed pin takes effect on its own at
-            // the next start and buys nothing by cutting this one short.
-            if (binaryStale || binaryMissing) await seam.restartOpencode()
-            opencode = 'updated'
-            nextState.opencode_version = expected
-            logger.info('[runtime-assets] opencode converged', {
-              from: installed,
-              to: expected,
-              pin: pinResult,
-              restarted: binaryStale || binaryMissing,
-            })
-          }
-        }
-      }
-    } catch (err) {
-      logger.warn('[runtime-assets] opencode reconcile failed', { err: String(err) })
-      opencode = 'failed'
-      reasons.opencode = String(err)
-    }
-  }
+  // Native component semantics belong to the selected harness. Keep the
+  // shared pass responsible for ordering and persisting the combined result.
+  const harnessResult = await assets.reconcile({ manifest, setActivity: setRuntimeAssetsActivity })
+  Object.assign(nextState, harnessResult.state)
+  Object.assign(reasons, harnessResult.reasons)
 
   // The epoch advances only after a pass that actually looked at this manifest.
   // It is recorded even when a half failed: `build` answers "which manifest did
@@ -1141,7 +860,7 @@ export async function reconcileRuntimeAssets(
   await writeState(statePath, nextState)
   const result: RuntimeAssetsResult = { cli, skills }
   if (agent !== undefined) result.agent = agent
-  if (opencode !== undefined) result.opencode = opencode
+  Object.assign(result, harnessResult.components)
   if (build !== undefined) result.build = build
   if (agentSwapPending) result.agentSwapPending = true
   if (Object.keys(reasons).length > 0) result.reasons = reasons
@@ -1199,7 +918,7 @@ export function resetAgentSwapBlockersForTests(): void {
 }
 
 interface RuntimeConvergenceConfig {
-  seam: RuntimeConvergenceSeam
+  assets: HarnessAssetsService
   turnInFlight: () => Promise<boolean | null>
   agentStateDir?: string
   exit?: (code: number) => void
@@ -1212,7 +931,7 @@ interface RuntimeConvergenceConfig {
  * pass only a `Config`, so the runtime is registered here instead of threaded
  * through every one of them. Nothing below requires it: an unconfigured daemon
  * still converges the CLI and the overlay, and simply reports that it had no
- * runtime to converge opencode against.
+ * runtime to converge harness assets against.
  */
 let swapConfig: RuntimeConvergenceConfig | null = null
 
@@ -1241,7 +960,7 @@ export interface AgentSwapOptions {
  * Ask the supervisor to install the staged daemon — but only if nothing is
  * mid-flight that the restart would destroy.
  *
- * THE SAFETY RULE, stated once: this process exiting takes opencode, the
+ * THE SAFETY RULE, stated once: this process exiting takes the harness, the
  * reverse proxy and every PTY down with it. So a swap is requested only when
  * the turn oracle says, definitely, that no turn is running, AND no registered
  * blocker claims live work. "Cannot tell" counts as busy — an update is never
@@ -1319,7 +1038,7 @@ let inFlight: Promise<RuntimeAssetsResult> | null = null
  */
 export function ensureLatestKortixAssets(configDir?: string): void {
   if (inFlight) return
-  inFlight = reconcileRuntimeAssets({ configDir, seam: swapConfig?.seam })
+  inFlight = reconcileRuntimeAssets({ configDir, assets: swapConfig?.assets })
   void inFlight
     .finally(() => {
       inFlight = null
@@ -1329,7 +1048,7 @@ export function ensureLatestKortixAssets(configDir?: string): void {
       // the process, and a pass that converged but never got reported would
       // make the box look like it had not run at all.
       noteRuntimeConvergence(result)
-      if (result.cli === 'updated' || result.skills === 'updated' || result.opencode === 'updated') {
+      if (Object.values(result).some((outcome) => outcome === 'updated')) {
         logger.info('[runtime-assets] reconcile complete', result)
       } else {
         logger.info('[runtime-assets] reconcile no-op', result)
@@ -1348,12 +1067,12 @@ export function ensureLatestKortixAssets(configDir?: string): void {
 }
 
 /**
- * The call-site form: resolve the session's live opencode config dir, then run a
+ * The call-site form: resolve the session's live harness config dir, then run a
  * detached pass. Returns synchronously — nothing here is ever on a readiness or
  * request-latency path.
  */
 export function scheduleRuntimeAssetsReconcile(cfg: Config): void {
-  void resolveOpencodeConfigDir(cfg)
+  void resolveHarness(cfg).assets.resolveConfigDir(cfg)
     .then((configDir) => ensureLatestKortixAssets(configDir))
     // A config dir we cannot resolve costs the overlay re-injection, not the
     // CLI update — still worth running.
@@ -1410,7 +1129,11 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
     skills: result.skills,
   }
   if (result.agent) components.agent = result.agent
-  if (result.opencode) components.opencode = result.opencode
+  const assets = swapConfig?.assets ?? resolveHarness().assets
+  for (const name of assets.componentNames) {
+    const outcome = (result as unknown as Record<string, ReconcileOutcome | undefined>)[name]
+    if (outcome) components[name] = outcome
+  }
   lastConvergence = {
     build: result.build ?? lastConvergence.build,
     at: new Date().toISOString(),

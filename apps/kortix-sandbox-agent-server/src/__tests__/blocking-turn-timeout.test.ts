@@ -15,7 +15,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 
-import { isBlockingTurnRequest } from '../proxy'
+import { isBlockingTurnRequest } from '../harness/open-code/http'
 
 describe('isBlockingTurnRequest', () => {
   test('all three blocking turn endpoints match', () => {

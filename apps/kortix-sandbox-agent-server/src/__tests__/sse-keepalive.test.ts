@@ -202,7 +202,7 @@ describe('withSseKeepalive', () => {
     // A source pin, matching the repo's guard-pinning convention: the proxy
     // has no unit seam (it needs a live opencode), so assert the passthrough
     // branch exists and is gated on the event-stream content type.
-    const source = await Bun.file(new URL('../proxy.ts', import.meta.url).pathname).text()
+    const source = await Bun.file(new URL('../harness/open-code/http.ts', import.meta.url).pathname).text()
     expect(source).toContain("upstreamContentType.includes('text/event-stream')")
     expect(source).toContain('withSseKeepalive(upstream.body)')
     expect(source).toContain("respHeaders.delete('content-length')")

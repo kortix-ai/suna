@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'routes', 'env.ts'), 'utf8')
+const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'routes', 'env.ts'), 'utf8')
 
 /** The allowlist body, so a name added to a comment or another Set never counts. */
 function runtimeEnvAllowlist(): string[] {

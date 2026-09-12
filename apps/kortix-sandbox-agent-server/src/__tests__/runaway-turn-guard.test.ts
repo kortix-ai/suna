@@ -5,7 +5,7 @@ import {
   MAX_CONSECUTIVE_REPEATS,
   observeIdleForRunaway,
   stepRunawayGuard,
-} from '../runaway-turn-guard';
+} from '../harness/open-code/runaway-turn-guard';
 
 describe('stepRunawayGuard', () => {
   test('a fresh parent id never aborts and starts the streak at 1', () => {

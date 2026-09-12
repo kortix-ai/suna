@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { finalizeInitialSession } from '../main'
+import { finalizeInitialSession } from '../harness/open-code/boot'
 
 describe('initial opencode session failure is not permanent', () => {
   // proxy.ts:345 returns 503 initial_opencode_session_failed on this flag and

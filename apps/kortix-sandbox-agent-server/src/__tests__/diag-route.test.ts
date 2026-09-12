@@ -6,11 +6,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { __flushDaemonLogFileForTests, __resetLoggerFileSinkForTests, enableDaemonLogFile, logger } from '../logger'
-import type { Opencode } from '../opencode'
+import type { Opencode } from '../harness/open-code/supervisor'
 import { startResourceMonitor } from '../resources'
-import { createDiagRouter } from '../routes/diag'
+import { createDiagRouter } from '../harness/open-code/routes/diag'
 
 let root: string
 const savedEnv = process.env.KORTIX_DAEMON_LOG_FILE
@@ -64,7 +64,7 @@ describe('GET /kortix/diag', () => {
     await __flushDaemonLogFileForTests()
     mkdirSync(join(root, '.local', 'share', 'opencode', 'log'), { recursive: true })
     writeFileSync(join(root, '.local', 'share', 'opencode', 'log', 'opencode.log'), 'oc-line\n')
-    const monitor = startResourceMonitor({ intervalMs: 60_000, opencodePid: () => 4242 })
+    const monitor = startResourceMonitor({ intervalMs: 60_000, runtimePid: () => 4242 })
     try {
       const app = createDiagRouter(cfg, {
         opencode: fakeOpencode,
@@ -82,6 +82,13 @@ describe('GET /kortix/diag', () => {
       expect(body.boot.timeline).toEqual([{ label: 'proxy-up', atMs: 12 }])
       expect(body.resources).not.toBeNull()
       expect(Array.isArray(body.resources.disks)).toBe(true)
+      expect(body.resources.opencode.pid).toBe(4242)
+      expect(Array.isArray(body.resources.opencodePids)).toBe(true)
+      expect(body.resources).not.toHaveProperty('runtime')
+      expect(body.resources).not.toHaveProperty('runtimePids')
+      expect(body.resources_previous.opencode.pid).toBe(4242)
+      expect(body.resources_previous).not.toHaveProperty('runtime')
+      expect(body.resources_previous).not.toHaveProperty('runtimePids')
       expect(body.logs.tail).toBe(50)
       expect(String(body.logs.daemon)).toContain('[test] diag-line')
       expect(body.logs.opencode).toBe('oc-line\n')

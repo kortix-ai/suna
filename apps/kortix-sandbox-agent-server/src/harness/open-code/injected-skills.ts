@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { access, constants, cp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { logger } from './logger'
+import { logger } from '../../logger'
 
 const execFileAsync = promisify(execFile)
 

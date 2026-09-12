@@ -12,7 +12,7 @@
  * re-rendering the "Interrupted" marker on a turn that was already closed out.
  *
  * `finalizeOrphanedTurn` is the shared entry point behind BOTH the unplanned-
- * respawn hook (main.ts's `onUnplannedRespawn`, called via
+ * respawn hook (harness/open-code/boot.ts's `onUnplannedRespawn`, called via
  * `opencode.ts`'s `finalizeAfterReplacement`) and structurally the same guard
  * the boot reused-root path applies inline in `maybeCreateInitialOpencodeSession`
  * — both route through the same `isTurnStillOrphaned` predicate. Exercising it
@@ -20,9 +20,9 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { finalizeOrphanedTurn } from '../main'
+import { finalizeOrphanedTurn } from '../harness/open-code/boot'
 
-const SRC = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+const SRC = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
 
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 

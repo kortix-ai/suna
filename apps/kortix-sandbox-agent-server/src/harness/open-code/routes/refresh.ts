@@ -1,15 +1,16 @@
 import { Hono } from 'hono'
 
-import { resolveOpencodeConfigDirRelative, type Config } from '../config'
-import { refreshRepo, syncOpencodeConfigDirToBase, syncWorkspaceToBase } from '../git'
-import { scheduleRuntimeAssetsReconcile } from '../runtime-assets'
+import type { OpenCodeConfig as Config } from '../config'
+import { resolveOpencodeConfigDirRelative } from '../config'
+import { refreshRepo, syncConfigDirToBase, syncWorkspaceToBase } from '../../../git'
+import { scheduleRuntimeAssetsReconcile } from '../../../runtime-assets'
 import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
-} from '../kortix-user-context'
-import { logger } from '../logger'
-import type { Opencode } from '../opencode'
+} from '../../../kortix-user-context'
+import { logger } from '../../../logger'
+import type { Opencode } from '../supervisor'
 
 function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null
@@ -114,7 +115,7 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         // After the repo op, so a successful pull is reflected before we compare
         // the config dir against base.
         const configDir = syncConfigDir
-          ? await syncOpencodeConfigDirToBase(cfg, await resolveOpencodeConfigDirRelative(cfg), baseSha)
+          ? await syncConfigDirToBase(cfg, await resolveOpencodeConfigDirRelative(cfg), baseSha)
           : undefined
         // Verified swap, not a kill-then-hope restart: boot the new opencode,
         // prove it serves, and only then retire the running one. A config that

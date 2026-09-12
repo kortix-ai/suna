@@ -11,7 +11,7 @@
  * (a real wedge), converging fast on recovery.
  */
 import { describe, expect, test } from 'bun:test'
-import { nextLivenessState } from '../opencode'
+import { nextLivenessState } from '../harness/open-code/supervisor'
 
 const T = 3 // threshold used in these tests
 
@@ -51,7 +51,7 @@ describe('nextLivenessState', () => {
   })
 
   test('scenario: 2 blips then recover keeps a running session OK the whole time', () => {
-    let s: { state: import('../opencode').OpencodeState; consecutiveFailures: number } = { state: 'ok', consecutiveFailures: 0 }
+    let s: { state: import('../harness/open-code/supervisor').OpencodeState; consecutiveFailures: number } = { state: 'ok', consecutiveFailures: 0 }
     const seq = [false, false, true] // miss, miss, answer
     const states: string[] = []
     for (const ready of seq) {
@@ -63,7 +63,7 @@ describe('nextLivenessState', () => {
   })
 
   test('scenario: 3 consecutive failures = genuine wedge -> starting', () => {
-    let s: { state: import('../opencode').OpencodeState; consecutiveFailures: number } = { state: 'ok', consecutiveFailures: 0 }
+    let s: { state: import('../harness/open-code/supervisor').OpencodeState; consecutiveFailures: number } = { state: 'ok', consecutiveFailures: 0 }
     let downgradedAt = -1
     ;[false, false, false].forEach((ready, i) => {
       const r = nextLivenessState({ state: s.state, ready, consecutiveFailures: s.consecutiveFailures, threshold: T })

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { bootPhaseLabel } from '../boot-phase';
+import { bootPhaseLabel } from '../harness/open-code/boot-phase';
 
 describe('bootPhaseLabel', () => {
   test('changes as the boot advances, so the API can see progress', () => {

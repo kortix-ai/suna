@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { refreshMayConvergeRuntime } from '../routes/refresh';
+import { refreshMayConvergeRuntime } from '../harness/open-code/routes/refresh';
 
 describe('refreshMayConvergeRuntime', () => {
   test('a booting runtime is never converged from a refresh', () => {

@@ -33,11 +33,11 @@
  * `open-bundle` already carries the same discipline
  * (`session-open-bundle.ts:32-35`).
  */
-import { logger } from './logger'
-import type { Config } from './config'
-import type { Opencode } from './opencode'
+import { logger } from '../../logger'
+import type { OpenCodeConfig as Config } from './config'
+import type { Opencode } from './supervisor'
 import { OpencodeDb, isSupportedOpencodeVersion } from './opencode-db'
-import { kortixEventBus } from './kortix-event-bus'
+import { kortixEventBus } from '../../kortix-event-bus'
 import {
   type AgentProjection,
   type CommandProjection,

@@ -3,8 +3,8 @@ import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import { createOpencodeSupervisor, waitForOpencodeReady } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpencodeSupervisor, waitForOpencodeReady } from '../harness/open-code/supervisor'
 import { createOpenCodeHarnessService } from '../harness/open-code/service'
 
 let root: string

@@ -1,50 +1,64 @@
-# Internal harness services
+# Internal harness boundary
 
-This boundary prepares the daemon for other harnesses. It does not add a second
-harness or change the client protocol.
+`harness.ts` is the only host module that imports a concrete adapter. It resolves
+the implementation and exposes a definition for configuration, boot, and service
+creation. OpenCode remains the default. Unknown explicit IDs fail; no environment
+selector, project setting, or UI behavior is added.
+
+```ts
+const selected = resolveHarness(cfg)
+const runtime = selected.createService(cfg, projectEnv)
+await runtime.lifecycle.start()
+```
 
 ## Ownership
 
-- `harness.ts`: lifecycle contract with no native protocol or config types.
-- `open-code/service.ts`: composes one OpenCode supervisor into lifecycle,
-  configuration, event, and native compatibility ports.
-- `open-code/supervisor.ts`: existing process supervision, configuration
-  assembly, model catalog, readiness, and reload implementation.
-- `open-code/events.ts`: existing native SSE parsing, dispatch, and reconnect.
+| Location | Responsibility |
+| --- | --- |
+| `harness.ts` | Resolution and host-facing contracts |
+| `assets.ts` | Harness maintenance contract |
+| `open-code/service.ts` | Composition over one supervisor; native typed ports |
+| `open-code/boot.ts` | Native cold boot, warm seed/adoption, first turn, reconciliation and relays |
+| `open-code/http.ts`, `open-code/routes/` | Full existing compatibility HTTP surface and forwarding |
+| `open-code/events.ts`, `open-code/event-bus.ts` | Native event reading, session identity and recovery instructions |
+| `open-code/config.ts`, `open-code/paths.ts` | Native environment, authored config discovery and paths |
+| `open-code/assets.ts` | Native binary/plugin updates and skill placement |
+| `open-code/background.ts`, `open-code/resource-diagnostics.ts` | Native offload, turn guard and diagnostic projection |
+| Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 
-`main.ts` selects OpenCode explicitly, as before. It creates the service without
-starting a process or event subscription. Boot, warm adoption, and monitor mode
-keep their existing operation order. Shutdown depends only on the common stop
-operation.
+The host retains its entrypoint, monitor mode, Git/files/PTYs, authentication,
+static previews, LLM/connector proxy, resource sampler, event sequencer, and
+CLI/daemon update scheduler. These call service ports for harness behavior.
+They do not import OpenCode modules or unwrap a native supervisor.
 
-## Preserve native features
+There are no root `opencode.ts` or `opencode-events.ts` compatibility reexports.
+Native tests import the implementation that owns the behavior. A package-level
+architecture test rejects concrete adapter imports from host production code.
 
-The common lifecycle is not a list of permitted product features. Concrete
-services expose additional typed ports. OpenCode retains verified reload,
-in-place config disposal, workspace gates, binary prefetch, diagnostics, and its
-full native event stream. Another harness need not implement these operations.
+## Native features remain available
 
-Use `lifecycle` for common operations. Use `configuration` for OpenCode reload
-and reconfiguration. Existing native routes and remaining native boot logic use
-the complete `native` compatibility port. Do not silently replace an unsupported
-feature with a weaker operation when adding another harness.
+The common interface is not a feature limit. The HTTP port mounts every existing
+native route and preserves catch-all forwarding. OpenCode-specific configuration,
+events and full supervisor operations remain typed inside the adapter. A future
+adapter can expose its own features without implementing weaker substitutes for
+OpenCode operations. No silent feature fallback or harness switching is added.
 
-The lifecycle, configuration, and native ports reference the same supervisor.
-Do not copy its methods into other objects: several use `this` to call sibling
-methods. Event subscriptions receive the current config explicitly so warm
-adoption does not retain the seed configuration.
+`createService` does not spawn a process or subscribe to events. The lifecycle,
+configuration and internal supervisor refer to the same object. Methods that use
+`this` keep their owner. Warm adoption reuses that object and passes refreshed
+configuration to event subscriptions and HTTP rebuilds.
 
-## Compatibility and scope
+## Unchanged contracts
 
-Root `opencode.ts` and `opencode-events.ts` reexport the implementations. Existing
-imports share the same module state; there is no duplicate supervisor or catalog
-cache. Tests that inspect implementation source read the new owning files.
+- Project folders, native config locations and configuration precedence.
+- Environment variable names, defaults and loaded values.
+- Routes, response/event payloads, diagnostics and durable state filenames.
+- Readiness gates, timeout policy, native feature coverage and update ordering.
+- SDK/UI behavior, Docker images and sandbox image selection.
 
-Project folders, configuration precedence, durable state filenames, API/SDK
-contracts, native event payloads, route names, and Docker images are unchanged.
-No registry, runtime selector, template system, capability-negotiation API, or
-canonical response format is introduced.
+The event sequencer owns only ordering and replay. Native event interpretation
+and resync URLs live in the adapter. The shared resource sampler uses generic
+process fields; the adapter produces the existing diagnostic JSON and messages.
 
-Native HTTP routes, database projections, session pins, and OpenCode-specific
-boot/reconciliation operations remain explicit follow-up seams. This extraction
-does not claim that the entire daemon is harness-agnostic yet.
+This is code organization for future integrations. It does not implement a second
+harness, a new client protocol, capability negotiation, or project migration.

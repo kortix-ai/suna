@@ -11,7 +11,7 @@ import {
   resolveOpenCodeAuditSpoolPath,
   writeOpenCodeSeedBakedPin,
   writeOpenCodeSessionPin,
-} from '../runtime-state'
+} from '../harness/open-code/runtime-state'
 
 describe('sandbox runtime state paths', () => {
   test('keeps every default under the kortix-owned home directory', () => {
@@ -49,7 +49,7 @@ describe('sandbox runtime state paths', () => {
     const priorStateDirectory = process.env.KORTIX_RUNTIME_STATE_DIR
     try {
       process.env.KORTIX_RUNTIME_STATE_DIR = root
-      const fresh = await import(`../runtime-state.ts?test=${crypto.randomUUID()}`)
+      const fresh = await import(`../harness/open-code/runtime-state.ts?test=${crypto.randomUUID()}`)
       fresh.writeOpenCodeSessionPin('ses_private')
       fresh.writeOpenCodeSeedBakedPin('ses_seed')
       const sessionPath = join(root, 'opencode-session-id')

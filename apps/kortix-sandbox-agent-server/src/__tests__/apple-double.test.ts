@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { pruneAppleDoubleFiles } from '../apple-double'
+import { pruneAppleDoubleFiles } from '../harness/open-code/apple-double'
 
 const dirs: string[] = []
 

@@ -1,12 +1,12 @@
 import { Hono } from 'hono'
-import { logger } from '../logger'
-import { readPinnedOpencodeSessionId } from '../main'
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import { logger } from '../../../logger'
+import { readPinnedOpencodeSessionId } from '../boot'
+import type { OpenCodeConfig as Config } from '../config'
+import type { Opencode } from '../supervisor'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
-} from '../kortix-user-context'
+} from '../../../kortix-user-context'
 
 // POST /kortix/abort — interrupt the in-flight opencode turn for the pinned
 // session. apps/api calls this when the user clicks "Stop" on the Slack

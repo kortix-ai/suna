@@ -38,24 +38,24 @@ export type VerifiedReloadResult =
   | { outcome: 'kept-old'; reason: string }
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { homedir } from 'node:os'
+import { OPENCODE_HOME } from './paths'
 import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from '../../agent-env-file'
 import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '../../llm-proxy'
-import type { Config } from '../../config'
+import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '../../git'
 import { egressShimEnv } from '../../egress-shim'
 import { logger } from '../../logger'
-import { applyManagedOpencodeEnv } from '../../managed-opencode-env'
+import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from '../../project-env'
 import {
   OPENCODE_CURRENT_LINK,
   OPENCODE_SYSTEM_LINK,
   publishOpencodeNativeLink,
   resolveInstalledOpencodeNative,
-} from '../../opencode-binary'
+} from './opencode-binary'
 import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
@@ -86,7 +86,6 @@ const READY_LIVENESS_MS = 5_000
 const READY_LIVENESS_DOWNGRADE_THRESHOLD = 3
 const READY_LIVENESS_RECHECK_MS = 2_000
 
-export const OPENCODE_HOME = homedir()
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
 const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'

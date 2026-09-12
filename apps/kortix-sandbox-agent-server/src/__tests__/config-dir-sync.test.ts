@@ -1,5 +1,5 @@
 /**
- * `syncOpencodeConfigDirToBase` — the operation a reload actually needs.
+ * `syncConfigDirToBase` — the operation a reload actually needs.
  *
  * Context, because the shape of these tests only makes sense with it: opencode
  * is spawned with `OPENCODE_CONFIG_DIR` pointing INTO the working tree, and the
@@ -23,11 +23,11 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Config } from '../config'
-import { syncOpencodeConfigDirToBase } from '../git'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { syncConfigDirToBase } from '../git'
 import { KORTIX_SERVICE_CALL_HEADER } from '../kortix-user-context'
-import type { Opencode } from '../opencode'
-import { createRefreshRouter } from '../routes/refresh'
+import type { Opencode } from '../harness/open-code/supervisor'
+import { createRefreshRouter } from '../harness/open-code/routes/refresh'
 
 const CONFIG_DIR = '.kortix/opencode'
 const AGENT = `${CONFIG_DIR}/agents/kortix.md`
@@ -84,11 +84,11 @@ afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 const agentText = () => readFileSync(join(work, AGENT), 'utf8')
 
-describe('syncOpencodeConfigDirToBase', () => {
+describe('syncConfigDirToBase', () => {
   test('brings the agent config forward to base', async () => {
     expect(agentText()).toBe('ORIGINAL PROMPT\n')
 
-    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(result).toEqual({ synced: true })
     expect(agentText()).toBe('UPDATED PROMPT\n')
@@ -101,7 +101,7 @@ describe('syncOpencodeConfigDirToBase', () => {
     git(work, 'commit', '-qm', 'session work')
     const head = git(work, 'rev-parse', 'HEAD')
 
-    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(git(work, 'rev-parse', 'HEAD')).toBe(head)
     expect(git(work, 'branch', '--show-current')).toBe('ses-1111-2222')
@@ -112,7 +112,7 @@ describe('syncOpencodeConfigDirToBase', () => {
   test('it leaves files outside the config dir alone', async () => {
     write(work, 'app.ts', 'export const x = 999\n')
 
-    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(readFileSync(join(work, 'app.ts'), 'utf8')).toBe('export const x = 999\n')
   })
@@ -122,7 +122,7 @@ describe('syncOpencodeConfigDirToBase', () => {
     // the user is in the middle of writing.
     write(work, AGENT, 'MY WORK IN PROGRESS\n')
 
-    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(result).toEqual({ synced: false, skipped: 'local changes' })
     expect(agentText()).toBe('MY WORK IN PROGRESS\n')
@@ -135,7 +135,7 @@ describe('syncOpencodeConfigDirToBase', () => {
     git(work, 'add', '-A')
     git(work, 'commit', '-qm', 'my agent tweak')
 
-    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(result).toEqual({ synced: false, skipped: 'local commits' })
     expect(agentText()).toBe('MY COMMITTED PROMPT\n')
@@ -149,7 +149,7 @@ describe('syncOpencodeConfigDirToBase', () => {
     write(work, 'app.ts', 'export const x = 999\n')
     write(work, 'notes/untracked.txt', 'keep me\n')
 
-    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(result).toEqual({ synced: false, skipped: 'local commits' })
     expect(git(work, 'rev-parse', 'HEAD')).toBe(head)
@@ -165,20 +165,20 @@ describe('syncOpencodeConfigDirToBase', () => {
     // did replace, producing a directory that is neither base nor the session.
     write(work, `${CONFIG_DIR}/agents/scratch.md`, 'draft\n')
 
-    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(result).toEqual({ synced: false, skipped: 'local changes' })
   })
 
   test('reports "already matches base" rather than implying it rewrote files', async () => {
-    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
-    const second = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    await syncConfigDirToBase(cfg(), CONFIG_DIR)
+    const second = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(second).toEqual({ synced: false, skipped: 'already matches base' })
   })
 
   test('leaves the update UNSTAGED, and its diff against base is empty', async () => {
-    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     // Not staged: the index still matches HEAD.
     expect(git(work, 'diff', '--cached', '--name-only')).toBe('')
@@ -199,7 +199,7 @@ describe('syncOpencodeConfigDirToBase', () => {
     git(work, 'add', '-A')
     git(work, 'commit', '-qm', 'local edit outside the config dir')
 
-    const result = await syncOpencodeConfigDirToBase(cfg(), ':(top)*')
+    const result = await syncConfigDirToBase(cfg(), ':(top)*')
 
     expect(result.synced).toBe(false)
     // Untouched: the file outside the config dir still has the session's content.
@@ -216,14 +216,14 @@ describe('syncOpencodeConfigDirToBase', () => {
   })
 
   test('a project with no tracked config dir is skipped, not failed', async () => {
-    expect(await syncOpencodeConfigDirToBase(cfg(), null)).toEqual({
+    expect(await syncConfigDirToBase(cfg(), null)).toEqual({
       synced: false,
       skipped: 'no tracked config dir',
     })
   })
 
   test('a config dir absent from base is skipped, not failed', async () => {
-    const result = await syncOpencodeConfigDirToBase(cfg(), 'does/not/exist')
+    const result = await syncConfigDirToBase(cfg(), 'does/not/exist')
 
     expect(result.synced).toBe(false)
     // Either answer is correct and which one you get depends on git's version:
@@ -236,7 +236,7 @@ describe('syncOpencodeConfigDirToBase', () => {
   test('an explicit base_sha pins which commit is restored', async () => {
     const firstBase = git(origin, 'rev-parse', 'HEAD~1')
 
-    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, firstBase)
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR, firstBase)
 
     // HEAD~1 is the ORIGINAL prompt, which the working tree already has — so the
     // honest answer is "already matches", not a rewrite to the newer tip.

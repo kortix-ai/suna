@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test'
 // Shape assertions over the boot sequence (a unit suite cannot boot OpenCode).
 // They keep the sub-marks that decompose `opencode-ready` — and the early
 // initial-turn claim — from being quietly dropped.
-const MAIN = readFileSync(join(import.meta.dir, '..', 'main.ts'), 'utf8')
+const MAIN = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
 const OPENCODE = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'supervisor.ts'), 'utf8')
 
 describe('boot instrumentation', () => {
@@ -53,7 +53,7 @@ describe('boot instrumentation', () => {
     const check = OPENCODE.indexOf('async function checkReady(')
     expect(OPENCODE.slice(check, check + 220)).toContain('if (!directoryProbeOpen) return false')
 
-    // main.ts: gate requested exactly when the early spawn can happen, and
+    // Native boot: gate requested exactly when the early spawn can happen, and
     // opened only after config deps + injected skills.
     expect(MAIN).toContain('deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null')
     const deps = MAIN.indexOf("bootMark('config-deps')")
@@ -65,7 +65,7 @@ describe('boot instrumentation', () => {
   })
 
   test('the proxy holds every caller off until the workspace is complete', () => {
-    const PROXY = readFileSync(join(import.meta.dir, '..', 'proxy.ts'), 'utf8')
+    const PROXY = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'http.ts'), 'utf8')
     expect(PROXY).toContain("bootState.workspaceReady === false")
     expect(PROXY).toContain("'workspace_not_ready'")
     // set false only on the early-spawn path, true once deps + skills are in

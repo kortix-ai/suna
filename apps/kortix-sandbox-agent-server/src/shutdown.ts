@@ -22,7 +22,7 @@ export interface DaemonShutdown {
 }
 
 export function installShutdownHandlers(
-  opencode: Pick<HarnessLifecycleService, 'stop'>,
+  harness: Pick<HarnessLifecycleService, 'stop'>,
   proxy: ProxyServer,
   staticWeb?: StaticWebServer,
 ): DaemonShutdown {
@@ -52,9 +52,9 @@ export function installShutdownHandlers(
         }
       }
       try {
-        await opencode.stop(signal)
+        await harness.stop(signal)
       } catch (err) {
-        logger.warn('[shutdown] opencode stop failed', err)
+        logger.warn('[shutdown] harness stop failed', err)
       }
       logger.info('[shutdown] done', { reason, exitCode })
       process.exit(exitCode)

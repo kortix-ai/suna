@@ -20,7 +20,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { SQLITE_READER_SUPPORTED_MINORS, isSupportedOpencodeVersion } from '../opencode-db'
+import { SQLITE_READER_SUPPORTED_MINORS, isSupportedOpencodeVersion } from '../harness/open-code/opencode-db'
 
 const RUNTIME_VERSIONS = join(
   import.meta.dir,

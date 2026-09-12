@@ -1553,7 +1553,7 @@ export interface ConfigDirSyncResult {
  * modification, and its diff against base is empty by construction — so a change
  * request opened from this session carries nothing extra.
  */
-export async function syncOpencodeConfigDirToBase(
+export async function syncConfigDirToBase(
   cfg: Config,
   relConfigDir: string | null,
   baseSha?: string,

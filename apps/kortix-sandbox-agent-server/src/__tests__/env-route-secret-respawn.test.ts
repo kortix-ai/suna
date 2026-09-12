@@ -19,10 +19,10 @@ import { afterAll, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/supervisor'
 import { createProjectEnvStore } from '../project-env'
-import { buildOpencodeApp } from '../proxy'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
 
 const TEST_TOKEN = 'respawn-test-kortix-token-32-chars'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-respawn-'))
@@ -79,7 +79,7 @@ function fakeOpencode(): { opencode: Opencode; calls: ReloadCall[] } {
 }
 
 function buildTestApp(opencode: Opencode, store: ReturnType<typeof createProjectEnvStore>) {
-  return buildOpencodeApp(
+  return buildOpenCodeTestApp(
     baseConfig(),
     opencode,
     Date.now(),
@@ -92,7 +92,7 @@ function buildTestApp(opencode: Opencode, store: ReturnType<typeof createProject
 }
 
 async function postEnv(
-  app: ReturnType<typeof buildOpencodeApp>,
+  app: ReturnType<typeof buildOpenCodeTestApp>,
   body: Record<string, unknown>,
 ): Promise<{ status: number; json: Record<string, unknown> }> {
   const res = await app.request('/kortix/env', {

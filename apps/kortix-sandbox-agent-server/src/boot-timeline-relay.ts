@@ -1,5 +1,5 @@
 import { logger } from './logger'
-import type { BootMark } from './routes/health'
+import type { BootMark } from './boot-state'
 
 /**
  * Relays the in-guest boot timeline to the control plane, once, when a

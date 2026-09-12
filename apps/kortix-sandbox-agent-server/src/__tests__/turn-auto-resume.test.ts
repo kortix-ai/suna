@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { OpencodeTurnError } from '../opencode-events';
-import { createTurnAutoResumer, isTransientTurnError } from '../turn-auto-resume';
+import type { OpencodeTurnError } from '../harness/open-code/events';
+import { createTurnAutoResumer, isTransientTurnError } from '../harness/open-code/turn-auto-resume';
 
 describe('isTransientTurnError', () => {
   test('the prod failure — OpenRouter mid-stream idle timeout (JSON-quoted message)', () => {

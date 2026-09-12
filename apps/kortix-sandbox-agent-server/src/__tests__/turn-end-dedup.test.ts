@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../main'
-import type { Config } from '../config'
+import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 
 // Exactly-once finalize for a completed turn. Proves the fast-boot event-loss
 // fix's dedup invariant: whether a turn's end is observed by the natural

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { BUNDLED_MANAGED_MODELS } from '../opencode'
+import { BUNDLED_MANAGED_MODELS } from '../harness/open-code/supervisor'
 
 // The bundled managed floor is what OpenCode sees when the live managed fetch
 // is down AND the baked image catalog predates a lineup change. A managed

@@ -88,7 +88,7 @@ describe('tryDisposeReload', () => {
   })
 
   test('the env route passes credential-carrier changes to the respawn gate', () => {
-    const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'routes', 'env.ts'), 'utf8')
+    const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'routes', 'env.ts'), 'utf8')
     // The route used to inline `opencodeEnvNames.includes('KORTIX_OPENCODE_DENY_ENV')`.
     // The invariant is unchanged; the mechanism moved into `requiresRespawn`,
     // which also covers the auth carriers a dispose cannot rewrite — and keys
@@ -133,7 +133,7 @@ describe('tryDisposeReload', () => {
  * OLD auth.json on disk and opencode kept authenticating with the account the
  * user had just replaced — while the UI confirmed the new one.
  */
-import { requiresRespawn, RESPAWN_REQUIRED_ENV_NAMES } from '../opencode'
+import { requiresRespawn, RESPAWN_REQUIRED_ENV_NAMES } from '../harness/open-code/supervisor'
 
 describe('requiresRespawn', () => {
   test('the auth carriers force a respawn — a dispose cannot rewrite auth.json', () => {

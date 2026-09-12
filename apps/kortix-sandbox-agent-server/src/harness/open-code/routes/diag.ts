@@ -13,12 +13,13 @@
  * Nothing secret: no env dump, no tokens. Same auth as `/kortix/logs`.
  */
 import { Hono } from 'hono'
-import type { Config } from '../config'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context'
-import { daemonLogFilePath, logger } from '../logger'
-import type { Opencode } from '../opencode'
-import type { ResourceMonitor } from '../resources'
-import { runtimeConvergenceReport } from '../runtime-assets'
+import type { OpenCodeConfig as Config } from '../config'
+import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../../kortix-user-context'
+import { daemonLogFilePath, logger } from '../../../logger'
+import type { Opencode } from '../supervisor'
+import type { ResourceMonitor } from '../../../resources'
+import { projectOpenCodeResourceSnapshot } from '../resource-diagnostics'
+import { runtimeConvergenceReport } from '../../../runtime-assets'
 import type { SandboxBootState } from './health'
 import { opencodeLogFilePath, tailFile } from './logs'
 
@@ -89,8 +90,8 @@ export function createDiagRouter(cfg: Config, deps: DiagDeps): Hono {
         initial_session_error: deps.bootState.initialOpenCodeSessionError ?? null,
         timeline: deps.bootState.timeline,
       },
-      resources: resourcesNow,
-      resources_previous: monitor?.latest() ?? null,
+      resources: projectOpenCodeResourceSnapshot(resourcesNow),
+      resources_previous: projectOpenCodeResourceSnapshot(monitor?.latest() ?? null),
       runtime,
       logs: {
         tail,

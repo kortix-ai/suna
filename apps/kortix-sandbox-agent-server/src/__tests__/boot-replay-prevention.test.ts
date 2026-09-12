@@ -35,9 +35,9 @@ import {
   initialPromptAlreadyDelivered,
   resolveExistingRoot,
   reusedRootAlreadyDelivered,
-} from '../main'
+} from '../harness/open-code/boot'
 
-const SRC = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+const SRC = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
 
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 

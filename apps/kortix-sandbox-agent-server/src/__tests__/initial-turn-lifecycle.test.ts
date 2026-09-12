@@ -6,8 +6,8 @@ import {
   reconcileInitialTurnAcceptanceToApi,
   relayInitialTurnAcceptedToApi,
   resetClaimedInitialTurnForTests,
-} from '../main';
-import { type SandboxBootState, resolveTurnObservationIdentity } from '../routes/health';
+} from '../harness/open-code/boot';
+import { type SandboxBootState, resolveTurnObservationIdentity } from '../harness/open-code/routes/health';
 
 const KEYS = [
   'KORTIX_PROJECT_ID',

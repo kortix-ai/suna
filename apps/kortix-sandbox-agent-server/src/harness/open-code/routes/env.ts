@@ -1,15 +1,15 @@
 import { Hono } from 'hono'
 
-import { writeAgentEnvFile } from '../agent-env-file'
-import type { Config } from '../config'
-import { syncEgressShim } from '../egress-shim'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { writeAgentEnvFile } from '../../../agent-env-file'
+import type { OpenCodeConfig as Config } from '../config'
+import { syncEgressShim } from '../../../egress-shim'
+import { KORTIX_USER_CONTEXT_HEADER } from '../../../kortix-user-context'
 import { invalidateRuntimeState } from '../runtime-state-projection'
 import { scheduleRuntimeProjectionPush } from '../runtime-projection-relay'
-import { llmProxyBaseUrl, setLlmProxyToken } from '../llm-proxy'
-import { logger } from '../logger'
-import { requiresRespawn, type Opencode } from '../opencode'
-import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
+import { llmProxyBaseUrl, setLlmProxyToken } from '../../../llm-proxy'
+import { logger } from '../../../logger'
+import { requiresRespawn, type Opencode } from '../supervisor'
+import { reconcileProjectEnv, type ProjectEnvStore } from '../../../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',

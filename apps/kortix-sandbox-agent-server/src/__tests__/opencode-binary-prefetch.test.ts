@@ -3,8 +3,8 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import type { Config } from '../config'
-import { createOpencodeSupervisor, prefetchExecutablePages } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpencodeSupervisor, prefetchExecutablePages } from '../harness/open-code/supervisor'
 
 const tempDirs: string[] = []
 
@@ -265,7 +265,7 @@ describe('OpenCode executable prefetch', () => {
   })
 
   test('overlaps prefetch with repository work and cancels it before spawn', async () => {
-    const main = await readFile(resolve(import.meta.dir, '..', 'main.ts'), 'utf8')
+    const main = await readFile(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     const begin = main.indexOf('const opencodeBinaryPrefetchPromise')
     const repo = main.indexOf('const repoMaterializePromise')
     const repoErrorBranch = main.indexOf('if (bootState.repoMaterializationError)')
@@ -281,7 +281,7 @@ describe('OpenCode executable prefetch', () => {
   })
 
   test('starts OpenCode from compiled config before checkout extraction completes', async () => {
-    const main = await readFile(resolve(import.meta.dir, '..', 'main.ts'), 'utf8')
+    const main = await readFile(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     const repo = main.indexOf('const repoMaterializePromise')
     const compiledStart = main.indexOf('const compiledOpencodeStartPromise')
     const checkoutWait = main.indexOf('await repoMaterializePromise')
@@ -293,7 +293,7 @@ describe('OpenCode executable prefetch', () => {
   })
 
   test('starts the LLM proxy before compiled OpenCode can spawn', async () => {
-    const main = await readFile(resolve(import.meta.dir, '..', 'main.ts'), 'utf8')
+    const main = await readFile(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     const llmProxyStart = main.indexOf('const llmUrl = startLlmProxy(')
     const llmProxyExport = main.indexOf('process.env.KORTIX_LLM_PROXY_URL = llmUrl', llmProxyStart)
     const compiledStart = main.indexOf('const compiledOpencodeStartPromise')

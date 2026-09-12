@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import {
   DAEMON_LOG_BUFFER_CAP_BYTES,
   DAEMON_LOG_MAX_LINE_BYTES,
@@ -22,7 +22,7 @@ import {
   enableDaemonLogFile,
   logger,
 } from '../logger'
-import { createLogsRouter, tailFile } from '../routes/logs'
+import { createLogsRouter, tailFile } from '../harness/open-code/routes/logs'
 
 let root: string
 const savedEnv = { file: process.env.KORTIX_DAEMON_LOG_FILE, max: process.env.KORTIX_DAEMON_LOG_MAX_BYTES }

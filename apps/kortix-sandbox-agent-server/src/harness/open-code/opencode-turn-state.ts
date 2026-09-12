@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-import { logger } from './logger'
+import { logger } from '../../logger'
 import { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
 export { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
 

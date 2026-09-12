@@ -15,9 +15,9 @@
 import { Hono } from 'hono'
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Config } from '../config'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context'
-import { daemonLogFilePath, logger } from '../logger'
+import type { OpenCodeConfig as Config } from '../config'
+import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../../kortix-user-context'
+import { daemonLogFilePath, logger } from '../../../logger'
 
 export const DEFAULT_TAIL_LINES = 500
 export const MAX_TAIL_LINES = 5_000

@@ -16,11 +16,14 @@
  * are visible in the source. The live swap is exercised on dev.
  */
 import { describe, expect, test } from 'bun:test';
+import { createOpenCodeHttpService } from '../harness/open-code/http';
+import type { Opencode } from '../harness/open-code/supervisor';
+import { loadOpenCodeConfig } from '../harness/open-code/config';
 
 const SRC = await Bun.file(new URL('../harness/open-code/supervisor.ts', import.meta.url).pathname).text();
-const CONFIG = await Bun.file(new URL('../config.ts', import.meta.url).pathname).text();
+const CONFIG = await Bun.file(new URL('../harness/open-code/config.ts', import.meta.url).pathname).text();
 const PROXY = await Bun.file(new URL('../proxy.ts', import.meta.url).pathname).text();
-const REFRESH = await Bun.file(new URL('../routes/refresh.ts', import.meta.url).pathname).text();
+const REFRESH = await Bun.file(new URL('../harness/open-code/routes/refresh.ts', import.meta.url).pathname).text();
 
 /** `verifyCandidateBoots`'s body, comments stripped. */
 function candidateBody(): string {
@@ -120,8 +123,10 @@ describe('the port pair', () => {
     // ephemeral candidate port would be unguarded the moment it went live —
     // an unproxied route from the sandbox to its own opencode.
     const call = PROXY.slice(PROXY.indexOf('blockedSelfPorts'), PROXY.indexOf('blockedSelfPorts') + 260);
-    expect(call).toContain('cfg.opencodeInternalPort');
-    expect(call).toContain('cfg.opencodeStandbyPort');
+    expect(call).toContain('...harness.http.blockedPorts(cfg)');
+    const http = createOpenCodeHttpService({} as Opencode);
+    const cfg = loadOpenCodeConfig({ KORTIX_OPENCODE_INTERNAL_PORT: '4096', KORTIX_OPENCODE_STANDBY_PORT: '4097' });
+    expect(http.blockedPorts(cfg)).toEqual([4096, 4097]);
   });
 
   test('chooses the idle half relative to the current active port', () => {

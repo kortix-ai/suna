@@ -5,9 +5,9 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
-import { buildOpencodeApp } from '../proxy'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/supervisor'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 
 const TEST_TOKEN = 'files-test-kortix-token'
@@ -90,7 +90,7 @@ describe('daemon file write routes', () => {
 
   beforeAll(async () => {
     WORKSPACE = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-files-test-'))
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode(), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode(), Date.now())
     server = Bun.serve({ port: 0, fetch: app.fetch })
     base = `http://127.0.0.1:${server.port}`
   })
@@ -355,7 +355,7 @@ describe('daemon file read + list + status + find routes', () => {
     await fs.writeFile(`${WS}/ignored.txt`, 'do not track\n') // gitignored
 
     const cfg: Config = { ...baseConfig(), workspace: WS, projectTarget: WS }
-    const app = buildOpencodeApp(cfg, fakeOpencode(), Date.now())
+    const app = buildOpenCodeTestApp(cfg, fakeOpencode(), Date.now())
     server = Bun.serve({ port: 0, fetch: app.fetch })
     base = `http://127.0.0.1:${server.port}`
   })
