@@ -133,6 +133,11 @@ module "api" {
   # the primary fix (that's the DB pool + statement_timeout in app code).
   requests_per_target_target = 600
   tags                       = local.tags
+
+  # Repository snapshots. Empty by default: the module creates no policy until a
+  # bucket is named, so this forwarding adds no permission on its own.
+  repo_snapshot_bucket = var.repo_snapshot_bucket
+  repo_snapshot_prefix = var.repo_snapshot_prefix
 }
 
 # ── Gateway (LLM proxy) — its own ECS Fargate service + CF-validated cert ─────

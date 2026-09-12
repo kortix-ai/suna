@@ -36,12 +36,10 @@ import {
   githubBackedProjectsSql,
   gitMetadataSubtree,
   pendingPushedRefs,
+  advanceOverflowCursorExpr,
   clearPendingOverflowExpr,
-  pendingOverflowPage,
-  pendingPushedRefsOverflowed,
-  pendingPushedSeq,
-  pendingSeqUnchanged,
-  setPendingOverflowPageExpr,
+  pendingOverflowState,
+  pendingOverflowUnchanged,
   readRepoSnapshotRepository,
   recordedRepositoryIdSql,
   removePendingPushedRefsExpr,
@@ -360,15 +358,14 @@ async function drainPendingPushedRefs(
   // is not the accepted set. Ask the provider for the authoritative one — the
   // truncated names are a hint, the repository's own branch list is the answer.
   //
-  // ONE PAGE per pass, resuming from where the last one stopped: a repository
-  // with thousands of branches must not turn a background tick into thousands
-  // of ref writes and a hundred provider calls.
-  if (pendingPushedRefsOverflowed(project)) {
-    // Read BEFORE the enumeration. A push that overflows while this runs bumps
-    // it, and the acknowledgement below then does not fire — otherwise this
-    // pass would erase a marker set for names it never saw.
-    const seq = pendingPushedSeq(project);
-    const page = pendingOverflowPage(project);
+  // ONE PAGE per pass, resuming from where the last pass of THIS generation
+  // stopped. Everything below is bound to `overflowSeq`: a push that overflows
+  // while this runs raises a new generation, every write here becomes a no-op,
+  // and the next pass starts that generation from its first page.
+  const state = pendingOverflowState(project);
+  if (state.overflowSeq !== null) {
+    const overflowSeq = state.overflowSeq;
+    const page = state.page;
     const names = await enumerateBranchPage(project, repository, page).catch((error) => {
       logger.warn('[repo-snapshot] could not enumerate branches for an overflowed push', {
         projectId: project.projectId,
@@ -388,27 +385,30 @@ async function drainPendingPushedRefs(
           () => {},
         );
       }
+      // Only a page every one of whose refs landed may be left behind; a
+      // partial page is retried, never skipped.
+      const complete = scheduled === names.length;
       const lastPage = names.length < BRANCH_PAGE_SIZE;
-      if (lastPage && scheduled === names.length) {
-        // Acknowledge, but only if nothing has parked since this pass began.
+      if (complete) {
         await db
           .update(projects)
-          .set({ metadata: clearPendingOverflowExpr(project) })
-          .where(and(eq(projects.projectId, project.projectId), pendingSeqUnchanged(project, seq)))
-          .catch(() => {});
-      } else if (!lastPage) {
-        await db
-          .update(projects)
-          .set({ metadata: setPendingOverflowPageExpr(project, page + 1) })
-          .where(and(eq(projects.projectId, project.projectId), pendingSeqUnchanged(project, seq)))
+          .set({
+            metadata: lastPage
+              ? clearPendingOverflowExpr(project)
+              : advanceOverflowCursorExpr(project, page + 1, overflowSeq),
+          })
+          .where(
+            and(eq(projects.projectId, project.projectId), pendingOverflowUnchanged(project, overflowSeq)),
+          )
           .catch(() => {});
       }
       logger.info('[repo-snapshot] enumerated a branch page after an overflowed push', {
         projectId: project.projectId,
+        generation: overflowSeq,
         page,
         branches: names.length,
         scheduled,
-        done: lastPage,
+        done: complete && lastPage,
       });
       return scheduled;
     }
@@ -484,7 +484,7 @@ export async function drainRegisteredPendingRefs(limit: number): Promise<number>
         sql`(
           (jsonb_typeof(${effectiveGitSubtreeSql} -> 'snapshot_pending_refs') = 'array'
            and jsonb_array_length(${effectiveGitSubtreeSql} -> 'snapshot_pending_refs') > 0)
-          or coalesce((${effectiveGitSubtreeSql} ->> 'snapshot_pending_overflow')::boolean, false)
+          or jsonb_typeof(${effectiveGitSubtreeSql} -> 'snapshot_pending_overflow_seq') = 'number'
         )`,
       ),
     )

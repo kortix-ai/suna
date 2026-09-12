@@ -188,3 +188,23 @@ variable "manage_dns" {
   type        = bool
   default     = true
 }
+
+variable "repo_snapshot_bucket" {
+  description = <<-EOT
+    S3 bucket holding prepared repository snapshots, forwarded to the API task
+    role. Empty (the default) grants nothing, so applying this root without
+    setting it changes no permissions.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "repo_snapshot_prefix" {
+  description = <<-EOT
+    Key prefix inside repo_snapshot_bucket for THIS environment. Must match
+    KORTIX_REPO_SNAPSHOT_PREFIX; the grant is scoped to it, so one environment's
+    task role cannot read or write another's objects.
+  EOT
+  type        = string
+  default     = ""
+}

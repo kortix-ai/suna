@@ -31,7 +31,7 @@ process.env.KORTIX_REPO_SNAPSHOT_MODE = 'shadow';
 
 const { db } = await import('../shared/db');
 const { projects } = await import('@kortix/db');
-const { eq } = await import('drizzle-orm');
+const { and, eq } = await import('drizzle-orm');
 const { prepareRefTip } = await import('../repo-snapshots/prepare');
 const { readRepoRef } = await import('../repo-snapshots/store');
 const {
@@ -78,6 +78,12 @@ const fixtureSha = 'c'.repeat(39) + '7';
 let parkedProjectFails = false;
 /** How many branches the stub says the repository has. */
 let overflowBranchCount = 0;
+/** Every branch-list page the stub served, in order: proves where recovery resumed. */
+const branchPagesRequested: number[] = [];
+/** When set, the next branch-list page carries one name the database must reject. */
+let poisonNextBranchPage = false;
+/** A project whose overflow recovery is interrupted by a newer push and a failed write. */
+const generationRepoId = String(915000000 + Math.floor(Math.random() * 4000000));
 const lookups: string[] = [];
 /** Any GitHub path outside the fixture namespace. Must stay empty. */
 const foreignCalls: string[] = [];
@@ -96,6 +102,7 @@ const ownedRepositoryIds = new Set<string>([
   pushRepoId,
   parkedRepoId,
   overflowRepoId,
+  generationRepoId,
   orphanRepoId,
   legacyDoneRepoId,
 ]);
@@ -193,8 +200,15 @@ beforeAll(async () => {
         const url = new URL(request.url);
         const perPage = Number(url.searchParams.get('per_page') ?? '100');
         const page = Number(url.searchParams.get('page') ?? '1');
+        branchPagesRequested.push(page);
         const names = Array.from({ length: overflowBranchCount }, (_, index) => `bulk-${index}`);
         const slice = names.slice((page - 1) * perPage, page * perPage);
+        if (poisonNextBranchPage && slice.length > 0) {
+          poisonNextBranchPage = false;
+          // Postgres text cannot hold a NUL byte, so writing this ref fails in
+          // the real database — a genuine partial-page failure, not a mock.
+          slice[0] = 'bulk-\u0000-rejected';
+        }
         return new Response(JSON.stringify(slice.map((name) => ({ name }))), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -220,7 +234,9 @@ beforeAll(async () => {
               ? parkedRepoId
               : slug === 'discovery-overflow'
                 ? overflowRepoId
-                : goodRepoId;
+                : slug === 'discovery-generation'
+                  ? generationRepoId
+                  : goodRepoId;
       return new Response(JSON.stringify({ id: Number(id), full_name: `kortix-ai/${slug}` }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -583,11 +599,112 @@ describe('a failed first preparation recovers without another webhook', () => {
     expect(Math.max(...perPass)).toBeLessThanOrEqual(100);
     expect(perPass.length).toBeGreaterThan(1);
 
+    // Every enumerated branch, exactly once. The worker's missing-default-ref
+    // repair may also have given the project its default branch from a
+    // background tick; that row is legitimate, and it is the ONLY other ref
+    // allowed — a duplicate or stray recovered name would fail here.
     const stored = (await db.execute(sql`
       select count(*)::int as n from kortix.repo_snapshot_refs
-      where repository_id = ${repositoryId}`)) as unknown as Array<{ n: number }>;
+      where repository_id = ${repositoryId} and ref like 'bulk-%'`)) as unknown as Array<{ n: number }>;
     expect(stored[0]?.n).toBe(overflowBranchCount);
+    const others = (await db.execute(sql`
+      select ref from kortix.repo_snapshot_refs
+      where repository_id = ${repositoryId} and ref not like 'bulk-%'`)) as unknown as Array<{ ref: string }>;
+    expect(others.map((row) => row.ref).filter((ref) => ref !== 'main')).toEqual([]);
     expect(pendingPushedRefsOverflowed((await projectRow(projectId)) as never)).toBe(false);
+    overflowBranchCount = 0;
+  });
+
+  test('a newer overflowing push restarts recovery, and a failed page is retried', async () => {
+    if (!guard()) return;
+    githubHealthy = true;
+    const { prepareRevisionsForPush } = await import('../repo-snapshots/prepare');
+    const {
+      advanceOverflowCursorExpr,
+      pendingOverflowState,
+      pendingOverflowUnchanged,
+    } = await import('../repo-snapshots/identity');
+    const { drainRegisteredPendingRefs } = await import('../repo-snapshots/worker');
+    const projectId = await seedProject('discovery-generation');
+    overflowBranchCount = 250;
+    const bulk = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, index) => `refs/heads/bulk-${from + index}`);
+
+    // Push 1 overflows the parking bound during an identity outage.
+    parkedProjectFails = true;
+    await prepareRevisionsForPush((await projectRow(projectId)) as never, bulk(0, 1001));
+    parkedProjectFails = false;
+    const first = pendingOverflowState((await projectRow(projectId)) as never);
+    expect(first.overflowSeq).not.toBeNull();
+
+    // Register the project, then recover ONE page of generation 1.
+    await resetRepoSnapshotDiscoveryBackoff(created);
+    for (let pass = 0; pass < 12; pass += 1) {
+      if (readRepoSnapshotRepository((await projectRow(projectId)) as never).repository) break;
+      await discoverUnregisteredProjects(1);
+    }
+    const repositoryId = readRepoSnapshotRepository((await projectRow(projectId)) as never).repository
+      ?.repositoryId as string;
+    ownedRepositoryIds.add(repositoryId);
+    // Discovery may already have drained page 1; make sure the cursor now sits past it.
+    if (pendingOverflowState((await projectRow(projectId)) as never).page === 1) {
+      await drainRegisteredPendingRefs(50);
+    }
+    const afterPageOne = pendingOverflowState((await projectRow(projectId)) as never);
+    expect(afterPageOne.overflowSeq).toBe(first.overflowSeq);
+    expect(afterPageOne.page).toBe(2);
+
+    // Push 2 overflows again: a NEW generation. Registration succeeds this time,
+    // so nothing blocks it; it must still be parked past the bound.
+    await db.execute(sql`
+      update kortix.projects
+      set metadata = metadata || jsonb_build_object('git',
+        (metadata -> 'git') - 'external_repo_id')
+      where project_id = ${projectId}`);
+    parkedProjectFails = true;
+    await prepareRevisionsForPush((await projectRow(projectId)) as never, bulk(1001, 2002));
+    parkedProjectFails = false;
+    await db.execute(sql`
+      update kortix.projects
+      set metadata = metadata || jsonb_build_object('git',
+        (metadata -> 'git') || jsonb_build_object('external_repo_id', ${repositoryId}::text))
+      where project_id = ${projectId}`);
+    const second = pendingOverflowState((await projectRow(projectId)) as never);
+    expect(second.overflowSeq).not.toBe(first.overflowSeq);
+    // The cursor belonged to generation 1, so it is not a cursor for generation 2.
+    expect(second.page).toBe(1);
+
+    // A drain that read generation 1 and writes late must change nothing.
+    const stale = await db
+      .update(projects)
+      .set({ metadata: advanceOverflowCursorExpr((await projectRow(projectId)) as never, 9, first.overflowSeq as number) })
+      .where(and(eq(projects.projectId, projectId), pendingOverflowUnchanged((await projectRow(projectId)) as never, first.overflowSeq as number)))
+      .returning({ projectId: projects.projectId });
+    expect(stale).toHaveLength(0);
+    expect(pendingOverflowState((await projectRow(projectId)) as never).page).toBe(1);
+
+    // Page 1 of generation 2 carries one ref the database rejects: the cursor
+    // must stay on page 1, and the next pass must ask for page 1 again.
+    branchPagesRequested.length = 0;
+    poisonNextBranchPage = true;
+    await drainRegisteredPendingRefs(50);
+    expect(branchPagesRequested).toEqual([1]);
+    expect(pendingOverflowState((await projectRow(projectId)) as never).page).toBe(1);
+
+    await drainRegisteredPendingRefs(50);
+    expect(branchPagesRequested).toEqual([1, 1]);
+    expect(pendingOverflowState((await projectRow(projectId)) as never).page).toBe(2);
+
+    // And recovery still finishes, bounded, with every branch the repository has.
+    for (let pass = 0; pass < 10; pass += 1) {
+      if (pendingOverflowState((await projectRow(projectId)) as never).overflowSeq === null) break;
+      await drainRegisteredPendingRefs(50);
+    }
+    expect(pendingOverflowState((await projectRow(projectId)) as never).overflowSeq).toBeNull();
+    const stored = (await db.execute(sql`
+      select count(*)::int as n from kortix.repo_snapshot_refs
+      where repository_id = ${repositoryId} and ref like 'bulk-%'`)) as unknown as Array<{ n: number }>;
+    expect(stored[0]?.n).toBe(overflowBranchCount);
     overflowBranchCount = 0;
   });
 

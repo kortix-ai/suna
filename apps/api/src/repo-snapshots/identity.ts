@@ -282,13 +282,21 @@ export function addPendingPushedRefsExpr(project: ProjectRow, refs: string[]): S
     select coalesce(jsonb_agg(ref order by ref), '[]'::jsonb)
     from (select ref from ${union} u order by ref limit ${MAX_PENDING_REFS}) bounded
   )`;
-  // Past the bound the names are dropped, and THAT is recorded: the drain then
-  // re-enumerates the repository's branches from the provider, which is the
-  // authoritative list, instead of trusting a truncated one. Nothing accepted is
-  // lost, and the hot row stays bounded.
-  const overflowed = sql`(
-    (select count(*) from ${union} u) > ${MAX_PENDING_REFS}
-    or coalesce((${subtree} ->> 'snapshot_pending_overflow')::boolean, false)
+  // Past the bound the names are dropped, and THAT is recorded — as the
+  // generation at which it happened, not a boolean. The drain then enumerates
+  // the repository's branches from the provider, which is the authoritative
+  // list, instead of trusting a truncated one. Nothing accepted is lost, the hot
+  // row stays bounded, and a drain cannot acknowledge an overflow raised after
+  // it started reading, because the generation it acknowledges is not this one.
+  const nextSeqInline = sql`(coalesce((${subtree} ->> 'snapshot_pending_seq')::bigint, 0) + 1)`;
+  // Both branches are jsonb: a bigint THEN against a jsonb ELSE is a type
+  // error, and silently coercing one of them would store a generation in a
+  // shape the reader does not recognise.
+  const overflowSeq = sql`(
+    case when (select count(*) from ${union} u) > ${MAX_PENDING_REFS}
+         then to_jsonb(${nextSeqInline})
+         else coalesce(${subtree} -> 'snapshot_pending_overflow_seq', 'null'::jsonb)
+    end
   )`;
   // A monotonic counter, bumped by every park. The drain reads it before it
   // starts and clears the overflow marker only if it has not moved — otherwise
@@ -297,43 +305,90 @@ export function addPendingPushedRefsExpr(project: ProjectRow, refs: string[]): S
   const nextSeq = sql`(coalesce((${subtree} ->> 'snapshot_pending_seq')::bigint, 0) + 1)`;
   return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
     ${subtree} || jsonb_build_object('snapshot_pending_refs', ${merged})
-               || jsonb_build_object('snapshot_pending_overflow', ${overflowed})
+               || jsonb_build_object('snapshot_pending_overflow_seq', ${overflowSeq})
                || jsonb_build_object('snapshot_pending_seq', ${nextSeq}))`;
+}
+
+/**
+ * The overflow recovery state, as ONE generation-bound record.
+ *
+ *   seq          bumped by every park.
+ *   overflowSeq  the `seq` at which a park last truncated, or null when none.
+ *                Recovery is owed exactly while this is set.
+ *   page         the next provider page to enumerate.
+ *   pageSeq      the generation that cursor belongs to.
+ *
+ * The cursor is meaningless outside its generation: a later push that overflows
+ * again raises a NEW `overflowSeq`, and a page counter left over from the
+ * previous one would resume in the middle of a list that is no longer the one
+ * being recovered. So a drain that finds `pageSeq !== overflowSeq` starts at
+ * page 1, and every write back is conditional on the generation it read.
+ */
+export interface PendingOverflowState {
+  seq: number;
+  overflowSeq: number | null;
+  page: number;
+  pageSeq: number | null;
+}
+
+function pendingSubtree(project: ProjectRow): Record<string, unknown> {
+  const meta = (project.metadata ?? {}) as Record<string, any>;
+  return (meta[gitMetadataSubtree(project)] ?? {}) as Record<string, unknown>;
+}
+
+function numberOrNull(value: unknown): number | null {
+  // `Number(null)` is 0, and a JSON null here means "no generation" — not
+  // generation zero, which is a real value this state machine can hold.
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function pendingOverflowState(project: ProjectRow): PendingOverflowState {
+  const subtree = pendingSubtree(project);
+  const overflowSeq = numberOrNull(subtree.snapshot_pending_overflow_seq);
+  const pageSeq = numberOrNull(subtree.snapshot_pending_page_seq);
+  const page = numberOrNull(subtree.snapshot_pending_page);
+  return {
+    seq: numberOrNull(subtree.snapshot_pending_seq) ?? 0,
+    overflowSeq,
+    // A cursor from another generation is not a cursor for this one.
+    page: page && page > 0 && pageSeq === overflowSeq ? page : 1,
+    pageSeq,
+  };
+}
+
+/** Is recovery owed? */
+export function pendingPushedRefsOverflowed(project: ProjectRow): boolean {
+  return pendingOverflowState(project).overflowSeq !== null;
 }
 
 /** The park counter this project is at; see `addPendingPushedRefsExpr`. */
 export function pendingPushedSeq(project: ProjectRow): number {
-  const meta = (project.metadata ?? {}) as Record<string, any>;
-  const raw = meta[gitMetadataSubtree(project)]?.snapshot_pending_seq;
-  return Number.isFinite(Number(raw)) ? Number(raw) : 0;
+  return pendingOverflowState(project).seq;
 }
 
-/** Where a bounded enumeration got to, so the next pass resumes rather than restarts. */
-export function pendingOverflowPage(project: ProjectRow): number {
-  const meta = (project.metadata ?? {}) as Record<string, any>;
-  const raw = meta[gitMetadataSubtree(project)]?.snapshot_pending_page;
-  const page = Number(raw);
-  return Number.isFinite(page) && page > 0 ? page : 1;
+/** Only a project whose overflow generation is still `overflowSeq` may be written. */
+export function pendingOverflowUnchanged(project: ProjectRow, overflowSeq: number): SQL {
+  const key = gitMetadataSubtree(project);
+  return sql`coalesce((coalesce(${projects.metadata} -> ${key}, '{}'::jsonb) ->> 'snapshot_pending_overflow_seq')::bigint, -1) = ${overflowSeq}`;
 }
 
-/** Record how far the enumeration got. */
-export function setPendingOverflowPageExpr(project: ProjectRow, page: number): SQL {
+/** Record where a bounded enumeration got to, bound to its generation. */
+export function advanceOverflowCursorExpr(project: ProjectRow, nextPage: number, overflowSeq: number): SQL {
   const key = gitMetadataSubtree(project);
   const subtree = sql`coalesce(${projects.metadata} -> ${key}, '{}'::jsonb)`;
   return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
-    ${subtree} || jsonb_build_object('snapshot_pending_page', ${Math.max(1, page)}::int))`;
+    ${subtree} || jsonb_build_object('snapshot_pending_page', ${Math.max(1, nextPage)}::int)
+               || jsonb_build_object('snapshot_pending_page_seq', ${overflowSeq}::bigint))`;
 }
 
-/** Only a project whose park counter is still `seq` may have its marker cleared. */
-export function pendingSeqUnchanged(project: ProjectRow, seq: number): SQL {
+/** Recovery is complete for this generation: drop the whole cursor. */
+export function clearPendingOverflowExpr(project: ProjectRow): SQL {
   const key = gitMetadataSubtree(project);
-  return sql`coalesce((coalesce(${projects.metadata} -> ${key}, '{}'::jsonb) ->> 'snapshot_pending_seq')::bigint, 0) = ${seq}`;
-}
-
-/** Did a push park more branches than the bound allows? */
-export function pendingPushedRefsOverflowed(project: ProjectRow): boolean {
-  const meta = (project.metadata ?? {}) as Record<string, any>;
-  return meta[gitMetadataSubtree(project)]?.snapshot_pending_overflow === true;
+  const subtree = sql`coalesce(${projects.metadata} -> ${key}, '{}'::jsonb)`;
+  return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
+    ((${subtree} - 'snapshot_pending_overflow_seq') - 'snapshot_pending_page') - 'snapshot_pending_page_seq')`;
 }
 
 /**
@@ -359,13 +414,6 @@ export function removePendingPushedRefsExpr(project: ProjectRow, refs: string[])
     ${subtree} || jsonb_build_object('snapshot_pending_refs', ${remaining}))`;
 }
 
-/** Clear the overflow marker, once the authoritative enumeration has run. */
-export function clearPendingOverflowExpr(project: ProjectRow): SQL {
-  const key = gitMetadataSubtree(project);
-  const subtree = sql`coalesce(${projects.metadata} -> ${key}, '{}'::jsonb)`;
-  return sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text,
-    (${subtree} - 'snapshot_pending_overflow') - 'snapshot_pending_page')`;
-}
 
 export function withCommit(
   repository: RepoSnapshotRepository,

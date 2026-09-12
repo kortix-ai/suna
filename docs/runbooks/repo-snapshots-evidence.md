@@ -651,3 +651,39 @@ migrated or deleted.
 startup and later Git and Kortix CR operations remain unexercised in this pass;
 see the reduced-candidate result document for the exact local blockers.
 
+## Checkpoint — resumed pass, gate 1: integration and recovery contract
+
+The reduced candidate `a884ba7c3c` was fast-forwarded into `config-provider-s3`.
+The ten WIP edits were checkpointed first — branch `config-provider-s3-wip-checkpoint`
+and a patch beside the handoffs — then reapplied without conflict. The typecheck
+line they carried was identical to the committed one.
+
+Kept from the WIP, now committed: the overflow-recovery state machine
+(`identity.ts`, `worker.ts`), the Terraform root forwarding of the snapshot
+bucket inputs (`dev`, `staging`, `prod`), and the rollout-runbook gates. The
+recovery contract it implements, and the tests that prove each part against the
+task database:
+
+| Contract | Proof |
+| --- | --- |
+| A newer overflowing push invalidates an older pagination cursor | `integration-repo-snapshot-discovery.test.ts`: the cursor returns to page 1, and a write carrying the old generation changes nothing |
+| A page with a failed ref write is retried, never skipped | same test: one ref the database rejects keeps the cursor on the page, and the next pass requests that page again |
+| Bounded multi-page recovery finishes without losing accepted refs | same test and the 1,500-ref test: every enumerated branch stored exactly once; the only other ref permitted is the default branch |
+
+Results on the integrated tree:
+
+| Check | Result |
+| --- | --- |
+| `apps/api` `tsc --noEmit` | exit 0 |
+| Discovery integration suite, task database | 18 pass, 0 fail; fixture rows after run: 0 |
+| `session-sandbox.test.ts` | 33 pass, 0 fail |
+| Sessions wiring, failover and metadata tests | 24 pass, 0 fail |
+| `src/repo-snapshots/` (MinIO reachable, nothing skipped) | 81 pass, 0 fail |
+| `src/snapshots/` | 318 pass, 0 fail |
+| `git diff --check` against `origin/main` | clean |
+| `terraform fmt -check`, three roots and the module | clean |
+
+Integration suites are run through dotenvx with a job-local override file placed
+first (mode 600, never printed), so they target the task database rather than the
+inherited profile's.
+
