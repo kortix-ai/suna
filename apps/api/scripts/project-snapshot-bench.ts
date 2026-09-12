@@ -185,7 +185,7 @@ interface Round {
   started_at: string;
   runtime_ready_at: string | null;
   git_proxy_requests: number | null;
-  git_proxy_paths: string[];
+  git_proxy_paths: GitProxyRequest[];
 }
 
 async function oneRound(arm: Arm, jwt: string, projectId: string, round: number, apiLog?: string): Promise<Round> {
@@ -263,27 +263,44 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
     await api(arm.api, jwt, `/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
   }
   if (apiLog && result.runtime_ready_at) {
-    const seen = listGitProxyRequests(apiLog, projectId, startedAt, new Date(result.runtime_ready_at));
-    result.git_proxy_requests = seen.length;
+    // Window: create → 5 s past observed readiness, so the daemon's own
+    // post-ready work (the deferred history backfill fires AT readiness) is
+    // visible and attributable by its offset instead of being cut in half by
+    // the 500 ms health poll.
+    const readyAt = new Date(result.runtime_ready_at);
+    const seen = listGitProxyRequests(apiLog, projectId, startedAt, new Date(readyAt.getTime() + 5000), readyAt);
     result.git_proxy_paths = seen;
+    // Acquisition-related = anything that completed clearly BEFORE readiness.
+    // The descriptor exchange is the S3 path's one expected request.
+    result.git_proxy_requests = seen.filter((s) => s.offsetMs < -250).length;
   }
   return result;
 }
 
+interface GitProxyRequest {
+  method: string;
+  path: string;
+  status: number;
+  /** Completion time relative to the observed runtimeReady (negative = before). */
+  offsetMs: number;
+}
+
 /**
  * Git-proxy requests for this project logged by the arm's API inside
- * [from, to], as `METHOD suffix status`. Per PROJECT, not per session: rounds
- * run sequentially with a cooldown, so a window belongs to one boot.
+ * [from, to]. Per PROJECT, not per session: rounds run sequentially with a
+ * cooldown, so a window belongs to one boot.
  */
-function listGitProxyRequests(logPath: string, projectId: string, from: Date, to: Date): string[] {
+function listGitProxyRequests(logPath: string, projectId: string, from: Date, to: Date, readyAt: Date): GitProxyRequest[] {
   if (!existsSync(logPath)) return [];
   const re = new RegExp(`^\\[(\\d{4}-\\d{2}-\\d{2}T[^\\]]+)\\] \\[INFO\\] Request completed: (GET|POST) /v1/git/${projectId}\\.git/(info/refs|git-upload-pack|fast-boot-bundle|compiled-checkout|project-snapshot) (\\d{3})`);
-  const seen: string[] = [];
+  const seen: GitProxyRequest[] = [];
   for (const line of readFileSync(logPath, 'utf8').split('\n')) {
     const m = line.match(re);
     if (!m) continue;
     const at = new Date(m[1]!);
-    if (at >= from && at <= to) seen.push(`${m[2]} ${m[3]} ${m[4]}`);
+    if (at >= from && at <= to) {
+      seen.push({ method: m[2]!, path: m[3]!, status: Number(m[4]), offsetMs: at.getTime() - readyAt.getTime() });
+    }
   }
   return seen;
 }
@@ -375,6 +392,14 @@ function report(): void {
       full_boot_min_ms: boot[0] ?? null,
       full_boot_max_ms: boot[boot.length - 1] ?? null,
       git_proxy_requests_avg: ok.length ? ok.reduce((a, r) => a + (r.git_proxy_requests ?? 0), 0) / ok.length : null,
+      // Which Git-proxy calls completed clearly BEFORE readiness (offset < -250 ms),
+      // summed over rounds — the S3 arm should show only `project-snapshot`.
+      git_proxy_before_ready_by_path: ok.reduce<Record<string, number>>((acc, r) => {
+        for (const q of r.git_proxy_paths ?? []) {
+          if (q.offsetMs < -250) acc[`${q.method} ${q.path}`] = (acc[`${q.method} ${q.path}`] ?? 0) + 1;
+        }
+        return acc;
+      }, {}),
       sandbox_providers: ok.reduce<Record<string, number>>((acc, r) => {
         acc[r.provider ?? '?'] = (acc[r.provider ?? '?'] ?? 0) + 1;
         return acc;
