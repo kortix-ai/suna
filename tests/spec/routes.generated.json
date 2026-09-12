@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 637,
+  "count": 639,
   "routes": [
     {
       "method": "GET",
@@ -1108,6 +1108,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/git/:project/repo-snapshot"
+    },
+    {
+      "method": "GET",
       "path": "/v1/health"
     },
     {
@@ -1257,6 +1261,10 @@
     {
       "method": "GET",
       "path": "/v1/platform/github-app/status"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/github-app/webhook"
     },
     {
       "method": "POST",

@@ -9,6 +9,7 @@ import {
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
   materializeRepo,
+  readRepoTransportAttribution,
   materializeScaffoldSeed,
   materializeProjectSeed,
   runGitCredentialHelper,
@@ -389,6 +390,12 @@ async function main() {
   // resolution, readiness probe, initial session creation) think the workspace
   // is ready.
   await repoMaterializePromise
+  // Attribution for the boot benchmark: which transport served the workspace,
+  // and how many Git network operations this boot performed (0 when prepared).
+  const transport = readRepoTransportAttribution()
+  bootState.repoSnapshot = transport.snapshot
+  bootState.gitNetworkOps = transport.gitNetworkOps
+  if (transport.snapshot?.used) bootMark('repo-snapshot')
   bootMark('repo-materialized')
   await compiledOpencodeStartPromise
   await earlyOpencodeStartPromise

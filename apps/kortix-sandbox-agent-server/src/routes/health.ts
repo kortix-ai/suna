@@ -70,6 +70,28 @@ export type SandboxBootState = {
    * before this flips. Undefined on every other path: unchanged behaviour.
    */
   workspaceReady?: boolean
+  /**
+   * Repository-snapshot transport outcome for this boot (Config Provider v1).
+   * Read by `apps/api/scripts/bench-boot-attribution.ts`, which needs to
+   * attribute materialization AND to prove that a prepared start performed no
+   * Git network operation — `gitNetworkOps` is the count of clone/fetch calls
+   * the boot actually made, not an inference from a missing log line.
+   */
+  repoSnapshot?: {
+    mode: string
+    used: boolean
+    commitSha?: string
+    compression?: string
+    bytes?: number
+    transferMs?: number
+    firstEntryAtMs?: number
+    extractMs?: number
+    verifyMs?: number
+    attempts?: number
+    fallbackReason?: string
+  } | null
+  /** Git clone/fetch operations this boot performed. 0 on a prepared start. */
+  gitNetworkOps?: number
 }
 
 /**
@@ -275,6 +297,10 @@ export function createHealthRouter(
       // In-container boot timeline (ms since process start) so the dashboard can
       // attribute the post-create boot latency (clone vs opencode vs proxy).
       boot_timeline: bootState.timeline,
+      // Config Provider v1 attribution: which transport served this boot, and
+      // how many Git network operations it still needed (0 when prepared).
+      repo_snapshot: bootState.repoSnapshot ?? null,
+      git_network_ops: bootState.gitNetworkOps ?? 0,
       // Visible auth posture so misconfiguration doesn't silently downgrade.
       auth: cfg.sandboxToken ? 'configured' : 'unconfigured',
     })

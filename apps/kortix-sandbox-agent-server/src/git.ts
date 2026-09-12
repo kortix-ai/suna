@@ -12,6 +12,49 @@ import {
   materializeRepoSnapshotToStage,
   readRepoSnapshotDescriptor,
 } from './repo-snapshot'
+
+/**
+ * Transport attribution for THIS boot. The benchmark needs two facts the logs
+ * cannot supply reliably: which path served the workspace, and how many Git
+ * network operations the boot still made. `gitNetworkOps` is incremented at the
+ * call sites that actually clone or fetch, so "zero attempted Git network
+ * operations" is a counter, not the absence of a message.
+ */
+export interface RepoTransportAttribution {
+  mode: string
+  used: boolean
+  commitSha?: string
+  compression?: string
+  bytes?: number
+  transferMs?: number
+  firstEntryAtMs?: number
+  extractMs?: number
+  verifyMs?: number
+  attempts?: number
+  fallbackReason?: string
+}
+
+const transportAttribution: { snapshot: RepoTransportAttribution | null; gitNetworkOps: number } = {
+  snapshot: null,
+  gitNetworkOps: 0,
+}
+
+export function readRepoTransportAttribution(): {
+  snapshot: RepoTransportAttribution | null
+  gitNetworkOps: number
+} {
+  return { snapshot: transportAttribution.snapshot, gitNetworkOps: transportAttribution.gitNetworkOps }
+}
+
+export function __resetRepoTransportAttributionForTests(): void {
+  transportAttribution.snapshot = null
+  transportAttribution.gitNetworkOps = 0
+}
+
+/** Called at every site that performs a Git clone or fetch over the network. */
+function countGitNetworkOp(): void {
+  transportAttribution.gitNetworkOps += 1
+}
 import { logger } from './logger'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
@@ -189,12 +232,21 @@ interface CloneCredential {
   token: string
 }
 
+/**
+ * Every authenticated Git invocation goes through here, so this is the ONE
+ * place that can count network operations without missing a call site. Local
+ * subcommands (`checkout -B`, `rev-parse`, `status`) are not counted; only the
+ * ones that open a connection are.
+ */
+const GIT_NETWORK_SUBCOMMANDS = new Set(['clone', 'fetch', 'pull', 'push', 'ls-remote'])
+
 async function gitWithAuth(
   credential: CloneCredential | undefined,
   repoUrl: string | undefined,
   args: string[],
   opts: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<ExecResult> {
+  if (args.some((arg) => GIT_NETWORK_SUBCOMMANDS.has(arg))) countGitNetworkOp()
   return execGit([
     ...buildGitAuthArgs(repoUrl, credential?.token),
     ...args,
@@ -723,6 +775,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
         throw new Error('repo snapshot mode is `required` but the session carries no snapshot descriptor')
       }
       if (descriptor) {
+        transportAttribution.snapshot = { mode: repoSnapshotMode, used: false, commitSha: descriptor.commitSha }
         const stage = await createStagePath(target, 'snapshot')
         try {
           const metrics = await materializeRepoSnapshotToStage(descriptor, stage, {
@@ -748,6 +801,18 @@ export async function materializeRepo(cfg: Config): Promise<void> {
             if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
             await configureRepoGitIdentity(cfg, target)
             await markSessionCheckoutAdopted(target, cfg.branchName)
+            transportAttribution.snapshot = {
+              mode: repoSnapshotMode,
+              used: true,
+              commitSha: metrics.commitSha,
+              compression: metrics.compression,
+              bytes: metrics.bytes,
+              transferMs: metrics.transferMs,
+              firstEntryAtMs: metrics.firstEntryAtMs,
+              extractMs: metrics.extractMs,
+              verifyMs: metrics.verifyMs,
+              attempts: metrics.attempts,
+            }
             logger.info('[git] repo materialized from snapshot', metrics)
             return
           }
@@ -755,6 +820,12 @@ export async function materializeRepo(cfg: Config): Promise<void> {
           await rm(stage, { recursive: true, force: true }).catch(() => {})
           // `required` never silently serves a different revision.
           if (repoSnapshotMode === 'required') throw error
+          transportAttribution.snapshot = {
+            mode: repoSnapshotMode,
+            used: false,
+            commitSha: descriptor.commitSha,
+            fallbackReason: error instanceof Error ? error.message : String(error),
+          }
           logger.warn('[git] repo snapshot unavailable; using existing path', {
             mode: repoSnapshotMode,
             commitSha: descriptor.commitSha,

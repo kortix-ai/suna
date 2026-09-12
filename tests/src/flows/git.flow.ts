@@ -29,6 +29,7 @@ flow(
     routes: [
       "GET /v1/git/:project/info/refs",
       "GET /v1/git/:project/compiled-checkout",
+      "GET /v1/git/:project/repo-snapshot",
       "GET /v1/git/:project/compiled-runtime",
       "GET /v1/git/:project/compiled-pi-runtime",
       "POST /v1/git/:project/git-upload-pack",
@@ -84,6 +85,27 @@ flow(
           query: { ref: "main", sha: "a".repeat(40) },
         });
       r.status([401, 403]);
+    });
+    await ctx.step("repo snapshot descriptor without git auth → 401", async () => {
+      // Config Provider v1. The descriptor carries a signed object capability,
+      // so the auth boundary is identical to every other artifact route and is
+      // checked BEFORE the feature flag: an anonymous caller never learns
+      // whether snapshots are enabled for this deployment.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/repo-snapshot", {
+          params: { project: p.id },
+          query: { sha: "a".repeat(40) },
+        });
+      r.status([401, 403]);
+    });
+    await ctx.step("repo snapshot descriptor rejects a non-SHA revision → 400", async () => {
+      // A branch name is never immutable identity. The route takes an exact
+      // 40-hex commit and nothing else.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/repo-snapshot", { params: { project: p.id }, query: { sha: "main" } });
+      r.status([400, 401, 403]);
     });
     await ctx.step("git-receive-pack (push) without git auth → 401", async () => {
       const r = await ctx.client

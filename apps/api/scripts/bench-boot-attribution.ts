@@ -94,6 +94,26 @@ interface Boot {
   hostMarks: Array<{ label: string; deltaMs: number }> | null;
   /** In-guest BootMark[] read off /kortix/health. */
   bootTimeline: BootMark[] | null;
+  /**
+   * Config Provider v1 attribution, read off /kortix/health:
+   * which transport served the workspace, and how many Git network operations
+   * the boot performed. `gitNetworkOps === 0` is the prepared-start proof — a
+   * counter the daemon increments, not the absence of a log line.
+   */
+  repoSnapshot: {
+    mode: string;
+    used: boolean;
+    commitSha?: string;
+    compression?: string;
+    bytes?: number;
+    transferMs?: number;
+    firstEntryAtMs?: number;
+    extractMs?: number;
+    verifyMs?: number;
+    attempts?: number;
+    fallbackReason?: string;
+  } | null;
+  gitNetworkOps: number | null;
   error?: string;
 }
 
@@ -111,6 +131,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
     target: target.label, round, sessionId: null, provider: null, image: null, imageKind: 'unknown',
     apiCreateMs: null, vmCreatedMs: null, rowActiveMs: null,
     daemonReachableMs: null, runtimeReadyMs: null, hostMarks: null, bootTimeline: null,
+    repoSnapshot: null, gitNetworkOps: null,
   };
   const t0 = performance.now();
   const at = () => Math.round(performance.now() - t0);
@@ -144,6 +165,8 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
             if (boot.daemonReachableMs === null) boot.daemonReachableMs = at();
             const hb: any = await h.json().catch(() => null);
             if (hb?.boot_timeline) boot.bootTimeline = hb.boot_timeline;
+            if (hb?.repo_snapshot !== undefined) boot.repoSnapshot = hb.repo_snapshot;
+            if (typeof hb?.git_network_ops === 'number') boot.gitNetworkOps = hb.git_network_ops;
             if (hb?.runtimeReady) { boot.runtimeReadyMs = at(); return; }
           }
         } catch { /* daemon not up yet */ }
@@ -262,6 +285,38 @@ function report(boots: Boot[]): void {
     }
     const kinds = ok.reduce<Record<string, number>>((a, b) => ((a[b.imageKind] = (a[b.imageKind] ?? 0) + 1), a), {});
     console.error(`  image kinds: ${JSON.stringify(kinds)}`);
+
+    // Config Provider v1 attribution. Reported separately from the stage
+    // timings because it answers a different question: WHICH transport ran.
+    const snapshotBoots = ok.filter((b) => b.repoSnapshot?.used);
+    const fallbacks = ok.filter((b) => b.repoSnapshot && !b.repoSnapshot.used);
+    if (snapshotBoots.length || fallbacks.length) {
+      console.error(`  repo snapshot: ${snapshotBoots.length}/${ok.length} boots used a prepared snapshot`);
+      const transfer = snapshotBoots.map((b) => b.repoSnapshot!.transferMs ?? 0).filter(Boolean);
+      const firstEntry = snapshotBoots.map((b) => b.repoSnapshot!.firstEntryAtMs ?? 0).filter(Boolean);
+      const bytes = snapshotBoots.map((b) => b.repoSnapshot!.bytes ?? 0).filter(Boolean);
+      if (transfer.length) {
+        console.error(
+          `    transfer   p50=${pct(transfer, 50)}ms p90=${pct(transfer, 90)}ms  ` +
+            `first-entry p50=${pct(firstEntry, 50)}ms  bytes p50=${pct(bytes, 50)}`,
+        );
+        // Extraction overlapping the download is the design claim; this is where
+        // it shows up in a real boot rather than in a unit test.
+        const overlapped = snapshotBoots.filter(
+          (b) => (b.repoSnapshot!.firstEntryAtMs ?? Number.POSITIVE_INFINITY) < (b.repoSnapshot!.transferMs ?? 0),
+        ).length;
+        console.error(`    extraction began before the response ended in ${overlapped}/${snapshotBoots.length} boots`);
+      }
+      for (const b of fallbacks) {
+        console.error(`    FALLBACK r${b.round}: ${b.repoSnapshot!.fallbackReason ?? 'unknown'}`);
+      }
+    }
+    const counted = ok.filter((b) => b.gitNetworkOps !== null);
+    if (counted.length) {
+      const zero = counted.filter((b) => b.gitNetworkOps === 0).length;
+      const worst = Math.max(...counted.map((b) => b.gitNetworkOps!));
+      console.error(`  git network ops: ${zero}/${counted.length} boots at ZERO (max observed ${worst})`);
+    }
   }
 }
 
