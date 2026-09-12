@@ -90,7 +90,7 @@ function expectStripeUrl(value: string | undefined, hosts: string[], pathPattern
 
 test.describe
   .serial('10 - Billing customer journey', () => {
-    test.skip(!enabled, 'The Stripe-backed billing journey runs only in strict staging QA.');
+    test.skip(!enabled, 'Billing UI is disabled in the default local profile.');
     test.setTimeout(300_000);
 
     let user: AuthUser;

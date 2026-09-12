@@ -316,6 +316,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   KORTIX_PREVIEW_BASE_DOMAIN: ['kortix-api', 'caddy'],
   KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: ['kortix-api'],
   KORTIX_APPS_ALLOW_DIRECT_EDGE: ['kortix-api'],
+  KORTIX_FRONTEND_MEMORY_LIMIT: ['frontend'],
 
   // Internal tokens
   GATEWAY_INTERNAL_TOKEN: ['kortix-api', 'llm-gateway'],

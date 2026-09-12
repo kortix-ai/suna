@@ -157,7 +157,10 @@ describe('authorizeGitProxy — CLI PAT', () => {
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
 
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: 'all', connectors: 'all' });
+    if (res.ok) {
+      expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: 'all', connectors: 'all' });
+      expect(res.principal).toMatchObject({ kind: 'session', userId: 'user-1', tokenId: 'tok-1' });
+    }
   });
 
   test('a PAT on another account passes when the user holds the git capability', async () => {
@@ -313,12 +316,15 @@ describe('authorizeGitProxy — sandbox token', () => {
       branchName: 'sandbox-1',
       sessionMetadata: { workspace_mode: 'branch' },
     };
-    grantRow = { agentGrant: { agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' } };
+    grantRow = { userId: 'launcher-1', tokenId: 'session-token-1', agentGrant: { agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' } };
 
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
 
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' });
+    if (res.ok) {
+      expect(res.agentGrant).toEqual({ agent: 'main', kortixCli: ['project.gitops.ref.any'], connectors: 'all' });
+      expect(res.principal).toMatchObject({ kind: 'session', userId: 'launcher-1', tokenId: 'session-token-1' });
+    }
   });
 
   test('a session with no connector-token grant reads null, not widened', async () => {

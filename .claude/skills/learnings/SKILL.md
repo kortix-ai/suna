@@ -21,6 +21,72 @@ linked, not inlined.
 
 ## Register
 
+### A `workflow_run` job runs the DEFAULT BRANCH's copy of the workflow, not the branch it is deploying (2026-09-10)
+
+**When:** a workflow triggered by `workflow_run:` verifies or deploys another
+branch. `deploy-staging.yml` fires on `workflow_run` after Build Staging
+Artifacts. GitHub loads that YAML from the DEFAULT branch (`main`), while the
+job checks out and deploys `staging`. So staging can hold a corrected workflow
+and still be verified by main's stale one. Here staging's copy asserted the
+HOST-ONLY access cookie (correct since #7065 stopped `.kortix.com` sending
+dev's cookie to staging, prod and api.kortix.com alike); main's copy still
+demanded the parent-domain cookie the app deliberately no longer sets. The
+staging deploy for `40c750d5d6` deployed everything correctly and then failed
+its own verification, blocking the promote — while the previous deploy of the
+same code had PASSED because it ran via `workflow_dispatch`, which uses the
+selected branch's file. Same workflow, same environment, opposite verdicts,
+decided only by trigger type. **Rules.** (1) A fix to a `workflow_run` workflow
+is not live until it is on the DEFAULT branch — landing it on the branch under
+test changes nothing. (2) When a `workflow_run` deploy fails a check its
+`workflow_dispatch` twin passes, diff the workflow file between the two
+branches before touching anything else. (3) An assertion about a security
+property must be re-read when that property is deliberately changed; this one
+asserted the exact bug #7065 removed. *Incident:* v0.13.14 promote blocked,
+2026-09-10; second occurrence (v0.13.11, 2026-09-05, PR #7137 still open).
+*Enforcer:* the assertion now also REFUSES a `.kortix.com` row, so a #7065
+regression fails loudly instead of silently satisfying the old rule.
+
+### Stop concurrent deployed suites when managed GitHub reports a secondary limit (2026-09-10)
+
+**When:** preview and staging tests share a managed GitHub organization.
+Stop content-creating runs, allow a quiet backoff interval, then retry unfinished
+shards serially. A primary rate-limit budget does not prove secondary capacity.
+*Near-miss:* 0.13.13 validation exhausted repository creation; preview and staging
+provisioning returned 503 with GitHub's secondary-limit response.
+*Enforcer:* manual serialized job reruns; TODO: a shared deployed-suite lease
+and secondary-limit backoff in the managed GitHub client.
+
+### Give a shared modal store exactly one active renderer (2026-09-10)
+
+**When:** a page and its nested settings overlay both mount a global dialog.
+Select one renderer at the deepest dialog depth. Concurrent Radix dialogs can
+hide each other from the accessibility tree while both remain visibly open.
+*Near-miss:* the 0.13.13 preview opened two billing dialogs from the account hub;
+the checkout controls disappeared from Playwright's role locators.
+*Enforcer:* billing browser journey asserts one accessible dialog, repeated
+open/close, and Escape preserving the account hub.
+
+### Verify the preview report SHA and result before accepting a green deployment (2026-09-10)
+
+**When:** using a persistent branch preview as release evidence. Push deploys
+set `PREVIEW_RUN_TESTS=0`; their success comment can still claim tests passed.
+Dispatch `deploy-preview.yml` explicitly, then check the report's `gitSha`,
+failures, and exclusions. A healthy runtime does not validate a retained report.
+*Near-miss:* PR #7190 deployed db5f0714 but retained c6b9685e's report with
+13 failures. The misleading green status was caught before staging promotion.
+*Enforcer:* manual report inspection; TODO: report skipped tests truthfully.
+
+### Intersect session Git ref grants with the effective IAM role (2026-09-10)
+
+**When:** exposing agent grants to the Git receive-pack ref gate. An explicit
+`project.gitops.ref.any` or `.ref.delete` grant narrows the effective identity;
+it never replaces that identity's role. Carry the session token and launcher
+into `actorForToken` so activated service accounts retain their own ceiling.
+*Near-miss:* staging PR #7186 blocked promotion of #7185, which exposed raw
+grants and let member-launched sessions request manager ref authority.
+*Enforcers:* `ref-scopes.test.ts`, `unit-git-proxy-authz.test.ts`, and real Git
+push assertions in `receive-pack-gate.test.ts`.
+
 ### A finished run must LEAVE — `process.exitCode` alone waits on a loop one leaked handle keeps alive forever (2026-09-10)
 
 **When:** writing the completion path of any long-running CLI, test runner, or
@@ -4781,3 +4847,102 @@ drift, stale commit, unreadable manifest, cooldown),
 `apps/api/src/connectors/principal-access.test.ts`, and flow `CONN-27`
 (a real session-bound token: hot reload with provenance, glitch repair,
 channel guarantee, honest denials, ten calls after a mid-session add).
+
+
+## A failed artifact secret guard must prevent upload (2026-09-10)
+
+**Incident.** Release run `34510232187`, attempt 3, was canceled during browser
+shard 2. Cancellation left raw Playwright traces before reporter scrubbing.
+The secret guard rejected the traces, but `upload-artifact` used `always()`
+and uploaded them anyway. Artifact `10166938271` was deleted in this session.
+The earlier attempt 1 artifact guard passed. No secret value was printed
+during this investigation.
+
+**Rule.** Diagnostic uploads run after failed or canceled tests only when
+the artifact secret guard completed successfully. A failed or skipped guard
+blocks upload. Preserve the guard failure as the job result.
+
+**Enforcement.** `.github/workflows/tests-release.yml` gives both API and browser
+guards the `artifact-secrets` step ID. Both upload steps require
+`steps.artifact-secrets.outcome == 'success'` in addition to `always()`.
+
+
+## Custom diagnostic headers require explicit artifact redaction (2026-09-10)
+
+**Incident.** Release run `34510198802` API shard 5 recorded
+`x-kortix-ci-passthrough` in its public `results.json`. The request-capture
+sensitive-header set did not mask it, and its hexadecimal value did not match
+the final secret-shape scrubber. A bounded report inspection also printed
+the captured header before this omission was identified.
+
+**Rule.** Add every credential-bearing diagnostic header to capture-time
+redaction when introducing it. Do not assume a final shape-based scrubber
+recognizes arbitrary secrets. Inspect only selected response fields while
+diagnosing a flow; do not print a whole request or result object.
+
+**Enforcement.** `tests/src/core/client.ts` masks this header.
+`tests/unit/client-ci-passthrough.test.ts` proves the outgoing request carries
+the credential while the captured artifact omits its full value. The new
+regression failed before the fix; all 32 focused client/scrubber tests pass.
+Both release artifact guards also reject the exact diagnostic credential.
+The staging Worker binding and matching GitHub Actions secret were rotated
+at `2026-09-10T18:49:37Z`. The current Worker no longer reads that legacy
+diagnostic binding; its HTTP health response remains `200` at source
+`2dd55445`.
+
+## Browser and runtime tests must express the current user interaction (2026-09-10)
+
+**Incident.** The v0.13.13 gate searched for a `Connected` heading behind an
+open connector dialog. The current page exposes a `Connected` tab. Both
+connector writes returned `200`, and the dialog showed `Reconnect`. The
+RUN-9 fixture separately said "Disregard everything above"; the model
+classified the latest user request as prompt injection and continued the
+previous essay after a successful abort.
+
+**Rule.** Close a modal before asserting on the page behind it. Match the
+current accessible role. A transport cancellation fixture uses an ordinary
+new user request, without asking the model to disregard prior instructions.
+Keep the network, persisted-state, abort, and second-turn marker assertions.
+
+**Enforcement.** `23-composio-connector.spec.ts` closes the detail dialog and
+asserts the selected `Connected` tab. `session-thread-reliability.flow.ts`
+uses an explicit essay cancellation followed by the same exact reply marker.
+
+
+## Self-host memory adjustments must survive CLI regeneration (2026-09-10)
+
+**Incident.** Before the Essentia update, both frontend replicas had restarted
+234 times. Logs repeatedly reported `Reached heap limit`. Each container
+had a 512 MiB limit while the 16 GiB host had about 9.9 GiB available.
+The CLI hardcoded the frontend limit, so editing generated Compose would
+be overwritten by the next manual update.
+
+**Rule.** Expose per-service resource adjustments through persisted instance
+configuration. Map the configuration key to that service. Verify the actual
+CLI command and the resolved Docker Compose configuration before a rollout.
+
+**Enforcement.** `KORTIX_FRONTEND_MEMORY_LIMIT` overrides the frontend limit
+with a 512 MiB default. Its service mapping selects only `frontend`.
+The CLI regression verifies `env set` and a later `init` preserve the value.
+A real CLI/Docker Compose check resolves 536870912 bytes by default and
+1073741824 bytes after configuring `1024m`, including after another `init`.
+All 134 focused self-host tests pass. Live Essentia verification follows
+the production release and manual update.
+
+## Session-token fixtures must not require the server signing secret (2026-09-10)
+
+**Incident.** Release run `34510198802` API shard 4 finished its flows at
+18:44 UTC but remained alive until cancellation at 19:24 UTC. CONN-27 opened
+a PostgreSQL connection, then skipped outside its cleanup block because
+`KE2E_API_KEY_SECRET` was absent. The connection kept the process alive.
+
+**Rule.** Mint test credentials through the public token API. Bind fixture
+metadata in the database without copying server signing secrets into test
+environments. Acquire database connections inside the cleanup scope. Do not
+hide a leaked connection by forcing the test process to exit.
+
+**Enforcement.** CONN-27 uses `POST /v1/accounts/tokens`, enters `try/finally`
+before connecting, and deletes the minted token by `token_id`. Preview test
+configuration no longer exports the signing secret; its unit test rejects
+that export. The flow allows five minutes for managed Git writes and ten
+sequential manifest reads; all existing assertions remain required.

@@ -392,3 +392,159 @@ flow(
     });
   },
 );
+
+flow(
+  'GH-17',
+  {
+    domain: 'git',
+    requires: ['database'],
+    routes: [
+      'POST /v1/accounts/tokens',
+      'GET /v1/git/:project/info/refs',
+      'POST /v1/git/:project/git-upload-pack',
+      'POST /v1/git/:project/git-receive-pack',
+    ],
+  },
+  async (ctx) => {
+    const { randomUUID } = await import('node:crypto');
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const { Client: PgClient } = await import('pg');
+    const exec = promisify(execFile);
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const project = await team.project({ managedGit: true });
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const databaseUrl = ctx.env.databaseUrl!;
+    const db = new PgClient({ connectionString: databaseUrl,
+      ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+    await db.connect();
+    const root = await mkdtemp(join(tmpdir(), 'ke2e-ref-role-'));
+    const sessions: string[] = [];
+    let localGitServer: import('node:http').Server | null = null;
+    const mint = async (identity: typeof ctx.P.OWNER) => {
+      const userId = identity.userId!;
+      const sessionId = randomUUID();
+      sessions.push(sessionId);
+      const created = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
+        name: 'GH-17 session fixture',
+      });
+      created.status(201);
+      const { token_id: tokenId, secret_key: secret } = created.json<{ token_id: string; secret_key: string }>();
+      await db.query(`INSERT INTO kortix.project_sessions
+        (session_id, account_id, project_id, branch_name, created_by, metadata)
+        VALUES ($1, $2, $3, $1, $4, '{"workspace_mode":"branch"}'::jsonb)`,
+      [sessionId, team.id, project.id, userId]);
+      await db.query(`INSERT INTO kortix.session_sandboxes
+        (sandbox_id, session_id, account_id, project_id, status)
+        VALUES ($1::uuid, $1, $2, $3, 'active')`,
+      [sessionId, team.id, project.id]);
+      // Bind the API-minted credential to the fixture session. The test never
+      // needs the server's token-hash secret on local, preview, or staging.
+      await db.query(`UPDATE kortix.account_tokens
+        SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5, user_id = $6 WHERE token_id = $1`,
+      [tokenId, project.id, sessionId,
+        JSON.stringify({ agent: 'kortix', kortixCli: 'all', connectors: 'all', env: [] }), team.id, userId]);
+      return { secret, sessionId };
+    };
+    const git = async (secret: string, args: string[], expected = 0) => {
+      let code = 0;
+      let output = '';
+      try {
+        const result = await exec('git', args, { cwd: root, timeout: 60_000,
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } });
+        output = result.stdout + result.stderr;
+      } catch (error: any) {
+        code = typeof error.code === 'number' ? error.code : -1;
+        output = String(error.stdout ?? '') + String(error.stderr ?? '');
+      }
+      if ((expected === 0 && code !== 0) || (expected !== 0 && code === 0)) {
+        throw new Error(`git ${args[0]}: expected ${expected === 0 ? 'success' : 'rejection'}, got ${code}: ${output.replaceAll(secret, '[redacted]')}`);
+      }
+      return output;
+    };
+    try {
+      if (ctx.env.target === 'local') {
+        // Serve the fixture's real bare repository through Git's CGI backend.
+        // The API proxy speaks HTTP; a filesystem repo_url is not an HTTP origin.
+        const { createServer } = await import('node:http');
+        const { spawn } = await import('node:child_process');
+        const { rows } = await db.query('SELECT repo_url FROM kortix.projects WHERE project_id = $1', [project.id]);
+        const repo = rows[0].repo_url as string;
+        localGitServer = createServer((req, res) => {
+          const url = new URL(req.url!, 'http://localhost');
+          const child = spawn('git', ['http-backend'], { env: { ...process.env,
+            GIT_PROJECT_ROOT: repo, GIT_HTTP_EXPORT_ALL: '1',
+            PATH_INFO: url.pathname, QUERY_STRING: url.search.slice(1),
+            REQUEST_METHOD: req.method!, CONTENT_TYPE: req.headers['content-type'] ?? '',
+            REMOTE_USER: 'ke2e', REMOTE_ADDR: '127.0.0.1' } });
+          const chunks: Buffer[] = [];
+          req.pipe(child.stdin);
+          child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+          child.stderr.resume();
+          child.on('error', () => { res.writeHead(502); res.end(); });
+          child.on('close', () => {
+            const body = Buffer.concat(chunks);
+            const split = body.indexOf('\r\n\r\n');
+            if (split < 0) { res.writeHead(502); res.end(); return; }
+            for (const line of body.subarray(0, split).toString().split('\r\n')) {
+              const colon = line.indexOf(':');
+              if (colon < 0) continue;
+              const name = line.slice(0, colon); const value = line.slice(colon + 1).trim();
+              if (name.toLowerCase() === 'status') res.statusCode = Number(value.split(' ')[0]);
+              else res.setHeader(name, value);
+            }
+            res.end(body.subarray(split + 4));
+          });
+        });
+        await new Promise<void>((resolve) => localGitServer!.listen(0, '127.0.0.1', resolve));
+        const port = (localGitServer.address() as import('node:net').AddressInfo).port;
+        await db.query('UPDATE kortix.projects SET repo_url = $1 WHERE project_id = $2',
+          [`http://127.0.0.1:${port}`, project.id]);
+      }
+      const owner = await mint(ctx.P.OWNER);
+      const memberSession = await mint(member);
+      const remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
+      await ctx.step('owner session clones through HTTP and creates a shared branch; read-back finds it', async () => {
+        await git(owner.secret, ['clone', remote, '.']);
+        await git(owner.secret, ['push', 'origin', 'HEAD:refs/heads/gh17-shared']);
+        const refs = await git(owner.secret, ['ls-remote', '--heads', 'origin', 'gh17-shared']);
+        if (!refs.includes('refs/heads/gh17-shared')) throw new Error('shared branch missing after owner push');
+      });
+      await ctx.step('member session pushes its own branch with a wildcard agent grant', async () => {
+        await git(memberSession.secret, ['push', 'origin', `HEAD:refs/heads/${memberSession.sessionId}`]);
+      });
+      await ctx.step('member wildcard grant cannot create another branch or delete the shared branch; shared ref persists', async () => {
+        for (const args of [
+          ['push', 'origin', 'HEAD:refs/heads/gh17-member-forbidden'],
+          ['push', 'origin', '--delete', 'gh17-shared'],
+        ]) {
+          const output = await git(memberSession.secret, args, 1);
+          if (!output.includes('[remote rejected]')) throw new Error('expected a Git ref-policy rejection');
+        }
+        const refs = await git(owner.secret, ['ls-remote', '--heads', 'origin', 'gh17-shared', 'gh17-member-forbidden']);
+        if (!refs.includes('refs/heads/gh17-shared') || refs.includes('refs/heads/gh17-member-forbidden')) {
+          throw new Error('denied member push changed repository refs');
+        }
+      });
+      await ctx.step('owner session deletes the shared branch; read-back proves deletion', async () => {
+        await git(owner.secret, ['push', 'origin', '--delete', 'gh17-shared']);
+        const refs = await git(owner.secret, ['ls-remote', '--heads', 'origin', 'gh17-shared']);
+        if (refs.trim()) throw new Error('shared branch still exists after owner deletion');
+      });
+    } finally {
+      for (const sessionId of sessions) {
+        await db.query('DELETE FROM kortix.account_tokens WHERE session_id = $1', [sessionId]);
+        await db.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1', [sessionId]);
+        await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId]);
+      }
+      if (localGitServer) await new Promise<void>((resolve) => localGitServer!.close(() => resolve()));
+      await db.end();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);

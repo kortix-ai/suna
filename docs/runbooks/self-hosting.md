@@ -379,6 +379,16 @@ whether a newer release is available.
 
 ## Configuring email, Daytona, and other integrations later
 
+The frontend container defaults to a 512 MiB memory limit. If its logs report
+`Reached heap limit`, set a larger limit that fits the host's available memory:
+
+```bash
+kortix self-host env set KORTIX_FRONTEND_MEMORY_LIMIT=1024m
+```
+
+This setting restarts the frontend and persists through later CLI updates.
+For a rollout with two replicas, each replica receives the configured limit.
+
 Everything is `kortix self-host env set KEY=VALUE …` followed by
 `kortix self-host start` (or the interactive `kortix self-host configure`),
 whether at first boot or months later:
