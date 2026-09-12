@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 639,
+  "count": 640,
   "routes": [
     {
       "method": "GET",
@@ -1109,6 +1109,10 @@
     {
       "method": "GET",
       "path": "/v1/git/:project/repo-snapshot"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/repo-snapshot/archive"
     },
     {
       "method": "GET",

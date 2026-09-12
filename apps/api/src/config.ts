@@ -580,6 +580,14 @@ const envSchema = z.object({
   KORTIX_REPO_SNAPSHOT_COMPRESSION: z.enum(['gzip', 'zstd']).optional().default('gzip'),
   // Lifetime of the object-scoped presigned GET handed to a sandbox.
   KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS: optInt(3600),
+  // How the archive reaches the sandbox.
+  //   presigned  a short-lived, object-scoped GET straight to object storage.
+  //              Lowest cost and no API bandwidth. Requires the sandbox to be
+  //              able to reach the bucket.
+  //   proxy      an authenticated stream through this API. Required wherever
+  //              the object store is not reachable from a sandbox — self-host,
+  //              preview, and any local stack whose storage is on loopback.
+  KORTIX_REPO_SNAPSHOT_DELIVERY: z.enum(['presigned', 'proxy']).optional().default('presigned'),
   // Publisher worker: disable to stop producing snapshots without changing the
   // consumption mode.
   KORTIX_REPO_SNAPSHOT_WORKER_ENABLED: optBoolTrue,
@@ -1228,6 +1236,7 @@ export const config = {
   KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY: env.KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY,
   KORTIX_REPO_SNAPSHOT_COMPRESSION: env.KORTIX_REPO_SNAPSHOT_COMPRESSION,
   KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS: env.KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS,
+  KORTIX_REPO_SNAPSHOT_DELIVERY: env.KORTIX_REPO_SNAPSHOT_DELIVERY,
   KORTIX_REPO_SNAPSHOT_WORKER_ENABLED: env.KORTIX_REPO_SNAPSHOT_WORKER_ENABLED,
   KORTIX_REPO_SNAPSHOT_WORKER_INTERVAL_MS: env.KORTIX_REPO_SNAPSHOT_WORKER_INTERVAL_MS,
   KORTIX_REPO_SNAPSHOT_WORKER_BATCH: env.KORTIX_REPO_SNAPSHOT_WORKER_BATCH,

@@ -3,6 +3,8 @@ import { serializeBootDescriptor, snapshotSessionEnv } from './descriptor';
 
 const descriptor = {
   url: 'https://bucket.s3.us-east-1.amazonaws.com/o/r/sha/1/project-snapshot-v1/d.tar.gz?X-Amz-Signature=secret',
+  delivery: 'presigned' as const,
+  auth: 'none' as const,
   expiresAt: new Date('2026-09-12T12:00:00.000Z'),
   sha256: 'd'.repeat(64),
   compression: 'gzip' as const,
@@ -14,6 +16,14 @@ const descriptor = {
 };
 
 describe('boot descriptor', () => {
+  test('proxy delivery asks the sandbox for a bearer; presigned never does', async () => {
+    const { serializeBootDescriptor: serialize, snapshotSessionEnv: envFor } = await import('./descriptor');
+    const proxied = { ...descriptor, delivery: 'proxy' as const, auth: 'bearer' as const };
+    expect(serialize(proxied)).toMatchObject({ delivery: 'proxy', auth: 'bearer' });
+    expect(envFor('prefer', proxied).KORTIX_REPO_SNAPSHOT_AUTH).toBe('bearer');
+    expect(serialize(descriptor)).toMatchObject({ delivery: 'presigned', auth: 'none' });
+  });
+
   test('serializes every field the sandbox verifies, and no bucket name', () => {
     const body = serializeBootDescriptor(descriptor);
     expect(body).toMatchObject({
@@ -42,6 +52,8 @@ describe('boot descriptor', () => {
     expect(env.KORTIX_REPO_SNAPSHOT_COMMIT_SHA).toBe(descriptor.commitSha);
     expect(env.KORTIX_REPO_SNAPSHOT_SHA256).toBe(descriptor.sha256);
     expect(env.KORTIX_REPO_SNAPSHOT_ENTRY_COUNT).toBe('42');
+    // Object storage never receives the Kortix session token.
+    expect(env.KORTIX_REPO_SNAPSHOT_AUTH).toBe('none');
     // Every numeric bound reaches the sandbox as a string; the daemon coerces.
     expect(typeof env.KORTIX_REPO_SNAPSHOT_COMPRESSED_BYTES).toBe('string');
   });

@@ -59,6 +59,8 @@ export async function pinSessionSnapshot(input: {
   project: ProjectRow;
   ref: string;
   requestedSha?: string | null;
+  /** `$KORTIX_API_URL` for this deployment. Required for proxy delivery. */
+  apiBase?: string;
 }): Promise<SessionSnapshotOutcome> {
   const mode = repoSnapshotMode();
   if (mode === 'off') return { pinned: false, mode, miss: { reason: 'disabled' } };
@@ -81,6 +83,9 @@ export async function pinSessionSnapshot(input: {
   const resolved = await resolveSnapshotForRevision({
     repositoryId: identity.repository.repositoryId,
     commitSha,
+    // Proxy delivery needs both; presigned delivery ignores them.
+    projectId: input.project.projectId,
+    apiBase: input.apiBase,
   });
   if (!resolved.ok) return { pinned: false, mode, miss: resolved.miss };
 

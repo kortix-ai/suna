@@ -1010,6 +1010,7 @@ export async function createProjectSession(input: {
     project,
     ref: baseRef,
     requestedSha,
+    apiBase: deriveKortixApiBase(),
   }).catch((error) => {
     // A THROWN pin is an infrastructure failure, not a miss. In `required` it
     // must not be laundered into the clone path.

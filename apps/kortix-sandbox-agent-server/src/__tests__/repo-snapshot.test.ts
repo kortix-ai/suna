@@ -21,6 +21,7 @@ import { createCompressor } from '../snapshot-codec'
 import {
   REPO_SNAPSHOT_EMBEDDED_MANIFEST,
   RepoSnapshotError,
+  archiveRequestHeaders,
   materializeRepoSnapshotToStage,
   readRepoSnapshotDescriptor,
   redactUrl,
@@ -401,6 +402,67 @@ describe('materializeRepoSnapshotToStage', () => {
       }),
     ).rejects.toThrow(/HTTP 403/)
   }, 60_000)
+})
+
+describe('archiveRequestHeaders', () => {
+  const base = {
+    url: 'https://api.kortix.test/v1/git/p/repo-snapshot/archive?sha=abc',
+    sha256: 'a'.repeat(64),
+    compression: 'gzip' as const,
+    commitSha: 'b'.repeat(40),
+    repositoryId: '1',
+  }
+
+  test('presigned delivery sends no credential at all', () => {
+    expect(archiveRequestHeaders({ ...base, auth: 'none' }, 'sandbox-token')).toEqual({})
+    expect(archiveRequestHeaders(base, 'sandbox-token')).toEqual({})
+  })
+
+  test('proxy delivery sends the bearer to the control plane origin', () => {
+    expect(
+      archiveRequestHeaders(
+        { ...base, auth: 'bearer', apiOrigin: 'https://api.kortix.test' },
+        'sandbox-token',
+      ),
+    ).toEqual({ authorization: 'Bearer sandbox-token' })
+  })
+
+  test('refuses to send the Kortix token anywhere but the control plane', () => {
+    // This is the shape a stolen or tampered descriptor takes: `auth: bearer`
+    // pointed at someone else's host. The cost of honouring it is the session
+    // credential, so it fails instead.
+    expect(() =>
+      archiveRequestHeaders(
+        {
+          ...base,
+          url: 'https://evil.invalid/archive.tar.gz',
+          auth: 'bearer',
+          apiOrigin: 'https://api.kortix.test',
+        },
+        'sandbox-token',
+      ),
+    ).toThrow(/refusing to send the Kortix token/)
+    // An S3 host is equally refused, even though it is a legitimate snapshot host.
+    expect(() =>
+      archiveRequestHeaders(
+        {
+          ...base,
+          url: 'https://bucket.s3.us-east-1.amazonaws.com/key.tar.gz?X-Amz-Signature=x',
+          auth: 'bearer',
+          apiOrigin: 'https://api.kortix.test',
+        },
+        'sandbox-token',
+      ),
+    ).toThrow(/refusing to send the Kortix token/)
+    // No origin recorded → nothing is trusted.
+    expect(() =>
+      archiveRequestHeaders({ ...base, auth: 'bearer' }, 'sandbox-token'),
+    ).toThrow(/refusing to send the Kortix token/)
+    // Bearer requested but no token configured is a descriptor error.
+    expect(() =>
+      archiveRequestHeaders({ ...base, auth: 'bearer', apiOrigin: 'https://api.kortix.test' }, undefined),
+    ).toThrow(/requires a bearer/)
+  })
 })
 
 describe('readRepoSnapshotDescriptor', () => {

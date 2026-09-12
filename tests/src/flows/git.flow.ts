@@ -30,6 +30,7 @@ flow(
       "GET /v1/git/:project/info/refs",
       "GET /v1/git/:project/compiled-checkout",
       "GET /v1/git/:project/repo-snapshot",
+      "GET /v1/git/:project/repo-snapshot/archive",
       "GET /v1/git/:project/compiled-runtime",
       "GET /v1/git/:project/compiled-pi-runtime",
       "POST /v1/git/:project/git-upload-pack",
@@ -105,6 +106,26 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .get("/v1/git/:project/repo-snapshot", { params: { project: p.id }, query: { sha: "main" } });
+      r.status([400, 401, 403]);
+    });
+    await ctx.step("repo snapshot archive without git auth → 401", async () => {
+      // Proxy delivery streams the archive through this API. Same auth
+      // boundary as the descriptor, checked before the feature flag.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/repo-snapshot/archive", {
+          params: { project: p.id },
+          query: { sha: "a".repeat(40) },
+        });
+      r.status([401, 403]);
+    });
+    await ctx.step("repo snapshot archive rejects a non-SHA revision → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/repo-snapshot/archive", {
+          params: { project: p.id },
+          query: { sha: "main" },
+        });
       r.status([400, 401, 403]);
     });
     await ctx.step("git-receive-pack (push) without git auth → 401", async () => {

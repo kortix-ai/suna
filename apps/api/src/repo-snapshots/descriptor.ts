@@ -28,8 +28,17 @@ export function repoSnapshotMode(): RepoSnapshotMode {
   return resolveRepoSnapshotBucket() ? mode : 'off';
 }
 
+export type RepoSnapshotDelivery = 'presigned' | 'proxy';
+
 export interface RepoSnapshotBootDescriptor {
   url: string;
+  /** How the sandbox must fetch `url`. */
+  delivery: RepoSnapshotDelivery;
+  /**
+   * `bearer` means the sandbox attaches its Kortix session token — valid ONLY
+   * for a Kortix-origin proxy URL. Object storage is never handed that token.
+   */
+  auth: 'bearer' | 'none';
   expiresAt: Date;
   sha256: string;
   compression: RepoSnapshotCompression;
@@ -58,8 +67,18 @@ export type RepoSnapshotResolution =
  * repository rename changes the derived prefix, and an already-published object
  * must stay readable at the location it was written to.
  */
+export function repoSnapshotDelivery(): RepoSnapshotDelivery {
+  return (config.KORTIX_REPO_SNAPSHOT_DELIVERY ?? 'presigned') as RepoSnapshotDelivery;
+}
+
+/** `GET /v1/git/{project}/repo-snapshot/archive?sha=…` on this API's origin. */
+export function proxyArchiveUrl(apiBase: string, projectId: string, commitSha: string): string {
+  return `${apiBase.replace(/\/+$/, '')}/git/${encodeURIComponent(projectId)}/repo-snapshot/archive?sha=${commitSha}`;
+}
+
 export async function describeReadySnapshot(
   row: RepoSnapshotRow,
+  options: { projectId?: string; apiBase?: string } = {},
 ): Promise<RepoSnapshotBootDescriptor | null> {
   const bucket = resolveRepoSnapshotBucket();
   if (!bucket) return null;
@@ -82,10 +101,23 @@ export async function describeReadySnapshot(
   };
   const key = row.payloadKey ?? payloadKey(identity, row.archiveSha256, row.compression);
   const ttl = config.KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS ?? 3600;
-  const signed = await presignRepoSnapshotGet(bucket, key, ttl);
+  const delivery = repoSnapshotDelivery();
+  // Proxy delivery keeps the object store private to the API. It costs API
+  // bandwidth, so it is opt-in, but it is the ONLY mode that works when a
+  // sandbox cannot route to the bucket.
+  const location =
+    delivery === 'proxy' && options.projectId && options.apiBase
+      ? {
+          url: proxyArchiveUrl(options.apiBase, options.projectId, row.commitSha),
+          expiresAt: new Date(Date.now() + ttl * 1000),
+        }
+      : await presignRepoSnapshotGet(bucket, key, ttl);
+  const usingProxy = delivery === 'proxy' && options.projectId !== undefined && options.apiBase !== undefined;
   return {
-    url: signed.url,
-    expiresAt: signed.expiresAt,
+    url: location.url,
+    delivery: usingProxy ? 'proxy' : 'presigned',
+    auth: usingProxy ? 'bearer' : 'none',
+    expiresAt: location.expiresAt,
     sha256: row.archiveSha256,
     compression: row.compression,
     commitSha: row.commitSha,
@@ -106,6 +138,9 @@ export async function describeReadySnapshot(
 export async function resolveSnapshotForRevision(input: {
   repositoryId: string;
   commitSha: string;
+  /** Required for proxy delivery; ignored for presigned. */
+  projectId?: string;
+  apiBase?: string;
 }): Promise<RepoSnapshotResolution> {
   if (repoSnapshotMode() === 'off') return { ok: false, miss: { reason: 'disabled' } };
   const row = await findReadyRepoSnapshot({
@@ -114,7 +149,10 @@ export async function resolveSnapshotForRevision(input: {
     commitSha: input.commitSha,
   });
   if (!row) return { ok: false, miss: { reason: 'not_prepared', commitSha: input.commitSha } };
-  const descriptor = await describeReadySnapshot(row).catch((error) => {
+  const descriptor = await describeReadySnapshot(row, {
+    projectId: input.projectId,
+    apiBase: input.apiBase,
+  }).catch((error) => {
     logger.warn('[repo-snapshot] could not sign descriptor', {
       repositoryId: input.repositoryId,
       commitSha: input.commitSha,
@@ -131,6 +169,8 @@ export function serializeBootDescriptor(descriptor: RepoSnapshotBootDescriptor):
   return {
     format: REPO_SNAPSHOT_FORMAT,
     url: descriptor.url,
+    delivery: descriptor.delivery,
+    auth: descriptor.auth,
     expires_at: descriptor.expiresAt.toISOString(),
     sha256: descriptor.sha256,
     compression: descriptor.compression,
@@ -151,6 +191,7 @@ export function snapshotSessionEnv(
   return {
     KORTIX_REPO_SNAPSHOT_MODE: mode,
     KORTIX_REPO_SNAPSHOT_URL: descriptor.url,
+    KORTIX_REPO_SNAPSHOT_AUTH: descriptor.auth,
     KORTIX_REPO_SNAPSHOT_SHA256: descriptor.sha256,
     KORTIX_REPO_SNAPSHOT_COMPRESSION: descriptor.compression,
     KORTIX_REPO_SNAPSHOT_COMMIT_SHA: descriptor.commitSha,

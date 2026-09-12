@@ -73,6 +73,7 @@ const Schema = z.object({
   // none of them is trusted on its own.
   KORTIX_REPO_SNAPSHOT_MODE: RepoSnapshotModeSchema.default('off'),
   KORTIX_REPO_SNAPSHOT_URL: z.string().optional(),
+  KORTIX_REPO_SNAPSHOT_AUTH: z.enum(['bearer', 'none']).optional(),
   KORTIX_REPO_SNAPSHOT_SHA256: z.string().optional(),
   KORTIX_REPO_SNAPSHOT_COMPRESSION: z.enum(['gzip', 'zstd']).optional(),
   KORTIX_REPO_SNAPSHOT_COMMIT_SHA: z.string().optional(),
@@ -160,6 +161,8 @@ export type Config = {
   /** Object-scoped, short-lived GET for this session's pinned archive. Its
    *  query string carries a credential: never log it, never echo it. */
   repoSnapshotUrl?: string
+  /** `bearer` only ever applies to a Kortix-origin proxy URL. */
+  repoSnapshotAuth?: 'bearer' | 'none'
   repoSnapshotSha256?: string
   repoSnapshotCompression?: 'gzip' | 'zstd'
   repoSnapshotCommitSha?: string
@@ -210,6 +213,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
     KORTIX_REPO_SNAPSHOT_MODE: env.KORTIX_REPO_SNAPSHOT_MODE,
     KORTIX_REPO_SNAPSHOT_URL: env.KORTIX_REPO_SNAPSHOT_URL,
+    KORTIX_REPO_SNAPSHOT_AUTH: env.KORTIX_REPO_SNAPSHOT_AUTH,
     KORTIX_REPO_SNAPSHOT_SHA256: env.KORTIX_REPO_SNAPSHOT_SHA256,
     KORTIX_REPO_SNAPSHOT_COMPRESSION: env.KORTIX_REPO_SNAPSHOT_COMPRESSION,
     KORTIX_REPO_SNAPSHOT_COMMIT_SHA: env.KORTIX_REPO_SNAPSHOT_COMMIT_SHA,
@@ -254,6 +258,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     compiledBootMode: parsed.KORTIX_COMPILED_BOOT_MODE,
     repoSnapshotMode: parsed.KORTIX_REPO_SNAPSHOT_MODE,
     repoSnapshotUrl: parsed.KORTIX_REPO_SNAPSHOT_URL,
+    repoSnapshotAuth: parsed.KORTIX_REPO_SNAPSHOT_AUTH,
     repoSnapshotSha256: parsed.KORTIX_REPO_SNAPSHOT_SHA256,
     repoSnapshotCompression: parsed.KORTIX_REPO_SNAPSHOT_COMPRESSION,
     repoSnapshotCommitSha: parsed.KORTIX_REPO_SNAPSHOT_COMMIT_SHA,

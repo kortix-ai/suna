@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises'
 import type { Config } from './config'
 import { materializeCompiledCheckoutToStage } from './compiled-checkout'
 import {
+  archiveRequestHeaders,
   buildDescriptorRefresher,
   materializeRepoSnapshotToStage,
   readRepoSnapshotDescriptor,
@@ -779,6 +780,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
         const stage = await createStagePath(target, 'snapshot')
         try {
           const metrics = await materializeRepoSnapshotToStage(descriptor, stage, {
+            headers: archiveRequestHeaders(descriptor, cfg.sandboxToken),
             refreshDescriptor: buildDescriptorRefresher(cfg, descriptor),
           })
           if (repoSnapshotMode === 'shadow') {

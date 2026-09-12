@@ -79,6 +79,9 @@ import {
   resolveSnapshotForRevision,
   serializeBootDescriptor,
 } from '../repo-snapshots/descriptor';
+import { requireRepoSnapshotBucket, s3GetObjectStream } from '../repo-snapshots/s3';
+import { findReadyRepoSnapshot } from '../repo-snapshots/store';
+import { payloadKey } from '../repo-snapshots/format';
 import { readRepoSnapshotRepository } from '../repo-snapshots/identity';
 import {
   COMPILED_RUNTIME_CONTENT_TYPE,
@@ -705,6 +708,94 @@ gitProxyApp.openapi(
 gitProxyApp.openapi(
   createRoute({
     method: 'get',
+    path: '/{project}/repo-snapshot/archive',
+    tags: ['git'],
+    summary: 'Stream a prepared repository snapshot through this API',
+    description:
+      'Authenticated streaming delivery for deployments where the object store is not ' +
+      'reachable from a sandbox (self-host, preview, a local stack whose storage is on ' +
+      'loopback). Never builds. The object key is derived from the AUTHORIZED project row ' +
+      'and the requested SHA, so a caller cannot name another repository\'s object.',
+    request: {
+      params: projectParam,
+      query: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/) }),
+    },
+    responses: {
+      200: { description: 'The snapshot archive bytes' },
+      400: { description: 'Invalid project id or source SHA' },
+      401: gitResponses[401],
+      403: gitResponses[403],
+      404: gitResponses[404],
+      409: { description: 'The revision is not prepared' },
+      501: { description: 'Repository snapshots are not enabled for this deployment' },
+    },
+  }),
+  async (c) => {
+    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
+    if (projectId instanceof Response) return projectId;
+    const auth = await authorize(c, projectId, 'read');
+    if (!auth.ok) {
+      if (auth.status === 401) return unauthorized(c, auth.message);
+      return c.text(auth.message, auth.status === 404 ? 404 : 403);
+    }
+    if (repoSnapshotMode() === 'off') return c.json({ error: 'repository snapshots are disabled' }, 501);
+    const { sha } = c.req.valid('query');
+    const identity = readRepoSnapshotRepository(auth.project);
+    if (!identity.repository) {
+      return c.json({ error: 'project has no snapshot identity', detail: identity.unsupportedReason }, 409);
+    }
+    const row = await findReadyRepoSnapshot({
+      provider: 'github',
+      repositoryId: identity.repository.repositoryId,
+      commitSha: sha,
+    });
+    if (!row || !row.archiveSha256 || !row.compression) {
+      return c.json({ error: 'snapshot is not prepared', commit_sha: sha }, 409);
+    }
+    // The recorded key wins: a repository rename changes the derived prefix,
+    // and an already-published object must stay readable where it was written.
+    const key =
+      row.payloadKey ??
+      payloadKey(
+        {
+          provider: 'github',
+          repositoryId: row.repositoryId,
+          owner: row.owner,
+          repo: row.repo,
+          commitSha: row.commitSha,
+        },
+        row.archiveSha256,
+        row.compression as 'gzip' | 'zstd',
+      );
+    try {
+      const object = await s3GetObjectStream(requireRepoSnapshotBucket(), key);
+      return new Response(object.body, {
+        status: 200,
+        headers: {
+          'content-type': 'application/octet-stream',
+          ...(object.contentLength !== null ? { 'content-length': String(object.contentLength) } : {}),
+          // Immutable, content-addressed bytes.
+          'cache-control': 'private, max-age=31536000, immutable',
+          etag: `"sha256-${row.archiveSha256}"`,
+          'x-kortix-artifact-sha256': row.archiveSha256,
+          'x-kortix-artifact-source-sha': row.commitSha,
+        },
+      });
+    } catch (error) {
+      // The bucket name and the key never reach the client.
+      console.warn('[git-proxy] snapshot archive unavailable', {
+        projectId,
+        sha,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return c.json({ error: 'snapshot archive unavailable' }, 409);
+    }
+  },
+);
+
+gitProxyApp.openapi(
+  createRoute({
+    method: 'get',
     path: '/{project}/repo-snapshot',
     tags: ['git'],
     summary: 'Resolve the object-scoped capability for a prepared repository snapshot',
@@ -749,6 +840,8 @@ gitProxyApp.openapi(
     const resolved = await resolveSnapshotForRevision({
       repositoryId: identity.repository.repositoryId,
       commitSha: sha,
+      projectId,
+      apiBase: `${new URL(c.req.url).origin}/v1`,
     });
     if (!resolved.ok) {
       return c.json({ error: 'snapshot is not prepared', ...resolved.miss }, 409);

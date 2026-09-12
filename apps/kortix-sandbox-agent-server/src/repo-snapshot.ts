@@ -46,6 +46,14 @@ export type RepoSnapshotCompression = 'gzip' | 'zstd'
 
 export interface RepoSnapshotDescriptor {
   url: string
+  /**
+   * `bearer` tells the daemon to attach its Kortix session token. It is only
+   * ever honoured for a URL on the control plane's own origin — object storage
+   * must never receive a Kortix credential, whatever a descriptor claims.
+   */
+  auth?: 'bearer' | 'none'
+  /** Control-plane origin the bearer may be sent to. */
+  apiOrigin?: string
   sha256: string
   compression: RepoSnapshotCompression
   commitSha: string
@@ -100,8 +108,16 @@ export function readRepoSnapshotDescriptor(cfg: Config): RepoSnapshotDescriptor 
   if (!REPOSITORY_ID_RE.test(repositoryId)) {
     throw new RepoSnapshotError('descriptor repository id is invalid', 'bad_descriptor', false)
   }
+  let apiOrigin: string | undefined
+  try {
+    apiOrigin = cfg.apiUrl ? new URL(cfg.apiUrl).origin : undefined
+  } catch {
+    apiOrigin = undefined
+  }
   return {
     url,
+    auth: cfg.repoSnapshotAuth ?? 'none',
+    apiOrigin,
     sha256,
     compression,
     commitSha,
@@ -110,6 +126,37 @@ export function readRepoSnapshotDescriptor(cfg: Config): RepoSnapshotDescriptor 
     expandedBytes: cfg.repoSnapshotExpandedBytes,
     entryCount: cfg.repoSnapshotEntryCount,
   }
+}
+
+/**
+ * Headers for the archive request.
+ *
+ * The bearer is attached ONLY when the descriptor asks for it AND the URL is on
+ * the control plane's own origin. A descriptor that says `bearer` for a
+ * third-party host is refused rather than honoured: that is the shape a stolen
+ * or tampered descriptor would take, and the cost of getting it wrong is the
+ * session credential.
+ */
+export function archiveRequestHeaders(
+  descriptor: RepoSnapshotDescriptor,
+  token: string | undefined,
+): Record<string, string> {
+  if (descriptor.auth !== 'bearer') return {}
+  if (!token) throw new RepoSnapshotError('snapshot descriptor requires a bearer but none is configured', 'bad_descriptor', false)
+  let host: string
+  try {
+    host = new URL(descriptor.url).origin
+  } catch {
+    throw new RepoSnapshotError('snapshot descriptor url is not a valid URL', 'bad_descriptor', false)
+  }
+  if (!descriptor.apiOrigin || host !== descriptor.apiOrigin) {
+    throw new RepoSnapshotError(
+      `refusing to send the Kortix token to ${host}; bearer delivery is only valid for the control plane`,
+      'bad_descriptor',
+      false,
+    )
+  }
+  return { authorization: `Bearer ${token}` }
 }
 
 /** Strip credentials and query from a URL so it can safely reach a log line. */
@@ -211,15 +258,20 @@ async function streamIntoStage(
   descriptor: RepoSnapshotDescriptor,
   stage: string,
   fetchImpl: typeof fetch,
+  headers: Record<string, string>,
 ): Promise<{ bytes: number; expandedBytes: number; sha256: string; transferMs: number } & ExtractOutcome> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), TRANSFER_TIMEOUT_MS)
   const started = Date.now()
   try {
-    // No Kortix bearer token here: object storage authenticates the presigned
-    // URL itself, and forwarding a session credential to a third party would
-    // hand it to whoever answers that host.
-    const response = await fetchImpl(descriptor.url, { signal: controller.signal })
+    // Presigned delivery sends NO credential: object storage authenticates the
+    // URL itself, and forwarding a session token to a third-party host would
+    // hand it to whoever answers. Proxy delivery sends the bearer, and only
+    // after `archiveRequestHeaders` has proved the URL is the control plane's.
+    const response = await fetchImpl(descriptor.url, {
+      headers,
+      signal: controller.signal,
+    })
     if (!response.ok) {
       const retryable = response.status === 403 || response.status === 408 || response.status >= 500
       throw new RepoSnapshotError(
@@ -431,6 +483,8 @@ async function verifyStage(stage: string, descriptor: RepoSnapshotDescriptor): P
 
 export interface MaterializeOptions {
   fetchImpl?: typeof fetch
+  /** Built by `archiveRequestHeaders`; empty for presigned delivery. */
+  headers?: Record<string, string>
   /** Re-authorize with the control plane when the object capability expired. */
   refreshDescriptor?: () => Promise<RepoSnapshotDescriptor | null>
   maxAttempts?: number
@@ -456,7 +510,7 @@ export async function materializeRepoSnapshotToStage(
     await rm(stage, { recursive: true, force: true })
     await mkdir(stage, { recursive: true, mode: 0o755 })
     try {
-      const streamed = await streamIntoStage(descriptor, stage, fetchImpl)
+      const streamed = await streamIntoStage(descriptor, stage, fetchImpl, options.headers ?? {})
       if (streamed.sha256 !== descriptor.sha256) {
         throw new RepoSnapshotError(
           `snapshot digest mismatch: expected ${descriptor.sha256}, got ${streamed.sha256}`,

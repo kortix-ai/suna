@@ -58,7 +58,8 @@ newer desired revision).
 | `KORTIX_REPO_SNAPSHOT_ENDPOINT` | S3-compatible endpoint (MinIO/LocalStack). Forces path-style. |
 | `KORTIX_REPO_SNAPSHOT_ACCESS_KEY_ID` / `..._SECRET_ACCESS_KEY` | Static writer credentials. Unset ⇒ the ambient AWS chain (ECS task role, EKS web identity), same as SES. |
 | `KORTIX_REPO_SNAPSHOT_COMPRESSION` | `gzip` (default) or `zstd`, for NEW archives only. Readers accept both. |
-| `KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS` | Presigned GET lifetime. Default 3600. |
+| `KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS` | Capability lifetime. Default 3600. |
+| `KORTIX_REPO_SNAPSHOT_DELIVERY` | `presigned` (default) or `proxy`. |
 | `KORTIX_REPO_SNAPSHOT_WORKER_ENABLED` | Stop publishing without changing consumption. |
 | `KORTIX_REPO_SNAPSHOT_RECONCILE_INTERVAL_MINUTES` | Re-resolution cadence for refs with no usable webhook. Default 15. |
 | `KORTIX_REPO_SNAPSHOT_WEBHOOK_SECRET` | Extra accepted webhook secret (self-host, repo-level hook). |
@@ -84,6 +85,24 @@ writer role stays the ceiling.
 Retention: keep every referenced artifact. Expire incomplete multipart uploads
 after 1 day. Do not add an age-based expiry: a session pinned to an older
 revision and a rollback both read artifacts that are not the current tip.
+
+### Delivery mode
+
+| Mode | The sandbox fetches | Use it when |
+| --- | --- | --- |
+| `presigned` | Object storage directly, with a short-lived object-scoped GET. No Kortix credential is sent. | The sandbox can route to the bucket. Lowest cost, no API bandwidth. |
+| `proxy` | `GET /v1/git/{project}/repo-snapshot/archive?sha=…` on this API, with its own session bearer. | The object store is **not reachable from a sandbox**: self-host, preview, and any local stack whose storage is on loopback. |
+
+In `proxy` mode the object key is derived from the **authorized project row** and
+the requested SHA, so a caller cannot name another repository's object, and the
+bucket name never reaches the client.
+
+The daemon attaches its Kortix token **only** when the descriptor says `bearer`
+AND the URL is on the control plane's own origin (`archiveRequestHeaders` in
+`apps/kortix-sandbox-agent-server/src/repo-snapshot.ts`). A descriptor that asks
+for a bearer against any other host — including a legitimate S3 host — is
+refused, because that is the shape a tampered descriptor takes and the cost of
+honouring it is the session credential.
 
 ## 4. Rollout
 
