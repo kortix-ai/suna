@@ -170,10 +170,8 @@ export interface EnsureSandboxImageResult {
   /**
    * The resource specification of the template this image was built from.
    *
-   * Carried out so metering and any later consumer bill the revision that was
-   * actually selected. Resolving the template a second time would re-read the
-   * source — and, without the session's pin, could read a DIFFERENT revision
-   * and bill a spec no part of this session ever used.
+   * Carried out so metering bills the template that was actually selected,
+   * without resolving it a second time on the post-ready path.
    *
    * ABSENT when the image served is not the one this template resolves to: the
    * last-ready fallback boots an OLDER image of the same lineage, whose
@@ -262,25 +260,13 @@ export async function ensureSandboxImage(
      * row's provider for non-session callers (pre-build/manual/background).
      */
     provider?: string;
-    /**
-     * The session's GOVERNING repository snapshot. It supplies BOTH halves of
-     * the build — the manifest declaration (slug, Dockerfile path, resource
-     * spec) and the Dockerfile bytes — so a session always builds what its own
-     * revision declares. The snapshot name is content-addressed over those
-     * bytes, so two revisions that differ cannot share an image.
-     */
-    sessionSnapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null;
   } = {},
 ): Promise<EnsureSandboxImageResult> {
-  const template = await resolveTemplateBySlug(project, opts.slug, {
-    sessionSnapshot: opts.sessionSnapshot,
-  });
+  const template = await resolveTemplateBySlug(project, opts.slug);
   const result = await ensureSandboxImageForTemplate(project, template, opts);
   // The spec travels WITH the image so no consumer has to resolve the template
-  // again. A second resolution without this session's pin reads the default
-  // branch, which is how a session can end up billed for a spec it never ran.
-  // A fallback image is a DIFFERENT build, so it gets no spec rather than this
-  // template's — see `servedOlderImage`.
+  // again. A fallback image is a DIFFERENT build, so it gets no spec rather
+  // than this template's — see `servedOlderImage`.
   if (result.servedOlderImage) return result;
   return {
     ...result,
@@ -301,7 +287,7 @@ async function ensureSandboxImageForTemplate(
     throw new SnapshotBuildError(`Sandbox provider ${buildProvider} is not configured`);
   }
 
-  const identity = await computeTemplateIdentity(project, template, opts.sessionSnapshot);
+  const identity = await computeTemplateIdentity(project, template);
   const blockingPreparation = (opts.source ?? 'session-start') !== 'session-start';
 
   // Trust-the-row fast path. If the template row already recorded THIS exact
@@ -386,16 +372,11 @@ async function ensureSandboxImageForTemplate(
           accountId: opts.accountId,
           provider: buildProvider,
           snapshotName: identity.snapshotName,
-          sessionSnapshot: opts.sessionSnapshot,
         });
       }
-      // ACCEPTED SEMANTICS, not exact parity: this boots the newest ready image
-      // of the same template LINEAGE, which may have been built from a
-      // different Dockerfile and a different resource spec than the template
-      // resolves to now. The trade is deliberate — a session boots immediately
-      // on a slightly older image instead of waiting for a build — and it is
-      // why the result carries `servedOlderImage` and no `spec`. A caller that
-      // needs the exact pinned image must wait for the build, not for this.
+      // This boots the newest ready image of the same template lineage, which
+      // may predate the current Dockerfile and spec — hence `servedOlderImage`
+      // and no `spec` on the result.
       console.log(
         `[snapshots] ${template.slug}: ${identity.snapshotName} is ${state}; ` +
         `booting last ready image ${servable.snapshotName} instead of waiting for the build ` +
@@ -662,22 +643,11 @@ const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
  */
 export async function deleteSandboxImage(
   project: GitBackedProject,
-  opts: {
-    slug?: string;
-    provider?: string;
-    /**
-     * The pin the caller resolved the image from. Recomputing identity without
-     * it resolves the DEFAULT branch instead, so a heal would delete a
-     * different revision's image and leave the broken one in place.
-     */
-    sessionSnapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null;
-  } = {},
+  opts: { slug?: string; provider?: string } = {},
 ): Promise<{ deleted: boolean; snapshotName: string; slug: string }> {
-  const template = await resolveTemplateForBuildSlug(project, opts.slug, {
-    sessionSnapshot: opts.sessionSnapshot,
-  });
+  const template = await resolveTemplateForBuildSlug(project, opts.slug);
   const provider = getSandboxProvider(opts.provider ?? template.provider);
-  const identity = await computeTemplateIdentity(project, template, opts.sessionSnapshot);
+  const identity = await computeTemplateIdentity(project, template);
   const before = await provider.getSnapshotState(identity.snapshotName);
   await provider.deleteSnapshot(identity.snapshotName);
   // Reflect on the template row.
@@ -1078,14 +1048,7 @@ export function backgroundBuildKey(provider: string, snapshotName: string): stri
  */
 function kickBackgroundRebuild(
   project: GitBackedProject,
-  opts: {
-    slug?: string;
-    accountId?: string;
-    provider: string;
-    snapshotName: string;
-    /** The same pin the foreground resolve used; without it this rebuilds another revision. */
-    sessionSnapshot?: import('../repo-snapshots/store').RepoSnapshotRow | null;
-  },
+  opts: { slug?: string; accountId?: string; provider: string; snapshotName: string },
 ): void {
   const key = backgroundBuildKey(opts.provider, opts.snapshotName);
   if (inflightBackgroundBuilds.has(key)) return;
@@ -1095,7 +1058,6 @@ function kickBackgroundRebuild(
     accountId: opts.accountId,
     source: 'background',
     provider: opts.provider,
-    sessionSnapshot: opts.sessionSnapshot,
   })
     .catch((err) =>
       console.warn(

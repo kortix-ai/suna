@@ -703,7 +703,7 @@ describe('legacy metadata.github projects are not damaged by discovery', () => {
     // assertion is that the row EXISTS for this revision and names the project
     // that supplied it — not that nothing has touched it since.
     expect(queued).toBeTruthy();
-    expect(['queued', 'building', 'ready', 'failed']).toContain(queued?.status);
+    expect(['queued', 'building', 'ready', 'failed']).toContain(queued?.status ?? '');
     expect(queued?.sourceProjectId).toBe(ids.get('discovery-legacy-done') as string);
     expect((await readRepoRef({ provider: 'github', repositoryId: legacyDoneRepoId }, 'main'))?.desiredSha).toBe(
       fixtureSha,

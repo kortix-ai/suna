@@ -169,6 +169,28 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
   });
 });
 
+describe('prepared starts and project sandbox templates', () => {
+  test('a prepared start refuses a project template before any template read', async () => {
+    const source = await sessionsSource();
+    // The existing prevalidation block for non-shared slugs.
+    const block = source.indexOf('sandboxSlug !== PI_WORKER_SANDBOX_SLUG\n  ) {');
+    const refusal = source.indexOf('if (governingPin) {', block);
+    const code = source.indexOf("code: 'PROJECT_SANDBOX_TEMPLATE_UNSUPPORTED'", refusal);
+    const read = source.indexOf('await resolveTemplate(', block);
+    expect(block).toBeGreaterThan(-1);
+    expect(refusal).toBeGreaterThan(block);
+    expect(code).toBeGreaterThan(refusal);
+    // Refused BEFORE the template is resolved: no Git read, no image build.
+    expect(read).toBeGreaterThan(code);
+  });
+
+  test('the sandbox slug is not derived from the pinned archive', async () => {
+    const source = await sessionsSource();
+    expect(source).not.toContain('pinnedSandboxDefaultSlug');
+    expect(source).not.toContain('sessionSnapshot:');
+  });
+});
+
 describe('pi worker env model override', () => {
   test('only an explicit session model overrides the baked agent model', async () => {
     const source = await sessionsSource();

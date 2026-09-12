@@ -95,9 +95,8 @@ async function openComputeSessionForSandbox(
   userId: string | null | undefined,
   /**
    * The spec of the image this session actually booted, from
-   * `ensureSandboxImage`. Resolving the template again here used to re-read the
-   * source — and, after a prepared start, would have read the DEFAULT branch
-   * rather than the session's pin, billing a spec this session never ran.
+   * `ensureSandboxImage`. Resolving the template again here re-read the
+   * manifest after the session was already running.
    */
   resolvedSpec: { cpu?: number; memoryGb?: number; diskGb?: number } | undefined,
   provider: ProviderName,
@@ -406,10 +405,6 @@ export async function provisionSessionSandbox(opts: {
             ensurePiWorkerImage({ source: 'session-start', provider: targetProvider }),
           )
         : ensureSandboxImage(gitProject, {
-          // Declaration AND Dockerfile from the session's own pinned revision:
-          // a build describes what this session runs, so both halves must come
-          // from the same place. See `templates.ts` `TemplateSourceOptions`.
-          sessionSnapshot: opts.repoSnapshotRow,
           slug,
           accountId,
           source: 'session-start',
@@ -433,9 +428,8 @@ export async function provisionSessionSandbox(opts: {
     // are content-hashed from platform artifacts and read nothing from the
     // repository. Resolving the git project for them MINTS a GitHub
     // installation token that nothing then uses, which is a network call on the
-    // start path for no reason. Only a project template needs the project, and
-    // with a prepared snapshot it needs its coordinates rather than its
-    // credential.
+    // start path for no reason. Only a project template needs the credential,
+    // to read its Dockerfile over Git.
     const gitProject = sharedImageSlug(slug) ? opts.gitProject : await resolveGitProject();
     const image = await resolveImage(gitProject, providerName);
     return { ...image, gitProject };
@@ -670,7 +664,9 @@ export async function provisionSessionSandbox(opts: {
         image = await firstImagePromise;
         firstImagePromise = null;
       } else {
-        const gitProject = await resolveGitProject();
+        // Same rule as the first attempt: a shared image needs no credential,
+        // so a heal-retry or failover must not mint one either.
+        const gitProject = sharedImageSlug(slug) ? opts.gitProject : await resolveGitProject();
         image = await resolveImage(gitProject, providerName);
       }
       imageInfo = {
@@ -1069,12 +1065,9 @@ export async function provisionSessionSandbox(opts: {
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        await deleteSandboxImage(await resolveGitProject(), {
+        await deleteSandboxImage(opts.gitProject, {
           slug: imageInfo.slug,
           provider: providerName,
-          // The same pin the image was resolved from, or this deletes a
-          // different revision's image and leaves the broken one in place.
-          sessionSnapshot: opts.repoSnapshotRow,
         }).catch((err: unknown) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,

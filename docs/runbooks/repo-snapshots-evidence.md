@@ -205,7 +205,7 @@ as proving AWS. What is needed to close it is in §6.
 
 ## 4. Benchmark
 
-`docs/benchmarks/repo-snapshots/` — `raw.json`, `results.csv`, `report.md`.
+`docs/benchmarks/repo-snapshots/report.md`. The raw `raw.json` and `results.csv` are preserved outside the reduced candidate; see that report's "Raw data" section.
 
 It is a **local component microbenchmark** and does not establish the rollout
 gates. Both arms are local (a `file://` Git mirror and a local S3 endpoint), the
@@ -397,13 +397,6 @@ Object store: the existing MinIO on `127.0.0.1:19000`, bucket
    `main`. Every store entry point now resolves the stored spelling, and
    migration `20260912164500000_repo_snapshot_ref_alias_consolidation.concurrent.ts`
    folds the old rows into the canonical one (batched, incrementally committed).
-6. **A pinned session gets its own catalogue.** With a governing pin, every
-   project-scoped `source: 'toml'` row is excluded — not just the slugs the pin
-   also declares — so a template the revision renamed or deleted cannot come
-   back with its old path and spec. UI-owned and shared rows are kept. The
-   pinned manifest read no longer swallows failures: a missing archive or a
-   checksum mismatch fails the catalogue instead of quietly serving the
-   platform default.
 
 ### Results
 
@@ -429,10 +422,6 @@ New integration coverage:
   `source_project_id`.
 - `integration-repo-snapshot-ref-alias.test.ts` (8) — raw pre-existing
   `refs/heads/*` rows, and the migration driven against the real table.
-- `integration-repo-snapshot-templates.test.ts` (7) — the pinned catalogue:
-  old-only slug rejection, path/spec/declaration from the pin, two revisions
-  side by side, no writes to project-global rows, UI and platform precedence,
-  no-manifest, unreadable snapshot.
 - `branch-deletion.test.ts` (6) — the 404 classifier against real HTTP.
 - `integration-repo-snapshot-lifecycle.test.ts` (+5) — observation ordering as a
   generation rather than a clock.
@@ -584,15 +573,6 @@ takes the prepared path — the session pin, the required-mode gates in
 `sessions.ts`, and both snapshot routes on the Git proxy — resolves through it;
 `cohort.test.ts` asserts that no call site was left on the global mode.
 
-### The last-ready fallback is not pinned-image parity
-
-When the pinned image is still building, the builder boots the newest ready
-image of the same template lineage. That image may have been built from a
-different Dockerfile and a different resource spec. The trade is deliberate — a
-session boots now instead of waiting — so the result carries `servedOlderImage`
-and NO spec, and metering falls back to its own default rather than billing the
-current template's numbers for an image nobody booted. A caller that needs the
-exact pinned image waits for the build.
 
 `integration-repo-snapshot-ref-alias.test.ts` proves the lock ordering directly:
 a second connection holds the branch lock, renames the row and records a newer
@@ -629,6 +609,45 @@ rows. Proved in `integration-repo-snapshot-discovery.test.ts`.
 
 ### Outstanding
 
-Real HTTP GitHub-App and custom-image startup with Git blocked on both sides,
+Real HTTP GitHub-App startup on the shared image with Git blocked on both sides,
 later Git and Kortix-CR operations, the three-arm boot benchmark, the strict AWS
 test mode, and the production deployment package.
+
+## Checkpoint — scope reduction: per-project images removed
+
+The user rejected per-project sandbox images outright, and excluded building
+images for other harnesses. Sessions reuse the existing shared images — the
+platform default, meta and the pi worker. Project source, skills and
+configuration arrive through the pinned repository archive and are applied by
+the existing runtime configuration. A commit produces a new archive, never a new
+image. This reduced candidate removes the image work that had grown on top of
+that, and keeps the rest.
+
+**Removed.** The archive-backed project template catalogue, its per-revision
+cache identity and the archive Dockerfile reads (`snapshots/templates.ts` is
+back to its pre-follow-up content); the snapshot pin threaded into image
+ensure, delete and background rebuild (`snapshots/builder.ts`); the
+archive-derived default sandbox slug and archive-backed template prevalidation
+(`projects/lib/sessions.ts`); the pin passed into image resolution and heal
+deletion (`platform/services/session-sandbox.ts`); and
+`integration-repo-snapshot-templates.test.ts`, which tested the rejected model.
+
+**Kept.** Default-branch grant sourcing, operation-time Git proxy and credential
+helper authentication, the shared-image credential bypass, and metering from
+the resolved image's spec.
+
+**Changed behaviour.** The heal retry now applies the same shared-image rule as
+the first attempt, so it no longer resolves the authenticated project for a
+shared image, and the missing-image heal deletes through the unauthenticated
+project exactly as it did before this feature. A project template reached while
+a snapshot governs the start is refused with `409
+PROJECT_SANDBOX_TEMPLATE_UNSUPPORTED` before any template read. That is the
+explicit transition for existing project-image settings: nothing silently builds
+a project image, and nothing silently swaps in the shared image. Starts that no
+snapshot governs keep their existing behaviour; no stored configuration is
+migrated or deleted.
+
+**Not measured.** Full request-to-runtimeReady comparison, live GitHub-App
+startup and later Git and Kortix CR operations remain unexercised in this pass;
+see the reduced-candidate result document for the exact local blockers.
+

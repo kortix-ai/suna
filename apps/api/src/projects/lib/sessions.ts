@@ -40,7 +40,6 @@ import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
-import { pinnedSandboxDefaultSlug } from '../../snapshots/templates';
 import {
   grantFromLoadedAgents,
   loadProjectAgents,
@@ -1397,14 +1396,9 @@ export async function createProjectSession(input: {
   }
   // Explicit request wins. The selected agent environment is next. The
   // project default and platform default remain the final fallbacks.
-  // A prepared session takes its default from its OWN revision. The project
-  // metadata copy is written by the manifest sync from whatever revision last
-  // ran it, so it can name a template this revision renamed or dropped.
-  const projectDefaultSandboxSlug = pinnedSnapshotRow
-    ? await pinnedSandboxDefaultSlug(project, pinnedSnapshotRow)
-    : normalizeString(
-        (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
-      );
+  const projectDefaultSandboxSlug = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
+  );
   const requestedSandboxSlug = normalizeString(body.sandbox_slug ?? body.sandboxSlug);
   let sandboxSlug: string;
   if (platformMetaAgent) {
@@ -1519,6 +1513,26 @@ export async function createProjectSession(input: {
     sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
     sandboxSlug !== PI_WORKER_SANDBOX_SLUG
   ) {
+    if (governingPin) {
+      // A prepared start runs on the platform's shared image. A project
+      // template is a per-project image built from the repository: a prepared
+      // start neither builds it nor silently swaps in the shared image, which
+      // would drop whatever the template installs. Refuse, and name the setting.
+      return {
+        error: {
+          status: 409,
+          body: {
+            error:
+              `sandbox template "${sandboxSlug}" is a project image, which sessions prepared ` +
+              'from a repository snapshot do not support. Start on the platform sandbox ' +
+              '(remove the template from the request, the agent, or `sandbox.default`), ' +
+              'or keep this project out of KORTIX_REPO_SNAPSHOT_COHORT.',
+            code: 'PROJECT_SANDBOX_TEMPLATE_UNSUPPORTED',
+            retryable: false,
+          },
+        },
+      };
+    }
     try {
       await resolveTemplate(
         {
@@ -1529,13 +1543,6 @@ export async function createProjectSession(input: {
           gitAuthToken: null,
         },
         sandboxSlug,
-        // Prevalidation is a manifest read like any other, and it runs BEFORE
-        // provisioning. Without a prepared source it falls through to a
-        // host-side Git fetch — with null auth, so on a private repository it
-        // fails and turns a valid slug into `UNKNOWN_SANDBOX_TEMPLATE`. It reads
-        // the SESSION's revision, which is the one whose declaration decides
-        // whether this slug exists for this session.
-        { sessionSnapshot: pinnedSnapshotRow },
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

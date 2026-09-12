@@ -705,6 +705,66 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-rebuilt');
   });
 
+  test('a shared image never resolves the authenticated project, including on the heal retry', async () => {
+    // The platform default image reads nothing from the repository, so asking
+    // for the authenticated project mints a GitHub credential nobody uses.
+    // The first attempt already skipped it; the heal retry must skip it too.
+    let credentialResolutions = 0;
+    imageResolutionQueue = [
+      { snapshotName: 'kortix-default-stale', slug: 'default', contentHash: 'hash-1', isDefault: true, built: false },
+      { snapshotName: 'kortix-default-rebuilt', slug: 'default', contentHash: 'hash-2', isDefault: true, built: true },
+    ];
+    providerCreateErrors.daytona = 'snapshot kortix-default-stale not found';
+    providerCreateErrorLimits.daytona = 3;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      resolveGitProject: async () => {
+        credentialResolutions += 1;
+        return baseOpts().gitProject;
+      },
+    });
+    await opened;
+
+    expect(imageRequests).toHaveLength(2);
+    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
+    expect(credentialResolutions).toBe(0);
+  });
+
+  test('a project template on the legacy path still resolves the authenticated project', async () => {
+    // Scope of the bypass, not an expansion of project images: a template that
+    // is not a shared image still reads its Dockerfile through the credential.
+    let credentialResolutions = 0;
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      sandboxSlug: 'project-template',
+      resolveGitProject: async () => {
+        credentialResolutions += 1;
+        return baseOpts().gitProject;
+      },
+    });
+
+    expect(credentialResolutions).toBeGreaterThan(0);
+  });
+
+  test('the workspace snapshot revision never reaches image selection', async () => {
+    // Project source and configuration change with every commit; the image must
+    // not. Two sessions pinned to different revisions request the same image.
+    const pinnedTo = (commitSha: string) =>
+      ({ commitSha, repositoryId: '123', archiveSha256: commitSha.slice(0, 64) }) as never;
+
+    await provisionSessionSandbox({ ...baseOpts(), repoSnapshotRow: pinnedTo('a'.repeat(40)) });
+    await provisionSessionSandbox({ ...baseOpts(), repoSnapshotRow: pinnedTo('b'.repeat(40)) });
+
+    expect(imageRequests).toHaveLength(2);
+    expect(imageRequests[0]).toEqual(imageRequests[1]);
+    expect(JSON.stringify(imageRequests)).not.toContain('a'.repeat(40));
+    expect(JSON.stringify(imageRequests)).not.toContain('b'.repeat(40));
+  });
+
   test('the resolved image boots by the activated id when its image name matches', async () => {
     activeRouting = {
       activeProvider: 'platinum',

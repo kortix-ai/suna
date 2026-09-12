@@ -115,3 +115,11 @@ difference it does show is visible.
 - Every arm now produces the same deliverable: a fresh writable working
   tree. `snapshot-warm` copies the cached tree out rather than reporting
   a cache stat.
+
+## Raw data
+
+`raw.json` and `results.csv` (960 samples) are not tracked in the reduced
+candidate. They are preserved byte-for-byte outside the repository at
+`/Users/gliba/.openclaw/workspace/reviews/kortix-architecture-2026-09-10/config-provider-s3-benchmark-raw/repo-snapshots/`, with checksums in `SHA256SUMS`, and remain committed on
+branch `config-provider-s3` at `cf6549e717` under this same path.
+`apps/api/scripts/bench-repo-snapshot.ts` regenerates them.

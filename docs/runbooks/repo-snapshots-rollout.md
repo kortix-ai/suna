@@ -176,6 +176,15 @@ A fallback is not an incident — `prefer` is defined to fall back at the same S
 — but a fallback RATE above a few percent means the coverage gate in §4 was read
 too generously.
 
+**Project sandbox templates are not eligible.** A prepared start runs on the
+shared image. If a cohort project's session resolves a project sandbox template —
+from the request's `sandbox_slug`, the agent's sandbox, or `sandbox.default` —
+the create is refused with `409 PROJECT_SANDBOX_TEMPLATE_UNSUPPORTED` rather than
+building a project image or silently booting the shared one. Before adding a
+project to the cohort, move it to the platform sandbox or leave it out. Nothing
+about its stored configuration changes, and it keeps its current behaviour
+outside the cohort.
+
 Expand the cohort only after a full business day at each size.
 
 ---
