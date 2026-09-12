@@ -548,6 +548,51 @@ const envSchema = z.object({
     .optional()
     .default('off'),
 
+  // ── Config Provider v1 — repository snapshots from S3 ─────────────────────
+  // Transport policy for prebuilt, immutable repository archives. Scoped to
+  // GitHub-backed projects and DELIBERATELY independent of
+  // KORTIX_COMPILED_BOOT_MODE above: that flag also enables the experimental
+  // compiled OpenCode launcher, which this feature must never drag in.
+  //   off      existing clone/delta behaviour; the rollback destination.
+  //   shadow   serve the existing path, verify the snapshot separately.
+  //   prefer   ready snapshot first, counted exact-SHA Git fallback.
+  //   required no automatic Git fallback; a miss is a retryable pending state.
+  KORTIX_REPO_SNAPSHOT_MODE: z
+    .enum(['off', 'shadow', 'prefer', 'required'])
+    .optional()
+    .default('off'),
+  // Private, environment-scoped bucket. Empty = the feature is unconfigured and
+  // every mode behaves as `off`.
+  KORTIX_REPO_SNAPSHOT_BUCKET: optStr,
+  KORTIX_REPO_SNAPSHOT_REGION: optStr,
+  // S3-compatible endpoint (MinIO/LocalStack) for local and preview runs.
+  // Setting it forces path-style addressing.
+  KORTIX_REPO_SNAPSHOT_ENDPOINT: optStr,
+  KORTIX_REPO_SNAPSHOT_PATH_STYLE: optBoolUnset,
+  // Key prefix that separates dev/staging/prod inside one bucket.
+  KORTIX_REPO_SNAPSHOT_PREFIX: optStr,
+  // Static writer credentials. Unset = the ambient AWS chain (ECS task role,
+  // EKS web identity), same as the SES transport.
+  KORTIX_REPO_SNAPSHOT_ACCESS_KEY_ID: optStr,
+  KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY: optStr,
+  // Codec for NEWLY published archives. Readers accept both regardless, so a
+  // change here never invalidates already-published revisions.
+  KORTIX_REPO_SNAPSHOT_COMPRESSION: z.enum(['gzip', 'zstd']).optional().default('gzip'),
+  // Lifetime of the object-scoped presigned GET handed to a sandbox.
+  KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS: optInt(3600),
+  // Publisher worker: disable to stop producing snapshots without changing the
+  // consumption mode.
+  KORTIX_REPO_SNAPSHOT_WORKER_ENABLED: optBoolTrue,
+  KORTIX_REPO_SNAPSHOT_WORKER_INTERVAL_MS: optInt(5_000),
+  KORTIX_REPO_SNAPSHOT_WORKER_BATCH: optInt(2),
+  // How often an unattended ref is re-resolved against the provider. This is
+  // the safety net for repositories with no usable webhook (PAT-linked
+  // projects, GitHub Apps created before push delivery was enabled).
+  KORTIX_REPO_SNAPSHOT_RECONCILE_INTERVAL_MINUTES: optInt(15),
+  // Shared secret for the GitHub push webhook, when it differs from the App's
+  // own manifest-issued secret (self-host, or a repo-level hook).
+  KORTIX_REPO_SNAPSHOT_WEBHOOK_SECRET: optStr,
+
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
   // pt_live_… key; PLATINUM_API_URL is the control-plane base
@@ -1173,6 +1218,21 @@ export const config = {
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
+  KORTIX_REPO_SNAPSHOT_MODE: env.KORTIX_REPO_SNAPSHOT_MODE,
+  KORTIX_REPO_SNAPSHOT_BUCKET: env.KORTIX_REPO_SNAPSHOT_BUCKET,
+  KORTIX_REPO_SNAPSHOT_REGION: env.KORTIX_REPO_SNAPSHOT_REGION,
+  KORTIX_REPO_SNAPSHOT_ENDPOINT: env.KORTIX_REPO_SNAPSHOT_ENDPOINT,
+  KORTIX_REPO_SNAPSHOT_PATH_STYLE: env.KORTIX_REPO_SNAPSHOT_PATH_STYLE ?? false,
+  KORTIX_REPO_SNAPSHOT_PREFIX: env.KORTIX_REPO_SNAPSHOT_PREFIX,
+  KORTIX_REPO_SNAPSHOT_ACCESS_KEY_ID: env.KORTIX_REPO_SNAPSHOT_ACCESS_KEY_ID,
+  KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY: env.KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY,
+  KORTIX_REPO_SNAPSHOT_COMPRESSION: env.KORTIX_REPO_SNAPSHOT_COMPRESSION,
+  KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS: env.KORTIX_REPO_SNAPSHOT_URL_TTL_SECONDS,
+  KORTIX_REPO_SNAPSHOT_WORKER_ENABLED: env.KORTIX_REPO_SNAPSHOT_WORKER_ENABLED,
+  KORTIX_REPO_SNAPSHOT_WORKER_INTERVAL_MS: env.KORTIX_REPO_SNAPSHOT_WORKER_INTERVAL_MS,
+  KORTIX_REPO_SNAPSHOT_WORKER_BATCH: env.KORTIX_REPO_SNAPSHOT_WORKER_BATCH,
+  KORTIX_REPO_SNAPSHOT_RECONCILE_INTERVAL_MINUTES: env.KORTIX_REPO_SNAPSHOT_RECONCILE_INTERVAL_MINUTES,
+  KORTIX_REPO_SNAPSHOT_WEBHOOK_SECRET: env.KORTIX_REPO_SNAPSHOT_WEBHOOK_SECRET,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,

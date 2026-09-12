@@ -477,6 +477,13 @@
       "when": 1789058652035,
       "tag": "20260910164412_drop_dead_audit_events_index_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789212422701,
+      "tag": "20260912112702_repo_snapshots",
+      "breakpoints": true
     }
   ]
 }

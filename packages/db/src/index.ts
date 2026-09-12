@@ -73,6 +73,8 @@ export {
   projectSessionPublicShares,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
+  repoSnapshots,
+  repoSnapshotRefs,
   providerTransitions,
   providerTransitionStatusEnum,
   sandboxTemplates,

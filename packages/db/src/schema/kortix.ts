@@ -5911,3 +5911,115 @@ export const connectorProjectSettingsRelations = relations(connectorProjectSetti
     references: [projects.projectId],
   }),
 }));
+
+// ---------------------------------------------------------------------------
+// Repository snapshots (Config Provider v1)
+//
+// One immutable S3 archive per (provider, repository_id, commit_sha, format).
+// The archive is project-NEUTRAL: two projects on the same repository and SHA
+// share one object and receive their own origin, branch, identity and
+// permissions at activation. These rows are the durable publication ledger the
+// background worker drives and the session-create path reads; the S3 objects
+// are the artifact.
+//
+// NAMING: "repo snapshot" is the Git SOURCE archive. It is a different thing
+// from `project_snapshot_builds` above, which is the per-project SANDBOX IMAGE
+// build. The two never share a table, a worker, or a term.
+// ---------------------------------------------------------------------------
+
+/** Immutable repository-revision publication record. */
+export const repoSnapshots = kortixSchema.table(
+  'repo_snapshots',
+  {
+    snapshotId: uuid('snapshot_id').defaultRandom().primaryKey().notNull(),
+    provider: varchar('provider', { length: 16 }).default('github').notNull(),
+    /** The PROVIDER's stable numeric repository id (GitHub's), not a Kortix id. */
+    repositoryId: text('repository_id').notNull(),
+    owner: text('owner').notNull(),
+    repo: text('repo').notNull(),
+    commitSha: varchar('commit_sha', { length: 40 }).notNull(),
+    format: text('format').notNull(),
+    status: varchar('status', { length: 16 }).default('queued').notNull(),
+    /** Derived from identity, but STORED so a rename or transfer keeps the
+     *  already-published location readable. */
+    manifestKey: text('manifest_key'),
+    payloadKey: text('payload_key'),
+    /** sha256 of the STORED COMPRESSED bytes. Not the commit SHA, not the S3 ETag. */
+    archiveSha256: varchar('archive_sha256', { length: 64 }),
+    compression: varchar('compression', { length: 8 }),
+    treeSha: varchar('tree_sha', { length: 40 }),
+    compressedBytes: bigint('compressed_bytes', { mode: 'number' }),
+    expandedBytes: bigint('expanded_bytes', { mode: 'number' }),
+    entryCount: integer('entry_count'),
+    producerVersion: text('producer_version'),
+    /** Provenance only — never an authorization input. */
+    sourceProjectId: uuid('source_project_id'),
+    sourceRef: text('source_ref'),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseOwner: text('lease_owner'),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    errorCode: text('error_code'),
+    error: text('error'),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('repo_snapshots_identity_key').on(
+      table.provider,
+      table.repositoryId,
+      table.commitSha,
+      table.format,
+    ),
+    check(
+      'repo_snapshots_status_check',
+      sql`${table.status} IN ('queued', 'building', 'ready', 'failed')`,
+    ),
+    check('repo_snapshots_sha_check', sql`${table.commitSha} ~ '^[0-9a-f]{40}$'`),
+    index('repo_snapshots_claim_idx').on(table.status, table.nextAttemptAt),
+    index('repo_snapshots_repo_idx').on(table.repositoryId, table.readyAt),
+  ],
+);
+
+/**
+ * Desired revision per (provider, repository_id, ref). Written by webhook
+ * ingestion, proxy pushes, import and reconciliation; read when a session pins
+ * a revision.
+ *
+ * Kept SEPARATE from `repo_snapshots` on purpose: a slow build of an older
+ * commit must never replace a newer desired revision, and "what the control
+ * plane last observed" is a different fact from "what has been published".
+ */
+export const repoSnapshotRefs = kortixSchema.table(
+  'repo_snapshot_refs',
+  {
+    provider: varchar('provider', { length: 16 }).default('github').notNull(),
+    repositoryId: text('repository_id').notNull(),
+    ref: text('ref').notNull(),
+    /** Latest authorized SHA the control plane has OBSERVED. Null = ref absent. */
+    desiredSha: varchar('desired_sha', { length: 40 }),
+    /** Monotonic server-side ordering. Webhook arrival order is never trusted. */
+    revision: bigint('revision', { mode: 'number' }).default(0).notNull(),
+    observedAt: timestamp('observed_at', { withTimezone: true }).defaultNow().notNull(),
+    /** How the observation arrived: webhook | reconcile | proxy_push | import. */
+    observedVia: varchar('observed_via', { length: 16 }).default('reconcile').notNull(),
+    /** Set when the ref needs re-resolution against the provider. */
+    reconcileAfter: timestamp('reconcile_after', { withTimezone: true }),
+    owner: text('owner').notNull(),
+    repo: text('repo').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'repo_snapshot_refs_pkey',
+      columns: [table.provider, table.repositoryId, table.ref],
+    }),
+    check(
+      'repo_snapshot_refs_sha_check',
+      sql`${table.desiredSha} IS NULL OR ${table.desiredSha} ~ '^[0-9a-f]{40}$'`,
+    ),
+    index('repo_snapshot_refs_reconcile_idx').on(table.reconcileAfter),
+  ],
+);
