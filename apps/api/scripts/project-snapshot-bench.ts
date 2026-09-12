@@ -186,6 +186,8 @@ interface Round {
   runtime_ready_at: string | null;
   git_proxy_requests: number | null;
   git_proxy_paths: GitProxyRequest[];
+  runtime: unknown;
+  daemon_fingerprint: string | null;
 }
 
 async function oneRound(arm: Arm, jwt: string, projectId: string, round: number, apiLog?: string): Promise<Round> {
@@ -216,6 +218,8 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
     runtime_ready_at: null,
     git_proxy_requests: null,
     git_proxy_paths: [],
+    runtime: null,
+    daemon_fingerprint: null,
   };
   if (created.status !== 201 || !sessionId) {
     result.error = `create ${created.status}: ${JSON.stringify(created.body).slice(0, 200)}`;
@@ -247,6 +251,16 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
         result.runtime_ready_at = new Date().toISOString();
         result.commit_sha = h.body.commit_sha ?? null;
         result.config_provider = h.body.config_provider ?? null;
+        // Which daemon build actually ran: the runtime-assets convergence
+        // report plus a fingerprint of the health surface (`config_provider`
+        // exists only on this branch; `s3_skipped` only on its final build).
+        result.runtime = h.body.runtime ?? null;
+        result.daemon_fingerprint =
+          h.body.config_provider === undefined
+            ? 'legacy'
+            : h.body.config_provider && 's3_skipped' in h.body.config_provider
+              ? 'branch-final'
+              : 'branch-early';
         for (const m of h.body.boot_timeline ?? []) result.boot_marks[m.label] = m.atMs;
         break;
       }
@@ -272,7 +286,7 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
     result.git_proxy_paths = seen;
     // Acquisition-related = anything that completed clearly BEFORE readiness.
     // The descriptor exchange is the S3 path's one expected request.
-    result.git_proxy_requests = seen.filter((s) => s.offsetMs < -250).length;
+    result.git_proxy_requests = seen.filter((s) => s.offsetMs < -1000).length;
   }
   return result;
 }
@@ -343,6 +357,17 @@ async function run(): Promise<void> {
 }
 
 // ── report ──────────────────────────────────────────────────────────────────
+function histogram(rounds: Round[], keep: (q: GitProxyRequest) => boolean): Record<string, number> {
+  return rounds.reduce<Record<string, number>>((acc, r) => {
+    for (const q of r.git_proxy_paths ?? []) {
+      if (!keep(q)) continue;
+      const key = `${q.method} ${q.path} ${q.status}`;
+      acc[key] = (acc[key] ?? 0) + 1;
+    }
+    return acc;
+  }, {});
+}
+
 function pct(sorted: number[], p: number): number {
   if (!sorted.length) return Number.NaN;
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
@@ -391,13 +416,20 @@ function report(): void {
       full_boot_p95_ms: pct(boot, 95),
       full_boot_min_ms: boot[0] ?? null,
       full_boot_max_ms: boot[boot.length - 1] ?? null,
-      git_proxy_requests_avg: ok.length ? ok.reduce((a, r) => a + (r.git_proxy_requests ?? 0), 0) / ok.length : null,
-      // Which Git-proxy calls completed clearly BEFORE readiness (offset < -250 ms),
-      // summed over rounds — the S3 arm should show only `project-snapshot`.
-      git_proxy_before_ready_by_path: ok.reduce<Record<string, number>>((acc, r) => {
-        for (const q of r.git_proxy_paths ?? []) {
-          if (q.offsetMs < -250) acc[`${q.method} ${q.path}`] = (acc[`${q.method} ${q.path}`] ?? 0) + 1;
-        }
+      // Git-proxy calls the arm's API logged for the project, summed over
+      // rounds, split by when they completed relative to the bench's
+      // OBSERVED readiness. Readiness is observed up to ~1 s late (500 ms
+      // health poll + proxy round trip), and the daemon kicks the deferred
+      // history backfill exactly at readiness — so `pre_ready` (< -1000 ms)
+      // is acquisition-related work and `at_or_after_ready` is the backfill
+      // pair (`info/refs` + `git-upload-pack`) or nothing.
+      git_proxy_pre_ready_by_path: histogram(ok, (q) => q.offsetMs < -1000),
+      git_proxy_at_or_after_ready_by_path: histogram(ok, (q) => q.offsetMs >= -1000),
+      git_proxy_pre_ready_avg: ok.length
+        ? ok.reduce((a, r) => a + (r.git_proxy_paths ?? []).filter((q) => q.offsetMs < -1000).length, 0) / ok.length
+        : null,
+      daemon_fingerprints: ok.reduce<Record<string, number>>((acc, r) => {
+        acc[r.daemon_fingerprint ?? '?'] = (acc[r.daemon_fingerprint ?? '?'] ?? 0) + 1;
         return acc;
       }, {}),
       sandbox_providers: ok.reduce<Record<string, number>>((acc, r) => {
