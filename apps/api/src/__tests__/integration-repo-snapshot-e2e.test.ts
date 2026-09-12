@@ -56,16 +56,22 @@ const { materializeRepoSnapshotToStage } = await import(
 );
 
 const roots: string[] = [];
+/**
+ * Acceptance must not pass by skipping. Missing prerequisites FAIL the test
+ * unless `KORTIX_REPO_SNAPSHOT_E2E=skip` is set explicitly, which is how a
+ * laptop with no Docker opts out on purpose rather than by accident.
+ */
+const ALLOW_SKIP = process.env.KORTIX_REPO_SNAPSHOT_E2E === 'skip';
 let live = false;
+let liveReason = '';
 let hasDb = false;
+let dbReason = '';
 let projectId = '';
 let accountId = '';
 let createdAccount = false;
 let upstream = '';
 let headSha = '';
 let repositoryId = '';
-/** Absolute path of the recording `git` shim's log. */
-let gitLog = '';
 
 function realGit(args: string[], cwd: string): string {
   return execFileSync('git', args, {
@@ -111,7 +117,6 @@ exec ${JSON.stringify(real)} "$@"
 `,
   );
   chmodSync(shim, 0o755);
-  gitLog = log;
   const read = () => readFileSync(log, 'utf8').split('\n').filter(Boolean);
   return {
     dir,
@@ -120,17 +125,66 @@ exec ${JSON.stringify(real)} "$@"
   };
 }
 
-async function endpointAlive(): Promise<boolean> {
+/**
+ * Count and block every GitHub HTTP call.
+ *
+ * The PATH shim only sees `git` SUBPROCESSES. A GitHub App installation token,
+ * `getBranchCommitSha` and `createBranchRef` are plain HTTPS calls from inside
+ * this process and would be invisible to it. This wraps `fetch` so an
+ * api.github.com / github.com request during a prepared start is both COUNTED
+ * and refused, which is what makes "zero attempted Git/GitHub calls" a
+ * measurement rather than a claim.
+ */
+function installHttpEgressGuard(): { attempts: () => string[]; restore: () => void } {
+  const original = globalThis.fetch;
+  const attempts: string[] = [];
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    let host = '';
+    try {
+      host = new URL(url).host;
+    } catch {
+      host = '';
+    }
+    if (/(^|\.)github\.com$/.test(host) || /(^|\.)githubusercontent\.com$/.test(host)) {
+      attempts.push(`${init?.method ?? 'GET'} ${host}${new URL(url).pathname}`);
+      throw new Error(`GitHub egress blocked by the snapshot E2E guard: ${host}`);
+    }
+    return original(input as never, init);
+  }) as typeof fetch;
+  return {
+    attempts: () => [...attempts],
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
+}
+
+/**
+ * Is the configured object store reachable?
+ *
+ * Deliberately NOT a MinIO health probe: this test must work against real AWS
+ * S3, where `/minio/health/live` does not exist and would make the whole
+ * acceptance silently skip. Reachability is decided by a HEAD on the bucket
+ * through the signed client, which is the same code path the feature uses.
+ */
+async function storageReachable(): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
-    const res = await fetch(`${ENDPOINT}/minio/health/live`, { signal: AbortSignal.timeout(2000) });
-    return res.ok;
-  } catch {
-    return false;
+    const { requireRepoSnapshotBucket, s3HeadObject } = await import('../repo-snapshots/s3');
+    const bucket = requireRepoSnapshotBucket();
+    // A missing key answers null; anything else (403, 404 on the BUCKET, DNS
+    // failure) throws and is reported rather than swallowed.
+    await s3HeadObject(bucket, `preflight/${crypto.randomUUID()}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
 beforeAll(async () => {
-  live = await endpointAlive();
+  const storage = await storageReachable();
+  live = storage.ok;
+  if (!storage.ok) liveReason = storage.reason;
   if (!live) return;
   try {
     const rows = (await db.execute(
@@ -149,7 +203,7 @@ beforeAll(async () => {
     }
     hasDb = true;
   } catch (error) {
-    console.warn('[e2e] database unavailable:', error instanceof Error ? error.message : error);
+    dbReason = error instanceof Error ? error.message : String(error);
     return;
   }
 
@@ -204,7 +258,15 @@ afterAll(async () => {
 describe('repository snapshot end to end', () => {
   test('publishes, pins and materializes with zero attempted Git network operations', async () => {
     if (!live || !hasDb) {
-      console.warn('[e2e] skipped — needs a live S3 endpoint and a local database');
+      const reason = !live
+        ? `object storage is not reachable at ${ENDPOINT}: ${liveReason}`
+        : `database is not reachable: ${dbReason}`;
+      if (!ALLOW_SKIP) {
+        // Fail, do not skip. A green run that never ran is the failure mode
+        // this acceptance exists to prevent.
+        throw new Error(`repo-snapshot end-to-end prerequisites missing — ${reason}`);
+      }
+      console.warn(`[e2e] SKIPPED by KORTIX_REPO_SNAPSHOT_E2E=skip — ${reason}`);
       return;
     }
     const identity = normalizeRepoSnapshotIdentity({
@@ -254,6 +316,7 @@ describe('repository snapshot end to end', () => {
 
     // ── Prepared start. From here on, Git network access is blocked AND counted.
     const guard = installGitGuard();
+    const http = installHttpEgressGuard();
     const originalPath = process.env.PATH;
     const originalCacheDir = process.env.KORTIX_GIT_CACHE_DIR;
     process.env.PATH = `${guard.dir}:${originalPath}`;
@@ -283,9 +346,13 @@ describe('repository snapshot end to end', () => {
       expect(outcome.pin.env.KORTIX_REPO_SNAPSHOT_COMMIT_SHA).toBe(headSha);
       expect(outcome.pin.env.KORTIX_REPO_SNAPSHOT_MODE).toBe('prefer');
 
-      // 2. Config discovery reads the archive, not Git.
-      const configDir = await resolveOpencodeConfigDirFromSnapshot(outcome.pin.row, 'kortix.yaml');
-      expect(configDir).toBe('.kortix/opencode');
+      // 2. Config discovery reads the archive, not Git — with an EMPTY local
+      //    cache first (full S3 fetch + extract) and then a WARM one.
+      rmSync(process.env.KORTIX_REPO_SNAPSHOT_CACHE_DIR!, { recursive: true, force: true });
+      const coldConfigDir = await resolveOpencodeConfigDirFromSnapshot(outcome.pin.row, 'kortix.yaml');
+      expect(coldConfigDir).toBe('.kortix/opencode');
+      const warmConfigDir = await resolveOpencodeConfigDirFromSnapshot(outcome.pin.row, 'kortix.yaml');
+      expect(warmConfigDir).toBe('.kortix/opencode');
       const manifest = await readManifest(project, { snapshot: outcome.pin.row });
       expect(manifest?.commit).toBe(headSha);
       expect(JSON.stringify(manifest)).toContain('kortix');
@@ -314,18 +381,28 @@ describe('repository snapshot end to end', () => {
       expect(realGit(['rev-parse', 'HEAD'], stage)).toBe(headSha);
       expect(realGit(['status', '--porcelain'], stage)).toBe('');
 
-      // 4. THE ASSERTION: not one Git network operation was attempted.
+      // 4. THE ASSERTION, on BOTH egress surfaces.
+      //    (a) no `git` subprocess attempted a network operation…
       expect(guard.networkAttempts()).toEqual([]);
-      // …and the guard was genuinely on the path for local Git work.
+      //    (b) …and no GitHub HTTP call was attempted either. A token mint or a
+      //    branch-ref create would show up here and nowhere else.
+      expect(http.attempts()).toEqual([]);
+      // Both guards were genuinely installed: local Git work still ran through
+      // the shim, so an empty network list is a measurement, not an artefact of
+      // the shim never being reached.
       expect(guard.attempts().length).toBeGreaterThan(0);
     } finally {
+      http.restore();
       process.env.PATH = originalPath;
       if (originalCacheDir) process.env.KORTIX_GIT_CACHE_DIR = originalCacheDir;
     }
   }, 180_000);
 
   test('the guard itself blocks and counts a Git network attempt', async () => {
-    if (!live || !hasDb) return;
+    if (!live || !hasDb) {
+      if (!ALLOW_SKIP) throw new Error('repo-snapshot end-to-end prerequisites missing');
+      return;
+    }
     // A guard that silently allowed everything would make the assertion above
     // vacuous. Prove it fires.
     const guard = installGitGuard();

@@ -443,6 +443,13 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify({ error: 'already claimed' }));
       return;
     }
+    // Take the claim BEFORE the first await. The guard above and the flag were
+    // separated by the body read, so two claims that arrived while the first
+    // was still reading its body both passed the guard and both got 200 -- the
+    // box could be handed to two sessions. Reserving here closes that window;
+    // a claim that then fails validation releases the reservation below, so a
+    // malformed request cannot strand the box.
+    claimed = true;
     let env;
     try {
       const body = JSON.parse(await readBody(req, 256 * 1024));
@@ -457,11 +464,12 @@ const server = createServer(async (req, res) => {
         if (!env[key]) throw new Error('claim env missing ' + key);
       }
     } catch (error) {
+      // Release the reservation: this claim never happened.
+      claimed = false;
       res.writeHead(400, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: String(error?.message ?? error) }));
       return;
     }
-    claimed = true;
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
     console.log(JSON.stringify({ msg: 'park claim accepted', keys: Object.keys(env).length }));

@@ -5,8 +5,8 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { createReadStream, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -111,8 +111,11 @@ async function makeFixture(
     createCompressor(compression),
     createWriteStream(archive),
   )
-  const bytes = statSync(archive).size
-  const sha256 = createHash('sha256').update(readFileSync(archive)).digest('hex')
+  // One read, two facts. A stat() followed by a readFile() of the same path is
+  // a check-then-use on a file this process just wrote.
+  const archived = readFileSync(archive)
+  const bytes = archived.byteLength
+  const sha256 = createHash('sha256').update(archived).digest('hex')
   return { archive, sha256, bytes, commitSha, repositoryId }
 }
 

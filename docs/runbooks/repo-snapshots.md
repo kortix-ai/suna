@@ -71,10 +71,15 @@ snapshot transport must never drag that in.
 ### Bucket
 
 Private, no public access, SSE enabled, versioning off (objects are immutable
-and content-addressed). The writer needs `s3:PutObject`, `s3:GetObject` and
-`s3:HeadObject` on `<bucket>/<prefix>*`. Nothing is ever granted `s3:ListBucket`
-or `s3:DeleteObject` by the API, and the sandbox receives only an object-scoped
-presigned GET — never a bucket-level capability.
+and content-addressed). The writer needs `s3:PutObject` and `s3:GetObject` on
+`<bucket>/<prefix>*`.
+
+`s3:HeadObject` is **not** an IAM action — a `HEAD` request is authorized by
+`s3:GetObject`, so the publisher's existence checks need no extra permission.
+Nothing is ever granted `s3:ListBucket` or `s3:DeleteObject` by the API, and the
+sandbox receives only an object-scoped presigned GET, never a bucket-level
+capability. A presigned URL cannot exceed the signer's own permissions, so the
+writer role stays the ceiling.
 
 Retention: keep every referenced artifact. Expire incomplete multipart uploads
 after 1 day. Do not add an age-based expiry: a session pinned to an older

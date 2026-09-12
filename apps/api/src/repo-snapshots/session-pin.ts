@@ -156,6 +156,45 @@ export async function readManifestFromSnapshot(
   return null;
 }
 
+/**
+ * Is this miss fatal for session creation?
+ *
+ * In `required` there is no automatic Git fallback, so a miss must surface as a
+ * bounded, retryable preparation state — never as a silent fall-through to the
+ * clone path, which would defeat the mode. `unsupported_project` is NOT
+ * retryable: nothing about waiting makes a non-GitHub project snapshottable.
+ */
+export function requiredModeFailure(
+  outcome: SessionSnapshotOutcome,
+): { status: 409 | 503; code: string; message: string; retryable: boolean } | null {
+  if (outcome.pinned || outcome.mode !== 'required') return null;
+  switch (outcome.miss.reason) {
+    case 'disabled':
+      return null;
+    case 'unsupported_project':
+      return {
+        status: 409,
+        code: 'REPO_SNAPSHOT_UNSUPPORTED_PROJECT',
+        message: `repository snapshots are required but this project cannot be snapshotted: ${outcome.miss.detail}`,
+        retryable: false,
+      };
+    case 'failed':
+      return {
+        status: 503,
+        code: 'REPO_SNAPSHOT_PREPARATION_FAILED',
+        message: `snapshot preparation failed for ${outcome.miss.commitSha}: ${outcome.miss.detail}`,
+        retryable: true,
+      };
+    default:
+      return {
+        status: 503,
+        code: 'REPO_SNAPSHOT_PREPARING',
+        message: `snapshot for ${outcome.miss.commitSha} is not prepared yet; retry once preparation completes`,
+        retryable: true,
+      };
+  }
+}
+
 /** One structured line per prepared start, for the rollout coverage report. */
 export function logSnapshotOutcome(
   outcome: SessionSnapshotOutcome,

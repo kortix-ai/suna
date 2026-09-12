@@ -54,7 +54,13 @@ describe('session fast boot Git hint cache', () => {
     expect(block).not.toContain('resolveFastBootGitHintWithCache');
     // A pinned snapshot also suppresses the compiled-boot prebuild, which would
     // otherwise refresh the mirror for an artifact nothing consumes.
-    expect(source).toContain('!pin && hint?.baseSha');
+    expect(source).toContain('!pin && authedProject && hint?.baseSha');
+    // The authoring credential is LAZY on a prepared start: `withProjectGitAuth`
+    // mints a GitHub token, and a prepared start must attempt no GitHub call.
+    expect(source).toContain('const preparedStart = createSnapshotPin?.pinned === true;');
+    expect(source).toContain('const projectWithGitAuthPromise = preparedStart');
+    // …and the remote session branch, which is authoring work, is deferred.
+    expect(source).toContain('const deferRemoteBranch = preparedStart;');
   });
 
   test('gates every session allocation before a full-repository image can be selected', async () => {
@@ -112,12 +118,43 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
   test('the pi decision resolves runtime and tip in one parallel round trip', async () => {
     const source = await sessionsSource();
     const decision = source.indexOf("resolveFeatureFlag(project.metadata, 'pi_worker')");
-    const parallel = source.indexOf('const [runtime, sha] = await Promise.all([', decision);
+    const parallel = source.indexOf('[runtime, sha] = await Promise.all([', decision);
     expect(decision).toBeGreaterThan(-1);
     expect(parallel).toBeGreaterThan(decision);
     const block = source.slice(parallel, source.indexOf(']);', parallel));
     expect(block).toContain('resolveManifestRuntime(authedProject, baseRef)');
     expect(block).toContain('resolveCommitSha(authedProject, ref).catch(() => null)');
+  });
+
+  test('a pinned snapshot answers the pi decision with no Git and no GitHub', async () => {
+    const source = await sessionsSource();
+    const decision = source.indexOf("resolveFeatureFlag(project.metadata, 'pi_worker')");
+    const parallel = source.indexOf('[runtime, sha] = await Promise.all([', decision);
+    // Slice the PINNED branch only: the else branch legitimately keeps the Git
+    // resolution, so including it would make the negative assertions vacuous.
+    const branchStart = source.indexOf('if (pinnedSnapshotRow) {', decision);
+    const pinned = source.slice(branchStart, source.indexOf('} else {', branchStart));
+    // The pinned branch reads the manifest from the archive and takes the SHA
+    // from the pin. `withProjectGitAuth` and `resolveCommitSha` — an
+    // installation-token mint and an `ls-remote` — stay in the else branch.
+    expect(pinned).toContain('if (pinnedSnapshotRow) {');
+    expect(pinned).toContain('resolveManifestRuntime(project, baseRef, pinnedSnapshotRow)');
+    expect(pinned).toContain('sha = pinnedSnapshotRow.commitSha;');
+    expect(pinned).not.toContain('withProjectGitAuth');
+    expect(pinned).not.toContain('resolveCommitSha');
+  });
+
+  test('required mode fails closed instead of falling through to the clone path', async () => {
+    const source = await sessionsSource();
+    // A miss or a thrown pin in `required` returns an error to the caller. The
+    // old shape swallowed both into `null` and quietly used the Git path, which
+    // would have made the mode inert.
+    expect(source).toContain('const failure = requiredModeFailure(createSnapshotPin);');
+    expect(source).toContain("code: 'REPO_SNAPSHOT_UNAVAILABLE'");
+    expect(source).toContain("} else if (repoSnapshotMode() === 'required') {");
+    // An explicit revision reaches the pin; it is not replaced by the tip.
+    expect(source).toContain('const requestedSha = normalizeString(body.base_sha ?? body.baseSha);');
+    expect(source).toContain('requestedSha,');
   });
 });
 

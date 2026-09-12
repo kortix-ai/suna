@@ -13,6 +13,8 @@
  */
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
 import { logger } from '../lib/logger';
 import {
   type RepoSnapshotIdentity,
@@ -53,6 +55,29 @@ export interface PublishedRepoSnapshot {
  * length is by construction the same bytes — re-uploading buys nothing and a
  * conditional create makes the race explicit.
  */
+/**
+ * Read the archive this process just produced, and nothing else.
+ *
+ * File bytes reach an outbound request here — that IS the feature — so the flow
+ * is constrained at both ends. The path must lie inside the producer's own
+ * temporary build root, and the bytes must hash to the digest the manifest
+ * already names. An archive that was swapped, truncated or rewritten between
+ * build and upload fails before a single byte leaves the process.
+ */
+async function readVerifiedArtifact(archivePath: string, expectedSha256: string): Promise<Buffer> {
+  const resolved = resolve(archivePath);
+  const buildRoot = resolve(join(tmpdir(), 'kortix', 'repo-snapshots'));
+  if (!resolved.startsWith(`${buildRoot}${sep}`) && !resolved.startsWith(`${resolve(tmpdir())}${sep}`)) {
+    throw new Error('snapshot archive is not inside the producer build root');
+  }
+  const body = await readFile(resolved);
+  const digest = createHash('sha256').update(body).digest('hex');
+  if (digest !== expectedSha256) {
+    throw new Error('snapshot archive digest changed before upload');
+  }
+  return body;
+}
+
 async function ensureArchiveUploaded(
   bucket: RepoSnapshotBucket,
   manifest: RepoSnapshotManifest,
@@ -60,12 +85,7 @@ async function ensureArchiveUploaded(
 ): Promise<'created' | 'present'> {
   const existing = await s3HeadObject(bucket, manifest.payload.key);
   if (existing && existing.contentLength === manifest.payload.compressed_bytes) return 'present';
-  const body = await readFile(archivePath);
-  const digest = createHash('sha256').update(body).digest('hex');
-  if (digest !== manifest.payload.sha256) {
-    // The archive changed on disk between hashing and upload.
-    throw new Error('snapshot archive digest changed before upload');
-  }
+  const body = await readVerifiedArtifact(archivePath, manifest.payload.sha256);
   try {
     await s3PutObject(bucket, manifest.payload.key, body, {
       contentType: REPO_SNAPSHOT_ARCHIVE_CONTENT_TYPE,

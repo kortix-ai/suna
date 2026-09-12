@@ -14,7 +14,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { projects } from '@kortix/db';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, ne, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { managedGithubAppConfig } from '../platform/services/managed-github-app';

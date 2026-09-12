@@ -455,11 +455,23 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
 export async function resolveManifestRuntime(
   project: GitBackedProject,
   baseRef?: string | null,
+  /**
+   * A prepared repository snapshot for the pinned revision. When present the
+   * manifest comes from the archive and NO Git command and NO GitHub call runs
+   * — the same I/O-source swap `readManifest` takes, so the runtime decision
+   * cannot reintroduce the network this feature removes.
+   */
+  snapshot?: import('../../repo-snapshots/store').RepoSnapshotRow | null,
 ): Promise<RuntimeV2 | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref);
+    const found = snapshot
+      ? await (await import('../../repo-snapshots/session-pin')).readManifestFromSnapshot(
+          snapshot,
+          project.manifestPath,
+        )
+      : await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
     if (manifestSchemaVersion(raw) !== 2) return null;

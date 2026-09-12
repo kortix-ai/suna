@@ -476,3 +476,74 @@ flow(
     });
   },
 );
+
+/**
+ * Config Provider v1 push ingestion.
+ *
+ * Unauthenticated at the middleware layer BY NECESSITY — GitHub cannot present
+ * a Kortix credential — and authenticated inside the handler by
+ * `X-Hub-Signature-256` over the exact raw body. These probes are non-mutating:
+ * every one is rejected before it can reach preparation, so they are safe on a
+ * shared deployment.
+ */
+flow(
+  'GHA-6',
+  {
+    domain: 'platform',
+    routes: ['POST /v1/platform/github-app/webhook'],
+  },
+  async (ctx) => {
+    const pushBody = {
+      ref: 'refs/heads/main',
+      repository: { id: 1296269, full_name: 'octocat/Hello-World', default_branch: 'main' },
+    };
+
+    await ctx.step('no signature → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post('/v1/platform/github-app/webhook', pushBody, {
+          headers: { 'x-github-event': 'push' },
+        });
+      r.status(401);
+    });
+
+    await ctx.step('a malformed signature → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post('/v1/platform/github-app/webhook', pushBody, {
+          headers: { 'x-github-event': 'push', 'x-hub-signature-256': 'sha256=not-a-digest' },
+        });
+      r.status(401);
+    });
+
+    await ctx.step('a well-formed but WRONG signature → 401', async () => {
+      // 64 hex characters, so the shape check passes and the constant-time
+      // comparison is what rejects it.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post('/v1/platform/github-app/webhook', pushBody, {
+          headers: { 'x-github-event': 'push', 'x-hub-signature-256': `sha256=${'a'.repeat(64)}` },
+        });
+      r.status(401);
+    });
+
+    await ctx.step('a user JWT is not a webhook signature → 401', async () => {
+      // The route takes ONE credential shape. A logged-in caller cannot use it.
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/platform/github-app/webhook', pushBody, {
+          headers: { 'x-github-event': 'push' },
+        });
+      r.status(401);
+    });
+
+    await ctx.step('a ping without a signature is rejected like any other event', async () => {
+      // Signature verification happens BEFORE the event switch, so `ping` is
+      // not an unauthenticated escape hatch.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post('/v1/platform/github-app/webhook', {}, { headers: { 'x-github-event': 'ping' } });
+      r.status(401);
+    });
+  },
+);

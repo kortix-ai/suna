@@ -1,0 +1,12 @@
+[safe]
+	directory = /var/folders/wf/vn25fw0x7mb2ddt7d6fv74080000gn/T/kortix-first-adoption-refs-fOqanE/workspace
+	directory = /var/folders/wf/vn25fw0x7mb2ddt7d6fv74080000gn/T/kortix-restart-base-refs-sUShN0/workspace
+	directory = /var/folders/wf/vn25fw0x7mb2ddt7d6fv74080000gn/T/kortix-fresh-image-restart-tcvotf/workspace
+	directory = /var/folders/wf/vn25fw0x7mb2ddt7d6fv74080000gn/T/kortix-project-image-restore-qTkBMz/workspace
+	directory = /var/folders/wf/vn25fw0x7mb2ddt7d6fv74080000gn/T/kortix-fresh-without-base-sha-1ki5H2/workspace
+[user]
+	name = Kortix Agent
+	email = agent@kortix.ai
+[credential "https://api.kortix.test"]
+	helper = !'/opt/homebrew/Cellar/bun/1.4.0/bin/bun' git-credential
+	username = x-access-token

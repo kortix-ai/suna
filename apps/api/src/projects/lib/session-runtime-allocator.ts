@@ -49,10 +49,18 @@ export function allocateSessionRuntime(input: AllocateSessionRuntimeInput): void
 async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): Promise<void> {
   const tl = new ProvisionTimeline(input.sessionId, 'session-create');
   try {
-    const gitProjectPromise = input.resolveGitProject().then((project) => {
-      tl.mark('git-auth');
-      return project;
-    });
+    // Lazy, memoized. `resolveGitProject` MINTS an authoring credential (a
+    // GitHub API call for an App-backed project). A start served by a prepared
+    // repository snapshot never needs one, so it must not be started eagerly
+    // just because it used to overlap the env build.
+    let gitProjectPromise: Promise<GitBackedProject> | null = null;
+    const resolveGitProjectOnce = (): Promise<GitBackedProject> => {
+      gitProjectPromise ??= input.resolveGitProject().then((project) => {
+        tl.mark('git-auth');
+        return project;
+      });
+      return gitProjectPromise;
+    };
     const envPromise = input.buildEnvVars().then((envVars) => {
       tl.mark('env-vars');
       return envVars;
@@ -83,7 +91,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         manifestPath: input.project.manifestPath,
         gitAuthToken: null,
       },
-      resolveGitProject: async () => gitProjectPromise,
+      resolveGitProject: () => resolveGitProjectOnce(),
       baseRef: input.baseRef,
       sandboxSlug: input.sandboxSlug,
       beforeActive: input.beforeActive,

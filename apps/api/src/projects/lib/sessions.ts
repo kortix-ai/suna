@@ -118,9 +118,11 @@ import {
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
+import { repoSnapshotMode } from '../../repo-snapshots/descriptor';
 import {
   logSnapshotOutcome,
   pinSessionSnapshot,
+  requiredModeFailure,
   resolveOpencodeConfigDirFromSnapshot,
   type SessionSnapshotPin,
 } from '../../repo-snapshots/session-pin';
@@ -1001,7 +1003,47 @@ export async function createProjectSession(input: {
   // With a prepared snapshot that read comes from the archive, which is what
   // removes `forceRefresh: true`'s mirror refresh from the create path. Without
   // one the Git-backed reader runs exactly as before.
-  const createSnapshotPin = await pinSessionSnapshot({ project, ref: baseRef }).catch(() => null);
+  // An explicit revision wins over the observed tip: `base_sha` is exact and is
+  // never replaced by whatever the control plane last saw on the branch.
+  const requestedSha = normalizeString(body.base_sha ?? body.baseSha);
+  const createSnapshotPin = await pinSessionSnapshot({
+    project,
+    ref: baseRef,
+    requestedSha,
+  }).catch((error) => {
+    // A THROWN pin is an infrastructure failure, not a miss. In `required` it
+    // must not be laundered into the clone path.
+    console.warn('[repo-snapshot] pin failed', {
+      projectId,
+      ref: baseRef,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+  if (createSnapshotPin) {
+    const failure = requiredModeFailure(createSnapshotPin);
+    if (failure) {
+      return {
+        error: {
+          status: failure.status,
+          body: { error: failure.message, code: failure.code, retryable: failure.retryable },
+          ...(failure.retryable ? { headers: { 'retry-after': '10' } } : {}),
+        },
+      };
+    }
+  } else if (repoSnapshotMode() === 'required') {
+    return {
+      error: {
+        status: 503,
+        body: {
+          error: 'repository snapshots are required but the pin could not be resolved',
+          code: 'REPO_SNAPSHOT_UNAVAILABLE',
+          retryable: true,
+        },
+        headers: { 'retry-after': '10' },
+      },
+    };
+  }
   const pinnedSnapshotRow = createSnapshotPin?.pinned ? createSnapshotPin.pin.row : null;
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: !pinnedSnapshotRow,
@@ -1377,16 +1419,27 @@ export async function createProjectSession(input: {
   let piWorkerSha: string | null = null;
   if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
     try {
-      const authedProject = await withProjectGitAuth(project);
       const ref = (baseRef ?? '').trim() || project.defaultBranch;
-      // One round trip, not two: the runtime read and the tip resolution are
-      // independent, and both sit on the POST /sessions critical path. A
-      // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
-      // a full sequential git hop.
-      const [runtime, sha] = await Promise.all([
-        resolveManifestRuntime(authedProject, baseRef),
-        resolveCommitSha(authedProject, ref).catch(() => null),
-      ]);
+      let runtime: Awaited<ReturnType<typeof resolveManifestRuntime>>;
+      let sha: string | null;
+      if (pinnedSnapshotRow) {
+        // A prepared revision answers both questions with zero network: the
+        // manifest comes from the archive and the SHA is the pin itself.
+        // Resolving them over Git here would put the `ls-remote` back on the
+        // create path for every pi_worker project.
+        runtime = await resolveManifestRuntime(project, baseRef, pinnedSnapshotRow);
+        sha = pinnedSnapshotRow.commitSha;
+      } else {
+        const authedProject = await withProjectGitAuth(project);
+        // One round trip, not two: the runtime read and the tip resolution are
+        // independent, and both sit on the POST /sessions critical path. A
+        // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
+        // a full sequential git hop.
+        [runtime, sha] = await Promise.all([
+          resolveManifestRuntime(authedProject, baseRef),
+          resolveCommitSha(authedProject, ref).catch(() => null),
+        ]);
+      }
       if (runtime === 'pi' && sha) {
         piWorkerSha = sha;
         piWorkerBoot = true;
@@ -1703,13 +1756,25 @@ export async function createProjectSession(input: {
   void (async () => {
     const tl = new ProvisionTimeline(sessionId, 'session-create');
     try {
-      // Resolve git auth and user env concurrently. Git auth is needed for
-      // background freshness checks / remote branch publishing, but a warm
-      // session can boot from an existing ready snapshot without waiting for it.
-      const projectWithGitAuthPromise = withProjectGitAuth(project).then((gitProject) => {
-        tl.mark('git-auth');
-        return gitProject;
-      });
+      // A prepared snapshot serves this start, so nothing on the readiness path
+      // needs a GitHub credential. `withProjectGitAuth` MINTS an installation
+      // token — a GitHub API call — so it is not started at all here; the
+      // authoring paths below resolve it only when they actually author.
+      const preparedStart = createSnapshotPin?.pinned === true;
+      let gitAuthPromise: Promise<Awaited<ReturnType<typeof withProjectGitAuth>>> | null = null;
+      /** Resolve the authoring credential lazily, and only once. */
+      const projectWithGitAuth = (): Promise<Awaited<ReturnType<typeof withProjectGitAuth>>> => {
+        gitAuthPromise ??= withProjectGitAuth(project).then((gitProject) => {
+          tl.mark('git-auth');
+          return gitProject;
+        });
+        return gitAuthPromise;
+      };
+      // Eager on the legacy path: the fast-boot hint and the compiled-boot
+      // prebuild both consume it, and starting it late would serialize them.
+      const projectWithGitAuthPromise = preparedStart
+        ? Promise.resolve(null)
+        : projectWithGitAuth();
       // Resolve the base tip from the API's existing mirror and package its
       // one-commit scaffold delta. This moves the small object transfer into
       // sandbox creation and removes the slow in-guest Git negotiation.
@@ -1749,14 +1814,8 @@ export async function createProjectSession(input: {
         }
         if (piWorkerBoot || !config.KORTIX_FAST_GIT_BOOT_ENABLED) return undefined;
         return Promise.race([
-          projectWithGitAuthPromise
-            .then((projectWithGitAuth) =>
-              resolveFastBootGitHintWithCache(
-                projectWithGitAuth,
-                baseRef,
-                project.metadata,
-              ),
-            )
+          projectWithGitAuth()
+            .then((authed) => resolveFastBootGitHintWithCache(authed, baseRef, project.metadata))
             .catch(() => undefined),
           new Promise<undefined>((resolve) => {
             fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
@@ -1769,12 +1828,12 @@ export async function createProjectSession(input: {
       // boot fetches its own per-commit pi artifact instead.
       if (!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
         void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise, snapshotPinPromise])
-          .then(([projectWithGitAuth, hint, pin]) =>
+          .then(([authedProject, hint, pin]) =>
             // A pinned snapshot already delivers the checkout. Compiling a
             // second artifact would refresh the mirror for no consumer.
-            !pin && hint?.baseSha
+            !pin && authedProject && hint?.baseSha
               ? prebuildCompiledBootArtifacts(
-                  projectWithGitAuth,
+                  authedProject,
                   baseRef,
                   hint.baseSha,
                   proxyGitUrl(projectId),
@@ -1879,11 +1938,18 @@ export async function createProjectSession(input: {
       // fire-and-forget so they never block the IIFE itself.
       const branchAlreadyCreated =
         body.branch_already_created === true || body.branchAlreadyCreated === true;
-      const branchPromise: Promise<void> = branchAlreadyCreated
+      // Publishing the session branch to the remote is AUTHORING work: two
+      // GitHub API calls plus an installation token. A prepared start defers it
+      // until the sandbox actually authors — the daemon creates the branch
+      // locally from the snapshot, and its first push creates the remote ref.
+      // Deferring keeps a prepared start at zero attempted Git/GitHub calls,
+      // which the legacy path could not offer because it had no local base.
+      const deferRemoteBranch = preparedStart;
+      const branchPromise: Promise<void> = branchAlreadyCreated || deferRemoteBranch
         ? Promise.resolve()
-        : projectWithGitAuthPromise
-            .then((projectWithGitAuth) =>
-            createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
+        : projectWithGitAuth()
+            .then((authedProject) =>
+            createRemoteSessionBranch(authedProject, sessionId, baseRef),
             )
             .then(() => {
             tl.mark('branch-pushed');
@@ -1895,6 +1961,16 @@ export async function createProjectSession(input: {
                 },
             }).catch(() => {});
           });
+      if (deferRemoteBranch && !branchAlreadyCreated) {
+        void mergeSessionMetadata({
+          remote_branch: {
+            status: 'deferred',
+            branch: sessionId,
+            reason: 'prepared snapshot start — the first push publishes the ref',
+            updated_at: new Date().toISOString(),
+          },
+        }).catch(() => {});
+      }
       branchPromise.catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
@@ -1950,7 +2026,10 @@ export async function createProjectSession(input: {
           manifestPath: project.manifestPath,
           gitAuthToken: null,
         },
-        resolveGitProject: async () => projectWithGitAuthPromise,
+        // Lazy on purpose: the sandbox allocator resolves this only when it
+        // genuinely needs an authoring credential, so a prepared start never
+        // mints a GitHub token it will not use.
+        resolveGitProject: () => projectWithGitAuth(),
         baseRef,
         sandboxSlug,
       });

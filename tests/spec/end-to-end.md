@@ -736,7 +736,7 @@ supplied scope field without restarting the session.
 
 ## 25. Parallel-authored domains (git/platform/iam/channels/queue/audit/scim)
 
-`GH-9` `GET /git/:project/info/refs` · `GET …/compiled-checkout` · `GET …/compiled-runtime` · `GET …/compiled-pi-runtime` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → Git proxy and compiled boot artifacts, git token auth (not JWT); bad/no token → 401/502.
+`GH-9` `GET /git/:project/info/refs` · `GET …/compiled-checkout` · `GET …/repo-snapshot` · `GET …/compiled-runtime` · `GET …/compiled-pi-runtime` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → Git proxy and prepared boot artifacts, git token auth (not JWT); bad/no token → 401/502. `repo-snapshot` returns an object-scoped capability for one EXACT commit: a branch name is rejected (400) because a branch is never immutable identity, and the auth boundary is checked before the feature flag so an anonymous caller never learns whether snapshots are enabled.
 `GH-10` `GET /git/:project/info/refs` → user JWT is not a git token → 401/403; NONMEMBER → 401/403/404.
 `GH-12` `POST /projects/:id/git/collaborators` → missing username → 400; non-managed → 409; no install → 502.
 `GH-13` `GET /projects/github/repositories` → PROJECT_CREATE; no App install → 409 install_url.
@@ -943,6 +943,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `GHA-1` A platform admin configures, reads, and removes the GitHub App or PAT integration through the supported setup routes.
 `GHA-2` GitHub App manifest and installation callbacks reject invalid state and preserve the configured integration. An install that arrives with no state at all is not an error — that is what installing from the App's own GitHub page looks like — so it redirects reporting `github=install_received&reason=direct_install` and carries the `installation_id`, the only thing that identifies the installation for later linking.
 `GHA-3` The GitHub App OAuth identity-proof callbacks reject an untrusted frontend origin and a forged state without minting a token.
+`GHA-6` `POST /platform/github-app/webhook` ingests GitHub `push` deliveries for repository-snapshot preparation. It is unauthenticated at the middleware layer because GitHub cannot present a Kortix credential, and authenticated inside the handler by `X-Hub-Signature-256` over the exact raw body. A missing, malformed, or wrong signature is 401; a logged-in user's JWT is not a substitute; and signature verification runs BEFORE the event switch, so `ping` is not an unauthenticated escape hatch.
 `GW-1b` The public LLM gateway health alias returns its health contract.
 `GW-2c` The OpenAI-compatible LLM models alias enforces authentication and returns the supported model envelope.
 `GW-3b` The OpenAI-compatible LLM chat alias enforces authentication before model execution.
