@@ -28,7 +28,7 @@
  */
 import { writeFileSync } from 'node:fs';
 import { projectSessions, projects } from '@kortix/db';
-import { and, asc, eq, gt, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, ne, notInArray } from 'drizzle-orm';
 import { db } from '../src/shared/db';
 import { getBranchCommitSha, parseGitHubRepoUrl } from '../src/projects/github';
 import { withProjectGitAuth } from '../src/projects/lib/git';
@@ -78,10 +78,18 @@ type ProjectOutcome = {
 /** Every ref this project needs prepared: the default branch plus live pins. */
 async function refsForProject(project: ProjectRow): Promise<string[]> {
   const refs = new Set<string>([project.defaultBranch]);
+  // Live sessions only. `project_session_status` has no `deleted` value — the
+  // terminal states are `stopped`, `failed` and `completed` — and naming one
+  // that does not exist makes Postgres reject the whole query (22P02).
   const rows = await db
     .select({ metadata: projectSessions.metadata })
     .from(projectSessions)
-    .where(and(eq(projectSessions.projectId, project.projectId), ne(projectSessions.status, 'deleted')))
+    .where(
+      and(
+        eq(projectSessions.projectId, project.projectId),
+        notInArray(projectSessions.status, ['stopped', 'failed', 'completed']),
+      ),
+    )
     .limit(200);
   for (const row of rows) {
     const baseRef = (row.metadata as Record<string, unknown> | null)?.base_ref;
@@ -187,11 +195,14 @@ async function main(): Promise<void> {
       outcomes.push(outcome);
       processed += 1;
       const refs = outcome.refs.map((r) => `${r.ref}=${r.state}`).join(' ');
+      // The per-ref states already carry any error text, so the summary reason
+      // is only appended when it says something they do not.
+      const reason = outcome.reason && !refs.includes(outcome.reason) ? ` — ${outcome.reason}` : '';
       console.error(
         `[${outcome.status}] ${project.projectId} ${project.name}` +
           (outcome.repositoryId ? ` repo=${outcome.repositoryId}` : '') +
           (refs ? ` ${refs}` : '') +
-          (outcome.reason ? ` — ${outcome.reason}` : ''),
+          reason,
       );
     }
     cursor = page[page.length - 1]!.projectId;

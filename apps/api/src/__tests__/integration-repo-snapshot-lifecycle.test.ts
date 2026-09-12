@@ -1,7 +1,9 @@
 /**
  * Publication lifecycle against the real database: deduplication, two
- * publishers racing one lease, crash-before-readiness, retry budget, and the
- * desired-vs-ready separation that stops an old build replacing a new revision.
+ * publishers racing one lease, crash-before-readiness, retry budget, the
+ * desired-vs-ready separation that stops an old build replacing a new revision,
+ * and the REAL worker driving a queued revision all the way to two durable
+ * objects in the store.
  *
  * Run:
  *   cd apps/api && dotenvx run -- bun test --isolate src/__tests__/integration-repo-snapshot-lifecycle.test.ts
@@ -26,6 +28,7 @@ import {
 } from '../repo-snapshots/store';
 
 let hasDb = false;
+let hasStorage = false;
 const repositoryId = String(800000000 + Math.floor(Math.random() * 90000000));
 const shaA = 'a'.repeat(39) + '1';
 const shaB = 'b'.repeat(39) + '2';
@@ -67,12 +70,123 @@ beforeAll(async () => {
   } catch {
     hasDb = false;
   }
+  try {
+    const { requireRepoSnapshotBucket, s3HeadObject } = await import('../repo-snapshots/s3');
+    await s3HeadObject(requireRepoSnapshotBucket(), `preflight/${crypto.randomUUID()}`);
+    hasStorage = true;
+  } catch {
+    hasStorage = false;
+  }
 });
 
 afterAll(async () => {
   if (!hasDb) return;
   await db.execute(sql`delete from kortix.repo_snapshots where repository_id = ${repositoryId}`).catch(() => {});
   await db.execute(sql`delete from kortix.repo_snapshot_refs where repository_id = ${repositoryId}`).catch(() => {});
+});
+
+describe('the real worker publishes a queued revision', () => {
+  test('queued -> leased -> built -> uploaded -> ready, with both objects durable', async () => {
+    if (!hasDb || !hasStorage) return;
+    const { execFileSync } = await import('node:child_process');
+    const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    const root = mkdtempSync(join(tmpdir(), 'kortix-worker-lifecycle-'));
+    const upstream = join(root, 'upstream');
+    mkdirSync(upstream);
+    const git = (...args: string[]) =>
+      execFileSync('git', args, {
+        cwd: upstream,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'Worker Fixture',
+          GIT_AUTHOR_EMAIL: 'worker@example.invalid',
+          GIT_COMMITTER_NAME: 'Worker Fixture',
+          GIT_COMMITTER_EMAIL: 'worker@example.invalid',
+        },
+        encoding: 'utf8',
+      }).trim();
+    git('init', '-b', 'main');
+    writeFileSync(join(upstream, 'kortix.yaml'), 'kortix_version: 2\n');
+    git('add', '-A');
+    git('commit', '-m', 'worker fixture');
+    const workerSha = git('rev-parse', 'HEAD');
+
+    const accounts = (await db.execute(
+      sql`select account_id from kortix.accounts limit 1`,
+    )) as unknown as Array<{ account_id: string }>;
+    if (!accounts[0]) {
+      rmSync(root, { recursive: true, force: true });
+      return;
+    }
+    const projectId = crypto.randomUUID();
+    const workerRepositoryId = String(980000000 + Math.floor(Math.random() * 9000000));
+    await db.execute(sql`
+      insert into kortix.projects (project_id, account_id, name, repo_url, default_branch, manifest_path, status, metadata)
+      values (${projectId}, ${accounts[0].account_id}, 'repo-snapshot-worker', ${`file://${upstream}`},
+              'main', 'kortix.yaml', 'active',
+              ${JSON.stringify({
+                git: {
+                  provider: 'github',
+                  owner: 'kortix-ai',
+                  name: 'worker-fixture',
+                  external_repo_id: workerRepositoryId,
+                  // GitHub IDENTITY with a local SOURCE: `resolveUpstreamUrl`
+                  // prefers an explicit upstream_url, so the fixture keeps the
+                  // repository id the object key needs without pointing the
+                  // producer at a repository that does not exist.
+                  upstream_url: `file://${upstream}`,
+                  auth: { method: 'none' },
+                },
+              })}::jsonb)`);
+
+    const cache = mkdtempSync(join(tmpdir(), 'kortix-worker-mirror-'));
+    const previousCache = process.env.KORTIX_GIT_CACHE_DIR;
+    process.env.KORTIX_GIT_CACHE_DIR = cache;
+    try {
+      const { runRepoSnapshotTick } = await import('../repo-snapshots/worker');
+      const { requireRepoSnapshotBucket, s3HeadObject } = await import('../repo-snapshots/s3');
+      const identity = normalizeRepoSnapshotIdentity({
+        repositoryId: workerRepositoryId,
+        owner: 'kortix-ai',
+        repo: 'worker-fixture',
+        commitSha: workerSha,
+      });
+      const queued = await enqueueRepoSnapshot({ identity, sourceProjectId: projectId, sourceRef: 'main' });
+      expect(queued.status).toBe('queued');
+
+      const ticked = await runRepoSnapshotTick();
+      expect(ticked.published).toBeGreaterThan(0);
+
+      const row = await findRepoSnapshot(identity);
+      expect(row?.status).toBe('ready');
+      expect(row?.errorCode).toBeNull();
+      expect(row?.payloadKey).toBeTruthy();
+      expect(row?.manifestKey).toBeTruthy();
+
+      // The ROW is not the artifact. Both objects must actually be in the store.
+      const bucket = requireRepoSnapshotBucket();
+      const payload = await s3HeadObject(bucket, row!.payloadKey!);
+      const manifest = await s3HeadObject(bucket, row!.manifestKey!);
+      expect(payload?.contentLength).toBe(row!.compressedBytes);
+      expect(manifest?.contentLength).toBeGreaterThan(0);
+
+      // The key carries the requested identity components, in order.
+      expect(row!.payloadKey).toContain(
+        `kortix-ai/worker-fixture/${workerSha}/${workerRepositoryId}/project-snapshot-v1/`,
+      );
+      expect(row!.payloadKey!.endsWith(`${row!.archiveSha256}.tar.gz`)).toBe(true);
+    } finally {
+      if (previousCache) process.env.KORTIX_GIT_CACHE_DIR = previousCache;
+      else delete process.env.KORTIX_GIT_CACHE_DIR;
+      await db.execute(sql`delete from kortix.repo_snapshots where repository_id = ${workerRepositoryId}`).catch(() => {});
+      await db.execute(sql`delete from kortix.projects where project_id = ${projectId}`).catch(() => {});
+      rmSync(root, { recursive: true, force: true });
+      rmSync(cache, { recursive: true, force: true });
+    }
+  }, 180_000);
 });
 
 describe('repo snapshot publication lifecycle', () => {

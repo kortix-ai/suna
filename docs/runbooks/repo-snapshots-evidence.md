@@ -126,6 +126,28 @@ and "access and restriction" groups: two projects on one revision receive the
 SAME object, and repository identity — not project ownership alone — is what
 gates it.
 
+## 2c. The real publisher worker, and the backfill command
+
+`integration-repo-snapshot-lifecycle.test.ts` drives `runRepoSnapshotTick` —
+the shipped worker, not a stand-in — over a queued revision:
+queued → claimed under lease → built → uploaded → manifest written → `ready`.
+It then asserts both objects are actually in the store at the recorded sizes,
+because a ready ROW is not an artifact. Observed: 1346-byte payload, 823-byte
+manifest, key
+`kortix-ai/worker-fixture/<sha>/<repository-id>/project-snapshot-v1/<digest>.tar.gz`.
+
+`scripts/backfill-repo-snapshots.ts` was run against the local database in
+`--dry-run` and found two real defects on the way:
+
+- it filtered sessions by a `deleted` status that does not exist in
+  `project_session_status`, so Postgres rejected the whole query (22P02);
+- it printed the summary reason twice when the per-ref line already carried it.
+
+Both fixed. The command reports every project it could NOT prepare individually,
+with the reason, and never folds them into a success count — which is how the
+five leftover fixture projects with no GitHub auth showed up as five named
+errors rather than a silent zero.
+
 ## 3. Object store: what was actually used
 
 | Evidence | Store |
