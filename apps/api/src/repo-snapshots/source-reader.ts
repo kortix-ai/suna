@@ -215,18 +215,6 @@ export async function readSnapshotFile(
   }
 }
 
-/** The first candidate path present at the pinned revision, in priority order. */
-export async function readFirstSnapshotFile(
-  row: RepoSnapshotRow,
-  candidates: string[],
-): Promise<{ path: string; content: string } | null> {
-  for (const candidate of candidates) {
-    const found = await readSnapshotFile(row, candidate);
-    if (found) return { path: candidate, content: found.content };
-  }
-  return null;
-}
-
 export async function snapshotDirectoryExists(row: RepoSnapshotRow, relativePath: string): Promise<boolean> {
   const root = await materializeSnapshotLocally(row);
   const absolute = assertInsideSnapshot(root, relativePath);

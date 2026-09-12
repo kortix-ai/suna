@@ -23,8 +23,6 @@ export const REPO_SNAPSHOT_EMBEDDED_MANIFEST = '.git/kortix-project-snapshot.jso
 
 export type RepoSnapshotCompression = 'gzip' | 'zstd';
 
-export const REPO_SNAPSHOT_COMPRESSIONS: readonly RepoSnapshotCompression[] = ['gzip', 'zstd'];
-
 /** Archive extension for a codec. The manifest and the object key always agree. */
 export function archiveExtension(compression: RepoSnapshotCompression): string {
   return compression === 'zstd' ? 'tar.zst' : 'tar.gz';
