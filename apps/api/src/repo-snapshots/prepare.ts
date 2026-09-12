@@ -12,11 +12,51 @@ import { getBranchCommitSha, getRepo, parseGitHubRepoUrl } from '../projects/git
 import type { GitHubApiError } from '../projects/github';
 import { withProjectGitAuth } from '../projects/lib/git';
 import type { ProjectRow } from '../projects/lib/serializers';
-import { ensureRepoSnapshotRepository, readRepoSnapshotRepository } from './identity';
+import { ensureRepoSnapshotRepository } from './identity';
 import { beginRefObservation, ensureRefReconcileScheduled, observeRepoRef } from './store';
 import { prepareRevision, repoSnapshotWorkerEnabled, triggerRepoSnapshotWorker } from './worker';
 
 export type PrepareResult = { prepared: true; commitSha: string } | { prepared: false; reason: string };
+
+/** Everything one preparation needs, resolved once. */
+interface PrepareContext {
+  project: ProjectRow;
+  repository: NonNullable<Awaited<ReturnType<typeof ensureRepoSnapshotRepository>>['repository']>;
+  coordinates: { owner: string; repo: string };
+  auth?: { token: string };
+}
+
+/**
+ * Resolve the identity and the credential for one project, once.
+ *
+ * Both are per-PROJECT, not per-ref: resolving them inside a loop over a push's
+ * branches cost three provider round trips per ref where one per push is
+ * enough, and — worse — read the identity before the first preparation had
+ * registered it, so the refs after the budget saw a project that "had no
+ * repository id" and were dropped.
+ */
+async function prepareContext(
+  project: ProjectRow,
+): Promise<PrepareContext | { prepared: false; reason: string }> {
+  const resolved = await ensureRepoSnapshotRepository(project);
+  if (!resolved.repository) {
+    return { prepared: false, reason: resolved.unsupportedReason ?? 'project is not GitHub-backed' };
+  }
+  const context: PrepareContext = {
+    project,
+    repository: resolved.repository,
+    coordinates: { owner: resolved.repository.owner, repo: resolved.repository.repo },
+  };
+  try {
+    const authed = await withProjectGitAuth(project);
+    context.coordinates = parseGitHubRepoUrl(authed.repoUrl) ?? context.coordinates;
+    context.auth = authed.gitAuthToken ? { token: authed.gitAuthToken } : undefined;
+  } catch {
+    // Leave the credential unset: every caller records a retry deadline for the
+    // refs it could not resolve, and the reconcile pass tries again later.
+  }
+  return context;
+}
 
 /**
  * Prepare the current tip of `ref`.
@@ -31,27 +71,28 @@ export async function prepareRefTip(
   via: 'webhook' | 'proxy_push' | 'import' | 'reconcile',
 ): Promise<PrepareResult> {
   if (!repoSnapshotWorkerEnabled()) return { prepared: false, reason: 'snapshot storage is not configured' };
-  const resolved = await ensureRepoSnapshotRepository(project);
-  if (!resolved.repository) {
-    return { prepared: false, reason: resolved.unsupportedReason ?? 'project is not GitHub-backed' };
-  }
+  const context = await prepareContext(project);
+  if ('prepared' in context) return context;
+  return prepareRefTipWith(context, ref, via);
+}
+
+/** One ref, with the project's identity and credential already resolved. */
+async function prepareRefTipWith(
+  context: PrepareContext,
+  ref: string,
+  via: 'webhook' | 'proxy_push' | 'import' | 'reconcile',
+): Promise<PrepareResult> {
+  const { project, repository, coordinates, auth } = context;
   const branch = ref.replace(/^refs\/heads\//, '');
   // Declared outside the try: the 404 path must record its result under the
   // SAME generation the lookup started from.
   let token: Awaited<ReturnType<typeof beginRefObservation>> | undefined;
-  // Hoisted: the 404 path needs the same coordinates and the same credential to
-  // ask whether the repository is visible at all.
-  let coordinates = { owner: resolved.repository.owner, repo: resolved.repository.repo };
-  let auth: { token: string } | undefined;
   try {
-    const authed = await withProjectGitAuth(project);
-    coordinates = parseGitHubRepoUrl(authed.repoUrl) ?? coordinates;
-    auth = authed.gitAuthToken ? { token: authed.gitAuthToken } : undefined;
     // Taken BEFORE the provider call. Anything recorded while this lookup is in
     // flight invalidates it, so a slower request cannot outrank a newer one by
     // finishing later. See `beginRefObservation`.
     token = await beginRefObservation(
-      { provider: 'github', repositoryId: resolved.repository.repositoryId },
+      { provider: 'github', repositoryId: repository.repositoryId },
       ref,
     );
     const commitSha = await getBranchCommitSha({
@@ -60,7 +101,7 @@ export async function prepareRefTip(
       branch,
       auth,
     });
-    const outcome = await prepareRevision({ project, ref, commitSha, via, token });
+    const outcome = await prepareRevision({ project, ref, commitSha, via, token, repository });
     return outcome.prepared ? { prepared: true, commitSha } : { prepared: false, reason: outcome.reason };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -74,7 +115,7 @@ export async function prepareRefTip(
       // keep a reconcile deadline: a null with no deadline is invisible to the
       // due scan forever, so a branch that comes back is never noticed.
       await observeRepoRef({
-        identity: resolved.repository,
+        identity: repository,
         ref,
         desiredSha: null,
         via: via === 'reconcile' ? 'reconcile' : 'webhook',
@@ -88,7 +129,7 @@ export async function prepareRefTip(
     // thing that brings a project back. Schedule the retry, and never touch a
     // desired SHA that may already be correct.
     await ensureRefReconcileScheduled({
-      identity: resolved.repository,
+      identity: repository,
       ref,
       at: new Date(Date.now() + reconcileRetryDelayMs()),
     }).catch(() => {});
@@ -152,10 +193,16 @@ export const PREPARE_REFS_PER_PUSH = 20;
 /**
  * Every branch one push touched.
  *
- * Each ref is given a durable reconcile deadline FIRST. That is a local write
- * with no provider call, and it is what makes the inline budget safe: a ref past
- * the budget, or one whose preparation throws, still has a row the reconcile
- * pass will pick up, instead of being dropped until somebody pushes again. Each
+ * The project's identity and credential are resolved ONCE, before anything
+ * else. That matters twice over: it turns three provider round trips per ref
+ * into one per push, and it REGISTERS a project that had no repository id yet —
+ * without which every ref past the inline budget was silently dropped, because
+ * there was no key to store it under.
+ *
+ * Each ref is then given a durable reconcile deadline. That is a local write
+ * with no provider call, and it is what makes the inline budget safe: a ref
+ * past the budget, or one whose preparation throws, still has a row the
+ * reconcile pass picks up, instead of waiting for somebody to push again. Each
  * inline preparation is isolated, so one failure cannot take the rest with it.
  */
 export async function prepareRevisionsForPush(
@@ -166,37 +213,36 @@ export async function prepareRevisionsForPush(
   const branches = [...new Set(refs.filter((ref) => ref.startsWith('refs/heads/')))];
   if (branches.length === 0) return { prepared: 0, scheduled: 0 };
 
-  const repository = readRepoSnapshotRepository(project).repository;
-  let scheduled = 0;
-  if (repository) {
-    const at = new Date();
-    for (const ref of branches) {
-      await ensureRefReconcileScheduled({ identity: repository, ref, at }).then(
-        () => {
-          scheduled += 1;
-        },
-        (error) => {
-          logger.warn('[repo-snapshot] could not record a pushed ref', {
-            projectId: project.projectId,
-            ref,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        },
-      );
-    }
-  } else {
-    // No recorded repository id yet, so there is no key to store these under.
-    // The worker's discovery pass registers the project, and the next push —
-    // or the default-branch repair — brings its refs in.
-    logger.info('[repo-snapshot] pushed refs not recorded; project has no repository id', {
+  const context = await prepareContext(project);
+  if ('prepared' in context) {
+    logger.info('[repo-snapshot] pushed refs not recorded', {
       projectId: project.projectId,
       refs: branches.length,
+      reason: context.reason,
     });
+    return { prepared: 0, scheduled: 0 };
+  }
+
+  const at = new Date();
+  let scheduled = 0;
+  for (const ref of branches) {
+    await ensureRefReconcileScheduled({ identity: context.repository, ref, at }).then(
+      () => {
+        scheduled += 1;
+      },
+      (error) => {
+        logger.warn('[repo-snapshot] could not record a pushed ref', {
+          projectId: project.projectId,
+          ref,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
+    );
   }
 
   let prepared = 0;
   for (const ref of branches.slice(0, PREPARE_REFS_PER_PUSH)) {
-    const result = await prepareRefTip(project, ref, 'proxy_push').catch((error) => ({
+    const result = await prepareRefTipWith(context, ref, 'proxy_push').catch((error) => ({
       prepared: false as const,
       reason: error instanceof Error ? error.message : String(error),
     }));
@@ -214,6 +260,7 @@ export async function prepareRevisionsForPush(
       projectId: project.projectId,
       refs: branches.length,
       inline: PREPARE_REFS_PER_PUSH,
+      queued: scheduled,
     });
   }
   return { prepared, scheduled };

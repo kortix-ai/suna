@@ -14,7 +14,7 @@
  * and two revisions never share a directory.
  */
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -41,6 +41,87 @@ export class RepoSnapshotReadError extends Error {
 
 function cacheRoot(): string {
   return process.env.KORTIX_REPO_SNAPSHOT_CACHE_DIR || join(tmpdir(), 'kortix', 'repo-snapshots', 'cache');
+}
+
+/**
+ * How long an unused extracted snapshot is kept, and how many are kept at all.
+ *
+ * The cache is content-addressed and therefore append-only: every new revision
+ * of every project adds a tree and nothing ever removed one, so an API host
+ * filled its disk in proportion to how many revisions it had served. Eviction
+ * is by LAST USE — a hit touches the directory — and never touches an entry
+ * younger than `CACHE_MIN_AGE_MS`, which is orders of magnitude longer than the
+ * read that follows a materialization.
+ */
+function cacheTtlMs(): number {
+  return Math.max(1, Number(process.env.KORTIX_REPO_SNAPSHOT_CACHE_TTL_MINUTES) || 360) * 60_000;
+}
+function cacheMaxEntries(): number {
+  return Math.max(1, Number(process.env.KORTIX_REPO_SNAPSHOT_CACHE_MAX_ENTRIES) || 200);
+}
+/** No entry is evicted before this, whatever the size pressure. */
+const CACHE_MIN_AGE_MS = 10 * 60_000;
+/** At most one prune per process per this interval. */
+const PRUNE_INTERVAL_MS = 5 * 60_000;
+let lastPruneAt = 0;
+let pruning: Promise<void> | null = null;
+
+/**
+ * Drop extracted snapshots nobody has used recently.
+ *
+ * Best-effort and bounded: it walks the two-level cache layout once, never
+ * removes an entry that is in flight or younger than `CACHE_MIN_AGE_MS`, and
+ * swallows its own errors — a cache it cannot prune is a disk-space problem,
+ * not a reason to fail the read that triggered it.
+ */
+export async function pruneSnapshotCache(now = Date.now()): Promise<number> {
+  const root = cacheRoot();
+  const entries: Array<{ path: string; usedAt: number }> = [];
+  for (const repositoryId of await readdir(root).catch(() => [])) {
+    for (const commitSha of await readdir(join(root, repositoryId)).catch(() => [])) {
+      const commitDir = join(root, repositoryId, commitSha);
+      for (const digest of await readdir(commitDir).catch(() => [])) {
+        const path = join(commitDir, digest);
+        // A staging directory belongs to a materialization in progress.
+        if (digest.includes('.staging-')) continue;
+        const info = await stat(path).catch(() => null);
+        if (!info?.isDirectory()) continue;
+        entries.push({ path, usedAt: Math.max(info.mtimeMs, info.atimeMs) });
+      }
+    }
+  }
+
+  const evictable = entries
+    .filter((entry) => now - entry.usedAt > CACHE_MIN_AGE_MS && !inFlight.has(entry.path))
+    .sort((a, b) => a.usedAt - b.usedAt);
+  const overflow = Math.max(0, entries.length - cacheMaxEntries());
+  const ttl = cacheTtlMs();
+  let removed = 0;
+  for (const [index, entry] of evictable.entries()) {
+    const tooOld = now - entry.usedAt > ttl;
+    if (!tooOld && index >= overflow) continue;
+    await rm(entry.path, { recursive: true, force: true }).catch(() => {});
+    removed += 1;
+  }
+  if (removed > 0) {
+    logger.info('[repo-snapshot] pruned the local snapshot cache', {
+      removed,
+      kept: entries.length - removed,
+    });
+  }
+  return removed;
+}
+
+function schedulePrune(): void {
+  const now = Date.now();
+  if (pruning || now - lastPruneAt < PRUNE_INTERVAL_MS) return;
+  lastPruneAt = now;
+  pruning = pruneSnapshotCache()
+    .then(() => undefined)
+    .catch(() => undefined)
+    .finally(() => {
+      pruning = null;
+    });
 }
 
 /** Immutable identity is the cache key; a hit needs no revalidation. */
@@ -100,7 +181,12 @@ export async function materializeSnapshotLocally(row: RepoSnapshotRow): Promise<
   };
   const target = cacheDir(identity, row.archiveSha256);
   const marker = join(target, '.git', 'kortix-project-snapshot.json');
-  if (await stat(marker).then(() => true).catch(() => false)) return target;
+  if (await stat(marker).then(() => true).catch(() => false)) {
+    // Mark it used, so eviction sees a hot entry as hot.
+    const now = new Date();
+    await utimes(target, now, now).catch(() => {});
+    return target;
+  }
 
   const existing = inFlight.get(target);
   if (existing) return existing;
@@ -176,6 +262,8 @@ export async function materializeSnapshotLocally(row: RepoSnapshotRow): Promise<
         compressedBytes,
         expandedBytes,
       });
+      // The only moment the cache grows is the only moment worth pruning it.
+      schedulePrune();
       return target;
     } catch (error) {
       await rm(staging, { recursive: true, force: true }).catch(() => {});

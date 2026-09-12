@@ -28,6 +28,7 @@ import {
   discardBuiltRepoSnapshot,
 } from './build';
 import { type RepoSnapshotCompression, normalizeRepoSnapshotIdentity } from './format';
+import type { RepoSnapshotRepository } from './identity';
 import {
   discoveryMarkerSql,
   ensureRepoSnapshotRepository,
@@ -397,15 +398,27 @@ export async function prepareRevision(input: {
   via: 'webhook' | 'reconcile' | 'proxy_push' | 'import';
   /** Generation taken before the lookup; see `beginRefObservation`. */
   token?: import('./store').RefObservationToken;
+  /**
+   * The identity the caller already resolved.
+   *
+   * Without it this re-resolves per call, and a caller looping over a push's
+   * branches hands in the SAME pre-registration project row every time — so a
+   * project that had no repository id pays one GitHub lookup and one metadata
+   * write per ref.
+   */
+  repository?: RepoSnapshotRepository;
 }): Promise<{ prepared: true } | { prepared: false; reason: string }> {
   if (!repoSnapshotWorkerEnabled()) return { prepared: false, reason: 'snapshot storage is not configured' };
-  const resolved = await ensureRepoSnapshotRepository(input.project);
-  if (!resolved.repository) {
-    return { prepared: false, reason: resolved.unsupportedReason ?? 'project is not GitHub-backed' };
+  const repository = input.repository ?? (await ensureRepoSnapshotRepository(input.project)).repository;
+  if (!repository) {
+    return {
+      prepared: false,
+      reason: readRepoSnapshotRepository(input.project).unsupportedReason ?? 'project is not GitHub-backed',
+    };
   }
-  const identity = withCommit(resolved.repository, input.commitSha);
+  const identity = withCommit(repository, input.commitSha);
   await observeRepoRef({
-    identity: resolved.repository,
+    identity: repository,
     ref: input.ref,
     desiredSha: identity.commitSha,
     via: input.via,

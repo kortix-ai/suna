@@ -60,6 +60,8 @@ const ids = new Map<string, string>();
 const goodRepoId = String(940000000 + Math.floor(Math.random() * 9000000));
 /** The id the stub hands back for the legacy fixtures. */
 const legacyAppRepoId = String(930000000 + Math.floor(Math.random() * 9000000));
+/** A project that is still unregistered when its first push arrives. */
+const pushRepoId = String(920000000 + Math.floor(Math.random() * 9000000));
 /** Registered, but its ref row never got written. Nothing else can find it. */
 const orphanRepoId = String(950000000 + Math.floor(Math.random() * 9000000));
 /** A legacy project that already carries its id under `github.repo_id`. */
@@ -83,6 +85,7 @@ const realFetch = globalThis.fetch;
 const ownedRepositoryIds = new Set<string>([
   goodRepoId,
   legacyAppRepoId,
+  pushRepoId,
   orphanRepoId,
   legacyDoneRepoId,
 ]);
@@ -185,7 +188,12 @@ beforeAll(async () => {
         });
       }
       const slug = path.split('/')[3] ?? '';
-      const id = slug === 'discovery-legacy-app' ? legacyAppRepoId : goodRepoId;
+      const id =
+        slug === 'discovery-legacy-app'
+          ? legacyAppRepoId
+          : slug === 'discovery-push'
+            ? pushRepoId
+            : goodRepoId;
       return new Response(JSON.stringify({ id: Number(id), full_name: `kortix-ai/${slug}` }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -421,6 +429,33 @@ describe('a failed first preparation recovers without another webhook', () => {
     const boom = await readRepoRef({ provider: 'github', repositoryId: goodRepoId }, 'boom');
     expect(boom?.desiredSha).toBeNull();
     expect(boom?.reconcileAfter).not.toBeNull();
+  });
+
+  test('a first push registers the project and keeps every ref', async () => {
+    if (!guard()) return;
+    githubHealthy = true;
+    const { prepareRevisionsForPush, PREPARE_REFS_PER_PUSH } = await import('../repo-snapshots/prepare');
+    // Unregistered: this is a project whose FIRST contact is the push itself.
+    const projectId = await seedProject('discovery-push');
+    expect(readRepoSnapshotRepository((await projectRow(projectId)) as never).repository).toBeNull();
+
+    const refs = Array.from(
+      { length: PREPARE_REFS_PER_PUSH + 5 },
+      (_, index) => `refs/heads/first-${index}`,
+    );
+    const outcome = await prepareRevisionsForPush((await projectRow(projectId)) as never, refs);
+
+    // The identity is resolved BEFORE anything is scheduled, so the refs past
+    // the inline budget have a key to be stored under instead of vanishing.
+    expect(readRepoSnapshotRepository((await projectRow(projectId)) as never).repository?.repositoryId).toBe(
+      pushRepoId,
+    );
+    expect(outcome.scheduled).toBe(refs.length);
+    expect(outcome.prepared).toBe(PREPARE_REFS_PER_PUSH);
+    const stored = (await db.execute(sql`
+      select count(*)::int as n from kortix.repo_snapshot_refs
+      where repository_id = ${pushRepoId}`)) as unknown as Array<{ n: number }>;
+    expect(stored[0]?.n).toBe(refs.length);
   });
 
   test('the worker tick runs both scans', async () => {

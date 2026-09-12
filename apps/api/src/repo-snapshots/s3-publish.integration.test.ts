@@ -13,8 +13,19 @@
  *     kortixsnapshots kortixsnapshots123
  *   docker exec kortix-snapshot-minio mc mb --ignore-existing local/kortix-repo-snapshots
  *
- * Skipped (not failed) when no endpoint answers, so the hermetic unit gate stays
- * runnable on a laptop with no Docker.
+ * TWO MODES, and the difference matters for what the result proves:
+ *
+ *   `KORTIX_REPO_SNAPSHOT_TEST_MODE=local` (default) — the local MinIO defaults
+ *   above. Skipped, not failed, when no endpoint answers, so the hermetic unit
+ *   gate stays runnable on a laptop with no Docker. A pass here says the S3
+ *   PROTOCOL works; it says nothing about AWS.
+ *
+ *   `KORTIX_REPO_SNAPSHOT_TEST_MODE=aws` — no defaults are injected at all. The
+ *   bucket, the region and the credential chain are whatever the environment
+ *   provides, which on a deployed runtime is the task/pod role. Missing or
+ *   unreachable setup FAILS; nothing is skipped. This is the only mode whose
+ *   pass is evidence about AWS, and the only one that exercises an ambient
+ *   role rather than a static key pair.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,17 +33,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-const ENDPOINT = process.env.KORTIX_REPO_SNAPSHOT_ENDPOINT || 'http://127.0.0.1:19000';
-const BUCKET = process.env.KORTIX_REPO_SNAPSHOT_BUCKET || 'kortix-repo-snapshots';
-const ACCESS_KEY = process.env.KORTIX_REPO_SNAPSHOT_ACCESS_KEY_ID || 'kortixsnapshots';
-const SECRET_KEY = process.env.KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY || 'kortixsnapshots123';
-const REGION = process.env.KORTIX_REPO_SNAPSHOT_REGION || 'us-east-1';
+const AWS_MODE = process.env.KORTIX_REPO_SNAPSHOT_TEST_MODE === 'aws';
 
-process.env.KORTIX_REPO_SNAPSHOT_ENDPOINT = ENDPOINT;
-process.env.KORTIX_REPO_SNAPSHOT_BUCKET = BUCKET;
-process.env.KORTIX_REPO_SNAPSHOT_ACCESS_KEY_ID = ACCESS_KEY;
-process.env.KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY = SECRET_KEY;
-process.env.KORTIX_REPO_SNAPSHOT_REGION = REGION;
+if (!AWS_MODE) {
+  // Local mode only. In AWS mode nothing is defaulted: a test that injects a
+  // MinIO endpoint and a static key pair cannot tell you whether the deployed
+  // role works, and silently falling back to one is how an AWS run "passes"
+  // without ever reaching AWS.
+  process.env.KORTIX_REPO_SNAPSHOT_ENDPOINT ||= 'http://127.0.0.1:19000';
+  process.env.KORTIX_REPO_SNAPSHOT_BUCKET ||= 'kortix-repo-snapshots';
+  process.env.KORTIX_REPO_SNAPSHOT_ACCESS_KEY_ID ||= 'kortixsnapshots';
+  process.env.KORTIX_REPO_SNAPSHOT_SECRET_ACCESS_KEY ||= 'kortixsnapshots123';
+  process.env.KORTIX_REPO_SNAPSHOT_REGION ||= 'us-east-1';
+}
 
 const { buildRepoSnapshot, discardBuiltRepoSnapshot } = await import('./build');
 const { normalizeRepoSnapshotIdentity, manifestKey, parseRepoSnapshotManifest } = await import('./format');
@@ -47,24 +60,34 @@ const {
 } = await import('./s3');
 
 let live = false;
+let liveReason = '';
 const roots: string[] = [];
 
-async function endpointAlive(): Promise<boolean> {
+/**
+ * A SIGNED write to the configured bucket.
+ *
+ * Not a health endpoint: `/minio/health/live` proves a MinIO process is up and
+ * nothing about whether this credential can write this bucket, and it does not
+ * exist on AWS at all. A conditional PUT is the operation publication actually
+ * performs, so it is the only probe whose success means publication will work.
+ */
+async function storageReachable(): Promise<boolean> {
   try {
-    const res = await fetch(`${ENDPOINT}/minio/health/live`, { signal: AbortSignal.timeout(2000) });
-    return res.ok;
-  } catch {
-    try {
-      const res = await fetch(ENDPOINT, { method: 'HEAD', signal: AbortSignal.timeout(2000) });
-      return res.status < 500;
-    } catch {
-      return false;
-    }
+    await s3PutObject(requireRepoSnapshotBucket(), `preflight/${crypto.randomUUID()}`, Buffer.from('ok'));
+    return true;
+  } catch (error) {
+    liveReason = error instanceof Error ? error.message : String(error);
+    return false;
   }
 }
 
 beforeAll(async () => {
-  live = await endpointAlive();
+  live = await storageReachable();
+  if (!live && AWS_MODE) {
+    throw new Error(
+      `KORTIX_REPO_SNAPSHOT_TEST_MODE=aws but the configured storage is unusable: ${liveReason}`,
+    );
+  }
 });
 
 afterAll(() => {

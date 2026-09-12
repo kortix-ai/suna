@@ -409,9 +409,9 @@ Object store: the existing MinIO on `127.0.0.1:19000`, bucket
 
 | Suite | Result |
 | --- | --- |
-| `apps/api` full unit suite (`bash scripts/test.sh`) | 9013 pass, 79 skip, 1 fail |
+| `apps/api` full unit suite (`bash scripts/test.sh`) | 9017 pass, 79 skip, 1 fail |
 | `src/repo-snapshots/` + `src/snapshots/` + metadata-merge guard | 384 pass, 5 skip, 0 fail |
-| 6 repo-snapshot integration suites (real DB + MinIO) | 52 pass, 0 fail |
+| 6 repo-snapshot integration suites (real DB + MinIO) | 53 pass, 0 fail |
 | `apps/api` `tsc --noEmit` | clean |
 | `packages/db` migration lint | 209 files pass |
 
@@ -515,6 +515,37 @@ picks up, instead of waiting for somebody to push again. Each inline
 preparation is isolated, so one failing ref cannot take the rest of the push
 with it. Proved in `integration-repo-snapshot-discovery.test.ts` with a
 25-branch push whose FIRST ref always fails.
+
+A push also RESOLVES the project's identity and credential once, before it
+schedules anything. That turned three provider round trips per ref into one per
+push (41 HTTP calls for a 25-branch push became 21), and it fixed the case that
+made the budget unsafe in the first place: a project whose FIRST contact is the
+push had no repository id when the refs were scheduled, so everything past the
+inline budget had no key to be stored under and was dropped. Proved in
+`integration-repo-snapshot-discovery.test.ts` with a 25-branch first push at an
+unregistered project — 25 stored, 20 prepared inline, identity persisted.
+
+### Operational limits that were missing
+
+- **`--dry-run` writes nothing.** The backfill resolved — and PERSISTED — a
+  repository id even in a dry run. A deployment reviewer reading `--dry-run` is
+  entitled to an untouched database, so it now reads what is recorded and
+  reports an unregistered project as exactly that.
+- **The extracted-snapshot cache forgets.** It is content-addressed, so it only
+  ever grew: every revision of every project added a tree. Entries are now
+  evicted by last use (a cache hit touches the directory) with a TTL of
+  `KORTIX_REPO_SNAPSHOT_CACHE_TTL_MINUTES` (default 360) and a cap of
+  `KORTIX_REPO_SNAPSHOT_CACHE_MAX_ENTRIES` (default 200). Nothing younger than
+  10 minutes is ever evicted, so a boot storm cannot delete a tree another
+  session is reading. `cache-eviction.test.ts` covers idle expiry, size
+  pressure, and the boot-storm case where nothing may be removed.
+- **The AWS test mode is explicit.** `s3-publish.integration.test.ts` defaulted
+  a MinIO endpoint and a static key pair even when the intent was AWS, and used
+  `/minio/health/live` as its probe — an endpoint AWS does not have. With
+  `KORTIX_REPO_SNAPSHOT_TEST_MODE=aws` nothing is defaulted, the probe is a
+  signed PUT to the configured bucket, and missing or unusable setup FAILS
+  instead of skipping. Local mode still skips, and its pass is evidence about
+  the S3 protocol only.
 
 ### The last-ready fallback is not pinned-image parity
 

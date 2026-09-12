@@ -19,7 +19,8 @@
  *   … --limit 200 --project <uuid> --json out.json
  *
  * Flags:
- *   --dry-run        report what would be queued, write nothing
+ *   --dry-run        report what would be queued; writes NOTHING, including
+ *                    the repository id an unregistered project would gain
  *   --limit <n>      stop after n projects (default: all)
  *   --page <n>       projects per database page (default 100)
  *   --project <uuid> one project only
@@ -33,7 +34,11 @@ import { db } from '../src/shared/db';
 import { getBranchCommitSha, parseGitHubRepoUrl } from '../src/projects/github';
 import { withProjectGitAuth } from '../src/projects/lib/git';
 import type { ProjectRow } from '../src/projects/lib/serializers';
-import { ensureRepoSnapshotRepository, withCommit } from '../src/repo-snapshots/identity';
+import {
+  ensureRepoSnapshotRepository,
+  readRepoSnapshotRepository,
+  withCommit,
+} from '../src/repo-snapshots/identity';
 import {
   enqueueRepoSnapshot,
   findRepoSnapshot,
@@ -100,12 +105,19 @@ async function refsForProject(project: ProjectRow): Promise<string[]> {
 
 async function processProject(project: ProjectRow, args: Args): Promise<ProjectOutcome> {
   const outcome: ProjectOutcome = { projectId: project.projectId, name: project.name, status: 'skipped', refs: [] };
-  // Resolving the repository id writes it to project metadata when it was
-  // never recorded. That is a prerequisite for addressing the project at all,
-  // so a dry run performs it too and reports it as a read.
-  const resolved = await ensureRepoSnapshotRepository(project);
+  // A dry run WRITES NOTHING, including here. `ensureRepoSnapshotRepository`
+  // persists the repository id it learns, which is a real change to project
+  // metadata — and a deployment reviewer reading "--dry-run" has every right to
+  // expect the database untouched. So a dry run reads what is already recorded
+  // and reports an unregistered project as exactly that, rather than quietly
+  // registering it.
+  const resolved = args.dryRun
+    ? readRepoSnapshotRepository(project)
+    : await ensureRepoSnapshotRepository(project);
   if (!resolved.repository) {
-    outcome.reason = resolved.unsupportedReason ?? 'not GitHub-backed';
+    outcome.reason = args.dryRun && resolved.githubBacked
+      ? `${resolved.unsupportedReason ?? 'unregistered'} (a real run would resolve and record it)`
+      : resolved.unsupportedReason ?? 'not GitHub-backed';
     return outcome;
   }
   outcome.repositoryId = resolved.repository.repositoryId;
