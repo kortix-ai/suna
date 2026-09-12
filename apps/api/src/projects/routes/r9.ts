@@ -16,6 +16,7 @@ import {
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString, readBody } from '../lib/serializers';
 
 projectsApp.openapi(
@@ -132,6 +133,21 @@ projectsApp.openapi(
         409,
       );
     }
+
+    // The base tip moved server-side (no proxy push saw it): queue the project
+    // snapshot archive for the exact merged SHA so the next fresh session
+    // boots from S3. Fire-and-forget; the merge is already durable.
+    void enqueueProjectSnapshot({
+      projectId: loaded.row.projectId,
+      ref: cr.baseRef,
+      commitSha: result.base_sha_after,
+      repoUrl: loaded.row.repoUrl,
+    }).catch((err) => {
+      console.warn('[project-snapshot] enqueue after merge failed', {
+        projectId: loaded.row.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
     const [row] = await db
       .update(changeRequests)

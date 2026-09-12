@@ -71,6 +71,13 @@ import {
 } from './compiled-runtime';
 import { prebuildDefaultBranchArtifacts } from './compiled-prebuild';
 import { config } from '../config';
+import { queueProjectSnapshotForRef, readReadyProjectSnapshot } from './project-snapshot';
+import {
+  PROJECT_SNAPSHOT_FORMAT,
+  presignProjectSnapshotDownload,
+  projectSnapshotArchiveKey,
+  projectSnapshotStorageConfigured,
+} from './project-snapshot-store';
 
 export const gitProxyApp = makeOpenApiApp();
 
@@ -261,6 +268,17 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
           ).catch((err) => {
             console.warn(
               `[git-proxy] fast-boot hint warm skipped for ${projectId}:`,
+              err instanceof Error ? err.message : err,
+            );
+          });
+        }
+        // Queue the project snapshot archive for the new default-branch tip so
+        // the next fresh session boots from S3 instead of a clone. Idempotent
+        // per (project, sha); the mirror refresh is shared with the hint above.
+        if (projectSnapshotStorageConfigured()) {
+          void queueProjectSnapshotForRef(gitProject, gitProject.defaultBranch).catch((err) => {
+            console.warn(
+              `[git-proxy] project snapshot enqueue skipped for ${projectId}:`,
               err instanceof Error ? err.message : err,
             );
           });
@@ -499,6 +517,82 @@ gitProxyApp.openapi(
       if (/is at |not an ancestor/.test(message)) return c.text(message, 409);
       console.warn('[git-proxy] fast-boot bundle unavailable', { projectId, ref, tip, parent, error: message });
       return c.text('fast-boot bundle unavailable', 503);
+    }
+  },
+);
+
+// ── project snapshot descriptor (S3 config provider) ─────────────────────
+// The sandbox env carries only the snapshot's IDENTITY
+// (KORTIX_PROJECT_SNAPSHOT_PIN = sha:sha256:bytes). The daemon exchanges it
+// here, with its session credential, for a short-lived presigned download
+// URL. Same authorization as a clone: whoever may `git-upload-pack` this
+// project may read this archive, so the route widens nothing. 404 = no
+// prepared archive for that exact SHA (the daemon records a miss and boots
+// from Git); never a build-on-demand — a session start does not wait for
+// archive creation.
+gitProxyApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{project}/project-snapshot',
+    tags: ['git'],
+    summary: 'Short-lived download descriptor for a prepared project snapshot archive',
+    request: {
+      params: projectParam,
+      query: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/) }),
+    },
+    responses: {
+      200: {
+        description: 'Descriptor: identity, digest, size, presigned archive URL',
+        content: { 'application/json': { schema: z.any() } },
+      },
+      400: { description: 'Invalid project id or source SHA' },
+      401: gitResponses[401],
+      403: gitResponses[403],
+      404: { description: 'No prepared archive for this project at this SHA' },
+      503: { description: 'Project snapshot storage is not configured' },
+    },
+  }),
+  async (c) => {
+    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
+    if (projectId instanceof Response) return projectId;
+    const auth = await authorize(c, projectId, 'read');
+    if (!auth.ok) {
+      if (auth.status === 401) return unauthorized(c, auth.message);
+      return c.text(auth.message, auth.status === 404 ? 404 : 403);
+    }
+    if (!projectSnapshotStorageConfigured()) {
+      return c.json({ error: 'project snapshot storage is not configured' }, 503);
+    }
+    const { sha } = c.req.valid('query');
+    const ready = await readReadyProjectSnapshot(projectId, sha);
+    if (!ready) return c.json({ error: 'not_prepared', sha }, 404);
+    const archiveKey = projectSnapshotArchiveKey(ready.objectPrefix, ready.archiveSha256);
+    try {
+      const download = await presignProjectSnapshotDownload(archiveKey);
+      return c.json({
+        format: PROJECT_SNAPSHOT_FORMAT,
+        commit_sha: ready.commitSha,
+        ref: ready.ref,
+        repository: {
+          owner: ready.repository.owner,
+          name: ready.repository.name,
+          external_id: ready.repository.externalId,
+        },
+        archive: {
+          url: download.url,
+          sha256: ready.archiveSha256,
+          bytes: ready.archiveBytes,
+          entries: ready.entryCount,
+          expires_at: download.expiresAt.toISOString(),
+        },
+      });
+    } catch (error) {
+      console.warn('[git-proxy] project snapshot descriptor unavailable', {
+        projectId,
+        sha,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return c.json({ error: 'project snapshot descriptor unavailable' }, 503);
     }
   },
 );

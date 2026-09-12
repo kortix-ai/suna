@@ -164,6 +164,30 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
   });
 
   invalidateIamCacheForUser(input.userId);
+  // Prepare the project snapshot archive (S3 config provider) for the
+  // default-branch tip at creation/import, so the first session already finds
+  // it. Fire-and-forget, idempotent per (project, sha), no-op when the bucket
+  // is not configured. Dynamic import: this module sits in a widely-mocked
+  // graph and must not grow a static edge into the Git proxy.
+  void import('../../git-proxy/project-snapshot')
+    .then(({ queueProjectSnapshotForRef }) =>
+      queueProjectSnapshotForRef(
+        {
+          projectId: row.projectId,
+          repoUrl: row.repoUrl,
+          defaultBranch: row.defaultBranch,
+          manifestPath: row.manifestPath,
+          gitAuthToken: null,
+        },
+        row.defaultBranch,
+      ),
+    )
+    .catch((err) => {
+      console.warn('[project-snapshot] enqueue after registration failed', {
+        projectId: row.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   return row;
 }
 

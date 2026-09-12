@@ -1076,6 +1076,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/git/:project/project-snapshot"
+    },
+    {
+      "method": "GET",
       "path": "/v1/health"
     },
     {

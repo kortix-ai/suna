@@ -38,6 +38,18 @@ export interface SessionRuntimeEnvInput {
    * checkout exists and only falls back to the serial boot without a hint.
    */
   opencodeConfigDir?: string | null;
+  /**
+   * S3 config provider rollout mode for THIS session (platform env, or the
+   * project's `metadata.project_snapshot_mode` canary override). `git`/absent
+   * emits nothing, so the daemon never attempts S3.
+   */
+  projectSnapshotMode?: 'git' | 'prefer-s3' | 'require-s3';
+  /**
+   * `<commit-sha>:<archive-sha256>:<archive-bytes>` for a prepared archive at
+   * `baseSha`. Identity only — never a URL or a credential. The daemon fetches
+   * the short-lived download descriptor from the Git proxy with KORTIX_TOKEN.
+   */
+  projectSnapshotPin?: string | null;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
@@ -122,11 +134,23 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     allowsFullRepository && input.restoreSessionBranch
       ? { KORTIX_SESSION_BRANCH_RESTORE: '1' }
       : {};
+  // Fresh, full-repository sessions only: a resumed session keeps its own
+  // workspace, and a restricted workspace mode receives no repository at all —
+  // the archive would disclose files that mode withholds.
+  const snapshotMode = input.projectSnapshotMode ?? 'git';
+  const projectSnapshotEnv: Record<string, string> =
+    allowsFullRepository && input.freshSession && snapshotMode !== 'git'
+      ? {
+          KORTIX_PROJECT_SNAPSHOT_MODE: snapshotMode,
+          ...(input.projectSnapshotPin ? { KORTIX_PROJECT_SNAPSHOT_PIN: input.projectSnapshotPin } : {}),
+        }
+      : {};
   return {
     ...projectGitEnv,
     ...fastGitBootEnv,
     ...opencodeConfigDirHintEnv,
     ...restoreGitEnv,
+    ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
     ...(input.fastColdBootEnabled ? { KORTIX_OPENCODE_BINARY_PREFETCH: '1' } : {}),
     KORTIX_PROJECT_ID: input.projectId,

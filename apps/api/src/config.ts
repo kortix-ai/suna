@@ -547,6 +547,39 @@ const envSchema = z.object({
     .enum(['off', 'shadow', 'prefer', 'required'])
     .optional()
     .default('off'),
+  // ── Project snapshot archives (S3 config provider) ─────────────────────
+  // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
+  // instead of a Git clone. `git` (default) never attempts S3 and is the
+  // rollback mode. `prefer-s3` tries a prepared archive and falls back to the
+  // legacy Git path on any acquisition failure. `require-s3` fails closed —
+  // acceptance runs and controlled validation only. A project can override
+  // the platform mode with `projects.metadata.project_snapshot_mode` (canary).
+  // The producer worker runs on the leader whenever the bucket is configured,
+  // independent of the consumption mode, so archives can be prepared ahead of
+  // a rollout. Credentials: the explicit pair below, else the AWS SDK default
+  // chain (env, shared config, ECS/EKS task role). Endpoint + path style are
+  // the MinIO/S3-compatible overrides; leave them unset on AWS.
+  KORTIX_PROJECT_SNAPSHOT_MODE: z
+    .enum(['git', 'prefer-s3', 'require-s3'])
+    .optional()
+    .default('git'),
+  KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: optStr,
+  KORTIX_PROJECT_SNAPSHOT_S3_REGION: optStr,
+  KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: optUrl(''),
+  /**
+   * Endpoint the SANDBOX reaches the store through, when it differs from the
+   * API's (MinIO behind a proxy/tunnel; self-host). Presigned download URLs
+   * are signed for this host. Unset = same as the endpoint above / AWS.
+   */
+  KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: optUrl(''),
+  KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: optBoolFalse,
+  /** Optional key prefix inside the bucket (e.g. `dev/`), namespacing environments that share one bucket. */
+  KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: optStr,
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: optStr,
+  KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: optStr,
+  /** Lifetime of the presigned download URL handed to a sandbox. */
+  KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: optInt(900),
+  KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -1149,6 +1182,17 @@ export const config = {
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
+  KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
+  KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
+  KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
+  KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT,
+  KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT,
+  KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: env.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
+  KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: env.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX,
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
+  KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
+  KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+  KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: env.KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,

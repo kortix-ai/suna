@@ -472,6 +472,57 @@ export const projectGitConnections = kortixSchema.table(
   ],
 );
 
+/**
+ * Readiness ledger for prebuilt project snapshot archives (S3 config provider).
+ *
+ * One row per (project, exact commit SHA). The producer worker
+ * (`apps/api/src/git-proxy/project-snapshot-worker.ts`) claims `queued` rows,
+ * builds a `.tar.gz` of the committed tree + sanitized shallow `.git` from the
+ * API's Git mirror, uploads the archive THEN the manifest to the immutable
+ * layout `<owner>/<repo>/<sha>/<external_repo_id>/project-snapshot-v1/`, and
+ * only then flips the row to `ready`. The session-create path reads `ready`
+ * rows to pin a prepared archive into the sandbox env; the daemon downloads it
+ * through a short-lived descriptor minted by the Git proxy.
+ *
+ * Immutable by construction: a SHA never changes content, so a `ready` row is
+ * never overwritten by later work and an older job cannot regress newer state.
+ */
+export const projectSnapshotArchives = kortixSchema.table(
+  'project_snapshot_archives',
+  {
+    snapshotId: uuid('snapshot_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Normalized branch name the SHA was resolved from (`main`, never `refs/heads/main`). */
+    ref: varchar('ref', { length: 255 }).notNull(),
+    commitSha: varchar('commit_sha', { length: 40 }).notNull(),
+    /** Repository identity copied from project_git_connections at enqueue time. */
+    repoOwner: varchar('repo_owner', { length: 255 }).notNull(),
+    repoName: varchar('repo_name', { length: 255 }).notNull(),
+    externalRepoId: text('external_repo_id').notNull(),
+    /** 'queued' | 'building' | 'ready' | 'failed' */
+    status: varchar('status', { length: 16 }).default('queued').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedBy: text('locked_by'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    /** Object key prefix (`…/project-snapshot-v1/`), set when ready. */
+    objectPrefix: text('object_prefix'),
+    archiveSha256: varchar('archive_sha256', { length: 64 }),
+    archiveBytes: bigint('archive_bytes', { mode: 'number' }),
+    entryCount: integer('entry_count'),
+    lastError: text('last_error'),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_project_snapshot_archives_project_sha').on(table.projectId, table.commitSha),
+    index('idx_project_snapshot_archives_claim').on(table.status, table.nextAttemptAt),
+  ],
+);
+
 export const projectGitCredentials = kortixSchema.table(
   'project_git_credentials',
   {

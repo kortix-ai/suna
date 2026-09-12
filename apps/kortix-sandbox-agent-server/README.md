@@ -67,10 +67,22 @@ in-process daemon.
 3. The sandbox entrypoint downloads and verifies the compiled `server.mjs` when
    compiled boot is enabled. `prefer` executes it with baked-agent fallback.
    `shadow` verifies it and executes the baked agent. `required` fails closed.
-4. Materialize the project repo in `/workspace/.kortix`. `prefer` and
-   `required` first download a compiled checkout. `shadow` validates the
-   checkout without using it. `off` mode and `prefer` failures use `git clone`.
-   Materialization failures are logged but non-fatal in non-required modes.
+4. Materialize the project repo in `/workspace/.kortix` through the
+   config-provider coordinator (`src/config-provider/config-provider.ts`). A
+   baked checkout that IS the session's base is adopted first, in every mode.
+   Then `KORTIX_PROJECT_SNAPSHOT_MODE` selects the transport: `git` (default)
+   is the legacy path — compiled checkout (`KORTIX_COMPILED_BOOT_MODE`
+   `prefer`/`required`), image-baked scaffold + API delta, or `git clone`;
+   `prefer-s3` streams the PREPARED archive pinned in
+   `KORTIX_PROJECT_SNAPSHOT_PIN` from object storage (descriptor from the Git
+   proxy, presigned GET, hash → gunzip → safe tar, verify, activate) and falls
+   back to the Git path on any acquisition failure except an authorization
+   denial or a cancellation; `require-s3` fails closed. The outcome — provider,
+   expected vs actual SHA, classified S3 failure, fallback — is reported on
+   `GET /kortix/health` (`config_provider`) and in the boot timeline marks
+   (`config-provider:*`). A prepared-S3 start defers the optional history
+   backfill until the runtime is actually ready. Materialization failures are
+   logged but non-fatal in non-required modes.
 5. Inject managed system skills into `.kortix/opencode/skills`.
 6. Resolve `OPENCODE_CONFIG_DIR`.
 7. Start the OpenCode REST supervisor in the project directory
@@ -151,6 +163,8 @@ KORTIX_BRANCH_FETCH_DELAY=0.25
 KORTIX_DEFAULT_OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 KORTIX_PROJECT_AUTO_CLONE=0
 KORTIX_COMPILED_BOOT_MODE=off
+KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/config-provider)
+KORTIX_PROJECT_SNAPSHOT_PIN=              # <sha>:<archive-sha256>:<bytes> of a PREPARED archive, set by the API
 KORTIX_COMPILED_RUNTIME_FORMAT=
 KORTIX_COMPILED_RUNTIME_SOURCE_SHA=
 KORTIX_REPO_URL=

@@ -31,6 +31,7 @@ import {
   type Opencode,
 } from './opencode'
 import { relayBootTimelineToApi } from './boot-timeline-relay'
+import { materializeProject } from './config-provider/config-provider'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
@@ -304,11 +305,30 @@ async function main() {
       ? opencode.prefetchBinary()
       : Promise.resolve(false)
 
+  // Fresh-boot acquisition goes through the config-provider coordinator
+  // (git | prefer-s3 | require-s3, see src/config-provider). In `git` mode this
+  // is materializeRepo's exact behaviour, split across the coordinator's warm
+  // check and the Git transport.
   const repoMaterializePromise: Promise<void> = cfg.autoClone
-    ? materializeRepo(cfg).catch((err) => {
-        bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
-        logger.error('[boot] repo materialization failed', err)
+    ? materializeProject(cfg, {
+        bootMark,
+        onSummary: (summary) => {
+          bootState.configProvider = summary
+        },
       })
+        .then((result) => {
+          // A prepared-S3 start already has the exact working tree; the
+          // optional history backfill waits for real readiness (see
+          // runDeferredHistoryBackfill) instead of competing with the runtime
+          // spawn for CPU and the proxied Git path.
+          if (result.provider === 's3') {
+            bootState.deferredHistoryBackfill = () => scheduleHistoryBackfill(cfg, cfg.projectTarget)
+          }
+        })
+        .catch((err) => {
+          bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+          logger.error('[boot] repo materialization failed', err)
+        })
     : Promise.resolve()
 
   // Every gateway session routes OpenCode through the localhost LLM proxy.
@@ -396,7 +416,7 @@ async function main() {
   // The boot clone is shallow; restore history in the background now that the
   // workspace is usable, so `git log`/`blame`/`diff` work without ever having
   // been on the critical path.
-  if (cfg.autoClone && !bootState.repoMaterializationError) {
+  if (cfg.autoClone && !bootState.repoMaterializationError && !bootState.deferredHistoryBackfill) {
     scheduleHistoryBackfill(cfg, cfg.projectTarget)
   }
 
@@ -645,6 +665,18 @@ function armSeedAdoption(
 // start happens (seed boot then fork adoption), so a box can never restart
 // OpenCode twice for the same reason.
 let managedReconcileRan = false
+
+/**
+ * Run the history backfill a prepared-S3 start deferred until the runtime is
+ * ACTUALLY ready (both readiness exits call this; the first one wins). A Git
+ * start schedules its backfill right after materialization as before.
+ */
+function runDeferredHistoryBackfill(bootState: SandboxBootState): void {
+  const run = bootState.deferredHistoryBackfill
+  if (!run) return
+  bootState.deferredHistoryBackfill = null
+  run()
+}
 
 /**
  * Post-spawn managed-model reconcile — the OFF-CRITICAL-PATH half of "the
@@ -977,6 +1009,7 @@ async function startSessionRuntime(
       // Persist the in-guest timeline now that this boot is complete — see
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
+      runDeferredHistoryBackfill(bootState)
       // The boot push: the projection exists server-side from the moment the
       // box is usable, so a cold session answers its roster from Postgres.
       scheduleRuntimeProjectionPush('boot')
@@ -1024,6 +1057,7 @@ async function startSessionRuntime(
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
     relayBootTimelineToApi(bootState.timeline)
+    runDeferredHistoryBackfill(bootState)
     scheduleRuntimeProjectionPush('boot')
     scheduleRuntimeAssetsReconcile(cfg)
     // Only start the loop if the initial-session branch didn't already (avoids a
