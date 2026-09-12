@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 
-import { catalogSections } from './catalog-entry';
 import {
   CATEGORY_PICKS,
   CURATED_SECTIONS,
@@ -100,22 +99,5 @@ describe('CATEGORY_PICKS hygiene', () => {
     // whole change exists to fix.
     expect(CATEGORY_PICKS.productivity?.length ?? 0).toBeGreaterThan(6);
     expect(CATEGORY_PICKS['developer-tools']?.length ?? 0).toBeGreaterThan(6);
-  });
-});
-
-describe('catalogSections applies picks', () => {
-  const entry = (slug: string, categories: string[]) =>
-    ({ slug, name: slug, categories, popularity: null }) as never;
-
-  test('a section leads with its picks, not with feed order', () => {
-    const sections = catalogSections(
-      [
-        entry('zzz-unknown', ['productivity']),
-        entry('trello', ['productivity']),
-        entry('notion', ['productivity']),
-      ],
-      { popularCap: 6 },
-    );
-    expect(sections[0]?.items.map((i) => i.slug)).toEqual(['notion', 'trello', 'zzz-unknown']);
   });
 });

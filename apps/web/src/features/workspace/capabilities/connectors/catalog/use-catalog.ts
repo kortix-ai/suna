@@ -5,6 +5,7 @@ import {
   listConnectSections,
   listConnectToolkits,
   listDiscoverConnectors,
+  listDiscoverSections,
   listPipedreamApps,
   listPipedreamSections,
   type PipedreamCategory,
@@ -16,19 +17,20 @@ import { useDebounce } from '@/hooks/use-debounce';
 
 import { useTranslations } from '@/i18n/use-translations';
 import {
+  browseSections,
+  connectToolkitApp,
+  sectionsPageFromConnect,
+  sectionsPageFromDiscover,
+  sectionsPageFromPipedream,
+  type BrowseSectionsPage,
+} from './browse-sections';
+import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
-  catalogSections,
   computersCatalogEntry,
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
-import {
-  browseSections,
-  connectToolkitApp,
-  sectionsPageFromConnect,
-  type EasyConnectSectionsPage,
-} from './connect-sections';
 import { CATEGORY_ROW_CAP, localizedSectionTitle } from './connector-categories';
 
 /** Apps per request. One page fills several rows of the widest grid, so a
@@ -252,9 +254,18 @@ export function useCatalog(
   const easyConnectProvider = connectStatus.provider ?? 'composio';
 
   const discoverQuery = useInfiniteQuery({
-    queryKey: ['discover-connectors', projectId, activeQuery],
+    // An open category is a server-side filter, so it is part of the key. The
+    // unfiltered key stays exactly the one `discover-catalogue.tsx` shares.
+    queryKey:
+      category === null
+        ? ['discover-connectors', projectId, activeQuery]
+        : ['discover-connectors', projectId, activeQuery, category],
     queryFn: ({ pageParam }) =>
-      listDiscoverConnectors(projectId, activeQuery || undefined, pageParam as string | undefined),
+      listDiscoverConnectors(projectId, {
+        q: activeQuery || undefined,
+        cursor: pageParam as string | undefined,
+        category: category ?? undefined,
+      }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,
@@ -280,27 +291,34 @@ export function useCatalog(
     placeholderData: keepPreviousData,
   });
 
-  // The browse page, in one request, from whichever provider serves Easy
-  // Connect. Both answer with each category's TRUE size, so a heading never
+  // The browse page, in one request, from whichever catalogue this project
+  // uses. Every one answers with each category's TRUE size, so a heading never
   // reports how many cards one loaded page happened to hold.
   //
-  // Fetched while browsing. Composio also keeps it while a category is open:
-  // its paged endpoint publishes no category facet, and this response's facet
-  // is what lets the open category's header state its name and size. Same key,
-  // so opening a category from the browse page costs no request.
+  // Fetched while browsing. Discover and Composio also keep it while a category
+  // is open: their paged endpoints publish no category facet, and this
+  // response's facet is what lets the open category's header state its name
+  // and size. Same key, so opening a category from the browse page costs no
+  // request. Pipedream's paged endpoint carries its own facet.
+  const sectionsCatalogue = source === 'discover' ? 'discover' : easyConnectProvider;
   const sectionsQuery = useQuery({
-    queryKey: ['easy-connect-sections', projectId, easyConnectProvider],
-    queryFn: async (): Promise<EasyConnectSectionsPage> => {
+    queryKey: ['catalog-sections', projectId, sectionsCatalogue],
+    queryFn: async (): Promise<BrowseSectionsPage> => {
       const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
-      if (easyConnectProvider === 'pipedream') return listPipedreamSections(projectId, limits);
+      if (sectionsCatalogue === 'discover') {
+        return sectionsPageFromDiscover(await listDiscoverSections(projectId, limits));
+      }
+      if (sectionsCatalogue === 'pipedream') {
+        return sectionsPageFromPipedream(await listPipedreamSections(projectId, limits));
+      }
       return sectionsPageFromConnect(await listConnectSections(projectId, limits));
     },
     staleTime: 5 * 60_000,
     enabled:
       opts.enabled &&
-      easyConnectRunnable &&
+      (source === 'discover' || easyConnectRunnable) &&
       !searching &&
-      (category === null || easyConnectProvider === 'composio'),
+      (category === null || sectionsCatalogue !== 'pipedream'),
   });
 
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
@@ -355,7 +373,7 @@ export function useCatalog(
 
   // The browse page is loading until its own request lands — the paged query
   // behind it says nothing about whether the sections are ready.
-  const showingSections = !searching && category === null && source === 'easy-connect';
+  const showingSections = !searching && category === null;
   const { refetch: sectionsRefetch } = sectionsQuery;
 
   // Retry refetches the sections too: on the browse page they are what failed.
@@ -365,38 +383,27 @@ export function useCatalog(
   }, [activeRefetch, sectionsRefetch, showingSections]);
 
   /**
-   * The browse sections, normalised across both sources so `ConnectorBrowse`
+   * The browse sections, normalised across every catalogue so `ConnectorBrowse`
    * renders one shape.
    *
-   * Easy Connect gets them from the server, complete and fixed, for both
-   * providers. Section keys are the provider's own category keys, so "View all"
-   * asks the server for exactly the set the heading counted. Discover has no
-   * such endpoint, so it keeps the original client-side bucketing of loaded
-   * entries — with `total` set to what is actually in hand, because that is all
-   * that source can honestly claim.
+   * All of them come from the server, complete and fixed, with each section's
+   * true total. A section key is exactly what the catalogue's category filter
+   * accepts, so "View all" asks the server for the set the heading counted.
    */
   const sections = useMemo<CatalogSection[]>(() => {
-    if (searching || category !== null) return [];
-    if (source === 'discover') {
-      return catalogSections(entries, { popularCap: SECTION_CARD_COUNT }).map((section) => ({
-        key: section.category,
-        label: localizedSectionTitle(section.category, tI18nComplete),
-        total: section.items.length,
-        items: section.items.slice(0, SECTION_CARD_COUNT),
-      }));
-    }
-    if (!sectionsQuery.data) return [];
+    if (searching || category !== null || !sectionsQuery.data) return [];
     return browseSections(sectionsQuery.data, {
       native: computersCatalogEntry(tI18nComplete),
       cardCount: SECTION_CARD_COUNT,
       title: (label) => localizedSectionTitle(label, tI18nComplete),
     });
-  }, [searching, category, source, entries, sectionsQuery.data, tI18nComplete]);
+  }, [searching, category, sectionsQuery.data, tI18nComplete]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
   const categories = useMemo<PipedreamCategory[]>(() => {
-    if (source !== 'easy-connect') return [];
-    if (easyConnectProvider === 'pipedream') return easyConnectPage?.categories ?? [];
+    if (source === 'easy-connect' && easyConnectProvider === 'pipedream') {
+      return easyConnectPage?.categories ?? [];
+    }
     return (sectionsQuery.data?.categories ?? []).map((facet) => ({
       ...facet,
       label: localizedSectionTitle(facet.label, tI18nComplete),

@@ -116,7 +116,11 @@ import type {
   ConnectorRouterDeps,
 } from './router';
 import { resolveShareSubject } from './share';
-import { getConnectorCatalogDetail, listConnectorCatalog } from './connector-catalog';
+import {
+  connectorCatalogSections,
+  getConnectorCatalogDetail,
+  listConnectorCatalog,
+} from './connector-catalog';
 import {
   discoverDraftConnectorAuth,
   materializeComputerConnectorProfile,
@@ -2259,6 +2263,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
+  listDiscoverSections: (input) => connectorCatalogSections(input),
   getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>

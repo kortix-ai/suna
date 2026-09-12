@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 636,
+  "count": 637,
   "routes": [
     {
       "method": "GET",
@@ -1037,6 +1037,10 @@
     {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/discover/connectors/detail"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/discover/sections"
     },
     {
       "method": "GET",

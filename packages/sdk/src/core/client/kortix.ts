@@ -619,6 +619,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         discover: {
           list: (...a: DropFirst<Parameters<typeof P.listDiscoverConnectors>>) =>
             P.listDiscoverConnectors(projectId, ...a),
+          /** The browse page: Popular plus a fixed top slice of each section,
+           *  with each section's true total, in one request. */
+          sections: (...a: DropFirst<Parameters<typeof P.listDiscoverSections>>) =>
+            P.listDiscoverSections(projectId, ...a),
           detail: (...a: DropFirst<Parameters<typeof P.getDiscoverConnector>>) =>
             P.getDiscoverConnector(projectId, ...a),
         },

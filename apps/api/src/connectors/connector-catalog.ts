@@ -1,3 +1,10 @@
+import {
+  groupIntoSections,
+  sectionKeysForEntry,
+  sectionTitle,
+  sortByPicks,
+} from '@kortix/shared/connector-sections';
+
 const INTEGRATIONS_BASE_URL = 'https://integrations.sh';
 const DEFAULT_TTL_MS = 15 * 60_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -282,6 +289,10 @@ function normalizeSurface(value: unknown, index: number): ConnectorSurfaceVarian
   return null;
 }
 
+function boundedCount(value: number | undefined, fallback: number, max: number): number {
+  return value && value > 0 ? Math.min(Math.floor(value), max) : fallback;
+}
+
 export function createConnectorCatalog(options: CatalogOptions = {}) {
   const fetchImpl = options.fetch ?? fetch;
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
@@ -363,16 +374,29 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
   };
 
   return {
-    async list(input: { q?: string; cursor?: string; limit?: number } = {}) {
+    /**
+     * A page of the catalogue. `category` is a browse-section key from
+     * `sections()` — membership uses the same shared rule that built the
+     * section, and picks lead in the same order, so "View all" opens exactly
+     * the set and order the section heading counted.
+     */
+    async list(input: { q?: string; cursor?: string; limit?: number; category?: string } = {}) {
       const items = await loadIndex();
       const query = input.q?.trim().toLowerCase() ?? '';
-      const filtered = query
+      const category = input.category?.trim();
+      const searched = query
         ? items.filter((item) =>
             [item.name, item.description, item.domain, item.kind, ...item.categories]
               .filter(Boolean)
               .some((value) => String(value).toLowerCase().includes(query)),
           )
         : items;
+      const filtered = category
+        ? sortByPicks(
+            category,
+            searched.filter((item) => sectionKeysForEntry(item.categories).has(category)),
+          )
+        : searched;
       const parsedOffset = Number.parseInt(input.cursor ?? '0', 10);
       const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
       const limit = Math.min(
@@ -386,6 +410,56 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
         total: filtered.length,
         nextCursor: nextOffset < filtered.length ? String(nextOffset) : undefined,
         hasMore: nextOffset < filtered.length,
+      };
+    },
+
+    /**
+     * The browse page: Popular, then a fixed top slice of each section, each
+     * with the section's TRUE size across the complete catalogue.
+     *
+     * The web page used to bucket one 48-item page of ~5500 and head each
+     * bucket with its card count, so most headings read `· 1`. Grouping the
+     * whole index here fixes the count at the source. Sections follow the
+     * shared curated order; limits and defaults match the other providers.
+     */
+    async sections(input: { perCategory?: number; maxCategories?: number } = {}) {
+      const perCategory = boundedCount(input.perCategory, 6, 24);
+      const maxCategories = boundedCount(input.maxCategories, 12, 40);
+      const items = await loadIndex();
+      const groups = groupIntoSections(items, (item) => item.categories);
+      // The feed publishes one record per surface (`stripe-com`,
+      // `stripe-com-openapi`, `stripe-com-cli`). A card resolves every surface
+      // for its domain, so a slice shows one card per domain. `total` still
+      // counts every record, because that is what "View all" lists.
+      const onePerDomain = (candidates: ConnectorCatalogItem[]) => {
+        const seen = new Set<string>();
+        const distinct: ConnectorCatalogItem[] = [];
+        for (const item of candidates) {
+          if (seen.has(item.domain)) continue;
+          seen.add(item.domain);
+          distinct.push(item);
+          if (distinct.length === perCategory) break;
+        }
+        return distinct;
+      };
+      const popular = onePerDomain(
+        items
+          .filter((item) => item.popularity !== null)
+          .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0)),
+      );
+      return {
+        popular,
+        sections: groups.slice(0, maxCategories).map((group) => ({
+          key: group.category,
+          label: sectionTitle(group.category),
+          total: group.items.length,
+          items: onePerDomain(sortByPicks(group.category, group.items)),
+        })),
+        categories: groups.map((group) => ({
+          key: group.category,
+          label: sectionTitle(group.category),
+          count: group.items.length,
+        })),
       };
     },
 
@@ -405,4 +479,5 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
 const catalog = createConnectorCatalog();
 
 export const listConnectorCatalog = catalog.list;
+export const connectorCatalogSections = catalog.sections;
 export const getConnectorCatalogDetail = catalog.detail;

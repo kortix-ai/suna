@@ -487,7 +487,13 @@ export interface ConnectorRouterDeps {
   listDiscoverConnectors?(input: {
     q?: string;
     cursor?: string;
+    /** A browse-section key from `listDiscoverSections`. */
+    category?: string;
+    limit?: number;
   }): Promise<unknown>;
+  /** The Discover browse page: Popular plus a fixed top slice of each
+   *  section, each with the section's true total across the whole catalogue. */
+  listDiscoverSections?(input: { perCategory?: number; maxCategories?: number }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
   getDiscoverConnector?(id: string): Promise<unknown>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
@@ -911,7 +917,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       ...auth,
       request: {
         params: ProjectParam,
-        query: z.object({ q: z.string().optional(), cursor: z.string().optional() }),
+        query: z.object({
+          q: z.string().optional(),
+          cursor: z.string().optional(),
+          /** A browse-section key from `/discover/sections`. */
+          category: z.string().optional(),
+          limit: z.coerce.number().int().positive().max(96).optional(),
+        }),
       },
       responses: {
         200: json(OpaqueSchema, 'Direct connector catalogue page'),
@@ -927,11 +939,60 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         return c.json(featureDisabledBody('connectors_api_discover'), 403);
       }
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
+      const limit = Number(c.req.query('limit'));
       try {
         return c.json(
           await deps.listDiscoverConnectors({
             q: c.req.query('q') || undefined,
             cursor: c.req.query('cursor') || undefined,
+            category: c.req.query('category') || undefined,
+            ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+          }),
+        );
+      } catch (error) {
+        return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
+      }
+    },
+  );
+
+  // ── Admin: the Discover browse page, one request ─────────────────────────
+  // Sections grouped from the complete integrations.sh index, so each heading
+  // states its section's real size instead of how many cards one page held.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/discover/sections',
+      tags: ['connector'],
+      summary: 'Browse the integrations.sh catalogue by category',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({
+          perCategory: z.coerce.number().int().positive().max(24).optional(),
+          maxCategories: z.coerce.number().int().positive().max(40).optional(),
+        }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Direct connector catalogue sections'),
+        ...errors(403, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      // Flag gate AFTER authz: a non-admin still learns nothing.
+      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
+        return c.json(featureDisabledBody('connectors_api_discover'), 403);
+      }
+      if (!deps.listDiscoverSections) return c.json({ error: 'catalogue unavailable' }, 502);
+      const perCategory = Number(c.req.query('perCategory'));
+      const maxCategories = Number(c.req.query('maxCategories'));
+      try {
+        return c.json(
+          await deps.listDiscoverSections({
+            ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
+            ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
           }),
         );
       } catch (error) {

@@ -5,13 +5,10 @@ import { testUiTranslator } from '@/i18n/test-translator';
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
-  catalogSections,
   computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
-  POPULAR_SECTION,
 } from './catalog-entry';
-import { CATEGORY_ROW_CAP } from './connector-categories';
 
 const connector = (over: Partial<DiscoverConnector> = {}): DiscoverConnector =>
   ({
@@ -161,53 +158,5 @@ describe('connected join', () => {
     expect(keys.has('github')).toBe(false);
     expect(keys.has('gmail')).toBe(true);
     expect(keys.has('provider:composio')).toBe(true);
-  });
-});
-
-describe('catalogSections', () => {
-  const ranked = (slug: string, popularity: number, categories: string[]) =>
-    catalogEntryFromDiscover(connector({ id: slug, slug, name: slug, popularity, categories }));
-
-  test('Popular leads, ordered by descending rank and capped', () => {
-    const sections = catalogSections(
-      [ranked('a', 1, ['dev']), ranked('b', 9, ['dev']), ranked('c', 5, ['dev'])],
-      { popularCap: 2 },
-    );
-    expect(sections[0]?.category).toBe(POPULAR_SECTION);
-    expect(sections[0]?.items.map((i) => i.slug)).toEqual(['b', 'c']);
-  });
-
-  // An app is both popular and a developer tool. Removing it from Developer to
-  // avoid repeating it would make that section lie about what it contains.
-  test('a popular entry still appears in its real category', () => {
-    const sections = catalogSections([ranked('b', 9, ['dev'])], { popularCap: 6 });
-    expect(sections.map((s) => s.category)).toEqual([POPULAR_SECTION, 'dev']);
-    expect(sections[1]?.items.map((i) => i.slug)).toEqual(['b']);
-  });
-
-  // Easy Connect ranks nothing, so it must produce no Popular heading at all
-  // rather than an empty one.
-  test('an unranked catalogue gets no Popular section', () => {
-    const sections = catalogSections([catalogEntryFromEasyConnect(app())], { popularCap: 6 });
-    expect(sections.some((s) => s.category === POPULAR_SECTION)).toBe(false);
-  });
-
-  test('an empty catalogue produces no sections', () => {
-    expect(catalogSections([], { popularCap: 6 })).toEqual([]);
-  });
-
-  // `CategorySection` offers "View all" on `items.length > CATEGORY_ROW_CAP`
-  // alone — there is no `category !== POPULAR_SECTION` special case any more,
-  // and this is what makes dropping it safe rather than an oversight. Popular
-  // is synthesised from a per-item rank, not published as a category, so
-  // expanding it would mean expanding a bucket that has no more members to
-  // load. Capping it at exactly the row cap means the button never appears.
-  test('Popular never exceeds the row cap, so it never offers "View all"', () => {
-    const many = Array.from({ length: CATEGORY_ROW_CAP * 3 }, (_, index) =>
-      ranked(`app-${index}`, index, ['dev']),
-    );
-    const sections = catalogSections(many, { popularCap: CATEGORY_ROW_CAP });
-    expect(sections[0]?.category).toBe(POPULAR_SECTION);
-    expect(sections[0]?.items.length).toBe(CATEGORY_ROW_CAP);
   });
 });

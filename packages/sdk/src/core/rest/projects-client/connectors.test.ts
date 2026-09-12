@@ -21,6 +21,7 @@ import {
   listConnectToolkits,
   listConnectors,
   listDiscoverConnectors,
+  listDiscoverSections,
   listPipedreamApps,
   listPipedreamSections,
   listSessionConnectRequests,
@@ -825,6 +826,51 @@ test('listDiscoverConnectors GETs a searchable cursor page', async () => {
   expect(last().url).toContain('q=notion+admin');
   expect(last().url).toContain('cursor=48');
   expect(last().method).toBe('GET');
+});
+
+test('listDiscoverConnectors accepts a query object with a category filter and page size', async () => {
+  nextResponse = { status: 200, body: { items: [], total: 70, hasMore: true, nextCursor: '24' } };
+  const result = await listDiscoverConnectors('P1', {
+    q: 'pay',
+    category: 'finance',
+    cursor: '48',
+    limit: 24,
+  });
+  expect(last().url).toContain('/connectors/projects/P1/discover/connectors?');
+  expect(last().url).toContain('q=pay');
+  expect(last().url).toContain('category=finance');
+  expect(last().url).toContain('cursor=48');
+  expect(last().url).toContain('limit=24');
+  expect(result.total).toBe(70);
+});
+
+test('listDiscoverSections GETs the Discover browse page with true category totals', async () => {
+  const stripe = { id: 'mcp/stripe', slug: 'stripe', name: 'Stripe', categories: ['payments'] };
+  nextResponse = {
+    status: 200,
+    body: {
+      popular: [stripe],
+      sections: [{ key: 'finance', label: 'Finance', total: 116, items: [stripe] }],
+      categories: [{ key: 'finance', label: 'Finance', count: 116 }],
+    },
+  };
+
+  const result = await listDiscoverSections('P1', { perCategory: 6, maxCategories: 12 });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/connectors/projects/P1/discover/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  // `total` is the category's size, not `items.length` — 116 over one card.
+  expect(result.sections[0]?.total).toBe(116);
+  expect(result.popular.map((item) => item.slug)).toEqual(['stripe']);
+  expect(result.categories).toEqual([{ key: 'finance', label: 'Finance', count: 116 }]);
+});
+
+test('listDiscoverSections GETs without a query string when unparameterised', async () => {
+  nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
+  await listDiscoverSections('P1');
+  expect(last().url).toMatch(/\/connectors\/projects\/P1\/discover\/sections$/);
 });
 
 test('getDiscoverConnector GETs detail by encoded catalogue id', async () => {

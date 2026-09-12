@@ -372,6 +372,7 @@ flow(
       'PATCH /v1/projects/:projectId/features',
       'GET /v1/connectors/projects/:projectId/discover/connectors',
       'GET /v1/connectors/projects/:projectId/discover/connectors/detail',
+      'GET /v1/connectors/projects/:projectId/discover/sections',
     ],
   },
   async (ctx) => {
@@ -406,6 +407,61 @@ flow(
         });
       detail.status(200).body().exists('$.item').exists('$.variants');
     });
+    await ctx.step(
+      'browse sections state each section total that its category filter returns',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/discover/sections', {
+            params: { projectId: p.id },
+            query: { perCategory: '6', maxCategories: '12' },
+          });
+        r.status([200, 502]);
+        if (r.statusCode !== 200) return;
+        r.body().exists('$.popular').exists('$.sections').exists('$.categories');
+        const body = r.json<{
+          popular: unknown[];
+          sections: Array<{ key: string; total: number; items: unknown[] }>;
+          categories: Array<{ key: string; count: number }>;
+        }>();
+        if (body.popular.length > 6) {
+          throw new Error(`Popular carried ${body.popular.length} cards over a 6-card slice`);
+        }
+        if (body.sections.length === 0 || body.sections.length > 12) {
+          throw new Error(`expected 1..12 sections, got ${body.sections.length}`);
+        }
+        for (const section of body.sections) {
+          if (section.items.length > 6 || section.total < section.items.length) {
+            throw new Error(
+              `section ${section.key} reports total ${section.total} over ${section.items.length} cards`,
+            );
+          }
+          const facet = body.categories.find((category) => category.key === section.key);
+          if (facet?.count !== section.total) {
+            throw new Error(`category facet for ${section.key} disagrees with its section total`);
+          }
+        }
+        // The regression: headings counted one 48-item page of a ~5500-item
+        // catalogue. The largest section of the complete index is far bigger.
+        const largest = [...body.sections].sort((a, b) => b.total - a.total)[0];
+        if (largest.total <= largest.items.length) {
+          throw new Error(`largest section ${largest.key} reports only ${largest.total}`);
+        }
+        const opened = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/discover/connectors', {
+            params: { projectId: p.id },
+            query: { category: largest.key, limit: '24' },
+          });
+        opened.status(200);
+        const page = opened.json<{ total?: number }>();
+        if (page.total !== largest.total) {
+          throw new Error(
+            `section ${largest.key} heading says ${largest.total}, its category filter returns ${page.total}`,
+          );
+        }
+      },
+    );
     await ctx.step('NONMEMBER cannot browse or resolve catalogue records', async () => {
       const list = await ctx.client
         .as(ctx.P.NONMEMBER)
@@ -413,6 +469,12 @@ flow(
           params: { projectId: p.id },
         });
       list.status(403);
+      const sections = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/connectors/projects/:projectId/discover/sections', {
+          params: { projectId: p.id },
+        });
+      sections.status(403);
       const detail = await ctx.client
         .as(ctx.P.NONMEMBER)
         .get('/v1/connectors/projects/:projectId/discover/connectors/detail', {

@@ -18,6 +18,7 @@ const DB_DEPS_SOURCE = await Bun.file(
 
 const REQUIRED_DEP_KEYS = [
   'listDiscoverConnectors',
+  'listDiscoverSections',
   'getDiscoverConnector',
   'discoverConnectorAuth',
   'listPipedreamApps',
