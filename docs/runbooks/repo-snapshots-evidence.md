@@ -439,6 +439,30 @@ New integration coverage:
 
 Every integration suite cleans up only the ids it created.
 
+### Correction — the consolidation merge rule
+
+The first version of the migration compared `alias.revision` to
+`canonical.revision` and kept the higher one's SHA. That is wrong: `revision`
+counts writes to ONE row, so a stale alias at revision 9 says nothing about a
+current canonical row at revision 3, and the migration would have restored the
+old SHA — while the running application, which always prefers the canonical
+row, said the opposite. The canonical row now simply wins, its `desired_sha`
+and `revision` are left untouched so no in-flight CAS token is invalidated, and
+only the reconcile deadline moves to the earlier of the two.
+
+Two further test defects found with it: the migration's batching loop was
+driven through an adapter that read `rows.length` instead of postgres-js's
+`count`, so a data move larger than one batch would have looked complete after
+the first pass (now covered by a 700-row case); and `scheduleRefReconcile` — a
+different function from `ensureRefReconcileScheduled` — still normalized the
+key instead of resolving the stored spelling, so an alias-only row's deadline
+was never updated.
+
+The migration test now runs against a throwaway database it creates and drops,
+because the migration's SQL is deployment-wide by definition. The one test that
+calls `claimRefsDueForReconcile` asserts nothing else is due before claiming,
+rather than leasing another writer's row.
+
 ### Outstanding
 
 Real HTTP GitHub-App and custom-image startup with Git blocked on both sides,

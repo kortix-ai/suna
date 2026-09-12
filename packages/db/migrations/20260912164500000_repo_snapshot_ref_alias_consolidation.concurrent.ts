@@ -11,11 +11,18 @@
 // cleanup, not a cutover: it is safe before, during and after the rollout, in
 // either order, and safe to run twice.
 //
-// Merge rule where BOTH spellings exist: the higher `revision` is the later
-// observation, so its `desired_sha` wins, and the surviving canonical row takes
-// `greatest(revision) + 1` so no in-flight CAS token can match a generation
-// that no longer describes the row. Where only the alias exists it is renamed
-// in place, which preserves its revision and its reconcile deadline.
+// Merge rule where BOTH spellings exist: the CANONICAL row wins and the alias
+// is dropped. `revision` is a per-row counter, not a clock — it counts how many
+// times THAT row was written, so a stale alias at revision 9 says nothing about
+// a newer canonical row at revision 3, and comparing them would restore an old
+// SHA. This is also exactly what the running application does when it finds
+// both spellings (`storedRefKey`), so the migration cannot disagree with it.
+//
+// The canonical row's `desired_sha` and `revision` are left untouched, so no
+// in-flight observation's CAS token is invalidated by the cleanup. Only the
+// reconcile deadline moves, to the earlier of the two, so a recheck the alias
+// was still owed is not lost. Where only the alias exists it is renamed in
+// place, preserving its revision and its deadline.
 //
 // Chunked and incrementally committed: a plain .sql migration would hold
 // ACCESS EXCLUSIVE for the whole data move (learnings 2026-08-10, "Never
@@ -66,13 +73,9 @@ export const up = async (pgm: MigrationBuilder) => {
       ),
       promoted as (
         update kortix.repo_snapshot_refs canonical
-        set desired_sha = case when alias.revision > canonical.revision
-                               then alias.desired_sha else canonical.desired_sha end,
-            observed_at = greatest(canonical.observed_at, alias.observed_at),
-            reconcile_after = least(
+        set reconcile_after = least(
               coalesce(canonical.reconcile_after, alias.reconcile_after),
               coalesce(alias.reconcile_after, canonical.reconcile_after)),
-            revision = greatest(canonical.revision, alias.revision) + 1,
             updated_at = now()
         from kortix.repo_snapshot_refs alias
         join doomed on doomed.provider = alias.provider

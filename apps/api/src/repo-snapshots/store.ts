@@ -487,7 +487,7 @@ export async function scheduleRefReconcile(
       and(
         eq(repoSnapshotRefs.provider, identity.provider),
         eq(repoSnapshotRefs.repositoryId, identity.repositoryId),
-        eq(repoSnapshotRefs.ref, normalizeRefKey(ref)),
+        eq(repoSnapshotRefs.ref, await storedRefKey(identity, ref)),
       ),
     );
 }

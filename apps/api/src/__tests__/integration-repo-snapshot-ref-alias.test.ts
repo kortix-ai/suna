@@ -158,6 +158,16 @@ describe('a ref row stored under the old full-ref spelling stays usable', () => 
       revision: 2,
       reconcileAfter: new Date(Date.now() - 60_000).toISOString(),
     });
+    // `claimRefsDueForReconcile` is deployment-wide: it leases whatever is due.
+    // Refuse to run it when anything else is due rather than take someone
+    // else's row.
+    const foreignDue = (await db.execute(sql`
+      select count(*)::int as n from kortix.repo_snapshot_refs
+      where reconcile_after <= now() and repository_id <> ${ids.migrationAlias}`)) as unknown as Array<{
+      n: number;
+    }>;
+    expect(foreignDue[0]?.n ?? 0).toBe(0);
+
     const claimed = await claimRefsDueForReconcile(50);
     const mine = claimed.find((row) => row.repositoryId === ids.migrationAlias);
     expect(mine?.ref).toBe('refs/heads/release');
@@ -165,7 +175,67 @@ describe('a ref row stored under the old full-ref spelling stays usable', () => 
 });
 
 describe('the consolidation migration folds old rows into the canonical one', () => {
-  /** The real migration, driven against this database through the three calls it makes. */
+  /**
+   * The migration runs in a database of its own.
+   *
+   * Its SQL is deployment-wide by definition — it consolidates EVERY alias row
+   * in `kortix.repo_snapshot_refs` — so running it against a shared database
+   * would rewrite rows belonging to whoever else is using it. A throwaway
+   * database with the same table gives the real SQL real rows to move and
+   * touches nothing else.
+   */
+  const scratchDb = `kortix_alias_migration_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  let scratch: ReturnType<typeof import('postgres')> | null = null;
+  let scratchReady = false;
+  let scratchReason = '';
+
+  beforeAll(async () => {
+    if (!ready) return;
+    try {
+      const postgres = (await import('postgres')).default;
+      const admin = postgres('postgresql://postgres:postgres@127.0.0.1:13922/postgres', { max: 1 });
+      await admin.unsafe(`create database "${scratchDb}"`);
+      await admin.end();
+      scratch = postgres(`postgresql://postgres:postgres@127.0.0.1:13922/${scratchDb}`, { max: 1 });
+      await scratch.unsafe(`create schema kortix`);
+      await scratch.unsafe(`
+        create table kortix.repo_snapshot_refs (
+          provider text not null,
+          repository_id text not null,
+          owner text not null,
+          repo text not null,
+          ref text not null,
+          desired_sha text,
+          revision bigint not null default 0,
+          observed_at timestamptz not null default now(),
+          observed_via text not null,
+          reconcile_after timestamptz,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now(),
+          primary key (provider, repository_id, ref)
+        )`);
+      scratchReady = true;
+    } catch (error) {
+      scratchReason = error instanceof Error ? error.message : String(error);
+    }
+  });
+
+  afterAll(async () => {
+    await scratch?.end().catch(() => {});
+    if (!scratchReady) return;
+    const postgres = (await import('postgres')).default;
+    const admin = postgres('postgresql://postgres:postgres@127.0.0.1:13922/postgres', { max: 1 });
+    await admin.unsafe(`drop database if exists "${scratchDb}" with (force)`).catch(() => {});
+    await admin.end();
+  });
+
+  function scratchGuard(): boolean {
+    if (!guard()) return false;
+    if (scratchReady) return true;
+    throw new Error(`migration scratch database unavailable — ${scratchReason}`);
+  }
+
+  /** The real migration, driven through exactly the three calls it makes. */
   async function runMigration(): Promise<void> {
     const { up } = await import(
       '../../../../packages/db/migrations/20260912164500000_repo_snapshot_ref_alias_consolidation.concurrent'
@@ -173,20 +243,51 @@ describe('the consolidation migration folds old rows into the canonical one', ()
     await up({
       noTransaction: () => {},
       sql: async (text: string) => {
-        await db.execute(sql.raw(text));
+        await (scratch as NonNullable<typeof scratch>).unsafe(text);
       },
       db: {
         query: async (text: string) => {
-          const rows = (await db.execute(sql.raw(text))) as unknown as unknown[];
-          return { rowCount: Array.isArray(rows) ? rows.length : 0, rows };
+          const result = await (scratch as NonNullable<typeof scratch>).unsafe(text);
+          // postgres-js reports an UPDATE/DELETE's affected rows in `count`;
+          // `length` is 0 without RETURNING, which would end the batching loop
+          // after one pass and silently leave everything past it behind.
+          return { rowCount: result.count ?? 0 };
         },
       },
     } as never);
   }
 
+  async function scratchRows(repositoryId: string) {
+    return (await (scratch as NonNullable<typeof scratch>).unsafe(
+      `select ref, desired_sha, revision from kortix.repo_snapshot_refs
+       where repository_id = '${repositoryId}' order by ref`,
+    )) as unknown as Array<{ ref: string; desired_sha: string | null; revision: string }>;
+  }
+
+  async function seedScratch(input: {
+    repositoryId: string;
+    ref: string;
+    desiredSha: string | null;
+    revision: number;
+    reconcileAfter?: string | null;
+  }): Promise<void> {
+    await (scratch as NonNullable<typeof scratch>).unsafe(
+      `insert into kortix.repo_snapshot_refs
+        (provider, repository_id, owner, repo, ref, desired_sha, revision, observed_via, reconcile_after)
+       values ('github', $1, 'kortix-ai', 'alias-fixture', $2, $3, $4, 'webhook', $5)`,
+      [
+        input.repositoryId,
+        input.ref,
+        input.desiredSha,
+        String(input.revision),
+        input.reconcileAfter ?? null,
+      ] as never,
+    );
+  }
+
   test('an alias-only row is renamed in place, keeping its revision', async () => {
-    if (!guard()) return;
-    await insertRaw({
+    if (!scratchGuard()) return;
+    await seedScratch({
       repositoryId: ids.migrationBoth,
       ref: 'refs/heads/feature',
       desiredSha: shaOld,
@@ -194,36 +295,94 @@ describe('the consolidation migration folds old rows into the canonical one', ()
     });
     await runMigration();
 
-    const rows = await rowsFor(ids.migrationBoth);
+    const rows = await scratchRows(ids.migrationBoth);
     expect(rows.map((r) => r.ref)).toEqual(['feature']);
     expect(rows[0]?.desired_sha).toBe(shaOld);
     expect(Number(rows[0]?.revision)).toBe(4);
   });
 
-  test('a duplicated branch keeps the later observation and one row', async () => {
-    if (!guard()) return;
-    await db.execute(sql`delete from kortix.repo_snapshot_refs where repository_id = ${ids.migrationBoth}`);
-    await insertRaw({ repositoryId: ids.migrationBoth, ref: 'main', desiredSha: shaOld, revision: 3 });
-    await insertRaw({
+  test('the canonical row wins a duplicate, whatever the counters say', async () => {
+    if (!scratchGuard()) return;
+    await (scratch as NonNullable<typeof scratch>).unsafe(
+      `delete from kortix.repo_snapshot_refs where repository_id = '${ids.migrationBoth}'`,
+    );
+    // The alias has the HIGHER counter and the OLDER SHA. `revision` counts
+    // writes to one row; it does not order two rows, so trusting it here would
+    // restore a stale revision over a current one.
+    await seedScratch({ repositoryId: ids.migrationBoth, ref: 'main', desiredSha: shaNew, revision: 3 });
+    await seedScratch({
       repositoryId: ids.migrationBoth,
       ref: 'refs/heads/main',
-      desiredSha: shaNew,
+      desiredSha: shaOld,
       revision: 9,
     });
     await runMigration();
 
-    const rows = await rowsFor(ids.migrationBoth);
+    const rows = await scratchRows(ids.migrationBoth);
     expect(rows.map((r) => r.ref)).toEqual(['main']);
-    // The alias held the later observation, so its SHA survives …
     expect(rows[0]?.desired_sha).toBe(shaNew);
-    // … and the revision moves past both, so no in-flight CAS token matches.
-    expect(Number(rows[0]?.revision)).toBe(10);
+    // Untouched, so no in-flight observation's CAS token is invalidated.
+    expect(Number(rows[0]?.revision)).toBe(3);
+  });
+
+  test('a deadline the alias was still owed is not lost', async () => {
+    if (!scratchGuard()) return;
+    const soon = new Date(Date.now() + 60_000).toISOString();
+    const later = new Date(Date.now() + 3_600_000).toISOString();
+    await (scratch as NonNullable<typeof scratch>).unsafe(
+      `delete from kortix.repo_snapshot_refs where repository_id = '${ids.aliasOnly}'`,
+    );
+    await seedScratch({
+      repositoryId: ids.aliasOnly,
+      ref: 'main',
+      desiredSha: shaNew,
+      revision: 2,
+      reconcileAfter: later,
+    });
+    await seedScratch({
+      repositoryId: ids.aliasOnly,
+      ref: 'refs/heads/main',
+      desiredSha: shaOld,
+      revision: 1,
+      reconcileAfter: soon,
+    });
+    await runMigration();
+
+    const due = (await (scratch as NonNullable<typeof scratch>).unsafe(
+      `select reconcile_after from kortix.repo_snapshot_refs where repository_id = '${ids.aliasOnly}'`,
+    )) as unknown as Array<{ reconcile_after: Date }>;
+    expect(due).toHaveLength(1);
+    expect(new Date(due[0]?.reconcile_after as Date).getTime()).toBeLessThan(Date.parse(later));
+  });
+
+  test('more rows than one batch are all consolidated', async () => {
+    if (!scratchGuard()) return;
+    const bulk = String(919000000 + Math.floor(Math.random() * 900000));
+    await (scratch as NonNullable<typeof scratch>).unsafe(`
+      insert into kortix.repo_snapshot_refs
+        (provider, repository_id, owner, repo, ref, desired_sha, revision, observed_via)
+      select 'github', '${bulk}', 'kortix-ai', 'alias-fixture',
+             'refs/heads/branch-' || g, '${shaOld}', 1, 'webhook'
+      from generate_series(1, 700) g`);
+    // 700 alias-only rows against a batch of 500: a loop that stops after the
+    // first pass leaves 200 behind.
+    await runMigration();
+
+    const left = (await (scratch as NonNullable<typeof scratch>).unsafe(
+      `select count(*)::int as n from kortix.repo_snapshot_refs
+       where repository_id = '${bulk}' and ref like 'refs/heads/%'`,
+    )) as unknown as Array<{ n: number }>;
+    expect(left[0]?.n).toBe(0);
+    const renamed = (await (scratch as NonNullable<typeof scratch>).unsafe(
+      `select count(*)::int as n from kortix.repo_snapshot_refs where repository_id = '${bulk}'`,
+    )) as unknown as Array<{ n: number }>;
+    expect(renamed[0]?.n).toBe(700);
   });
 
   test('running it again changes nothing', async () => {
-    if (!guard()) return;
-    const before = await rowsFor(ids.migrationBoth);
+    if (!scratchGuard()) return;
+    const before = await scratchRows(ids.migrationBoth);
     await runMigration();
-    expect(await rowsFor(ids.migrationBoth)).toEqual(before);
+    expect(await scratchRows(ids.migrationBoth)).toEqual(before);
   });
 });
