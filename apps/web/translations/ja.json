@@ -970,10 +970,6 @@
           "name": "LLM ゲートウェイ",
           "description": "管理モデル、計測、予算のために、Kortix の管理対象 LLM ゲートウェイ経由でこのプロジェクトを処理します。"
         },
-        "review_center": {
-          "name": "レビューセンター",
-          "description": "変更リクエスト、承認、エージェント出力を Web または Slack の1つの受信箱で確認します。"
-        },
         "meta_agent": {
           "name": "メタエージェント",
           "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
@@ -1252,8 +1248,6 @@
     "metaCoordinator": "Meta コーディネーター",
     "files": "ファイル",
     "retry": "もう一度",
-    "proposedChanges": "提案された変更",
-    "untitledChange": "無題の変更",
     "review": "確認",
     "connectGpt": "GPT サブスクリプションを接続",
     "upgradePlan": "プランをアップグレード",

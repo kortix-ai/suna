@@ -970,10 +970,6 @@
           "name": "LLM-Gateway",
           "description": "Leiten Sie dieses Projekt über das verwaltete Kortix-LLM-Gateway für Modelle, Messung und Budgets."
         },
-        "review_center": {
-          "name": "Prüfzentrale",
-          "description": "Prüfen Sie Änderungsanfragen, Freigaben und Agentenausgaben in einem Posteingang im Web oder in Slack."
-        },
         "meta_agent": {
           "name": "Meta-Agent",
           "description": "Fügen Sie einen Koordinator hinzu, der spezialisierte Sitzungen und mehrstufige Arbeiten im Projekt verwaltet."
@@ -1252,8 +1248,6 @@
     "metaCoordinator": "Meta-Koordinator",
     "files": "Dateien",
     "retry": "Nochmal versuchen",
-    "proposedChanges": "Vorgeschlagene Änderungen",
-    "untitledChange": "Unbenannte Änderung",
     "review": "Prüfen",
     "connectGpt": "GPT-Abonnement verbinden",
     "upgradePlan": "Tarif upgraden",

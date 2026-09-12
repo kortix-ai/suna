@@ -225,6 +225,11 @@ async function main() {
     const repaired = await repairMigrationLedger({
       databaseUrl,
       migrationsDir: runtimeMigrations.path,
+      applyAttachmentPrerequisite: async (name) => {
+        // Only the checksum-guarded attachment rename can request these two
+        // exact prerequisites. The final pending run retains strict ordering.
+        await runner({ ...base, direction: 'up', count: 1, checkOrder: false, file: name });
+      },
       applyConnectorMigration: async () => {
         await runner({
           ...base,

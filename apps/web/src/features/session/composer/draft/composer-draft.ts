@@ -119,7 +119,7 @@ export function serializeDraft(input: {
     let attachment: PromptAttachment | undefined;
     if (file.kind === 'staged') {
       attachment = attachmentsById.get(file.attachment.attachment_id);
-    } else {
+    } else if (file.uploadId) {
       attachment = attachmentsByUploadId.get(file.uploadId);
     }
     if (attachment) {

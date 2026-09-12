@@ -111,6 +111,9 @@ suite('migration ledger rename repair', () => {
       count: Number.POSITIVE_INFINITY,
       checkOrder: true,
       dryRun: true,
+      // Validate the complete applied prefix, but do not invoke unrelated
+      // future TS migrations against this deliberately minimal July fixture.
+      file: migrationLedgerRepairConnectorName,
     });
     const pendingNames = pending.map((migration) => migration.name);
     expect(pendingNames).not.toContain(migrationLedgerRepairConnectorName);

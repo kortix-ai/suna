@@ -970,10 +970,6 @@
           "name": "LLM 网关",
           "description": "通过 Kortix 托管 LLM 网关路由此项目，以使用托管模型、计量和预算。"
         },
-        "review_center": {
-          "name": "审查中心",
-          "description": "在网页或 Slack 的统一收件箱中审查变更请求、批准和智能体输出。"
-        },
         "meta_agent": {
           "name": "元智能体",
           "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
@@ -1252,8 +1248,6 @@
     "metaCoordinator": "Meta 协调器",
     "files": "文件",
     "retry": "重试",
-    "proposedChanges": "建议的更改",
-    "untitledChange": "未命名更改",
     "review": "审阅",
     "connectGpt": "连接 GPT 订阅",
     "upgradePlan": "升级方案",

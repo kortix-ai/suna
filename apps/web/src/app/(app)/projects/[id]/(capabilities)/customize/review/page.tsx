@@ -13,9 +13,9 @@ import { ReviewView } from '@/features/workspace/customize/sections/view/review-
  * It was the `review` section of `/projects/[id]/config` until that page was
  * retired the same day; every other section of it moved into the Settings
  * overlay's Workspace group, and this one — an inbox, not configuration —
- * moved up onto the bar instead. Flag-gated on `review_center` exactly as the
- * section was: the tab bar hides the tab (`visibleCapabilityTabs`) and the
- * view itself gates acting on `project.review.act`.
+ * moved up onto the bar instead. No feature flag gates it: the tab bar shows
+ * the tab to anyone holding `project.review.read` (`visibleCapabilityTabs`) and
+ * the view itself gates acting on `project.review.act`.
  */
 export default function ProjectReviewPage() {
   const { id: projectId } = useParams<{ id: string }>();

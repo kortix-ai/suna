@@ -41,7 +41,9 @@ describe("ke2e local profile", () => {
       pollMs: 1,
       request: async (url, init) => {
         seen.push({ url: String(url), init });
-        return responses.shift()!;
+        const response = responses.shift();
+        if (!response) throw new Error('Unexpected readiness request');
+        return response;
       },
     });
     expect(seen).toHaveLength(3);

@@ -1296,6 +1296,9 @@ importers:
       '@types/react-dom':
         specifier: 19.2.3
         version: 19.2.3(@types/react@19.2.18)
+      '@types/react-test-renderer':
+        specifier: ^19.1.0
+        version: 19.1.0
       '@types/turndown':
         specifier: ^5.0.5
         version: 5.0.6
@@ -1317,6 +1320,9 @@ importers:
       prettier-plugin-tailwindcss:
         specifier: ^0.6.14
         version: 0.6.14(prettier-plugin-organize-imports@4.3.0)(prettier@3.9.4)
+      react-test-renderer:
+        specifier: ^19.2.0
+        version: 19.2.8(react@19.2.8)
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1

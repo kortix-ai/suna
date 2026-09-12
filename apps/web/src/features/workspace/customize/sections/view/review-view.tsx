@@ -8,8 +8,8 @@ import { useProjectName } from '@kortix/sdk/react';
 
 /**
  * Review Center customize section — the per-project human-in-the-loop inbox wired
- * to live data. Gated behind the `review_center` experimental flag (see
- * the legacy panel + project-actions.ts). Mirrors changes-view.tsx.
+ * to live data. On for every project; acting is gated on `project.review.act`
+ * (see project-actions.ts). Mirrors changes-view.tsx.
  */
 export function ReviewView({ projectId }: { projectId: string }) {
   // One source for the project name — see `useProjectName`'s doc comment.

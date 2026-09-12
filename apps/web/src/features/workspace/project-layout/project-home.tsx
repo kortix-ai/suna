@@ -149,6 +149,19 @@ export function ProjectHome({
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
+  // These callers do not await the composer submission path. The session hook
+  // owns the visible error; restore their text here so the user can retry.
+  const sendOutsideComposer = useCallback(
+    async (text: string, options: ComposerOptions) => {
+      try {
+        await handleSend(text, undefined, options);
+      } catch {
+        setPrefill((previous) => ({ text, id: (previous?.id ?? Date.now()) + 1 }));
+      }
+    },
+    [handleSend],
+  );
+
   useEffect(() => {
     if (!pendingPrefill) return;
     consumePrefill(projectId);
@@ -159,17 +172,17 @@ export function ProjectHome({
     // the command palette) omits the flag and keeps the old prefill-only
     // behavior below.
     if (pendingPrefill.autoSend) {
-      handleSend(pendingPrefill.text, undefined, {});
+      void sendOutsideComposer(pendingPrefill.text, {});
       return;
     }
     setPrefill({ text: pendingPrefill.text, id: Date.now() });
-  }, [pendingPrefill, projectId, consumePrefill, handleSend]);
+  }, [pendingPrefill, projectId, consumePrefill, sendOutsideComposer]);
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
-      handleSend(`/${cmd.name}${args ? ` ${args}` : ''}`, undefined, options);
+      void sendOutsideComposer(`/${cmd.name}${args ? ` ${args}` : ''}`, options);
     },
-    [handleSend],
+    [sendOutsideComposer],
   );
 
   const applySuggestion = (s: string) => {

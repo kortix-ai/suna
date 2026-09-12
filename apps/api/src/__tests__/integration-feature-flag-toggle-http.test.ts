@@ -112,16 +112,16 @@ describe('PATCH /v1/projects/:projectId/features', () => {
   test('the /experimental alias behaves identically', async () => {
     const viaAlias = await patch(
       `/v1/projects/${PROJECT}/experimental`,
-      JSON.stringify({ feature: 'review_center', enabled: true }),
+      JSON.stringify({ feature: 'apps', enabled: true }),
     );
     expect(viaAlias.status).toBe(200);
     const aliasBody = await viaAlias.json();
-    expect(aliasBody.experimental.review_center).toBe(true);
-    expect(await storedOverrides(PROJECT)).toEqual({ review_center: true });
+    expect(aliasBody.experimental.apps).toBe(true);
+    expect(await storedOverrides(PROJECT)).toEqual({ apps: true });
 
     const viaCanonical = await patch(
       `/v1/projects/${PROJECT}/features`,
-      JSON.stringify({ feature: 'review_center', enabled: true }),
+      JSON.stringify({ feature: 'apps', enabled: true }),
     );
     expect(viaCanonical.status).toBe(200);
     const canonicalBody = await viaCanonical.json();
@@ -130,7 +130,7 @@ describe('PATCH /v1/projects/:projectId/features', () => {
 
     await patch(
       `/v1/projects/${PROJECT}/features`,
-      JSON.stringify({ feature: 'review_center', enabled: null }),
+      JSON.stringify({ feature: 'apps', enabled: null }),
     );
   });
 

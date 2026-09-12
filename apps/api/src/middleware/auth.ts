@@ -829,6 +829,35 @@ function extractPreviewSandboxId(path: string): string | null {
 }
 
 /**
+ * Write-only platform sinks whose ONLY caller is the in-guest sandbox daemon
+ * reporting on its OWN session. Every one of them is reached with the
+ * session-scoped `KORTIX_TOKEN`, which is an `isAccountToken` PAT — so it lands
+ * in the PAT branch of `resolveSupabaseAuth` and is judged by
+ * `enforceTokenProjectScope`, NOT by the legacy `sandboxTokenPathAllowed`
+ * allowlist above (that one only covers `kortix_`/`kortix_sb_` API keys, which
+ * nothing has minted for a sandbox since the unified-credential cutover).
+ *
+ * A sink that is missing here is not "secure" — it is UNREACHABLE, answering
+ * 403 to a fire-and-forget push that nobody sees fail. That is exactly what
+ * happened twice:
+ *   - `/v1/platform/runtime-projection`, observed live 2026-08-27.
+ *   - `/v1/platform/boot-timeline`, observed live in prod for the 7 days to
+ *     2026-09-09: 2,338 x `POST /v1/platform/boot-timeline -> 403
+ *     [HTTPException]`, 1,414 of them in the last two days against just 47
+ *     successes (97% denied). Prod minted 583 session-scoped PATs and ZERO
+ *     sandbox API keys in that window, so effectively every boot was denied and
+ *     no in-guest boot timeline was recorded.
+ *
+ * ADD A SINK HERE when you add a route whose caller is the daemon holding
+ * `KORTIX_TOKEN`. `__tests__/unit-boot-timeline-auth-mount.test.ts` pins the
+ * membership of this set for the same reason it pins the middleware mount.
+ */
+const SESSION_BOUND_PLATFORM_SINKS = new Set([
+  '/v1/platform/runtime-projection',
+  '/v1/platform/boot-timeline',
+]);
+
+/**
  * A project-scoped CLI PAT can only act on its bound project. Reject
  * the request if:
  *   - the URL targets a `:projectId` parameter that doesn't match, OR
@@ -848,16 +877,16 @@ async function enforceTokenProjectScope(
 ): Promise<void> {
   const path = c.req.path;
 
-  // `/v1/platform/runtime-projection` — the sandbox daemon pushing its OWN
-  // runtime projection. A session sandbox holds exactly ONE credential — a
-  // project+SESSION-scoped PAT ("One sandbox, one session-scoped Kortix
-  // credential", platform/services/session-sandbox.ts) — so without this
-  // branch the daemon's push can never reach the sink on any environment.
-  // Allowed ONLY for a session-BOUND token; an ordinary project PAT stays
-  // denied. The handler re-verifies the binding against `session_sandboxes`
-  // (sandbox id ∧ session ∧ account ∧ live) via isSessionSandboxCredential,
-  // so this gate is authentication, not the authorization boundary.
-  if (opts.sessionBound && path === '/v1/platform/runtime-projection') return;
+  // Daemon-only platform sinks (SESSION_BOUND_PLATFORM_SINKS). A session
+  // sandbox holds exactly ONE credential — a project+SESSION-scoped PAT ("One
+  // sandbox, one session-scoped Kortix credential",
+  // platform/services/session-sandbox.ts) — so without this branch the daemon's
+  // push can never reach the sink on any environment. Allowed ONLY for a
+  // session-BOUND token; an ordinary project PAT stays denied. Each handler
+  // re-verifies the binding against `session_sandboxes` (sandbox id ∧ session ∧
+  // account ∧ live) via isSessionSandboxCredential, so this gate is
+  // authentication, not the authorization boundary.
+  if (opts.sessionBound && SESSION_BOUND_PLATFORM_SINKS.has(path)) return;
 
   // Whitelist a couple of self-identity probes the CLI hits even for
   // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm
@@ -890,11 +919,26 @@ async function enforceTokenProjectScope(
   // not authorization.
   if (path.startsWith('/v1/runtime-assets/')) return;
 
+  const deny = (check: string, reason: string): never => {
+    // NAME the principal and the check in the message. The global `app.onError`
+    // logs `${method} ${path} -> ${status} [HTTPException] ${message}`, so a
+    // bare reason string made every one of these denials indistinguishable in
+    // Better Stack — 2,338 identical `POST /v1/platform/boot-timeline -> 403
+    // [HTTPException]` lines over 7 days named neither the credential that was
+    // rejected nor the branch that rejected it, which is why the boot-timeline
+    // gate defect above went unnoticed for weeks.
+    throw new HTTPException(403, {
+      message:
+        `${reason} ` +
+        `[check=token-project-scope:${check} ` +
+        `principal=${opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat'} ` +
+        `project=${tokenProjectId} path=${path}]`,
+    });
+  };
+
   // Reject other account-level routes outright.
   if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {
-    throw new HTTPException(403, {
-      message: 'Project-scoped token cannot call account-level routes',
-    });
+    deny('account-level-route', 'Project-scoped token cannot call account-level routes');
   }
 
   // `/v1/projects/:projectId/...` AND `/v1/connectors/projects/:projectId/...` —
@@ -908,9 +952,7 @@ async function enforceTokenProjectScope(
   if (m) {
     const urlProjectId = m[1];
     if (urlProjectId !== tokenProjectId) {
-      throw new HTTPException(403, {
-        message: 'Project-scoped token cannot access a different project',
-      });
+      deny('cross-project', 'Project-scoped token cannot access a different project');
     }
     return;
   }
@@ -918,9 +960,7 @@ async function enforceTokenProjectScope(
   // Bare `/v1/projects` (list) is also account-scoped: a project-bound
   // token shouldn't enumerate other projects.
   if (path === '/v1/projects') {
-    throw new HTTPException(403, {
-      message: 'Project-scoped token cannot list projects',
-    });
+    deny('project-list', 'Project-scoped token cannot list projects');
   }
 
   // Sandbox-proxy path — this is what session.send()/stream() and other
@@ -937,14 +977,13 @@ async function enforceTokenProjectScope(
     if (sandboxProjectId && sandboxProjectId === tokenProjectId) {
       return;
     }
-    throw new HTTPException(403, {
-      message: 'Project-scoped token cannot access a sandbox outside its project',
-    });
+    deny(
+      'foreign-sandbox',
+      'Project-scoped token cannot access a sandbox outside its project',
+    );
   }
 
   // All other surfaces (router, billing, channels, etc.) are
   // account-level — refuse.
-  throw new HTTPException(403, {
-    message: 'Project-scoped token cannot call this surface',
-  });
+  deny('default-deny', 'Project-scoped token cannot call this surface');
 }

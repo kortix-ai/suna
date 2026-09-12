@@ -588,7 +588,8 @@ describe('full self-host Docker distribution', () => {
       services: Record<string, { mem_limit?: string }>;
     };
     const limit = document.services.frontend?.mem_limit ?? '0m';
-    const limitMb = Number(limit.replace(/m$/, ''));
+    const defaultLimit = limit.match(/:-([0-9]+m)}$/)?.[1] ?? limit;
+    const limitMb = Number(defaultLimit.replace(/m$/, ''));
 
     expect(limitMb).toBeGreaterThanOrEqual(1024);
   });

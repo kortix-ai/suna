@@ -163,11 +163,15 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             // duplex:'half' is required by Bun/undici when a request carries a
             // streaming body; valid at runtime even where the RequestInit type
             // omits it, so build + cast rather than inline.
-            const init: RequestInit & { duplex?: 'half'; timeout?: false } = {
+            const init: RequestInit & { duplex?: 'half'; timeout?: false; decompress?: false } = {
               method: req.method,
               headers,
               body,
               redirect: 'manual',
+              // Forward wire bytes with their original encoding and length.
+              // Bun otherwise decodes the body but retains compressed headers,
+              // so downstream clients try to decompress the decoded stream.
+              decompress: false,
               // Bun's fetch has a default 300 s IDLE timeout (measured on
               // 1.3.14: `TimeoutError: The operation timed out.` at 300.0 s;
               // a `signal` does not disable it, `timeout: false` does). The

@@ -10,8 +10,8 @@ type SwitchProps = Omit<ComponentProps<typeof SwitchPrimitive.Root>, 'asChild'> 
   label?: string;
 };
 
+// Track is `w-[34px] h-[20px]` in the className — keep it in sync with these.
 const TRACK_WIDTH = 34;
-const TRACK_HEIGHT = 20;
 const THUMB_SIZE = 16;
 const THUMB_OFFSET = 2;
 const THUMB_TRAVEL = TRACK_WIDTH - THUMB_SIZE - THUMB_OFFSET * 2;
@@ -133,22 +133,17 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         disabled={disabled}
         tabIndex={0}
         className={cn(
-          'relative shrink-0 cursor-pointer touch-none rounded-full outline-none',
+          'group/switch relative h-[20px] w-[34px] shrink-0 cursor-pointer touch-none rounded-full outline-none',
           'transition-colors duration-80',
           'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-1 focus-visible:ring-offset-2',
+          // Colours come from Radix's `data-state`, never from JS state.
+          // Off is translucent ink, so one class reads in both themes and on
+          // any panel. Thumb vs track (WCAG 1.4.11, 3:1), worst of page /
+          // card / muted: rest 3.13:1, hover 4.13:1. On: white thumb 3.23:1.
+          'data-[state=checked]:bg-kortix-blue',
+          'data-[state=unchecked]:bg-foreground/10 data-[state=unchecked]:hover:bg-foreground/15',
           !label && className,
         )}
-        style={{
-          width: TRACK_WIDTH,
-          height: TRACK_HEIGHT,
-          backgroundColor: isChecked
-            ? hovered
-              ? 'var(--kortix-blue)'
-              : 'var(--kortix-blue)'
-            : hovered
-              ? 'color-mix(in oklab, var(--accent), rgb(var(--overlay)) 10%)'
-              : 'var(--accent)',
-        }}
         onPointerEnter={(e) => {
           if (e.pointerType === 'mouse') setHovered(true);
         }}
@@ -164,8 +159,14 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
       >
         <SwitchPrimitive.Thumb asChild>
           <m.span
-            className="absolute top-0 left-0 block rounded-full bg-white shadow-sm"
+            className={cn(
+              'duration-fast absolute top-0 left-0 rounded-full shadow-sm transition-colors',
+              'data-[state=checked]:bg-white',
+              // A white thumb on the light off track would be ~1.25:1.
+              'data-[state=unchecked]:bg-foreground/45 group-hover/switch:data-[state=unchecked]:bg-foreground/55',
+            )}
             initial={false}
+            // Motion value binding for drag, not a colour or layout style.
             style={{ x: motionX }}
             animate={{
               y: thumbY,

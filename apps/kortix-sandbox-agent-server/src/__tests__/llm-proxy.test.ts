@@ -2,6 +2,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { readFileSync, writeFileSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { brotliCompressSync, deflateSync } from 'node:zlib'
 import {
   startLlmProxy,
   setLlmProxyToken,
@@ -121,7 +122,8 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
-    const cfg = JSON.parse(json!)
+    if (!json) throw new Error('Expected OpenCode config')
+    const cfg = JSON.parse(json)
 
     // gateway provider points at the proxy with a placeholder — NO real key baked
     expect(cfg.provider.kortix.options.baseURL).toBe('http://127.0.0.1:4319')
@@ -146,7 +148,8 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
-    const cfg = JSON.parse(json!)
+    if (!json) throw new Error('Expected OpenCode config')
+    const cfg = JSON.parse(json)
 
     expect(cfg.mcp['kortix-connectors'].command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
     expect(cfg.mcp['kortix-connectors'].environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
@@ -162,7 +165,8 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
-    const cfg = JSON.parse(json!)
+    if (!json) throw new Error('Expected OpenCode config')
+    const cfg = JSON.parse(json)
     expect(cfg.provider.kortix.options.baseURL).toBe('https://gateway.kortix.test/v1/llm')
     expect(cfg.provider.kortix.options.apiKey).toBe('real-session-token')
     expect(cfg.mcp).toBeUndefined()
@@ -269,7 +273,8 @@ describe('in-sandbox inline image window (Essentia 2026-08-25: >128 MiB vision b
         body: JSON.stringify({ model: 'x', messages }),
       })
       expect(res.status).toBe(200)
-      const seen = up.seen()!
+      const seen = up.seen()
+      if (!seen) throw new Error('Expected upstream request')
       expect(seen.images).toBe(12) // DEFAULT_IMAGE_WINDOW.keepOnOverflow
       expect(seen.auth).toBe('Bearer real-token')
       expect(Number(seen.contentLength)).toBe(seen.bytes)
@@ -290,7 +295,7 @@ describe('in-sandbox inline image window (Essentia 2026-08-25: >128 MiB vision b
         body: JSON.stringify({ model: 'x', messages }),
       })
       expect(res.status).toBe(200)
-      expect(up.seen()!.images).toBe(2)
+      expect(up.seen()?.images).toBe(2)
     } finally {
       up.stop()
     }
@@ -307,9 +312,102 @@ describe('in-sandbox inline image window (Essentia 2026-08-25: >128 MiB vision b
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ model: 'x', messages }),
       })
-      expect(up.seen()!.images).toBe(25)
+      expect(up.seen()?.images).toBe(25)
     } finally {
       up.stop()
     }
   })
+})
+
+describe('credential proxy response wire encoding', () => {
+  afterEach(() => { stopLlmProxy(); stopConnectorProxy() })
+  const payload = JSON.stringify({ error: { message: 'upstream model rejected input '.repeat(80) } })
+  const encoders = {
+    zstd: (value: string) => Bun.zstdCompressSync(value),
+    gzip: (value: string) => Bun.gzipSync(value),
+    br: (value: string) => brotliCompressSync(value),
+    deflate: (value: string) => deflateSync(value),
+    identity: (value: string) => Buffer.from(value),
+  }
+  for (const [encoding, encode] of Object.entries(encoders)) {
+    test(`${encoding} keeps raw bytes and headers paired and decodes exactly once`, async () => {
+      const bytes = encode(payload)
+      const seen: Array<{ method: string; path: string; auth: string | null; body: string }> = []
+      const upstream = Bun.serve({ port: 0, async fetch(req) {
+        seen.push({ method: req.method, path: new URL(req.url).pathname, auth: req.headers.get('authorization'), body: await req.text() })
+        return new Response(bytes, { status: 400, statusText: 'Model rejected', headers: {
+          'content-type': 'application/json', 'content-length': String(bytes.byteLength),
+          ...(encoding === 'identity' ? {} : { 'content-encoding': encoding }),
+        } })
+      } })
+      try {
+        const base = startLlmProxy(0, `http://127.0.0.1:${upstream.port}`, 'token-A')
+        const init = { method: 'POST', body: 'request body', headers: { authorization: 'Bearer placeholder' } }
+        const raw = await fetch(`${base}/chat/completions`, { ...init, decompress: false })
+        expect(raw.status).toBe(400)
+        expect(raw.statusText).toBe('Bad Request')
+        expect(raw.headers.get('content-encoding')).toBe(encoding === 'identity' ? null : encoding)
+        expect(raw.headers.get('content-length')).toBe(String(bytes.byteLength))
+        expect(Buffer.from(await raw.arrayBuffer())).toEqual(Buffer.from(bytes))
+        setLlmProxyToken('token-B')
+        const decoded = await fetch(`${base}/chat/completions`, init)
+        expect(decoded.status).toBe(400)
+        expect(await decoded.text()).toBe(payload)
+        expect(seen).toEqual([
+          { method: 'POST', path: '/chat/completions', auth: 'Bearer token-A', body: 'request body' },
+          { method: 'POST', path: '/chat/completions', auth: 'Bearer token-B', body: 'request body' },
+        ])
+      } finally { upstream.stop(true) }
+    })
+  }
+
+  for (const compressed of [false, true]) {
+    test(`${compressed ? 'gzip' : 'plain'} SSE delivers the first event before upstream completion`, async () => {
+      const first = 'data: first\n\n'
+      const last = 'data: [DONE]\n\n'
+      const encode = (text: string) => compressed ? Bun.gzipSync(text) : Buffer.from(text)
+      let finish!: () => void
+      let ended = false
+      let completeImmediately = false
+      const upstream = Bun.serve({ port: 0, fetch(req) {
+        expect(req.headers.get('authorization')).toBe('Bearer stream-token')
+        return new Response(new ReadableStream({ start(controller) {
+          if (completeImmediately) {
+            controller.enqueue(encode(first + last))
+            controller.close()
+            return
+          }
+          controller.enqueue(encode(first))
+          finish = () => { ended = true; controller.enqueue(encode(last)); controller.close() }
+        } }), { headers: { 'content-type': 'text/event-stream', ...(compressed ? { 'content-encoding': 'gzip' } : {}) } })
+      } })
+      try {
+        const base = startConnectorProxy(0, `http://127.0.0.1:${upstream.port}`, 'stream-token')
+        // Observe the wire stream independently of Bun's client decompressor,
+        // which can buffer tiny gzip events. Both gzip members remain intact.
+        const response = await fetch(`${base}/events`, { decompress: false, signal: AbortSignal.timeout(2000) })
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('text/event-stream')
+        if (!response.body) throw new Error('Expected SSE body')
+        const reader = response.body.getReader()
+        const initial = await reader.read()
+        if (!initial.value) throw new Error('Expected first SSE chunk')
+        expect(Buffer.from(initial.value)).toEqual(Buffer.from(encode(first)))
+        expect(new TextDecoder().decode(compressed ? Bun.gunzipSync(initial.value) : initial.value)).toBe(first)
+        expect(ended).toBe(false)
+        finish()
+        const tail: Uint8Array[] = []
+        for (;;) {
+          const result = await reader.read()
+          if (result.done) break
+          tail.push(result.value)
+        }
+        expect(Buffer.concat(tail)).toEqual(Buffer.from(encode(last)))
+        expect(new TextDecoder().decode(compressed ? Bun.gunzipSync(Buffer.concat(tail)) : Buffer.concat(tail))).toBe(last)
+        completeImmediately = true
+        const decoded = await fetch(`${base}/events`, { signal: AbortSignal.timeout(2000) })
+        expect(await decoded.text()).toBe(first + last)
+      } finally { upstream.stop(true) }
+    })
+  }
 })

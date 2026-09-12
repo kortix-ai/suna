@@ -193,6 +193,38 @@ function resolveTurbopackMemoryEviction(): false | 'auto' | 'full' {
   return 'auto';
 }
 
+// --- Turbopack dev filesystem cache ---------------------------------------
+// `experimental.turbopackFileSystemCacheForDev` is default-ON since Next 16.1.
+// It persists compiled tasks to `.next/dev/cache` and restores them lazily, so
+// a warm dev server starts fast. A restore that fails is NOT recoverable: it
+// panics outside turbo-tasks' per-task panic boundary and aborts the whole
+// dev server process.
+//
+//   thread 'tokio-rt-worker' panicked at
+//     turbopack/crates/turbo-tasks-backend/src/backend/operation/mod.rs:292:17:
+//   Restore of All for task TaskId 7979517 failed in another thread: restoring failed
+//   turbo-tasks: an internal panic occurred outside the per-task panic boundary.
+//   Aborting.
+//
+// A one-shot CI job gains nothing from the cache — it starts cold and throws
+// the directory away — and loses the entire browser shard when the abort hits,
+// because every remaining spec then fails with ERR_CONNECTION_REFUSED against a
+// dead port. So the deterministic test stack sets KORTIX_TURBOPACK_FS_CACHE=off
+// and trades a cold compile for a dev server that cannot die this way.
+// Unset (every developer machine, every real deployment) keeps upstream's
+// default. See tests/src/core/local-stack.ts.
+function resolveTurbopackFileSystemCacheForDev(): boolean {
+  const raw = process.env.KORTIX_TURBOPACK_FS_CACHE;
+  if (raw === undefined || raw === '') return true;
+  if (raw === 'off' || raw === 'false') return false;
+  if (raw === 'on' || raw === 'true') return true;
+  console.warn(
+    `[next.config.ts] Ignoring KORTIX_TURBOPACK_FS_CACHE=${JSON.stringify(raw)} — ` +
+      `expected one of 'on', 'off'. Falling back to the Next default (on).`,
+  );
+  return true;
+}
+
 // Local `pnpm preview` (scripts/dev-local.sh --build) sets KORTIX_PREVIEW_BUILD=1
 // to trade prod-build fidelity for speed: skip the `standalone` file-tracing pass
 // (next start never reads .next/standalone) and skip ESLint.
@@ -271,12 +303,12 @@ const nextConfig = (): NextConfig => ({
   // --- Next.js 16.3 posture ------------------------------------------------
   // Recording WHY each 16.3 knob is set or left alone, so nobody "adds the
   // missing config" later or wonders whether we missed the release. The only
-  // knob we set is turbopackMemoryEviction (below) — and only as an escape
-  // hatch, keeping upstream's default.
+  // knobs we set are turbopackMemoryEviction and turbopackFileSystemCacheForDev
+  // (both below) — and both only as escape hatches that default to upstream's
+  // value when their env var is unset.
   //
   // Already default-ON in 16.3 — restating them here would be dead config that
   // silently diverges the day upstream changes a default:
-  //   · experimental.turbopackFileSystemCacheForDev    (default true since 16.1)
   //   · experimental.turbopackFileSystemCacheForBuild  (default true as of 16.3)
   //     Measured: warm `next build` compile 36.3s -> 1.9s. Only pays off where
   //     .next/cache survives between builds — Vercel does this automatically;
@@ -384,6 +416,11 @@ const nextConfig = (): NextConfig => ({
     // when the laptop is thrashing. Disk cost is real either way:
     // .next/dev/cache grew 3.8GB -> 14-15GB.
     turbopackMemoryEviction: resolveTurbopackMemoryEviction(),
+    // Upstream's default (on) unless KORTIX_TURBOPACK_FS_CACHE=off. The
+    // deterministic test stack turns it off because a failed cache restore
+    // aborts the dev server and takes the whole browser shard with it — the
+    // full rationale is on resolveTurbopackFileSystemCacheForDev above.
+    turbopackFileSystemCacheForDev: resolveTurbopackFileSystemCacheForDev(),
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       '@phosphor-icons/react',

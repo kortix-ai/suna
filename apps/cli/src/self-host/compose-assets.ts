@@ -659,7 +659,7 @@ const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   // then exhausted its ~396 MiB heap after the ceiling rose to 768 MiB. The
   // 1 GiB ceiling gives the server more headroom while the full steady-state
   // budget stays below the 12 GiB self-host floor enforced below.
-  frontend: { limit: '1024m', reservation: '128m' },
+  frontend: { limit: '${KORTIX_FRONTEND_MEMORY_LIMIT:-1024m}', reservation: '128m' },
   'kortix-migrate': { limit: '512m', reservation: '128m' },
   'kortix-updater': { limit: '256m', reservation: '64m' },
   'supabase-kong': { limit: '384m', reservation: '128m' },

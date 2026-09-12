@@ -67,12 +67,8 @@ describe('isFeatureFlagKey', () => {
 
 describe('resolveFeatureFlag — explicit override wins', () => {
   test('per-project map overrides the platform default', () => {
-    expect(resolveFeatureFlag({ experimental: { review_center: true } }, 'review_center')).toBe(
-      true,
-    );
-    expect(resolveFeatureFlag({ experimental: { review_center: false } }, 'review_center')).toBe(
-      false,
-    );
+    expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
   });
 
   test('agent_tunnel respects an explicit choice but stays AND-gated on availability', () => {
@@ -215,7 +211,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('a malformed experimental subtree never throws', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
-      expect(typeof resolveFeatureFlag(metadata, 'review_center')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'agent_tunnel')).toBe('boolean');
     }
@@ -224,26 +220,37 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
 describe('resolveFeatureFlags', () => {
   test('returns a boolean for every registered key', () => {
-    const map = resolveFeatureFlags({ experimental: { review_center: true } });
+    const map = resolveFeatureFlags({ experimental: { meta_agent: true } });
     expect(Object.keys(map).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
     for (const key of FEATURE_FLAG_KEYS) {
       expect(typeof map[key]).toBe('boolean');
     }
-    expect(map.review_center).toBe(true);
+    expect(map.meta_agent).toBe(true);
+  });
+
+  test('a stored override for a graduated key is inert', () => {
+    // Review Center graduated out of the flag system. Projects that toggled it
+    // before graduation still carry `experimental.review_center` in metadata.
+    // That value must not resurface as a key, a catalog row, or a gate.
+    const metadata = { experimental: { review_center: false, meta_agent: true } };
+    expect(isFeatureFlagKey('review_center')).toBe(false);
+    expect(Object.keys(resolveFeatureFlags(metadata)).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('review_center');
+    expect(resolveFeatureFlags(metadata).meta_agent).toBe(true);
   });
 });
 
 describe('buildFeatureFlagCatalog', () => {
   test('describes each flag with effective + overridden state', () => {
-    const catalog = buildFeatureFlagCatalog({ experimental: { review_center: true } });
+    const catalog = buildFeatureFlagCatalog({ experimental: { meta_agent: true } });
 
-    const reviewCenter = catalog.find((f) => f.key === 'review_center');
-    if (!reviewCenter) throw new Error('Missing Review Center flag');
-    expect(reviewCenter.name).toBeTruthy();
-    expect(reviewCenter.description).toBeTruthy();
-    expect(reviewCenter.enabled).toBe(true);
-    expect(reviewCenter.overridden).toBe(true);
-    expect(typeof reviewCenter.available).toBe('boolean');
+    const metaAgent = catalog.find((f) => f.key === 'meta_agent');
+    if (!metaAgent) throw new Error('Missing Meta Agent flag');
+    expect(metaAgent.name).toBeTruthy();
+    expect(metaAgent.description).toBeTruthy();
+    expect(metaAgent.enabled).toBe(true);
+    expect(metaAgent.overridden).toBe(true);
+    expect(typeof metaAgent.available).toBe('boolean');
 
     const teams = catalog.find((f) => f.key === 'teams');
     if (!teams) throw new Error('Missing Microsoft Teams flag');

@@ -16,7 +16,7 @@ import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-set
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -59,22 +59,14 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
  * actually received, so a slow `/effective` never blanks the bar for a
  * manager mid-navigation.
  *
- * Review is additionally flag-gated on `review_center` — the same gate the
- * retired config page's Review section carried, so a flag that hides the
- * inbox hides every way in. Flags default OFF here, unlike permissions: a
- * flag is a fact the project detail already holds, not a probe in flight.
+ * No tab is flag-gated. Review was until Review Center graduated out of the
+ * flag system; it now follows its read leaf like every other tab.
  */
-export interface CapabilityTabFlags {
-  reviewEnabled: boolean;
-}
-
 export function visibleCapabilityTabs(
   caps: Record<string, { allowed: boolean }>,
-  flags: CapabilityTabFlags = { reviewEnabled: false },
 ): readonly CapabilityTab[] {
   if (caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false) return [];
   return CAPABILITY_TABS.filter((tab) => {
-    if (tab.key === 'review' && !flags.reviewEnabled) return false;
     const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
     return pref ? caps[pref.action]?.allowed !== false : true;
   });
@@ -194,8 +186,7 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const tabs = useLocalizedUiCatalog(visibleCapabilityTabs(caps, { reviewEnabled }));
+  const tabs = useLocalizedUiCatalog(visibleCapabilityTabs(caps));
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));

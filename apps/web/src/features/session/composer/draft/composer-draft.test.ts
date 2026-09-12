@@ -287,9 +287,9 @@ describe('deserializeDraft', () => {
       documentIsEmpty: true,
       files: [first, REMOTE_FILE, third, REMOTE_FILE, fourth],
       attachments: [
-        { ...fourthAttachment, uploadId: fourth.uploadId },
-        { ...thirdAttachment, uploadId: third.uploadId },
-        { ...firstAttachment, uploadId: first.uploadId },
+        { ...fourthAttachment, uploadId: 'before-reload-fourth' },
+        { ...thirdAttachment, uploadId: 'before-reload-third' },
+        { ...firstAttachment, uploadId: 'before-reload-first' },
       ],
       userId: USER,
     });

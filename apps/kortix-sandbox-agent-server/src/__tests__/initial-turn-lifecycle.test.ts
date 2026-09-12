@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { gzipSync } from 'node:zlib';
 
 import {
   claimInitialTurnFromApi,
@@ -35,9 +36,15 @@ afterEach(() => {
 describe('daemon-delivered initial turn lifecycle', () => {
   test('claims the first prompt with the single session credential', async () => {
     let observed: { authorization: string | null; body: unknown } | null = null;
+    const unrelated: Array<{ method: string; path: string; bytes: number; encoding: string | null }> = [];
     const server = Bun.serve({
       port: 0,
       async fetch(request) {
+        const path = new URL(request.url).pathname;
+        if (request.method !== 'POST' || path !== '/v1/projects/project-1/turn-stream') {
+          unrelated.push({ method: request.method, path, bytes: (await request.clone().arrayBuffer()).byteLength, encoding: request.headers.get('content-encoding') });
+          return Response.json({ error: 'not found' }, { status: 404 });
+        }
         observed = {
           authorization: request.headers.get('authorization'),
           body: await request.json(),
@@ -57,6 +64,18 @@ describe('daemon-delivered initial turn lifecycle', () => {
       process.env.KORTIX_SESSION_ID = 'session-1';
       process.env.KORTIX_TOKEN = 'session-token';
       process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
+
+      const probe = await fetch(`http://127.0.0.1:${server.port}/health`);
+      expect(unrelated).toEqual([{ method: 'GET', path: '/health', bytes: 0, encoding: null }]);
+      expect(probe.status).toBe(404);
+      // A delayed projection uses the same API origin but sends gzip, not JSON.
+      // Pin the fixture boundary independently of test order and timer timing.
+      const projection = gzipSync(JSON.stringify({ session_id: 'unrelated-session' }));
+      const response = await fetch(`${process.env.KORTIX_API_URL}/platform/runtime-projection`, {
+        method: 'POST', headers: { 'content-encoding': 'gzip' }, body: projection,
+      });
+      expect(unrelated[1]).toEqual({ method: 'POST', path: '/v1/platform/runtime-projection', bytes: projection.byteLength, encoding: 'gzip' });
+      expect(response.status).toBe(404);
 
       expect(await claimInitialTurnFromApi()).toEqual({
         prompt: 'private prompt',

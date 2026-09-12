@@ -796,10 +796,6 @@
           "name": "LLM Gateway",
           "description": "Route this project through the managed Kortix LLM gateway for managed models, metering, and budgets."
         },
-        "review_center": {
-          "name": "Review Center",
-          "description": "Review change requests, approvals, and agent outputs from one inbox on the web or in Slack."
-        },
         "meta_agent": {
           "name": "Meta Agent",
           "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
@@ -1252,8 +1248,6 @@
     "metaCoordinator": "Meta coordinator",
     "files": "Files",
     "retry": "Try again",
-    "proposedChanges": "Proposed changes",
-    "untitledChange": "Untitled change",
     "review": "Review",
     "connectGpt": "Connect GPT subscription",
     "upgradePlan": "Upgrade plan",

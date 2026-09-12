@@ -14,6 +14,32 @@ function row(name: string, runOn = RUN_ON): MigrationLedgerRow {
 }
 
 describe('planMigrationLedgerRepair', () => {
+  test('plans only the two known missing prerequisites for an applied attachment migration', () => {
+    const plan = planMigrationLedgerRepair([row('20260908152048390_prompt_attachments')]);
+    expect(plan?.renames).toEqual([
+      {
+        legacyName: '20260908152048390_prompt_attachments',
+        currentName: '20260912000000000_prompt_attachments',
+      },
+    ]);
+    expect(plan?.attachmentRepair).toEqual({
+      runOn: RUN_ON,
+      missingPrerequisites: [
+        '20260909083000000_drop_dead_audit_events_index.concurrent',
+        '20260910164412042_drop_dead_audit_events_index_snapshot',
+      ],
+    });
+  });
+
+  test('refuses duplicate attachment migration names', () => {
+    expect(() =>
+      planMigrationLedgerRepair([
+        row('20260908152048390_prompt_attachments'),
+        row('20260912000000000_prompt_attachments'),
+      ]),
+    ).toThrow('contains both');
+  });
+
   test('does nothing for a fresh or already-repaired ledger', () => {
     expect(planMigrationLedgerRepair([])).toBeNull();
     expect(planMigrationLedgerRepair([row(CONNECTOR), row(CURRENT_SQL)])).toBeNull();

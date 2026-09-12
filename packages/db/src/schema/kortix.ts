@@ -3017,12 +3017,10 @@ export const auditEvents = kortixSchema.table(
       table.sessionId,
       table.sessionSequence,
     ),
-    index('idx_audit_events_account_source_phase_time').on(
-      table.accountId,
-      table.authoritativeSource,
-      table.phase,
-      table.occurredAt,
-    ),
+    // `idx_audit_events_account_source_phase_time` was dropped 2026-09-09
+    // (migration 20260909083000000): 8.6 GB, zero scans in 2.5 months, one
+    // index write on every audit row. A filter on (authoritative_source, phase)
+    // uses `idx_audit_events_account_time` for the account+time prefix.
     index('idx_audit_events_account_client_source_time')
       .on(table.accountId, table.clientReportedSource, table.occurredAt)
       .where(sql`${table.clientReportedSource} is not null`),

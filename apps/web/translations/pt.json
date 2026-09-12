@@ -970,10 +970,6 @@
           "name": "Gateway LLM",
           "description": "Encaminhe este projeto pelo gateway LLM gerenciado da Kortix para modelos, medição e orçamentos."
         },
-        "review_center": {
-          "name": "Central de revisão",
-          "description": "Revise solicitações de alteração, aprovações e resultados de agentes em uma caixa na Web ou no Slack."
-        },
         "meta_agent": {
           "name": "Meta-agente",
           "description": "Adicione um coordenador que gerencia sessões especializadas e trabalhos de várias etapas no projeto."
@@ -1252,8 +1248,6 @@
     "metaCoordinator": "Coordenador Meta",
     "files": "Arquivos",
     "retry": "Tentar de novo",
-    "proposedChanges": "Alterações propostas",
-    "untitledChange": "Alteração sem título",
     "review": "Rever",
     "connectGpt": "Ligar subscrição GPT",
     "upgradePlan": "Atualizar plano",

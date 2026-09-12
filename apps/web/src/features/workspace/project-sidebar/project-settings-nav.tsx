@@ -62,8 +62,7 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   { key: 'triggers', action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ },
   // Review — the inbox, on the bar since 2026-09-02 (it was a section of the
   // retired `/config` page). Same read leaf `CUSTOMIZE_SECTION_ACCESS.review`
-  // gated the section on; the `review_center` flag is applied by the bar
-  // (`visibleCapabilityTabs`), not by this permission list.
+  // gated the section on. No feature flag gates it.
   { key: 'review', action: PROJECT_ACTIONS.PROJECT_REVIEW_READ },
   // Models and Secrets graduated out of the Settings overlay's sub-nav onto
   // their own top-level tabs. Their read leaves are carried over unchanged
