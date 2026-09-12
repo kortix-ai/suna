@@ -174,8 +174,20 @@ export interface EnsureSandboxImageResult {
    * actually selected. Resolving the template a second time would re-read the
    * source — and, without the session's pin, could read a DIFFERENT revision
    * and bill a spec no part of this session ever used.
+   *
+   * ABSENT when the image served is not the one this template resolves to: the
+   * last-ready fallback boots an OLDER image of the same lineage, whose
+   * Dockerfile and spec are whatever that build had. Reporting the current
+   * template's numbers for it would describe an image nobody booted, so the
+   * field is simply not set and the consumer uses its own default.
    */
   spec?: { cpu?: number; memoryGb?: number; diskGb?: number };
+  /**
+   * True when this is the last-ready fallback: an older image of the same
+   * template lineage, served because the current one is not built yet. Its
+   * rootfs, its Dockerfile and its resource spec are the previous build's.
+   */
+  servedOlderImage?: boolean;
 }
 
 /**
@@ -267,6 +279,9 @@ export async function ensureSandboxImage(
   // The spec travels WITH the image so no consumer has to resolve the template
   // again. A second resolution without this session's pin reads the default
   // branch, which is how a session can end up billed for a spec it never ran.
+  // A fallback image is a DIFFERENT build, so it gets no spec rather than this
+  // template's — see `servedOlderImage`.
+  if (result.servedOlderImage) return result;
   return {
     ...result,
     spec: { cpu: template.cpu, memoryGb: template.memoryGb, diskGb: template.diskGb },
@@ -374,6 +389,13 @@ async function ensureSandboxImageForTemplate(
           sessionSnapshot: opts.sessionSnapshot,
         });
       }
+      // ACCEPTED SEMANTICS, not exact parity: this boots the newest ready image
+      // of the same template LINEAGE, which may have been built from a
+      // different Dockerfile and a different resource spec than the template
+      // resolves to now. The trade is deliberate — a session boots immediately
+      // on a slightly older image instead of waiting for a build — and it is
+      // why the result carries `servedOlderImage` and no `spec`. A caller that
+      // needs the exact pinned image must wait for the build, not for this.
       console.log(
         `[snapshots] ${template.slug}: ${identity.snapshotName} is ${state}; ` +
         `booting last ready image ${servable.snapshotName} instead of waiting for the build ` +
@@ -388,6 +410,9 @@ async function ensureSandboxImageForTemplate(
           contentHash: servable.contentHash ?? identity.contentHash,
           built: false,
           isDefault: !!template.isShared,
+          // A previous build of this lineage, not the image this template
+          // currently resolves to.
+          servedOlderImage: true,
         },
         { blocking: blockingPreparation },
       );

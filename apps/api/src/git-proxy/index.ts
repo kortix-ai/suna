@@ -196,13 +196,6 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
  * ref policy, and either refuses (without opening an upstream connection at
  * all) or hands the reconstructed body back here untouched.
  */
-/**
- * Branches prepared per push. A push that moves more than this is a bulk
- * operation (a mirror sync, a branch import); preparing every one of them would
- * fan out one provider lookup per ref on a background task.
- */
-const PREPARE_REFS_PER_PUSH = 20;
-
 async function forwardAuthorized(
   c: any,
   auth: Extract<GitProxyAuth, { ok: true }>,
@@ -323,30 +316,11 @@ async function forwardAuthorized(
         // by (repository id, SHA), so re-resolving an unchanged tip costs one
         // no-op upsert.
         void (async () => {
-          const { prepareRevisionForPush } = await import('../repo-snapshots/prepare');
-          const branches = [...new Set(pushedRefs.filter((ref) => ref.startsWith('refs/heads/')))];
-          if (branches.length > PREPARE_REFS_PER_PUSH) {
-            console.warn(
-              `[git-proxy] push moved ${branches.length} branches for ${projectId}; ` +
-              `preparing the first ${PREPARE_REFS_PER_PUSH}`,
-            );
-          }
-          for (const ref of branches.slice(0, PREPARE_REFS_PER_PUSH) ) {
-            const result = await prepareRevisionForPush(auth.project, ref);
-            if (!result.prepared) {
-              console.warn(
-                `[git-proxy] snapshot preparation skipped for ${projectId} ${ref}: ${result.reason}`,
-              );
-            }
-          }
-          if (branches.length === 0) {
-            // No command section was parsed (a non-gated path); the default
-            // branch is the only thing we can name.
-            const result = await prepareRevisionForPush(auth.project, gitProject.defaultBranch);
-            if (!result.prepared) {
-              console.warn(`[git-proxy] snapshot preparation skipped for ${projectId}: ${result.reason}`);
-            }
-          }
+          const { prepareRevisionsForPush } = await import('../repo-snapshots/prepare');
+          await prepareRevisionsForPush(
+            auth.project,
+            pushedRefs.length > 0 ? pushedRefs : [`refs/heads/${gitProject.defaultBranch}`],
+          );
         })().catch((err) => {
           console.warn(
             `[git-proxy] snapshot preparation failed for ${projectId}:`,

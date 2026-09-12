@@ -411,7 +411,7 @@ Object store: the existing MinIO on `127.0.0.1:19000`, bucket
 | --- | --- |
 | `apps/api` full unit suite (`bash scripts/test.sh`) | 9013 pass, 79 skip, 1 fail |
 | `src/repo-snapshots/` + `src/snapshots/` + metadata-merge guard | 384 pass, 5 skip, 0 fail |
-| 6 repo-snapshot integration suites (real DB + MinIO) | 51 pass, 0 fail |
+| 6 repo-snapshot integration suites (real DB + MinIO) | 52 pass, 0 fail |
 | `apps/api` `tsc --noEmit` | clean |
 | `packages/db` migration lint | 209 files pass |
 
@@ -487,11 +487,44 @@ Three further races, each reproduced against the real table before the fix.
    than reading a value out of a result, which is the one answer node-pg and
    postgres-js report identically.
 
+Two more, from the same review round:
+
+4. **A read must not lose a row to a rename either.** `readRepoRef` resolved the
+   key and then read it in two statements; a consolidation landing between them
+   reported a branch as ABSENT while it plainly existed. Both spellings are now
+   matched in ONE select, canonical first.
+5. **The migration no longer tests before it writes.** An old replica takes no
+   advisory lock, so a canonical row could still appear between an `exists`
+   check and the rename and abort the pass with `23505`. The per-branch work now
+   attempts the rename and catches `unique_violation`, merging instead — there
+   is no window between a test and a write because there is no test.
+
 Residual, and documented rather than fixed: an API replica running the PREVIOUS
 build takes no advisory lock, so during a rolling deploy it can still create a
 legacy row. The consolidation is safe to run again, and the running application
 reads either spelling, so the effect is a row to clean up later, not a lost
 revision.
+
+### Pushes, and what a bounded budget may not drop
+
+A push through the Git proxy now records a reconcile deadline for EVERY branch
+it touched before preparing any of them. That local write is what makes the
+inline budget safe: the first 20 branches are prepared immediately, and branch
+21 — or a branch whose preparation throws — still has a row the reconcile pass
+picks up, instead of waiting for somebody to push again. Each inline
+preparation is isolated, so one failing ref cannot take the rest of the push
+with it. Proved in `integration-repo-snapshot-discovery.test.ts` with a
+25-branch push whose FIRST ref always fails.
+
+### The last-ready fallback is not pinned-image parity
+
+When the pinned image is still building, the builder boots the newest ready
+image of the same template lineage. That image may have been built from a
+different Dockerfile and a different resource spec. The trade is deliberate — a
+session boots now instead of waiting — so the result carries `servedOlderImage`
+and NO spec, and metering falls back to its own default rather than billing the
+current template's numbers for an image nobody booted. A caller that needs the
+exact pinned image waits for the build.
 
 `integration-repo-snapshot-ref-alias.test.ts` proves the lock ordering directly:
 a second connection holds the branch lock, renames the row and records a newer

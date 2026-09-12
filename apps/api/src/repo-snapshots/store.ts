@@ -274,9 +274,11 @@ export async function beginRefObservation(
   identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
   ref: string,
 ): Promise<RefObservationToken> {
-  const key = await storedRefKey(db, identity, ref);
-  const row = await readRepoRefByKey(db, identity, key);
-  return { generation: row ? Number(row.revision) : null, ref: key };
+  // One statement: the row and the key it is stored under come from the same
+  // read, so a rename cannot land between them and report an absent generation
+  // for a ref that exists.
+  const row = await readAuthoritativeRef(db, identity, ref);
+  return { generation: row ? Number(row.revision) : null, ref: row?.ref ?? normalizeRefKey(ref) };
 }
 
 /**
@@ -406,7 +408,7 @@ export async function ensureRefReconcileScheduled(input: {
 }
 
 /**
- * The spelling this ref is actually STORED under.
+ * The authoritative row for one branch, in ONE statement.
  *
  * Rows written before ref keys were normalized hold `refs/heads/main`, and a
  * deployment mid-rollout can still produce one. Such a row is invisible to a
@@ -414,20 +416,20 @@ export async function ensureRefReconcileScheduled(input: {
  * null, and a write creates a SECOND row for the same branch — two revisions of
  * one ref, one of them permanently due for reconciliation.
  *
- * So every store entry point resolves the stored spelling first: the canonical
- * key when a row for it exists, the legacy alias when only that one does, and
- * the canonical key when neither exists (which is what a new row gets). The
- * migration that consolidates existing aliases makes this a no-op over time; it
- * stays because a rolling deploy can always write one more.
+ * Both spellings are therefore matched together, canonical first, in a single
+ * SELECT. Resolving the key and then reading it would be two statements with a
+ * rename in between: the consolidation renames the legacy row after the first
+ * one picks it, and the second finds nothing — reporting a branch as ABSENT
+ * while it plainly exists.
  */
-async function storedRefKey(
+async function readAuthoritativeRef(
   executor: RefExecutor,
   identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
   ref: string,
-): Promise<string> {
+): Promise<RepoSnapshotRefRow | null> {
   const canonical = normalizeRefKey(ref);
   const [row] = await executor
-    .select({ ref: repoSnapshotRefs.ref })
+    .select()
     .from(repoSnapshotRefs)
     .where(
       and(
@@ -437,10 +439,19 @@ async function storedRefKey(
       ),
     )
     // Canonical wins when both exist, so a consolidation in flight cannot make
-    // the alias authoritative.
+    // the legacy row authoritative.
     .orderBy(sql`case when ${repoSnapshotRefs.ref} = ${canonical} then 0 else 1 end`)
     .limit(1);
-  return row?.ref ?? canonical;
+  return row ?? null;
+}
+
+/** The key that row is stored under, or the canonical key when there is no row. */
+async function storedRefKey(
+  executor: RefExecutor,
+  identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
+  ref: string,
+): Promise<string> {
+  return (await readAuthoritativeRef(executor, identity, ref))?.ref ?? normalizeRefKey(ref);
 }
 
 /** `db`, or a transaction handle. Every ref statement runs through one of these. */
@@ -494,7 +505,7 @@ export async function readRepoRef(
   identity: Pick<RepoSnapshotIdentity, 'provider' | 'repositoryId'>,
   ref: string,
 ): Promise<RepoSnapshotRefRow | null> {
-  return readRepoRefByKey(db, identity, await storedRefKey(db, identity, ref));
+  return readAuthoritativeRef(db, identity, ref);
 }
 
 /**

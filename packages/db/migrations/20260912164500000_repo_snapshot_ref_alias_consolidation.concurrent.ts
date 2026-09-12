@@ -23,11 +23,13 @@
 //
 // CONCURRENCY. Each branch is consolidated while holding the same advisory lock
 // the application takes for that branch (`withRefLock`), computed identically:
-// `hashtextextended('<provider>:<repository_id>:<canonical ref>', 0)`. Inside
-// that lock the "does a canonical row exist" test and the write that depends on
-// it are atomic, so a rolling writer cannot create the canonical row between
-// them and turn the rename into a 23505. The lock is held for one branch at a
-// time, never for the whole pass.
+// `hashtextextended('<provider>:<repository_id>:<canonical ref>', 0)`. That
+// serializes this work against every writer on the CURRENT build. A replica
+// still running the PREVIOUS build takes no such lock, so the per-branch work
+// does not depend on one: it attempts the rename and, if the canonical row
+// turns out to exist, catches the unique violation and merges instead. There is
+// no window between a test and a write because there is no test. The lock is
+// held for one branch at a time, never for the whole pass.
 //
 // Chunked and incrementally committed: a plain .sql migration would hold
 // ACCESS EXCLUSIVE for the whole data move (learnings 2026-08-10, "Never
@@ -36,11 +38,11 @@
 // batching is the rule, not a volume estimate.
 //
 // mixed-version-safe: an old replica that writes `refs/heads/x` again simply
-// recreates an alias row, which the running application still resolves and a
-// later run of this pass would consolidate. Such a replica does not take the
-// advisory lock, which is why the per-branch work is also written to be correct
-// without it — the `exists` test and the write are one statement each, and a
-// rename that would collide is skipped and folded by the next pass instead.
+// recreates a legacy row, which the running application still resolves and a
+// later run of this pass consolidates. Such a replica does not take the
+// advisory lock, which is why the per-branch work catches `unique_violation`
+// rather than testing first — a canonical row created at any moment before the
+// rename commits is handled, not a cause of failure.
 
 // batched-dml: consolidates `refs/heads/*` rows of kortix.repo_snapshot_refs,
 // 100 branches per committed DO block, each under that branch's advisory lock,
@@ -49,7 +51,7 @@
 
 export const shorthands = undefined;
 
-/** Branches consolidated per committed statement. */
+/** Branches consolidated per committed statement; mirrored in the SQL's LIMIT. */
 const BATCH = 100;
 /** Enough passes to drain any plausible table; a stuck pass must not spin forever. */
 const MAX_PASSES = 1000;
@@ -81,19 +83,28 @@ begin
     from kortix.repo_snapshot_refs
     where ref like 'refs/heads/%'
     order by provider, repository_id, ref
-    limit ${BATCH}
+    limit 100
   loop
     canonical := regexp_replace(target.ref, '^refs/heads/', '');
     -- The same key apps/api/src/repo-snapshots/store.ts locks for this branch.
+    -- It serializes this work against every writer on the CURRENT build; the
+    -- exception handler below is what makes it correct against an older one,
+    -- which takes no such lock.
     perform pg_advisory_xact_lock(
       hashtextextended(target.provider || ':' || target.repository_id || ':' || canonical, 0));
 
-    if exists (
-      select 1 from kortix.repo_snapshot_refs canonical_row
-      where canonical_row.provider = target.provider
-        and canonical_row.repository_id = target.repository_id
-        and canonical_row.ref = canonical
-    ) then
+    begin
+      update kortix.repo_snapshot_refs
+      set ref = canonical, updated_at = now()
+      where provider = target.provider
+        and repository_id = target.repository_id
+        and ref = target.ref;
+    exception when unique_violation then
+      -- The canonical row exists, either from the start or created by a writer
+      -- that did not take the lock. It is authoritative — a per-row counter
+      -- cannot order two rows — so keep it, take the earlier of the two
+      -- reconcile deadlines so a recheck the legacy row was owed is not lost,
+      -- and drop the legacy row.
       update kortix.repo_snapshot_refs canonical_row
       set reconcile_after = least(
             coalesce(canonical_row.reconcile_after, alias.reconcile_after),
@@ -111,13 +122,7 @@ begin
       where provider = target.provider
         and repository_id = target.repository_id
         and ref = target.ref;
-    else
-      update kortix.repo_snapshot_refs
-      set ref = canonical, updated_at = now()
-      where provider = target.provider
-        and repository_id = target.repository_id
-        and ref = target.ref;
-    end if;
+    end;
   end loop;
 end $$`;
 

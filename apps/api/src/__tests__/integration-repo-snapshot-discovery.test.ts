@@ -176,6 +176,9 @@ beforeAll(async () => {
       }
       const refMatch = path.match(/^\/repos\/kortix-ai\/([^/]+)\/git\/ref\/heads\/(.+)$/);
       if (refMatch) {
+        // One branch that always fails, to prove one bad ref cannot take the
+        // rest of a push with it.
+        if (refMatch[2] === 'boom') return new Response('{"message":"Server Error"}', { status: 500 });
         return new Response(JSON.stringify({ object: { sha: fixtureSha, type: 'commit' } }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -381,6 +384,43 @@ describe('a failed first preparation recovers without another webhook', () => {
   test('no GitHub call ever left the fixture namespace', async () => {
     if (!guard()) return;
     expect(foreignCalls).toEqual([]);
+  });
+
+  test('a push records every branch it touched, past the inline budget', async () => {
+    if (!guard()) return;
+    githubHealthy = true;
+    const { prepareRevisionsForPush, PREPARE_REFS_PER_PUSH } = await import('../repo-snapshots/prepare');
+    const project = await projectRow(ids.get('discovery-good') as string);
+    expect(readRepoSnapshotRepository(project as never).repository?.repositoryId).toBe(goodRepoId);
+
+    // More branches than the inline budget, with a failing one FIRST.
+    const refs = [
+      'refs/heads/boom',
+      ...Array.from({ length: PREPARE_REFS_PER_PUSH + 4 }, (_, index) => `refs/heads/pushed-${index}`),
+      // Not a branch: it must not enter the ref table at all.
+      'refs/tags/v1',
+    ];
+    const outcome = await prepareRevisionsForPush(project as never, refs);
+
+    // Every branch is durable, budget or no budget — that is what makes the
+    // budget safe.
+    expect(outcome.scheduled).toBe(refs.length - 1);
+    const rows = (await db.execute(sql`
+      select ref, reconcile_after from kortix.repo_snapshot_refs
+      where repository_id = ${goodRepoId}`)) as unknown as Array<{
+      ref: string;
+      reconcile_after: Date | null;
+    }>;
+    expect(rows.map((r) => r.ref).sort()).toEqual(
+      [...refs.slice(0, -1).map((ref) => ref.slice('refs/heads/'.length)), 'main'].sort(),
+    );
+    for (const row of rows) expect(row.reconcile_after).not.toBeNull();
+
+    // The failing ref did not stop the ones behind it.
+    expect(outcome.prepared).toBeGreaterThanOrEqual(PREPARE_REFS_PER_PUSH - 1);
+    const boom = await readRepoRef({ provider: 'github', repositoryId: goodRepoId }, 'boom');
+    expect(boom?.desiredSha).toBeNull();
+    expect(boom?.reconcileAfter).not.toBeNull();
   });
 
   test('the worker tick runs both scans', async () => {

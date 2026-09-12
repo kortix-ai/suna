@@ -12,7 +12,7 @@ import { getBranchCommitSha, getRepo, parseGitHubRepoUrl } from '../projects/git
 import type { GitHubApiError } from '../projects/github';
 import { withProjectGitAuth } from '../projects/lib/git';
 import type { ProjectRow } from '../projects/lib/serializers';
-import { ensureRepoSnapshotRepository } from './identity';
+import { ensureRepoSnapshotRepository, readRepoSnapshotRepository } from './identity';
 import { beginRefObservation, ensureRefReconcileScheduled, observeRepoRef } from './store';
 import { prepareRevision, repoSnapshotWorkerEnabled, triggerRepoSnapshotWorker } from './worker';
 
@@ -140,6 +140,83 @@ function reconcileRetryDelayMs(): number {
 /** A successful push through the Kortix git proxy. */
 export async function prepareRevisionForPush(project: ProjectRow, ref: string): Promise<PrepareResult> {
   return prepareRefTip(project, ref, 'proxy_push');
+}
+
+/**
+ * Branches prepared INLINE per push. Beyond this the work is left to the
+ * worker: a bulk push (a mirror sync, a branch import) must not turn into one
+ * provider lookup per ref on a background task.
+ */
+export const PREPARE_REFS_PER_PUSH = 20;
+
+/**
+ * Every branch one push touched.
+ *
+ * Each ref is given a durable reconcile deadline FIRST. That is a local write
+ * with no provider call, and it is what makes the inline budget safe: a ref past
+ * the budget, or one whose preparation throws, still has a row the reconcile
+ * pass will pick up, instead of being dropped until somebody pushes again. Each
+ * inline preparation is isolated, so one failure cannot take the rest with it.
+ */
+export async function prepareRevisionsForPush(
+  project: ProjectRow,
+  refs: string[],
+): Promise<{ prepared: number; scheduled: number }> {
+  if (!repoSnapshotWorkerEnabled()) return { prepared: 0, scheduled: 0 };
+  const branches = [...new Set(refs.filter((ref) => ref.startsWith('refs/heads/')))];
+  if (branches.length === 0) return { prepared: 0, scheduled: 0 };
+
+  const repository = readRepoSnapshotRepository(project).repository;
+  let scheduled = 0;
+  if (repository) {
+    const at = new Date();
+    for (const ref of branches) {
+      await ensureRefReconcileScheduled({ identity: repository, ref, at }).then(
+        () => {
+          scheduled += 1;
+        },
+        (error) => {
+          logger.warn('[repo-snapshot] could not record a pushed ref', {
+            projectId: project.projectId,
+            ref,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        },
+      );
+    }
+  } else {
+    // No recorded repository id yet, so there is no key to store these under.
+    // The worker's discovery pass registers the project, and the next push —
+    // or the default-branch repair — brings its refs in.
+    logger.info('[repo-snapshot] pushed refs not recorded; project has no repository id', {
+      projectId: project.projectId,
+      refs: branches.length,
+    });
+  }
+
+  let prepared = 0;
+  for (const ref of branches.slice(0, PREPARE_REFS_PER_PUSH)) {
+    const result = await prepareRefTip(project, ref, 'proxy_push').catch((error) => ({
+      prepared: false as const,
+      reason: error instanceof Error ? error.message : String(error),
+    }));
+    if (result.prepared) prepared += 1;
+    else {
+      logger.info('[repo-snapshot] pushed ref not prepared inline', {
+        projectId: project.projectId,
+        ref,
+        reason: result.reason,
+      });
+    }
+  }
+  if (branches.length > PREPARE_REFS_PER_PUSH) {
+    logger.info('[repo-snapshot] push exceeded the inline budget; the rest are queued', {
+      projectId: project.projectId,
+      refs: branches.length,
+      inline: PREPARE_REFS_PER_PUSH,
+    });
+  }
+  return { prepared, scheduled };
 }
 
 /**
