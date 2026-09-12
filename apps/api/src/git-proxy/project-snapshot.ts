@@ -164,14 +164,31 @@ export async function enqueueProjectSnapshot(input: {
   return inserted.length > 0 ? 'queued' : 'exists';
 }
 
-/** Resolve the ref's tip from the mirror, then enqueue that exact SHA. */
+/**
+ * Resolve the ref's CURRENT tip, then enqueue that exact SHA. The remote is
+ * asked first (`ls-remote`, one round trip, always fresh): a push hook runs
+ * seconds after the tip moved, and the mirror's refresh memo would otherwise
+ * hand back the previous tip — an older prepared SHA silently standing in for
+ * the new one. The mirror is the fallback when the remote cannot be listed
+ * (no credential on this call path); the worker refreshes it at build time.
+ */
 export async function queueProjectSnapshotForRef(
   project: GitBackedProject,
   ref: string,
 ): Promise<{ outcome: EnqueueOutcome; commitSha: string | null }> {
   if (!projectSnapshotStorageConfigured()) return { outcome: 'unconfigured', commitSha: null };
-  const { resolveCommitSha } = await import('../projects/git/commits');
-  const commitSha = await resolveCommitSha(project, normalizeSnapshotRef(ref));
+  const normalized = normalizeSnapshotRef(ref);
+  let commitSha: string | null = null;
+  try {
+    const { resolveRemoteBranchTip } = await import('../projects/git/branches');
+    commitSha = await resolveRemoteBranchTip(project, normalized);
+  } catch {
+    commitSha = null;
+  }
+  if (!commitSha) {
+    const { resolveCommitSha } = await import('../projects/git/commits');
+    commitSha = await resolveCommitSha(project, normalized);
+  }
   const outcome = await enqueueProjectSnapshot({
     projectId: project.projectId,
     ref,

@@ -319,7 +319,7 @@ describe('materializeProject — prefer-s3', () => {
       const stages = stageDirs(target)
       const files = stages.flatMap((s) => {
         const dir = join(target, s)
-        return existsSync(dir) ? readdirSync(dir, { recursive: true }) : []
+        return existsSync(dir) ? (readdirSync(dir, { recursive: true }) as string[]) : []
       })
       return { stages, files: files.length }
     })
@@ -389,7 +389,7 @@ describe('materializeProject — prefer-s3', () => {
     api.archiveMode = 'corrupt'
     const result = await materializeProject(cfg)
     expect(result.provider).toBe('git')
-    expect(['digest-mismatch', 'malformed']).toContain(result.fallback?.reason)
+    expect(['digest-mismatch', 'malformed'].includes(result.fallback?.reason ?? '')).toBe(true)
     expect(result.fallback?.attempts).toBe(1)
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
