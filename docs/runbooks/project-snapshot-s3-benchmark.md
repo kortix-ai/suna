@@ -50,7 +50,27 @@ _(filled in from the report output — see the sections below)_
 
 ## Real-boot smoke (gate 5) — final daemon build
 
-_(filled in)_
+One fresh Daytona session on the representative project with the project
+pinned to `require-s3`, booted from the branch's own image
+(`kortix-default-ddd595915ad8`, baked from the final Supervisor build,
+runtime-assets manifest sha256 `e9edbdd11d225a4d9dc63d0043bbfd48af252cc4a003f2c90fe4aafb0556e84e`
+= `dist/kortix-agent` on disk):
+
+| Measure | Value |
+| --- | --- |
+| API create ack | 0.73 s |
+| create → `/start` ready | 6.7 s |
+| create → `runtimeReady` (daemon health) | 6.95 s |
+| daemon `config_provider` | `provider:s3`, `sha_matches:true`, `s3_attempts:1`, `fallback:false`, `s3_skipped:false` |
+| in-guest acquisition | warm check 3 ms, S3 acquire 1,293 ms (descriptor + 3.18 MB download + streamed extraction + verify), activate 28 ms |
+| Git-proxy requests, create → readiness | exactly one: `GET …/project-snapshot 200` (the descriptor exchange, −2.97 s before observed readiness) |
+| Git-proxy requests at/after readiness | `GET info/refs` + `POST git-upload-pack` — the history backfill the S3 path defers until runtime readiness (observed at −0.6 s / −0.1 s relative to the bench's 500 ms-granular readiness poll, i.e. at readiness) |
+
+The remaining startup network work observed on this path (all included in the
+full-boot number): the descriptor exchange, the initial-turn claim, the managed
+model prefetch, the boot-timeline relay, the runtime-projection push, and the
+API-side remote session-branch publication (`createRemoteSessionBranch`, which
+goes to GitHub directly and is not project acquisition).
 
 ## Compatibility gate (gate 6)
 
