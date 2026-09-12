@@ -417,15 +417,26 @@ describe('UserMessage persisted attachments', () => {
   });
 
   // The runtime streams the text part first and the file parts seconds later.
-  // The names the preview promised fill the gap as pending tiles, and the
+  // The names the preview promised fill the gap as stable tiles, and the
   // strip says so — instead of blinking out (review finding, 2026-09-05: the
   // earlier fix held a SECOND bubble over this one).
-  test('draws promised-but-unarrived files as pending tiles on the real message', () => {
+  test('draws promised-but-unarrived files without restarting upload progress', () => {
     const streaming = {
-      info: { id: 'message-streaming', role: 'user', time: { created: Date.parse('2026-09-05T22:00:00.000Z') } },
+      info: {
+        id: 'message-streaming',
+        role: 'user',
+        time: { created: Date.parse('2026-09-05T22:00:00.000Z') },
+      },
       parts: [
         { id: 'p-text', messageID: 'message-streaming', type: 'text', text: 'REPRO' },
-        { id: 'p-png', messageID: 'message-streaming', type: 'file', mime: 'image/png', filename: 'tiny.png', url: 'data:image/png;base64,iVBORw0KGgo=' },
+        {
+          id: 'p-png',
+          messageID: 'message-streaming',
+          type: 'file',
+          mime: 'image/png',
+          filename: 'tiny.png',
+          url: 'data:image/png;base64,iVBORw0KGgo=',
+        },
       ],
     } as MessageWithParts;
     const html = renderToStaticMarkup(
@@ -459,7 +470,7 @@ describe('UserMessage persisted attachments', () => {
       ).split('tiny.png').length - 1,
     );
     expect(html).not.toContain('Uploading');
-    expect(html).toContain('animate-spinner-orbit');
+    expect(html).not.toContain('animate-spinner-orbit');
   });
 
   // The store swaps the optimistic copy for the runtime's echo and the parts
@@ -471,7 +482,11 @@ describe('UserMessage persisted attachments', () => {
   // at full opacity — "the same message twice, then it vanishes" (2026-09-06).
   test('keeps the bubble and the promised tiles through a frame with no parts', () => {
     const swapping = {
-      info: { id: 'message-swapping', role: 'user', time: { created: Date.parse('2026-09-06T00:00:00.000Z') } },
+      info: {
+        id: 'message-swapping',
+        role: 'user',
+        time: { created: Date.parse('2026-09-06T00:00:00.000Z') },
+      },
       parts: [],
     } as unknown as MessageWithParts;
     const html = renderToStaticMarkup(
@@ -495,7 +510,7 @@ describe('UserMessage persisted attachments', () => {
     expect(html).toContain('tiny.png');
     expect(html).toContain('doc.pdf');
     expect(html).not.toContain('Uploading');
-    expect(html).toContain('animate-spinner-orbit');
+    expect(html).not.toContain('animate-spinner-orbit');
   });
 
   test('keeps workspace references before a later native file after reload', () => {

@@ -15,6 +15,24 @@ const render = (el: React.ReactElement) =>
   );
 
 describe('QueuedPromptBubbles attachments', () => {
+  test('an accepted completed attachment stays stable while delivery is pending', () => {
+    const markup = render(
+      <QueuedPromptBubbles
+        queued={[
+          {
+            id: 'accepted-file',
+            text: 'Use this file',
+            attachments: [{ filename: 'brief.pdf', mime: 'application/pdf' }],
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('brief.pdf');
+    expect(markup).not.toContain('animate-spinner-orbit');
+    expect(markup).not.toContain('<button');
+  });
+
   test('a stale runtime row waits for the workspace and never says Not sent', () => {
     const markup = render(
       <QueuedPromptBubbles
@@ -39,7 +57,7 @@ describe('QueuedPromptBubbles attachments', () => {
   // The warm-box gap, measured in a real browser on 2026-09-04: the transcript
   // mounted at +6s, the queued row stood in for the prompt, and it drew the
   // text alone — three attached files, no tiles, no word about an upload.
-  test('draws every attachment as a spinning pending tile', () => {
+  test('draws every accepted attachment as a stable tile', () => {
     const markup = render(
       <QueuedPromptBubbles
         queued={[
@@ -60,7 +78,7 @@ describe('QueuedPromptBubbles attachments', () => {
     expect(markup).toContain('tiny.png');
     expect(markup).toContain('logo.svg');
     expect(markup).toContain('doc.pdf');
-    expect(markup).toContain('animate-spinner-orbit');
+    expect(markup).not.toContain('animate-spinner-orbit');
     expect(markup).not.toContain('Uploading');
   });
 

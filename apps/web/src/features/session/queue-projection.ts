@@ -25,7 +25,7 @@ export interface QueueRow {
   blockedReason?: 'runtime_stale';
   /** The row's files, by name and type only — see `projectQueueRows`. */
   attachments?: ReadonlyArray<{ filename: string; mime: string }>;
-  /** `uploading` while the row is undelivered, `failed` with the row's error. */
+  /** Present only when the accepted row failed before runtime delivery. */
   uploadStatus?: { state: 'uploading' } | { state: 'failed'; message: string };
 }
 
@@ -73,12 +73,17 @@ export function projectQueueRows(input: {
       ...(attachments.length > 0
         ? {
             attachments,
-            // `state`, never `last_error` alone — a queued row can carry a
-            // stale error from an attempt the server is about to retry.
-            uploadStatus:
-              prompt.state === 'failed'
-                ? ({ state: 'failed', message: prompt.last_error ?? 'Upload failed' } as const)
-                : ({ state: 'uploading' } as const),
+            // The browser upload completed before this row was accepted. A
+            // missing runtime path affects preview availability, not upload
+            // progress. Keep only a real failed-send status here.
+            ...(prompt.state === 'failed'
+              ? {
+                  uploadStatus: {
+                    state: 'failed',
+                    message: prompt.last_error ?? 'Upload failed',
+                  } as const,
+                }
+              : {}),
           }
         : {}),
     };

@@ -18,9 +18,9 @@ import {
   BUBBLE_SURFACE,
   BUBBLE_TEXT,
   MessageAttachments,
+  UserMessageActions,
   type AttachmentUploadStatus,
   type NormalizedAttachment,
-  UserMessageActions,
 } from '@/features/session/turn/user-message';
 import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { cn } from '@/lib/utils';
@@ -64,8 +64,7 @@ export function OptimisticTurn({
   /** Opens a file mention. Omitted before a runtime exists — mentions then
    *  render as static chips rather than dead buttons. */
   onFileClick,
-  /** Paint every tile as still-uploading while there is no sandbox yet
-   *  (instant shell). Same `pending` flag MessageAttachments uses on send. */
+  /** Prevent runtime previews while there is no sandbox yet (instant shell). */
   deferPreview,
   /**
    * Files this prompt is sending, by NAME and TYPE only.
@@ -75,14 +74,12 @@ export function OptimisticTurn({
    * (the upload has not landed, and the row is polled). Without them a
    * refreshed tab drew a bare sentence for a send of seven attachments and the
    * user could not tell a stuck upload from a prompt that never had files.
-   * Always rendered pending: a staged file has no sandbox path to preview.
+   * Rendered without an open action until a runtime path exists.
    */
   attachments: staged,
   /**
-   * What to say about attachments still going up — see
-   * {@link AttachmentUploadStatus}. The runtime creates the user's message
-   * only after every file has been written to the box, so this bubble is the
-   * whole UI for that wait and has to narrate it.
+   * A failed accepted send remains visible until retry — see
+   * {@link AttachmentUploadStatus}.
    */
   uploadStatus,
   /** Keys the busy indicator's dot-matrix glyph — see `SessionDotMatrix`. */
@@ -165,9 +162,10 @@ function OptimisticUserBubble({
       mime: f.mime,
       // An upload that has not landed has no sandbox path to resolve. Passing
       // the old PREDICTED path made the tile fetch a file that did not exist.
-      src: f.path || undefined,
-      path: f.path || undefined,
-      pending: deferPreview || Boolean(f.pending) || !f.path,
+      src: deferPreview ? undefined : f.path || undefined,
+      path: deferPreview ? undefined : f.path || undefined,
+      // `pending` in the serialized ref is an attachment identity, not browser
+      // upload progress. No path already keeps this tile inert.
     }));
 
     // A file that already landed is BOTH a text ref and (after a reload) a
@@ -179,9 +177,7 @@ function OptimisticUserBubble({
         key: `staged:${i}:${file.filename}`,
         filename: file.filename,
         mime: file.mime,
-        // No `src`/`path`: the bytes are still on their way to the box. The
-        // tile is a skeleton until the runtime echoes the real message.
-        pending: true,
+        // No `src`/`path`: the runtime cannot preview or open this tile yet.
       }));
 
     return [...fromText, ...fromStaged];
@@ -190,11 +186,7 @@ function OptimisticUserBubble({
   return (
     <div className="ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end">
       {attachments.length > 0 && (
-        <MessageAttachments
-          attachments={attachments}
-          pending={deferPreview}
-          status={uploadStatus}
-        />
+        <MessageAttachments attachments={attachments} status={uploadStatus} />
       )}
       {(cleanText || replyContext) && (
         <div className={cn(BUBBLE_SURFACE, 'w-fit overflow-hidden')}>

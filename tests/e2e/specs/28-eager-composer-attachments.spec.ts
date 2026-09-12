@@ -255,6 +255,11 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     });
     await pickerBegin;
     await expect(page.locator('img[alt="picker.png"]')).toBeVisible();
+    // The local preview appears before its chunk upload settles. Wait for the
+    // actual upload state so the forced retry.txt failures cannot hit picker.png.
+    await expect(
+      page.locator('[title="picker.png"] .animate-spinner-orbit'),
+    ).toHaveCount(0, { timeout: 30_000 });
 
     failChunks = 3;
     await page.locator("input[type=file]").setInputFiles({
@@ -359,6 +364,12 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     expect(JSON.stringify(promptBodies[1])).not.toContain("data:");
     expect(chunkRequests).toBe(chunksBeforeRetry);
     const response = await secondResponse;
+    await expect(page.locator('[title="picker.png"]')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.locator('[title="picker.png"] .animate-spinner-orbit'),
+    ).toHaveCount(0);
     if (isDeployedTarget()) {
       expect(response.ok()).toBe(true);
       await expect(page).toHaveURL(/\/projects\/[^/]+\/sessions\/[^/]+/, {

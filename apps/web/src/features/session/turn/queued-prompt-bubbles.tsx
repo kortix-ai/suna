@@ -24,12 +24,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
-import {
-  ArrowClockwiseIcon,
-  PaperPlaneRightIcon,
-  WarningIcon,
-  XIcon,
-} from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, PaperPlaneRightIcon, WarningIcon, XIcon } from '@phosphor-icons/react';
 import {
   type AttachmentUploadStatus,
   BUBBLE_SURFACE,
@@ -46,12 +41,12 @@ export interface QueuedPromptRow {
   blockedReason?: 'runtime_stale';
   /**
    * The row's files, by NAME and TYPE. A queued row is the only thing on
-   * screen for a prompt whose bytes are still travelling to the box, and on a
-   * warm box that is the whole upload window: drawn text-only, a send of
+   * screen for a prompt waiting on runtime delivery, and on a warm box that is
+   * the whole delivery window: drawn text-only, a send of
    * three files read as a send of none (2026-09-04, browser-measured).
    */
   attachments?: ReadonlyArray<{ filename: string; mime: string }>;
-  /** What the strip says about them — see `AttachmentUploadStatus`. */
+  /** A failed accepted send remains visible until retry. */
   uploadStatus?: AttachmentUploadStatus;
 }
 
@@ -288,8 +283,7 @@ function QueuedBubble({
     key: `queued:${row.id}:${index}:${file.filename}`,
     filename: file.filename,
     mime: file.mime,
-    // No `src`/`path`: nothing to preview until the runtime holds the bytes.
-    pending: true,
+    // No `src`/`path`: nothing to preview or open until the runtime holds the bytes.
   }));
   return (
     <div
@@ -301,17 +295,16 @@ function QueuedBubble({
           to its right, revealed on hover — never floating in space. The
           column is width-reserved (`w-6`) so nothing shifts on hover. */}
       {/* The row's files, ABOVE the bubble exactly where the sent message will
-          draw them, every tile pending: the bytes are still on their way. Same
-          strip and the same "Uploading N files…" line the boot shell shows, so
-          the warm-box path stops being the one path with no tiles. */}
+          draw them. The browser upload already completed before acceptance;
+          unavailable runtime previews remain stable and inert. */}
       {queuedTiles.length > 0 && (
-        <MessageAttachments attachments={queuedTiles} pending status={row.uploadStatus} />
+        <MessageAttachments attachments={queuedTiles} status={row.uploadStatus} />
       )}
       <div className="flex w-full items-center justify-end gap-1">
         <div
           className={cn(
             BUBBLE_SURFACE,
-            'w-fit transition-opacity duration-normal motion-reduce:transition-none',
+            'duration-normal w-fit transition-opacity motion-reduce:transition-none',
             failed ? 'opacity-90' : live ? 'opacity-100' : QUEUED_BUBBLE_OPACITY_CLASS,
           )}
         >
@@ -321,7 +314,7 @@ function QueuedBubble({
         </div>
         <div
           className={cn(
-            'flex w-6 shrink-0 flex-col items-center justify-center transition-opacity duration-normal motion-reduce:transition-none',
+            'duration-normal flex w-6 shrink-0 flex-col items-center justify-center transition-opacity motion-reduce:transition-none',
             failed
               ? 'opacity-100'
               : 'opacity-0 group-hover/queued:opacity-100 focus-within:opacity-100',

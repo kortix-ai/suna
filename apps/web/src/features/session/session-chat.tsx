@@ -2262,14 +2262,10 @@ export function SessionChat({
   // it runs now or waits for the turn in flight.
   const promptInbox = useSessionPrompts(projectId, projectSessionId);
   /**
-   * What the first prompt's attachment strip should say while its files are
-   * still travelling to the box.
+   * What the first prompt's attachment strip should say before runtime delivery.
    *
-   * The runtime creates the user's message only after every attachment has
-   * landed, so for the whole upload the preview bubble is the only thing on
-   * screen — and it used to show tiles with no word about what was happening.
-   * The undelivered row is the witness: it carries the names, and `last_error`
-   * is the one place a failed upload is ever named.
+   * Browser upload completes before prompt acceptance. The undelivered row
+   * carries names and reports a real failed send through `last_error`.
    */
   const firstPromptUploadStatus = useMemo((): AttachmentUploadStatus | undefined => {
     const row = promptInbox.prompts.find((p) => (p.attachments?.length ?? 0) > 0);
@@ -2280,7 +2276,7 @@ export function SessionChat({
     // (review finding, 2026-09-05).
     return row.state === 'failed'
       ? { state: 'failed', message: row.last_error ?? 'Upload failed' }
-      : { state: 'uploading' };
+      : undefined;
   }, [promptInbox.prompts]);
 
   // T10: the most recently issued stop/cancel's `AbortSettlement`
@@ -5511,11 +5507,8 @@ export function SessionChat({
                                 firstPromptSource.text,
                                 firstPromptSource.files,
                               )}
-                              // The bytes are still being written to the box
-                              // chunk by chunk; without this the strip's
-                              // "Uploading N files…" line vanished the instant
-                              // the boot shell handed over to this component,
-                              // mid-upload.
+                              // Preserve a real failed-send status through the
+                              // boot-shell handover without inventing upload progress.
                               uploadStatus={firstPromptUploadStatus}
                               agentNames={agentNames}
                               onFileClick={openFileInComputer}
@@ -5613,7 +5606,7 @@ export function SessionChat({
                                   }
                                   uploadStatus={
                                     turnIndex === 0 && firstTurnHandover?.attachments.length
-                                      ? (firstPromptUploadStatus ?? { state: 'uploading' })
+                                      ? firstPromptUploadStatus
                                       : undefined
                                   }
                                   sessionWorking={lastTurnWorking}

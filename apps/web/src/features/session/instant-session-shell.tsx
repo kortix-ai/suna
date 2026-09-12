@@ -168,24 +168,22 @@ export function InstantSessionShell({
     );
     if (!row) return null;
     // `files` stays empty: this tab never held the bytes. The row's attachment
-    // NAMES are what the bubble draws, as pending tiles, so a reloaded tab
+    // NAMES are what the bubble draws as stable inert tiles, so a reloaded tab
     // shows the same seven files the sending tab did instead of a bare
     // sentence (2026-09-04).
     return {
       text: row.text,
       files: [] as AttachedFile[],
       attachments: row.attachments ?? [],
-      // The row IS the upload's progress. Its bytes are written to the box
-      // one chunk at a time before the runtime creates the message, so an
-      // undelivered row with attachments means "still going up" — and
-      // `last_error` is the only place a failed upload is ever named.
+      // Browser upload completed before the row was accepted. The row can
+      // still name a failed send, but an undelivered row is not upload progress.
       // `state`, never `last_error` alone: the API writes `last_error` on
       // rows it keeps `queued` and retries, and never clears it on success.
       uploadStatus:
         (row.attachments?.length ?? 0) > 0
           ? row.state === 'failed'
             ? ({ state: 'failed', message: row.last_error ?? 'Upload failed' } as const)
-            : ({ state: 'uploading' } as const)
+            : undefined
           : undefined,
     };
   }, [promptInbox.prompts]);
@@ -241,8 +239,7 @@ export function InstantSessionShell({
         // Only when this tab holds no bytes of its own — otherwise the local
         // files already draw every tile and these names would double them.
         attachments: localFiles.length > 0 ? [] : (pendingRowSubmission?.attachments ?? []),
-        // Sourced from the row either way: it is the only witness to bytes
-        // still travelling to the box, whether or not this tab holds them.
+        // Sourced from the row either way so a real failed send remains visible.
         uploadStatus: pendingRowSubmission?.uploadStatus,
       }
     : null;
@@ -420,7 +417,7 @@ export function InstantSessionShell({
                   {/* The optimistic turn, rendered by the component SessionChat
                     also renders — not a copy of it. `deferPreview` is the one
                     difference the shell is entitled to: there is no sandbox yet,
-                    so MessageAttachments paints every tile as pending. The
+                    so runtime previews remain unavailable. The
                     waiting row underneath says "Thinking" at every boot stage,
                     exactly as it will once the real chat takes over. */}
                   <OptimisticTurn

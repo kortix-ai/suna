@@ -1,6 +1,6 @@
+import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { OptimisticTurn } from './optimistic-turn';
@@ -104,9 +104,7 @@ describe('OptimisticTurn', () => {
       expect(chat).toContain(box);
     }
     // Both still open with the same bubble and close with the same waiting row.
-    expect(shell.slice(0, shell.indexOf('size-28'))).toBe(
-      chat.slice(0, chat.indexOf('size-28')),
-    );
+    expect(shell.slice(0, shell.indexOf('size-28'))).toBe(chat.slice(0, chat.indexOf('size-28')));
     expect(shell).toContain('Thinking');
     expect(chat).toContain('Thinking');
   });
@@ -129,7 +127,7 @@ describe('OptimisticTurn staged attachments', () => {
   // NAMES ONLY — no bytes, no sandbox path, because the upload has not landed.
   // Without this the refreshed tab showed a bare sentence for a send of seven
   // attachments (2026-09-04), which reads as "my files were dropped".
-  test('draws a pending tile per staged attachment after a reload', () => {
+  test('draws a stable tile per staged attachment after a reload', () => {
     const markup = render(
       <OptimisticTurn
         text="YO BRO"
@@ -142,6 +140,7 @@ describe('OptimisticTurn staged attachments', () => {
     expect(markup).toContain('YO BRO');
     expect(markup).toContain('20260830_134945.jpg');
     expect(markup).toContain('spec.pdf');
+    expect(markup).not.toContain('animate-spinner-orbit');
   });
 
   test('keeps send order', () => {
@@ -195,7 +194,7 @@ describe('OptimisticTurn upload status', () => {
   // whole upload — it has to say what is happening.
   // No "Uploading N files…" line: every tile already spins while its bytes
   // are on their way, and a second line said the same thing (Jay, 2026-09-06).
-  test('while uploading, the tiles spin and nothing is written under them', () => {
+  test('an accepted first-send attachment does not restart upload progress', () => {
     const markup = render(
       <OptimisticTurn
         text="YO BRO"
@@ -208,7 +207,7 @@ describe('OptimisticTurn upload status', () => {
       />,
     );
     expect(markup).not.toContain('Uploading');
-    expect(markup).toContain('animate-spinner-orbit');
+    expect(markup).not.toContain('animate-spinner-orbit');
     expect(markup).toContain('a.jpg');
     expect(markup).toContain('c.svg');
   });
@@ -228,11 +227,11 @@ describe('OptimisticTurn upload status', () => {
     expect(markup).not.toContain('Uploading');
   });
 
-  test('a staged file in a running-session turn spins, with no line under it', () => {
-    const pending = render(
+  test('a staged file in a running-session turn stays stable, with no line under it', () => {
+    const accepted = render(
       <OptimisticTurn text="x" attachments={[{ filename: 'a.png', mime: 'image/png' }]} />,
     );
-    expect(pending).toContain('animate-spinner-orbit');
-    expect(pending).not.toContain('Uploading');
+    expect(accepted).not.toContain('animate-spinner-orbit');
+    expect(accepted).not.toContain('Uploading');
   });
 });

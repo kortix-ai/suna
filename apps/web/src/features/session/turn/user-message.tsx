@@ -45,9 +45,9 @@ import {
 } from '@/ui';
 import {
   AttachmentTile,
+  isPreviewableImage,
   TILE_INTERACTIVE,
   TILE_SURFACE,
-  isPreviewableImage,
 } from '../attachment-tile';
 import { MentionChip } from '../mention-chip';
 import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
@@ -766,26 +766,26 @@ export function MessageAttachments({
             );
           }
 
-        if (isImageAttachment(file)) {
+          if (isImageAttachment(file)) {
+            return (
+              <li key={file.key} className="contents">
+                <AttachmentImage file={file} pending={pending} />
+              </li>
+            );
+          }
+
+          const canOpen = Boolean(file.path);
           return (
             <li key={file.key} className="contents">
-              <AttachmentImage file={file} pending={pending} />
+              <AttachmentTile
+                filename={file.filename}
+                mime={file.mime}
+                pending={pending || file.pending}
+                onOpen={canOpen ? () => openFileInComputer(file.path!) : undefined}
+              />
             </li>
           );
-        }
-
-        const canOpen = Boolean(file.path);
-        return (
-          <li key={file.key} className="contents">
-            <AttachmentTile
-              filename={file.filename}
-              mime={file.mime}
-              pending={pending || file.pending}
-              onOpen={canOpen ? () => openFileInComputer(file.path!) : undefined}
-            />
-          </li>
-        );
-      })}
+        })}
       </ul>
       {caption && (
         // Right-aligned under the strip, on the same rail as the tiles. One
@@ -1245,12 +1245,12 @@ export function UserMessage({
   /**
    * Files this message is KNOWN to carry that its parts do not show yet. The
    * runtime streams a message's parts text-first and the file parts seconds
-   * later; drawing these as pending tiles in the meantime is what keeps the
+   * later; drawing these as stable tiles in the meantime is what keeps the
    * strip from blinking out for that window. Deduped by name against the
    * parts that have arrived.
    */
   pendingAttachments?: ReadonlyArray<{ filename: string; mime: string }>;
-  /** What the strip says while `pendingAttachments` are in flight. */
+  /** A failed accepted send remains visible until retry. */
   uploadStatus?: AttachmentUploadStatus;
   /**
    * The prompt's text as the sender knew it, for the frames where this
@@ -1316,7 +1316,8 @@ export function UserMessage({
         key: `pending:${message.info.id}:${index}:${file.filename}`,
         filename: file.filename,
         mime: file.mime,
-        pending: true,
+        // No runtime part means no preview path or open action yet. The
+        // browser upload completed before the prompt was accepted.
       }));
     return [...arrived, ...missing];
   }, [message.parts, uploadedFiles, pendingAttachments, message.info.id]);
