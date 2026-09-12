@@ -26,6 +26,9 @@ export type DraftScope =
  */
 export type RemoteAttachedFile = Extract<AttachedFile, { kind: 'remote' }>;
 
+/** In-memory association; serialization strips the controller's local identity. */
+export type CompletedDraftAttachment = PromptAttachment & { uploadId: string };
+
 /** Bumped whenever `StoredDraft`'s shape changes. Old drafts then read as misses. */
 export const DRAFT_ENVELOPE_VERSION = 3;
 
@@ -91,7 +94,7 @@ export function serializeDraft(input: {
   doc: JSONContent;
   documentIsEmpty: boolean;
   files: readonly AttachedFile[];
-  attachments?: readonly PromptAttachment[];
+  attachments?: readonly CompletedDraftAttachment[];
   userId: string;
 }): StoredDraft | null {
   if (!input.userId) return null;
@@ -101,13 +104,12 @@ export function serializeDraft(input: {
   const attachmentsById = new Map(
     attachments.map((attachment) => [attachment.attachment_id, attachment]),
   );
-  const attachmentsByFile = new Map<string, PromptAttachment[]>();
-  for (const attachment of attachments) {
-    const key = `${attachment.filename}\0${attachment.mime}\0${attachment.size}`;
-    const matches = attachmentsByFile.get(key) ?? [];
-    matches.push(attachment);
-    attachmentsByFile.set(key, matches);
-  }
+  const attachmentsByUploadId = new Map(
+    (input.attachments ?? []).map((attachment) => [
+      attachment.uploadId,
+      attachmentsById.get(attachment.attachment_id),
+    ]),
+  );
   const order: DraftAttachmentOrderEntry[] = [];
   for (const file of input.files) {
     if (file.kind === 'remote') {
@@ -118,12 +120,7 @@ export function serializeDraft(input: {
     if (file.kind === 'staged') {
       attachment = attachmentsById.get(file.attachment.attachment_id);
     } else {
-      const matches =
-        attachmentsByFile.get(`${file.file.name}\0${file.file.type}\0${file.file.size}`) ?? [];
-      while (matches.length > 0 && !unusedAttachments.has(matches[0]!.attachment_id)) {
-        matches.shift();
-      }
-      attachment = matches.shift();
+      attachment = attachmentsByUploadId.get(file.uploadId);
     }
     if (attachment) {
       unusedAttachments.delete(attachment.attachment_id);

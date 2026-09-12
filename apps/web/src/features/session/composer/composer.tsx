@@ -550,7 +550,7 @@ function ComposerImpl({
     attachedFiles,
     attachments: promptAttachmentItems
       .filter((item) => item.status === 'ready' && item.attachment)
-      .map((item) => item.attachment!),
+      .map((item) => ({ ...item.attachment!, uploadId: item.id })),
     hasPrefill: !!prefill,
     onRestore: handleDraftRestore,
   });

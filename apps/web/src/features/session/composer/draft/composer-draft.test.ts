@@ -101,7 +101,7 @@ describe('serializeDraft', () => {
       doc: EMPTY_DOC,
       documentIsEmpty: true,
       files: [LOCAL_FILE],
-      attachments: [attachment],
+      attachments: [{ ...attachment, uploadId: 'local-ready' }],
       userId: USER,
     });
 
@@ -227,7 +227,7 @@ describe('deserializeDraft', () => {
       doc: EMPTY_DOC,
       documentIsEmpty: true,
       files: [staged, REMOTE_FILE],
-      attachments: [attachment],
+      attachments: [{ ...attachment, uploadId: staged.uploadId }],
       userId: USER,
     });
     const back = deserializeDraft(JSON.parse(JSON.stringify(stored)), USER);
@@ -252,38 +252,45 @@ describe('deserializeDraft', () => {
   test('preserves mixed attachment order through save, reload, capture, and Send', async () => {
     const firstAttachment = {
       attachment_id: 'att-first',
-      filename: 'first.txt',
-      mime: 'text/plain',
+      filename: 'first.bin',
+      mime: 'application/octet-stream',
       size: 5,
       expires_at: '2099-01-01T00:00:00.000Z',
     };
     const thirdAttachment = {
       attachment_id: 'att-third',
-      filename: 'third.txt',
+      filename: 'third_.txt',
       mime: 'text/plain',
       size: 5,
       expires_at: '2099-01-01T00:00:00.000Z',
     };
     const first: AttachedFile = {
-      kind: 'staged',
+      kind: 'local',
       uploadId: 'before-reload-first',
-      attachment: firstAttachment,
-      filename: firstAttachment.filename,
-      mime: firstAttachment.mime,
+      file: new File(['first'], 'first.bin'),
+      localUrl: 'blob:first',
       isImage: false,
     };
     const third: AttachedFile = {
       kind: 'local',
       uploadId: 'before-reload-third',
-      file: new File(['third'], thirdAttachment.filename, { type: thirdAttachment.mime }),
+      file: new File(['third'], 'third?.txt', { type: 'text/plain; charset=utf-8' }),
       localUrl: 'blob:third',
       isImage: false,
     };
+    // Identical display metadata belongs to distinct uploads. Controller
+    // completion order below deliberately differs from the tray order.
+    const fourthAttachment = { ...thirdAttachment, attachment_id: 'att-fourth' };
+    const fourth: AttachedFile = { ...third, uploadId: 'before-reload-fourth' };
     const stored = serializeDraft({
       doc: EMPTY_DOC,
       documentIsEmpty: true,
-      files: [first, REMOTE_FILE, third],
-      attachments: [firstAttachment, thirdAttachment],
+      files: [first, REMOTE_FILE, third, REMOTE_FILE, fourth],
+      attachments: [
+        { ...fourthAttachment, uploadId: fourth.uploadId },
+        { ...thirdAttachment, uploadId: third.uploadId },
+        { ...firstAttachment, uploadId: first.uploadId },
+      ],
       userId: USER,
     });
     const back = deserializeDraft(JSON.parse(JSON.stringify(stored)), USER);
@@ -296,7 +303,7 @@ describe('deserializeDraft', () => {
       mime: attachment.mime,
       isImage: attachment.mime.startsWith('image/'),
     }));
-    const readyParts: SessionPromptPart[] = [firstAttachment, thirdAttachment].map(
+    const readyParts: SessionPromptPart[] = [firstAttachment, thirdAttachment, fourthAttachment].map(
       (attachment) => ({
         type: 'file',
         attachment_id: attachment.attachment_id,
@@ -306,7 +313,7 @@ describe('deserializeDraft', () => {
     );
     const snapshot: PromptAttachmentSnapshot = {
       canSend: true,
-      attachments: [firstAttachment, thirdAttachment].map((attachment) => ({
+      attachments: [firstAttachment, thirdAttachment, fourthAttachment].map((attachment) => ({
         id: `restored-${attachment.attachment_id}`,
         filename: attachment.filename,
         mime: attachment.mime,
@@ -324,14 +331,20 @@ describe('deserializeDraft', () => {
 
     expect(
       restored.map((file) => (file.kind === 'local' ? file.file.name : file.filename)),
-    ).toEqual(['first.txt', 'a.png', 'third.txt']);
-    expect(captured.submittedIds).toEqual(['restored-att-first', 'restored-att-third']);
-    expect(sent.map((part) => part.filename)).toEqual(['first.txt', 'a.png', 'third.txt']);
+    ).toEqual(['first.bin', 'a.png', 'third_.txt', 'a.png', 'third_.txt']);
+    expect(captured.submittedIds).toEqual(['restored-att-first', 'restored-att-third', 'restored-att-fourth']);
+    expect(sent.map((part) => part.filename)).toEqual(['first.bin', 'a.png', 'third_.txt', 'a.png', 'third_.txt']);
     expect(sent.map((part) => part.attachment_id ?? part.url)).toEqual([
       'att-first',
       REMOTE_FILE.kind === 'remote' ? REMOTE_FILE.url : '',
       'att-third',
+      REMOTE_FILE.kind === 'remote' ? REMOTE_FILE.url : '',
+      'att-fourth',
     ]);
+    const serialized = JSON.stringify(back);
+    for (const forbidden of ['blob:', 'data:', 'uploadId', 'third?', 'charset=', 'signed']) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 
   test('a stale envelope version is refused', () => {

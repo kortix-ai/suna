@@ -273,6 +273,72 @@ export async function ensureLocalMigrations(
   if (exitCode !== 0) {
     throw new Error(`local database migration exited with code ${exitCode}`);
   }
+  await waitForLocalPostgrest(supabase);
+}
+
+/** Migrations can finish while PostgREST still backs off from a missing schema. */
+export async function waitForLocalPostgrest(
+  supabase: LocalSupabaseEnvironment,
+  options: { request?: typeof fetch; timeoutMs?: number; pollMs?: number } = {},
+): Promise<void> {
+  if (!supabase.API_URL || !supabase.SERVICE_ROLE_KEY) {
+    throw new Error('local Supabase environment is missing REST credentials');
+  }
+  const url = localEndpoint(supabase.API_URL, 'local Supabase', '/rest/v1/credit_accounts');
+  url.search = 'select=account_id&limit=0';
+  const request = options.request ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 90_000;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const signal = AbortSignal.timeout(Math.max(1, Math.min(2_000, deadline - Date.now())));
+    let response: Response | undefined;
+    try {
+      response = await request(url, {
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          apikey: supabase.SERVICE_ROLE_KEY,
+          authorization: `Bearer ${supabase.SERVICE_ROLE_KEY}`,
+          'accept-profile': 'kortix',
+        },
+        signal,
+      });
+    } catch {
+      // A starting service can refuse the connection or exceed the attempt budget.
+      // Never print fetch errors: they can contain request credentials or URLs.
+    }
+    if (response) {
+      if (response.status === 200 || response.status === 404) {
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch {
+          if (!signal.aborted) {
+            throw new Error('local PostgREST schema probe returned an invalid result');
+          }
+        }
+        if (!signal.aborted) {
+          if (response.status === 200) {
+            if (Array.isArray(body) && body.length === 0) return;
+            throw new Error('local PostgREST schema probe returned an invalid result');
+          }
+          if (!body || typeof body !== 'object' || !('code' in body) || body.code !== 'PGRST205') {
+            throw new Error('local PostgREST schema probe rejected: HTTP 404');
+          }
+        }
+      } else {
+        await response.body?.cancel();
+        if (![502, 503, 504].includes(response.status)) {
+          throw new Error(`local PostgREST schema probe rejected: HTTP ${response.status}`);
+        }
+      }
+    }
+    const remaining = deadline - Date.now();
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(options.pollMs ?? 250, remaining)));
+    }
+  }
+  throw new Error(`local PostgREST kortix schema did not become ready within ${timeoutMs}ms`);
 }
 
 export async function localApiHealthy(apiUrl: string): Promise<boolean> {

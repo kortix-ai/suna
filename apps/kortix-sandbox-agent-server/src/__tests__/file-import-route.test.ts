@@ -8,6 +8,7 @@ import type { Config } from '../config'
 import type { Opencode } from '../opencode'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { buildOpencodeApp } from '../proxy'
+import { logger } from '../logger'
 
 const TOKEN = 'import-test-token'
 const COMMAND_ID = '11111111-1111-4111-8111-111111111111'
@@ -16,6 +17,20 @@ const bytes = new TextEncoder().encode('verified attachment')
 const sha256 = createHash('sha256').update(bytes).digest('hex')
 let workspace = ''
 let originalFetch: typeof fetch
+let warningSpy: ReturnType<typeof spyOn<typeof logger, 'warn'>>
+const UPSTREAM_SECRET = 'upstream-secret-text'
+
+function assertImportFailureWarning(response: Response) {
+  expect(response.status).toBe(502)
+  const calls = warningSpy.mock.calls.splice(0)
+  expect(calls).toEqual([[
+    '[files] attachment import failed',
+    { command_id: COMMAND_ID, attachment_id: ATTACHMENT_ID, reason: 'failed' },
+  ]])
+  for (const forbidden of ['http://', 'https://', 'Bearer ', TOKEN, 'token=secret', UPSTREAM_SECRET]) {
+    expect(JSON.stringify(calls)).not.toContain(forbidden)
+  }
+}
 
 function config(overrides: Partial<Config> = {}): Config {
   return {
@@ -143,11 +158,21 @@ describe('POST /file/import', () => {
   beforeEach(async () => {
     workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-import-test-'))
     originalFetch = globalThis.fetch
+    const warn = logger.warn
+    warningSpy = spyOn(logger, 'warn').mockImplementation((message, context) => {
+      if (message !== '[files] attachment import failed') warn(message, context)
+    })
   })
 
   afterEach(async () => {
     globalThis.fetch = originalFetch
-    await fs.rm(workspace, { recursive: true, force: true })
+    try {
+      // Every expected warning must be asserted by the case that caused it.
+      expect(warningSpy.mock.calls).toEqual([])
+    } finally {
+      warningSpy.mockRestore()
+      await fs.rm(workspace, { recursive: true, force: true })
+    }
   })
 
   it('pulls a server-bound descriptor and writes verified bytes atomically', async () => {
@@ -240,7 +265,7 @@ describe('POST /file/import', () => {
       part_index: 0,
     })
 
-    expect(response.status).toBe(502)
+    assertImportFailureWarning(response)
     expect(canceled).toBe(true)
   })
 
@@ -248,7 +273,7 @@ describe('POST /file/import', () => {
     let canceled = false
     const writeSpy = interceptTemporaryWrites(async ({ call, bytes, writeOriginal }) => {
       if (call === 1) return writeOriginal(bytes.subarray(0, 5))
-      throw Object.assign(new Error('injected write failure'), { code: 'EIO' })
+      throw Object.assign(new Error(`injected write failure ${UPSTREAM_SECRET} Bearer ${TOKEN}`), { code: 'EIO' })
     })
     try {
       const body = new ReadableStream<Uint8Array>({
@@ -273,7 +298,7 @@ describe('POST /file/import', () => {
         part_index: 0,
       })
 
-      expect(response.status).toBe(502)
+      assertImportFailureWarning(response)
       expect(canceled).toBe(true)
       expect(await fs.readdir(path.dirname(targetPath())).catch(() => [])).toEqual([])
     } finally {
@@ -324,7 +349,7 @@ describe('POST /file/import', () => {
       part_index: 0,
     })
 
-    expect(response.status).toBe(502)
+    assertImportFailureWarning(response)
     expect(await response.text()).not.toContain('token=secret')
     expect(await fs.readdir(path.dirname(targetPath()))).toEqual([])
   })
@@ -350,7 +375,7 @@ describe('POST /file/import', () => {
         part_index: 0,
       })
 
-      expect(response.status).toBe(502)
+      assertImportFailureWarning(response)
       expect(calls).toHaveLength(1)
     }
   })
@@ -362,11 +387,11 @@ describe('POST /file/import', () => {
           const url = String(input)
           if (url.startsWith('http://api.test/')) {
             if (failure === 'descriptor-redirect') return Response.redirect('http://attacker.test/', 302)
-            if (failure === 'descriptor-error') return Response.json({ error: 'denied' }, { status: 403 })
+            if (failure === 'descriptor-error') return Response.json({ error: `${UPSTREAM_SECRET} Bearer ${TOKEN}` }, { status: 403 })
             return Response.json(descriptor())
           }
           if (failure === 'download-redirect') return Response.redirect('http://attacker.test/', 302)
-          return new Response('failed', { status: 503 })
+          return new Response(`${UPSTREAM_SECRET} Bearer ${TOKEN}`, { status: 503 })
         },
         { preconnect: originalFetch.preconnect },
       )
@@ -376,7 +401,7 @@ describe('POST /file/import', () => {
         part_index: 0,
       })
 
-      expect(response.status).toBe(502)
+      assertImportFailureWarning(response)
       expect(await response.text()).not.toContain('attacker.test')
     }
   })
@@ -397,7 +422,7 @@ describe('POST /file/import', () => {
         part_index: 0,
       })
 
-      expect(response.status).toBe(502)
+      assertImportFailureWarning(response)
       expect(await fs.stat(targetPath()).then(() => true).catch(() => false)).toBe(false)
       expect(await fs.readdir(path.dirname(targetPath())).catch(() => [])).toEqual([])
     }
@@ -441,7 +466,7 @@ describe('POST /file/import', () => {
       part_index: 0,
     })
 
-    expect(response.status).toBe(502)
+    assertImportFailureWarning(response)
     expect(calls).toEqual([
       `https://api.test/v1/projects/${config().projectId}/runtime/prompt-attachments/${ATTACHMENT_ID}?command_id=${COMMAND_ID}&part_index=0`,
     ])
@@ -466,7 +491,7 @@ describe('POST /file/import', () => {
         part_index: 0,
       })
 
-      expect(response.status).toBe(502)
+      assertImportFailureWarning(response)
       expect(await fs.readdir(path.join(outside, COMMAND_ID))).toEqual([])
     } finally {
       await fs.rm(outside, { recursive: true, force: true })

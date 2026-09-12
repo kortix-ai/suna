@@ -72,9 +72,7 @@ let dbReadDelayMs = 0;
 const afterReadDelay = <T>(value: () => T): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(value()), dbReadDelayMs));
 
-const databaseMock = {
-  transaction: async <T>(callback: (tx: typeof databaseMock) => Promise<T>): Promise<T> =>
-    callback(databaseMock),
+const queryMock = {
   select: () => ({
     from: (table: unknown) => ({
       where: (predicate: unknown) => {
@@ -121,6 +119,12 @@ const databaseMock = {
       },
     }),
   }),
+};
+
+const databaseMock = {
+  ...queryMock,
+  transaction: async <T>(callback: (tx: typeof queryMock) => Promise<T>): Promise<T> =>
+    callback(queryMock),
 };
 
 /**

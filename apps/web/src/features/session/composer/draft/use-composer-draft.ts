@@ -1,6 +1,5 @@
 'use client';
 
-import type { PromptAttachment } from '@kortix/sdk';
 import type { JSONContent } from '@tiptap/core';
 import { type RefObject, useCallback, useEffect, useRef } from 'react';
 
@@ -10,6 +9,7 @@ import type { ComposerEditorHandle } from '../editor/composer-editor';
 import type { AttachedFile } from '../types';
 import {
   type DraftScope,
+  type CompletedDraftAttachment,
   type StoredDraft,
   draftScopeKey,
   serializeDraft,
@@ -32,7 +32,7 @@ export interface UseComposerDraftInput {
   editorReady: boolean;
   attachedFiles: readonly AttachedFile[];
   /** Completed SDK metadata. Never includes File objects or signed URLs. */
-  attachments: readonly PromptAttachment[];
+  attachments: readonly CompletedDraftAttachment[];
   /** An explicit prefill outranks a stored draft — see `shouldRestoreDraft`. */
   hasPrefill: boolean;
   /** Called once, with the validated draft, when it is this draft's turn. */
@@ -197,6 +197,7 @@ export function useComposerDraft({
       .filter((file) => file.kind === 'remote')
       .map((file) => [file.url, file.filename, file.mime]),
     attachments: attachments.map((attachment) => [
+      attachment.uploadId,
       attachment.attachment_id,
       attachment.filename,
       attachment.mime,

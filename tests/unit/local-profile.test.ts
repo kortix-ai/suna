@@ -15,6 +15,7 @@ import {
   localMigrationPlan,
   localTopology,
   parseSupabaseEnvironment,
+  waitForLocalPostgrest,
 } from "../src/core/local-stack";
 import { runExitCode } from "../src/core/result";
 
@@ -27,6 +28,68 @@ function registeredFlow(id: string, requires: RegisteredFlow["meta"]["requires"]
 }
 
 describe("ke2e local profile", () => {
+  it('waits for the migrated kortix schema before allowing REST fixtures', async () => {
+    const seen: Array<{ url: string; init?: RequestInit }> = [];
+    const responses = [
+      Response.json({ code: 'PGRST002' }, { status: 503 }),
+      Response.json({ code: 'PGRST205' }, { status: 404 }),
+      Response.json([]),
+    ];
+    await waitForLocalPostgrest({
+      API_URL: 'http://127.0.0.1:54321', SERVICE_ROLE_KEY: 'test-service-key',
+    }, {
+      pollMs: 1,
+      request: async (url, init) => {
+        seen.push({ url: String(url), init });
+        return responses.shift()!;
+      },
+    });
+    expect(seen).toHaveLength(3);
+    for (const { url, init } of seen) {
+      expect(url).toBe('http://127.0.0.1:54321/rest/v1/credit_accounts?select=account_id&limit=0');
+      expect(init?.method).toBe('GET');
+      expect(init?.redirect).toBe('error');
+      expect(new Headers(init?.headers).get('accept-profile')).toBe('kortix');
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer test-service-key');
+      expect(new Headers(init?.headers).get('apikey')).toBe('test-service-key');
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('bounds an unavailable schema without echoing credentials or upstream text', async () => {
+    let requests = 0;
+    await expect(waitForLocalPostgrest({
+      API_URL: 'http://127.0.0.1:54321', SERVICE_ROLE_KEY: 'test-service-key',
+    }, {
+      timeoutMs: 20, pollMs: 2,
+      request: async () => {
+        requests += 1;
+        return Response.json({ code: 'PGRST002', message: 'test-service-key upstream-secret' }, { status: 503 });
+      },
+    })).rejects.toThrow('local PostgREST kortix schema did not become ready within 20ms');
+    expect(requests).toBeGreaterThan(1);
+    expect(requests).toBeLessThan(20);
+  });
+
+  it.each([401, 403, 406, 500])('fails immediately on non-retryable HTTP %s', async (status) => {
+    let requests = 0;
+    await expect(waitForLocalPostgrest({
+      API_URL: 'http://127.0.0.1:54321', SERVICE_ROLE_KEY: 'test-service-key',
+    }, {
+      request: async () => {
+        requests += 1;
+        return Response.json({ message: 'test-service-key upstream-secret' }, { status });
+      },
+    })).rejects.toThrow(`local PostgREST schema probe rejected: HTTP ${status}`);
+    expect(requests).toBe(1);
+  });
+
+  it.each([{}, { code: 'PGRST002' }, [{ account_id: 'unexpected-row' }]])('requires the exact empty read result: %j', async (body) => {
+    await expect(waitForLocalPostgrest({
+      API_URL: 'http://127.0.0.1:54321', SERVICE_ROLE_KEY: 'test-service-key',
+    }, { request: async () => Response.json(body) })).rejects.toThrow('local PostgREST schema probe returned an invalid result');
+  });
+
   it("targets the current worktree and local Supabase only", () => {
     expect(
       localEnvironmentOverrides({
