@@ -6,13 +6,18 @@
  * It is never looked up during a prepared session start: that would put a
  * GitHub API call back on the critical path this feature exists to remove.
  */
-import { projects } from '@kortix/db';
+import { projectGitConnections, projects } from '@kortix/db';
 import { eq, sql, type SQL } from 'drizzle-orm';
 import { logger } from '../lib/logger';
-import { getProjectGitRemote, resolveUpstreamUrl, withProjectGitAuth } from '../projects/lib/git';
+import {
+  getProjectGitConnection,
+  getProjectGitRemote,
+  resolveUpstreamUrl,
+  withProjectGitAuth,
+} from '../projects/lib/git';
 import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
 import { getRepo, parseGitHubRepoUrl } from '../projects/github';
-import type { ProjectRow } from '../projects/lib/serializers';
+import type { ProjectGitConnectionRow, ProjectRow } from '../projects/lib/serializers';
 import { db } from '../shared/db';
 import {
   RepoSnapshotIdentityError,
@@ -37,8 +42,22 @@ export interface RepoIdentityResolution {
   githubBacked: boolean;
 }
 
-function upstreamGitHubCoordinates(project: ProjectRow): { owner: string; repo: string } | null {
-  const remote = getProjectGitRemote(project);
+/**
+ * The project's git connection row, or null. A database read and nothing else.
+ *
+ * Every managed and connected project records its remote HERE, and
+ * `getProjectGitRemote` gives this row precedence over project metadata. A
+ * snapshot identity read without it saw only the metadata copy — which for a
+ * managed project carries no provider and no repository id — so the whole
+ * feature silently skipped the product's main project path.
+ */
+type Connection = ProjectGitConnectionRow | null | undefined;
+
+function upstreamGitHubCoordinates(
+  project: ProjectRow,
+  connection?: Connection,
+): { owner: string; repo: string } | null {
+  const remote = getProjectGitRemote(project, connection);
   if (remote.repoOwner && remote.repoName) return { owner: remote.repoOwner, repo: remote.repoName };
   // `resolveUpstreamUrl` is the pure, DB-free derivation. The async
   // `resolveProjectUpstream` mints a credential, which this path must not do.
@@ -58,17 +77,36 @@ export const effectiveGitSubtreeSql = sql`(case when ${projects.metadata} ? 'git
   then ${projects.metadata} -> 'git'
   else coalesce(${projects.metadata} -> 'github', '{}'::jsonb) end)`;
 
-/** The repository id `getProjectGitRemote` would read. `repo_id` is the legacy spelling. */
-export const recordedRepositoryIdSql = sql`coalesce(
-  nullif(${effectiveGitSubtreeSql} ->> 'external_repo_id', ''),
-  nullif(${effectiveGitSubtreeSql} ->> 'repo_id', '')
+/** Does this project have a git connection row? When it does, that row wins. */
+const hasConnectionSql = sql`exists (
+  select 1 from kortix.project_git_connections c where c.project_id = ${projects.projectId}
 )`;
 
-/** Exactly the projects `getProjectGitRemote` reports as GitHub-backed. */
-export const githubBackedProjectsSql = sql`(
-  ${projects.metadata} -> 'git' ->> 'provider' = 'github'
-  or (not (${projects.metadata} ? 'git') and ${projects.metadata} ? 'github')
-)`;
+/**
+ * The repository id `getProjectGitRemote` would read.
+ *
+ * Same precedence as the TypeScript: a connection row, when one exists, is the
+ * whole answer — even when its repository id is empty, because the metadata copy
+ * is not consulted for a connected project. Otherwise the metadata subtree in
+ * effect, where `repo_id` is the legacy spelling.
+ */
+export const recordedRepositoryIdSql = sql`(case
+  when ${hasConnectionSql}
+  then (select nullif(c.external_repo_id, '') from kortix.project_git_connections c
+        where c.project_id = ${projects.projectId} limit 1)
+  else coalesce(
+    nullif(${effectiveGitSubtreeSql} ->> 'external_repo_id', ''),
+    nullif(${effectiveGitSubtreeSql} ->> 'repo_id', ''))
+end)`;
+
+/** Exactly the projects `getProjectGitRemote` reports as GitHub-backed, connection first. */
+export const githubBackedProjectsSql = sql`(case
+  when ${hasConnectionSql}
+  then exists (select 1 from kortix.project_git_connections c
+               where c.project_id = ${projects.projectId} and c.provider = 'github')
+  else (${projects.metadata} -> 'git' ->> 'provider' = 'github'
+        or (not (${projects.metadata} ? 'git') and ${projects.metadata} ? 'github'))
+end)`;
 
 /** Last snapshot-discovery attempt, from whichever subtree is in effect. */
 export const discoveryMarkerSql = sql`coalesce(${effectiveGitSubtreeSql} ->> 'snapshot_discovery_at', '')`;
@@ -105,18 +143,24 @@ export function repositoryIdFields(project: ProjectRow, repositoryId: string): R
 }
 
 /** The provider repository id already recorded on the project, if any. */
-export function recordedRepositoryId(project: ProjectRow): string | null {
-  const remote = getProjectGitRemote(project);
+export function recordedRepositoryId(project: ProjectRow, connection?: Connection): string | null {
+  const remote = getProjectGitRemote(project, connection);
   const value = (remote.externalRepoId ?? '').trim();
   return /^[0-9]{1,20}$/.test(value) ? value : null;
 }
 
 /**
  * Read the identity from what is already stored. No network, no GitHub token.
- * This is the ONLY variant a session-create path may call.
+ *
+ * Pass the project's connection row when the caller has it. Without it this
+ * sees only project metadata, which is wrong for every connected project; use
+ * `loadRepoSnapshotRepository` unless the row is already in hand.
  */
-export function readRepoSnapshotRepository(project: ProjectRow): RepoIdentityResolution {
-  const remote = getProjectGitRemote(project);
+export function readRepoSnapshotRepository(
+  project: ProjectRow,
+  connection?: Connection,
+): RepoIdentityResolution {
+  const remote = getProjectGitRemote(project, connection);
   if (remote.provider !== 'github') {
     return {
       repository: null,
@@ -124,7 +168,7 @@ export function readRepoSnapshotRepository(project: ProjectRow): RepoIdentityRes
       githubBacked: false,
     };
   }
-  const coordinates = upstreamGitHubCoordinates(project);
+  const coordinates = upstreamGitHubCoordinates(project, connection);
   if (!coordinates) {
     return {
       repository: null,
@@ -132,7 +176,7 @@ export function readRepoSnapshotRepository(project: ProjectRow): RepoIdentityRes
       githubBacked: true,
     };
   }
-  const repositoryId = recordedRepositoryId(project);
+  const repositoryId = recordedRepositoryId(project, connection);
   if (!repositoryId) {
     return {
       repository: null,
@@ -159,6 +203,16 @@ export function readRepoSnapshotRepository(project: ProjectRow): RepoIdentityRes
 }
 
 /**
+ * The identity from what is stored, INCLUDING the project's connection row.
+ *
+ * One database read, no network, no GitHub token: the variant a session-create
+ * path calls.
+ */
+export async function loadRepoSnapshotRepository(project: ProjectRow): Promise<RepoIdentityResolution> {
+  return readRepoSnapshotRepository(project, await getProjectGitConnection(project.projectId));
+}
+
+/**
  * Resolve the identity, reaching GitHub once when the repository id was never
  * recorded, and persist what it learns.
  *
@@ -169,11 +223,12 @@ export function readRepoSnapshotRepository(project: ProjectRow): RepoIdentityRes
 export async function ensureRepoSnapshotRepository(
   project: ProjectRow,
 ): Promise<RepoIdentityResolution> {
-  const cached = readRepoSnapshotRepository(project);
+  const connection = await getProjectGitConnection(project.projectId);
+  const cached = readRepoSnapshotRepository(project, connection);
   if (cached.repository || cached.unsupportedReason !== 'project has no recorded GitHub repository id') {
     return cached;
   }
-  const coordinates = upstreamGitHubCoordinates(project);
+  const coordinates = upstreamGitHubCoordinates(project, connection);
   if (!coordinates) {
     return {
       repository: null,
@@ -195,16 +250,26 @@ export async function ensureRepoSnapshotRepository(
       repo: coordinates.repo,
       commitSha: '0'.repeat(40),
     });
-    await db
-      .update(projects)
-      .set({
-        metadata: metadataMergeSubtree(
-          gitMetadataSubtree(project),
-          repositoryIdFields(project, identity.repositoryId),
-        ),
-        updatedAt: new Date(),
-      })
-      .where(eq(projects.projectId, project.projectId));
+    if (connection) {
+      // A connected project's remote lives on its connection row, and that row
+      // shadows project metadata — so the id belongs there, where every later
+      // read will look for it.
+      await db
+        .update(projectGitConnections)
+        .set({ externalRepoId: identity.repositoryId, updatedAt: new Date() })
+        .where(eq(projectGitConnections.connectionId, connection.connectionId));
+    } else {
+      await db
+        .update(projects)
+        .set({
+          metadata: metadataMergeSubtree(
+            gitMetadataSubtree(project),
+            repositoryIdFields(project, identity.repositoryId),
+          ),
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.projectId, project.projectId));
+    }
     logger.info('[repo-snapshot] recorded repository id', {
       projectId: project.projectId,
       repositoryId: identity.repositoryId,

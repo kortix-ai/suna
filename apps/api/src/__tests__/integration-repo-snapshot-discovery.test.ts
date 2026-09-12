@@ -84,6 +84,8 @@ const branchPagesRequested: number[] = [];
 let poisonNextBranchPage = false;
 /** A project whose overflow recovery is interrupted by a newer push and a failed write. */
 const generationRepoId = String(915000000 + Math.floor(Math.random() * 4000000));
+/** A managed project: its remote exists ONLY on its git connection row. */
+const connectedRepoId = String(919000000 + Math.floor(Math.random() * 900000));
 const lookups: string[] = [];
 /** Any GitHub path outside the fixture namespace. Must stay empty. */
 const foreignCalls: string[] = [];
@@ -103,6 +105,7 @@ const ownedRepositoryIds = new Set<string>([
   parkedRepoId,
   overflowRepoId,
   generationRepoId,
+  connectedRepoId,
   orphanRepoId,
   legacyDoneRepoId,
 ]);
@@ -322,6 +325,9 @@ afterAll(async () => {
   globalThis.fetch = realFetch;
   server?.stop(true);
   for (const id of created) {
+    await db
+      .execute(sql`delete from kortix.project_git_connections where project_id = ${id}`)
+      .catch(() => {});
     await db.execute(sql`delete from kortix.project_secrets where project_id = ${id}`).catch(() => {});
     await db
       .execute(sql`delete from kortix.project_git_credentials where project_id = ${id}`)
@@ -706,6 +712,52 @@ describe('a failed first preparation recovers without another webhook', () => {
       where repository_id = ${repositoryId} and ref like 'bulk-%'`)) as unknown as Array<{ n: number }>;
     expect(stored[0]?.n).toBe(overflowBranchCount);
     overflowBranchCount = 0;
+  });
+
+  test('a project whose remote lives only on its connection row is prepared', async () => {
+    if (!guard()) return;
+    githubHealthy = true;
+    const { loadRepoSnapshotRepository } = await import('../repo-snapshots/identity');
+    // The managed-project shape, as `POST /v1/projects/provision` writes it:
+    // project metadata carries no provider and no repository id, and the real
+    // remote is the connection row.
+    const id = crypto.randomUUID();
+    const name = 'discovery-connected';
+    await db.execute(sql`
+      insert into kortix.projects (project_id, account_id, name, repo_url, default_branch, manifest_path, status, metadata)
+      values (${id}, ${accountId}, ${name}, ${`https://github.com/kortix-ai/${name}.git`}, 'main', 'kortix.yaml',
+              'active', ${JSON.stringify({ git: {}, default_agent: 'kortix' })}::jsonb)`);
+    created.push(id);
+    ids.set(name, id);
+    await db.execute(sql`
+      insert into kortix.project_git_connections
+        (account_id, project_id, provider, repo_url, repo_owner, repo_name, external_repo_id,
+         default_branch, auth_method, status, upstream_url, managed)
+      values (${accountId}, ${id}, 'github', ${`https://github.com/kortix-ai/${name}.git`}, 'kortix-ai', ${name},
+              ${connectedRepoId}, 'main', 'github_app', 'connected', ${`https://github.com/kortix-ai/${name}.git`}, true)`);
+    const row = await projectRow(id);
+
+    // The defect this guards against: a metadata-only read cannot see it.
+    expect(readRepoSnapshotRepository(row as never).repository).toBeNull();
+    // With the connection row, the identity is exactly the connection's.
+    const loaded = await loadRepoSnapshotRepository(row as never);
+    expect(loaded.repository).toEqual({
+      provider: 'github',
+      repositoryId: connectedRepoId,
+      owner: 'kortix-ai',
+      repo: name,
+    });
+
+    // The SQL selectors take the same precedence: the missing-ref repair finds
+    // the project by its connection's repository id.
+    await scheduleMissingDefaultRefs(50);
+    const ref = await readRepoRef({ provider: 'github', repositoryId: connectedRepoId }, 'main');
+    expect(ref).not.toBeNull();
+
+    // And reconciliation finds a source project for that repository instead of
+    // deferring forever with "no project can supply source access".
+    const outcome = await reconcileRef(ref as never);
+    expect(outcome).toEqual({ ok: true, sha: fixtureSha });
   });
 
   test('the worker tick runs both scans', async () => {

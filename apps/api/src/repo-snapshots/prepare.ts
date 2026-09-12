@@ -20,7 +20,7 @@ import {
   addPendingPushedRefsExpr,
   ensureRepoSnapshotRepository,
   pendingPushedRefs,
-  readRepoSnapshotRepository,
+  loadRepoSnapshotRepository,
   removePendingPushedRefsExpr,
 } from './identity';
 import { beginRefObservation, ensureRefReconcileScheduled, observeRepoRef } from './store';
@@ -226,7 +226,7 @@ export async function prepareRevisionsForPush(
   // Park the branches BEFORE the identity lookup. It reaches GitHub, and a 503
   // there used to take every branch of the push with it: no repository id means
   // no ref rows, and nothing else remembered the push had happened.
-  const alreadyRegistered = readRepoSnapshotRepository(project).repository !== null;
+  const alreadyRegistered = (await loadRepoSnapshotRepository(project)).repository !== null;
   if (!alreadyRegistered) {
     await db
       .update(projects)

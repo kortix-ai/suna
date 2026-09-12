@@ -82,7 +82,7 @@ import {
 import { requireRepoSnapshotBucket, s3GetObjectStream } from '../repo-snapshots/s3';
 import { findReadyRepoSnapshot } from '../repo-snapshots/store';
 import { payloadKey } from '../repo-snapshots/format';
-import { readRepoSnapshotRepository } from '../repo-snapshots/identity';
+import { loadRepoSnapshotRepository } from '../repo-snapshots/identity';
 import {
   COMPILED_RUNTIME_CONTENT_TYPE,
   COMPILED_RUNTIME_FORMAT,
@@ -750,7 +750,7 @@ gitProxyApp.openapi(
     if (repoSnapshotModeForProject(projectId) === 'off')
       return c.json({ error: 'repository snapshots are disabled' }, 501);
     const { sha } = c.req.valid('query');
-    const identity = readRepoSnapshotRepository(auth.project);
+    const identity = await loadRepoSnapshotRepository(auth.project);
     if (!identity.repository) {
       return c.json({ error: 'project has no snapshot identity', detail: identity.unsupportedReason }, 409);
     }
@@ -840,7 +840,7 @@ gitProxyApp.openapi(
     const { sha } = c.req.valid('query');
     // Identity comes from the AUTHORIZED project row, never from the request:
     // a caller must not be able to name someone else's repository id.
-    const identity = readRepoSnapshotRepository(auth.project);
+    const identity = await loadRepoSnapshotRepository(auth.project);
     if (!identity.repository) {
       return c.json(
         { error: 'project has no snapshot identity', detail: identity.unsupportedReason },

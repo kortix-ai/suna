@@ -36,7 +36,7 @@ import { withProjectGitAuth } from '../src/projects/lib/git';
 import type { ProjectRow } from '../src/projects/lib/serializers';
 import {
   ensureRepoSnapshotRepository,
-  readRepoSnapshotRepository,
+  loadRepoSnapshotRepository,
   withCommit,
 } from '../src/repo-snapshots/identity';
 import {
@@ -112,7 +112,7 @@ async function processProject(project: ProjectRow, args: Args): Promise<ProjectO
   // and reports an unregistered project as exactly that, rather than quietly
   // registering it.
   const resolved = args.dryRun
-    ? readRepoSnapshotRepository(project)
+    ? await loadRepoSnapshotRepository(project)
     : await ensureRepoSnapshotRepository(project);
   if (!resolved.repository) {
     outcome.reason = args.dryRun && resolved.githubBacked

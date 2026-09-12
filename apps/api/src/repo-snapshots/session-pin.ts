@@ -31,7 +31,7 @@ import {
   resolveSnapshotForRevision,
   snapshotSessionEnv,
 } from './descriptor';
-import { readRepoSnapshotRepository } from './identity';
+import { loadRepoSnapshotRepository } from './identity';
 import { readSnapshotFile, snapshotDirectoryExists } from './source-reader';
 import { findReadyRepoSnapshot, readRepoRef, type RepoSnapshotRow } from './store';
 
@@ -75,7 +75,7 @@ export async function pinSessionSnapshot(input: {
   const mode = repoSnapshotModeForProject(input.project.projectId);
   if (mode === 'off') return { pinned: false, mode, miss: { reason: 'disabled' } };
 
-  const identity = readRepoSnapshotRepository(input.project);
+  const identity = await loadRepoSnapshotRepository(input.project);
   if (!identity.repository) {
     return {
       pinned: false,
@@ -197,7 +197,7 @@ export async function resolveDefaultBranchGrantSnapshot(
   project: ProjectRow,
 ): Promise<RepoSnapshotRow | null> {
   if (repoSnapshotModeForProject(project.projectId) === 'off') return null;
-  const identity = readRepoSnapshotRepository(project);
+  const identity = await loadRepoSnapshotRepository(project);
   if (!identity.repository) return null;
   const refRow = await readRepoRef(
     { provider: 'github', repositoryId: identity.repository.repositoryId },

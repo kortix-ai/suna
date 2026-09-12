@@ -40,7 +40,7 @@ import {
   clearPendingOverflowExpr,
   pendingOverflowState,
   pendingOverflowUnchanged,
-  readRepoSnapshotRepository,
+  loadRepoSnapshotRepository,
   recordedRepositoryIdSql,
   removePendingPushedRefsExpr,
   withCommit,
@@ -492,7 +492,7 @@ export async function drainRegisteredPendingRefs(limit: number): Promise<number>
 
   let drained = 0;
   for (const project of candidates) {
-    const repository = readRepoSnapshotRepository(project).repository;
+    const repository = (await loadRepoSnapshotRepository(project)).repository;
     if (!repository) continue;
     drained += await drainPendingPushedRefs(project, repository);
   }
@@ -531,7 +531,7 @@ export async function scheduleMissingDefaultRefs(limit: number): Promise<number>
 
   let scheduled = 0;
   for (const project of candidates) {
-    const repository = readRepoSnapshotRepository(project).repository;
+    const repository = (await loadRepoSnapshotRepository(project)).repository;
     if (!repository) continue;
     // Every candidate is attempted, so one row that cannot be written consumes
     // its own slot and nothing else's.
@@ -578,7 +578,8 @@ export async function prepareRevision(input: {
   if (!repository) {
     return {
       prepared: false,
-      reason: readRepoSnapshotRepository(input.project).unsupportedReason ?? 'project is not GitHub-backed',
+      reason:
+        (await loadRepoSnapshotRepository(input.project)).unsupportedReason ?? 'project is not GitHub-backed',
     };
   }
   const identity = withCommit(repository, input.commitSha);
