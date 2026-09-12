@@ -30,7 +30,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
+const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'supervisor.ts'), 'utf8')
 const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'routes', 'env.ts'), 'utf8')
 const SECRET_CAPABILITIES_SRC = readFileSync(
   join(import.meta.dir, '..', 'secret-capabilities.ts'),

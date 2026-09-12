@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test'
 // They keep the sub-marks that decompose `opencode-ready` — and the early
 // initial-turn claim — from being quietly dropped.
 const MAIN = readFileSync(join(import.meta.dir, '..', 'main.ts'), 'utf8')
-const OPENCODE = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
+const OPENCODE = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'supervisor.ts'), 'utf8')
 
 describe('boot instrumentation', () => {
   test('the initial-turn claim is prefetched at proxy-up, before the clone is awaited', () => {
@@ -58,7 +58,7 @@ describe('boot instrumentation', () => {
     expect(MAIN).toContain('deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null')
     const deps = MAIN.indexOf("bootMark('config-deps')")
     const open = MAIN.indexOf('opencode.markWorkspaceReady()', deps)
-    const reload = MAIN.indexOf('opencode.reloadForWorkspace()', open)
+    const reload = MAIN.indexOf('harness.configuration.reloadForWorkspace()', open)
     expect(deps).toBeGreaterThan(-1)
     expect(open).toBeGreaterThan(deps)
     expect(reload).toBeGreaterThan(open)
@@ -82,9 +82,9 @@ describe('boot instrumentation', () => {
 
     const deps = MAIN.indexOf('await ensureOpencodeConfigDeps(opencodeConfigDir)')
     const skills = MAIN.indexOf('await ensureInjectedManagedSkills(opencodeConfigDir)', deps)
-    const reconfigure = MAIN.indexOf('opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)', skills)
+    const reconfigure = MAIN.indexOf('harness.configuration.reconfigure(cfg, opencodeConfigDir, projectEnv)', skills)
     const open = MAIN.indexOf('opencode.markWorkspaceReady()', reconfigure)
-    const reload = MAIN.indexOf('opencode.reloadForWorkspace()', open)
+    const reload = MAIN.indexOf('harness.configuration.reloadForWorkspace()', open)
     expect(deps).toBeGreaterThan(-1)
     expect(skills).toBeGreaterThan(deps)
     expect(open).toBeGreaterThan(reconfigure)
@@ -96,7 +96,7 @@ describe('boot instrumentation', () => {
     const body = OPENCODE.slice(fn, OPENCODE.indexOf('async reloadConfig(', fn))
     expect(body).toContain('restarting instead of disposing')
     expect(body).not.toContain('return disposeInstances()')
-    const restart = MAIN.indexOf('opencode.restart()', MAIN.indexOf('const reloaded = await opencode.reloadForWorkspace()'))
+    const restart = MAIN.indexOf('opencode.restart()', MAIN.indexOf('const reloaded = await harness.configuration.reloadForWorkspace()'))
     expect(restart).toBeGreaterThan(-1)
   })
 

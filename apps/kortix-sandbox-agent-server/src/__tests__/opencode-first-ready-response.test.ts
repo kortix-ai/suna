@@ -187,7 +187,7 @@ Bun.serve({
   }, 15_000)
 
   test('wires the first ready response to its own de-duplicated boot mark', () => {
-    const supervisorAt = MAIN.indexOf('const opencode = createOpencodeSupervisor(')
+    const supervisorAt = MAIN.indexOf('const harness = createOpenCodeHarnessService(')
     const sessionRuntimeAt = MAIN.indexOf('void startSessionRuntime(', supervisorAt)
     const bootPath = MAIN.slice(supervisorAt, sessionRuntimeAt)
     const callbackAt = bootPath.indexOf('onFirstReadyResponse: () => {')

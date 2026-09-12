@@ -28,7 +28,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const SRC = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
+const SRC = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'supervisor.ts'), 'utf8')
 
 /** The body of the `start()` method on the returned supervisor. */
 function startBody(): string {

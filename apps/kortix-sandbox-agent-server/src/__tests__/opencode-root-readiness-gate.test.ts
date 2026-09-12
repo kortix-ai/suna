@@ -82,12 +82,12 @@ describe('fast OpenCode root readiness gate', () => {
     const runtimeStart = src.indexOf('async function startSessionRuntime(')
     const runtimeEnd = src.indexOf('\n// Establish the session', runtimeStart)
     const runtime = src.slice(runtimeStart, runtimeEnd)
-    const eventLoopAt = runtime.indexOf('startOpencodeEventLoop(opencode, cfg, eventHandlers)')
+    const eventLoopAt = runtime.indexOf('harness.events.subscribe(cfg, eventHandlers)')
     const initialSessionAt = runtime.indexOf('await maybeCreateInitialOpencodeSession(', eventLoopAt)
 
     expect(eventLoopAt).toBeGreaterThan(-1)
     expect(initialSessionAt).toBeGreaterThan(eventLoopAt)
-    expect(runtime.slice(eventLoopAt, initialSessionAt)).not.toContain('await startOpencodeEventLoop')
+    expect(runtime.slice(eventLoopAt, initialSessionAt)).not.toContain('await harness.events.subscribe')
 
     const initialStart = src.indexOf('async function maybeCreateInitialOpencodeSession(')
     const initialEnd = src.indexOf('\nasync function resolveExistingRoot', initialStart)

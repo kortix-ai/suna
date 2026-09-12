@@ -26,7 +26,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
+const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'supervisor.ts'), 'utf8')
 
 function disposeReloadBody(): string {
   // tryDisposeReload + the disposeInstances helper it delegates the HTTP call to.

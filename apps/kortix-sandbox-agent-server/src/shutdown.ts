@@ -1,7 +1,7 @@
 import { shredAgentEnvFile } from './agent-env-file'
 import { stopEgressShim } from './egress-shim'
 import { logger } from './logger'
-import type { Opencode } from './opencode'
+import type { HarnessLifecycleService } from './harness/harness'
 import type { ProxyServer } from './proxy'
 import type { StaticWebServer } from './static-web'
 
@@ -22,7 +22,7 @@ export interface DaemonShutdown {
 }
 
 export function installShutdownHandlers(
-  opencode: Opencode,
+  opencode: Pick<HarnessLifecycleService, 'stop'>,
   proxy: ProxyServer,
   staticWeb?: StaticWebServer,
 ): DaemonShutdown {

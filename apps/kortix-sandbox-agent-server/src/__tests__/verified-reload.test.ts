@@ -17,7 +17,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-const SRC = await Bun.file(new URL('../opencode.ts', import.meta.url).pathname).text();
+const SRC = await Bun.file(new URL('../harness/open-code/supervisor.ts', import.meta.url).pathname).text();
 const CONFIG = await Bun.file(new URL('../config.ts', import.meta.url).pathname).text();
 const PROXY = await Bun.file(new URL('../proxy.ts', import.meta.url).pathname).text();
 const REFRESH = await Bun.file(new URL('../routes/refresh.ts', import.meta.url).pathname).text();

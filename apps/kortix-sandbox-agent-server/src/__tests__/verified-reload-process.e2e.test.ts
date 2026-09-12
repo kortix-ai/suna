@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import type { Config } from '../config'
 import { createOpencodeSupervisor, waitForOpencodeReady } from '../opencode'
+import { createOpenCodeHarnessService } from '../harness/open-code/service'
 
 let root: string
 let supervisor: ReturnType<typeof createOpencodeSupervisor> | null
@@ -46,7 +47,7 @@ afterEach(async () => {
 })
 
 describe('verified reload process promotion', () => {
-  test('promotes each verified candidate and preserves the active process on failure', async () => {
+  test('harness service promotes verified candidates, preserves failed reloads, and restarts through lifecycle', async () => {
     const workspace = join(root, 'workspace')
     const configDir = join(root, 'config')
     const binary = join(root, 'opencode')
@@ -68,18 +69,19 @@ describe('verified reload process promotion', () => {
       gitUserName: 'Kortix Agent',
       gitUserEmail: 'agent@kortix.ai',
     } as Config
-    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+    const harness = createOpenCodeHarnessService(cfg, configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
     })
 
-    await supervisor.start()
+    supervisor = harness.native
+    await harness.lifecycle.start()
     expect(await waitForOpencodeReady(supervisor, workspace)).toBe(true)
     const initialPid = supervisor.getPid()
     expect(initialPid).not.toBeNull()
     expect(supervisor.getInternalUrl()).toBe(`http://127.0.0.1:${primary}`)
 
-    const first = await supervisor.reloadVerified()
+    const first = await harness.configuration.reloadVerified()
     expect(first.outcome).toBe('swapped')
     if (first.outcome !== 'swapped') throw new Error(first.reason)
     expect(first.port).toBe(standby)
@@ -90,7 +92,7 @@ describe('verified reload process promotion', () => {
     await Bun.sleep(650)
     expect(supervisor.getPid()).toBe(first.pid)
 
-    const second = await supervisor.reloadVerified()
+    const second = await harness.configuration.reloadVerified()
     expect(second.outcome).toBe('swapped')
     if (second.outcome !== 'swapped') throw new Error(second.reason)
     expect(second.port).toBe(primary)
@@ -101,10 +103,18 @@ describe('verified reload process promotion', () => {
     expect(supervisor.getPid()).toBe(second.pid)
 
     const activePid = supervisor.getPid()
-    const failed = await supervisor.reloadVerified({ forceFail: true })
+    const failed = await harness.configuration.reloadVerified({ forceFail: true })
     expect(failed.outcome).toBe('kept-old')
     expect(supervisor.getPid()).toBe(activePid)
     expect(supervisor.getInternalUrl()).toBe(`http://127.0.0.1:${primary}`)
+    expect((await fetch(`${supervisor.getInternalUrl()}/session`)).status).toBe(200)
+
+    // Lifecycle and native features must retain the same method owner. These
+    // operations call sibling supervisor methods through `this` internally.
+    await harness.lifecycle.restart()
+    expect(await waitForOpencodeReady(supervisor, workspace)).toBe(true)
+    expect(supervisor.getPid()).not.toBe(activePid)
+    expect(harness.lifecycle.getState()).toBe('ok')
     expect((await fetch(`${supervisor.getInternalUrl()}/session`)).status).toBe(200)
   }, 20_000)
 })

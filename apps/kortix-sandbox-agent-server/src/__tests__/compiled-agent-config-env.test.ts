@@ -60,7 +60,7 @@ describe('the live-env allowlist', () => {
   })
 })
 
-const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
+const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'supervisor.ts'), 'utf8')
 
 describe('the unplanned-respawn hook waits for readiness', () => {
   test('it fires only after opencode answers again, not when the process spawns', () => {

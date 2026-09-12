@@ -18,7 +18,6 @@ import { enableDaemonLogFile, logger } from './logger'
 import { MonitorRunner, parseMonitorSpecs } from './monitor-runner'
 import {
   catalogIsDegraded,
-  createOpencodeSupervisor,
   hasKortixLlmGateway,
   OPENCODE_HOME,
   missingManagedModelIds,
@@ -43,7 +42,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 // milliseconds to the readiness the API and the frontend poll for.
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
-import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from './kortix-event-bus'
 import { runtimeStateStore } from './runtime-state-projection'
@@ -70,6 +69,7 @@ import {
 } from './llm-proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
+import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './harness/open-code/service'
 import { startStaticWebServer } from './static-web'
 import { opencodeDeliveryInFlight, opencodeTurnInFlight } from './opencode-turn-state'
 import { installCompiledRuntime } from './compiled-runtime'
@@ -208,7 +208,7 @@ async function main() {
   // spawned. `reconfigure` only rewrites state read at spawn time, so this is
   // exactly equivalent to constructing it late.
   const opencodeBinaryPrefetchEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
-  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
+  const harness = createOpenCodeHarnessService(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
     onFirstListeningResponse: () => {
       if (bootState.timeline.some((mark) => mark.label === 'opencode-http-listening')) return
@@ -245,8 +245,9 @@ async function main() {
       })
     },
   })
+  const opencode = harness.native
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  const shutdown = installShutdownHandlers(opencode, server, staticWeb)
+  const shutdown = installShutdownHandlers(harness.lifecycle, server, staticWeb)
   // Hand the convergence machinery this session's live runtime, once.
   //
   // Two things need it. opencode convergence restarts opencode, so it goes
@@ -346,7 +347,7 @@ async function main() {
     earlyOpencodeConfigDir && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
       ? (async () => {
           opencode.cancelBinaryPrefetch()
-          opencode.reconfigure(cfg, earlyOpencodeConfigDir, projectEnv)
+          harness.configuration.reconfigure(cfg, earlyOpencodeConfigDir, projectEnv)
           await opencode.start()
           opencodeStartedEarly = opencode.getPid() !== null
           if (opencodeStartedEarly) {
@@ -374,7 +375,7 @@ async function main() {
         await ensureInjectedManagedSkills(compiledOpencodeConfigDir)
         bootMark('compiled-config-deps')
         opencode.cancelBinaryPrefetch()
-        opencode.reconfigure(cfg, compiledOpencodeConfigDir, projectEnv)
+        harness.configuration.reconfigure(cfg, compiledOpencodeConfigDir, projectEnv)
         await opencode.start()
         opencodeStartedFromCompiledConfig = opencode.getPid() !== null
         if (opencodeStartedFromCompiledConfig) bootMark('opencode-spawned')
@@ -455,7 +456,7 @@ async function main() {
     })
     // Reconfigure now so any later restart uses the checked-out config. The
     // already-running compiled-config process stays untouched.
-    opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
+    harness.configuration.reconfigure(cfg, opencodeConfigDir, projectEnv)
     // The checkout, its config-dir dependencies and the injected skills are ALL
     // on disk now — this is the first moment a directory-scoped request may
     // reach OpenCode. Opening the gate earlier is the bug this exists to stop
@@ -466,7 +467,7 @@ async function main() {
     if (opencodeStartedEarly) {
       // The process is up on the right dir; the workspace arrived after it.
       // Dispose in place so instances re-read config + re-detect the git root.
-      const reloaded = await opencode.reloadForWorkspace()
+      const reloaded = await harness.configuration.reloadForWorkspace()
       if (reloaded) {
         bootMark('opencode-workspace-reloaded')
       } else {
@@ -580,11 +581,11 @@ async function main() {
       }
       logger.info('[seed] capture-ready; awaiting session adoption', { timeline: bootState.timeline })
     })()
-    armSeedAdoption(opencode, server, bootState, bootMark)
+    armSeedAdoption(harness, server, bootState, bootMark)
     return
   }
 
-  void startSessionRuntime(opencode, cfg, bootState, bootMark)
+  void startSessionRuntime(harness, cfg, bootState, bootMark)
 }
 
 // Adopt a forked session inside a warm-seed clone. The repo is already baked —
@@ -593,7 +594,7 @@ async function main() {
 // Trigger: KORTIX_SESSION_ID appearing in /etc/pt-env (the seed's own env
 // never contains it — platinum-seed.ts strips it from captureEnv).
 function armSeedAdoption(
-  opencode: ReturnType<typeof createOpencodeSupervisor>,
+  harness: OpenCodeHarnessService,
   server: ReturnType<typeof startProxy>,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
@@ -625,7 +626,7 @@ function armSeedAdoption(
           await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
         }
       }
-      await startSessionRuntime(opencode, cfg2, bootState, bootMark)
+      await startSessionRuntime(harness, cfg2, bootState, bootMark)
       logger.info('[seed] adoption complete', { adoptMs: Date.now() - t0, timeline: bootState.timeline })
     })()
   }
@@ -675,7 +676,7 @@ export function resetManagedReconcileForTests(): void {
 }
 
 export async function reconcileManagedModels(
-  opencode: ReturnType<typeof createOpencodeSupervisor>,
+  opencode: Opencode,
   cfg: Config,
   bootMark: (label: string) => void,
   // Test seams only — production always uses these defaults. The session
@@ -748,11 +749,12 @@ export async function reconcileManagedModels(
 }
 
 async function startSessionRuntime(
-  opencode: ReturnType<typeof createOpencodeSupervisor>,
+  harness: OpenCodeHarnessService,
   cfg: Config,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
+  const opencode = harness.native
   const markOpencodeListening = () => {
     if (bootState.timeline.some((mark) => mark.label === 'opencode-listening')) return
     bootMark('opencode-listening')
@@ -955,7 +957,7 @@ async function startSessionRuntime(
     // Do not await the response headers: OpenCode can withhold them until the
     // first event, which makes an await here deadlock with prompt delivery. The
     // connect reconciliation closes the residual event-loss race.
-    startOpencodeEventLoop(opencode, cfg, eventHandlers)
+    harness.events.subscribe(cfg, eventHandlers)
     loopStarted = true
     const completeInitialSessionBoot = async () => {
       // `maybeCreateInitialOpencodeSession` (direct call above, or via
@@ -1028,7 +1030,7 @@ async function startSessionRuntime(
     scheduleRuntimeAssetsReconcile(cfg)
     // Only start the loop if the initial-session branch didn't already (avoids a
     // duplicate subscription when the initial session was requested but failed).
-    if (!loopStarted) startOpencodeEventLoop(opencode, cfg, eventHandlers)
+    if (!loopStarted) harness.events.subscribe(cfg, eventHandlers)
   } else {
     logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', { opencodePid: opencode.getPid() })
   }
@@ -1129,11 +1131,12 @@ async function runMonitorMode(
   // the proxy's route table is built around it. /kortix/health answers without
   // touching opencode; every opencode route cleanly 503s, which is the honest
   // answer for a box that has no agent.
-  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
+  const harness = createOpenCodeHarnessService(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
   })
+  const opencode = harness.native
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(opencode, server, staticWeb)
+  installShutdownHandlers(harness.lifecycle, server, staticWeb)
   bootMark('proxy-up')
 
   if (cfg.autoClone) {
@@ -1257,7 +1260,7 @@ async function runWarmSeedMode(
     )
   }
 
-  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv, {
+  const harness = createOpenCodeHarnessService(cfg, opencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
@@ -1281,10 +1284,11 @@ async function runWarmSeedMode(
       })
     },
   })
+  const opencode = harness.native
   await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
   bootMark('seed-opencode-spawned')
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(opencode, server, staticWeb)
+  installShutdownHandlers(harness.lifecycle, server, staticWeb)
   bootMark('seed-proxy-ready')
 
   // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
@@ -1441,13 +1445,13 @@ async function runWarmSeedMode(
         }
       }
       if (!hotSwapped) {
-        opencode.reconfigure(cfg2, adoptedOpencodeConfigDir, projectEnv)
+        harness.configuration.reconfigure(cfg2, adoptedOpencodeConfigDir, projectEnv)
         await opencode.restart().catch((err) =>
           logger.warn('[seed] adoption opencode restart failed', { err: (err as Error).message }),
         )
         bootMark('adopt-opencode-restarted')
       }
-      await startSessionRuntime(opencode, cfg2, bootState, bootMark)
+      await startSessionRuntime(harness, cfg2, bootState, bootMark)
       logger.info('[seed] fork adoption complete', { adoptMs: Date.now() - t0, hotSwapped, timeline: bootState.timeline })
     })()
   }
@@ -2693,7 +2697,7 @@ function slackRelayContext(): SandboxRelayContext | null {
 async function relayQuestionToApi(
   req: QuestionRequest,
   cfg: Config,
-  opencode: ReturnType<typeof createOpencodeSupervisor>,
+  opencode: Opencode,
 ): Promise<void> {
   // EVERY session, not just Slack ones.
   //
