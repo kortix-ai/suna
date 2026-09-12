@@ -114,6 +114,29 @@ used the existing Git path — whose network operations are counted (2, against 
 on the prepared run). That is the counted-fallback contract, observed rather
 than asserted.
 
+## 1c. `required` fails closed, over real HTTP
+
+Same harness, `KORTIX_REPO_SNAPSHOT_MODE=required`, nothing published:
+
+```text
+POST /projects/:id/sessions → 503
+{"error":"snapshot for 564dda88bdc5cfddae5eeb4323eb3b0b128f20bf is not prepared yet;
+  retry once preparation completes",
+ "code":"REPO_SNAPSHOT_PREPARING","retryable":true}
+```
+
+The mode matrix, end to end and observed rather than asserted:
+
+| mode | prepared? | outcome |
+| --- | --- | --- |
+| `required` | yes | boots from S3, `git_network_ops: 0` (§1) |
+| `required` | no | 503 `REPO_SNAPSHOT_PREPARING`, retryable, names the SHA |
+| `prefer` | no | existing Git path, `git_network_ops: 2` (§1b) |
+| `shadow` / `off` | either | legacy path unchanged — `repo-snapshot-modes.test.ts` |
+
+`required` never silently fell through to the clone path, and the error names
+the exact revision rather than a generic failure.
+
 ## 2b. Descriptor and archive routes — real HTTP, real Kortix token
 
 `apps/api/scripts/verify-repo-snapshot-http.ts`, against the running API and a
