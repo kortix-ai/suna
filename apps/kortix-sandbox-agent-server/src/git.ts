@@ -676,9 +676,50 @@ export async function finalizeSnapshotStage(cfg: Config, stage: string): Promise
   const target = cfg.projectTarget
   await swapStageIntoTarget(stage, target)
   await ensureOriginRemote(target, repoUrl)
-  if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
+  await configurePartialClone(target)
+  if (cfg.branchName) await pointHeadAtSessionBranch(target, cfg.branchName)
   await configureRepoGitIdentity(cfg, target)
   await markSessionCheckoutAdopted(target, cfg.branchName)
+}
+
+/**
+ * The snapshot's `.git` ships without blobs (its one pack is marked promisor).
+ * Declare `origin` the promisor remote with a blob-less filter so git treats
+ * every missing blob as fetchable-on-demand through the proxy — the safety net
+ * until the blob pack is imported — and so the later history backfill stays
+ * blob-less too. Config only; nothing here reads the working tree.
+ */
+async function configurePartialClone(target: string): Promise<void> {
+  const settings: Array<[string, string]> = [
+    ['core.repositoryformatversion', '1'],
+    ['extensions.partialclone', 'origin'],
+    ['remote.origin.promisor', 'true'],
+    ['remote.origin.partialclonefilter', 'blob:none'],
+  ]
+  for (const [key, value] of settings) {
+    const res = await execGit(['-C', target, 'config', '--local', key, value])
+    if (res.code !== 0) throw new Error(`git config ${key} failed: ${res.stderr || res.stdout}`)
+  }
+}
+
+/**
+ * Create the session branch at HEAD and point HEAD at it WITHOUT a checkout.
+ * `git checkout -B` would refresh the index — stat and hash every file — and
+ * a snapshot ships an index with no stat data, so that would put a full-tree
+ * hash on the boot path (and, blob-less, it has nothing to read the old
+ * content from). `branch` + `symbolic-ref` touch refs only; the tree is
+ * already exactly HEAD. An existing ref is reused, never reset (see
+ * checkoutLocalSessionBranch for why).
+ */
+async function pointHeadAtSessionBranch(target: string, branch: string): Promise<void> {
+  const exists = await execGit(['-C', target, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+  if (exists.code !== 0) {
+    const created = await execGit(['-C', target, 'branch', branch, 'HEAD'])
+    if (created.code !== 0) throw new Error(`failed to create local session branch ${branch}: ${created.stderr}`)
+  }
+  const pointed = await execGit(['-C', target, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`])
+  if (pointed.code !== 0) throw new Error(`failed to point HEAD at ${branch}: ${pointed.stderr}`)
+  logger.info('[git] session branch created without checkout (snapshot)', { branch })
 }
 
 /**

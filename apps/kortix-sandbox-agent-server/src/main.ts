@@ -322,7 +322,15 @@ async function main() {
           // runDeferredHistoryBackfill) instead of competing with the runtime
           // spawn for CPU and the proxied Git path.
           if (result.provider === 's3') {
-            bootState.deferredHistoryBackfill = () => scheduleHistoryBackfill(cfg, cfg.projectTarget)
+            // …and after the blob-pack import has settled, so the two never
+            // write packs into the same object store at once.
+            const hydration = result.hydration ?? Promise.resolve()
+            bootState.deferredHistoryBackfill = () => {
+              void hydration.then(
+                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
+                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
+              )
+            }
           }
         })
         .catch((err) => {

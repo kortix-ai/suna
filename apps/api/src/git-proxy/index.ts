@@ -75,7 +75,8 @@ import { queueProjectSnapshotForRef, readReadyProjectSnapshot } from './project-
 import {
   PROJECT_SNAPSHOT_FORMAT,
   presignProjectSnapshotDownload,
-  projectSnapshotArchiveKey,
+  projectSnapshotBlobsKey,
+  projectSnapshotTreeKey,
   projectSnapshotStorageConfigured,
 } from './project-snapshot-store';
 
@@ -566,9 +567,13 @@ gitProxyApp.openapi(
     const { sha } = c.req.valid('query');
     const ready = await readReadyProjectSnapshot(projectId, sha);
     if (!ready) return c.json({ error: 'not_prepared', sha }, 404);
-    const archiveKey = projectSnapshotArchiveKey(ready.objectPrefix, ready.archiveSha256);
+    const treeKey = projectSnapshotTreeKey(ready.objectPrefix, ready.archiveSha256);
+    const blobsKey = projectSnapshotBlobsKey(ready.objectPrefix, ready.blobsSha256);
     try {
-      const download = await presignProjectSnapshotDownload(archiveKey);
+      const [tree, blobs] = await Promise.all([
+        presignProjectSnapshotDownload(treeKey),
+        presignProjectSnapshotDownload(blobsKey),
+      ]);
       return c.json({
         format: PROJECT_SNAPSHOT_FORMAT,
         commit_sha: ready.commitSha,
@@ -578,12 +583,21 @@ gitProxyApp.openapi(
           name: ready.repository.name,
           external_id: ready.repository.externalId,
         },
-        archive: {
-          url: download.url,
+        // The boot object: working tree + blobless .git. Its digest/size is the
+        // session pin.
+        tree: {
+          url: tree.url,
           sha256: ready.archiveSha256,
           bytes: ready.archiveBytes,
           entries: ready.entryCount,
-          expires_at: download.expiresAt.toISOString(),
+          expires_at: tree.expiresAt.toISOString(),
+        },
+        // The hydration object: the tip's blob pack, fetched after activation.
+        blobs: {
+          url: blobs.url,
+          sha256: ready.blobsSha256,
+          bytes: ready.blobsBytes,
+          expires_at: blobs.expiresAt.toISOString(),
         },
       });
     } catch (error) {

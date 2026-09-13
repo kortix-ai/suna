@@ -135,8 +135,9 @@ async function waitReady(): Promise<void> {
   while (Date.now() < deadline) {
     const r = await api(base, pat, `/git/${projectId}.git/project-snapshot?sha=${sha}`);
     if (r.status === 200) {
-      const { url: _url, ...rest } = r.body.archive ?? {};
-      console.log(JSON.stringify({ ready: true, sha, archive: rest }));
+      const { url: _treeUrl, ...tree } = r.body.tree ?? r.body.archive ?? {};
+      const { url: _blobsUrl, ...blobs } = r.body.blobs ?? {};
+      console.log(JSON.stringify({ ready: true, sha, format: r.body.format, tree, blobs }));
       return;
     }
     await sleep(2000);
@@ -188,6 +189,11 @@ interface Round {
   git_proxy_paths: GitProxyRequest[];
   runtime: unknown;
   daemon_fingerprint: string | null;
+  /** v2: the blob-pack import that follows activation, as the daemon reported it once settled. */
+  hydration: { status: string; attempts: number; bytes: number; ms: number; reason: string | null } | null;
+  /** ms from create until the hydration report was observed settled (null = still pending at the poll cap). */
+  hydration_settled_ms: number | null;
+  s3_extractor: string | null;
 }
 
 async function oneRound(arm: Arm, jwt: string, projectId: string, round: number, apiLog?: string): Promise<Round> {
@@ -220,6 +226,9 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
     git_proxy_paths: [],
     runtime: null,
     daemon_fingerprint: null,
+    hydration: null,
+    hydration_settled_ms: null,
+    s3_extractor: null,
   };
   if (created.status !== 201 || !sessionId) {
     result.error = `create ${created.status}: ${JSON.stringify(created.body).slice(0, 200)}`;
@@ -258,9 +267,12 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
         result.daemon_fingerprint =
           h.body.config_provider === undefined
             ? 'legacy'
-            : h.body.config_provider && 's3_skipped' in h.body.config_provider
-              ? 'branch-final'
-              : 'branch-early';
+            : h.body.config_provider && 'hydration' in h.body.config_provider
+              ? 'branch-v2'
+              : h.body.config_provider && 's3_skipped' in h.body.config_provider
+                ? 'branch-final'
+                : 'branch-early';
+        result.s3_extractor = h.body.config_provider?.s3_extractor ?? null;
         for (const m of h.body.boot_timeline ?? []) result.boot_marks[m.label] = m.atMs;
         break;
       }
@@ -268,6 +280,26 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
       await sleep(500);
     }
     if (result.runtime_ready_ms === null) throw new Error('runtimeReady never observed');
+    // v2: the blob-pack import runs AFTER readiness; keep polling (cap 20 s)
+    // until the daemon reports it settled so the round records its outcome
+    // and how long after create the workspace was fully hydrated.
+    const cp0 = result.config_provider as { hydration?: { status: string } } | null;
+    if (cp0?.hydration) {
+      const hydrationDeadline = performance.now() + 20_000;
+      while (performance.now() < hydrationDeadline) {
+        const h = await api(arm.api, jwt, healthPath);
+        const hy = h.body?.config_provider?.hydration;
+        if (hy && hy.status !== 'pending') {
+          result.hydration = hy;
+          result.hydration_settled_ms = Math.round(performance.now() - t0);
+          result.config_provider = h.body.config_provider;
+          for (const m of h.body.boot_timeline ?? []) result.boot_marks[m.label] = m.atMs;
+          break;
+        }
+        await sleep(500);
+      }
+      if (!result.hydration) result.hydration = cp0.hydration as Round['hydration'];
+    }
     const row = await api(arm.api, jwt, `/projects/${projectId}/sessions/${sessionId}`);
     result.session_start_timeline = row.body?.metadata?.session_start_timeline ?? null;
     result.ok = true;
@@ -432,6 +464,23 @@ function report(): void {
         acc[r.daemon_fingerprint ?? '?'] = (acc[r.daemon_fingerprint ?? '?'] ?? 0) + 1;
         return acc;
       }, {}),
+      extractors: ok.reduce<Record<string, number>>((acc, r) => {
+        if (r.s3_extractor) acc[r.s3_extractor] = (acc[r.s3_extractor] ?? 0) + 1;
+        return acc;
+      }, {}),
+      // v2 hydration (blob-pack import after readiness): outcome counts, the
+      // import's own duration, and when after create it was observed settled.
+      hydration: (() => {
+        const rounds = ok.filter((r) => r.hydration);
+        if (rounds.length === 0) return null;
+        const statuses = rounds.reduce<Record<string, number>>((acc, r) => {
+          acc[r.hydration!.status] = (acc[r.hydration!.status] ?? 0) + 1;
+          return acc;
+        }, {});
+        const ms = rounds.filter((r) => r.hydration!.status === 'ok').map((r) => r.hydration!.ms).sort((a, b) => a - b);
+        const settled = rounds.map((r) => r.hydration_settled_ms).filter((v): v is number => v !== null).sort((a, b) => a - b);
+        return { statuses, import_ms_p50: pct(ms, 50), import_ms_p95: pct(ms, 95), settled_after_create_p50_ms: pct(settled, 50), settled_after_create_p95_ms: pct(settled, 95) };
+      })(),
       sandbox_providers: ok.reduce<Record<string, number>>((acc, r) => {
         acc[r.provider ?? '?'] = (acc[r.provider ?? '?'] ?? 0) + 1;
         return acc;

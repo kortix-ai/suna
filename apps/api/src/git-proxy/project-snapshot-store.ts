@@ -28,9 +28,22 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { config } from '../config';
 
-export const PROJECT_SNAPSHOT_FORMAT = 'project-snapshot-v1';
+/**
+ * v2 = two objects per revision:
+ *   <sha256>.tree.tar.gz — the BOOT object: working tree + a `.git` whose only
+ *                          pack holds the commit and trees (no blobs), marked
+ *                          promisor, so the box is a usable partial clone the
+ *                          moment it is extracted; nothing runs git on the
+ *                          boot path.
+ *   <sha256>.blobs.pack  — the HYDRATION object: the tip's blobs, imported by
+ *                          the daemon with `git index-pack` after activation,
+ *                          off the critical path.
+ * (v1 shipped one tar.gz with the tree AND a full pack — every blob twice.)
+ */
+export const PROJECT_SNAPSHOT_FORMAT = 'project-snapshot-v2';
 export const PROJECT_SNAPSHOT_MANIFEST_NAME = 'manifest.json';
 export const PROJECT_SNAPSHOT_ARCHIVE_CONTENT_TYPE = 'application/gzip';
+export const PROJECT_SNAPSHOT_BLOBS_CONTENT_TYPE = 'application/x-git-pack';
 
 export interface ProjectSnapshotRepository {
   owner: string;
@@ -44,7 +57,7 @@ export interface ProjectSnapshotManifest {
   repository: { owner: string; name: string; external_id: string };
   ref: string;
   commit_sha: string;
-  archive: {
+  tree: {
     key: string;
     sha256: string;
     bytes: number;
@@ -52,6 +65,13 @@ export interface ProjectSnapshotManifest {
     container: 'tar';
     compression: 'gzip';
     content_type: typeof PROJECT_SNAPSHOT_ARCHIVE_CONTENT_TYPE;
+  };
+  blobs: {
+    key: string;
+    sha256: string;
+    bytes: number;
+    container: 'git-pack';
+    content_type: typeof PROJECT_SNAPSHOT_BLOBS_CONTENT_TYPE;
   };
   limits: { max_archive_bytes: number };
   produced_at: string;
@@ -90,9 +110,16 @@ export function projectSnapshotObjectPrefix(
   );
 }
 
-export function projectSnapshotArchiveKey(prefix: string, sha256: string): string {
+/** The boot object (working tree + blobless `.git`). */
+export function projectSnapshotTreeKey(prefix: string, sha256: string): string {
   if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('project snapshot archive digest must be 64 hex');
-  return `${prefix}${sha256}.tar.gz`;
+  return `${prefix}${sha256}.tree.tar.gz`;
+}
+
+/** The hydration object (the tip's blob pack). */
+export function projectSnapshotBlobsKey(prefix: string, sha256: string): string {
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('project snapshot blob pack digest must be 64 hex');
+  return `${prefix}${sha256}.blobs.pack`;
 }
 
 export function projectSnapshotManifestKey(prefix: string): string {

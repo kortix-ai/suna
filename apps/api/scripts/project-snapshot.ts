@@ -33,9 +33,11 @@ import {
 } from '../src/git-proxy/project-snapshot';
 import { runProjectSnapshotWorkerOnce } from '../src/git-proxy/project-snapshot-worker';
 import {
+  PROJECT_SNAPSHOT_FORMAT,
   getObjectText,
   headObject,
-  projectSnapshotArchiveKey,
+  projectSnapshotBlobsKey,
+  projectSnapshotTreeKey,
   projectSnapshotBucket,
   projectSnapshotManifestKey,
   projectSnapshotS3Client,
@@ -100,20 +102,33 @@ async function printStatus(projectId: string, sha: string): Promise<number> {
     next_attempt_at: row.nextAttemptAt,
     last_error: row.lastError,
     object_prefix: row.objectPrefix,
-    archive_sha256: row.archiveSha256,
-    archive_bytes: row.archiveBytes,
+    format: row.format,
+    tree_sha256: row.archiveSha256,
+    tree_bytes: row.archiveBytes,
     entry_count: row.entryCount,
+    blobs_sha256: row.blobsSha256,
+    blobs_bytes: row.blobsBytes,
     ready_at: row.readyAt,
   };
-  if (row.status === 'ready' && row.objectPrefix && row.archiveSha256) {
-    const archiveKey = projectSnapshotArchiveKey(row.objectPrefix, row.archiveSha256);
-    const head = await headObject(archiveKey);
-    const manifest = await getObjectText(projectSnapshotManifestKey(row.objectPrefix));
-    out.archive_object = head ? { bytes: head.bytes, matches_ledger: head.bytes === row.archiveBytes } : 'MISSING';
+  if (row.status === 'ready' && row.objectPrefix && row.archiveSha256 && row.blobsSha256) {
+    const treeKey = projectSnapshotTreeKey(row.objectPrefix, row.archiveSha256);
+    const blobsKey = projectSnapshotBlobsKey(row.objectPrefix, row.blobsSha256);
+    const [tree, blobs, manifest] = await Promise.all([
+      headObject(treeKey),
+      headObject(blobsKey),
+      getObjectText(projectSnapshotManifestKey(row.objectPrefix)),
+    ]);
+    out.tree_object = tree ? { bytes: tree.bytes, matches_ledger: tree.bytes === row.archiveBytes } : 'MISSING';
+    out.blobs_object = blobs ? { bytes: blobs.bytes, matches_ledger: blobs.bytes === row.blobsBytes } : 'MISSING';
     out.manifest_object = manifest ? 'present' : 'MISSING';
   }
   console.log(JSON.stringify(out, null, 2));
-  return row.status === 'ready' && out.archive_object !== 'MISSING' && out.manifest_object !== 'MISSING' ? 0 : 1;
+  return row.status === 'ready' &&
+    out.tree_object !== 'MISSING' &&
+    out.blobs_object !== 'MISSING' &&
+    out.manifest_object !== 'MISSING'
+    ? 0
+    : 1;
 }
 
 const command = process.argv[2];
@@ -190,7 +205,7 @@ switch (command) {
       where p.status = 'active'
         and not exists (
           select 1 from kortix.project_snapshot_archives s
-          where s.project_id = p.project_id and s.status = 'ready'
+          where s.project_id = p.project_id and s.status = 'ready' and s.format = ${PROJECT_SNAPSHOT_FORMAT}
         )
       order by p.last_opened_at desc nulls last
       limit ${limit}

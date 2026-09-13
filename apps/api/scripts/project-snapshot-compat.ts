@@ -99,6 +99,18 @@ async function main(): Promise<void> {
     const cp = health.body?.config_provider ?? {};
     check('session booted from S3 (config_provider.provider = s3, sha matches)', cp.provider === 's3' && cp.sha_matches === true && cp.fallback === false, JSON.stringify({ provider: cp.provider, sha: cp.actual_sha, timings: cp.timings }));
     check('daemon reports the session branch checked out', health.body.branch === sessionId, `branch=${health.body.branch}`);
+    check('boot object was extracted by the system tar (native path)', cp.s3_extractor === 'tar', `extractor=${cp.s3_extractor}`);
+
+    // v2: the blob-pack import follows activation and must settle `ok` shortly
+    // after readiness; the health surface reports it in config_provider.hydration.
+    let hydration = cp.hydration ?? null;
+    const hydrationDeadline = Date.now() + 30_000;
+    while (hydration && hydration.status === 'pending' && Date.now() < hydrationDeadline) {
+      await new Promise((r) => setTimeout(r, 500));
+      const again = await call(api, jwt, `${runtime}/kortix/health`);
+      hydration = again.body?.config_provider?.hydration ?? hydration;
+    }
+    check('blob-pack hydration settled ok after readiness (config_provider.hydration)', hydration?.status === 'ok' && hydration.bytes > 0, JSON.stringify(hydration));
 
     // edit → commit → authenticated push (the box's credential helper + proxy)
     const fileName = `from-s3-session-${stamp}.txt`;

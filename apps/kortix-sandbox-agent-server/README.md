@@ -73,16 +73,22 @@ in-process daemon.
    Then `KORTIX_PROJECT_SNAPSHOT_MODE` selects the transport: `git` (default)
    is the legacy path — compiled checkout (`KORTIX_COMPILED_BOOT_MODE`
    `prefer`/`required`), image-baked scaffold + API delta, or `git clone`;
-   `prefer-s3` streams the PREPARED archive pinned in
+   `prefer-s3` fetches the PREPARED boot object pinned in
    `KORTIX_PROJECT_SNAPSHOT_PIN` from object storage (descriptor from the Git
-   proxy, presigned GET, hash → gunzip → safe tar, verify, activate) and falls
-   back to the Git path on any acquisition failure except an authorization
-   denial or a cancellation; `require-s3` fails closed. The outcome — provider,
-   expected vs actual SHA, classified S3 failure, fallback — is reported on
-   `GET /kortix/health` (`config_provider`) and in the boot timeline marks
-   (`config-provider:*`). A prepared-S3 start defers the optional history
-   backfill until the runtime is actually ready. Materialization failures are
-   logged but non-fatal in non-required modes.
+   proxy, presigned GET into a stage file with the hash and the tar-header
+   guard on the stream, native `tar` extraction, verify, activate as a
+   blob-less partial clone) and falls back to the Git path on any acquisition
+   failure except an authorization denial or a cancellation; `require-s3`
+   fails closed. Nothing runs git on that boot path. Off it, the daemon
+   refreshes the index and imports the tip's blob pack (`git index-pack`),
+   reported as `config_provider.hydration` (`pending` → `ok` | `failed`; a
+   failed import leaves lazy blob fetches through the proxy). The outcome —
+   provider, expected vs actual SHA, extractor, classified S3 failure,
+   fallback, hydration — is on `GET /kortix/health` (`config_provider`) and in
+   the boot timeline marks (`config-provider:*`). A prepared-S3 start defers
+   the optional history backfill until the runtime is actually ready and the
+   hydration has settled. Materialization failures are logged but non-fatal in
+   non-required modes.
 5. Inject managed system skills into `.kortix/opencode/skills`.
 6. Resolve `OPENCODE_CONFIG_DIR`.
 7. Start the OpenCode REST supervisor in the project directory

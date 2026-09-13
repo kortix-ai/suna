@@ -15,6 +15,8 @@ export type S3Stage =
   | 'extract'
   | 'verify'
   | 'activate'
+  /** The post-activation blob-pack import (never on the boot path). */
+  | 'hydrate'
 
 /**
  * Why an S3 acquisition did not complete. Classified so the coordinator can
@@ -83,10 +85,27 @@ export interface S3AcquisitionMetrics {
   bytes: number
   entries: number
   descriptorMs: number
+  /** Transfer of the boot object into the stage file (hash + header guard run on the stream). */
   downloadMs: number
-  /** Extraction overlaps the download; this is time from first byte to last entry written. */
+  /** Extraction of the verified file into the stage directory. */
   extractMs: number
   verifyMs: number
+  /** Which extractor unpacked the tree: the system `tar` or the in-process fallback. */
+  extractor: 'tar' | 'node-tar'
+}
+
+/**
+ * The blob-pack import that follows activation. `pending` while it runs;
+ * `failed` leaves a valid partial clone that fetches blobs lazily through the
+ * Git proxy (slower, never broken). Never on the boot path.
+ */
+export interface SnapshotHydrationSummary {
+  status: 'pending' | 'ok' | 'failed'
+  attempts: number
+  bytes: number
+  ms: number
+  reason: S3FailureReason | null
+  error: string | null
 }
 
 export interface MaterializedProject {
@@ -106,6 +125,8 @@ export interface MaterializedProject {
     durationMs: number
   }
   s3?: S3AcquisitionMetrics
+  /** Present on an S3 start: settles when the blob pack is imported (or given up on). */
+  hydration?: Promise<SnapshotHydrationSummary>
 }
 
 /** Health-visible, low-cardinality summary of what this boot's acquisition did. */
@@ -122,9 +143,13 @@ export interface ConfigProviderSummary {
   s3_skipped: boolean
   s3_stage: S3Stage | null
   s3_reason: S3FailureReason | null
+  /** Which extractor unpacked the boot object on an S3 start. */
+  s3_extractor: 'tar' | 'node-tar' | null
   fallback: boolean
   total_ms: number
   timings: Record<string, number>
   outcome: 'ok' | 'error'
   error: string | null
+  /** Blob-pack import state after an S3 start; null on every other path. Updated in place as it settles. */
+  hydration: SnapshotHydrationSummary | null
 }

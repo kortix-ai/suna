@@ -507,11 +507,20 @@ export const projectSnapshotArchives = kortixSchema.table(
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow().notNull(),
     lockedBy: text('locked_by'),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
-    /** Object key prefix (`…/project-snapshot-v1/`), set when ready. */
+    /**
+     * Archive layout this row was (or will be) built as. A row whose format is
+     * older than the API's current one is a cache miss and gets re-queued.
+     */
+    format: varchar('format', { length: 32 }).default('project-snapshot-v1').notNull(),
+    /** Object key prefix (`…/project-snapshot-v2/`), set when ready. */
     objectPrefix: text('object_prefix'),
+    /** The boot object: working tree + blobless `.git` (v2), or the whole checkout (v1). */
     archiveSha256: varchar('archive_sha256', { length: 64 }),
     archiveBytes: bigint('archive_bytes', { mode: 'number' }),
     entryCount: integer('entry_count'),
+    /** The hydration object (v2): the tip's blob pack, fetched after activation. */
+    blobsSha256: varchar('blobs_sha256', { length: 64 }),
+    blobsBytes: bigint('blobs_bytes', { mode: 'number' }),
     lastError: text('last_error'),
     readyAt: timestamp('ready_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

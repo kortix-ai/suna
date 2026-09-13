@@ -22,13 +22,19 @@ import type { Config, ProjectSnapshotMode } from '../config'
 import { adoptOrClearBakedCheckout, clearDirContents, finalizeSnapshotStage, readRepoInfo } from '../git'
 import { logger } from '../logger'
 import { materializeViaGit } from './git/git-config-provider'
-import { checkS3Eligibility, materializeFromS3 } from './s3/s3-config-provider'
+import {
+  checkS3Eligibility,
+  hydrateProjectSnapshotBlobs,
+  materializeFromS3,
+  refreshSnapshotIndex,
+} from './s3/s3-config-provider'
 import {
   ConfigProviderError,
   S3_NO_FALLBACK_REASONS,
   type ConfigProviderSummary,
   type MaterializeRequest,
   type MaterializedProject,
+  type SnapshotHydrationSummary,
 } from './types'
 
 /** Total S3 budget (descriptor + download + extract + verify, all retries). */
@@ -44,6 +50,10 @@ export interface MaterializeProjectOptions {
   fetchImpl?: typeof fetch
   /** Stall detector for the archive transfer; see DEFAULT_INACTIVITY_TIMEOUT_MS. */
   inactivityTimeoutMs?: number
+  /** Test seam: the extractor binary (a bogus path forces the in-process fallback). */
+  tarBinary?: string
+  /** Budget for the post-activation blob import. */
+  hydrationTimeoutMs?: number
 }
 
 export type MaterializeProjectResult = MaterializedProject & { summary: ConfigProviderSummary }
@@ -80,11 +90,13 @@ function summarize(
     s3_skipped: s3.skipped !== null,
     s3_stage: s3.error?.stage ?? s3.skipped?.stage ?? null,
     s3_reason: s3.error?.reason ?? s3.skipped?.reason ?? null,
+    s3_extractor: result.s3?.extractor ?? null,
     fallback: result.fallback !== undefined,
     total_ms: Date.now() - started,
     timings: result.timings,
     outcome: outcome.ok ? 'ok' : 'error',
     error: outcome.ok ? null : outcome.error,
+    hydration: null,
   }
 }
 
@@ -195,6 +207,7 @@ export async function materializeProject(
       const acquired = await materializeFromS3(req, {
         fetchImpl: opts.fetchImpl,
         inactivityTimeoutMs: opts.inactivityTimeoutMs,
+        tarBinary: opts.tarBinary,
       })
       s3State.attempts = acquired.metrics.attempts
       timings.s3_acquire = Date.now() - s3Started
@@ -206,14 +219,53 @@ export async function materializeProject(
       }
       timings.s3_activate = Date.now() - a0
       const info = await readRepoInfo(cfg.projectTarget)
-      return finish({
+
+      // The boot path ends here. Two things follow OFF it, concurrently with
+      // the runtime spawn: the one-time index refresh (so the agent's first
+      // `git status` is instant; it takes the index lock, so it goes first)
+      // and then the blob-pack import. Neither gates readiness; a failed
+      // import leaves a valid partial clone.
+      const hydration = refreshSnapshotIndex(cfg.projectTarget)
+        .then(
+          (ms) => logger.info('[config-provider] snapshot index refreshed', { ms }),
+          (err) => logger.warn('[config-provider] snapshot index refresh errored', { err: (err as Error)?.message ?? String(err) }),
+        )
+        .then(() =>
+          hydrateProjectSnapshotBlobs(cfg, cfg.projectTarget, acquired.descriptor, {
+            fetchImpl: opts.fetchImpl,
+            inactivityTimeoutMs: opts.inactivityTimeoutMs,
+            signal: opts.signal,
+            timeoutMs: opts.hydrationTimeoutMs,
+          }),
+        )
+      const finished = finish({
         provider: 's3',
         sha: info?.commit ?? null,
         expectedSha,
         workspacePath: cfg.projectTarget,
         timings: { ...timings },
         s3: acquired.metrics,
+        hydration,
       })
+      const pending: SnapshotHydrationSummary = { status: 'pending', attempts: 0, bytes: 0, ms: 0, reason: null, error: null }
+      finished.summary.hydration = pending
+      void hydration.then((h) => {
+        finished.summary.hydration = h
+        finished.summary.timings.s3_hydrate = h.ms
+        ;(h.status === 'ok' ? logger.info : logger.warn).call(logger, '[config-provider] snapshot hydration settled', {
+          event: 'config_provider_hydration',
+          status: h.status,
+          attempts: h.attempts,
+          bytes: h.bytes,
+          ms: h.ms,
+          reason: h.reason,
+          error: h.error,
+          expectedSha,
+        })
+        mark(`config-provider:hydrate:${h.status}`)
+        opts.onSummary?.(finished.summary)
+      })
+      return finished
     } catch (err) {
       const failure =
         err instanceof ConfigProviderError

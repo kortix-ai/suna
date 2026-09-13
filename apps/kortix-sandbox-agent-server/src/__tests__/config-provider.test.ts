@@ -1,8 +1,10 @@
 /**
- * Config provider (src/config-provider): S3 acquisition, classified failures,
- * bounded fallback to Git, strict mode, cancellation, denial, and the archive
- * safety guards — driven through the REAL coordinator with a real tar.gz
- * served by a local HTTP server standing in for the Git proxy + object store.
+ * Config provider (src/config-provider): S3 acquisition of the two-object
+ * snapshot (boot tree + blob pack), classified failures, bounded fallback to
+ * Git, strict mode, cancellation, denial, the archive safety guards, native
+ * vs in-process extraction, and the post-activation blob hydration — driven
+ * through the REAL coordinator with real objects built by git and served by a
+ * local HTTP server standing in for the Git proxy + object store.
  *
  * The Git fallback lands through the image-baked scaffold zero-network path
  * (the scaffold's HEAD == the pinned base SHA), so "fallback at the same
@@ -40,15 +42,20 @@ const roots: string[] = []
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, {
     cwd,
+    encoding: 'utf8',
     env: {
       ...process.env,
-      GIT_AUTHOR_NAME: 'Snapshot Test',
-      GIT_AUTHOR_EMAIL: 'snapshot@kortix.test',
-      GIT_COMMITTER_NAME: 'Snapshot Test',
-      GIT_COMMITTER_EMAIL: 'snapshot@kortix.test',
+      GIT_AUTHOR_NAME: 't',
+      GIT_AUTHOR_EMAIL: 't@t.test',
+      GIT_COMMITTER_NAME: 't',
+      GIT_COMMITTER_EMAIL: 't@t.test',
+      GIT_TERMINAL_PROMPT: '0',
     },
-    encoding: 'utf8',
   }).trim()
+}
+
+function gitBuffer(cwd: string, args: string[], input?: Buffer | string): Buffer {
+  return execFileSync('git', args, { cwd, input, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
 }
 
 function tmp(prefix: string): string {
@@ -57,15 +64,20 @@ function tmp(prefix: string): string {
   return dir
 }
 
-interface Archive {
+const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+
+interface Snapshot {
+  /** The boot object (working tree + blobless .git), tar.gz. */
   path: string
   bytes: Buffer
   sha256: string
-  sha: string
   entries: number
+  /** The hydration object (blob pack). */
+  blobs: { bytes: Buffer; sha256: string }
+  sha: string
 }
 
-/** A committed project (several files so gzip streams multiple entries) and its sanitized snapshot archive. */
+/** A committed project (several files so gzip streams multiple entries). */
 function makeSourceRepo(root: string, marker = 'v1'): { checkout: string; sha: string } {
   const checkout = join(root, `source-${marker}`)
   mkdirSync(checkout)
@@ -86,23 +98,50 @@ function makeSourceRepo(root: string, marker = 'v1'): { checkout: string; sha: s
 }
 
 /** Pack a directory the way the API producer does (node-tar, portable, no mtimes). */
-async function packDir(dir: string, path: string): Promise<Archive> {
+async function packDir(dir: string, path: string): Promise<{ path: string; bytes: Buffer; sha256: string; entries: number }> {
   let entries = 0
   await tar.create(
     { cwd: dir, file: path, gzip: true, portable: true, noMtime: true, filter: () => (entries += 1, true) },
     ['.'],
   )
   const bytes = readFileSync(path)
-  return { path, bytes, sha256: createHash('sha256').update(bytes).digest('hex'), sha: '', entries }
+  return { path, bytes, sha256: sha256(bytes), entries }
 }
 
-/** What the API producer ships: committed tree + sanitized shallow .git + marker, tar.gz. */
-async function makeArchive(root: string, source: { checkout: string; sha: string }, label = 'archive'): Promise<Archive> {
+/**
+ * What the API producer ships (project-snapshot.ts buildProjectSnapshotArchive):
+ * a sanitized shallow checkout whose ONE pack holds commit + trees (marked
+ * promisor) tarred with the working tree, plus the blob pack as its own object.
+ */
+async function makeSnapshot(root: string, source: { checkout: string; sha: string }, label = 'archive'): Promise<Snapshot> {
   const stage = join(root, `${label}-stage`)
   git(root, 'clone', '-q', '--depth', '1', `file://${source.checkout}`, stage)
   git(stage, 'remote', 'remove', 'origin')
   rmSync(join(stage, '.git', 'logs'), { recursive: true, force: true })
   rmSync(join(stage, '.git', 'hooks'), { recursive: true, force: true })
+  rmSync(join(stage, '.git', 'index'), { force: true })
+  git(stage, 'read-tree', 'HEAD')
+  const packDirPath = join(stage, '.git', 'objects', 'pack')
+  const fetched = readdirSync(packDirPath)
+  const blobsPack = gitBuffer(stage, ['pack-objects', '--revs', '--stdout', '-q'], 'HEAD\n')
+  // Boot pack = commit + trees + symlink blobs (git compares a symlink against
+  // its blob's content on refresh); regular-file blobs ride the blob pack.
+  const nonBlobs = gitBuffer(stage, ['rev-list', '--objects', '--filter=blob:none', 'HEAD']).toString().split('\n').map((l) => l.slice(0, 40))
+  const symlinkBlobs = gitBuffer(stage, ['ls-tree', '-r', 'HEAD'])
+    .toString()
+    .split('\n')
+    .filter((l) => l.startsWith('120000 blob '))
+    .map((l) => l.split(/\s+/)[2] ?? '')
+  const bootObjects = [...nonBlobs, ...symlinkBlobs].filter((id) => /^[0-9a-f]{40}$/.test(id))
+  const treePack = gitBuffer(stage, ['pack-objects', '--stdout', '-q'], `${bootObjects.join('\n')}\n`)
+  const indexed = gitBuffer(stage, ['index-pack', '--stdin'], treePack).toString()
+  const sum = indexed.match(/^pack\t([0-9a-f]+)/m)?.[1]
+  if (!sum) throw new Error(`index-pack did not name the pack: ${indexed}`)
+  for (const name of fetched) rmSync(join(packDirPath, name), { force: true })
+  for (const entry of readdirSync(join(stage, '.git', 'objects'))) {
+    if (/^[0-9a-f]{2}$/.test(entry)) rmSync(join(stage, '.git', 'objects', entry), { recursive: true, force: true })
+  }
+  writeFileSync(join(packDirPath, `pack-${sum}.promisor`), '')
   writeFileSync(
     join(stage, '.git', 'kortix-project-snapshot.json'),
     `${JSON.stringify({
@@ -112,21 +151,24 @@ async function makeArchive(root: string, source: { checkout: string; sha: string
       commit_sha: source.sha,
     })}\n`,
   )
-  const packed = await packDir(stage, join(root, `${label}.tar.gz`))
-  return { ...packed, sha: source.sha }
+  const packed = await packDir(stage, join(root, `${label}.tree.tar.gz`))
+  return { ...packed, sha: source.sha, blobs: { bytes: blobsPack, sha256: sha256(blobsPack) } }
 }
 
 interface FakeApi {
   url: string
   requests: Array<{ path: string; auth: string | null }>
   descriptorStatus: number
+  /** How the BOOT object is served. */
   archiveMode: 'ok' | 'forbidden' | 'stall' | 'cut' | 'corrupt' | 'slow'
-  archive: Archive
+  /** How the HYDRATION object is served (`forbidden-once`: 403 on the first request, then ok). */
+  blobsMode: 'ok' | 'missing' | 'forbidden' | 'forbidden-once'
+  archive: Snapshot
   firstHalfSent: Promise<void>
   stop: () => void
 }
 
-function startFakeApi(archive: Archive, opts: { deadlineStallMs?: number } = {}): FakeApi {
+function startFakeApi(archive: Snapshot, opts: { deadlineStallMs?: number } = {}): FakeApi {
   let resolveFirstHalf!: () => void
   const firstHalfSent = new Promise<void>((r) => {
     resolveFirstHalf = r
@@ -136,6 +178,7 @@ function startFakeApi(archive: Archive, opts: { deadlineStallMs?: number } = {})
     requests: [],
     descriptorStatus: 200,
     archiveMode: 'ok',
+    blobsMode: 'ok',
     archive,
     firstHalfSent,
     stop: () => {},
@@ -157,11 +200,17 @@ function startFakeApi(archive: Archive, opts: { deadlineStallMs?: number } = {})
         commit_sha: url.searchParams.get('sha') ?? '',
         ref: 'main',
         repository: { owner: 'kortix', name: 'demo', external_id: EXTERNAL_ID },
-        archive: {
-          url: `${state.url}/archive/${state.archive.sha256}.tar.gz?X-Amz-Signature=test-signature`,
+        tree: {
+          url: `${state.url}/tree/${state.archive.sha256}.tree.tar.gz?X-Amz-Signature=test-signature`,
           sha256: state.archive.sha256,
           bytes: state.archive.bytes.byteLength,
           entries: state.archive.entries,
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        },
+        blobs: {
+          url: `${state.url}/blobs/${state.archive.blobs.sha256}.blobs.pack?X-Amz-Signature=test-signature`,
+          sha256: state.archive.blobs.sha256,
+          bytes: state.archive.blobs.bytes.byteLength,
           expires_at: new Date(Date.now() + 60_000).toISOString(),
         },
       }
@@ -169,7 +218,27 @@ function startFakeApi(archive: Archive, opts: { deadlineStallMs?: number } = {})
       res.end(JSON.stringify(descriptor))
       return
     }
-    if (url.pathname.startsWith('/archive/')) {
+    if (url.pathname.startsWith('/blobs/')) {
+      const body = state.archive.blobs.bytes
+      switch (state.blobsMode) {
+        case 'missing':
+          res.writeHead(404, { 'content-type': 'application/xml' })
+          res.end('<Error><Code>NoSuchKey</Code></Error>')
+          return
+        case 'forbidden-once':
+          state.blobsMode = 'ok'
+        // fall through
+        case 'forbidden':
+          res.writeHead(403, { 'content-type': 'application/xml' })
+          res.end('<Error><Code>AccessDenied</Code><Message>Request has expired</Message></Error>')
+          return
+        default:
+          res.writeHead(200, { 'content-length': String(body.length), 'content-type': 'application/x-git-pack' })
+          res.end(body)
+          return
+      }
+    }
+    if (url.pathname.startsWith('/tree/')) {
       const body = state.archive.bytes
       const half = Math.floor(body.length / 2)
       switch (state.archiveMode) {
@@ -212,12 +281,9 @@ function startFakeApi(archive: Archive, opts: { deadlineStallMs?: number } = {})
     res.end('not found')
   })
   server.listen(0, '127.0.0.1')
-  const address = server.address() as AddressInfo
-  state.url = `http://127.0.0.1:${address.port}`
-  state.stop = () => {
-    server.closeAllConnections?.()
-    server.close()
-  }
+  const port = (server.address() as AddressInfo).port
+  state.url = `http://127.0.0.1:${port}`
+  state.stop = () => server.close()
   return state
 }
 
@@ -247,14 +313,14 @@ function makeConfig(
 
 let root: string
 let source: { checkout: string; sha: string }
-let archive: Archive
+let archive: Snapshot
 let api: FakeApi
 
 beforeEach(async () => {
   __clearRepoIdentityMemoForTests()
   root = tmp('kortix-config-provider-')
   source = makeSourceRepo(root)
-  archive = await makeArchive(root, source)
+  archive = await makeSnapshot(root, source)
   api = startFakeApi(archive)
   // The Git fallback's zero-network scaffold path: a bare copy whose HEAD IS
   // the pinned base SHA, exactly what the image bakes for a fresh project.
@@ -269,8 +335,20 @@ afterEach(() => {
   for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
+/** Private stage dirs AND stage files (`.kortix-snapshot-*.tgz`) left under the target. */
 function stageDirs(target: string): string[] {
   return existsSync(target) ? readdirSync(target).filter((n) => n.startsWith('.kortix-')) : []
+}
+
+/** Objects reachable from HEAD that are not in the local object store (no lazy fetch). */
+function missingObjects(target: string): number {
+  return git(target, 'rev-list', '--objects', '--missing=print', 'HEAD')
+    .split('\n')
+    .filter((l) => l.startsWith('?')).length
+}
+
+function packFiles(target: string): string[] {
+  return readdirSync(join(target, '.git', 'objects', 'pack')).sort()
 }
 
 async function expectWorkspaceAtSha(target: string, sha: string, repoUrl: string): Promise<void> {
@@ -284,6 +362,13 @@ async function expectWorkspaceAtSha(target: string, sha: string, repoUrl: string
   expect(git(target, 'status', '--porcelain')).toBe('')
   expect(existsSync(join(target, '.git', 'hooks', 'pre-commit'))).toBe(false)
   expect(stageDirs(target)).toEqual([])
+}
+
+/** The partial-clone contract a snapshot start leaves behind. */
+function expectPartialCloneConfig(target: string): void {
+  expect(git(target, 'config', '--local', '--get', 'remote.origin.promisor')).toBe('true')
+  expect(git(target, 'config', '--local', '--get', 'remote.origin.partialclonefilter')).toBe('blob:none')
+  expect(git(target, 'config', '--local', '--get', 'extensions.partialclone')).toBe('origin')
 }
 
 describe('pin + descriptor url', () => {
@@ -306,25 +391,21 @@ describe('pin + descriptor url', () => {
 })
 
 describe('materializeProject — prefer-s3', () => {
-  test('acquires the pinned archive by streaming, activates it, and delivers the Git checkout contract', async () => {
+  test('acquires the pinned boot object, activates a blob-less partial clone, then hydrates the blobs off the boot path', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.archiveMode = 'slow'
     const marks: string[] = []
-    // Overlap proof: after the first half of the body has been sent and the
-    // server is pausing, files from that half must already be on disk in the
-    // private stage — extraction did not wait for the download to finish.
-    const overlap = api.firstHalfSent.then(async () => {
+    // Two-pass proof: while the server is pausing mid-body, the object is
+    // accumulating in the private stage FILE and nothing has been extracted
+    // yet — no byte reaches the tree before the whole object is verified.
+    const midway = api.firstHalfSent.then(async () => {
       await new Promise((r) => setTimeout(r, 250))
-      const stages = stageDirs(target)
-      const files = stages.flatMap((s) => {
-        const dir = join(target, s)
-        return existsSync(dir) ? (readdirSync(dir, { recursive: true }) as string[]) : []
-      })
-      return { stages, files: files.length }
+      const entries = stageDirs(target)
+      return { files: entries.filter((n) => n.endsWith('.tgz')), dirs: entries.filter((n) => !n.endsWith('.tgz')) }
     })
     const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
-    const observed = await overlap
+    const observed = await midway
 
     expect(result.provider).toBe('s3')
     expect(result.fallback).toBeUndefined()
@@ -332,17 +413,82 @@ describe('materializeProject — prefer-s3', () => {
     expect(result.summary.sha_matches).toBe(true)
     expect(result.s3?.attempts).toBe(1)
     expect(result.s3?.bytes).toBe(archive.bytes.byteLength)
-    expect(observed.stages.length).toBe(1)
-    expect(observed.files).toBeGreaterThan(0)
+    expect(result.s3?.extractor).toBe('tar')
+    expect(observed.files.length).toBe(1)
+    expect(observed.dirs).toEqual([])
     expect(marks).toContain('config-provider:s3:ok')
+    // Boot path: a valid partial clone with NO blobs yet (hydration still pending).
+    expect(result.summary.hydration?.status).toBe('pending')
+    expectPartialCloneConfig(target)
+    expect(packFiles(target).filter((n) => n.endsWith('.promisor')).length).toBe(1)
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
     // The symlink committed in the source survives as a symlink.
     expect(readFileSync(join(target, 'README-link'), 'utf8')).toBe('project v1\n')
-    // Descriptor carried the sandbox credential; the archive request did not.
+
+    // Hydration: the blob pack lands as a second promisor pack; nothing is missing.
+    const hydration = await result.hydration!
+    expect(hydration.status).toBe('ok')
+    expect(hydration.bytes).toBe(archive.blobs.bytes.byteLength)
+    expect(result.summary.hydration?.status).toBe('ok')
+    expect(marks).toContain('config-provider:hydrate:ok')
+    expect(packFiles(target).filter((n) => n.endsWith('.pack')).length).toBe(2)
+    expect(packFiles(target).filter((n) => n.endsWith('.promisor')).length).toBe(2)
+    expect(missingObjects(target)).toBe(0)
+    expect(git(target, 'cat-file', '-p', 'HEAD:README.md')).toBe('project v1')
+    // The refreshed index makes status a stat-only check; still clean.
+    expect(git(target, 'status', '--porcelain')).toBe('')
+
+    // Descriptor carried the sandbox credential; neither object request did.
     const descriptorReq = api.requests.find((r) => r.path.endsWith('/project-snapshot'))
-    const archiveReq = api.requests.find((r) => r.path.startsWith('/archive/'))
+    const treeReq = api.requests.find((r) => r.path.startsWith('/tree/'))
+    const blobsReq = api.requests.find((r) => r.path.startsWith('/blobs/'))
     expect(descriptorReq?.auth).toBe(`Bearer ${TOKEN}`)
-    expect(archiveReq?.auth).toBeNull()
+    expect(treeReq?.auth).toBeNull()
+    expect(blobsReq?.auth).toBeNull()
+  })
+
+  test('a lost blob pack leaves a working partial clone: boot ok, hydration failed and visible', async () => {
+    const target = join(root, 'ws')
+    const cfg = makeConfig(api, target, archive.sha)
+    api.blobsMode = 'missing'
+    const marks: string[] = []
+    const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
+    expect(result.provider).toBe('s3')
+    const hydration = await result.hydration!
+    expect(hydration).toMatchObject({ status: 'failed', reason: 'missing', attempts: 1 })
+    expect(result.summary.hydration?.status).toBe('failed')
+    expect(marks).toContain('config-provider:hydrate:failed')
+    // Still a valid repository at the right commit, with blobs marked fetchable.
+    await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
+    expectPartialCloneConfig(target)
+    expect(missingObjects(target)).toBeGreaterThan(0)
+    expect(packFiles(target).filter((n) => n.endsWith('.pack')).length).toBe(1)
+  })
+
+  test('an expired blob-pack URL re-fetches the descriptor and completes hydration', async () => {
+    const target = join(root, 'ws')
+    const cfg = makeConfig(api, target, archive.sha)
+    // The first blob-pack request is refused (403); the daemon re-fetches the
+    // descriptor and the store accepts the second request.
+    api.blobsMode = 'forbidden-once'
+    const result = await materializeProject(cfg)
+    const hydration = await result.hydration!
+    expect(hydration.status).toBe('ok')
+    expect(hydration.attempts).toBe(2)
+    expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(2)
+    expect(missingObjects(target)).toBe(0)
+  })
+
+  test('falls back to the in-process extractor when no tar binary is usable', async () => {
+    const target = join(root, 'ws')
+    const cfg = makeConfig(api, target, archive.sha)
+    const result = await materializeProject(cfg, { tarBinary: join(root, 'no-such-tar') })
+    expect(result.provider).toBe('s3')
+    expect(result.s3?.extractor).toBe('node-tar')
+    await result.hydration
+    await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
+    expect(readFileSync(join(target, 'README-link'), 'utf8')).toBe('project v1\n')
+    expect(missingObjects(target)).toBe(0)
   })
 
   test('missing archive (404) falls back to Git at the SAME revision with the reason attributed', async () => {
@@ -353,11 +499,11 @@ describe('materializeProject — prefer-s3', () => {
     const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
     expect(result.provider).toBe('git')
     expect(result.fallback).toMatchObject({ from: 's3', stage: 'descriptor', reason: 'missing', attempts: 1 })
-    expect(result.summary).toMatchObject({ s3_attempted: true, s3_failed: true, s3_reason: 'missing', fallback: true, sha_matches: true })
+    expect(result.summary).toMatchObject({ s3_attempted: true, s3_failed: true, s3_reason: 'missing', fallback: true, sha_matches: true, hydration: null })
     expect(marks).toEqual(expect.arrayContaining(['config-provider:s3:failed:missing', 'config-provider:fallback', 'config-provider:git:fallback']))
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
-    // No archive download was ever attempted for a missing descriptor.
-    expect(api.requests.filter((r) => r.path.startsWith('/archive/'))).toHaveLength(0)
+    // No object download was ever attempted for a missing descriptor.
+    expect(api.requests.filter((r) => r.path.startsWith('/tree/') || r.path.startsWith('/blobs/'))).toHaveLength(0)
   })
 
   test('an interrupted transfer is retried with backoff, then falls back once', async () => {
@@ -371,7 +517,7 @@ describe('materializeProject — prefer-s3', () => {
     // build runtime) re-issues the GET itself after the reset and appends the
     // second response to the same body, so the server may see two per attempt.
     // The provider's own attempt count above is the contract.
-    expect(api.requests.filter((r) => r.path.startsWith('/archive/')).length).toBeGreaterThanOrEqual(3)
+    expect(api.requests.filter((r) => r.path.startsWith('/tree/')).length).toBeGreaterThanOrEqual(3)
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   }, 30_000)
 
@@ -387,21 +533,21 @@ describe('materializeProject — prefer-s3', () => {
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
 
-  test('a corrupt archive fails verification once (no retry) and falls back', async () => {
+  test('a corrupt object fails the digest once (no retry) and falls back', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.archiveMode = 'corrupt'
     const result = await materializeProject(cfg)
     expect(result.provider).toBe('git')
-    expect(['digest-mismatch', 'malformed'].includes(result.fallback?.reason ?? '')).toBe(true)
+    expect(result.fallback?.reason).toBe('digest-mismatch')
     expect(result.fallback?.attempts).toBe(1)
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
 
   test('an archive built from another commit is refused as revision-mismatch and falls back', async () => {
     const target = join(root, 'ws')
-    const other = await makeArchive(root, makeSourceRepo(root, 'v2'), 'other')
-    // The server serves the OTHER archive, self-consistent (digest matches),
+    const other = await makeSnapshot(root, makeSourceRepo(root, 'v2'), 'other')
+    // The server serves the OTHER snapshot, self-consistent (digests match),
     // but the pin/descriptor name the session's base SHA.
     api.archive = { ...other, sha: archive.sha }
     const cfg = makeConfig(api, target, archive.sha, {
@@ -479,7 +625,7 @@ describe('materializeProject — prefer-s3', () => {
     await expect(materializeProject(cfg, { signal: controller.signal })).rejects.toMatchObject({ reason: 'cancelled' })
     expect(existsSync(join(target, '.git'))).toBe(false)
     expect(stageDirs(target)).toEqual([])
-    expect(api.requests.filter((r) => r.path.startsWith('/archive/'))).toHaveLength(1)
+    expect(api.requests.filter((r) => r.path.startsWith('/tree/'))).toHaveLength(1)
   })
 
   test('a baked checkout that IS the base is adopted before any provider runs', async () => {
@@ -512,6 +658,7 @@ describe('materializeProject — require-s3 and git', () => {
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3' })
     const result = await materializeProject(cfg)
     expect(result.provider).toBe('s3')
+    await result.hydration
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
 
@@ -565,7 +712,7 @@ describe('archive safety guards', () => {
     expect(bytes.check('big', { type: 'File', size: 11 })).toMatch(/uncompressed size/)
   })
 
-  test('a real archive with a traversal entry is refused before anything escapes the stage', async () => {
+  test('a real archive with a traversal entry is refused before anything is extracted', async () => {
     const evilRoot = join(root, 'evil')
     mkdirSync(join(evilRoot, 'checkout'), { recursive: true })
     writeFileSync(join(evilRoot, 'outside.txt'), 'must not be written\n')
@@ -573,19 +720,23 @@ describe('archive safety guards', () => {
     const evilPath = join(root, 'evil.tar.gz')
     await tar.create({ cwd: join(evilRoot, 'checkout'), file: evilPath, gzip: true, preservePaths: true }, ['inner.txt', '../outside.txt'])
     const bytes = readFileSync(evilPath)
-    const evil: Archive = { path: evilPath, bytes, sha256: createHash('sha256').update(bytes).digest('hex'), sha: archive.sha, entries: 2 }
-    api.archive = evil
+    api.archive = { ...archive, path: evilPath, bytes, sha256: sha256(bytes), entries: 2 }
     const descriptor: ProjectSnapshotDescriptor = {
       format: PROJECT_SNAPSHOT_FORMAT,
       commit_sha: archive.sha,
       ref: 'main',
       repository: { owner: 'kortix', name: 'demo', external_id: EXTERNAL_ID },
-      archive: { url: `${api.url}/archive/x.tar.gz`, sha256: evil.sha256, bytes: bytes.byteLength, entries: 2, expires_at: '' },
+      tree: { url: `${api.url}/tree/x.tree.tar.gz`, sha256: api.archive.sha256, bytes: bytes.byteLength, entries: 2, expires_at: '' },
+      blobs: { url: `${api.url}/blobs/x.blobs.pack`, sha256: archive.blobs.sha256, bytes: archive.blobs.bytes.byteLength, expires_at: '' },
     }
-    const stage = join(root, 'ws', '.kortix-snapshot-test')
-    mkdirSync(join(root, 'ws'), { recursive: true })
+    const ws = join(root, 'ws')
+    const stage = join(ws, '.kortix-snapshot-test')
+    mkdirSync(ws, { recursive: true })
     await expect(downloadAndExtractProjectSnapshot(descriptor, stage, { timeoutMs: 5_000 })).rejects.toMatchObject({ stage: 'extract', reason: 'malformed' })
-    expect(existsSync(join(root, 'ws', 'outside.txt'))).toBe(false)
+    expect(existsSync(join(ws, 'outside.txt'))).toBe(false)
+    // Nothing was extracted at all: the guard verdict lands before the extractor runs.
+    expect(existsSync(stage)).toBe(false)
+    expect(existsSync(`${stage}.tgz`)).toBe(false)
   })
 
   test('a .git/config that names a remote, filter, or hooksPath is refused at verify', async () => {
@@ -603,7 +754,28 @@ describe('archive safety guards', () => {
       `${JSON.stringify({ format: PROJECT_SNAPSHOT_FORMAT, repository: { owner: 'kortix', name: 'demo', external_id: EXTERNAL_ID }, ref: 'main', commit_sha: archive.sha })}\n`,
     )
     const packed = await packDir(tainted, join(root, 'tainted.tar.gz'))
-    api.archive = { ...packed, sha: archive.sha }
+    api.archive = { ...packed, sha: archive.sha, blobs: archive.blobs }
+    const cfg = makeConfig(api, target, archive.sha, {
+      KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3',
+      KORTIX_PROJECT_SNAPSHOT_PIN: `${archive.sha}:${api.archive.sha256}:${packed.bytes.byteLength}`,
+    })
+    await expect(materializeProject(cfg)).rejects.toMatchObject({ stage: 'verify', reason: 'malformed' })
+    expect(existsSync(join(target, '.git'))).toBe(false)
+  })
+
+  test('a snapshot whose pack is not marked promisor is refused at verify', async () => {
+    const target = join(root, 'ws')
+    const plain = join(root, 'plain-stage')
+    git(root, 'clone', '-q', '--depth', '1', `file://${source.checkout}`, plain)
+    git(plain, 'remote', 'remove', 'origin')
+    rmSync(join(plain, '.git', 'hooks'), { recursive: true, force: true })
+    rmSync(join(plain, '.git', 'logs'), { recursive: true, force: true })
+    writeFileSync(
+      join(plain, '.git', 'kortix-project-snapshot.json'),
+      `${JSON.stringify({ format: PROJECT_SNAPSHOT_FORMAT, repository: { owner: 'kortix', name: 'demo', external_id: EXTERNAL_ID }, ref: 'main', commit_sha: archive.sha })}\n`,
+    )
+    const packed = await packDir(plain, join(root, 'plain.tar.gz'))
+    api.archive = { ...packed, sha: archive.sha, blobs: archive.blobs }
     const cfg = makeConfig(api, target, archive.sha, {
       KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3',
       KORTIX_PROJECT_SNAPSHOT_PIN: `${archive.sha}:${api.archive.sha256}:${packed.bytes.byteLength}`,

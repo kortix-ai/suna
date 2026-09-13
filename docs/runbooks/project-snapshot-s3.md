@@ -13,12 +13,28 @@ push / import / merge / session-create miss      boot → config-provider coordi
   → kortix.project_snapshot_archives (queued)      mode git        → warm adoption → Git (unchanged path)
   → build from the Git mirror at ONE sha           mode prefer-s3  → warm adoption → S3 → fallback Git
   → S3: <owner>/<repo>/<sha>/<repo-id>/            mode require-s3 → warm adoption → S3, fail closed
-       project-snapshot-v1/<sha256>.tar.gz
-       (If-None-Match) then manifest.json        S3 = descriptor (Git proxy, KORTIX_TOKEN)
-  → row ready                                        → presigned GET (no credential)
-session create: ready row → env pin                  → sha256 + gunzip + safe tar → verify → activate
-  KORTIX_PROJECT_SNAPSHOT_PIN=sha:sha256:bytes
+       project-snapshot-v2/
+         <sha256>.tree.tar.gz   (boot object)    S3 = descriptor (Git proxy, KORTIX_TOKEN)
+         <sha256>.blobs.pack    (hydration)          → presigned GET of the tree object (no credential)
+       (If-None-Match, both) then manifest.json      → sha256 + header guard on the stream → stage file
+  → row ready                                        → native tar → verify → activate (partial clone)
+session create: ready row → env pin                  → runtime spawns; repo-materialized
+  KORTIX_PROJECT_SNAPSHOT_PIN=sha:sha256:bytes       → OFF the boot path: index refresh, then
+  (identity of the tree object)                        presigned GET of the blob pack → git index-pack
 ```
+
+**Why two objects.** v1 shipped one tar.gz holding the working tree AND a full
+pack: every blob twice, 2.5× the bytes of the Git delta bundle, and a JS
+extraction. v2's boot object is the working tree plus a `.git` whose one pack
+holds the commit, the trees and the symlink blobs only, marked promisor; the
+box is a valid blob-less partial clone the moment `tar` finishes, and nothing
+runs git on the boot path. The tip's blobs travel as a plain git pack the
+daemon imports after activation. Until that lands, a command that needs an old
+blob (`git diff` of a modified file, `git checkout -- file`, `git stash`,
+`blame`, `log -p`) fetches it lazily through the proxy — slower, never
+broken. `git status`, `add`, `commit`, `push` and the harness's project scan
+need no blob (symlinks are the one exception git compares by blob content,
+which is why their blobs ride in the boot pack).
 
 | Piece | Where |
 | --- | --- |
@@ -35,11 +51,20 @@ session create: ready row → env pin                  → sha256 + gunzip + saf
 | Operator tool | `apps/api/scripts/project-snapshot.ts` |
 | Boot bench / compat gate | `apps/api/scripts/project-snapshot-bench.ts`, `apps/api/scripts/project-snapshot-compat.ts` |
 
-The archive is the committed tree at one exact commit plus a sanitized
-shallow `.git` (one commit, no remote, no hooks, no reflogs, fresh index).
-LFS objects are NOT included (pointers only — same as the Git path without
-`git lfs`); submodule contents are NOT included (`.gitmodules` only — same as a
-clone without `--recurse-submodules`).
+The boot object is the committed tree at one exact commit plus a sanitized
+shallow `.git` (one commit, no remote, no hooks, no reflogs, fresh index, one
+promisor-marked pack of commit + trees + symlink blobs). The blob pack is
+`git pack-objects` of everything reachable from that commit. LFS objects are
+NOT included (pointers only — same as the Git path without `git lfs`);
+submodule contents are NOT included (`.gitmodules` only — same as a clone
+without `--recurse-submodules`). A ledger row built as an older `format` is a
+cache miss: the next enqueue re-queues it under the current format (its old
+objects stay where they are; nothing is deleted).
+
+After activation the workspace is a partial clone: `extensions.partialclone =
+origin`, `remote.origin.promisor = true`, `remote.origin.partialclonefilter =
+blob:none`. The deferred history backfill therefore fetches commits and trees
+only; historical blobs are fetched on demand.
 
 ### How a fresh boot flows (`prefer-s3`, archive prepared)
 
@@ -60,16 +85,21 @@ sequenceDiagram
     D->>D: warm check: baked /workspace already at the base sha? (no)
     D->>D: eligible: fresh session, base sha, pin present, pin sha == base sha
     D->>GP: GET /v1/git/<project>.git/project-snapshot?sha=<pin sha><br/>(Authorization: KORTIX_TOKEN)
-    GP-->>D: 200 {sha256, bytes, entries, presigned URL, expires_at}
-    D->>S3: GET presigned URL
+    GP-->>D: 200 {tree: {presigned URL, sha256, bytes, entries}, blobs: {presigned URL, sha256, bytes}}
+    D->>S3: GET tree object (presigned)
     S3-->>D: tar.gz stream
-    D->>D: stream: sha256 + byte cap + inactivity watchdog → gunzip → tar with entry guard → private stage
-    D->>D: verify: marker, .git/config allowlist, rev-parse HEAD == sha
-    D->>D: activate: rename stage → /workspace, origin = proxy URL,<br/>checkout session branch, git identity
+    D->>D: stream → stage FILE: sha256 + byte cap + inactivity watchdog;<br/>tar headers guarded on a tee (nothing written to the tree yet)
+    D->>D: digest verified → native `tar -xzf` into the private stage (in-process fallback)
+    D->>D: verify: marker, .git/config allowlist, promisor pack, rev-parse HEAD == sha
+    D->>D: activate: rename stage → /workspace, origin = proxy URL, partial-clone config,<br/>session branch via branch + symbolic-ref (no checkout), git identity
     Note over D: mark repo-materialized (provider = s3). The runtime spawn ran in parallel.
+    D->>D: off the boot path: git update-index --refresh
+    D->>S3: GET blob pack (presigned)
+    S3-->>D: pack stream → sha256 → git index-pack --stdin → .promisor mark
+    Note over D: config_provider.hydration: pending → ok | failed (failed = lazy blob fetches through the proxy)
     D-->>API: runtime ready (health runtimeReady: true)
-    D->>GP: git fetch --unshallow --tags origin (best effort, only now)
-    GP-->>D: history objects (working tree unchanged)
+    D->>GP: git fetch --unshallow --tags origin (best effort, after hydration settles; blob-less)
+    GP-->>D: history commits + trees (working tree unchanged)
 ```
 
 Decisions and fallback inside the daemon:
@@ -113,10 +143,11 @@ sequenceDiagram
     API->>API: resolve the full sha (ls-remote, then mirror)
     API->>L: enqueue (project, sha), idempotent
     W->>L: claim queued rows (SKIP LOCKED, 15 min lease, attempts++)
-    W->>W: shallow fetch <sha> from the mirror → sanitized .git → tar.gz → sha256
-    W->>S3: PUT <prefix>/<sha256>.tar.gz (If-None-Match: *)
+    W->>W: shallow fetch <sha> from the mirror (one pack) → blob pack = pack-objects HEAD<br/>→ boot pack = commit + trees + symlink blobs (index-pack, .promisor) → sanitized .git → tree tar.gz → sha256 ×2
+    W->>S3: PUT <prefix>/<sha256>.tree.tar.gz (If-None-Match: *)
+    W->>S3: PUT <prefix>/<sha256>.blobs.pack (If-None-Match: *)
     W->>S3: PUT <prefix>/manifest.json (If-None-Match: *)
-    W->>L: ready (sha256, bytes, entries) or failed (backoff, max 5)
+    W->>L: ready (tree sha256/bytes/entries, blobs sha256/bytes) or failed (backoff, max 5)
 ```
 
 ## Configuration
@@ -219,7 +250,7 @@ All commands run from `apps/api` through the API env
 | Command | Effect |
 | --- | --- |
 | `prepare <projectId> [--ref main] [--sha <40hex>] [--wait]` | resolve the tip (or pin an exact sha), queue it, optionally build inline and print the verified status |
-| `status <projectId> [--sha <40hex>]` | ledger row + HeadObject on the archive + manifest presence; exit 0 only when ready and both objects exist |
+| `status <projectId> [--sha <40hex>]` | ledger row (incl. `format`) + HeadObject on the tree object and the blob pack + manifest presence; exit 0 only when ready at the current format and all three objects exist |
 | `retry <projectId> --sha <40hex>` | re-queue a failed/stuck row |
 | `backfill [--limit 50] [--wait]` | queue the default-branch tip of every active project without a ready row (default branches only) |
 | `worker-once` | one worker pass in this process |

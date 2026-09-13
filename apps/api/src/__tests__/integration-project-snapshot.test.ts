@@ -43,7 +43,8 @@ import {
   getObjectText,
   headObject,
   presignProjectSnapshotDownload,
-  projectSnapshotArchiveKey,
+  projectSnapshotBlobsKey,
+  projectSnapshotTreeKey,
   projectSnapshotBucket,
   projectSnapshotManifestKey,
   projectSnapshotS3Client,
@@ -153,50 +154,107 @@ describe('project snapshot producer (real DB + real bucket)', () => {
     expect(normalizeSnapshotRef('refs/heads/main')).toBe('main');
   });
 
-  test('the worker builds, publishes archive-then-manifest, and flips the row to ready', async () => {
+  test('the worker builds, publishes tree + blob pack then manifest, and flips the row to ready', async () => {
     const processed = await drainWorker();
     const mine = processed.find((p) => p.commitSha === firstSha);
     expect(mine?.outcome).toBe('ready');
     expect(mine?.archive).toBe('created');
+    expect(mine?.blobsBytes).toBeGreaterThan(0);
 
     const ready = await readReadyProjectSnapshot(projectId, firstSha);
     expect(ready).not.toBeNull();
-    expect(ready!.objectPrefix).toBe(`kortix-it/snapshot-integration/${firstSha}/990001/project-snapshot-v1/`);
+    expect(ready!.objectPrefix).toBe(`kortix-it/snapshot-integration/${firstSha}/990001/project-snapshot-v2/`);
     expect(ready!.archiveBytes).toBeGreaterThan(0);
     expect(ready!.entryCount).toBeGreaterThan(20);
+    expect(ready!.blobsBytes).toBeGreaterThan(0);
+    expect(ready!.blobsSha256).not.toBe(ready!.archiveSha256);
 
     // The actual objects, not the exit code.
-    const archiveKey = projectSnapshotArchiveKey(ready!.objectPrefix, ready!.archiveSha256);
-    const head = await headObject(archiveKey);
-    expect(head?.bytes).toBe(ready!.archiveBytes);
+    const treeKey = projectSnapshotTreeKey(ready!.objectPrefix, ready!.archiveSha256);
+    const blobsKey = projectSnapshotBlobsKey(ready!.objectPrefix, ready!.blobsSha256);
+    expect((await headObject(treeKey))?.bytes).toBe(ready!.archiveBytes);
+    expect((await headObject(blobsKey))?.bytes).toBe(ready!.blobsBytes);
     const manifest = JSON.parse((await getObjectText(projectSnapshotManifestKey(ready!.objectPrefix))) ?? '{}');
     expect(manifest).toMatchObject({
-      format: 'project-snapshot-v1',
+      format: 'project-snapshot-v2',
       commit_sha: firstSha,
       ref: 'main',
       repository: { owner: 'kortix-it', name: 'snapshot-integration', external_id: '990001' },
-      archive: { key: archiveKey, sha256: ready!.archiveSha256, bytes: ready!.archiveBytes, container: 'tar', compression: 'gzip' },
+      tree: { key: treeKey, sha256: ready!.archiveSha256, bytes: ready!.archiveBytes, container: 'tar', compression: 'gzip' },
+      blobs: { key: blobsKey, sha256: ready!.blobsSha256, bytes: ready!.blobsBytes, container: 'git-pack' },
     });
   });
 
-  test('the presigned descriptor URL downloads exactly the published bytes, with no credential', async () => {
+  test('the presigned URLs download exactly the published objects, with no credential; the tree is a blob-less partial clone the blob pack completes', async () => {
     const ready = await readReadyProjectSnapshot(projectId, firstSha);
-    const archiveKey = projectSnapshotArchiveKey(ready!.objectPrefix, ready!.archiveSha256);
-    const { url, expiresAt } = await presignProjectSnapshotDownload(archiveKey, 120);
-    expect(expiresAt.getTime()).toBeGreaterThan(Date.now());
-    const res = await fetch(url);
-    expect(res.status).toBe(200);
-    const bytes = Buffer.from(await res.arrayBuffer());
-    expect(bytes.byteLength).toBe(ready!.archiveBytes);
-    expect(createHash('sha256').update(bytes).digest('hex')).toBe(ready!.archiveSha256);
-    // The archive really is a sanitized checkout at that commit.
+    const treeKey = projectSnapshotTreeKey(ready!.objectPrefix, ready!.archiveSha256);
+    const blobsKey = projectSnapshotBlobsKey(ready!.objectPrefix, ready!.blobsSha256);
+    const tree = await presignProjectSnapshotDownload(treeKey, 120);
+    const blobs = await presignProjectSnapshotDownload(blobsKey, 120);
+    expect(tree.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    const treeRes = await fetch(tree.url);
+    expect(treeRes.status).toBe(200);
+    const treeBytes = Buffer.from(await treeRes.arrayBuffer());
+    expect(treeBytes.byteLength).toBe(ready!.archiveBytes);
+    expect(createHash('sha256').update(treeBytes).digest('hex')).toBe(ready!.archiveSha256);
+    const blobsRes = await fetch(blobs.url);
+    expect(blobsRes.status).toBe(200);
+    const blobBytes = Buffer.from(await blobsRes.arrayBuffer());
+    expect(blobBytes.byteLength).toBe(ready!.blobsBytes);
+    expect(createHash('sha256').update(blobBytes).digest('hex')).toBe(ready!.blobsSha256);
+
+    // The tree object really is a sanitized checkout at that commit whose
+    // pack carries no blob (and says so), yet is a working repository…
     const dir = join(root, 'extract');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(root, 'dl.tar.gz'), bytes);
-    execFileSync('tar', ['-xzf', join(root, 'dl.tar.gz'), '-C', dir]);
+    writeFileSync(join(root, 'dl.tree.tar.gz'), treeBytes);
+    execFileSync('tar', ['-xzf', join(root, 'dl.tree.tar.gz'), '-C', dir]);
     expect(git(dir, 'rev-parse', 'HEAD')).toBe(firstSha);
     expect(git(dir, 'remote')).toBe('');
+    const packs = execFileSync('ls', [join(dir, '.git', 'objects', 'pack')], { encoding: 'utf8' }).trim().split('\n');
+    expect(packs.filter((n) => n.endsWith('.pack')).length).toBe(1);
+    expect(packs.filter((n) => n.endsWith('.promisor')).length).toBe(1);
+    // Every distinct blob of the tip is absent (the fixture's 20 files share
+    // one blob, so the count is small but exact), nothing else is.
+    const missingBefore = git(dir, 'rev-list', '--objects', '--missing=print', 'HEAD').split('\n').filter((l) => l.startsWith('?'));
+    const distinctBlobs = new Set(git(dir, 'ls-tree', '-r', 'HEAD').split('\n').map((l) => l.split(/\s+/)[2])).size;
+    expect(distinctBlobs).toBeGreaterThan(0);
+    expect(missingBefore.length).toBe(distinctBlobs);
     expect(git(dir, 'status', '--porcelain')).toBe('');
+    // …that the blob pack completes.
+    execFileSync('git', ['-C', dir, 'index-pack', '--stdin'], { input: blobBytes });
+    const missingAfter = git(dir, 'rev-list', '--objects', '--missing=print', 'HEAD').split('\n').filter((l) => l.startsWith('?'));
+    expect(missingAfter).toEqual([]);
+    expect(git(dir, 'cat-file', '-p', 'HEAD:README.md')).toBe('snapshot integration v1');
+  });
+
+  test('a row built as an older layout is a cache miss that re-queues under the current format', async () => {
+    const staleProject = crypto.randomUUID();
+    projectIds.push(staleProject);
+    await db.insert(projects).values({ projectId: staleProject, accountId, name: 'snapshot-stale', repoUrl: remote, defaultBranch: 'main' });
+    await db.insert(projectSnapshotArchives).values({
+      projectId: staleProject,
+      ref: 'main',
+      commitSha: firstSha,
+      repoOwner: 'kortix-it',
+      repoName: 'snapshot-stale',
+      externalRepoId: 'kortix-stale',
+      status: 'ready',
+      format: 'project-snapshot-v1',
+      objectPrefix: `kortix-it/snapshot-stale/${firstSha}/kortix-stale/project-snapshot-v1/`,
+      archiveSha256: 'a'.repeat(64),
+      archiveBytes: 10,
+      entryCount: 1,
+      readyAt: new Date(),
+    });
+    expect(await readReadyProjectSnapshot(staleProject, firstSha)).toBeNull();
+    const miss = await resolveProjectSnapshotPinForSession({ projectId: staleProject, ref: 'main', commitSha: firstSha, repoUrl: remote });
+    expect(miss).toEqual({ pin: null, cache: 'miss' });
+    await new Promise((r) => setTimeout(r, 200));
+    const row = await readProjectSnapshot(staleProject, firstSha);
+    expect(row).toMatchObject({ status: 'queued', format: 'project-snapshot-v2', attempts: 0, archiveSha256: null, readyAt: null });
+    // And a second enqueue at the current format is a no-op.
+    expect(await enqueueProjectSnapshot({ projectId: staleProject, ref: 'main', commitSha: firstSha, repoUrl: remote })).toBe('exists');
   });
 
   test('session pin lookup: hit for a ready sha, miss (and enqueue) for a new one', async () => {
@@ -224,7 +282,7 @@ describe('project snapshot producer (real DB + real bucket)', () => {
 
   test('a duplicate build of a ready sha reuses the published objects (idempotent, no overwrite)', async () => {
     const ready = await readReadyProjectSnapshot(projectId, firstSha);
-    const archiveKey = projectSnapshotArchiveKey(ready!.objectPrefix, ready!.archiveSha256);
+    const archiveKey = projectSnapshotTreeKey(ready!.objectPrefix, ready!.archiveSha256);
     const etagBefore = (await headObject(archiveKey))?.etag;
     // Force a rebuild attempt through the same worker path.
     await db
@@ -277,7 +335,7 @@ describe('project snapshot producer (real DB + real bucket)', () => {
     expect(row?.readyAt).toBeNull();
     expect(await readReadyProjectSnapshot(thirdProject, firstSha)).toBeNull();
     // Nothing advertised for that project's prefix in the real bucket.
-    expect(await getObjectText(`kortix-it/snapshot-fail/${firstSha}/990002/project-snapshot-v1/manifest.json`)).toBeNull();
+    expect(await getObjectText(`kortix-it/snapshot-fail/${firstSha}/990002/project-snapshot-v2/manifest.json`)).toBeNull();
 
     // Retry now (the backoff would otherwise wait 30 s) and succeed.
     expect(await retryProjectSnapshot(thirdProject, firstSha)).toBe(true);

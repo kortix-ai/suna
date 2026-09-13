@@ -15,19 +15,22 @@ import {
 } from './project-snapshot';
 import {
   PROJECT_SNAPSHOT_FORMAT,
-  projectSnapshotArchiveKey,
+  projectSnapshotBlobsKey,
   projectSnapshotManifestKey,
   projectSnapshotObjectPrefix,
+  projectSnapshotTreeKey,
 } from './project-snapshot-store';
 
 const SHA = 'a'.repeat(40);
 const DIGEST = 'b'.repeat(64);
+const DIGEST2 = 'c'.repeat(64);
 
 describe('object layout', () => {
-  test('is <owner>/<repo>/<sha>/<external-id>/project-snapshot-v1/', () => {
+  test('is <owner>/<repo>/<sha>/<external-id>/project-snapshot-v2/ with a tree object and a blob pack', () => {
     const prefix = projectSnapshotObjectPrefix({ owner: 'kortix-ai', name: 'suna', externalId: '424242' }, SHA);
-    expect(prefix).toBe(`kortix-ai/suna/${SHA}/424242/project-snapshot-v1/`);
-    expect(projectSnapshotArchiveKey(prefix, DIGEST)).toBe(`${prefix}${DIGEST}.tar.gz`);
+    expect(prefix).toBe(`kortix-ai/suna/${SHA}/424242/project-snapshot-v2/`);
+    expect(projectSnapshotTreeKey(prefix, DIGEST)).toBe(`${prefix}${DIGEST}.tree.tar.gz`);
+    expect(projectSnapshotBlobsKey(prefix, DIGEST2)).toBe(`${prefix}${DIGEST2}.blobs.pack`);
     expect(projectSnapshotManifestKey(prefix)).toBe(`${prefix}manifest.json`);
   });
 
@@ -36,7 +39,7 @@ describe('object layout', () => {
     try {
       (config as { KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: string }).KORTIX_PROJECT_SNAPSHOT_S3_PREFIX = '/dev//';
       expect(projectSnapshotObjectPrefix({ owner: 'o', name: 'r', externalId: 'kortix-p1' }, SHA)).toBe(
-        `dev/o/r/${SHA}/kortix-p1/project-snapshot-v1/`,
+        `dev/o/r/${SHA}/kortix-p1/project-snapshot-v2/`,
       );
     } finally {
       (config as { KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: string }).KORTIX_PROJECT_SNAPSHOT_S3_PREFIX = before;
@@ -47,7 +50,8 @@ describe('object layout', () => {
     expect(() => projectSnapshotObjectPrefix({ owner: '..', name: 'r', externalId: '1' }, SHA)).toThrow();
     expect(() => projectSnapshotObjectPrefix({ owner: 'o/x', name: 'r', externalId: '1' }, SHA)).toThrow();
     expect(() => projectSnapshotObjectPrefix({ owner: 'o', name: 'r', externalId: '1' }, 'not-a-sha')).toThrow();
-    expect(() => projectSnapshotArchiveKey('p/', 'zz')).toThrow();
+    expect(() => projectSnapshotTreeKey('p/', 'zz')).toThrow();
+    expect(() => projectSnapshotBlobsKey('p/', 'zz')).toThrow();
   });
 });
 
@@ -65,16 +69,21 @@ describe('manifest parsing', () => {
     repository: { owner: 'o', name: 'r', external_id: '1' },
     ref: 'main',
     commit_sha: SHA,
-    archive: { key: `o/r/${SHA}/1/project-snapshot-v1/${DIGEST}.tar.gz`, sha256: DIGEST, bytes: 12, entries: 3 },
+    tree: { key: `o/r/${SHA}/1/project-snapshot-v2/${DIGEST}.tree.tar.gz`, sha256: DIGEST, bytes: 12, entries: 3 },
+    blobs: { key: `o/r/${SHA}/1/project-snapshot-v2/${DIGEST2}.blobs.pack`, sha256: DIGEST2, bytes: 7 },
   };
 
   test('accepts a manifest for the expected commit', () => {
-    expect(parseManifest(JSON.stringify(manifest), SHA).archive.sha256).toBe(DIGEST);
+    const parsed = parseManifest(JSON.stringify(manifest), SHA);
+    expect(parsed.tree.sha256).toBe(DIGEST);
+    expect(parsed.blobs.sha256).toBe(DIGEST2);
   });
 
-  test('rejects another commit, a bad digest, or garbage', () => {
+  test('rejects another commit, a bad digest, a missing object, an older format, or garbage', () => {
     expect(() => parseManifest(JSON.stringify(manifest), 'c'.repeat(40))).toThrow(/does not describe/);
-    expect(() => parseManifest(JSON.stringify({ ...manifest, archive: { ...manifest.archive, sha256: 'xx' } }), SHA)).toThrow();
+    expect(() => parseManifest(JSON.stringify({ ...manifest, tree: { ...manifest.tree, sha256: 'xx' } }), SHA)).toThrow();
+    expect(() => parseManifest(JSON.stringify({ ...manifest, blobs: undefined }), SHA)).toThrow(/does not describe/);
+    expect(() => parseManifest(JSON.stringify({ ...manifest, format: 'project-snapshot-v1' }), SHA)).toThrow(/does not describe/);
     expect(() => parseManifest('{', SHA)).toThrow(/valid JSON/);
   });
 });
