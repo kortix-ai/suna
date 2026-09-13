@@ -21,6 +21,36 @@ linked, not inlined.
 
 ## Register
 
+### The sandbox agent's Bun 1.3 re-issues a GET after a mid-body reset and appends the second body — never trust length alone (2026-09-13)
+
+**When:** streaming a download in `kortixd` (compiled with
+`SANDBOX_AGENT_BUN_VERSION=1.3.11`). After a socket reset mid-body, Bun 1.3
+silently re-issues the request and appends the new response to the SAME
+`fetch` body stream (server sees 2 GETs; consumer sees 1st-half + 2nd response,
+`close` with no `end`/`error`). Bun 1.4 (laptops) delivers a clean short EOF, so
+the suite is green locally and wrong in the image. Rules: (1) compare received
+bytes AND sha256 against a trusted descriptor; (2) treat an overrun past the
+declared size as transient transport garbage, not "too large"; (3) run the
+streaming suite under `oven/bun:<SANDBOX_AGENT_BUN_VERSION>` before shipping.
+*Near-miss:* the S3 config provider classified a reset as `malformed` (no
+retry) under 1.3.11; caught by running its suite in Docker under 1.3.11.
+*Enforcer:* none in CI — `docs/runbooks/project-snapshot-s3.md` carries the
+Docker command; a CI lane on the pinned Bun is the TODO.
+
+### Hand the AWS SDK a Buffer, not a Node stream, on the API image's Bun 1.2 (2026-09-13)
+
+**When:** uploading a file with `@aws-sdk/client-s3` from `apps/api` (image
+`BUN_VERSION=1.2`, 1.2.23). `PutObjectCommand({ Body: createReadStream(path) })`
+never completes on that Bun and pins a core at 90 % — the same call with
+`Body: await readFile(path)` finishes in 15–30 ms, and HeadObject, GetObject,
+conditional put (412) and presigning all work. Laptop/CI Bun 1.3/1.4 stream
+fine, so unit + integration tests are green while the deployed leader's
+snapshot worker would spin forever without publishing.
+*Near-miss:* the project-snapshot producer (`project-snapshot-store.ts`),
+caught pre-merge by running the call shapes under `oven/bun:1.2-slim`.
+*Enforcer:* `apps/api/scripts/project-snapshot-s3-probe.ts` run inside the
+image's Bun (runbook `project-snapshot-s3.md`); nothing runs it in CI yet.
+
 ### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
 
 **When:** a package imports source files from another package without installing

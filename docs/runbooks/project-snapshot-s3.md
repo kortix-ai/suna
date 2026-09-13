@@ -96,6 +96,43 @@ KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT=https://<quick-tunnel>.trycloudflare.
 
 Then `dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- bun run scripts/project-snapshot.ts ensure-bucket`.
 
+### Prove the object-store calls on the image's Bun
+
+`apps/api/Dockerfile` pins `BUN_VERSION=1.2` (1.2.23) while laptops and CI run
+a newer Bun. `scripts/project-snapshot-s3-probe.ts` exercises the exact SDK
+call shapes the store uses and prints one JSON line with `ok`. Run it inside
+the image's Bun before touching `project-snapshot-store.ts` or bumping the SDK:
+
+```sh
+# from the repo root; Docker Desktop: use the MinIO container's bridge IP as S3_ENDPOINT
+docker run --rm -v "$PWD:$PWD:ro" -w "$PWD/apps/api" \
+  -e S3_ENDPOINT=http://$(docker inspect -f '{{.NetworkSettings.IPAddress}}' kortix-project-snapshot-minio):9000 \
+  oven/bun:1.2-slim bun run scripts/project-snapshot-s3-probe.ts
+# → {"ok":true,"bun":"1.2.23","buffer_put_ms":15,"conditional_put_duplicate":"PreconditionFailed/412",…}
+```
+
+Known: on Bun 1.2.23 a `PutObject` whose `Body` is a Node `createReadStream`
+never completes and pins a core (verified 2026-09-13; a Buffer body of the
+same 3 MiB finishes in 15–30 ms). The store therefore uploads the archive as a
+whole-file Buffer. Keep it that way, or re-run the probe with the new shape.
+
+The daemon side has the same class of gap: `kortix-agent` is compiled with
+`SANDBOX_AGENT_BUN_VERSION=1.3.11`, whose `fetch` re-issues a GET after a
+mid-body socket reset and appends the second response to the same body
+stream (Bun 1.4 delivers a clean short EOF). Run the coordinator suite under
+that Bun before changing `s3-config-provider.ts`:
+
+```sh
+# from apps/kortix-sandbox-agent-server; needs git inside the image
+docker run --rm -v "$PWD:/app:ro" -w /tmp oven/bun:1.3.11 sh -c \
+  'cp -r /app /w && cd /w && apt-get update -qq && apt-get install -y -qq git >/dev/null \
+   && git config --global user.email t@t.test && git config --global user.name t \
+   && bun install --frozen-lockfile && bun test src/__tests__/config-provider.test.ts'
+```
+
+(pnpm-managed checkouts: copy without `node_modules`; `bun install` restores
+the daemon's own lockfile.) Expected: 22 pass, 0 fail.
+
 ## Preparation, backfill, readiness
 
 All commands run from `apps/api` through the API env
