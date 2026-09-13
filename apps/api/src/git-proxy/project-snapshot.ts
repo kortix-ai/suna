@@ -308,6 +308,51 @@ export async function readReadyProjectSnapshot(
 }
 
 /**
+ * A `ready` row whose objects are no longer in the bucket — a lifecycle
+ * expiration, an operator delete — must not keep advertising itself: every
+ * fresh session would pin it, fail the download and fall back. Verify both
+ * objects (two HeadObject calls, ~10 ms in-region) and on a miss re-queue the
+ * row so the leader rebuilds and republishes; the caller treats the row as
+ * not prepared. Returns the row only when both objects are present.
+ */
+export async function verifyReadyProjectSnapshotObjects(
+  ready: ReadyProjectSnapshot,
+): Promise<ReadyProjectSnapshot | null> {
+  const [tree, blobs] = await Promise.all([
+    headObject(projectSnapshotTreeKey(ready.objectPrefix, ready.archiveSha256)),
+    headObject(projectSnapshotBlobsKey(ready.objectPrefix, ready.blobsSha256)),
+  ]);
+  if (tree && blobs) return ready;
+  const missing = !tree ? 'tree object' : 'blob pack';
+  await db
+    .update(projectSnapshotArchives)
+    .set({
+      status: 'queued',
+      attempts: 0,
+      nextAttemptAt: new Date(),
+      lockedBy: null,
+      lockedUntil: null,
+      objectPrefix: null,
+      archiveSha256: null,
+      archiveBytes: null,
+      entryCount: null,
+      blobsSha256: null,
+      blobsBytes: null,
+      readyAt: null,
+      lastError: `published ${missing} is no longer in the bucket; re-queued`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(projectSnapshotArchives.snapshotId, ready.snapshotId), eq(projectSnapshotArchives.status, 'ready')));
+  console.warn('[project-snapshot] ready row lost its published object; re-queued', {
+    event: 'project_snapshot_object_missing',
+    projectId: ready.projectId,
+    sha: ready.commitSha,
+    missing,
+  });
+  return null;
+}
+
+/**
  * Session-create helper: the pin the sandbox env carries when an archive is
  * ready, and a recorded cache miss (plus an enqueue, so the NEXT session finds
  * it) when it is not.
@@ -321,8 +366,12 @@ export async function resolveProjectSnapshotPinForSession(input: {
   if (!projectSnapshotStorageConfigured()) return { pin: null, cache: 'unconfigured' };
   if (!input.commitSha || !/^[0-9a-f]{40}$/.test(input.commitSha)) return { pin: null, cache: 'no-sha' };
   const ready = await readReadyProjectSnapshot(input.projectId, input.commitSha);
-  if (ready) {
-    return { pin: `${ready.commitSha}:${ready.archiveSha256}:${ready.archiveBytes}`, cache: 'hit' };
+  // A row whose objects expired is re-queued here and the session takes the
+  // Git path outright (a recorded `no-pin` skip), instead of pinning an
+  // object it would fail to download at boot.
+  const verified = ready ? await verifyReadyProjectSnapshotObjects(ready) : null;
+  if (verified) {
+    return { pin: `${verified.commitSha}:${verified.archiveSha256}:${verified.archiveBytes}`, cache: 'hit' };
   }
   void enqueueProjectSnapshot({
     projectId: input.projectId,
@@ -756,7 +805,36 @@ export async function publishProjectSnapshot(input: {
   const existingManifest = await getObjectText(manifestKey);
   if (existingManifest) {
     const manifest = parseManifest(existingManifest, input.commitSha);
-    const [tree, blobs] = await Promise.all([headObject(manifest.tree.key), headObject(manifest.blobs.key)]);
+    let [tree, blobs] = await Promise.all([headObject(manifest.tree.key), headObject(manifest.blobs.key)]);
+    if (!tree || !blobs) {
+      // The manifest outlived its objects (a lifecycle rule expires them by
+      // age; the manifest is written last and can survive a window, or an
+      // operator removed an object). The build is deterministic — same tree,
+      // same gzip, same pack — so this build's digests are the manifest's
+      // digests and the objects can be republished under their own keys. The
+      // manifest itself is immutable by design (no overwrite, no delete): a
+      // digest that differs is a real inconsistency and stops here loudly.
+      if (manifest.tree.sha256 !== input.built.treeSha256 || manifest.blobs.sha256 !== input.built.blobsSha256) {
+        throw new Error(
+          `published manifest at ${manifestKey} names objects that are missing and this build's digests differ (tree ${manifest.tree.sha256} vs ${input.built.treeSha256}); remove the prefix to rebuild`,
+        );
+      }
+      if (!tree) {
+        await putObjectIfAbsent({
+          key: manifest.tree.key,
+          body: { path: input.built.treePath, bytes: input.built.treeBytes },
+          contentType: PROJECT_SNAPSHOT_ARCHIVE_CONTENT_TYPE,
+        });
+      }
+      if (!blobs) {
+        await putObjectIfAbsent({
+          key: manifest.blobs.key,
+          body: { path: input.built.blobsPath, bytes: input.built.blobsBytes },
+          contentType: PROJECT_SNAPSHOT_BLOBS_CONTENT_TYPE,
+        });
+      }
+      [tree, blobs] = await Promise.all([headObject(manifest.tree.key), headObject(manifest.blobs.key)]);
+    }
     if (!tree || tree.bytes !== manifest.tree.bytes || !blobs || blobs.bytes !== manifest.blobs.bytes) {
       throw new Error(`published manifest at ${manifestKey} names an object that is missing or truncated`);
     }

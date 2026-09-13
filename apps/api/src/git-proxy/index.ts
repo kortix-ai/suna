@@ -71,7 +71,7 @@ import {
 } from './compiled-runtime';
 import { prebuildDefaultBranchArtifacts } from './compiled-prebuild';
 import { config } from '../config';
-import { queueProjectSnapshotForRef, readReadyProjectSnapshot } from './project-snapshot';
+import { queueProjectSnapshotForRef, readReadyProjectSnapshot, verifyReadyProjectSnapshotObjects } from './project-snapshot';
 import {
   PROJECT_SNAPSHOT_FORMAT,
   presignProjectSnapshotDownload,
@@ -565,7 +565,10 @@ gitProxyApp.openapi(
       return c.json({ error: 'project snapshot storage is not configured' }, 503);
     }
     const { sha } = c.req.valid('query');
-    const ready = await readReadyProjectSnapshot(projectId, sha);
+    const row = await readReadyProjectSnapshot(projectId, sha);
+    // Both objects must still be there: a lifecycle expiration re-queues the
+    // row and the box takes the Git path instead of a doomed download.
+    const ready = row ? await verifyReadyProjectSnapshotObjects(row) : null;
     if (!ready) return c.json({ error: 'not_prepared', sha }, 404);
     const treeKey = projectSnapshotTreeKey(ready.objectPrefix, ready.archiveSha256);
     const blobsKey = projectSnapshotBlobsKey(ready.objectPrefix, ready.blobsSha256);

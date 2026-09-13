@@ -242,6 +242,52 @@ docker run --rm -v "$PWD:/app:ro" -w /tmp oven/bun:1.3.11 sh -c \
 (pnpm-managed checkouts: copy without `node_modules`; `bun install` restores
 the daemon's own lockfile.) Expected: 22 pass, 0 fail.
 
+## AWS
+
+Terraform owns the bucket and the task-role grant; the deploy workflow owns
+the non-secret env that names the bucket. Nothing else is needed: no sandbox
+credential, no public endpoint override (the bucket's regional endpoint is
+what the presigned URLs point at), no KMS context unless you opt in.
+
+| Piece | Where |
+| --- | --- |
+| Bucket module | `infra/terraform/modules/project-snapshots-bucket` — private (all public access blocked, `BucketOwnerEnforced`), SSE-S3 by default (`kms_key_arn` switches to SSE-KMS), versioning on with 7-day noncurrent expiry, objects expire after `expiration_days` (default 30; 0 disables), incomplete multipart uploads aborted after 1 day, TLS-only bucket policy |
+| Task-role grant | `modules/ecs-api` `project_snapshot_bucket_arn` (+ `project_snapshot_kms_key_arn`): `s3:PutObject` + `s3:GetObject` on `<bucket>/*`, nothing on the bucket itself, no delete |
+| Wiring | `infra/terraform/environments/{dev,staging,prod,prod-us-east-2-shadow}/main.tf`: `module "project_snapshots"` named `kortix-<env>-project-snapshots`, passed into `module "api"`; output `project_snapshot_bucket` |
+| Env | `KORTIX_ECS_ENV_OVERRIDES` in `.github/workflows/deploy-<env>.yml`: `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET` = the bucket name, `KORTIX_PROJECT_SNAPSHOT_S3_REGION` = the root's `aws_region`. Set for **staging only** as of this branch; dev and prod get the bucket and the grant from Terraform but stay idle until their workflows name it |
+
+Bringing staging up:
+
+1. Apply `infra/terraform/environments/staging` (the usual `terraform-apply.yml`
+   dispatch for that root). Plan shows: one bucket + its five sub-resources,
+   one `aws_iam_role_policy` on `kortix-staging-task`, one output. Nothing
+   touches the running service.
+2. Deploy staging (`deploy-staging.yml`). `ecs-deploy.sh` merges the two new
+   keys into the task env; the API validates them at boot and the leader's
+   snapshot worker starts polling. `GET /v1/git/<project>.git/project-snapshot`
+   answers 404 `not_prepared` instead of 503 from here on.
+3. Prepare one project and check it landed:
+   `bun run scripts/project-snapshot.ts prepare <project> --wait` (through the
+   staging env, or `backfill`), then `status <project>` → `ready`,
+   `format: project-snapshot-v2`, `tree_object` / `blobs_object` /
+   `manifest_object` present. `aws s3 ls s3://kortix-staging-project-snapshots/`
+   shows the prefix.
+4. Canary as in "Rollout" below; the box's `config_provider` must show
+   `provider: s3`, `s3_extractor: tar`, `hydration.status: ok`, and the
+   in-guest `s3_acquire` timing is the number the local benchmark could not
+   produce.
+
+Expiry semantics: objects are derived data, so `expiration_days` is safe.
+Both the descriptor route and the session-create pin lookup HEAD both objects;
+a missing one re-queues the ledger row (`lastError: published … is no longer in
+the bucket; re-queued`) and the session takes the Git path. The rebuild is
+deterministic, so when the manifest outlived its objects the worker republishes
+them under the same keys; a differing digest stops the build loudly. The
+`project-snapshot-v1/` prefixes from the first cut are never read again and
+expire with everything else.
+
+Cost: two HeadObject calls per fresh session on the API side (~10 ms in-region).
+
 ## Preparation, backfill, readiness
 
 All commands run from `apps/api` through the API env

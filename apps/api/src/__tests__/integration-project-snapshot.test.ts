@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import { HeadBucketCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { projectGitConnections, projectSnapshotArchives, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
@@ -36,6 +36,7 @@ import {
   readReadyProjectSnapshot,
   resolveProjectSnapshotPinForSession,
   retryProjectSnapshot,
+  verifyReadyProjectSnapshotObjects,
 } from '../git-proxy/project-snapshot';
 import { runProjectSnapshotWorkerOnce } from '../git-proxy/project-snapshot-worker';
 import {
@@ -226,6 +227,37 @@ describe('project snapshot producer (real DB + real bucket)', () => {
     const missingAfter = git(dir, 'rev-list', '--objects', '--missing=print', 'HEAD').split('\n').filter((l) => l.startsWith('?'));
     expect(missingAfter).toEqual([]);
     expect(git(dir, 'cat-file', '-p', 'HEAD:README.md')).toBe('snapshot integration v1');
+  });
+
+  test('a ready row whose object expired is re-queued on lookup, and the rebuild republishes under the existing manifest', async () => {
+    const ready = await readReadyProjectSnapshot(projectId, firstSha);
+    const treeKey = projectSnapshotTreeKey(ready!.objectPrefix, ready!.archiveSha256);
+    const manifestKey = projectSnapshotManifestKey(ready!.objectPrefix);
+    const manifestBefore = await getObjectText(manifestKey);
+    // A lifecycle rule (or an operator) removed the tree object; the manifest and the ledger still say ready.
+    await projectSnapshotS3Client().send(new DeleteObjectCommand({ Bucket: projectSnapshotBucket(), Key: treeKey }));
+    expect(await headObject(treeKey)).toBeNull();
+
+    // Verification re-queues the row instead of advertising a doomed download.
+    expect(await verifyReadyProjectSnapshotObjects(ready!)).toBeNull();
+    const requeued = await readProjectSnapshot(projectId, firstSha);
+    expect(requeued).toMatchObject({ status: 'queued', attempts: 0, archiveSha256: null, readyAt: null });
+    expect(requeued?.lastError).toMatch(/tree object is no longer in the bucket/);
+    expect(await readReadyProjectSnapshot(projectId, firstSha)).toBeNull();
+    // The session-create path sees a miss and does not pin anything.
+    const miss = await resolveProjectSnapshotPinForSession({ projectId, ref: 'main', commitSha: firstSha, repoUrl: remote });
+    expect(miss).toEqual({ pin: null, cache: 'miss' });
+
+    // The rebuild is deterministic: same digests, so the object is republished
+    // under the immutable manifest and the row is ready again.
+    const processed = await drainWorker();
+    expect(processed.find((p) => p.commitSha === firstSha && p.projectId === projectId)?.outcome).toBe('ready');
+    const again = await readReadyProjectSnapshot(projectId, firstSha);
+    expect(again?.archiveSha256).toBe(ready!.archiveSha256);
+    expect(again?.blobsSha256).toBe(ready!.blobsSha256);
+    expect((await headObject(treeKey))?.bytes).toBe(ready!.archiveBytes);
+    expect(await getObjectText(manifestKey)).toBe(manifestBefore);
+    expect(await verifyReadyProjectSnapshotObjects(again!)).not.toBeNull();
   });
 
   test('a row built as an older layout is a cache miss that re-queues under the current format', async () => {

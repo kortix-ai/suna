@@ -212,6 +212,34 @@ resource "aws_iam_role_policy" "ses_send" {
   })
 }
 
+# The API publishes project snapshots (leader worker) and mints presigned GETs
+# for sandboxes from this role's credentials — so the grant is exactly what
+# those two paths need on the objects, and nothing on the bucket itself.
+# HeadObject is authorized by s3:GetObject. Conditional writes
+# (If-None-Match: *) need no extra action.
+resource "aws_iam_role_policy" "project_snapshots" {
+  count = var.project_snapshot_bucket_arn != "" ? 1 : 0
+  name  = "${local.name}-project-snapshots"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      [{
+        Sid      = "SnapshotObjects"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject"]
+        Resource = "${var.project_snapshot_bucket_arn}/*"
+      }],
+      var.project_snapshot_kms_key_arn != "" ? [{
+        Sid      = "SnapshotObjectsKms"
+        Effect   = "Allow"
+        Action   = ["kms:GenerateDataKey", "kms:Decrypt"]
+        Resource = var.project_snapshot_kms_key_arn
+      }] : [],
+    )
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
