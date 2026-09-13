@@ -4946,3 +4946,60 @@ before connecting, and deletes the minted token by `token_id`. Preview test
 configuration no longer exports the signing secret; its unit test rejects
 that export. The flow allows five minutes for managed Git writes and ten
 sequential manifest reads; all existing assertions remain required.
+
+## Database diagnostics must suppress connection strings in errors (2026-09-10)
+
+**Near-miss.** A release diagnostic put a PostgreSQL URL in `PGDATABASE`.
+The installed `psql` treated it as a database name and printed a truncated
+credential-bearing URL in the local tool transcript. No public test artifact
+received this diagnostic output.
+
+**Rule.** Parse connection URLs into separate `PGHOST`, `PGPORT`, `PGUSER`,
+`PGPASSWORD`, and `PGDATABASE` environment variables. Keep the password in
+memory. Capture connection errors and report a sanitized failure, never the
+raw error or connection URL.
+
+**Enforcement.** The corrected release diagnostic parses the encrypted profile
+in memory, captures both output streams, and suppresses connection details on
+failure. This remains a procedure requirement for ad hoc diagnostics.
+
+## Inspect a cron write before retrying a request deadline (2026-09-10)
+
+**Incident.** BILL-13 in release run `34524663210` received
+`503 request_deadline` after 55 seconds. A later isolated call returned `200`
+in 0.7 seconds with `{processed: 0, skipped: 0, errors: []}`. The failed
+shard then passed on retry. The exact cause of the first delay was not isolated.
+
+**Rule.** A request deadline does not establish that the underlying operation
+stopped. Inspect its idempotency and subsequent result before retrying a write.
+Retain the successful-response assertion; do not accept a deadline response
+as evidence that a cron completed.
+
+**Enforcement.** Free-tier rotation keys each grant by account and month.
+BILL-13 still requires `200` and the rotation result fields. The final release
+gate passes all nine shards with zero excluded API flows.
+
+## SSM maintenance needs an explicit installer directory and completion proof (2026-09-10)
+
+**Incident.** The v0.13.13 self-host CLI update stopped with `HOME: unbound
+variable` in an SSM shell. Setting `KORTIX_HOME` to the existing installation
+directory allowed the update. The first wrapper then reported exit `0` without
+its final verification marker. It supplied the maintenance program through
+stdin; the exact point that omitted the remaining commands was not isolated.
+
+**Rule.** Do not assume SSM supplies an interactive shell's environment.
+Select the existing CLI installation with `KORTIX_HOME`. Execute maintenance
+from a file or `bash -c`, separately from child stdin. Require explicit
+completion markers and independent state checks after an update.
+
+**Enforcement.** The self-host runbook documents this execution pattern.
+Independent SSM verification matched the installed CLI's published checksum,
+all three released image digests, six healthy containers, and preserved
+instance settings. Both frontend replicas have a 1 GiB memory limit.
+
+**Post-release verification.** The v0.13.13 stable update preserved the configured
+1 GiB limit on both frontend replicas. Nineteen checks across 1,200 seconds
+observed six healthy application containers, zero restarts, and zero frontend
+heap errors. Public API and frontend health returned the released source SHA.
+A temporary confirmed user authenticated, read its account, and was deleted.
+The deletion read-back returned `404`. Existing customer sessions were not exercised.
