@@ -329,7 +329,13 @@ export async function downloadAndExtractProjectSnapshot(
         armWatchdog()
         received += chunk.length
         if (received > expectedBytes) {
-          callback(new ConfigProviderError('download', 'limit-exceeded', `archive exceeds declared ${expectedBytes} bytes`))
+          // The response declared exactly `expectedBytes` (checked above), so
+          // an overrun is transport garbage, not a large archive: Bun 1.3 (the
+          // sandbox agent's build runtime) re-issues the GET after a mid-body
+          // socket reset and appends the second response to this same stream.
+          // Transient → `unavailable`, retried; the size caps live in the
+          // descriptor check and the tar entry guard.
+          callback(new ConfigProviderError('download', 'unavailable', `archive transfer overran the declared ${expectedBytes} bytes`))
           return
         }
         hash.update(chunk)
@@ -357,8 +363,25 @@ export async function downloadAndExtractProjectSnapshot(
 
     await new Promise<void>((resolve, reject) => {
       let settled = false
+      // A decoder error while bytes are still arriving is ambiguous: a
+      // truncated transfer and a corrupt archive look the same to gunzip/tar.
+      // Bun 1.3 (the sandbox agent's build runtime) surfaces a mid-body
+      // socket cut exactly this way; Bun 1.4 as a source error. Keep draining
+      // the source — bytes still counted, watchdog still armed — and classify
+      // at EOF: short of the declared size → transient `unavailable` (retried),
+      // complete → `malformed` (not retried).
+      let decoderError: unknown = null
+      const isDecoderError = (err: unknown) =>
+        !(err instanceof ConfigProviderError) && !isAbortError(err) && (isDecompressionError(err) || isTarError(err))
       const fail = (stage: S3Stage, err: unknown) => {
         if (settled) return
+        if (isDecoderError(err) && !violation && !link.signal.aborted && received < expectedBytes) {
+          if (decoderError) return // already draining to EOF
+          decoderError = err
+          hasher.unpipe(gunzip)
+          hasher.resume()
+          return
+        }
         settled = true
         if (watchdog) clearTimeout(watchdog)
         source.destroy()
@@ -372,6 +395,14 @@ export async function downloadAndExtractProjectSnapshot(
         }
         reject(new ConfigProviderError(stage, 'unavailable', `archive transfer failed: ${(err as Error)?.message ?? String(err)}`, 0, { cause: err }))
       }
+      source.on('end', () => {
+        if (!decoderError || settled) return
+        if (received < expectedBytes) {
+          fail('download', new ConfigProviderError('download', 'unavailable', `archive transfer ended after ${received} of ${expectedBytes} bytes`, 0, { cause: decoderError }))
+        } else {
+          fail('extract', decoderError)
+        }
+      })
       const done = () => {
         if (settled) return
         settled = true
