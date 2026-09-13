@@ -41,6 +41,84 @@ LFS objects are NOT included (pointers only — same as the Git path without
 `git lfs`); submodule contents are NOT included (`.gitmodules` only — same as a
 clone without `--recurse-submodules`).
 
+### How a fresh boot flows (`prefer-s3`, archive prepared)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant API as Kortix API
+    participant P as Sandbox provider
+    participant D as kortixd (in the box)
+    participant GP as Git proxy (API)
+    participant S3 as S3 / MinIO
+
+    C->>API: POST /projects/:id/sessions
+    API->>API: mode = env or project metadata<br/>ledger: ready row for the base sha?
+    API->>P: create sandbox, env = KORTIX_TOKEN, KORTIX_REPO_URL (proxy),<br/>KORTIX_PROJECT_SNAPSHOT_MODE, KORTIX_PROJECT_SNAPSHOT_PIN=sha:sha256:bytes
+    P-->>D: VM boots, daemon starts
+    D->>D: warm check: baked /workspace already at the base sha? (no)
+    D->>D: eligible: fresh session, base sha, pin present, pin sha == base sha
+    D->>GP: GET /v1/git/<project>.git/project-snapshot?sha=<pin sha><br/>(Authorization: KORTIX_TOKEN)
+    GP-->>D: 200 {sha256, bytes, entries, presigned URL, expires_at}
+    D->>S3: GET presigned URL
+    S3-->>D: tar.gz stream
+    D->>D: stream: sha256 + byte cap + inactivity watchdog → gunzip → tar with entry guard → private stage
+    D->>D: verify: marker, .git/config allowlist, rev-parse HEAD == sha
+    D->>D: activate: rename stage → /workspace, origin = proxy URL,<br/>checkout session branch, git identity
+    Note over D: mark repo-materialized (provider = s3). The runtime spawn ran in parallel.
+    D-->>API: runtime ready (health runtimeReady: true)
+    D->>GP: git fetch --unshallow --tags origin (best effort, only now)
+    GP-->>D: history objects (working tree unchanged)
+```
+
+Decisions and fallback inside the daemon:
+
+```mermaid
+flowchart TD
+    A[materializeProject] --> B{baked /workspace at the base sha?}
+    B -- yes --> W[adopt in place]
+    B -- no --> C{mode}
+    C -- git --> G[acquireProjectViaGit: scaffold clone + delta bundle or fetch]
+    C -- prefer-s3 or require-s3 --> E{fresh + base sha + pin + pin sha == base sha?}
+    E -- no --> SK[recorded skip: config_provider_s3_skipped]
+    SK --> G2{require-s3 and reason != not-fresh?}
+    G2 -- yes --> F[boot error]
+    G2 -- no --> G
+    E -- yes --> DSC[GET descriptor]
+    DSC --> DL[stream download → verify → activate]
+    DL -- ok --> S[provider = s3, history backfill deferred to readiness]
+    DL -- failed --> CL{class}
+    CL -- unavailable or timeout, deadline left, attempts < 3 --> DSC
+    CL -- denied or cancelled --> F
+    CL -- any other class, require-s3 --> F
+    CL -- any other class, prefer-s3 --> FB[config_provider_fallback, clear target] --> G
+    G --> R[provider = git, backfill scheduled at once]
+    S --> RD[runtime ready]
+    R --> RD
+    W --> RD
+    RD --> HB[git fetch --unshallow --tags origin through the proxy]
+```
+
+The producer, on the API side:
+
+```mermaid
+sequenceDiagram
+    participant T as Trigger: push through the proxy, project registration, CR merge
+    participant API as API route
+    participant L as kortix.project_snapshot_archives
+    participant W as Snapshot worker (leader)
+    participant S3 as S3 / MinIO
+    T->>API: event with (project, ref)
+    API->>API: resolve the full sha (ls-remote, then mirror)
+    API->>L: enqueue (project, sha), idempotent
+    W->>L: claim queued rows (SKIP LOCKED, 15 min lease, attempts++)
+    W->>W: shallow fetch <sha> from the mirror → sanitized .git → tar.gz → sha256
+    W->>S3: PUT <prefix>/<sha256>.tar.gz (If-None-Match: *)
+    W->>S3: PUT <prefix>/manifest.json (If-None-Match: *)
+    W->>L: ready (sha256, bytes, entries) or failed (backoff, max 5)
+```
+
 ## Configuration
 
 API (`apps/api/.env*` via dotenvx, or the deployment's secret blob):
