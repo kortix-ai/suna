@@ -16,7 +16,7 @@
  * `If-None-Match: *` so a concurrent producer never overwrites a published
  * object and a reader never sees a manifest whose archive is still uploading.
  */
-import { createReadStream } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import {
   GetObjectCommand,
   HeadObjectCommand,
@@ -166,7 +166,17 @@ export async function putObjectIfAbsent(input: {
   if (typeof input.body === 'string' || Buffer.isBuffer(input.body)) {
     Body = input.body;
   } else {
-    Body = createReadStream(input.body.path);
+    // Whole-file Buffer, not `createReadStream`: on the API image's Bun
+    // (`BUN_VERSION=1.2`, 1.2.23) a PutObject with a Node ReadStream body
+    // never completes and pins a core (scripts/project-snapshot-s3-probe.ts
+    // reproduces it; a Buffer body of the same bytes finishes in ~30 ms).
+    // ponytail: archives are capped at KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES
+    // (512 MiB default) and are single-digit MB in practice; switch to
+    // @aws-sdk/lib-storage multipart if that ceiling is ever approached.
+    Body = await readFile(input.body.path);
+    if (Body.byteLength !== input.body.bytes) {
+      throw new Error(`archive changed on disk: expected ${input.body.bytes} bytes, read ${Body.byteLength}`);
+    }
     ContentLength = input.body.bytes;
   }
   try {
