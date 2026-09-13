@@ -21,11 +21,15 @@ gate (see `project-snapshot-s3.md`).
 
 Fixtures (both provisioned with the starter, then pushed through the Git proxy):
 
-| Fixture | Project | Tip | Archive |
-| --- | --- | --- | --- |
-| representative (starter + 400 × 4 KiB random files) | `65b9e291-96f1-4979-9d94-230132536be5` | `42c4202699911653cf660e30e53fe603cdbeb2a0` | 3,177,064 B, 651 entries |
-| many small files (starter + 5,000 × 512 B) | `e1b69abf-435b-4133-91d0-d743feeb10ff` | `3217623b5c8ff2f266fd49aed59ce5f413a02b98` | 5,170,441 B, 5,297 entries |
-| missing archive (same shape as representative; archive object deleted, ledger left `ready`) | `6115ae0e-2e6c-4e5a-ac97-1c135acaffc4` | `4bd88b8947d8a16d675e92a76dbae318fed6480f` | 3,177,052 B, 651 entries (object removed) |
+| Fixture | Project | Tip | v1 archive (tree + full pack) | v2 boot object (tree + blob-less pack) | v2 blob pack (hydration) | Git delta bundle |
+| --- | --- | --- | --- | --- | --- | --- |
+| representative (starter + 400 × 4 KiB random files) | `65b9e291-96f1-4979-9d94-230132536be5` | `42c4202699911653cf660e30e53fe603cdbeb2a0` | 3,177,064 B, 651 entries | 1,576,450 B, 652 entries | 1,600,272 B | 1,262,707 B |
+| many small files (starter + 5,000 × 512 B) | `e1b69abf-435b-4133-91d0-d743feeb10ff` | v1 `3217623b5c8ff2f266fd49aed59ce5f413a02b98`, v2 `81bbe87e54c3415a501b01076647bb3c8ff6df00` (tip moved by the compat gate's merge) | 5,170,441 B, 5,297 entries | 2,600,219 B, 5,301 entries | 2,604,190 B | 2,267,086 B |
+| missing archive (same shape as representative; object deleted, ledger left `ready`) | `6115ae0e-2e6c-4e5a-ac97-1c135acaffc4` | `4bd88b8947d8a16d675e92a76dbae318fed6480f` | 3,177,052 B | 1,576,308 B | 1,600,266 B | 1,262,708 B |
+
+The v2 boot object is 50 % of the v1 archive for both fixtures; the remaining
+gap to the Git delta bundle (+25 % / +15 %) is the starter's files, which the
+bundle never transfers because the image bakes the scaffold.
 
 Producer cost (representative, from the worker log): build 1,066 ms, publish
 56 ms; many-files: 5.17 MB / 5,297 entries built and published by the leader
@@ -167,7 +171,128 @@ goes to GitHub directly and is not project acquisition).
 | `oven/bun:1.3.11` = the Bun that compiles `kortix-agent` (`SANDBOX_AGENT_BUN_VERSION=1.3.11`) | the daemon's `config-provider.test.ts` (22 tests, real `node:http` fake API/store, real Git scaffold fallback) after `bun install --frozen-lockfile` in the container | **before the fix: 21 pass / 1 fail** — "an interrupted transfer is retried with backoff": `reason: malformed, stage: extract, attempts: 1` instead of `unavailable ×3`. Root cause (traced with a temporary trace in `fail()`): after the mid-body socket reset Bun 1.3.11 re-issues the GET itself and appends the second response to the same body stream — the fake server saw 6 GETs for 3 attempts, the consumer saw 4,764 of 4,765 bytes (two first halves), tar reported `TAR_ENTRY_INVALID: checksum failure`, and the source emitted `close` without `end`/`error`. Bun 1.4 delivers a clean short EOF. **After the fix: 22 pass / 0 fail on both runtimes** — a decoder error while bytes are still arriving now drains to EOF and classifies there (short → `unavailable`, complete → `malformed`); an overrun past the declared size is `unavailable` (transport garbage), not `limit-exceeded`. |
 | Bun 1.4.0 (laptop) | same suite | 22 pass / 0 fail before and after |
 
-## Compatibility gate (gate 6)
+## v2 results (blob-less boot object, native extraction, blob pack hydrated off the boot path)
+
+Same topology, same fixtures re-prepared under `project-snapshot-v2`, Supervisor
+sha256 `33345f23…`, image `kortix-default-14a4dd64f7aa`, run 2026-09-13
+13:59–14:38 UTC, arms alternating every round, 1 warm-up per arm discarded.
+Baseline = unmodified `main` (`b3202b8f23`) on its own API and tunnel.
+
+### Fresh sandbox, prepared revision — representative project (400 files; boot object 1.58 MB / 652 entries, blob pack 1.60 MB), 30 rounds per arm
+
+| Scenario | Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | Full boot p50 / p95 | Reduction vs baseline (p50 / p95) |
+|---|---|---|---|---|---|
+| Fresh sandbox, prepared revision | Baseline Git (`main`) | 30 / 0 / — | in-guest `repo-materialized` 1,055 / 1,398 ms | 6,556 / 8,863 ms | — |
+| Same conditions | New Git provider (`git` mode) | 30 / 0 / 0 | 1,181 / 1,726 ms (`repo-materialized` 1,212 / 1,760) | 6,374 / 13,179 ms | +2.8 % / −48.7 % |
+| Same conditions | **New S3 provider v2** (`prefer-s3`) | 30 S3 attempts / 1 failed acquisition / 1 fallback (29 served by S3) | 1,383 / 3,140 ms (`repo-materialized` 1,412 / 3,174) | 6,785 / 9,551 ms | −3.5 % / −7.8 % |
+
+Hydration (S3 arm, 29 rounds): `ok` 29/29, blob-pack import p50 617 / p95 944 ms,
+in-guest `config-provider:hydrate:ok` at 2,024 / 3,485 ms versus `opencode-ready`
+at 2,578 / 4,696 ms — the repository was fully hydrated **before the harness
+was ready** at both percentiles; the settled state was observed 6,977 ms
+(p50) after create, ~190 ms after `runtimeReady`. Extractor `tar` ×29. Git
+proxy before readiness: `GET project-snapshot 200` ×38 (30 rounds + 8 retried
+attempts), `GET fast-boot-bundle` ×1 (the fallback round); at/after readiness
+the deferred blob-less backfill (`info/refs` ×27, `git-upload-pack` ×29). In 2
+rounds an `info/refs` + `git-upload-pack` pair completed 1.1–1.2 s before the
+bench observed readiness: within the readiness-poll lag of the deferred
+backfill (which starts at real readiness), though a lazy blob fetch during the
+blob-less window would look identical on the proxy — the in-guest daemon log,
+not collected by the bench, is what disambiguates.
+
+Retries: rounds 10, 11, 21, 27, 30 needed 2–3 attempts and round 13 fell back
+to Git after 3 (3,145 ms of S3 time + 627 ms Git), every failure classified
+`unavailable` at `download`. The API answered every descriptor request 200 in
+under 500 ms, so the transient failures sat on the laptop-MinIO quick-tunnel
+leg; the Git arms' bundle travels the other quick tunnel and saw none. The
+retry/fallback design absorbed all of them (0 boot failures); their cost is
+the S3 arm's p95.
+
+Boot breakdown (p50, ms): create ack 759 / 756 / 753; create → daemon start
+4,183 / 4,037 / 3,938; in-guest `repo-materialized` 1,055 / 1,212 / 1,412;
+in-guest `opencode-ready` 2,235 / 2,374 / 2,578 (baseline / new Git / new S3).
+Host-side Daytona `provider-create` p50 1,634 / 1,677 / 1,860 ms, p95 4,895 /
+8,162 / 4,731 ms — 26–30 % of the median boot and, again, the tail.
+
+### Fresh sandbox, prepared revision — many small files (5,000 files; boot object 2.60 MB / 5,301 entries, blob pack 2.60 MB), 10 rounds per arm
+
+| Scenario | Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | Full boot p50 / p95 | Reduction vs baseline (p50 / p95) |
+|---|---|---|---|---|---|
+| Fresh sandbox, prepared revision | Baseline Git (`main`) | 10 / 0 / — | in-guest `repo-materialized` 1,602 / 2,075 ms | 6,580 / 7,325 ms | — |
+| Same conditions | New Git provider (`git` mode) | 10 / 0 / 0 | 1,524 / 13,058 ms (`repo-materialized` 1,553 / 13,087) | 6,260 / 24,218 ms | +4.9 % / −230.6 % |
+| Same conditions | **New S3 provider v2** (`prefer-s3`) | 10 / 0 / 0 (1 retried attempt) | 1,648 / 2,307 ms (`repo-materialized` 1,679 / 2,340) | 6,777 / 14,679 ms | −3.0 % / −100.4 % |
+
+With 10 rounds the p95 is the second-slowest round: the new Git arm's 24.2 s
+boot is one round whose bundle fetch took 13 s in-guest (the Git path has its
+own tail), and both new arms' tails include a 9.5 s `provider-create`.
+Hydration: `ok` 10/10, import p50 565 / p95 987 ms, in-guest hydrated at 2,310 /
+3,411 ms versus ready at 2,942 / 3,407 ms. Extractor `tar` ×10. Git proxy
+before readiness: `GET project-snapshot 200` ×11 only.
+
+### Missing boot object → Git fallback (`prefer-s3`, ledger `ready`, tree object deleted), 10 rounds
+
+| Scenario | Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | Full boot p50 / p95 |
+|---|---|---|---|---|
+| Fresh sandbox, prepared revision, boot object missing | New S3 provider v2 (`prefer-s3`) | 10 / 10 (`download` / `missing`) / 10 | 1,722 / 2,175 ms = failed attempt 501–1,272 ms + Git 716–1,168 ms | 6,557 / 9,023 ms |
+
+Every round: one attempt (`missing` is not transient), `fallback: true`,
+`provider: git`, exact SHA, `hydration: null`; proxy: `GET project-snapshot 200`
+×10 then `GET fast-boot-bundle 200` ×10, nothing else. The strict-mode
+behaviour (`require-s3` + missing → boot error, no fallback) is unchanged from
+the v1 run below and is covered by the suite on both runtimes.
+
+### v1 → v2, and the reading
+
+| In-guest, p50 | v1 S3 | v2 S3 | New Git (same runs) |
+|---|---|---|---|
+| Representative: acquisition | 1,521 ms | **1,383 ms** (−9 %) | 1,181 ms |
+| Representative: `repo-materialized` | 1,551 ms | **1,412 ms** | 1,212 ms |
+| 5,000 files: acquisition | 2,315 ms | **1,648 ms** (−29 %) | 1,524 ms |
+| 5,000 files: `repo-materialized` | 2,351 ms | **1,679 ms** | 1,553 ms |
+| Bytes on the boot path | 3.18 MB / 5.17 MB | 1.58 MB / 2.60 MB | 1.26 MB / 2.27 MB |
+| Extraction | node-tar (JS) | system `tar` | native `checkout` |
+| Git on the boot path | `rev-parse`, `checkout -B`, `read-tree` | `rev-parse` only (verify) | `unbundle`, `checkout` |
+
+v2 removed the byte duplication and the JS extraction, and the 5,000-file
+project shows it: the S3 arm went from +920 ms over the Git path in-guest to
++124 ms. What remains on this topology is round trips, not bytes: the
+descriptor and the object's time-to-first-byte are each a transatlantic hop
+through a Cloudflare quick tunnel to a laptop (≈ 250–400 ms apiece), and the
+Git path pays only one of them. Full boot is at parity with both Git arms
+(−3.5 % / −3.0 % at p50, inside the round-to-round noise), with the working
+tree ready at `repo-materialized` and the blobs in place before the harness
+listens. In the same AWS region those two hops collapse to ~30 ms each, which
+puts the v2 acquisition at roughly 100–250 ms (descriptor, one small GET,
+native extraction of a few thousand entries, `rev-parse`, activation) against
+the bundle path's native unbundle + checkout; that measurement is the deferred
+staging gate. Either way, VM creation stays 26–30 % of the median boot and all
+of the tail; acquisition is now 20 % of it.
+
+## v2 — smoke and compatibility
+
+Supervisor build sha256 `33345f23472c24e3523fe64c6c667307a0bd49a4da908ed7ffbcf5b8a9c879b0`
+(runtime-assets manifest = `dist/kortix-agent`), image `kortix-default-14a4dd64f7aa`.
+
+First `prefer-s3` boot of the representative project on that image (one round):
+
+| Measure | Value |
+| --- | --- |
+| create → `runtimeReady` | 7,254 ms (`/start` ready 7,065 ms) |
+| daemon `config_provider` | `provider: s3`, `sha_matches: true`, `s3_extractor: "tar"`, `timings: {warm: 2, s3_acquire: 1383, s3_activate: 26, s3_hydrate: 554}` |
+| in-guest marks | `config-provider:s3:ok` = `repo-materialized` @ 1,441 ms; `config-provider:hydrate:ok` @ 2,009 ms; `opencode-listening` @ 2,659 ms; `opencode-ready` @ 2,680 ms |
+| hydration | `{status: ok, attempts: 1, bytes: 1,600,272, ms: 554}` — settled 650 ms before the harness listened, i.e. the workspace was fully hydrated before readiness on this topology |
+| Git proxy before readiness | `GET project-snapshot 200` at −3,104 ms, nothing else |
+| Git proxy at/after readiness | `info/refs` −495 ms, `git-upload-pack` −27 ms: the deferred blob-less history backfill (offsets are relative to the bench's 500 ms-granular readiness poll) |
+
+Compatibility gate on the 5,000-file project, v2 S3-booted session, **23/23**
+(the 21 checks of gate 6 plus): `boot object was extracted by the system tar`
+(`extractor=tar`) and `blob-pack hydration settled ok after readiness`
+(`{status: ok, attempts: 1, bytes: 2,604,190, ms: 639}`), followed by upload →
+commit + push from the box → read-back → reload → change request → merge →
+stop / resume (adopts the workspace, `provider: git`, `s3_attempted: false`) →
+foreign PAT 403 on the descriptor → owner JWT 401 on the proxy.
+
+## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
 session (`config_provider.provider = s3`, sha matches), all 21 checks passed:
