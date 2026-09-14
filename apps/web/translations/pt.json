@@ -19225,6 +19225,9 @@
     }
   },
   "modelAccess": {
+    "manageProvider": "Configurações de {name}",
+    "enableProviderAction": "Ativar provedor",
+    "disableProviderAction": "Desativar provedor",
     "enabled": "Ativado",
     "disabled": "Desativado",
     "enableProvider": "Ativar {name}",

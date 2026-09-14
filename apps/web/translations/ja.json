@@ -19225,6 +19225,9 @@
     }
   },
   "modelAccess": {
+    "manageProvider": "{name}の設定",
+    "enableProviderAction": "プロバイダーを有効にする",
+    "disableProviderAction": "プロバイダーを無効にする",
     "enabled": "有効",
     "disabled": "無効",
     "enableProvider": "{name}を有効にする",

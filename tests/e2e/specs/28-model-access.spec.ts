@@ -39,19 +39,36 @@ test('provider and model access persists, keeps credentials, and updates control
 
     async function toggle(name: string, expected: { target: string; id: string; enabled: boolean }) {
       const response = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`${base}/model-access`));
-      await page.getByRole('switch', { name, exact: true }).click();
+      if (expected.target === 'provider') {
+        await page.getByRole('button', { name: `${name.replace(/^Enable /, '')} settings`, exact: true }).click();
+        await page.getByRole('menuitem', { name: expected.enabled ? 'Enable provider' : 'Disable provider', exact: true }).click();
+      } else {
+        await page.getByRole('switch', { name, exact: true }).click();
+      }
       const saved = await response;
       expect(saved.status()).toBe(200);
       expect(saved.request().postDataJSON()).toEqual(expected);
-      await expect(page.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', String(expected.enabled));
+      if (expected.target === 'provider') {
+        await expect(page.locator(`[data-provider-access="${expected.id}"]`).getByText('Disabled', { exact: true })).toHaveCount(expected.enabled ? 0 : 1);
+      } else {
+        await expect(page.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', String(expected.enabled));
+      }
     }
 
-    await expect(page.getByRole('switch', { name: 'Enable ChatGPT subscription', exact: true })).toBeDisabled();
+    await expect(page.getByRole('switch')).toHaveCount(0);
+    await expect(page.getByText('Enabled', { exact: true })).toHaveCount(0);
+    async function expectProtectedProvider(name: string) {
+      await page.getByRole('button', { name: `${name} settings`, exact: true }).click();
+      await expect(page.getByRole('menuitem', { name: 'Disable provider', exact: true })).toBeDisabled();
+      await expect(page.getByText('Choose a project default from another provider before disabling this provider.', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+    await expectProtectedProvider('ChatGPT subscription');
     await toggle('Enable Kortix Managed Models', { target: 'provider', id: 'kortix', enabled: false });
     await toggle('Enable OpenAI', { target: 'provider', id: 'openai', enabled: false });
     await page.reload();
-    await expect(page.getByRole('switch', { name: 'Enable Kortix Managed Models', exact: true })).toHaveAttribute('aria-checked', 'false');
-    await expect(page.getByRole('switch', { name: 'Enable OpenAI', exact: true })).toHaveAttribute('aria-checked', 'false');
+    await expect(page.locator('[data-provider-access="kortix"]').getByText('Disabled', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-provider-access="openai"]').getByText('Disabled', { exact: true })).toBeVisible();
     expect(await api(session.access_token, 'GET', `${base}/secrets`)).toEqual(beforeSecrets);
     await toggle('Enable OpenAI', { target: 'provider', id: 'openai', enabled: true });
     await page.locator('button[role=tab]').filter({ hasText: /^Models$/ }).click();
@@ -79,11 +96,10 @@ test('provider and model access persists, keeps credentials, and updates control
     const defaultSaved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`${base}/model-defaults`));
     await page.getByRole('menuitem', { name: "Start this project's sessions with it" }).click();
     expect((await defaultSaved).status()).toBe(200);
-    await expect(page.getByRole('switch', { name: 'Enable OpenAI', exact: true })).toBeDisabled();
+    await expectProtectedProvider('OpenAI');
     await expect(page.getByRole('switch', { name: "GPT-5.5 is this project's default model and cannot be turned off", exact: true })).toBeDisabled();
     await page.screenshot({ path: testInfo.outputPath('model-access.png'), fullPage: true });
     await page.getByRole('tab', { name: 'Providers', exact: true }).click();
-    await expect(page.getByRole('switch', { name: 'Enable ChatGPT subscription', exact: true })).toBeEnabled();
     await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: false });
     await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: true });
     await toggle('Enable Kortix Managed Models', { target: 'provider', id: 'kortix', enabled: true });

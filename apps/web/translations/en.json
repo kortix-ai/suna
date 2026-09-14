@@ -19225,6 +19225,9 @@
     }
   },
   "modelAccess": {
+    "manageProvider": "{name} settings",
+    "enableProviderAction": "Enable provider",
+    "disableProviderAction": "Disable provider",
     "enabled": "Enabled",
     "disabled": "Disabled",
     "enableProvider": "Enable {name}",

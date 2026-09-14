@@ -19225,6 +19225,9 @@
     }
   },
   "modelAccess": {
+    "manageProvider": "{name} 设置",
+    "enableProviderAction": "启用提供商",
+    "disableProviderAction": "禁用提供商",
     "enabled": "已启用",
     "disabled": "已禁用",
     "enableProvider": "启用{name}",

@@ -44,7 +44,7 @@ import {
   StarIcon as Star,
 } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
-import { ProviderAccessSwitch } from './provider-access-switch';
+import { ProviderAccessMenu } from './provider-access-menu';
 
 import {
   DropdownMenu,
@@ -213,7 +213,7 @@ export function ModelsTab({
                 <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
                   {group.rows.length}
                 </span>
-                <ProviderAccessSwitch
+                <ProviderAccessMenu
                   access={access}
                   providerId={group.providerID}
                   name={group.providerName}

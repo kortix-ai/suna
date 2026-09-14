@@ -83,8 +83,8 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_NOTES, ProviderLogo } from '@/features/providers/provider-branding';
 import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/sections/llm-provider/chatgpt-subscription-connect';
 import {
-  ProviderAccessSwitch,
-} from '@/features/workspace/customize/sections/llm-provider/provider-access-switch';
+  ProviderAccessMenu,
+} from '@/features/workspace/customize/sections/llm-provider/provider-access-menu';
 import { ProviderDetail } from '@/features/workspace/customize/sections/llm-provider/provider-detail';
 import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import {
@@ -553,9 +553,9 @@ function ProviderRow({
               <ExternalLink className="size-3.5 shrink-0" />
             </a>
           )}
+          {accessSlot}
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {accessSlot}
           {onOpenDetail && row.modelCount > 0 && (
             <button
               type="button"
@@ -1106,7 +1106,7 @@ export function ProviderConnect({
         accessSlots={Object.fromEntries(
           visibleRows.map((row) => [
             row.id,
-            <ProviderAccessSwitch
+            <ProviderAccessMenu
               key={row.id}
               access={access}
               providerId={row.id}
@@ -1139,7 +1139,7 @@ export function ProviderConnect({
                 openai: (
                   <ChatGptSubscriptionConnect
                     accessSlot={
-                      <ProviderAccessSwitch
+                      <ProviderAccessMenu
                         access={access}
                         providerId="codex"
                         name="ChatGPT subscription"
