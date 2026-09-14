@@ -13,7 +13,7 @@ export function githubInstallationLabel(
 /**
  * Persists the path to return to once `/github/setup` finishes, read back by
  * that page on completion. Was inlined identically in
- * `app/(app)/accounts/[id]/page.tsx` and `features/projects/modal/
+ * `features/accounts/hub/account-hub-content.tsx` and `features/projects/modal/
  * project-create-modal.tsx` — centralized here rather than adding a third
  * copy (`features/workspace/settings/tabs/connected-tab.tsx`). The two
  * existing call sites are untouched; only new callers should import this.

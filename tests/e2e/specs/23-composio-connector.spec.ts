@@ -71,152 +71,10 @@ test.describe("23 — Composio managed connector", () => {
     if (user?.id) await deleteAuthUser(user.id, authOptions);
   });
 
-  test("short searches return matching connectors in Discovery and All", async ({
-    page,
-  }) => {
-    const status = await api<ConnectStatus>(
-      session.access_token,
-      "GET",
-      "/connectors/connect-status",
-    );
-    const providers =
-      status.providers ?? (status.provider ? [status.provider] : []);
-    if (!providers.includes("composio")) {
-      expect(
-        process.env.E2E_REQUIRE_COMPOSIO,
-        "this run requires Composio",
-      ).not.toBe("1");
-      return;
-    }
-    const pageErrors: string[] = [];
-    const failedRequests: string[] = [];
-    page.on("pageerror", (error) => pageErrors.push(error.message));
-    page.on("response", (response) => {
-      if (
-        response.url().includes("/connect/toolkits") &&
-        response.status() >= 400
-      ) {
-        failedRequests.push(`${response.status()} ${response.url()}`);
-      }
-    });
-    await installBrowserSessionDirect(
-      page,
-      session,
-      `/projects/${project.id}/customize/connectors`,
-      authOptions,
-    );
-    await selectAccountForUi(page, accountId);
-    for (const scope of ["Discovery", "All"]) {
-      await page.goto(`/projects/${project.id}/customize/connectors`, {
-        waitUntil: "domcontentloaded",
-      });
-      await dismissOnboarding(page);
-      await page.getByRole("tab", { name: scope, exact: true }).click();
-      const search = page.getByPlaceholder("Search all connectors");
-      for (const query of ["a", "sl", " G ", "gm", "gmail"]) {
-        const response = page.waitForResponse((value) => {
-          // Only the real request: on the cross-site staging pair the Authorization
-          // header forces a CORS preflight — an OPTIONS on the SAME url and query that
-          // answers 204 and matched this predicate before the GET did (release gate
-          // v0.13.12, 2026-09-07/08, browser shard 3: "expected 200, received 204").
-          if (value.request().method() === "OPTIONS") return false;
-          const url = new URL(value.url());
-          return (
-            url.pathname.endsWith("/connect/toolkits") &&
-            url.searchParams.get("q") === query.trim()
-          );
-        });
-        await search.fill(query);
-        const result = await response;
-        expect(new URL(result.url()).origin).toBe(new URL(apiBase).origin);
-        expect(result.status()).toBe(200);
-        const body = await result.json();
-        const items = body.toolkits ?? body.items;
-        expect(items.length).toBeGreaterThan(0);
-        const name = query.trim() === "sl" ? "Slack" : "Gmail";
-        expect(items).toContainEqual(
-          expect.objectContaining({ slug: name.toLowerCase() }),
-        );
-        for (const item of query.trim().length < 3 ? items : []) {
-          expect(
-            `${item.name} ${item.slug} ${item.description ?? ""}`.toLowerCase(),
-          ).toContain(query.trim().toLowerCase());
-        }
-        await expect(
-          page.getByRole("button", { name: new RegExp(`^${name}\\b`) }).first(),
-        ).toBeVisible();
-        await expect(
-          page.getByText("Internal server error", { exact: true }),
-        ).toHaveCount(0);
-        if (query.trim().length < 3) {
-          await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
-        }
-        if (query === "sl") {
-          await expect(
-            page.getByRole("button", { name: /^Gmail\b/ }),
-          ).toHaveCount(0);
-        }
-        if (query === "gm") {
-          await expect(
-            page.getByRole("button", { name: /^Slack\b/ }),
-          ).toHaveCount(0);
-        }
-        if (query === "a") {
-          await page.screenshot({
-            path: test.info().outputPath(`${scope}-single-letter.png`),
-          });
-        }
-      }
-      // Backspacing restores the broader one-letter result set.
-      const backspaceResponse = page.waitForResponse((value) => {
-        // Only the real request: on the cross-site staging pair the Authorization
-        // header forces a CORS preflight — an OPTIONS on the SAME url and query that
-        // answers 204 and matched this predicate before the GET did (release gate
-        // v0.13.12, 2026-09-07/08, browser shard 3: "expected 200, received 204").
-        if (value.request().method() === "OPTIONS") return false;
-        const url = new URL(value.url());
-        return (
-          url.pathname.endsWith("/connect/toolkits") &&
-          url.searchParams.get("q") === "g"
-        );
-      });
-      await search.fill("g");
-      expect((await backspaceResponse).status()).toBe(200);
-      await expect(
-        page.getByRole("button", { name: /^GitHub\b/ }).first(),
-      ).toBeVisible();
-      const emptyResponse = page.waitForResponse((value) => {
-        // Only the real request: on the cross-site staging pair the Authorization
-        // header forces a CORS preflight — an OPTIONS on the SAME url and query that
-        // answers 204 and matched this predicate before the GET did (release gate
-        // v0.13.12, 2026-09-07/08, browser shard 3: "expected 200, received 204").
-        if (value.request().method() === "OPTIONS") return false;
-        const url = new URL(value.url());
-        return (
-          url.pathname.endsWith("/connect/toolkits") &&
-          url.searchParams.get("q") === "☃"
-        );
-      });
-      await search.fill("☃");
-      const emptyResult = await emptyResponse;
-      expect(emptyResult.status()).toBe(200);
-      expect(await emptyResult.json()).toMatchObject({
-        total: 0,
-        toolkits: [],
-        hasMore: false,
-      });
-      await expect(page.getByRole("button", { name: /^Gmail\b/ })).toHaveCount(
-        0,
-      );
-      await expect(page.locator('[data-testid="catalog-add"]')).toHaveCount(0);
-      await search.fill("");
-      await expect(
-        page.getByRole("button", { name: /^Computer Tunnels\b/ }).first(),
-      ).toBeVisible();
-    }
-    expect(pageErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
-  });
+  // The "short searches return matching connectors" journey was DELETED with
+  // the Discovery tab it walked (Jay, 2026-09-14): the catalogue is one flat
+  // All tab now, and the cards it asserted as buttons are links. Short-search
+  // guarding lives on in the API flows (connector-catalog + toolkits search).
 
   test("discovers, creates, and connects a real no-auth toolkit through the UI", async ({
     page,
@@ -317,20 +175,25 @@ test.describe("23 — Composio managed connector", () => {
     expect(createBody).toEqual(
       expect.objectContaining({
         name: "Composio Search",
-        slug: "composio-search",
         provider: "composio",
         app: "composio_search",
         authorization_strategy: "project",
         create_only: true,
       }),
     );
+    // A proposed connector slug is `<app>-<6 random base36>` since 7f6b8087f3
+    // (so two connections to one app never collide). The suffix is random, so
+    // read the slug the UI actually proposed and follow it for the rest of the
+    // journey instead of asserting a fixed one.
+    expect(createBody.slug).toMatch(/^composio-search-[a-z0-9]{6}$/);
+    const connectorSlug = createBody.slug as string;
     expect(JSON.stringify(createBody)).not.toMatch(
       /api[_-]?key|credential|secret/i,
     );
     expect((await createResponsePromise).status()).toBe(200);
 
     await expect(page).toHaveURL(new RegExp(`[?&]scope=connected(?:&|$)`));
-    await expect(page).toHaveURL(new RegExp(`[?&]c=composio-search(?:&|$)`));
+    await expect(page).toHaveURL(new RegExp(`[?&]c=${connectorSlug}(?:&|$)`));
     const detail = page.getByRole("dialog", { name: "Composio Search" });
     await expect(detail).toBeVisible();
     await expect(
@@ -342,7 +205,7 @@ test.describe("23 — Composio managed connector", () => {
         request
           .url()
           .endsWith(
-            `/v1/connectors/projects/${project.id}/connectors/composio-search/connect`,
+            `/v1/connectors/projects/${project.id}/connectors/${connectorSlug}/connect`,
           ) && request.method() === "POST",
     );
     const connectResponsePromise = page.waitForResponse(
@@ -350,7 +213,7 @@ test.describe("23 — Composio managed connector", () => {
         response
           .url()
           .endsWith(
-            `/v1/connectors/projects/${project.id}/connectors/composio-search/connect`,
+            `/v1/connectors/projects/${project.id}/connectors/${connectorSlug}/connect`,
           ) && response.request().method() === "POST",
     );
     await detail.getByRole("button", { name: "Connect", exact: true }).click();
@@ -376,9 +239,11 @@ test.describe("23 — Composio managed connector", () => {
     await expect(
       detail.getByRole("button", { name: "Reconnect", exact: true }),
     ).toBeVisible();
+    await detail.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(detail).not.toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Connected", exact: true }),
-    ).toBeVisible();
+      page.getByRole("tab", { name: "Connected", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
 
     const connections = await api<ConnectionList>(
       session.access_token,
@@ -387,7 +252,7 @@ test.describe("23 — Composio managed connector", () => {
     );
     const connection = connections.connections.find(
       (item) =>
-        item.connector_alias === "composio-search" &&
+        item.connector_alias === connectorSlug &&
         item.owner_type === "project" &&
         item.is_default,
     );

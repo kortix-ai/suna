@@ -37,13 +37,7 @@ const tabsTriggerHeightVariants = cva('', {
   },
 });
 
-/**
- * Web sizing only. The desktop shell overrides all of it with a flat
- * `html[data-desktop='true'] [role='tablist'] [role='tab'] { font-size }` rule
- * in globals.css — a descendant selector on <html> beats these utility
- * classes, so changing a size here has NO effect inside the desktop app.
- * Change tab text there, not here.
- */
+/** Shared tab typography for web and desktop. */
 const tabsTriggerTextVariants = cva('font-medium', {
   variants: {
     size: {

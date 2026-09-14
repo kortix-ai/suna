@@ -413,7 +413,6 @@ export function SecurityTabView({
 /** Container: owns every hook and renders `SecurityTabView` with real data
  *  and handlers. Only ever mounted while this tab is active. */
 export function SecurityTab() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.security');
   const copy: SecurityTabCopy = {
     twoFactorTitle: t('twoFactorTitle'),
@@ -457,9 +456,9 @@ export function SecurityTab() {
       const { error } = await supabase.auth.signOut({ scope: 'others' });
       if (error) throw error;
     },
-    onSuccess: () => successToast(tI18nComplete('text3ffb56c3e7fa')),
+    onSuccess: () => successToast(t('signedOutOtherDevices')),
     onError: (error: Error) =>
-      errorToast(error.message || tI18nComplete('text3f579c386187')),
+      errorToast(error.message || t('signOutOtherDevicesFailed')),
   });
 
   return (

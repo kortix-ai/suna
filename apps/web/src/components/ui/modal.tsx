@@ -54,19 +54,21 @@ import {
   hasOpenFloatingLayer,
   isFloatingLayerTarget,
   useDialogDepth,
+  useDialogRootLayer,
 } from '@/lib/z-stack';
 import { Suspense, useEffect, useState } from 'react';
 import { Button } from './button';
 import Loading from './loading';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
-const Modal = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
-  const parentDepth = useDialogDepth();
-  const depth = parentDepth + 1;
+// Stacks by open order, not only by JSX nesting: a Modal opened while another
+// is open sits above it even when the two share no React ancestor.
+const Modal = ({ open, defaultOpen, onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
+  const layer = useDialogRootLayer({ open, defaultOpen, onOpenChange });
 
   return (
-    <DialogDepthProvider depth={depth}>
-      <DialogPrimitive.Root onOpenChange={onOpenChange} {...props} />
+    <DialogDepthProvider depth={layer.depth}>
+      <DialogPrimitive.Root {...props} open={layer.open} onOpenChange={layer.onOpenChange} />
     </DialogDepthProvider>
   );
 };

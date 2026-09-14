@@ -196,7 +196,10 @@ describe('directory sync wizard wiring', () => {
   });
 
   test('the SCIM card links into the guided setup', () => {
-    expect(scimCardSource).toContain('/scim-setup');
+    // The wizard is a pane of the Identity section now (`?accountSetup=scim`),
+    // not a route — `/accounts/<id>/scim-setup` was deleted with the rest of
+    // the account routes on 2026-09-08.
+    expect(scimCardSource).toContain("setup: 'scim'");
   });
 });
 
@@ -342,7 +345,7 @@ describe('SCIM last-sync indicator', () => {
 // URL, IdP table, token list) collapse behind disclosures. Pins the redesign
 // of the "messy, everything at once" Identity tab.
 describe('identity page progressive disclosure', () => {
-  const pageSource = readFileSync(join(dir, '../../app/(app)/accounts/[id]/page.tsx'), 'utf8');
+  const pageSource = readFileSync(join(dir, '../../features/accounts/hub/account-hub-content.tsx'), 'utf8');
   const introSource = readFileSync(
     join(dir, '../../components/iam/identity-intro.tsx'),
     'utf8',
@@ -410,7 +413,7 @@ describe('SCIM start-sync guides', () => {
   test('the SCIM card renders the cheat sheet with deep links into each guide', () => {
     expect(scimCardSource).toContain("raw('textc8f3dd364de4')");
     expect(scimCardSource).toContain('startSyncHint');
-    expect(scimCardSource).toContain('scim-setup?provider=');
+    expect(scimCardSource).toContain('provider: g.id');
   });
 });
 

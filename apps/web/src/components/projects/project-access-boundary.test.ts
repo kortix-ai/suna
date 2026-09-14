@@ -420,8 +420,12 @@ describe('house dialect', () => {
         present: true,
       });
     }
-    // The quiet spinner every other auth sub-surface shows while it resolves.
-    expect(componentSource).toContain('<AuthPendingScreen ');
+    // The one exception to the auth vocabulary: the pending frame. It resolves
+    // into the project shell, not into an auth screen, so it is the shared
+    // "opening a project" mark rather than the consent flows' spinner. Paired
+    // with the absence, so a revert to AuthPendingScreen fails here.
+    expect(componentSource).toContain('<ProjectPendingScreen />');
+    expect(componentSource).not.toContain('<AuthPendingScreen');
   });
 
   test('does not re-introduce a bespoke frame, card or wallpaper', () => {

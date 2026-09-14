@@ -132,7 +132,7 @@ describe('every access write busts the probe cache', () => {
     'components/iam/access-projects-tab.tsx',
     'components/iam/roles-tab.tsx',
     'components/iam/groups-tab.tsx',
-    'app/(app)/accounts/[id]/page.tsx',
+    'features/accounts/hub/account-hub-content.tsx',
   ];
 
   for (const file of WRITE_SURFACES) {

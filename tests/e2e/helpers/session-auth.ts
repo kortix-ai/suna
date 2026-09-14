@@ -170,7 +170,12 @@ export async function installBrowserSessionDirect(
   // Drops any previous app session but keeps the deployment-protection cookie:
   // a plain clearCookies() sends the next navigation to vercel.com/sso-api.
   await clearCookiesPreservingBypass(page.context());
-  await page.goto("/favicon.png", { waitUntil: "domcontentloaded" });
+  // Electron contexts have no Playwright baseURL. Absolute return URLs carry
+  // their origin; browser journeys can keep using relative destinations.
+  const faviconUrl = /^https?:\/\//.test(returnUrl)
+    ? new URL("/favicon.png", returnUrl).href
+    : "/favicon.png";
+  await page.goto(faviconUrl, { waitUntil: "domcontentloaded" });
 
   const origin = new URL(page.url()).origin;
   const encoded = `base64-${Buffer.from(JSON.stringify(session), "utf8").toString("base64url")}`;

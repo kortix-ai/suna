@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // AccessList / AccessRow — THE list row for every access surface.
 //
 // Canonical anatomy, extracted faithfully from the account `MembersCard`
-// list (`app/(app)/accounts/[id]/page.tsx:1443-1676`): a `bg-popover
+// list (`features/accounts/hub/account-hub-content.tsx:1443-1676`): a `bg-popover
 // rounded-md border` stack, an optional bulk checkbox, a `UserAvatar` /
 // `EntityAvatar`, title + badges, an `InlineMeta` meta line, a trailing
 // role label, and a kebab `DropdownMenu`.

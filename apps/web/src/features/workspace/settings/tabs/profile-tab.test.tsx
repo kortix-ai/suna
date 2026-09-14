@@ -66,7 +66,10 @@ describe('ProfileTabView', () => {
 
     test('lists each account with a link to its settings', () => {
       const out = withAccounts();
-      expect(out).toContain('href="/accounts/acc_1"');
+      // `?accountId=acc_1` — the hub is a modal on the current page, not a
+      // route. Rendered with no router context, the href is the query-only
+      // relative form.
+      expect(out).toContain('href="?accountId=acc_1"');
       expect(out).toContain('>Acme<');
     });
 

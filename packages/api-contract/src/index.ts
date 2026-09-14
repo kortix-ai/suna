@@ -56,7 +56,6 @@ export const FeatureFlagMapSchema = z.object({
   agentmail_email: z.boolean(),
   teams: z.boolean(),
   llm_gateway: z.boolean(),
-  review_center: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
   monitors: z.boolean(),
@@ -613,6 +612,15 @@ const OAuth2ApplicationFields = {
   // RFC 7591/7592: present when Kortix registered this client dynamically.
   registration_client_uri: OAuth2HttpsUrlSchema.optional(),
   registration_access_token: z.string().min(1).max(65536).optional(),
+  /**
+   * The redirect URI this client was registered with, and the RFC 7591
+   * endpoint that issued it. Recorded so an authorize request can detect
+   * public-origin drift (a rotated dev tunnel, a domain move) — the server
+   * would refuse the mismatched redirect_uri — and self-heal by
+   * re-registering a fresh client for the current callback.
+   */
+  redirect_uri: OAuth2RedirectUrlSchema.optional(),
+  registration_endpoint: OAuth2HttpsUrlSchema.optional(),
   /**
    * The authorization server that issued this client (RFC 8414 `issuer`).
    * Recorded so the callback can validate RFC 9207 `iss`, and so credentials

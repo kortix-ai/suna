@@ -40,7 +40,7 @@ import {
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
@@ -256,9 +256,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const resetFilters = useSessionFilterStore((s) => s.resetFilters);
 
   // Review Center feeds `status` grouping's `needs-you` section and the menu's
-  // Show list. Same flag gate as the sidebar: flag off, query never runs.
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
+  // Show list — the same inbox summary the sidebar reads.
+  const reviewSummary = useReviewSessionSummary(projectId);
 
   const visibleSessions = useMemo(
     () =>

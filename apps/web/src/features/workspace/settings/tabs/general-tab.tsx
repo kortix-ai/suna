@@ -484,7 +484,7 @@ function GeneralWorkspaceCard({
     },
     onError: (error: Error, _nextName, context) => {
       renameOnError(queryClient, project.project_id, context);
-      errorToast(error.message || tI18nComplete('textdd2d120a9ea9'));
+      errorToast(error.message || t('updateFailed'));
     },
     onSettled: () => renameOnSettled(queryClient, project.project_id),
   });
@@ -506,7 +506,7 @@ function GeneralWorkspaceCard({
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
     onError: (error: Error) =>
-      errorToast(error.message || tI18nComplete('texta563730f828d')),
+      errorToast(error.message || t('iconUpdateFailed')),
     // The icon is read from THREE caches and this mutation used to write back
     // to one. `setQueryData` above repaints the sidebar switcher, which reads
     // `qk.project.summary`; the projects grid and ⌘K read a
@@ -646,7 +646,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       setArchiveOpen(false);
     },
     onError: (error: Error) =>
-      errorToast(error.message || tI18nComplete('textf4a10da7a820')),
+      errorToast(error.message || t('archiveFailed')),
   });
 
   return (

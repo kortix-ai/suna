@@ -40,7 +40,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "review_center"
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_worker"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -130,8 +130,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
     stability: 'experimental',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
-    platformDefault: () => false,
+    // ON by default since COR-17: the marketplace is MCP-first, so the Discover
+    // catalogue (integrations.sh — server-cached, no credentials required) is
+    // the default source. Easy Connect (Composio/Pipedream) stays reachable as
+    // the secondary source via the catalogue's source switch. A project can
+    // still opt out explicitly (`experimental.connectors_api_discover: false`).
+    platformDefault: () => true,
     enforcement: 'routes',
   },
   {
@@ -186,19 +190,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'llm-catalog/model-picker/model-defaults routes, and gateway title ' +
       'generation. Toggling propagates to active sandboxes via ' +
       'propagateLlmGatewayModeToActiveSandboxes.',
-  },
-  {
-    key: 'review_center',
-    name: 'Review Center',
-    description:
-      'A friendly inbox for change requests, approvals, and agent outputs — review and act (approve, reject, ask for changes) from one place, on the web or from Slack. The surface and what feeds it are still expanding.',
-    stability: 'experimental',
-    // Pure web/DB surface — the routes + table ship with the app, so no operator
-    // env gates it. Always available; a project opts in per Settings.
-    available: () => true,
-    // Explicit opt-in: hidden unless a project enables it in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
   },
   {
     key: 'meta_agent',

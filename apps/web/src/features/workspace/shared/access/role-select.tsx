@@ -1,5 +1,7 @@
 'use client';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
@@ -364,15 +366,15 @@ export function RoleSelect({
         {rbacEnabled && customRoles.length === 0 && !selectedMissingCustom && canManageRoles ? (
           <>
             <SelectSeparator />
-            <Link
-              href={`/accounts/${accountId}?tab=roles`}
+            <HubLink
+              to={hubTarget(accountId, { tab: 'roles' })}
               className={menuRow('md', 'default', 'text-muted-foreground hover:text-foreground')}
             >
               <span className="flex w-full items-center justify-between gap-2">
                 <span>{tI18nComplete.raw('text6dd06b2529d4')}</span>
                 <ArrowRightIcon className="size-3.5 shrink-0" aria-hidden />
               </span>
-            </Link>
+            </HubLink>
           </>
         ) : null}
       </SelectContent>

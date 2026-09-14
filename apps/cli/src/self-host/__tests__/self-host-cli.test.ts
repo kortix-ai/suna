@@ -78,6 +78,19 @@ describe('kortix self-host (generic Docker CLI)', () => {
     return parse(readFileSync(join(configRoot, instanceName, 'docker-compose.yml'), 'utf8'));
   }
 
+  test('frontend memory override survives env set and a later init', async () => {
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    expect((readCompose().services.frontend as { mem_limit: string }).mem_limit)
+      .toBe('${KORTIX_FRONTEND_MEMORY_LIMIT:-512m}');
+    const configured = await run(['env', 'set', 'KORTIX_FRONTEND_MEMORY_LIMIT=1024m']);
+    expect(configured.code).toBe(0);
+    expect(readEnv().KORTIX_FRONTEND_MEMORY_LIMIT).toBe('1024m');
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    expect(readEnv().KORTIX_FRONTEND_MEMORY_LIMIT).toBe('1024m');
+    expect((readCompose().services.frontend as { mem_limit: string }).mem_limit)
+      .toBe('${KORTIX_FRONTEND_MEMORY_LIMIT:-512m}');
+  });
+
   test('init defaults to the shared auth+sandbox defaults and the stable channel', async () => {
     const { code } = await run(['init', '--yes']);
     expect(code).toBe(0);

@@ -3,6 +3,8 @@
 import { CheckCircleIcon, CircleIcon, XIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import type { HubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useSyncExternalStore, type ReactNode } from 'react';
 
@@ -62,6 +64,9 @@ export interface ProjectSetupStep {
    *  dependency is still loading — the row renders inert rather than linking
    *  to a broken URL. */
   href: string | undefined;
+  /** "Invite your team" only: the account hub is a MODAL over this page, not a
+   *  route, so that one row names a `HubTarget` instead of an href. */
+  to?: HubTarget;
 }
 
 /**
@@ -420,7 +425,11 @@ function SetupChecklistRow({ step, done }: { step: ProjectSetupStep; done: boole
   // Only "Invite your team" can lack a destination, and only while
   // `account_id` is in flight. The row keeps its place and its height rather
   // than reflowing the list.
-  const row = step.href ? (
+  const row = step.to ? (
+    <HubLink to={step.to} className={cn(rowClass, BAND_ROW_HOVER_CLASS)}>
+      {body}
+    </HubLink>
+  ) : step.href ? (
     <HoverPrefetchLink href={step.href} prefetch className={cn(rowClass, BAND_ROW_HOVER_CLASS)}>
       {body}
     </HoverPrefetchLink>

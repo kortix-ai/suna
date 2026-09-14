@@ -1,5 +1,7 @@
 'use client';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // AccessHelp — the "how access works" reference, mounted as a real pane
 // (`/accounts/[id]?tab=help`) instead of the old `PermissionsHelpPopover`.
@@ -15,7 +17,6 @@ import { useTranslations } from '@/i18n/use-translations';
 // source `RoleSelect` renders in the dialog, so the help text and the picker
 // can never drift.
 
-import Link from 'next/link';
 
 import {
   ACCOUNT_ROLES_ASCENDING,
@@ -145,12 +146,12 @@ export function AccessHelp({ accountId }: AccessHelpProps) {
           <p className="text-muted-foreground text-xs leading-relaxed">
             {tI18nComplete.raw('text147d3ae89e52')}
           </p>
-          <Link
-            href={`/accounts/${accountId}?tab=roles`}
+          <HubLink
+            to={hubTarget(accountId, { tab: 'roles' })}
             className="text-foreground inline-block text-xs underline underline-offset-2"
           >
             {tI18nComplete.raw('textc2718d67695f')}
-          </Link>
+          </HubLink>
         </div>
       </Section>
 

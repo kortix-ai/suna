@@ -1,5 +1,7 @@
 'use client';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // Shared "GitHub isn't connected yet" panel — shown in place of the
 // create/import UI whenever there's no usable managed git on this server
@@ -9,7 +11,6 @@ import { useTranslations } from '@/i18n/use-translations';
 // deployment (there's no hosted Kortix App to install on self-host).
 
 import { GithubLogoIcon as Github } from '@phosphor-icons/react';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -60,15 +61,15 @@ export function GitHubSetupRequiredPanel({
         isAdmin ? tI18nComplete.raw('text02d7798e74f6') : tI18nComplete.raw('textc9b3285ac7b3')
       }
       action={
-        // An anchor once the account resolves, so Next prefetches Git settings
-        // and the click cannot degrade into a full document load. With no
-        // account there is no target, so it stays a disabled button.
+        // A `HubLink` once the account resolves: it opens the hub's Git pane
+        // over this page instead of navigating, and hovering warms its chunk.
+        // With no account there is no target, so it stays a disabled button.
         accountId ? (
           <Button size="sm" className="gap-1.5" asChild>
-            <Link href={`/accounts/${accountId}?tab=git`} prefetch onClick={onNavigate}>
+            <HubLink to={hubTarget(accountId, { tab: 'git' })} onClick={onNavigate}>
               <Github className="size-4" />
               {tI18nComplete.raw('text9917a73035f8')}
-            </Link>
+            </HubLink>
           </Button>
         ) : (
           <Button type="button" size="sm" className="gap-1.5" disabled>

@@ -1,9 +1,6 @@
 import type { UiTranslator } from '@/i18n/translator';
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
-import { groupIntoSections, POPULAR_SECTION } from './connector-categories';
-import { sortByPicks } from './connector-picks';
-
 /**
  * Which catalogue an entry came from. This is not cosmetic — it decides which
  * add flow the card opens. A `discover` entry goes to `DiscoverAddFlow`
@@ -93,6 +90,35 @@ export function catalogEntryFromEasyConnect(
  * into one comparable token: `Google Sheets`, `google-sheets` and
  * `google_sheets` all become `googlesheets`.
  */
+/**
+ * The catalogue kind behind a card, or `null` when the source has none
+ * (Easy Connect apps and the native Computers card carry no kind).
+ */
+export function catalogEntryKind(entry: CatalogEntry): DiscoverConnector['kind'] | null {
+  return entry.source === 'discover' ? entry.connector.kind : null;
+}
+
+/**
+ * The one fact that varies between cards: HOW this entry connects. Short
+ * nouns, shown as the card's quiet line under the title — every card gets
+ * one, so the rows scan as a consistent column instead of some cards
+ * carrying a mark and others nothing.
+ */
+export function catalogEntryKindLabel(entry: CatalogEntry): string {
+  if (entry.source === 'computer') return 'Native';
+  if (entry.source === 'easy-connect') return 'App';
+  switch (entry.connector.kind) {
+    case 'mcp':
+      return 'MCP';
+    case 'graphql':
+      return 'GraphQL';
+    case 'cli':
+      return 'CLI';
+    default:
+      return 'API';
+  }
+}
+
 export function foldKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -145,70 +171,85 @@ export function connectedCatalogKeys(connectors: readonly AdminConnector[]): Rea
   return keys;
 }
 
+/**
+ * Does a connector token (folded slug or name) identify this entry token?
+ *
+ * Exact match, or the connector token EXTENDS the entry's — the default add
+ * flows propose names like "Canva MCP server" / "Canva MCP server 2", which
+ * fold to `canvamcpserver…` and share only a PREFIX with the entry's `canva`.
+ * Exact-only matching read every such connector as unrelated, so the Canva
+ * card offered `+` and the Canva page listed nothing while the project held
+ * two Canva servers. Prefix only counts for entry tokens of 4+ characters, so
+ * a short entry ("Git") cannot claim everything that merely starts with it
+ * (github, gitlab).
+ */
+function tokenIdentifiesEntry(connectorToken: string, entryToken: string): boolean {
+  if (!entryToken || !connectorToken) return false;
+  if (connectorToken === entryToken) return true;
+  return entryToken.length >= 4 && connectorToken.startsWith(entryToken);
+}
+
+function catalogEntryTokens(entry: CatalogEntry): string[] {
+  return [foldKey(entry.slug), foldKey(entry.name)].filter(Boolean);
+}
+
 export function isCatalogEntryConnected(
   entry: CatalogEntry,
   connectedKeys: ReadonlySet<string>,
 ): boolean {
   if (entry.source === 'computer') return connectedKeys.has('provider:computer');
-  return connectedKeys.has(foldKey(entry.slug)) || connectedKeys.has(foldKey(entry.name));
+  const tokens = catalogEntryTokens(entry);
+  // The set stays the cheap exact index; the prefix pass iterates it — two
+  // keys per connector, dozens of connectors, ~72 cards: trivial.
+  for (const token of tokens) {
+    if (connectedKeys.has(token)) return true;
+  }
+  for (const key of connectedKeys) {
+    if (tokens.some((token) => tokenIdentifiesEntry(key, token))) return true;
+  }
+  return false;
 }
 
-/** The synthetic first section. Not a catalogue category — see
- *  `catalogSections` below. Defined in `connector-categories.ts` (which this
- *  module already imports from, so it cannot import back) and re-exported here
- *  because this is where it is used. */
-export { POPULAR_SECTION };
-
 /**
- * The catalogue as ordered sections: Popular first, then the curated browse
- * order (`groupIntoSections`, which is `CURATED_SECTIONS` then the uncurated
- * tail by size then `Other`).
- *
- * Popular stays above all of it because it is not a category — it is the
- * highest-ranked apps across every category, which is the one row that answers
- * "what do people actually connect?" before the user has picked a subject. It
- * only exists on the Discover source; Easy Connect ranks nothing, so there
- * Productivity leads.
- *
- * Popular is synthesised rather than read as a category, because `popularity`
- * is a per-item rank and no catalogue publishes a "popular" bucket. Entries in
- * it are NOT removed from their real sections — an app is both popular and a
- * developer tool, and hiding it from Developer tools to avoid repeating it
- * would make that section lie about what it contains. `groupIntoSections`
- * already duplicates items across the sections they claim, so this is the same
- * rule applied one level up.
- *
- * A section is emitted only when it has entries, so a catalogue with no ranked
- * items (Easy Connect, whose `popularity` is uniformly `null`) simply has no
- * Popular section instead of an empty heading.
+ * Every project connector created from this catalogue entry — the membership
+ * list behind a detail page's "In this project" section. Unlike
+ * {@link connectedCatalogKeys} it does NOT skip `needs_auth` rows: this is
+ * "what exists", not "what works" — a half-connected connector belongs in the
+ * list with its status line saying so.
  */
-export function catalogSections(
-  entries: readonly CatalogEntry[],
-  opts: {
-    popularCap: number;
-    /** Key sections by the catalogue's own category slug rather than the curated
-     *  bucket. Set for any source whose sections are opened by asking the server
-     *  for that key — see `sectionKeysForEntry`. */
-    rawCategoryKeys?: boolean;
-  },
-): Array<{ category: string; items: CatalogEntry[] }> {
-  const ranked = entries
-    .filter((entry) => entry.popularity !== null)
-    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
-    .slice(0, opts.popularCap);
+/**
+ * The inverse of {@link catalogEntryConnectors}: given catalogue items, which
+ * one does this CONNECTOR belong to? Same prefix rule, same direction — the
+ * connector token extends the app token ("canvamcpserver" extends "canva") —
+ * so the two joins cannot disagree about membership.
+ */
+export function catalogAppForConnector<T extends { slug: string; name: string }>(
+  items: readonly T[],
+  connector: Pick<AdminConnector, 'slug' | 'name'>,
+): T | null {
+  const connectorTokens = [foldKey(connector.slug), foldKey(connector.name ?? '')].filter(Boolean);
+  return (
+    items.find((item) =>
+      [foldKey(item.slug), foldKey(item.name)]
+        .filter(Boolean)
+        .some((token) =>
+          connectorTokens.some((connectorToken) => tokenIdentifiesEntry(connectorToken, token)),
+        ),
+    ) ?? null
+  );
+}
 
-  // Picks are applied HERE and nowhere else, which scopes them to the Discovery
-  // tab: this is the only caller that builds sections. The All tab reads
-  // `groupIntoSections` directly and keeps raw feed order, so the two tabs
-  // never disagree about what "first" means — one is opinionated, one is not.
-  //
-  // Popular is deliberately left alone. It is already ordered, by `popularity`,
-  // and re-sorting it by picks would replace a real ranking with a guess.
-  const sections = groupIntoSections(entries, (entry) => entry.categories, {
-    raw: opts.rawCategoryKeys,
-  }).map((section) => ({
-    category: section.category,
-    items: sortByPicks(section.category, section.items),
-  }));
-  return ranked.length > 0 ? [{ category: POPULAR_SECTION, items: ranked }, ...sections] : sections;
+export function catalogEntryConnectors(
+  connectors: readonly AdminConnector[],
+  entry: CatalogEntry,
+): AdminConnector[] {
+  if (entry.source === 'computer') {
+    return connectors.filter((connector) => connector.provider === 'computer');
+  }
+  const tokens = catalogEntryTokens(entry);
+  return connectors.filter((connector) =>
+    [foldKey(connector.slug), foldKey(connector.name ?? '')].some((connectorToken) =>
+      tokens.some((token) => tokenIdentifiesEntry(connectorToken, token)),
+    ),
+  );
 }

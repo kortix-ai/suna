@@ -28,10 +28,12 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'leaf-gate-http-test-project',
     repoUrl: 'https://example.com/leaf-gate-http-test.git',
-    // Flag-gated routes in CASES / SEND_PRIMITIVE_CASES (review/*,
-    // channels/teams/*) reject with 403 `feature_disabled` when off. Turn them
-    // on so this suite measures the LEAF gate, not the flag.
-    metadata: { experimental: { review_center: true, teams: true } },
+    // Flag-gated routes in CASES / SEND_PRIMITIVE_CASES (channels/teams/*)
+    // reject with 403 `feature_disabled` when off. Turn them on so this suite
+    // measures the LEAF gate, not the flag. `review_center: false` is a stale
+    // pre-graduation override: review/* is no longer flag-gated, so the
+    // manager rows still pass and the member rows still hit the leaf.
+    metadata: { experimental: { review_center: false, teams: true } },
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },

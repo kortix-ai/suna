@@ -16,6 +16,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import {
   HelpSubmenu,
   THEME_OPTIONS,
@@ -24,9 +25,11 @@ import {
 } from '@/features/layout/user-menu-shared';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
+import { useTranslations } from '@/i18n/use-translations';
 import { isBillingEnabled } from '@/lib/config';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import {
@@ -35,7 +38,6 @@ import {
   DownloadSimple,
   SignOutIcon as LogOut,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
@@ -139,7 +141,7 @@ export function UserMenu({
         className={cn(
           'group/user relative gap-2 p-1',
           // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
-          'relative flex cursor-pointer items-center gap-2 rounded-md transition-colors duration-150',
+          'duration-normal relative flex cursor-pointer items-center gap-2 rounded-md transition-colors',
           'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
         )}
       >
@@ -172,15 +174,12 @@ export function UserMenu({
       >
         {currentAccount && (
           <>
-            {/* An anchor, not a handler. `router.push` from a menu row runs the
-                RSC fetch cold at click time, and that fetch degrades into a full
-                document load whenever it answers wrong — `/accounts` is not in
-                `middleware.ts` PUBLIC_ROUTES, so an expired session answers it
-                with an HTML redirect to `/auth`. `onClick` keeps the explicit
-                close and must not call `preventDefault`: that cancels the
-                anchor. */}
+            {/* Opens the account hub OVER whatever page is behind this menu:
+                no navigation, no fetch (hovering the row warmed the chunk),
+                and closing puts you back exactly here. Still a real anchor, so
+                Cmd-click opens this page with the modal already open. */}
             <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
-              <Link href={`/accounts/${currentAccount.account_id}`} prefetch>
+              <HubLink to={hubTarget(currentAccount.account_id)}>
                 {/* No avatar: the trigger right below already shows it, and
                     repeating it inside the menu it opened is decoration. The
                     email is the identifier that actually disambiguates which
@@ -191,7 +190,7 @@ export function UserMenu({
                     {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextAccountSettings007162f5')}
                   </div>
                 </div>
-              </Link>
+              </HubLink>
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
@@ -235,7 +234,7 @@ export function UserMenu({
         {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits `headers()`
             and has no `loading.tsx`. */}
         <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
-          <Link href="/download" prefetch>
+          <Link href="/download" prefetch data-desktop-hidden>
             <DownloadSimple />
             {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
           </Link>
@@ -252,10 +251,10 @@ export function UserMenu({
             without `billing.write` from being handed the link. */}
         {currentAccount && isBillingEnabled() && canManageBilling && (
           <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
-            <Link href={`/accounts/${currentAccount.account_id}?tab=billing`} prefetch>
+            <HubLink to={hubTarget(currentAccount.account_id, { tab: 'billing' })}>
               <CreditCard />
               {tI18nHardcoded.raw('i18nComplete.text3ac8bbca9a74')}
-            </Link>
+            </HubLink>
           </DropdownMenuItem>
         )}
 

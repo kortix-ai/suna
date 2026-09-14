@@ -34,21 +34,21 @@ describe('AccountMembershipsSection', () => {
       />,
     );
     expect(rowLabels(out)).toEqual(['Acme', 'Globex']);
-    expect(hrefs(out)).toEqual(['/accounts/acc_1', '/accounts/acc_2']);
+    expect(hrefs(out)).toEqual(['?accountId=acc_1', '?accountId=acc_2']);
   });
 
   /**
-   * No `?tab=`. `app/(app)/accounts/[id]/page.tsx` falls back to `members`
-   * when the param is absent or unknown (`VALID_TABS`, line 349), which is the
-   * section a reader arriving from "which organizations am I in" is asking
-   * about — and it is the same bare target the workspace switcher's "Account
-   * settings" row and the Members pane's "Organization account settings" row
-   * already use. One account link in the product, one destination.
+   * No `accountTab`. `account-hub-content.tsx` falls back to `members` when the
+   * param is absent or unknown (`VALID_TABS`), which is the section a reader
+   * arriving from "which organizations am I in" is asking about — and it is
+   * the same bare target the workspace switcher's "Account settings" row and
+   * the Members pane's "Organization account settings" row already use. One
+   * account link in the product, one destination.
    */
-  test('links to the account page default section, with no tab query', () => {
+  test('links to the hub default section, with no tab param', () => {
     const out = renderToStaticMarkup(<AccountMembershipsSection accounts={[account()]} />);
-    expect(out).toContain('href="/accounts/acc_1"');
-    expect(out).not.toContain('?tab=');
+    expect(out).toContain('href="?accountId=acc_1"');
+    expect(out).not.toContain('accountTab=');
   });
 
   test('names the section and states what lives behind the link', () => {

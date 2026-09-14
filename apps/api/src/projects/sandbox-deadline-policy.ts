@@ -64,6 +64,36 @@ export function turnDeliveryGraceMs(): number {
 }
 
 /**
+ * The wall-clock ceiling on ONE turn record's authority.
+ *
+ * Everything else in this file is a renewable grant: {@link turnGrantMs} is
+ * re-granted on every observed turn start, {@link turnUnconfirmedDripMs} drips
+ * while the daemon cannot describe its turn, and `renewActiveSandboxTurn` is
+ * deliberately uncapped so a genuinely long turn outlives one provider run.
+ * That design has no bound at all when a turn WEDGES: the daemon keeps
+ * answering "still running", the reaper keeps re-granting, and the box becomes
+ * immortal. Observation cannot tell a wedged turn from a live one — both say
+ * `active`.
+ *
+ * PROD 2026-09-09: 44 open turn records on `active` sandboxes, 42 of them older
+ * than 24 h, the oldest 20 DAYS (box created 2026-08-20, last used 2026-08-21).
+ * Those boxes never stopped running, and their audit relays produced 1,115,227
+ * `503` responses in seven days — ~13k/h, the single largest error class in
+ * production — because the ingest they hammer is contended. The reaper wanted
+ * them and could not have them.
+ *
+ * Age is the one bound a box cannot author: `startedAtMs` is written by the
+ * control plane when it mints the record, and nothing in the sandbox can move
+ * it. The default sits ~3x above the longest turn ever measured here (~8.4 h)
+ * and ~18x above the p99 (~78 min), so it can only ever catch a record that
+ * nothing is going to close. A record with no start instant is exempt: it can
+ * prove no age, and inventing one would expire live work.
+ */
+export function turnAbsoluteMaxMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_TURN_ABSOLUTE_MAX_HOURS', 24) * 3_600_000;
+}
+
+/**
  * Granted when a provider-RUNNING box holds a recent control-plane-minted turn
  * record and its daemon ANSWERS the probe without saying anything about that
  * turn.

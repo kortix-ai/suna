@@ -26,6 +26,8 @@
  * the portal lands back here.
  */
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { Button } from '@/components/ui/button';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -65,7 +67,7 @@ export function PlanTab({ accountId }: { accountId: string | undefined }) {
               wallet-first `AccountOverviewTab`. Balance, credit composition,
               period spend and limits are the Credits pane's subject now
               (`tabs/credits-tab.tsx`), one row above this one in the rail.
-              `/accounts/[id]?tab=billing` passes nothing and keeps the
+              the hub's Billing pane passes nothing and keeps the
               wallet-first layout unchanged. */}
           <BillingTab returnUrl={planReturnUrl()} isActive showWallet={false} />
           <GlobalUpgradeModal />
@@ -74,7 +76,7 @@ export function PlanTab({ accountId }: { accountId: string | undefined }) {
         <SettingsRowGroup>
           <SettingsRow label={t('managedByAdmin')} description={t('adminOnly')}>
             <Button asChild variant="secondary" size="sm">
-              <Link href={`/accounts/${accountId}`}>{t('openAccount')}</Link>
+              <HubLink to={hubTarget(accountId)}>{t('openAccount')}</HubLink>
             </Button>
           </SettingsRow>
         </SettingsRowGroup>

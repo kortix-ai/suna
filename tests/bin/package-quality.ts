@@ -43,6 +43,8 @@ async function rejectFocusedTests(): Promise<void> {
       '*.test.tsx',
       '-g',
       '*.test.mts',
+      '-g',
+      '*.test.js',
     ],
     { cwd: root, stdout: 'pipe', stderr: 'inherit' },
   );

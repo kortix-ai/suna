@@ -8,7 +8,12 @@ import { useProjectCans } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { ProjectSetupChecklist } from './setup-checklist';
-import { PROJECT_SETUP_TILES, PROJECT_SETUP_TILE_ACTIONS, setupTileHref } from './setup-tiles';
+import {
+  PROJECT_SETUP_TILES,
+  PROJECT_SETUP_TILE_ACTIONS,
+  setupTileHref,
+  setupTileTo,
+} from './setup-tiles';
 
 /**
  * The IAM gate in front of the setup checklist. It answers one question —
@@ -75,6 +80,7 @@ export function ProjectHomeSections({
         key: tile.key,
         title: t(`setup.steps.${tile.key}`),
         href: setupTileHref(tile, projectId, accountId),
+        to: setupTileTo(tile, projectId, accountId),
       }))}
     />
   );
