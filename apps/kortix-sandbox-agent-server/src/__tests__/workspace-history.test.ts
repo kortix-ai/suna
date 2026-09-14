@@ -305,3 +305,63 @@ test('stored history is bounded across captures and deduplicates unchanged file 
   await expect(capture(history)).rejects.toThrow(/history storage limit/);
   expect(await readdir(join(state, 'captures'))).toHaveLength(2);
 });
+
+test('cancelled operations remain cancelled after restart and delayed apply', async () => {
+  const { workspace, history, config } = await fixture();
+  const before = await capture(history);
+  await writeFile(join(workspace, 'a'), 'after');
+  const after = await capture(history);
+  const request = move(after.snapshotId, before.snapshotId);
+  expect(await history.abort(request)).toMatchObject({ ...request, status: 'cancelled' });
+  expect(await new WorkspaceHistory(config).apply(request)).toMatchObject({ status: 'cancelled' });
+  expect(await readFile(join(workspace, 'a'), 'utf8')).toBe('after');
+  await expect(history.abort({ ...request, to: after.snapshotId })).rejects.toThrow(/identity/);
+});
+
+test('abort reports completion and cannot cancel a partially applied operation', async () => {
+  const { workspace, history, config } = await fixture();
+  const before = await capture(history);
+  await writeFile(join(workspace, 'a'), 'after');
+  const after = await capture(history);
+  const request = move(after.snapshotId, before.snapshotId);
+  const interrupted = new WorkspaceHistory({ ...config, afterMutation: () => { throw new Error('stopped'); } });
+  await expect(interrupted.apply(request)).rejects.toThrow('stopped');
+  await expect(history.abort(request)).rejects.toThrow(/pending/);
+  await history.apply(request);
+  expect(await history.abort(request)).toMatchObject({ status: 'complete' });
+});
+
+test('composed rollback preserves manual edits between agent operations and restores only their delta', async () => {
+  const { workspace, history } = await fixture();
+  const a = await capture(history);
+  await writeFile(join(workspace, 'agent'), 'one');
+  const b = await capture(history);
+  await writeFile(join(workspace, 'manual'), 'keep');
+  const c = await capture(history);
+  await writeFile(join(workspace, 'agent'), 'two');
+  await writeFile(join(workspace, 'other'), 'second operation');
+  const d = await capture(history);
+  const plan = await history.plan([{ from: d.snapshotId, to: c.snapshotId }, { from: b.snapshotId, to: a.snapshotId }]);
+  await history.apply(move(plan.from, plan.to));
+  expect(await readFile(join(workspace, 'manual'), 'utf8')).toBe('keep');
+  expect(await Bun.file(join(workspace, 'agent')).exists()).toBe(false);
+  expect(await Bun.file(join(workspace, 'other')).exists()).toBe(false);
+  await history.apply(move(plan.to, plan.from));
+  expect(await readFile(join(workspace, 'agent'), 'utf8')).toBe('two');
+  expect(await readFile(join(workspace, 'manual'), 'utf8')).toBe('keep');
+});
+
+test('composition refuses a manual edit between two changes to the same file', async () => {
+  const { workspace, history } = await fixture();
+  await writeFile(join(workspace, 'a'), 'initial');
+  const a = await capture(history);
+  await writeFile(join(workspace, 'a'), 'one');
+  const b = await capture(history);
+  await writeFile(join(workspace, 'a'), 'manual');
+  const c = await capture(history);
+  await writeFile(join(workspace, 'a'), 'two');
+  const d = await capture(history);
+  await expect(history.plan([{ from: d.snapshotId, to: c.snapshotId }, { from: b.snapshotId, to: a.snapshotId }])).rejects.toThrow(/conflict/);
+  expect(await readFile(join(workspace, 'a'), 'utf8')).toBe('two');
+  expect(await history.pending()).toBeNull();
+});

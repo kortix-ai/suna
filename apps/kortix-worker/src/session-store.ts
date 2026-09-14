@@ -399,7 +399,7 @@ export class DurableSessionStorage {
           if ((await inner.findOpenOperations('main')).length > 0) {
             throw new PiHistoryTransitionError('history has an unfinished native operation');
           }
-          if (item.action === 'stage') {
+          if (item.action === 'stage' || move.action === 'stage') {
             let ancestor = current;
             while (ancestor !== null && ancestor !== move.to) {
               const entry = await inner.getEntry(ancestor);

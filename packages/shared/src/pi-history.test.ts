@@ -112,3 +112,63 @@ test('replay rejects an old or stale writer that bypassed the history gate durin
   expect(() => projectPiHistory([...base, stage(2), accepted('u3', 2)])).toThrow('history revision changed');
   expect(projectPiHistory([...base, stage(2), accepted('u3', 3)]).staged).toBeNull();
 });
+
+const operationId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+const workspaceMove = { operationId, environmentId: 'environment-1', from: 'a'.repeat(64), to: 'b'.repeat(64) };
+const prepare = (revision = 2, selection: unknown = stage(revision), workspace: unknown = workspaceMove) => ({ kind: 'history', version: 1, action: 'prepare', revision, operationId, selection, workspace });
+const settle = (action: 'commit' | 'cancel', revision = 3, id = operationId) => ({ kind: 'history', version: 1, action, revision, operationId: id });
+
+test('prepared rewind fences admission without changing visible messages or native branches', () => {
+  const log = [...base, prepare()];
+  const state = projectPiHistory(log);
+  expect(state.pending).toMatchObject({ operationId, workspace: workspaceMove });
+  expect(state.revision).toBe(3);
+  expect(state.staged).toBeNull();
+  expect([...state.hiddenMessageIds]).toEqual([]);
+  expect(state.laneMoves).toEqual([]);
+  expect(() => validatePiHistoryControlAppend(log, accepted('u3', 3))).toThrow(/pending/);
+  expect(() => validatePiHistoryTransition(log, stage(3))).toThrow(/pending/);
+  expect(() => validatePiHistoryTransition(log, prepare(3))).toThrow(/pending/);
+});
+
+test('commit changes history once and keeps the file move needed for restore', () => {
+  const committed = { ...settle('commit'), _kortixAppendId: 'commit' };
+  const log = [...base, prepare(), committed, committed];
+  const state = projectPiHistory(log);
+  expect(state.pending).toBeNull();
+  expect(state.revision).toBe(4);
+  expect([...state.hiddenMessageIds]).toEqual(['u2', 'a2']);
+  expect(state.staged?.workspaceMoves).toEqual([workspaceMove]);
+  expect(state.laneMoves).toEqual([{ index: 5, from: 'e4', to: 'e2', action: 'stage' }]);
+  expect(() => validatePiHistoryControlAppend(log, accepted('u3', 4))).not.toThrow();
+});
+
+test('cancel preserves history and releases the prompt fence at a new revision', () => {
+  const log = [...base, prepare(), settle('cancel')];
+  const state = projectPiHistory(log);
+  expect(state.pending).toBeNull();
+  expect(state.staged).toBeNull();
+  expect(state.revision).toBe(4);
+  expect(state.laneMoves).toEqual([]);
+  expect(() => validatePiHistoryControlAppend(log, accepted('u3', 3))).toThrow(/revision changed/);
+  expect(() => validatePiHistoryControlAppend(log, accepted('u3', 4))).not.toThrow();
+});
+
+test('prepared restore remains hidden until its own commit and rejects another operation identity', () => {
+  const log = [...base, prepare(), settle('commit')];
+  const restoreId = '11111111-2222-4333-8444-555555555555';
+  const restored = [...log, { ...prepare(4, restore(4), { ...workspaceMove, operationId: restoreId, from: workspaceMove.to, to: workspaceMove.from }), operationId: restoreId }];
+  expect([...projectPiHistory(restored).hiddenMessageIds]).toEqual(['u2', 'a2']);
+  expect(() => validatePiHistoryTransition(restored, settle('commit', 5, operationId))).toThrow(/identity/);
+  expect([...projectPiHistory([...restored, settle('commit', 5, restoreId)]).hiddenMessageIds]).toEqual([]);
+});
+
+test.each([
+  { ...prepare(), operationId: 'invalid' },
+  { ...prepare(), workspace: { ...workspaceMove, operationId: '11111111-2222-4333-8444-555555555555' } },
+  { ...prepare(), workspace: { ...workspaceMove, from: '../outside' } },
+  { ...prepare(), selection: prepare() },
+  { ...prepare(), selection: stage(1) },
+])('invalid prepared operations are rejected before a durable fence %j', event => {
+  expect(() => validatePiHistoryTransition(base, event)).toThrow();
+});

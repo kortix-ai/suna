@@ -60,3 +60,20 @@ test('rewind to the start preserves an empty main branch across restart', async 
   const { storage } = await DurableSessionStorage.open(metadata, memoryLog(items));
   expect(await storage.getLanes()).toEqual([{ lane: 'main', leafId: null }]);
 });
+
+test('prepared operations do not move the native leaf until commit; cancellation preserves it', async () => {
+  const operationId = crypto.randomUUID();
+  const prepared = { kind: 'history' as const, version: 1 as const, revision: 0, action: 'prepare' as const, operationId, selection: stage(), workspace: null };
+  const items: SessionLogItem[] = [entry('e1'), entry('e2'), prepared];
+  expect(await (await DurableSessionStorage.open(metadata, memoryLog(items))).storage.getLanes()).toEqual([{ lane: 'main', leafId: 'e2' }]);
+  items.push({ kind: 'history', version: 1, revision: 1, action: 'commit', operationId });
+  expect(await (await DurableSessionStorage.open(metadata, memoryLog(items))).storage.getLanes()).toEqual([{ lane: 'main', leafId: 'e1' }]);
+  items[3] = { kind: 'history', version: 1, revision: 1, action: 'cancel', operationId };
+  expect(await (await DurableSessionStorage.open(metadata, memoryLog(items))).storage.getLanes()).toEqual([{ lane: 'main', leafId: 'e2' }]);
+});
+
+test('committed preparation still requires a native ancestor', async () => {
+  const operationId = crypto.randomUUID();
+  const items: SessionLogItem[] = [entry('e1'), entry('e2'), { kind: 'history', version: 1, revision: 0, action: 'prepare', operationId, selection: { ...stage(), toLeaf: 'missing' }, workspace: null }, { kind: 'history', version: 1, revision: 1, action: 'commit', operationId }];
+  await expect(DurableSessionStorage.open(metadata, memoryLog(items))).rejects.toThrow('ancestor');
+});

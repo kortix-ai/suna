@@ -383,13 +383,63 @@ export class WorkspaceHistory {
     await syncDirectory(path.dirname(path.join(this.workspace, temporary)));
   }
 
+  async abort(request: WorkspaceHistoryMove): Promise<WorkspaceHistoryReceipt> {
+    assertUuid(request.operationId); assertHash(request.from); assertHash(request.to);
+    return this.exclusive(async () => {
+      const location = path.join(this.state, 'operations', request.operationId + '.json');
+      const prior = await readRecord<WorkspaceHistoryReceipt>(location);
+      if (prior) {
+        if (prior.from !== request.from || prior.to !== request.to || !['complete', 'cancelled'].includes(prior.status)) fail('identity', 'operation identity already used');
+        return prior;
+      }
+      if (await this.readPending()) fail('pending', 'workspace history operation pending; resume before cancellation');
+      const receipt: WorkspaceHistoryReceipt = { ...request, status: 'cancelled', changedPaths: [] };
+      await this.saveRecord(location, receipt);
+      return receipt;
+    });
+  }
+
+  async plan(moves: Array<{ from: string; to: string }>): Promise<{ from: string; to: string }> {
+    if (!Array.isArray(moves) || !moves.length || moves.length > 1000) fail('invalid', 'invalid history plan size');
+    return this.exclusive(async () => {
+      if (await this.readPending()) fail('pending', 'workspace history operation pending');
+      const source: Record<string, Entry> = Object.create(null);
+      const target: Record<string, Entry> = Object.create(null);
+      const touched = new Set<string>();
+      for (const move of moves) {
+        const before = await this.manifest(move.from);
+        const after = await this.manifest(move.to);
+        for (const name of new Set([...Object.keys(before.files), ...Object.keys(after.files)])) {
+          if (same(before.files[name], after.files[name])) continue;
+          if (touched.has(name)) {
+            if (!same(target[name], before.files[name])) fail('conflict', `workspace changes conflict between operations: ${name}`);
+          } else {
+            touched.add(name);
+            if (before.files[name]) source[name] = before.files[name];
+          }
+          if (after.files[name]) target[name] = after.files[name];
+          else delete target[name];
+        }
+      }
+      const save = async (files: Record<string, Entry>) => {
+        const manifest: Manifest = { version: 1, identity: this.identity, files: Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) };
+        if (Buffer.byteLength(JSON.stringify(manifest)) > 7 * 1024 * 1024) fail('limit', 'checkpoint manifest size limit');
+        const id = digest(JSON.stringify(manifest));
+        await this.saveRecord(path.join(this.state, 'snapshots', id + '.json'), manifest);
+        await this.manifest(id);
+        return id;
+      };
+      return { from: await save(source), to: await save(target) };
+    });
+  }
+
   async apply(request: WorkspaceHistoryMove): Promise<WorkspaceHistoryReceipt> {
     assertUuid(request.operationId); assertHash(request.from); assertHash(request.to);
     return this.exclusive(async () => {
       const completedPath = path.join(this.state, 'operations', request.operationId + '.json');
       const completed = await readRecord<WorkspaceHistoryReceipt>(completedPath);
       if (completed) {
-        if (completed.from !== request.from || completed.to !== request.to || completed.status !== 'complete') fail('identity', 'operation identity already used');
+        if (completed.from !== request.from || completed.to !== request.to || !['complete', 'cancelled'].includes(completed.status)) fail('identity', 'operation identity already used');
         await this.readPending();
         return completed;
       }
