@@ -6,9 +6,9 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * ## What this screen is for
  *
- * Exactly one thing: turning models on and off in the model menu. Everything
- * here is subordinate to that, including the two default scopes, which are
- * settings ABOUT a model that is already on.
+ * Explicit model disables block inference. Legacy picker-only preferences
+ * remain distinct and are labeled so a hidden model is not mistaken for a
+ * blocked model. Default scopes apply to models offered by the picker.
  *
  * ## The row shows real numbers, not a paraphrase
  *
@@ -222,6 +222,9 @@ export function ModelsTab({
               <div className="bg-popover overflow-hidden rounded-md border">
                 {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
                   const enabled = !!model.enabled;
+                  const providerDisabled = access.data?.disabledProviders.includes(group.providerID) ?? false;
+                  const modelDisabled = access.data?.disabledModels.includes(wireId) ?? false;
+                  const hiddenFromPicker = !!access.data && !enabled && !providerDisabled && !modelDisabled;
                   // `auto` resolves to this one, so turning it off would break
                   // every default request — the server refuses it with a 409.
                   // Lock the switch and say why instead of letting the click
@@ -244,6 +247,7 @@ export function ModelsTab({
                     // carries its own accessible name instead.
                     <div
                       key={wireId}
+                      data-model-id={wireId}
                       className={cn(
                         'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
                         i > 0 && 'border-border border-t',
@@ -255,6 +259,12 @@ export function ModelsTab({
                           <span className="text-foreground truncate text-sm">
                             {model.modelName}
                           </span>
+                          {hiddenFromPicker && (
+                            <Hint label="Hidden from the picker. Direct requests are still allowed; use the model menu to disable them.">
+                              <Tag>Hidden from picker</Tag>
+                            </Hint>
+                          )}
+                          {modelDisabled && !providerDisabled && <Tag>Disabled</Tag>}
                           <ModelCapabilityIcons
                             reasoning={model.capabilities?.reasoning}
                             toolCall={model.capabilities?.toolcall}
@@ -318,7 +328,7 @@ export function ModelsTab({
                       `useDialogDepth`, so it stacks above the modal this tab
                       lives in without any per-call-site z-index.
                     */}
-                      {enabled && canWrite && (
+                      {canWrite && (enabled || hiddenFromPicker) && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -334,8 +344,22 @@ export function ModelsTab({
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-90">
+                            {hiddenFromPicker && (
+                              <DropdownMenuItem
+                                disabled={access.isUpdating}
+                                onSelect={() =>
+                                  void access
+                                    .setEnabled({ target: 'model', id: wireId, enabled: false })
+                                    .catch((error: unknown) =>
+                                      errorToast(error instanceof Error ? error.message : 'Could not update model access.'),
+                                    )
+                                }
+                              >
+                                Disable model
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
-                              disabled={isProjectDefault || defaults.isUpdating}
+                              disabled={!enabled || isProjectDefault || defaults.isUpdating}
                               onSelect={() =>
                                 void defaults.setProjectDefault(wireToModelKey(wireId))
                               }
@@ -345,7 +369,7 @@ export function ModelsTab({
                               {isProjectDefault && <Check className="ml-auto size-3.5" />}
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              disabled={isAccountDefault || defaults.isUpdating}
+                              disabled={!enabled || isAccountDefault || defaults.isUpdating}
                               onSelect={() =>
                                 void defaults.setAccountDefault(wireToModelKey(wireId))
                               }
@@ -384,7 +408,7 @@ export function ModelsTab({
                             ? tI18nComplete('texta931b0c34b16', { value0: model.modelName })
                             : `Enable ${model.modelName}`
                         }
-                        title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : undefined}
+                        title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : hiddenFromPicker ? 'Hidden from the picker. Direct requests are still allowed.' : undefined}
                         onCheckedChange={(next) =>
                           void access
                             .setEnabled({ target: 'model', id: wireId, enabled: next })

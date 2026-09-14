@@ -27,6 +27,7 @@ test('provider and model access persists, keeps credentials, and updates control
     await api(session.access_token, 'PUT', `${base}/gateway/routing-policy`, {
       defaultModel: 'codex/gpt-5.6-sol', visionModel: null, defaultFallback: null, rules: [],
     });
+    await api(session.access_token, 'PUT', `${base}/model-enablement`, { modelOverrides: { 'openai/gpt-4o-mini': false } });
     const beforeSecrets = await api(session.access_token, 'GET', `${base}/secrets`);
     await installBrowserSessionDirect(page, session, `${base}/models`, auth);
     await selectAccountForUi(page, account.account_id);
@@ -54,6 +55,16 @@ test('provider and model access persists, keeps credentials, and updates control
     expect(await api(session.access_token, 'GET', `${base}/secrets`)).toEqual(beforeSecrets);
     await toggle('Enable OpenAI', { target: 'provider', id: 'openai', enabled: true });
     await page.locator('button[role=tab]').filter({ hasText: /^Models$/ }).click();
+    const hiddenRow = page.locator('[data-model-id="openai/gpt-4o-mini"]');
+    await expect(hiddenRow.getByText('Hidden from picker', { exact: true })).toBeVisible();
+    await hiddenRow.getByRole('button', { name: 'Default settings for GPT-4o mini', exact: true }).click();
+    const hiddenDisabled = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`${base}/model-access`));
+    await page.getByRole('menuitem', { name: 'Disable model', exact: true }).click();
+    const hiddenSaved = await hiddenDisabled;
+    expect(hiddenSaved.status()).toBe(200);
+    expect(hiddenSaved.request().postDataJSON()).toEqual({ target: 'model', id: 'openai/gpt-4o-mini', enabled: false });
+    await expect(hiddenRow.getByText('Disabled', { exact: true })).toBeVisible();
+    await expect(hiddenRow.getByText('Hidden from picker', { exact: true })).toHaveCount(0);
     const modelSwitch = page.getByRole('switch', { name: 'Enable GPT-5.5', exact: true });
     await expect(modelSwitch).toBeVisible();
     // Explicit enable makes this catalog model visible regardless of its recency default.
