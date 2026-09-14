@@ -9,6 +9,7 @@
     "start": "next start",
     "docs:build": "node -e \"import('./scripts/blume-docs.mjs').then(m => m.buildBlumeDocs())\"",
     "lint": "eslint .",
+    "lint:i18n": "eloqnt lint",
     "catalog:enrich": "bun scripts/enrich-llm-catalog-capabilities.ts",
     "wallpapers:generate": "node scripts/generate-wallpapers.mjs",
     "i18n:audit": "node scripts/audit-i18n.mjs",
@@ -196,6 +197,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@eloqnt/cli": "^0.6.29",
     "@embedpdf/pdfium": "2.14.4",
     "@kortix/manifest-schema": "workspace:*",
     "@playwright/test": "^1.57.0",
