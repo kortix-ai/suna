@@ -27,6 +27,7 @@ import {
   sandboxInstanceId,
 } from '../instance-scope';
 import { syncSessionRuntimesEnvForPrompt } from '../lib/sandbox-env-sync';
+import { readRewoundMessageFloor } from '../lib/session-history';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { createProjectSession } from '../lib/sessions';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
@@ -1256,13 +1257,16 @@ async function remintWireMessageId(
   row: SessionLifecycleCommandRow,
   payload: QueuedContinueSessionPayload,
   transcript: InboxTranscriptState,
+  rewoundFloor: bigint | null = null,
 ): Promise<string> {
   const submitted = wireIdTime(payload.wireMessageId ?? '');
-  const floor = transcript.read
+  const visibleFloor = transcript.read
     ? transcript.newest
     : // OpenCode's own minting rule, so an id it wrote a second ago is still
       // beaten: `Date.now()` scaled into the id clock, with no backdate.
       (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+  const floor = rewoundFloor !== null && (visibleFloor === null || rewoundFloor > visibleFloor)
+    ? rewoundFloor : visibleFloor;
   // THE TRANSCRIPT IS NOT THE ONLY FLOOR — it lags. OpenCode persists a
   // mid-turn user message ~4s after the POST (measured against a real sandbox
   // in `integration-inbox-midturn-forward.test.ts`), and two prompts sent
@@ -1682,10 +1686,22 @@ export async function executeQueuedContinue(
   // reason to re-mint, for the same reason a redelivery is: OpenCode already
   // holds a message under the previous id.
   const deliveryAttempt = Number(payload.deliveryAttempt ?? 0);
-  // Asked only when nothing else has already decided to re-mint, and only for a
-  // row that HAS a client id to be wrong about: an automation prompt carries
-  // none, and every id-less producer would pay for this read for nothing.
-  const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited;
+  // Rewind hides messages but preserves their allocated IDs in the Pi journal.
+  // Place a replacement above those IDs before its first delivery.
+  let rewoundFloor: bigint | null = null;
+  if (payload.wireMessageId) {
+    try {
+      rewoundFloor = await readRewoundMessageFloor(db, row.sessionId);
+    } catch (error) {
+      await markCommandFailed(row.commandId, `history placement unavailable: ${error instanceof Error ? error.message : String(error)}`, {
+        retryable: true, attempts: row.attempts, sessionId: row.sessionId,
+      });
+      return 'failed';
+    }
+  }
+  const submittedClock = wireIdTime(payload.wireMessageId ?? '');
+  const needsHistoryPlacement = rewoundFloor !== null && (submittedClock === null || submittedClock <= rewoundFloor);
+  const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited || needsHistoryPlacement;
   let turnLive = false;
   if (payload.wireMessageId && !remintKnown) {
     try {
@@ -1755,6 +1771,7 @@ export async function executeQueuedContinue(
     // first. Only a first delivery may do this: a re-POST's original id may
     // already be persisted.
     if (
+      !needsHistoryPlacement &&
       deliveryAttempt === 0 &&
       redeliveries === 0 &&
       payload.wireMessageId &&
@@ -1766,7 +1783,7 @@ export async function executeQueuedContinue(
       underPlaced = true;
       tl.mark('under-placed');
     } else {
-      wireMessageId = await remintWireMessageId(row, payload, transcript);
+      wireMessageId = await remintWireMessageId(row, payload, transcript, rewoundFloor);
       tl.mark('remint');
     }
   }

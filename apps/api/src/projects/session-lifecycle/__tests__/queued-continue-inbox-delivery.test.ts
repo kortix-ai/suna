@@ -18,7 +18,7 @@
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
+import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes, sessionWorkerLog } from '@kortix/db';
 import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
 import type { SessionLifecycleCommandRow } from '../store';
 
@@ -56,6 +56,8 @@ let boxRow: { status: string; metadata: Record<string, unknown> | null } | null 
 /** The newest id the inbox's OWN rows say this session has already delivered,
  *  as `readDeliveredWireIdFloor` reads it back. Null = nothing delivered yet. */
 let deliveredFloor: bigint | null = null;
+let rewoundFloor: string | null = null;
+let rewoundFloorUnavailable = false;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let capturedKeys: string[] = [];
@@ -124,6 +126,10 @@ mock.module('../../../shared/db', () => ({
         where: () => {
           const limit = async () => {
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === sessionWorkerLog) {
+              if (rewoundFloorUnavailable) throw new Error('history storage unavailable');
+              return [{ floor: rewoundFloor }];
+            }
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
             // The aggregate `readDeliveredWireIdFloor` runs: always one row,
@@ -449,6 +455,8 @@ beforeEach(() => {
   };
   boxRow = null;
   deliveredFloor = null;
+  rewoundFloor = null;
+  rewoundFloorUnavailable = false;
   transcript = [];
   capturedBodies = [];
   capturedKeys = [];
@@ -491,6 +499,28 @@ beforeEach(() => {
     }
     return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
   }) as typeof fetch;
+});
+
+test.each(['assistant', 'user'])('a fresh replacement prompt clears IDs reserved by hidden Pi history before its first delivery with a visible %s', async (role) => {
+  rewoundFloor = OPENCODE_MINTED_ID;
+  transcript = [{ info: { id: NEWER_TRANSCRIPT_ID, role } }];
+  const outcome = await executeQueuedContinue(baseRow());
+  expect(outcome).toBe('succeeded');
+  expect(capturedBodies).toHaveLength(1);
+  const delivered = capturedBodies[0]!.messageID as string;
+  expect(wireIdTime(delivered)! > wireIdTime(OPENCODE_MINTED_ID)!).toBe(true);
+  expect(persistedWireIds()).toContain(delivered);
+  expect(forwardedCalls[0]?.wireMessageId).toBe(delivered);
+});
+
+test('history floor failure returns the claimed prompt to a retryable state before forwarding', async () => {
+  rewoundFloorUnavailable = true;
+  expect(await executeQueuedContinue(baseRow())).toBe('failed');
+  expect(capturedBodies).toHaveLength(0);
+  expect(failedCalls).toEqual([expect.objectContaining({
+    message: 'history placement unavailable: history storage unavailable',
+    options: expect.objectContaining({ retryable: true }),
+  })]);
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {

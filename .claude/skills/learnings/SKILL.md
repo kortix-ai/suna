@@ -6410,3 +6410,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** Pi deployment 34892242627 sent `PLATINUM_API_KEY`; the branch validator rejected it before replacing the API.
 **Rule:** port optional provider payload support with both present/absent tests. Keep unknown secrets rejected. Verify the running SHA after deployment.
 **Enforcer:** `preview-stack.test.ts` checks the allowlist, provider defaults, and explicit Platinum configuration.
+
+### Place replacement prompts above IDs reserved by discarded history (2026-09-14)
+
+**Incident:** preview Edit generated a message ID from visible history after rewind. Pi rejected it because discarded messages still reserved higher IDs. The inbox retained the replacement without running it.
+**Rule:** read the session's immutable history selections before delivery. Place replacement IDs above both visible and discarded messages, then persist the assigned ID before forwarding. A storage failure returns the claimed command to a retryable state.
+**Enforcer:** `queued-continue-inbox-delivery.test.ts` covers visible user and assistant tips, persisted placement, and storage failure. `session-history.test.ts` checks session isolation. Preview verification submits an edited message through the real browser and checks the streamed answer and reloaded history.
