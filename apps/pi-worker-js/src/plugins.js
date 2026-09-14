@@ -143,7 +143,12 @@ export async function loadPlugins({ dir, readDir, readFile, runtimeFor, onProgre
     let source;
     try { source = await readFile(path); } catch (e) { diagnostics.push(`${file}: could not be read (${e?.message ?? e})`); continue; }
     const rt = runtimeFor(path);
-    const r = await rt.load(source, `/${path}`);
+    // THE PLUGIN'S FILENAME IS WHERE IT ACTUALLY SITS. Naming it `/${path}`
+    // made it root-absolute, so `require("./lib/x.js")` resolved to
+    // `/.kortix/pi/plugins/lib/x.js` — a path in no workspace — and every
+    // multi-file plugin failed with "Cannot find module".
+    const root = String(rt.cwd ?? "").replace(/\/+$/, "");
+    const r = await rt.load(source, `${root}/${path}`.replace(/\/+/g, "/"));
     if (!r.ok) { diagnostics.push(`${file}: ${r.error}`); continue; }
     const factory = r.exports?.default ?? r.exports;
     if (typeof factory !== "function") { diagnostics.push(`${file}: a plugin must default-export a function`); continue; }

@@ -55,7 +55,7 @@ import { envRpcExecutionEnv, mintUserContext } from "./execenv.envrpc.js";
 import { machineTool } from "./machine-tool.js";
 import { machineFs, machineGit } from "./machine-fs.js";
 import { loadPlugins, pluginsDirFor, pluginsSummary, toPiTool } from "./plugins.js";
-import { createNodeRuntime } from "./nodejs.js";
+import { createNodeRuntime, collectWorkspace, seedRuntime } from "./nodejs.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
 // through the ExecutionEnv in execenv.platinum.js (see pitools.js). The module
 // stays for platinum-shapes.mjs, which unit-tests its ledger and bodies.
@@ -1180,6 +1180,30 @@ export class AgentCell {
     const dir = pluginsDirFor(configDir ?? ".kortix/pi");
     if (usesCellFilesystem(this.effectiveEnv())) this.cellFs ??= cellFs(this.sql);
     const env = executionEnvFor(this.effectiveEnv(), sessionId, "plugins", undefined, this.cellFs ?? null);
+    const net = (...a) => this.cellFs?.net?.(...a) ?? fetch(...a);
+    // THE WALK READS THROUGH THE SAME EXECUTION ENV THE PLUGIN FILES CAME FROM.
+    //
+    // Not through `workspaceFs()`: that answers the cell-shaped wrapper rather
+    // than an fs, and — the part that matters — it instantiates `this.cellFs`
+    // unconditionally, which is what `/model` reads to decide which backend to
+    // report. Loading plugins would have flipped a daemon session to reporting
+    // `cell`. One env, one truth, and it works over a machine too.
+    const readable = {
+      async readdirWithFileTypes(dir) {
+        const r = await env.listDir(dir);
+        if (!r?.ok) throw new Error(r?.error?.message ?? "no such directory");
+        return (r.value ?? []).map((e) => ({ name: e.name, isDirectory: e.kind === "directory", isFile: e.kind === "file" }));
+      },
+      async readFileBuffer(path) {
+        const r = await env.readBinaryFile(path);
+        if (!r?.ok) throw new Error(r?.error?.message ?? "unreadable");
+        return r.value;
+      },
+    };
+    const workspace = await collectWorkspace(readable, CELL_CWD).catch((e) => {
+      this.broadcast({ type: "plugin", line: `could not read the workspace: ${e?.message ?? e}` });
+      return { files: [], dirs: [] };
+    });
     const loaded = await loadPlugins({
       dir,
       readDir: async (d) => {
@@ -1195,12 +1219,18 @@ export class AgentCell {
       // ONE RUNTIME PER PLUGIN: a plugin that scribbles on its globals cannot
       // reach its neighbours, and a plugin that throws on load takes only
       // itself down.
+      // ONE COLLECTION, EVERY RUNTIME. A plugin of more than one file is the
+      // normal case — a `lib/` beside it, a package in node_modules — and it
+      // was impossible while each runtime was built with `fs: null`. The walk
+      // costs one pass over the checkout; the bytes are shared, not copied.
       runtimeFor: () => {
-        const rt = createNodeRuntime({ fs: null, cwd: CELL_CWD, fetch: (...a) => this.cellFs?.net?.(...a) ?? fetch(...a) });
+        const rt = createNodeRuntime({ fs: null, cwd: CELL_CWD, fetch: net });
+        seedRuntime(rt, workspace);
         rt.pluginContext = {
           project: this.effectiveEnv().KORTIX_PROJECT_ID ?? null,
           session: sessionId,
           cwd: CELL_CWD,
+          fetch: net,
           log: (...m) => this.broadcast({ type: "plugin", line: m.map(String).join(" ") }),
         };
         return rt;

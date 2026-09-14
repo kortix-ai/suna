@@ -31,6 +31,9 @@ import { CELL_CWD } from "./execenv.cell.js";
 /** How long a script may run, and how much it may print. */
 export const NODE_TIMEOUT_MS = 30_000;
 export const NODE_OUTPUT_MAX = 1_000_000;
+export const PRELOAD_EXTENSIONS = /\.(js|cjs|mjs|json|ts|mts|cts)$/;
+export const PRELOAD_MAX_FILES = 4000;
+export const PRELOAD_MAX_BYTES = 24 * 1024 * 1024;
 export const NODE_VERSION = "v22.0.0-pi-cell";
 
 const dirnameOf = (p) => { const i = p.lastIndexOf("/"); return i <= 0 ? "/" : p.slice(0, i); };
@@ -199,6 +202,51 @@ export function formatValue(v, seen = new Set(), depth = 0) {
  * never loaded and never written throws ENOENT, which is the honest answer:
  * this runtime cannot block on a promise.
  */
+/**
+ * EVERY FILE UNDER THE WORKSPACE THAT A MODULE COULD REQUIRE.
+ *
+ * `require` is synchronous and the workspace is not, so the files have to be in
+ * hand before anything runs. Bounded by count and by bytes, because a checkout
+ * with a node_modules is exactly the case this must not fall over on, and
+ * `.git` is skipped because nothing requires it.
+ *
+ * Shared by the `node` command and by the plugin loader: a plugin that is more
+ * than one file is the normal case, and it was impossible while the loader
+ * built its runtime with no filesystem at all.
+ */
+export async function collectWorkspace(fs, cwd, { maxFiles = PRELOAD_MAX_FILES, maxBytes = PRELOAD_MAX_BYTES, maxDepth = 12 } = {}) {
+  const files = [];
+  const dirs = [];
+  let count = 0, bytes = 0;
+  if (!fs) return { files, dirs, truncated: false };
+  const walk = async (dir, depth) => {
+    if (depth > maxDepth || count >= maxFiles || bytes >= maxBytes) return;
+    let entries;
+    try { entries = await fs.readdirWithFileTypes(dir); } catch { return; }
+    for (const e of entries) {
+      if (count >= maxFiles || bytes >= maxBytes) return;
+      const abs = `${dir}/${e.name}`.replace(/\/+/g, "/");
+      if (e.isDirectory) { if (e.name === ".git") continue; dirs.push(abs); await walk(abs, depth + 1); continue; }
+      if (!e.isFile) continue;
+      if (!PRELOAD_EXTENSIONS.test(e.name)) continue;
+      try {
+        const buf = await fs.readFileBuffer(abs);
+        files.push([abs, buf]);
+        count++; bytes += buf.length;
+      } catch { /* a file that cannot be read is a file the script cannot require */ }
+    }
+  };
+  await walk(cwd, 0);
+  return { files, dirs, truncated: count >= maxFiles || bytes >= maxBytes };
+}
+
+/** Put a collected workspace into one runtime. The bytes are shared, not copied. */
+export function seedRuntime(rt, collected) {
+  for (const d of collected.dirs) rt.dirs.add(d);
+  for (const [abs, bytes] of collected.files) rt.put(abs, bytes);
+  return rt;
+}
+
 export function createNodeRuntime({ fs, cwd = CELL_CWD, argv = [], env = {}, fetch: guardedFetch, now = Date.now, timeoutMs = NODE_TIMEOUT_MS }) {
   let out = "", err = "", truncated = false;
   const write = (which, s) => {
@@ -614,7 +662,7 @@ export function createNodeRuntime({ fs, cwd = CELL_CWD, argv = [], env = {}, fet
   }
 
   return {
-    files, dirs, core, processMod, consoleMod,
+    files, dirs, core, processMod, consoleMod, cwd,
     /** Seed the runtime with a file the loader may need. */
     put(path, bytes) { const abs = resolvePath(cwd, path); files.set(abs, typeof bytes === "string" ? enc.encode(bytes) : bytes); dirs.add(dirnameOf(abs)); },
     get output() { return { stdout: out, stderr: err, truncated }; },
@@ -697,25 +745,7 @@ export function nodeCommand(defineCommand, { fetch: guardedFetch, maxPreloadFile
     // PRELOAD. Every file under the workspace, so `require` resolves without a
     // promise. Bounded by count and bytes: a checkout with a node_modules is
     // exactly the case this must not fall over on.
-    let loadedFiles = 0, loadedBytes = 0;
-    const walk = async (dir, depth) => {
-      if (depth > 12 || loadedFiles >= maxPreloadFiles || loadedBytes >= maxPreloadBytes) return;
-      let entries;
-      try { entries = await ctx.fs.readdirWithFileTypes(dir); } catch { return; }
-      for (const e of entries) {
-        if (loadedFiles >= maxPreloadFiles || loadedBytes >= maxPreloadBytes) return;
-        const abs = `${dir}/${e.name}`.replace(/\/+/g, "/");
-        if (e.isDirectory) { if (e.name === ".git") continue; rt.dirs.add(abs); await walk(abs, depth + 1); continue; }
-        if (!e.isFile) continue;
-        if (!/\.(js|cjs|mjs|json)$/.test(e.name)) continue;
-        try {
-          const bytes = await ctx.fs.readFileBuffer(abs);
-          rt.put(abs, bytes);
-          loadedFiles++; loadedBytes += bytes.length;
-        } catch { /* a file that cannot be read is a file the script cannot require */ }
-      }
-    };
-    await walk(cwd, 0);
+    seedRuntime(rt, await collectWorkspace(ctx.fs, cwd, { maxFiles: maxPreloadFiles, maxBytes: maxPreloadBytes }));
 
     const source = evalSource !== null
       ? (printResult ? `console.log((${evalSource}))` : evalSource)

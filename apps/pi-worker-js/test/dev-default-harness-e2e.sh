@@ -207,6 +207,34 @@ fi
 ck "and STILL no environment — a push is not a reason to boot a machine" \
   "$([ "$(hasenv "$SID")" = 404 ] && echo 1 || echo 0)" "GET .../environment -> $(hasenv "$SID")"
 
+# ---------- 4b. THE PROJECT'S OWN TOOLS ----------
+#
+# pi ships no plugin system, so this is the whole feature: a project writes a
+# tool into its checkout and the model has it. Written in TypeScript and split
+# across two files on purpose — both were impossible until the cell could strip
+# types and resolve a require, and a single self-contained .js would prove
+# neither.
+ask "$SID" "Using only your bash tool, write two files.
+
+.kortix/pi/plugins/lib/greet.ts containing exactly:
+export const greet = (who: string): string => \`hi \${who}\`;
+
+.kortix/pi/plugins/multi.ts containing exactly:
+import { greet } from \"./lib/greet.js\";
+export default async () => ({ tools: { multigreet: { description: \"Greet someone from a multi-file TypeScript plugin.\", parameters: { type: \"object\", properties: { who: { type: \"string\" } }, required: [\"who\"] }, async execute({ who }: { who: string }): Promise<string> { return greet(who); } } } });
+
+Then reply with only the word: wroteplugin" "wroteplugin" 240 >/dev/null
+PLUGS=$(get "/plugins?reload=1")
+ck "a TypeScript plugin SPLIT ACROSS FILES loads — types erased, and './lib/greet.js' resolved to greet.ts" \
+  "$(R="$PLUGS" jq_ 'import json,os
+d=json.loads(os.environ["R"]); print(1 if "multigreet" in (d.get("tools") or []) else 0)')" \
+  "$(printf '%s' "$PLUGS" | head -c 200)"
+PLUGANS=$(ask "$SID" "Use your multigreet tool with who=Vukasin and reply with only what it returned." "hi Vukasin" 240)
+ck "and the MODEL has that tool — the project extended its own agent" \
+  "$(printf '%s' "$PLUGANS" | grep -q 'hi Vukasin' && echo 1 || echo 0)" "got: $(printf '%s' "$PLUGANS" | head -c 80)"
+ck "and none of it provisioned a microVM" \
+  "$([ "$(hasenv "$SID")" = 404 ] && echo 1 || echo 0)" "GET .../environment -> $(hasenv "$SID")"
+
 # ---------- 5. the machine is OPT-IN, and only for the session that asked ----------
 # `node --version` ALONE NO LONGER PROVES A MACHINE. The cell has its own node
 # now, which answers v22.0.0-pi-cell — a string the old regex happily matched,

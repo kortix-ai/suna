@@ -10,23 +10,32 @@
 // the two things that decide whether that is safe to turn on: what counts as a
 // tool (a project's bug must be reported, not handed to the model), and what a
 // broken plugin costs (nothing — the others load and the agent still runs).
-// EXPECTED_PASSES=32
+// EXPECTED_PASSES=36
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
 const { loadPlugins, pluginsDirFor, isPluginFile, validateTools, toPiTool, pluginsSummary, PLUGIN_MAX, PLUGIN_TOOLS_MAX } = await import("../src/plugins.js");
-const { createNodeRuntime } = await import("../src/nodejs.js");
+const { createNodeRuntime, seedRuntime } = await import("../src/nodejs.js");
 
-const runtimeFor = (ctx = {}) => () => {
-  const rt = createNodeRuntime({ fs: null, cwd: "/workspace", fetch: async () => { throw new Error("no network in this claim"); } });
-  rt.pluginContext = { project: "p1", session: "s1", cwd: "/workspace", log: () => {}, ...ctx };
+const enc = new TextEncoder();
+// WHAT THE CELL SEEDS EACH PLUGIN RUNTIME WITH: the checkout, so a plugin of
+// more than one file — a lib beside it, a package in node_modules — resolves.
+const workspace = (tree = {}) => ({
+  dirs: [...new Set(Object.keys(tree).map((f) => `/workspace/${f}`.replace(/\/[^/]*$/, "")))],
+  files: Object.entries(tree).map(([f, src]) => [`/workspace/${f}`, enc.encode(src)]),
+});
+const runtimeFor = (ctx = {}, tree) => () => {
+  const net = async () => { throw new Error("no network in this claim"); };
+  const rt = createNodeRuntime({ fs: null, cwd: "/workspace", fetch: net });
+  if (tree) seedRuntime(rt, workspace(tree));
+  rt.pluginContext = { project: "p1", session: "s1", cwd: "/workspace", fetch: net, log: () => {}, ...ctx };
   return rt;
 };
-const load = (files, ctx) => loadPlugins({
+const load = (files, ctx, tree) => loadPlugins({
   dir: ".kortix/pi/plugins",
   readDir: async () => Object.keys(files),
   readFile: async (p) => { const name = p.split("/").pop(); if (!(name in files)) throw new Error("unreadable"); return files[name]; },
-  runtimeFor: runtimeFor(ctx),
+  runtimeFor: runtimeFor(ctx, tree),
 });
 const textOf = (r) => r.content.map((c) => c.text).join("");
 
@@ -155,6 +164,52 @@ check("a plugin file is JavaScript or TypeScript, and a dotfile, a test or a dec
   const second = r.tools.find((t) => t.name === "b");
   check("one plugin's globals are not another's — each is loaded in its own runtime",
     textOf(await toPiTool(second).execute("1", {})) === "undefined", textOf(await toPiTool(second).execute("1", {})));
+}
+
+// ── A PLUGIN IS NOT ONE FILE ──
+//
+// The loader used to build each runtime with `fs: null`, so `require` could
+// resolve nothing and a plugin could only ever be a single self-contained
+// file — while the `node` command beside it preloaded the whole checkout. A
+// plugin with a lib next to it, or one that uses a package the project already
+// has, is the normal case, not the exotic one.
+{
+  const tree = {
+    ".kortix/pi/plugins/lib/rot.js": "module.exports.rot13 = (s) => s.replace(/[a-z]/gi, (c) => String.fromCharCode((c <= 'Z' ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26));",
+    "node_modules/tiny-case/package.json": '{"name":"tiny-case","version":"1.0.0","main":"index.js"}',
+    "node_modules/tiny-case/index.js": "exports.shout = (s) => String(s).toUpperCase();",
+  };
+  const r = await load({
+    "multi.js": `const { rot13 } = require("./lib/rot.js");
+const { shout } = require("tiny-case");
+export default async () => ({ tools: { both: { description: "d", parameters: {}, async execute() { return shout(rot13("hello")); } } } });`,
+  }, undefined, tree);
+  check("a plugin can require a FILE BESIDE IT — a plugin of more than one file is the normal case",
+    r.tools.length === 1, JSON.stringify(r.diagnostics));
+  check("and a PACKAGE the project already has, resolved the way node resolves it",
+    r.tools.length === 1 && (await toPiTool(r.tools[0]).execute("id", {}, null)).content[0].text === "URYYB",
+    JSON.stringify(r.diagnostics));
+}
+{
+  const tree = { ".kortix/pi/plugins/lib/dbl.ts": "export const twice = (n: number): number => n * 2;" };
+  const r = await load({
+    "typed.ts": `import { twice } from "./lib/dbl.js";
+export default async (): Promise<any> => ({ tools: { t: { description: "d", parameters: {}, async execute(): Promise<string> { return String(twice(21)); } } } });`,
+  }, undefined, tree);
+  check("a TypeScript plugin's own TypeScript imports resolve — `./lib/dbl.js` is dbl.ts, which is what TypeScript means",
+    r.tools.length === 1 && (await toPiTool(r.tools[0]).execute("id", {}, null)).content[0].text === "42",
+    JSON.stringify(r.diagnostics));
+}
+{
+  // THE CONTRACT SAYS `fetch`, so the contract has to hand one over: a plugin
+  // that calls an API is the first thing anyone writes, and it was documented
+  // and then not passed.
+  let saw = "";
+  const r = await load({
+    "ctx.js": 'export default async (ctx) => { ctx.log(Object.keys(ctx).sort().join(",")); return { tools: { t: { description: "d", parameters: {}, async execute() { return "x"; } } } }; };',
+  }, { log: (m) => { saw = String(m); } });
+  check("the context a plugin is handed carries project, session, cwd, fetch and log — all five the contract names",
+    r.tools.length === 1 && ["project", "session", "cwd", "fetch", "log"].every((k) => saw.split(",").includes(k)), saw);
 }
 
 // ── what the model is told ──
