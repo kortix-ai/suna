@@ -50,6 +50,7 @@ which is why their blobs ride in the boot pack).
 | Supervisor transports | `config-provider/git/git-config-provider.ts`, `config-provider/s3/s3-config-provider.ts` |
 | Operator tool | `apps/api/scripts/project-snapshot.ts` |
 | Boot bench / compat gate | `apps/api/scripts/project-snapshot-bench.ts`, `apps/api/scripts/project-snapshot-compat.ts` |
+| Local bench, no sandbox | `apps/kortix-sandbox-agent-server/scripts/config-provider-bench.ts` (+ `materialize-once.ts`): the daemon's coordinator on this machine, Git vs S3 per round, against the local API + MinIO; results in the benchmark runbook |
 
 The boot object is the committed tree at one exact commit plus a sanitized
 shallow `.git` (one commit, no remote, no hooks, no reflogs, fresh index, one

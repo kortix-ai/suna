@@ -390,6 +390,68 @@ would show `provider: s3` with *new* timings. The check now accepts either
 it saw (`adoptedWarm` / `daemonContinued`); the two provider behaviours are
 both "never re-acquired", which is the contract.
 
+## Local, no sandbox: the two paths at loopback (config-provider bench), 2026-09-14
+
+Every sandbox run above pays two transatlantic tunnel hops, so it cannot say
+what the two acquisitions cost by themselves. This run removes the network:
+`apps/kortix-sandbox-agent-server/scripts/config-provider-bench.ts` runs the
+daemon's own config-provider coordinator (`materializeProject`) on the laptop,
+in a fresh workspace per round, with the exact environment the API hands a
+fresh session — scaffold + remote delta bundle for Git (the production route,
+verified per round from the daemon log), pinned descriptor + presigned objects
+for S3 — against the local API on `13608` and MinIO on `19100`
+(`KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT=http://127.0.0.1:19100` so the
+presigned URLs stay on loopback). Same fixtures and objects as the sandbox
+runs; arms alternate every round, 1 warm-up discarded, macOS `bsdtar`.
+
+| Project | Git (scaffold + bundle) p50 / p95 | S3 (`prefer-s3`) p50 / p95 | S3 stages p50 | Hydration |
+|---|---|---|---|---|
+| 400 files (boot object 1.58 MB) | 227 / 247 ms | **216 / 224 ms** | descriptor + download + extract + verify 90, activate 116, hydrate 21 (off the boot path) | ok 30/30 |
+| 5,000 files (boot object 2.60 MB) | **534 / 603 ms** | 542 / 599 ms | 417 / 116 / 40 | ok 30/30 |
+
+30 rounds per arm and project, 0 failures, 0 fallbacks, `extractor: tar`
+×60, Git route `repo materialized via scaffold (one request: remote API
+delta bundle)` ×60.
+
+The same Git arm for a repository that shares **no** scaffold ancestor (an
+imported repo, another starter — the daemon's clone route, `cloning repo`
+×20), 10 rounds:
+
+| Project | Git (clone through the proxy) p50 / p95 | S3 from above |
+|---|---|---|
+| 400 files | 896 / 995 ms | 216 / 224 ms |
+| 5,000 files | 1,210 / 2,434 ms | 542 / 599 ms |
+
+Reading:
+
+- **With the network removed, the fast-boot Git path and the S3 path cost
+  the same.** Both are one GET plus local work; S3's 116 ms activation
+  (session branch, `symbolic-ref`, partial-clone config) is what the bundle
+  route spends applying the bundle. Everything the sandbox runs saw on top of
+  this was network: two tunnel hops for S3 (descriptor, object) against one
+  for Git (bundle).
+- **What S3 actually buys.** (1) In production the bundle GET goes sandbox →
+  API (a different region) while the S3 object GET stays in-region; the
+  descriptor call still crosses, so the expected in-region gain is the
+  object's transfer, a few hundred ms for these sizes — the dev deployment
+  measures it. (2) For a project **without** the scaffold root — imported
+  repositories, other starters — Git is a proxied clone: 4× slower on the
+  small project and 2.2× on the large one already at loopback, and 9 s
+  through the dev tunnel in the 2026-06-13 measurement. S3 does not care how
+  the project was born. (3) The boot no longer depends on the Git proxy's
+  upstream being reachable or on the mirror's refresh; that predictability
+  was the motivation for the blob-less v2 format.
+- **What it does not buy:** a faster boot for a scaffold-rooted project in
+  the same region as its API. Do not expect the dev numbers to show one.
+
+Re-run: the usage block at the top of `config-provider-bench.ts`. Inputs: the
+pin is `<sha>:<tree_sha256>:<tree_bytes>` from `project-snapshot.ts status`;
+the scaffold root and the parent commit payload are the project's cached hint
+(`metadata.git.fast_boot.parent_sha` / `.parent_commit_base64`, populated by
+any earlier session create); the local API must presign for an endpoint the
+laptop reaches (`KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT`). `--scaffold
+/nonexistent` measures the clone route.
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
