@@ -386,13 +386,7 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       const category = input.category?.trim();
       const searched = query
         ? items.filter((item) =>
-            // `slug` is in the haystack because it is how the web detail route
-            // resolves an entry: `/connectors/catalog/discover/<slug>` searches
-            // q=<slug> and fold-matches the result. Without it, any slug whose
-            // spelling differs from name and domain ("deepwiki-com" vs
-            // "deepwiki.com") answered zero rows and the page said "Connector
-            // not found" for an entry the catalogue carries.
-            [item.slug, item.name, item.description, item.domain, item.kind, ...item.categories]
+            [item.name, item.description, item.domain, item.kind, ...item.categories]
               .filter(Boolean)
               .some((value) => String(value).toLowerCase().includes(query)),
           )

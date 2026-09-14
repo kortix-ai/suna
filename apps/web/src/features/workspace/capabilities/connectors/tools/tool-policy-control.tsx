@@ -3,8 +3,8 @@
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import type { PolicyChoice } from './tool-policy';
 import { POLICY_SEGMENTS } from './tool-policy-labels';
@@ -71,7 +71,7 @@ export function ToolPolicyControl({
             }}
             className={cn(
               'px-2.5 text-xs font-medium',
-              'duration-normal transition-[color,background-color,scale] active:scale-[0.96]',
+              'transition-[color,background-color,scale] duration-150 active:scale-[0.96]',
               selected ? segment.tint : cn('text-muted-foreground', segment.hoverTint),
             )}
           >
