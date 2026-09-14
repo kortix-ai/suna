@@ -229,7 +229,7 @@ Access modes are `private`, `project`, `restricted`, `public`, and `password`. A
 
 Session reads recover a saved rewind after reload, without requiring its earlier SSE event.
 Rewind and restore events refresh active file views and Git diffs through the SDK.
-Hosts use `fileContentKeys`, `fileListKeys`, and `gitStatusKeys` from `@kortix/sdk/react` for those caches.
+Hosts use `fileContentKeys`, `fileListKeys`, `binaryBlobKeys`, and `gitStatusKeys` from `@kortix/sdk/react` for those caches.
 Pi restores recorded file changes from the original environment's checkpoints.
 Missing checkpoints, incomplete tool records, and conflicting edits refuse rewind.
 Environment deletion removes these checkpoints; conversation storage does not back up working files.

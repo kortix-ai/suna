@@ -4149,3 +4149,27 @@ describe("a part frame that beats its message frame never invents a role", () =>
 		expect(rolesById()).toEqual([`user:${WIRE}`, "assistant:msg_assistant0002"]);
 	});
 });
+
+
+describe("idle after history replay", () => {
+  test("a fresh idle frame settles activity after an earlier identical idle", () => {
+    const id = "ses_history_idle";
+    const store = useSyncStore.getState();
+    store.setStatus(id, { type: "idle" }, "wire", 1000);
+    const status = useSyncStore.getState().sessionStatus[id];
+    store.noteSessionActivity(id, 2000);
+    store.setStatus(id, { type: "idle" }, "wire", 3000);
+    expect(useSyncStore.getState().sessionStatusAt[id]).toBe(3000);
+    expect(useSyncStore.getState().sessionStatus[id]).toBe(status);
+    store.setStatus(id, { type: "idle" }, "wire", 4000);
+    expect(useSyncStore.getState().sessionStatusAt[id]).toBe(3000);
+  });
+  test("an older idle frame cannot settle later content", () => {
+    const id = "ses_history_old_idle";
+    const store = useSyncStore.getState();
+    store.setStatus(id, { type: "idle" }, "wire", 1000);
+    store.noteSessionActivity(id, 3000);
+    store.setStatus(id, { type: "idle" }, "wire", 2000);
+    expect(useSyncStore.getState().sessionStatusAt[id]).toBe(1000);
+  });
+});

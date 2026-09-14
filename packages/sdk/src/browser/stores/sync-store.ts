@@ -1375,6 +1375,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// that stops a dead stream from deciding was never reached. See
 			// `sameSessionStatus`.
 			if (sameSessionStatus(s.sessionStatus[sessionID], status)) {
+				const activityAt = s.sessionActivityAt[sessionID];
+				if (status.type === "idle" && origin === "wire" && activityAt !== undefined &&
+					activityAt > (s.sessionStatusAt[sessionID] ?? 0) && observedAt >= activityAt) {
+					return {
+						sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
+						sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: observedAt },
+					};
+				}
 				// The VALUE is not news, but who said it can be: a wire frame
 				// landing over a fabricated one (or the reverse) changes what the
 				// frame is allowed to decide. Update only the origin — the status

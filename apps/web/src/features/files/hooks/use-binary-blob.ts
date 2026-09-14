@@ -1,7 +1,7 @@
 'use client';
 
 import { isSandboxNotReadyError } from '@kortix/sdk';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { binaryBlobKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
@@ -10,11 +10,7 @@ import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
-export const binaryBlobKeys = {
-  all: ['runtime-files', 'binary-blob'] as const,
-  file: (serverUrl: string, filePath: string) =>
-    ['runtime-files', 'binary-blob', serverUrl, filePath] as const,
-};
+export { binaryBlobKeys } from '@kortix/sdk/react';
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
@@ -45,7 +41,7 @@ export function useBinaryBlob(filePath: string | null): {
   const query = useQuery<Blob>({
     queryKey: filePath
       ? binaryBlobKeys.file(serverUrl, filePath)
-      : ['runtime-files', 'binary-blob', '__disabled__'],
+      : [...binaryBlobKeys.all, '__disabled__'],
     queryFn: ({ signal }) =>
       readRuntimeFileWithRetry(
         filePath!,

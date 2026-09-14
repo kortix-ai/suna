@@ -1296,3 +1296,13 @@ describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)'
     expect(calls).toEqual([]);
   });
 });
+
+test.each(['session.next.revert.staged', 'session.next.revert.cleared', 'session.next.revert.committed'] as const)('%s refreshes open binary file previews', type => {
+  const { handleEvent, queryClient } = buildHandler();
+  const counter = countInvalidations(queryClient, ['opencode-files', 'binary-blob']);
+  const base = { sessionID: 'ses_1', timestamp: 1 };
+  if (type === 'session.next.revert.staged') handleEvent({ id: 'binary-rewind', type, properties: { ...base, revert: { messageID: 'msg_1' } } });
+  else if (type === 'session.next.revert.cleared') handleEvent({ id: 'binary-rewind', type, properties: base });
+  else handleEvent({ id: 'binary-rewind', type, properties: { ...base, messageID: 'msg_1' } });
+  expect(counter.n).toBe(1);
+});

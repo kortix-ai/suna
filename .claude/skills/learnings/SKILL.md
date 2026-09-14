@@ -6395,4 +6395,4 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 
 **Incident:** the Pi preview restored files correctly, but an open file preview kept deleted content. Host hooks had separate `runtime-files` keys while the SDK invalidated `opencode-files`. Restored message events also painted a false Thinking state.
 **Rule:** hosts import the SDK's file cache keys. A completed history move publishes current idle status after replay, only while no turn is unfinished or executing.
-**Enforcer:** `file-cache-keys.test.ts` checks each hook's actual query key against the SDK. `session-history-routes.test.ts` checks the real SSE stream ends replay with idle.
+**Enforcer:** `file-cache-keys.test.ts` checks each hook's actual query key against the SDK. `session-history-routes.test.ts` checks the real SSE stream ends replay with idle. `sync-store.test.ts` verifies that a fresh idle settles intervening content, while an old idle and repeated idle without new content keep their prior timestamps.
