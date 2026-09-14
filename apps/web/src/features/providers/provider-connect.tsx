@@ -83,7 +83,6 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_NOTES, ProviderLogo } from '@/features/providers/provider-branding';
 import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/sections/llm-provider/chatgpt-subscription-connect';
 import {
-  ManagedProviderAccess,
   ProviderAccessSwitch,
 } from '@/features/workspace/customize/sections/llm-provider/provider-access-switch';
 import { ProviderDetail } from '@/features/workspace/customize/sections/llm-provider/provider-detail';
@@ -103,7 +102,7 @@ import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { deleteProjectProviderOAuth, deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk';
-import { qk, refreshProjectProviderState, useModelAccess } from '@kortix/sdk/react';
+import { qk, refreshProjectProviderState, useModelAccess, useProjectModelPickerCatalog } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
@@ -118,7 +117,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 /**
  * The three providers JAY-510 makes first-class: "Anthropic (Claude), OpenAI
- * (ChatGPT), Google Gemini". They are the top THREE ROWS, not the only rows —
+ * (ChatGPT), Google Gemini". They lead the BYOK rows after Kortix, not the only rows —
  * every other provider follows them in catalog order. Deliberately NOT
  * `POPULAR_PROVIDER_IDS` (`provider-branding.tsx:10-17`), which is a
  * different, six-member list that also carries `github-copilot`, `openrouter`
@@ -212,7 +211,6 @@ export interface ProviderConnectViewProps {
   /** Per-provider extra auth affordance. Only `openai` has one today. */
   subscriptionSlots?: Record<string, ReactNode>;
   accessSlots?: Record<string, ReactNode>;
-  managedAccessSlot?: ReactNode;
   /**
    * "Browse before you connect". When set, `detailSlot` REPLACES the list —
    * the one capability the deleted `CatalogTab` drill-down had that an inline
@@ -556,17 +554,19 @@ function ProviderRow({
             </a>
           )}
         </div>
-        {accessSlot && <div className="mt-2">{accessSlot}</div>}
-        {onOpenDetail && row.modelCount > 0 && (
-          <button
-            type="button"
-            onClick={() => onOpenDetail(row.id)}
-            className="text-muted-foreground/50 hover:text-foreground mt-0.5 cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
-          >
-            {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
-            {row.modelCount === 1 ? '' : 's'}
-          </button>
-        )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {accessSlot}
+          {onOpenDetail && row.modelCount > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpenDetail(row.id)}
+              className="text-muted-foreground/50 hover:text-foreground cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
+            >
+              {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
+              {row.modelCount === 1 ? '' : 's'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -584,22 +584,26 @@ function ProviderRow({
   return (
     <div
       data-provider-row={row.id}
-      className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] sm:items-start sm:gap-4"
+      className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] sm:items-start sm:gap-4"
     >
       {identity}
-      <ProviderKeyFields
-        row={row}
-        values={values}
-        onValueChange={onValueChange}
-        onCommit={onCommit}
-        status={status}
-        errorMessage={errorMessage}
-        revealedFields={revealedFields}
-        onToggleReveal={onToggleReveal}
-        onRemoveKey={onRemoveKey}
-      >
-        {subscriptionSlot}
-      </ProviderKeyFields>
+      {row.envVars.length === 0 ? (
+        <p className="text-muted-foreground py-2 text-xs text-pretty">{row.note}</p>
+      ) : (
+        <ProviderKeyFields
+          row={row}
+          values={values}
+          onValueChange={onValueChange}
+          onCommit={onCommit}
+          status={status}
+          errorMessage={errorMessage}
+          revealedFields={revealedFields}
+          onToggleReveal={onToggleReveal}
+          onRemoveKey={onRemoveKey}
+        >
+          {subscriptionSlot}
+        </ProviderKeyFields>
+      )}
     </div>
   );
 }
@@ -664,7 +668,6 @@ export function ProviderConnectView({
   onSearchChange,
   subscriptionSlots,
   accessSlots,
-  managedAccessSlot,
   detailProviderId = null,
   onOpenDetail,
   detailSlot,
@@ -692,8 +695,6 @@ export function ProviderConnectView({
         />
         <InputGroupSearchClear onClick={() => onSearchChange('')} />
       </InputGroupSearch>
-
-      {managedAccessSlot}
 
       {/* The one sentence on the screen. With no Connect button, this is the
           only thing telling a reader their key will be written at all — an
@@ -801,9 +802,34 @@ export function ProviderConnect({
   className,
 }: ProviderConnectProps) {
   const access = useModelAccess(enabled ? projectId : null);
+  const tAccess = useTranslations('modelAccess');
+  const pickerCatalog = useProjectModelPickerCatalog(enabled ? projectId : null);
+  const managedProvider = useMemo<LlmProviderEntry>(() => ({
+    id: 'kortix',
+    label: 'Kortix',
+    envVars: [],
+    authRequirement: { methods: [] },
+    helpUrl: null,
+    apiHost: null,
+    hint: tAccess('managedDescription'),
+    models: Object.entries(pickerCatalog?.models ?? {})
+      .filter(([id]) => !id.includes('/'))
+      .map(([id, model]) => ({
+        id,
+        name: model.name || id,
+        description: model.description,
+        reasoning: model.reasoning,
+        tool_call: model.tool_call,
+        attachment: model.attachment,
+        limit: model.limit,
+        cost: model.cost,
+      })),
+    featured: true,
+    managed: true,
+  }), [pickerCatalog, tAccess]);
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useLiveLlmProviderCatalog(projectId, enabled);
-  useLlmProviderCatalogRevision();
+  const catalogRevision = useLlmProviderCatalogRevision();
   const { connectedProviders, providerStateLoading } = useConnectedProviders(projectId, enabled);
   const queryClient = useQueryClient();
 
@@ -826,7 +852,8 @@ export function ProviderConnect({
   // flags, and it cost an extra render too.
   const [pendingRequest, setPendingRequest] = useState<string | null>(null);
   const [detailProviderId, setDetailProviderId] = useState<string | null>(null);
-  const detailEntry = detailProviderId ? (LLM_PROVIDER_BY_ID.get(detailProviderId) ?? null) : null;
+  const detailEntry = detailProviderId === 'kortix' ? managedProvider
+    : detailProviderId ? (LLM_PROVIDER_BY_ID.get(detailProviderId) ?? null) : null;
 
   const connectedIds = useMemo(
     () => new Set(connectedProviders.map((provider) => provider.id)),
@@ -841,7 +868,12 @@ export function ProviderConnect({
 
   // The revision subscription above re-renders this component after the live
   // catalog replaces the module binding.
-  const searchable = LLM_PROVIDERS.filter((provider) => provider.id !== 'kortix');
+  const searchable = useMemo(() => [
+    ...(access.data?.enforced ? [managedProvider] : []),
+    ...LLM_PROVIDERS.filter((provider) => provider.id !== 'kortix'),
+  // The module catalog is replaced out of band; its revision triggers a fresh read.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [access.data?.enforced, managedProvider, catalogRevision]);
 
   /**
    * THE list, in a FIXED order that a save never disturbs — see
@@ -852,7 +884,7 @@ export function ProviderConnect({
     () =>
       orderProviderRows({
         providers: searchable,
-        firstClassIds: FIRST_CLASS_PROVIDER_IDS,
+        firstClassIds: ['kortix', ...FIRST_CLASS_PROVIDER_IDS],
         connectedIds,
         search,
       }).map((entry) => toRow(entry, connectedIds)),
@@ -1071,11 +1103,6 @@ export function ProviderConnect({
   return (
     <>
       <ProviderConnectView
-        managedAccessSlot={
-          !search || 'kortix managed models'.includes(search.toLowerCase()) ? (
-            <ManagedProviderAccess access={access} canWrite={canWrite} />
-          ) : undefined
-        }
         accessSlots={Object.fromEntries(
           visibleRows.map((row) => [
             row.id,
@@ -1083,7 +1110,7 @@ export function ProviderConnect({
               key={row.id}
               access={access}
               providerId={row.id}
-              name={row.label}
+              name={row.id === 'kortix' ? tAccess('managedTitle') : row.label}
               canWrite={canWrite}
             />,
           ]),
@@ -1133,7 +1160,7 @@ export function ProviderConnect({
             <ProviderDetail
               provider={detailEntry}
               isConnected={connectedIds.has(detailEntry.id)}
-              canWrite={canWrite}
+              canWrite={canWrite && detailEntry.id !== 'kortix'}
               onBack={() => setDetailProviderId(null)}
               // The credential field lives on the row BEHIND this detail, so
               // Connect closes the detail and puts the caret in it. A button

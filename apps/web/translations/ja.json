@@ -19232,7 +19232,7 @@
     "credentialsHint": "認証情報を削除せずに推論を無効にします。",
     "providerError": "プロバイダーへのアクセスを更新できませんでした。",
     "managedTitle": "Kortix管理モデル",
-    "managedDescription": "推論にKortixクレジットを使用します。自分のプロバイダーのみを使用するにはオフにしてください。",
+    "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
     "hiddenHint": "選択リストでは非表示です。直接リクエストは引き続き許可されます。無効にするにはモデルのメニューを使用してください。",
     "hidden": "選択リストで非表示",
     "disableModel": "モデルを無効にする",

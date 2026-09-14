@@ -19232,7 +19232,7 @@
     "credentialsHint": "Désactivez l’inférence sans supprimer les identifiants.",
     "providerError": "Impossible de modifier l’accès au fournisseur.",
     "managedTitle": "Modèles gérés par Kortix",
-    "managedDescription": "Utilisez des crédits Kortix pour l’inférence. Désactivez cette option pour utiliser uniquement vos propres fournisseurs.",
+    "managedDescription": "Modèles gérés facturés en crédits Kortix. Aucune clé API nécessaire.",
     "hiddenHint": "Masqué dans le sélecteur. Les requêtes directes restent autorisées ; désactivez-les dans le menu du modèle.",
     "hidden": "Masqué dans le sélecteur",
     "disableModel": "Désactiver le modèle",

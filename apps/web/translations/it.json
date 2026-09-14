@@ -19232,7 +19232,7 @@
     "credentialsHint": "Disattiva l’inferenza senza rimuovere le credenziali.",
     "providerError": "Impossibile aggiornare l’accesso al fornitore.",
     "managedTitle": "Modelli gestiti da Kortix",
-    "managedDescription": "Usa i crediti Kortix per l’inferenza. Disattiva questa opzione per usare solo i tuoi fornitori.",
+    "managedDescription": "Modelli gestiti addebitati in crediti Kortix. Non serve una chiave API.",
     "hiddenHint": "Nascosto nel selettore. Le richieste dirette sono ancora consentite; disattivale dal menu del modello.",
     "hidden": "Nascosto nel selettore",
     "disableModel": "Disattiva modello",

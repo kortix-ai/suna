@@ -19232,7 +19232,7 @@
     "credentialsHint": "Inferenz deaktivieren, ohne Zugangsdaten zu entfernen.",
     "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
     "managedTitle": "Von Kortix verwaltete Modelle",
-    "managedDescription": "Verwenden Sie Kortix-Guthaben für Inferenz. Deaktivieren Sie diese Option, um nur Ihre eigenen Anbieter zu verwenden.",
+    "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
     "hiddenHint": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt; deaktivieren Sie diese im Modellmenü.",
     "hidden": "In Auswahl ausgeblendet",
     "disableModel": "Modell deaktivieren",

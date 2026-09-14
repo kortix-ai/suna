@@ -19232,7 +19232,7 @@
     "credentialsHint": "Onemogućite inferenciju bez uklanjanja akreditiva.",
     "providerError": "Nije moguće ažurirati pristup provajderu.",
     "managedTitle": "Modeli kojima upravlja Kortix",
-    "managedDescription": "Koristite Kortix kredite za inferenciju. Isključite da biste koristili samo svoje provajdere.",
+    "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
     "hiddenHint": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni; onemogućite ih u meniju modela.",
     "hidden": "Sakriven iz birača",
     "disableModel": "Onemogući model",

@@ -48,24 +48,3 @@ export function ProviderAccessSwitch({
     </label>
   );
 }
-
-export function ManagedProviderAccess({ access, canWrite }: { access: Access; canWrite: boolean }) {
-  const t = useTranslations('modelAccess');
-  if (!access.data?.enforced) return null;
-  return (
-    <div className="bg-popover flex items-center gap-4 rounded-md border px-4 py-3">
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-sm font-medium">{t('managedTitle')}</p>
-        <p className="text-muted-foreground text-xs">
-          {t('managedDescription')}
-        </p>
-      </div>
-      <ProviderAccessSwitch
-        access={access}
-        providerId="kortix"
-        name={t('managedTitle')}
-        canWrite={canWrite}
-      />
-    </div>
-  );
-}

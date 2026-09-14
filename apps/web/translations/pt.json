@@ -19232,7 +19232,7 @@
     "credentialsHint": "Desative a inferência sem remover as credenciais.",
     "providerError": "Não foi possível atualizar o acesso ao provedor.",
     "managedTitle": "Modelos gerenciados pela Kortix",
-    "managedDescription": "Use créditos Kortix para inferência. Desative esta opção para usar apenas seus próprios provedores.",
+    "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
     "hiddenHint": "Oculto no seletor. Solicitações diretas continuam permitidas; desative-as no menu do modelo.",
     "hidden": "Oculto no seletor",
     "disableModel": "Desativar modelo",

@@ -19232,7 +19232,7 @@
     "credentialsHint": "禁用推理但保留凭据。",
     "providerError": "无法更新提供商访问权限。",
     "managedTitle": "Kortix 托管模型",
-    "managedDescription": "使用 Kortix 额度进行推理。关闭后仅使用您自己的提供商。",
+    "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
     "hiddenHint": "已从选择器中隐藏。仍允许直接请求；请通过模型菜单禁用。",
     "hidden": "已从选择器中隐藏",
     "disableModel": "禁用模型",
