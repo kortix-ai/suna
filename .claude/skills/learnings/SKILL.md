@@ -6322,3 +6322,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** preview `1877cccc43` upgraded the worker code but retained its original environment. The missing model endpoint kept live model selection disabled.
 **Rule:** derive additive endpoint URLs from existing API, project, and session identity when the new variable is absent. Test an existing worker through stop/resume, not only a fresh sandbox.
 **Enforcer:** `session-model.test.ts` covers the legacy environment fallback. The preview model-switch check starts its session on the preceding worker build.
+
+### Budget preview memory for the full locale census (2026-09-14)
+
+**Incident:** preview `1877cccc43` returned localized-page 502s during the browser suite. The frontend logged `Reached heap limit`; its container ceiling was 512 MiB.
+**Rule:** previews that enable the marketing site and test every locale reserve 2 GiB for the frontend. Set the Node heap ceiling to 1.5 GiB, leaving space for native allocations. Preserve the existing HTTP header limit.
+**Enforcer:** `tests/unit/preview-stack.test.ts` checks the preview overlay. Verify the complete locale census and container restart count on the deployed preview.

@@ -190,6 +190,10 @@ export function buildPreviewComposeOverlay(
   validatedValue(reportPath, 'reportPath');
   validatedValue(caddyfilePath, 'caddyfilePath');
   return `services:
+  frontend:
+    mem_limit: 2048m
+    environment:
+      NODE_OPTIONS: "--max-http-header-size=131072 --max-old-space-size=1536"
   preview-edge:
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     ports:

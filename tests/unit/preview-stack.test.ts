@@ -142,6 +142,12 @@ describe('ephemeral self-host preview stack', () => {
   // because the preview App cannot create repos (403) and a seeded project's
   // history therefore exists nowhere else. The org held none of the preview's
   // repos, and `/tmp/kortix/git-cache` was simply gone.
+  it('budgets the full locale census within the preview frontend memory ceiling', () => {
+    const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
+    expect(overlay).toContain('  frontend:\n    mem_limit: 2048m');
+    expect(overlay).toContain('NODE_OPTIONS: "--max-http-header-size=131072 --max-old-space-size=1536"');
+  });
+
   it('keeps the git mirror across a container recreate', () => {
     const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
     // Mounted at the PARENT of git-cache so sibling caches survive too.
