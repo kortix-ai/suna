@@ -172,7 +172,20 @@ async function main(): Promise<void> {
     const resumed = await waitReady(sessionId);
     const health2 = await call(api, jwt, `${resumed.runtime}/kortix/health`);
     const cp2 = health2.body?.config_provider ?? {};
-    check('resume adopts the existing workspace (no S3 attempt, provider git/warm)', cp2.s3_attempted === false && cp2.provider === 'git', JSON.stringify({ provider: cp2.provider, s3_attempted: cp2.s3_attempted, timings: cp2.timings }));
+    // Two provider behaviours are both "never re-acquired": Daytona restarts
+    // the container, so the daemon re-runs and must adopt the workspace warm
+    // (provider git, no S3 attempt); Platinum wakes the SAME VM with the same
+    // daemon process, so the boot-1 summary is still the one being reported
+    // (identical timings, uptime carried on). A re-acquisition on resume would
+    // show provider s3 with NEW timings.
+    const daemonContinued =
+      JSON.stringify(cp2.timings) === JSON.stringify(cp.timings) && (health2.body?.uptime_s ?? 0) >= (health.body?.uptime_s ?? 0);
+    const adoptedWarm = cp2.s3_attempted === false && cp2.provider === 'git';
+    check(
+      'resume never re-acquires (daemon restarted and adopted the workspace warm, or the same daemon continued)',
+      adoptedWarm || daemonContinued,
+      JSON.stringify({ provider: cp2.provider, s3_attempted: cp2.s3_attempted, timings: cp2.timings, adoptedWarm, daemonContinued, uptime_s: [health.body?.uptime_s, health2.body?.uptime_s] }),
+    );
     const rawScratch = await call(api, jwt, `${resumed.runtime}/file/raw?path=compat/${scratch}`, {}, false);
     check('uncommitted edit survived stop/resume', rawScratch.status === 200 && rawScratch.text === 'not committed\n', `${rawScratch.status}`);
     check('resumed session still on its branch with the pushed commit', health2.body.branch === sessionId && health2.body.commit_sha === headSha, `${health2.body.branch}@${health2.body.commit_sha}`);

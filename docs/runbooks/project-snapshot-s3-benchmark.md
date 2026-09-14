@@ -292,6 +292,104 @@ commit + push from the box → read-back → reload → change request → merge
 stop / resume (adopts the workspace, `provider: git`, `s3_attempted: false`) →
 foreign PAT 403 on the descriptor → owner JWT 401 on the proxy.
 
+## Platinum run (same topology, provider pinned to `platinum`), 2026-09-14
+
+Same local topology (API and MinIO each behind a cloudflared quick tunnel),
+same fixtures and the same v2 objects as the run above, provider pinned per
+session (`POST /sessions {"provider":"platinum"}`), daemon fingerprint
+`branch-v2` on every round, 1 warm-up per arm discarded, arms alternating.
+Run 11:58–12:28 UTC. No baseline arm: `main` has no Platinum-specific boot
+path, and the question is Git versus S3 on the same provider. `PLATINUM_TEMPLATE`
+is unset locally, so every session boots from the per-project template the
+snapshot builder materialises.
+
+### Representative project (400 files), 30 rounds per arm
+
+| Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | Full boot p50 / p95 (min / max) |
+|---|---|---|---|---|
+| New Git provider (`git` mode) | 30 / 0 / 0 | 620 / 1,480 ms | 706 / 1,569 ms | 11,867 / 12,954 ms (11,467 / 13,524) |
+| **New S3 provider v2** (`prefer-s3`) | 30 S3 attempts / 3 failed acquisitions / 3 fallbacks (27 served by S3) | 1,318 / 2,508 ms on the 27 S3 rounds (arm-wide 1,413 / 2,902) | 1,493 / 2,977 ms | 11,743 / 12,564 ms (8,186 / 12,619) |
+
+Hydration (27 S3 rounds): `ok` 27/27, blob-pack import p50 418 / p95 1,135 ms,
+in-guest `config-provider:hydrate:ok` at 1,937 / 3,080 ms versus
+`opencode-ready` at 7,396 / 7,524 ms on the same rounds — the repository was
+fully hydrated 5.4 s before the harness was ready at p50. Extractor `tar` ×27.
+The settled hydration state was observed 11,950 ms (p50) after create, ~200 ms
+after `runtimeReady`.
+
+Retries: 21 of 30 S3 rounds needed 2–3 download attempts (Daytona: 6 of 30),
+and rounds 15, 29 and 30 fell back to Git after 3 (2,313–2,410 ms of S3 time +
+452–542 ms Git); every failure `unavailable` at `download`. 60 descriptor
+requests for 30 rounds, because every attempt re-presigns. The Git arm's bundle
+crosses the other quick tunnel and saw none of it. The laptop–MinIO tunnel leg
+was flakier from Platinum's network than from Daytona's during this half hour
+(the many-files phase 20 minutes later had 0 retries in 10 rounds); the
+retry/fallback design absorbed all of it — 0 boot failures — at the cost of the
+S3 arm's acquisition p95.
+
+Git proxy before readiness: Git arm `GET fast-boot-bundle 200` ×30 (plus one
+`info/refs` + `git-upload-pack` pair); S3 arm `GET project-snapshot 200` ×60
+and `GET fast-boot-bundle 200` ×3 (the fallback rounds). At/after readiness the
+S3 arm's deferred backfill: `info/refs` ×24, `git-upload-pack` ×14.
+
+### Many small files (5,000 files), 10 rounds per arm
+
+| Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | Full boot p50 / p95 |
+|---|---|---|---|---|
+| New Git provider (`git` mode) | 10 / 0 / 0 | 1,003 / 1,166 ms | 1,087 / 1,281 ms | 11,934 / 12,471 ms |
+| **New S3 provider v2** (`prefer-s3`) | 10 / 0 / 0 (0 retried attempts) | 942 / 1,337 ms | 1,072 / 1,473 ms | 12,009 / 13,015 ms |
+
+Hydration: `ok` 10/10, import p50 418 / p95 568 ms, hydrated at 1,618 / 2,015 ms
+versus ready at 7,503 / 7,613 ms. Extractor `tar` ×10. Proxy before readiness:
+S3 arm `GET project-snapshot 200` ×10 only; Git arm `GET fast-boot-bundle` ×10
+(plus two `git-upload-pack`). At/after readiness: `info/refs` ×8,
+`git-upload-pack` ×8.
+
+### Daytona versus Platinum (same fixtures, same objects; in-guest marks p50 / p95, ms)
+
+| Measure | Daytona Git | Daytona S3 | Platinum Git | Platinum S3 |
+|---|---|---|---|---|
+| `repo-materialized`, 400 files | 1,212 / 1,760 | 1,412 / 3,174 | 706 / 1,569 | 1,493 / 2,977 |
+| `repo-materialized`, 5,000 files | 1,553 / 13,087 | 1,679 / 2,340 | 1,087 / 1,281 | 1,072 / 1,473 |
+| `opencode-listening`, 400 files | 2,334 / 4,330 | 2,549 / 4,682 | 7,271 / 7,501 | 7,356 / 7,504 |
+| `opencode-ready`, 400 files | 2,374 / 4,582 | 2,578 / 4,696 | 7,288 / 7,520 | 7,385 / 7,524 |
+| create ack (host), 400 files | 756 | 753 | 781 | 813 |
+| full boot, 400 files | 6,374 / 13,179 | 6,785 / 9,551 | 11,867 / 12,954 | 11,743 / 12,564 |
+
+Reading: the config path costs the same on both providers — S3 is at parity
+with Git inside the tunnel noise on both, and 60 ms faster at p50 on the
+5,000-file project on Platinum. Platinum's ~5 s longer full boot is entirely
+in-guest harness start: OpenCode listens at ~7.3 s on Platinum versus
+~2.3–2.5 s on Daytona, while the Git arm materialises the repository *earlier*
+on Platinum than on Daytona. Platinum's tail is tighter — p95 within 1.1 s of
+p50 in every arm, where Daytona's Git arm had a 13 s bundle fetch and a 24 s
+boot. As on Daytona, the numbers compare the two paths against each other
+under two transatlantic tunnel hops; absolute in-region speed needs the
+preview or dev deployment.
+
+### Compatibility gate on Platinum — 23/23
+
+`project-snapshot-compat.ts --provider platinum` on the 5,000-file project,
+S3-booted session (`provider: s3`, `sha_matches: true`, extractor `tar`,
+hydration `{status: ok, attempts: 1, bytes: 2,604,298, ms: 420}`): upload →
+commit + push from the box → read-back → reload → change request → merge
+(enqueues the new tip) → stop / resume → uncommitted edit survived → still on
+the session branch at the pushed commit → foreign PAT 403 on the descriptor
+(no `X-Amz-` in the body) → owner JWT 401 on the proxy.
+
+The first pass stopped at the stop/resume check with `provider: s3,
+s3_attempted: true`, which on Daytona would mean a re-acquisition. It is not
+one: Daytona restarts the container on resume, so the daemon re-runs and must
+adopt the workspace warm (`provider: git`, `timings: {warm: 235}`, no S3
+attempt — re-verified the same hour). Platinum wakes the **same** VM with the
+**same** daemon process — `opencode_pid` unchanged, `uptime_s` 8 → 50, the
+boot-1 `config_provider` summary reported verbatim — and the uncommitted file
+is still there (`file/raw` 200 with its content). A re-acquisition on resume
+would show `provider: s3` with *new* timings. The check now accepts either
+"restarted and adopted warm" or "same daemon continued" and prints which one
+it saw (`adoptedWarm` / `daemonContinued`); the two provider behaviours are
+both "never re-acquired", which is the contract.
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
