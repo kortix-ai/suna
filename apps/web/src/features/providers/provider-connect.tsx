@@ -82,6 +82,10 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_NOTES, ProviderLogo } from '@/features/providers/provider-branding';
 import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/sections/llm-provider/chatgpt-subscription-connect';
+import {
+  ManagedProviderAccess,
+  ProviderAccessSwitch,
+} from '@/features/workspace/customize/sections/llm-provider/provider-access-switch';
 import { ProviderDetail } from '@/features/workspace/customize/sections/llm-provider/provider-detail';
 import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import {
@@ -99,7 +103,7 @@ import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { deleteProjectProviderOAuth, deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk';
-import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { qk, refreshProjectProviderState, useModelAccess } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
@@ -207,6 +211,8 @@ export interface ProviderConnectViewProps {
   onRemoveKey?: (providerId: string) => void;
   /** Per-provider extra auth affordance. Only `openai` has one today. */
   subscriptionSlots?: Record<string, ReactNode>;
+  accessSlots?: Record<string, ReactNode>;
+  managedAccessSlot?: ReactNode;
   /**
    * "Browse before you connect". When set, `detailSlot` REPLACES the list —
    * the one capability the deleted `CatalogTab` drill-down had that an inline
@@ -464,7 +470,7 @@ function ProviderKeyFields({
       ) : (
         // One border around the stack, `divide-y` for the seams — Bedrock's
         // three fields are one credential, so they get one box.
-        <div className="border-border divide-border dark:bg-input/30 divide-y overflow-hidden rounded-md border">
+        <div className="border-border divide-border bg-input divide-y overflow-hidden rounded-md border">
           {fields}
         </div>
       )}
@@ -513,6 +519,7 @@ function ProviderRow({
   onToggleReveal,
   onRemoveKey,
   subscriptionSlot,
+  accessSlot,
   onOpenDetail,
 }: {
   row: ProviderConnectRow;
@@ -526,6 +533,7 @@ function ProviderRow({
   onToggleReveal: ProviderConnectViewProps['onToggleReveal'];
   onRemoveKey?: ProviderConnectViewProps['onRemoveKey'];
   subscriptionSlot?: ReactNode;
+  accessSlot?: ReactNode;
   onOpenDetail?: (providerId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -548,6 +556,7 @@ function ProviderRow({
             </a>
           )}
         </div>
+        {accessSlot && <div className="mt-2">{accessSlot}</div>}
         {onOpenDetail && row.modelCount > 0 && (
           <button
             type="button"
@@ -654,6 +663,8 @@ export function ProviderConnectView({
   search,
   onSearchChange,
   subscriptionSlots,
+  accessSlots,
+  managedAccessSlot,
   detailProviderId = null,
   onOpenDetail,
   detailSlot,
@@ -682,6 +693,8 @@ export function ProviderConnectView({
         <InputGroupSearchClear onClick={() => onSearchChange('')} />
       </InputGroupSearch>
 
+      {managedAccessSlot}
+
       {/* The one sentence on the screen. With no Connect button, this is the
           only thing telling a reader their key will be written at all — an
           auto-save nobody is told about is indistinguishable from an edit that
@@ -708,6 +721,7 @@ export function ProviderConnectView({
               onToggleReveal={onToggleReveal}
               onRemoveKey={onRemoveKey}
               subscriptionSlot={subscriptionSlots?.[row.id]}
+              accessSlot={accessSlots?.[row.id]}
               onOpenDetail={onOpenDetail}
             />
           ))}
@@ -786,6 +800,7 @@ export function ProviderConnect({
   enabled = true,
   className,
 }: ProviderConnectProps) {
+  const access = useModelAccess(enabled ? projectId : null);
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useLiveLlmProviderCatalog(projectId, enabled);
   useLlmProviderCatalogRevision();
@@ -1056,6 +1071,23 @@ export function ProviderConnect({
   return (
     <>
       <ProviderConnectView
+        managedAccessSlot={
+          !search || 'kortix managed models'.includes(search.toLowerCase()) ? (
+            <ManagedProviderAccess access={access} canWrite={canWrite} />
+          ) : undefined
+        }
+        accessSlots={Object.fromEntries(
+          visibleRows.map((row) => [
+            row.id,
+            <ProviderAccessSwitch
+              key={row.id}
+              access={access}
+              providerId={row.id}
+              name={row.label}
+              canWrite={canWrite}
+            />,
+          ]),
+        )}
         className={className}
         rows={visibleRows}
         totalCount={searchable.length}

@@ -1,3 +1,5 @@
+import { getProjectModelAccess } from '../../repositories/project-model-access';
+import { modelAccessAllows } from '../model-access';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
@@ -43,7 +45,7 @@ export async function servableProjectCatalog(input: {
 }): Promise<ServableProjectCatalog> {
   const { projectId, accountId, principalUserId } = input;
   const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
-  const [secrets, defaults, routing] = await Promise.all([
+  const [secrets, defaults, routing, access] = await Promise.all([
     listProjectSecretNamesForConsumer({
       projectId,
       principalUserId,
@@ -51,6 +53,7 @@ export async function servableProjectCatalog(input: {
     }).catch(() => [] as string[]),
     getAccountModelDefaults(accountId, projectId),
     getProjectRoutingPolicy(projectId),
+    getProjectModelAccess(projectId),
   ]);
   const effectiveDefault = toWireModel(
     defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
@@ -73,7 +76,7 @@ export async function servableProjectCatalog(input: {
     models: Object.fromEntries(
       Object.entries(models).map(([id, model]) => [
         id,
-        { ...model, enabled: enabled.get(id) ?? true },
+        { ...model, enabled: modelAccessAllows(access, id) && (enabled.get(id) ?? true) },
       ]),
     ),
     modelOverrides: routing?.modelOverrides ?? {},

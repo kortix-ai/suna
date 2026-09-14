@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import * as realTiers from '../../billing/services/tiers';
 
+let modelAccess = { disabledProviders: [] as string[], disabledModels: [] as string[] };
+mock.module('../../repositories/project-model-access', () => ({ getProjectModelAccess: async () => modelAccess }));
+
 let tierByAccount: Record<string, string> = {};
 const getAccountTier = mock(async (accountId: string) => tierByAccount[accountId] ?? 'pro');
 
@@ -175,6 +178,7 @@ function principal(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   tierByAccount = {};
+  modelAccess = { disabledProviders: [], disabledModels: [] };
   for (const key of Object.keys(config)) delete config[key];
   Object.assign(config, {
     LLM_GATEWAY_ENABLED: true,
@@ -594,5 +598,28 @@ describe('resolveCachedAccountTier — 30s TTL boundary', () => {
     tierByAccount[accountId] = 'pro';
     expect(await resolveCachedAccountTier(accountId, 10_000 + 30_000)).toBe('pro');
     expect(getAccountTier).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe('explicit project model access', () => {
+  test('disabled provider fails before any credential is read', async () => {
+    modelAccess.disabledProviders = ['anthropic'];
+    await expect(resolveCandidates(principal(), 'anthropic/test')).rejects.toMatchObject({ code: 'provider_disabled' });
+    expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+  });
+  test('disabled model fails before any credential is read', async () => {
+    modelAccess.disabledModels = ['codex/test'];
+    await expect(resolveCandidates(principal(), 'codex/test')).rejects.toMatchObject({ code: 'model_disabled' });
+    expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+  test('managed disable removes managed fallback while preserving the BYOK candidate', async () => {
+    modelAccess.disabledProviders = ['kortix'];
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    resolvedSecrets = [{ identifier: 'key', value: 'sk-test' }];
+    runtimeManagedModel = { id: 'anthropic/claude-sonnet-4.6' };
+    const candidates = await resolveCandidates(principal(), 'anthropic/test');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].credentialRef).toBe('key');
   });
 });

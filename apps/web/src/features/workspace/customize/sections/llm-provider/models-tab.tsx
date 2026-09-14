@@ -27,9 +27,11 @@ import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
 import { Tag } from '@/components/ui/tag';
+import { errorToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { cn } from '@/lib/utils';
 import {
+  useModelAccess,
   useModelDefaults,
   useModelEnablement,
   useProjectModels,
@@ -42,6 +44,7 @@ import {
   StarIcon as Star,
 } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
+import { ProviderAccessSwitch } from './provider-access-switch';
 
 import {
   DropdownMenu,
@@ -73,9 +76,11 @@ import { formatPricePerMillion, formatTokenCount } from './utils';
 export function ModelsTab({
   projectId,
   search: hostSearch,
+  canWrite = false,
 }: {
   projectId: string;
   search?: string;
+  canWrite?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [ownSearch, setOwnSearch] = useState('');
@@ -88,6 +93,7 @@ export function ModelsTab({
   // is the one and only thing deciding whether it appears there.
   const models = useProjectModels(projectId);
   const enablement = useModelEnablement(projectId);
+  const access = useModelAccess(projectId);
   // Setting the project default from here is what makes the locked row
   // actionable: the only way to turn the default off is to make something else
   // the default, so the control for that belongs on the same screen.
@@ -159,9 +165,17 @@ export function ModelsTab({
             <Button
               variant="ghost"
               size="sm"
-              disabled={enablement.isUpdating}
+              disabled={!canWrite || enablement.isUpdating || access.isUpdating}
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() => void enablement.resetToDefaults()}
+              onClick={() =>
+                void enablement
+                  .resetToDefaults()
+                  .catch((error: unknown) =>
+                    errorToast(
+                      error instanceof Error ? error.message : 'Could not reset the model list.',
+                    ),
+                  )
+              }
             >
               {tI18nComplete.raw('text5eed7e9fc8f3')}
             </Button>
@@ -192,10 +206,18 @@ export function ModelsTab({
                   name={group.providerName}
                   size="small"
                 />
-                <span className="text-foreground/70 text-xs font-medium">{group.providerName}</span>
+                <span className="text-muted-foreground text-xs font-medium">
+                  {group.providerName}
+                </span>
                 <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
                   {group.rows.length}
                 </span>
+                <ProviderAccessSwitch
+                  access={access}
+                  providerId={group.providerID}
+                  name={group.providerName}
+                  canWrite={canWrite}
+                />
               </div>
               <div className="bg-popover overflow-hidden rounded-md border">
                 {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
@@ -296,7 +318,7 @@ export function ModelsTab({
                       `useDialogDepth`, so it stacks above the modal this tab
                       lives in without any per-call-site z-index.
                     */}
-                      {enabled && (
+                      {enabled && canWrite && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -350,14 +372,30 @@ export function ModelsTab({
                       )}
                       <Switch
                         checked={enabled}
-                        disabled={enablement.isUpdating || isProjectDefault}
+                        disabled={
+                          !canWrite ||
+                          access.isLoading ||
+                          access.isUpdating ||
+                          (isProjectDefault && enabled) ||
+                          access.data?.disabledProviders.includes(group.providerID)
+                        }
                         aria-label={
                           isProjectDefault
                             ? tI18nComplete('texta931b0c34b16', { value0: model.modelName })
-                            : `Offer ${model.modelName}`
+                            : `Enable ${model.modelName}`
                         }
                         title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : undefined}
-                        onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
+                        onCheckedChange={(next) =>
+                          void access
+                            .setEnabled({ target: 'model', id: wireId, enabled: next })
+                            .catch((error: unknown) =>
+                              errorToast(
+                                error instanceof Error
+                                  ? error.message
+                                  : 'Could not update model access.',
+                              ),
+                            )
+                        }
                         className="mt-0.5 shrink-0"
                       />
                     </div>

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { qk } from "./query-keys";
 
 let invalidated: unknown[][] = [];
 // The project-detail read (useProjectLlmGatewayEnabled) resolves the
@@ -65,8 +66,17 @@ describe("useGatewayRoutingPolicy", () => {
     result.reset.onSuccess();
     expect(invalidated).toEqual([
       ["gateway-routing-policy", "P1"],
+      qk.project.modelAccess("P1"),
       ["gateway-routing-policy", "P1"],
+      qk.project.modelAccess("P1"),
     ]);
     expect(result.preview.mutationFn).toBeFunction();
   });
+});
+
+
+test('routing changes refresh the default protection in model access controls', () => {
+  const result = useGatewayRoutingPolicy('P1') as any;
+  result.set.onSuccess();
+  expect(invalidated).toContainEqual(qk.project.modelAccess("P1"));
 });

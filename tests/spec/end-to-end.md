@@ -1016,3 +1016,5 @@ Native commands trust only the configured frontend origin in the main window's
 main frame. A second window at that same origin must receive an unauthorized
 sender error. Full document navigation within the configured frontend stays in
 the app, including when the frontend uses a custom host.
+
+`GW-ACCESS-1` Project provider and model access. New projects have no explicit restrictions. Anonymous and nonmember reads/writes are denied; members cannot write. Managers disable managed or BYOK providers and individual models. The current default model/provider cannot be disabled. Concurrent edits persist together. Disables survive reads, hide models from the picker, and reject direct gateway requests with `provider_disabled` or `model_disabled` before upstream inference. Provider re-enable retains individual model restrictions. Model re-enable restores access; invalid payloads do not change policy. A disabled target cannot become the routing default. Other project metadata survives.

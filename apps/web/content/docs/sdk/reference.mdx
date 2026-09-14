@@ -1013,3 +1013,14 @@ defines `window.Kortix`.
 - [SDK](/docs/sdk) — install and your first session.
 - [Sessions](/docs/sdk/sessions) — lifecycle, streaming, and error handling.
 - [React hooks](/docs/sdk/react) — the reactive layer built on these modules.
+
+
+## Provider and model access
+
+Read `kortix.projects.modelAccess(projectId)`. Change one target with `kortix.projects.setModelAccess(projectId, { target: 'provider' | 'model', id, enabled })`.
+
+Use provider ID `kortix` for Kortix Managed Models, or a catalog provider ID for BYOK, Codex, and custom providers. Use the full gateway wire ID for a model. Provider disable covers future models and preserves individual model preferences and saved credentials.
+
+The current default model and its provider require a replacement before disabling (`409 cannot_disable_default`). Direct gateway requests to disabled targets fail with `model_disabled` or `provider_disabled`. Existing in-flight upstream requests finish normally. The response's `enforced` flag is false when the project uses native OpenCode instead of the gateway.
+
+React consumers use `useModelAccess(projectId)` from `@kortix/sdk/react`. Its `setEnabled(change)` mutation refreshes the management catalog and session picker.

@@ -1,3 +1,5 @@
+import { readModelAccess } from '../../llm-gateway/model-access';
+import { changeProjectModelAccess } from '../../repositories/project-model-access';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   ConnectionMetadataSchema,
@@ -3191,6 +3193,64 @@ projectsApp.openapi(
     return c.json(catalog);
   },
 );
+
+// Explicit inference controls are separate from legacy picker visibility.
+const modelAccessChangeBody = z.object({
+  target: z.enum(['provider', 'model']),
+  id: z.string().trim().min(1).max(256),
+  enabled: z.boolean(),
+}).strict();
+
+projectsApp.openapi(createRoute({
+  method: 'get', path: '/{projectId}/model-access', tags: ['projects'],
+  summary: 'Read project provider and model access', ...auth,
+  request: { params: z.object({ projectId: z.string() }) },
+  responses: { 200: { description: 'OK', content: { 'application/json': { schema: z.any() } } }, ...errors(403, 404) },
+}), async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
+  return c.json({
+    ...readModelAccess(loaded.row.metadata),
+    defaultModel: toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined,
+    enforced: projectLlmGatewayEnabled(loaded.row.metadata),
+  });
+});
+
+projectsApp.openapi(createRoute({
+  method: 'put', path: '/{projectId}/model-access', tags: ['projects'],
+  summary: 'Enable or disable a project provider or model', ...auth,
+  request: { params: z.object({ projectId: z.string() }),
+    body: { content: { 'application/json': { schema: modelAccessChangeBody } } } },
+  responses: { 200: { description: 'OK', content: { 'application/json': { schema: z.any() } } }, ...errors(400, 403, 404, 409) },
+}), async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const parsed = modelAccessChangeBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
+  const change = parsed.data;
+  if (change.target === 'provider' && !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(change.id)) {
+    return c.json({ error: 'Invalid provider id', code: 'invalid_body' }, 400);
+  }
+  if (change.target === 'model') {
+    change.id = toWireModel(change.id);
+    if (!change.id || change.id === 'auto' || /\s/.test(change.id)) {
+      return c.json({ error: 'Use a concrete model id', code: 'invalid_body' }, 400);
+    }
+  }
+  const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
+  const defaultModel = toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined;
+  const result = await changeProjectModelAccess({ projectId, updatedBy: c.get('userId'), defaultModel, change });
+  if (result.conflict) return c.json({
+    error: 'Change the project default to another enabled provider or model first.',
+    code: 'cannot_disable_default', defaultModel,
+  }, 409);
+  invalidateAccountModelDefaults(loaded.row.accountId);
+  return c.json({ ...result.policy, defaultModel, enforced: projectLlmGatewayEnabled(loaded.row.metadata) });
+});
 
 // PUT /v1/projects/:projectId/model-enablement  { modelOverrides: {id: boolean} }
 // Replace the project's EXCEPTIONS to the default model set (the newest model

@@ -46,6 +46,18 @@ A model id has one of three shapes:
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
 
+## Disable providers or models
+
+Open **Customize → Models → Providers**. Turn off **Kortix Managed Models** to use only your own providers. Each provider also has an **Enabled** switch beside its credentials.
+
+Open the **Models** tab to enable or disable individual models. A disabled provider blocks all of its models, including models added later. Re-enabling the provider preserves individual model choices. Credentials stay saved throughout.
+
+The project default and its provider cannot be disabled. Select a different enabled default first. Project managers can change access; readers can inspect it.
+
+These controls apply to new requests through the Kortix gateway, including saved session selections and fallback candidates. A request already sent to an upstream finishes normally. Disabled targets return `provider_disabled` or `model_disabled`; choose an enabled model to continue. Native OpenCode mode does not use this gateway policy.
+
+Existing picker-only visibility preferences remain separate. Resetting the model list does not remove explicit access restrictions.
+
 ## Thinking effort
 
 The composer's thinking control sets the session's model **variant** in both
