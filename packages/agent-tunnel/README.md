@@ -63,3 +63,31 @@ locally before enabling Computer Use. The tunnel uses an existing binary from
 `CUA_DRIVER_BIN`, `~/.local/bin`, `/usr/local/bin`, or `/opt/homebrew/bin`.
 Treat that binary as trusted local code. Agent Tunnel does not verify or update
 it.
+
+### Transfer a binary file without copying base64
+
+Run the client where the source file exists. Set `TUNNEL_API_URL`, `TUNNEL_TOKEN`,
+and `TUNNEL_ID` for the target connection, then run:
+
+```sh
+agent-tunnel-cli fs_upload '{"source":"/tmp/report.xlsx","path":"/Users/me/Desktop/report.xlsx"}'
+```
+
+`fs_upload` reads bytes from `source`, computes SHA-256, and sends the bytes
+programmatically over the authenticated tunnel. It requires filesystem write
+permission. A pending approval returns `success: false` and exit code 1; retry
+only after approval. The command accepts regular files up to 3 MiB, which leaves
+room under the relay's 5 MiB message limit after base64 encoding.
+
+The connected agent checks the supplied `sha256` before modifying the destination.
+It reads the file after writing and returns its persisted `sha256` and `size`.
+The CLI succeeds only when both match the source. An older agent without checksum
+support causes verification to fail; the file may already exist. Update the agent
+before retrying.
+
+For raw `fs.write`, `sha256` is optional for compatibility. Supply it for binary
+content. Never copy an opaque base64 payload from model context. Generate the file
+on the destination when a programmatic transfer is unavailable. A matching hash
+proves byte integrity, not format validity: validate XLSX/ZIP structure and workbook
+contents at the source. File size and magic bytes are insufficient. Do not use
+public file-host relays for this workflow.

@@ -13,6 +13,7 @@
  */
 import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
 import {
+  validateFilesystemParams,
   type TunnelCapability,
   capabilityForMethod,
   desktopFeatureForMethod,
@@ -103,6 +104,9 @@ export async function executeTunnelRpc(input: {
       message: `Invalid capability: ${capability}`,
     };
   }
+
+  const validationError = validateFilesystemParams(method, params);
+  if (validationError) return { ok: false, kind: 'bad_request', message: validationError };
 
   const [connection] = await db
     .select({
