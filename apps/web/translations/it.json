@@ -46,17 +46,17 @@
     "tryFree": "Inizia"
   },
   "newWorkspace": {
-    "title": "Crea uno spazio di lavoro",
-    "description": "Uno spazio di lavoro contiene agenti, file e sessioni.",
-    "templateSeed": "Questo spazio di lavoro verrà inizializzato dal modello scelto.",
+    "title": "Crea uno progetto",
+    "description": "Uno progetto contiene agenti, file e sessioni.",
+    "templateSeed": "Questo progetto verrà inizializzato dal modello scelto.",
     "account": {
       "label": "Account",
       "createIn": "Crea in {account}",
       "choose": "Scegli un account"
     },
     "name": {
-      "label": "Nome dello spazio di lavoro",
-      "placeholder": "Nome dello spazio di lavoro"
+      "label": "Nome dello progetto",
+      "placeholder": "Nome dello progetto"
     },
     "validation": {
       "nameRequired": "Il nome è obbligatorio",
@@ -64,12 +64,12 @@
       "nameTooLong": "Il nome deve contenere al massimo {max} caratteri"
     },
     "permissions": {
-      "noCreatableAccount": "Per creare uno spazio di lavoro devi avere accesso come proprietario o amministratore a un account.",
+      "noCreatableAccount": "Per creare uno progetto devi avere accesso come proprietario o amministratore a un account.",
       "unknownAccountPrefix": "Non possiamo stabilire quale account sia il tuo, quindi non faremo supposizioni. Scrivi a",
       "unknownAccountSuffix": "e risolveremo il problema."
     },
     "actions": {
-      "create": "Crea spazio di lavoro",
+      "create": "Crea progetto",
       "tryAgain": "Riprova",
       "logOut": "Esci",
       "signingOut": "Disconnessione"
@@ -77,7 +77,7 @@
     "repository": {
       "label": "Repository",
       "defaultBranch": "Branch predefinito",
-      "noGitHubAccount": "Nessun account GitHub è ancora collegato all'account di questo spazio di lavoro.",
+      "noGitHubAccount": "Nessun account GitHub è ancora collegato all'account di questo progetto.",
       "connectGitHub": "Collega un account GitHub",
       "connectGitHubSuffix": "per usare questa opzione.",
       "loadingGitHubAccounts": "Caricamento degli account GitHub…",
@@ -89,7 +89,7 @@
       "sources": {
         "managed": {
           "label": "Gestito da Kortix",
-          "description": "Kortix crea e gestisce un repository privato per questo spazio di lavoro."
+          "description": "Kortix crea e gestisce un repository privato per questo progetto."
         },
         "githubCreate": {
           "label": "Crea in GitHub",
@@ -313,14 +313,14 @@
       "close": "Chiudi",
       "docs": "Documentazione",
       "groups": {
-        "workspace": "Spazio di lavoro",
+        "workspace": "Progetto",
         "personal": "Personale",
         "account": "Account"
       },
       "items": {
         "workspace": {
           "label": "Generale",
-          "description": "Nome e icona di questo spazio di lavoro."
+          "description": "Nome e icona di questo progetto."
         },
         "sandbox": {
           "label": "Modelli sandbox",
@@ -332,7 +332,7 @@
         },
         "upgrades": {
           "label": "Aggiornamenti",
-          "description": "Modifiche apportate da un agente a questo spazio di lavoro. Ogni esecuzione apre una richiesta di modifica da esaminare. Nulla viene unito automaticamente."
+          "description": "Modifiche apportate da un agente a questo progetto. Ogni esecuzione apre una richiesta di modifica da esaminare. Nulla viene unito automaticamente."
         },
         "profile": {
           "label": "Profilo",
@@ -391,7 +391,7 @@
         "switchToLastTab": "Passa all'ultima scheda",
         "newSession": "Nuova sessione",
         "commandPalette": "Tavolozza dei comandi",
-        "switchWorkspace": "Cambia area di lavoro",
+        "switchWorkspace": "Cambia progetto",
         "settings": "Impostazioni",
         "toggleLeftSidebar": "Attiva/disattiva la barra laterale sinistra",
         "toggleRightSidebar": "Attiva/disattiva la barra laterale destra",
@@ -498,7 +498,7 @@
       "conversationDensity": "Densità della conversazione",
       "conversationDensityDescription": "Scegli quanti dettagli mostra l'agente nella conversazione mentre lavora.",
       "wallpaper": "Sfondo",
-      "wallpaperDescription": "Lo sfondo dietro l'area di lavoro.",
+      "wallpaperDescription": "Lo sfondo dietro l'progetto.",
       "defaultWallpaper": "Predefinito",
       "themes": {
         "light": "Chiaro",
@@ -621,18 +621,18 @@
       "baseBranchDescription": "Le nuove sessioni e le richieste di modifica partono da questo ramo.",
       "saving": "Salvataggio…",
       "manifestFile": "File manifest",
-      "manifestDescription": "Il file del repository che indica a Kortix come eseguire questo spazio di lavoro.",
+      "manifestDescription": "Il file del repository che indica a Kortix come eseguire questo progetto.",
       "learnMore": "Scopri di più",
       "localTitle": "Lavora in locale",
-      "localDescription": "Copia questo spazio di lavoro sul computer e modificalo nel tuo editor.",
+      "localDescription": "Copia questo progetto sul computer e modificalo nel tuo editor.",
       "installTitle": "Installa la riga di comando Kortix",
       "installHint": "Configurazione unica su macOS o Linux. Salta il passaggio se è già installata.",
       "installCommand": "Comando di installazione",
-      "cloneTitle": "Copia lo spazio di lavoro sul computer",
-      "cloneHint": "Scarica il codice in una nuova cartella e la collega a questo spazio di lavoro.",
+      "cloneTitle": "Copia lo progetto sul computer",
+      "cloneHint": "Scarica il codice in una nuova cartella e la collega a questo progetto.",
       "cloneCommand": "Comando di clonazione",
       "setupTitle": "Completa la configurazione nella nuova cartella",
-      "setupHint": "Scrive la configurazione locale e recupera i segreti di questo spazio di lavoro per eseguire il codice.",
+      "setupHint": "Scrive la configurazione locale e recupera i segreti di questo progetto per eseguire il codice.",
       "setupCommand": "Comando di configurazione",
       "secretsCommand": "Comando dei segreti",
       "ownClientTitle": "Usa il tuo client Git",
@@ -641,9 +641,9 @@
       "cloneAddress": "Indirizzo di clonazione",
       "peopleTitle": "Persone con accesso",
       "peopleManagedDescription": "Invita qualcuno con il suo nome utente GitHub. GitHub invierà un invito da accettare.",
-      "peopleExternalDescription": "Chi può leggere e scrivere il repository di questo spazio di lavoro.",
+      "peopleExternalDescription": "Chi può leggere e scrivere il repository di questo progetto.",
       "externalGithubDescription": "Kortix non ha creato questo repository e non può aggiungere collaboratori. Gestisci l'accesso dalle impostazioni del repository su GitHub.",
-      "externalProviderDescription": "Il repository di questo spazio di lavoro è ospitato su {provider}, che non supporta inviti da Kortix. Gestisci l'accesso presso il provider.",
+      "externalProviderDescription": "Il repository di questo progetto è ospitato su {provider}, che non supporta inviti da Kortix. Gestisci l'accesso presso il provider.",
       "manageOnGithub": "Gestisci su GitHub",
       "alreadyHasAccess": "@{username} ha già accesso a questo repository",
       "inviteSent": "Invito inviato a @{username} — deve accettarlo su GitHub",
@@ -654,35 +654,35 @@
       "canView": "Può visualizzare",
       "invite": "Invita",
       "title": "Repository Git",
-      "loadFailed": "Impossibile caricare il repository di questo spazio di lavoro",
+      "loadFailed": "Impossibile caricare il repository di questo progetto",
       "retry": "Riprova"
     },
     "workspace": {
-      "updateFailed": "Impossibile aggiornare lo spazio di lavoro",
-      "iconUpdateFailed": "Impossibile aggiornare l'icona dello spazio di lavoro",
+      "updateFailed": "Impossibile aggiornare lo progetto",
+      "iconUpdateFailed": "Impossibile aggiornare l'icona dello progetto",
       "icon": "Icona",
-      "iconDescription": "Mostrata accanto al nome dello spazio di lavoro.",
-      "name": "Nome dello spazio di lavoro",
-      "nameDescription": "Mostrato nel selettore e ovunque sia elencato questo spazio di lavoro.",
+      "iconDescription": "Mostrata accanto al nome dello progetto.",
+      "name": "Nome dello progetto",
+      "nameDescription": "Mostrato nel selettore e ovunque sia elencato questo progetto.",
       "saving": "Salvataggio…",
-      "archived": "Spazio di lavoro archiviato",
-      "archiveFailed": "Impossibile archiviare lo spazio di lavoro",
-      "loadFailed": "Impossibile caricare lo spazio di lavoro",
+      "archived": "Progetto archiviato",
+      "archiveFailed": "Impossibile archiviare lo progetto",
+      "loadFailed": "Impossibile caricare lo progetto",
       "retry": "Riprova",
       "dangerZone": "Zona pericolosa",
-      "deleteWorkspace": "Elimina spazio di lavoro",
-      "deleteDescription": "Rimuove questo spazio di lavoro e tutto il suo contenuto per ogni membro. Questa azione non può essere annullata.",
-      "deleteTitle": "Eliminare lo spazio di lavoro?",
+      "deleteWorkspace": "Elimina progetto",
+      "deleteDescription": "Rimuove questo progetto e tutto il suo contenuto per ogni membro. Questa azione non può essere annullata.",
+      "deleteTitle": "Eliminare lo progetto?",
       "deleteDialog": "Questa azione elimina {name} per chiunque vi abbia accesso. Non può essere annullata.",
       "consequencesTitle": "Perdi immediatamente:",
       "consequences": {
-        "sessions": "Ogni sessione in questo spazio di lavoro, con file, cronologia e risultati",
+        "sessions": "Ogni sessione in questo progetto, con file, cronologia e risultati",
         "automation": "Tutte le esecuzioni pianificate e i trigger — smettono subito di funzionare",
-        "integrations": "Ogni integrazione connessa, segreto e chiave API limitata a questo spazio di lavoro",
-        "access": "L'accesso per tutto il team — nessuno potrà più raggiungere questo spazio di lavoro"
+        "integrations": "Ogni integrazione connessa, segreto e chiave API limitata a questo progetto",
+        "access": "L'accesso per tutto il team — nessuno potrà più raggiungere questo progetto"
       },
       "reassurance": "Il repository Git connesso non viene eliminato. Il codice già inviato resta al suo posto.",
-      "keepWorkspace": "Mantieni spazio di lavoro"
+      "keepWorkspace": "Mantieni progetto"
     },
     "sandbox": {
       "states": {
@@ -803,7 +803,7 @@
       "categories": {
         "quota": {
           "label": "Limite snapshot raggiunto",
-          "help": "Questo spazio di lavoro ha memorizzato il numero massimo di macchine preparate consentito dal piano. Elimina un modello sandbox inutilizzato o aumenta il limite, quindi ripeti la creazione."
+          "help": "Questo progetto ha memorizzato il numero massimo di macchine preparate consentito dal piano. Elimina un modello sandbox inutilizzato o aumenta il limite, quindi ripeti la creazione."
         },
         "dockerfile": {
           "label": "Creazione Dockerfile non riuscita",
@@ -997,9 +997,9 @@
     },
     "upgrades": {
       "available": "Aggiornamenti disponibili",
-      "readOnly": "Sola lettura — per eseguire un aggiornamento serve l’accesso in scrittura a questo spazio di lavoro.",
+      "readOnly": "Sola lettura — per eseguire un aggiornamento serve l’accesso in scrittura a questo progetto.",
       "none": "Nessun aggiornamento disponibile",
-      "upToDateDescription": "Questo spazio di lavoro è già aggiornato.",
+      "upToDateDescription": "Questo progetto è già aggiornato.",
       "upToDate": "Aggiornato",
       "run": "Esegui",
       "oneOff": "Aggiornamento una tantum",
@@ -1098,7 +1098,7 @@
       "namePlaceholder": "Ad esempio, CLI portatile",
       "nameHint": "Usa un nome che identifichi dove userai questa chiave.",
       "scope": "Ambito",
-      "wholeWorkspace": "Intero spazio di lavoro",
+      "wholeWorkspace": "Intero progetto",
       "oneProject": "Un progetto",
       "scopeHint": "Una chiave limitata a un progetto può accedere solo al progetto selezionato.",
       "expires": "Scadenza",
@@ -1205,7 +1205,7 @@
     "searchResults": "Risultati di ricerca",
     "recent": "Recenti",
     "personalAccount": "Account personale",
-    "workspaces": "Aree di lavoro",
+    "workspaces": "Progetti",
     "servers": "Server",
     "searchServers": "Cerca server...",
     "addServer": "Aggiungi server",
@@ -1282,19 +1282,20 @@
       }
     },
     "workspace": {
-      "switch": "Cambia area di lavoro",
-      "switchMenu": "Cambia area di lavoro",
-      "create": "Crea spazio di lavoro…",
+      "switch": "Cambia progetto",
+      "switchMenu": "Cambia progetto",
+      "create": "Crea progetto…",
+      "createIn": "Crea un progetto in {account}",
       "createAccount": "Crea un account…",
       "settings": "Impostazioni",
       "downloadApp": "Scarica l'app",
       "logOut": "Esci",
-      "find": "Trova uno spazio di lavoro…",
+      "find": "Trova uno progetto…",
       "accountSettings": "Impostazioni account",
-      "noMatches": "Nessuno spazio di lavoro corrispondente",
-      "empty": "Nessuno spazio di lavoro",
+      "noMatches": "Nessuno progetto corrispondente",
+      "empty": "Nessuno progetto",
       "account": "Account",
-      "loadError": "Impossibile caricare gli spazi di lavoro"
+      "loadError": "Impossibile caricare gli progetti"
     },
     "manifestUpgrade": {
       "title": "Aggiorna alla v2",
@@ -1672,7 +1673,7 @@
     "failedToStartSession": "Impossibile avviare la sessione",
     "hintSkills": "Digita / per abilità, comandi e file",
     "hintMentions": "Digita @ per menzionare file e agenti",
-    "hintWorkspaceFile": "Chiedi informazioni su qualsiasi file nell'area di lavoro",
+    "hintWorkspaceFile": "Chiedi informazioni su qualsiasi file nell'progetto",
     "hintCommandPalette": "Premi {modifier}K per aprire la tavolozza dei comandi",
     "hintSwitchAgents": "Premi Tab per cambiare agente",
     "hintAttachFiles": "Trascina qui i file per allegarli",
@@ -18436,8 +18437,8 @@
     },
     "kickoff": {
       "tools": "Ho collegato anche questi strumenti: {count}. Usateli se aiutano.",
-      "noDomain": "Ho finito di configurare il mio spazio di lavoro.{toolsClause} Presentati, spiega cosa puoi fare e chiedi prima per cosa ho bisogno di aiuto.",
-      "withDomain": "Ho finito di configurare il mio spazio di lavoro per {domain}. Effettua una ricerca sull'azienda e dimmi cosa trovi.{toolsClause} Quindi chiedi prima per cosa ho bisogno di aiuto."
+      "noDomain": "Ho finito di configurare il mio progetto.{toolsClause} Presentati, spiega cosa puoi fare e chiedi prima per cosa ho bisogno di aiuto.",
+      "withDomain": "Ho finito di configurare il mio progetto per {domain}. Effettua una ricerca sull'azienda e dimmi cosa trovi.{toolsClause} Quindi chiedi prima per cosa ho bisogno di aiuto."
     },
     "company": {
       "title": "Raccontaci della tua azienda",
