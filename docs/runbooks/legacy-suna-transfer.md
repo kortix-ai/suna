@@ -467,3 +467,42 @@ the restore. Compare the full destination inventory, not only expected files.
 Verify binary files through the authenticated file API and prove pre-existing
 messages remain unchanged. Keep transcript completion and file completion
 separate in the ledger and user-facing progress reports.
+
+
+### Required directory evidence and process audit
+
+Every completed workspace has a real `/workspace/<legacy-project-uuid>/`
+directory. Zero regular files is valid only when the captured manifest proves
+that state. Preserve empty subdirectories. A missing source reference does not
+prove an empty workspace. Never create an empty replacement and call it restored.
+
+The versioned `apps/api/src/scripts/legacy-transfer/restore-workspace.py`
+validates a unique manifest root, exact destination paths, file SHA-256 hashes,
+sizes, modes, and modification times. Existing destination changes block a retry;
+the restore does not overwrite them. `assertWorkspaceVerified` requires explicit
+root-directory, exact-inventory, and file-hash evidence before completion.
+Older proofs without these fields require revalidation, not inferred flags.
+
+Run `bun test apps/api/src/scripts/legacy-transfer`. Filesystem tests require
+Python 3.12; `LEGACY_TRANSFER_PYTHON` can select another Python >=3.12 binary.
+They exercise real archives, empty directories, retries, corrupted archives,
+missing roots, duplicate paths, changed files, and destination symlinks.
+
+Full production completion remains blocked until all applicable items pass:
+
+- Every cutoff thread maps to exactly one destination session with its owner,
+  title, messages, and required shares verified.
+- Every workspace is captured and restored, or has an explicit source-specific
+  approved exception. Exceptions remain separate from restored workspaces.
+- Source projects without threads are inventoried for files and assigned a
+  destination. A thread-only queue cannot prove that all source files transferred.
+- Storage attachments and filesystem references outside `/workspace` are
+  inventoried and reconciled. Workspace restoration alone does not cover them.
+- Unsupported filesystem entries remain blocked. The current restore rejects
+  symlinks and hardlinks; it does not preserve xattrs or original numeric owners.
+- Export membership and final reconciliation account for live changes and
+  deletions. A created-at cutoff is not a consistent database snapshot.
+- Durable off-box archives and lost-sandbox recovery are verified. Local files
+  and a copy inside the destination sandbox do not meet this requirement.
+- Parallel apply has per-session claims, source-sandbox capture locks, retry
+  checkpoints, and capacity controls. The current global lease serializes apply.
