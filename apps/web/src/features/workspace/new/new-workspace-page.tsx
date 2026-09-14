@@ -1,5 +1,6 @@
 'use client';
 
+import { readAccountParam } from '@/features/workspace/new/account-param';
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
@@ -140,10 +141,19 @@ export function NewWorkspacePage() {
   // change never fights the user's own Select.
   const initialSource = readSourceParam(new URLSearchParams(searchParams?.toString() ?? ''));
 
+  // `?account=` is how "the account you just created" survives the navigation
+  // here (`readAccountParam`). Initial state only, like `?source=` above: this
+  // page's own default resolves to the user's PERSONAL account
+  // (`resolveDefaultCreatableAccountId`), so without the seed a brand-new
+  // account would land here with the wrong account preselected and quietly
+  // create its first workspace somewhere else.
+  const initialAccountId = readAccountParam(new URLSearchParams(searchParams?.toString() ?? ''));
+
   const [state, setState] = useState<NewWorkspaceFormState>(() => ({
     ...INITIAL_FORM_STATE,
     templateId: cloneItemId,
     ...(initialSource ? { source: initialSource } : {}),
+    ...(initialAccountId ? { accountId: initialAccountId } : {}),
   }));
   const [touched, setTouched] = useState(false);
   // Never cleared: the document is replaced, not re-rendered.
