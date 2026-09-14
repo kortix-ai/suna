@@ -75,6 +75,7 @@ describe('account hub — the read probes exist and are ordered', () => {
       'group.create',
       'group.members.manage',
       'role.create',
+      'project.create',
     ]);
     expect(bindings).toEqual([
       'canReadMembers',
@@ -90,6 +91,7 @@ describe('account hub — the read probes exist and are ordered', () => {
       'canCreateGroup',
       'canManageGroupMembers',
       'canManageRoles',
+      'canCreateProject',
     ]);
     expect(actions.length).toBe(bindings.length);
   });

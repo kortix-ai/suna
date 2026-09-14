@@ -69,6 +69,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
@@ -88,6 +89,8 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { forgetPushedEntry } from '@/stores/account-panel-store';
 import {
   AccessDetailShell,
   AccessDialog,
@@ -298,6 +301,10 @@ export interface AccessProjectsTabProps {
   rbacEnabled?: boolean;
   /** Shows the "Create a custom role →" link inside `RoleSelect`. */
   canManageRoles?: boolean;
+  /** Shows "New project" on the picker. The caller's `project.create` probe —
+   *  the leaf `POST /projects/provision` asserts. Defaults to false: an
+   *  unresolved probe must not offer a create the server will 403. */
+  canCreateProject?: boolean;
 }
 
 export function AccessProjectsTab({
@@ -306,9 +313,16 @@ export function AccessProjectsTab({
   onSelectProject,
   rbacEnabled = true,
   canManageRoles = false,
+  canCreateProject = false,
 }: AccessProjectsTabProps) {
   if (!selectedProjectId) {
-    return <ProjectPicker accountId={accountId} onSelectProject={onSelectProject} />;
+    return (
+      <ProjectPicker
+        accountId={accountId}
+        onSelectProject={onSelectProject}
+        canCreateProject={canCreateProject}
+      />
+    );
   }
   return (
     <ProjectAccessPanel
@@ -326,12 +340,49 @@ export function AccessProjectsTab({
 // Project picker (selectedProjectId === null)
 // ─────────────────────────────────────────────────────────────────────────
 
+/**
+ * "New project", in this account. `/new?account=` preselects the account
+ * (`account-param.ts`), so the project the form creates belongs to the account
+ * this pane lists — not whichever account the app happens to have selected.
+ *
+ * `replace`, after `forgetPushedEntry`: the hub modal pushed one history entry,
+ * and replacing it both closes the modal and leaves Back pointing where the
+ * person started — the same exit the hub's account-list pane takes.
+ */
+function NewProjectButton({
+  accountId,
+  variant,
+}: {
+  accountId: string;
+  variant: 'secondary' | 'outline';
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const router = useRouter();
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={variant}
+      className="shrink-0 gap-1.5"
+      onClick={() => {
+        forgetPushedEntry();
+        router.replace(newWorkspacePathForAccount(accountId));
+      }}
+    >
+      <PlusIcon className={variant === 'outline' ? 'size-3.5' : 'size-4'} />
+      {tI18nComplete.raw('texta41eb2bf7245')}
+    </Button>
+  );
+}
+
 function ProjectPicker({
   accountId,
   onSelectProject,
+  canCreateProject,
 }: {
   accountId: string;
   onSelectProject: (id: string) => void;
+  canCreateProject: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [search, setSearch] = useState('');
@@ -357,12 +408,15 @@ function ProjectPicker({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">
-          {tI18nComplete.raw('text04e2a9728af7')}
-          {settled ? ` · ${total}` : ''}
-        </p>
-        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text9949095feb15')}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('text04e2a9728af7')}
+            {settled ? ` · ${total}` : ''}
+          </p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text9949095feb15')}</p>
+        </div>
+        {canCreateProject ? <NewProjectButton accountId={accountId} variant="secondary" /> : null}
       </div>
 
       <InputGroupSearch>
@@ -404,6 +458,13 @@ function ProjectPicker({
           size="sm"
           title={
             search ? tI18nComplete.raw('text2302a8311ddf') : tI18nComplete.raw('textf83c80652286')
+          }
+          action={
+            // Only for an account with no projects at all: an empty SEARCH
+            // is a filter miss, and "create one" is not its answer.
+            !search && canCreateProject ? (
+              <NewProjectButton accountId={accountId} variant="outline" />
+            ) : undefined
           }
         />
       ) : (

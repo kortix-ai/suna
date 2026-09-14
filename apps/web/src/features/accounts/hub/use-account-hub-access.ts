@@ -47,6 +47,9 @@ export const ACCOUNT_PERMISSION_PROBES = [
   { action: 'group.create' },
   { action: 'group.members.manage' },
   { action: 'role.create' },
+  // POST /projects/provision asserts `project.create` (projects/routes/r1.ts)
+  // → the Projects pane's "New project" button.
+  { action: 'project.create' },
 ];
 
 type Allowed = CanResult['allowed'];
@@ -65,6 +68,7 @@ export interface AccountHubAccess {
   canCreateGroup: Allowed;
   canManageGroupMembers: Allowed;
   canManageRoles: Allowed;
+  canCreateProject: Allowed;
   /** Which sections this caller may open. ONE rule — see the body. */
   sectionVisible: Record<AccountSection, boolean>;
   /** The first section in nav order this caller can see; `help` at worst. */
@@ -96,6 +100,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     { allowed: canCreateGroup },
     { allowed: canManageGroupMembers },
     { allowed: canManageRoles },
+    { allowed: canCreateProject },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   // Self-host billing-disabled: no Stripe plan controls to show. Session costs
@@ -167,6 +172,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     canCreateGroup,
     canManageGroupMembers,
     canManageRoles,
+    canCreateProject,
     sectionVisible,
     firstVisibleSection,
   };

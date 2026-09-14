@@ -217,6 +217,7 @@ export function AccountHubContent() {
     canCreateGroup,
     canManageGroupMembers,
     canManageRoles,
+    canCreateProject,
     sectionVisible,
     activeSection,
   } = useAccountHubSection(accountId);
@@ -450,6 +451,7 @@ export function AccountHubContent() {
               onSelectProject={(id) => navigate('access-projects', { project: id })}
               rbacEnabled={rbacEnabled}
               canManageRoles={canManageRoles}
+              canCreateProject={canCreateProject === true}
             />
           ) : null}
 
