@@ -21,6 +21,19 @@ linked, not inlined.
 
 ## Register
 
+### A missing legacy sandbox reference is not an empty workspace (2026-09-14)
+
+**When:** migrating session files, require a captured manifest and matching
+destination inventory before marking the session verified. A null reference
+blocks file completion. Compare other approved source databases only after exact
+project and owner identity checks; retain the cross-source evidence.
+*Incident:* 14 imported histories were wrongly marked verified without files;
+the reported reconciliation session's 17-file workspace existed in the other
+legacy database. Recovery found 62 such project mappings.
+*Enforcer:* `source.test.ts` rejects null references as resolved, and
+`verification.test.ts` requires matching capture/restore evidence, including
+empty workspaces. Production apply calls `assertWorkspaceVerified`.
+
 ### Preserve titles across legacy schema generations (2026-09-14)
 
 **When:** importing legacy sessions, resolve a nonblank thread name before the

@@ -121,5 +121,6 @@ export function resolveSandbox(project: JsonRow, resources: Map<string, JsonRow>
   const resourceId = typeof resource?.external_id === 'string' && resource.external_id ? resource.external_id : null;
   if (resource && !resourceId) problems.push('missing-external-id');
   if (oldId && resourceId && oldId !== resourceId) problems.push('sandbox-id-conflict');
+  if (!resourceId && !oldId) problems.push('missing-sandbox-reference');
   return { id: resourceId ?? oldId, source: resourceId ? 'resource' : oldId ? 'legacy-json' : 'none', problems };
 }

@@ -443,3 +443,27 @@ does not necessarily update an existing runtime session's title.
 The regression covers null/blank thread names, explicit thread-name precedence,
 and rejection of an unrelated project. Production evidence is retained privately
 in `.legacy-transfer/production/title-repair-proof.json` and the E2E reports.
+
+### Workspace completion is independent of transcript completion
+
+A null `sandbox` and null `sandbox_resource_id` mean unresolved workspace
+location, not zero files. `resolveSandbox` reports `missing-sandbox-reference`.
+Do not mark a history-only import verified. The production completion gate
+requires a captured archive hash, matching source/destination entry and regular
+file counts, metadata verification, and the expected legacy project directory.
+An empty workspace requires the same capture and read-back proof. Explicit
+missing-sandbox exceptions remain separate from full verification.
+
+When another approved source contains the same project UUID, verify the same
+account, Auth owner, email, and destination owner mapping. Re-read its project
+and resource relationship before using that sandbox. Preserve both source
+identities and the relationship evidence; do not merge the destination projects.
+A creation-time similarity alone never authorizes a sandbox association.
+
+The production restore extracts into an isolated staging directory, verifies
+every path, hash, mode, and mtime, then renames the directory into place. An
+existing directory is verified, never overwritten. Unsupported entries block
+the restore. Compare the full destination inventory, not only expected files.
+Verify binary files through the authenticated file API and prove pre-existing
+messages remain unchanged. Keep transcript completion and file completion
+separate in the ledger and user-facing progress reports.

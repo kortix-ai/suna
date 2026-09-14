@@ -107,3 +107,10 @@ describe('source identity and preservation', () => {
   expect(() => assertPreparationScope({ ...scope, allow_source_lifecycle: true }, ref)).toThrow('remote writes disabled');
   expect(() => assertPreparationScope({ ...scope, allow_destination_writes: true }, ref)).toThrow('remote writes disabled');
 });
+
+
+test('a missing sandbox reference is unresolved, never evidence of an empty workspace', () => {
+  expect(resolveSandbox({ sandbox: null, sandbox_resource_id: null }, new Map())).toEqual({
+    id: null, source: 'none', problems: ['missing-sandbox-reference'],
+  });
+});
