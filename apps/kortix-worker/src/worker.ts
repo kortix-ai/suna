@@ -1805,6 +1805,9 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     }
     await historyCoordinator.prepare(selection, workspace, operationId);
     await hydrateDurableState();
+    if (!turnJournal.history.unfinishedTurnIds.size && !surface.turnProbe(null).turn_in_flight) {
+      surface.publishWire({ type: 'session.status', properties: { sessionID: surface.rootId, status: { type: 'idle' } } });
+    }
   };
   const recoverAndProjectTurn = async (messageId: string): Promise<void> => {
     recoveryProjectionCount++;

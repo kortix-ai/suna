@@ -1,15 +1,12 @@
 'use client';
 
 import type { GitFileStatus } from '@/features/file-browser/types';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { gitStatusKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { getFileStatus } from '../api/runtime-files';
 import { useCurrentProject, useServerHealth } from './use-server-health';
 
-export const gitStatusKeys = {
-  all: ['runtime-files', 'git-status'] as const,
-  status: (serverUrl: string) => ['runtime-files', 'git-status', serverUrl] as const,
-};
+export { gitStatusKeys } from '@kortix/sdk/react';
 
 /**
  * Fetch the git file status for the current project.

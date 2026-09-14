@@ -81,7 +81,28 @@ test('worker replacement restores staged history, undo restores exact envelopes,
     expect((await (await request(`/session/${id}`)).json()).revert).toEqual({ messageID: final[2].info.id });
     await restart();
     expect(await history()).toEqual(final.slice(0, 2));
-    expect((await request(`/session/${id}/unrevert`, {})).status).toBe(200);
+    const abort = new AbortController();
+    const stream = await fetch(`http://127.0.0.1:${worker.port}/global/event`, { headers: { authorization: 'Bearer fixture-token' }, signal: abort.signal });
+    const reader = stream.body!.getReader();
+    let frames = '';
+    const read = (async () => {
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          frames += new TextDecoder().decode(chunk.value);
+          if (frames.includes('"type":"session.status"') && frames.includes('"type":"idle"')) break;
+        }
+      } catch (error) { if (!abort.signal.aborted) throw error; }
+    })();
+    const deadline = setTimeout(() => abort.abort(), 1000);
+    try {
+      expect((await request(`/session/${id}/unrevert`, {})).status).toBe(200);
+      await read;
+      expect(frames).toContain('"type":"message.part.updated"');
+      expect(frames).toContain('"type":"idle"');
+      expect(frames.lastIndexOf('"type":"session.status"')).toBeGreaterThan(frames.lastIndexOf('"type":"message.part.updated"'));
+    } finally { clearTimeout(deadline); abort.abort(); }
     expect(await history()).toEqual(final);
     expect(worker.env.calls).toHaveLength(0);
   } finally {
