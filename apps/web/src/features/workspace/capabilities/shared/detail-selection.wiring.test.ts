@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -102,7 +102,10 @@ describe('catalogue search keeps its results', () => {
 
   test('the cold state and the refreshing state are reported separately', () => {
     expect(code).toContain('isRefreshing:');
-    expect(code).toContain('isRefreshing: opts.enabled && isPlaceholderData');
+    // Two feeds now (Easy Connect base + Discover additions): refreshing is
+    // either ACTIVE source showing placeholder data for a previous query.
+    expect(code).toContain('discoverActive && discoverPlaceholder');
+    expect(code).toContain('easyConnectActive && easyConnectPlaceholder');
   });
 
   test('no paging path runs against placeholder data', () => {
@@ -114,11 +117,20 @@ describe('catalogue search keeps its results', () => {
     // called by the scroll sentinel and by the "Load more" button. The
     // automatic chain that also called it is gone, so this used to assert the
     // guard at two entry points and now asserts it at the only one.
-    expect(code.match(/fetchNextPage\(\)/g)).toHaveLength(1);
-    expect(code).toContain('if (!hasNextPage || isFetchingNextPage || isPlaceholderData) return;');
+    // One entry point (`loadMore`), two feeds: each source's fetch is guarded
+    // by its own `…More` (which folds `!…Placeholder`) and its own in-flight
+    // flag.
+    expect(code).toContain('if (discoverMore && !discoverFetchingNext) void fetchNextDiscover();');
+    expect(code).toContain(
+      'if (easyConnectMore && !easyConnectFetchingNext) void fetchNextEasyConnect();',
+    );
+    expect(code).toContain('discoverHasNext && !discoverPlaceholder');
+    expect(code).toContain('easyConnectHasNext && !easyConnectPlaceholder');
     // `hasMore` is what the sentinel and the button both read, so withholding
     // it during the placeholder window disarms both at once.
-    expect(code).toContain('hasMore: opts.enabled && hasNextPage && !isPlaceholderData');
+    // Either feed still holding pages keeps the foot alive; each `…More`
+    // already folds `enabled` and `!placeholder`.
+    expect(code).toContain('hasMore: discoverMore || easyConnectMore');
   });
 
   test('the browse grid dims instead of blanking', () => {

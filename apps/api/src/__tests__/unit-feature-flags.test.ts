@@ -138,10 +138,12 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
-  test('connectors_api_discover defaults ON — MCP-first marketplace (COR-17)', () => {
-    // The Discover catalogue is the default marketplace; a project opts OUT
-    // explicitly, never in.
-    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(true);
+  test('connectors_api_discover defaults OFF — Discover is opt-in until completed', () => {
+    // Marko, 2026-09-15: the Discover catalogue is not production-ready, and
+    // defaulting it on hid the Composio catalogue and blocked the promote. A
+    // project opts IN explicitly; when it does, Discover ADDS to the Composio
+    // catalogue (`useCatalog`), never replaces it.
+    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
     expect(
       resolveFeatureFlag(
         { experimental: { connectors_api_discover: true } },

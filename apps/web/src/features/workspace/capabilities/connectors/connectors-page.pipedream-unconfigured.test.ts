@@ -50,7 +50,7 @@ describe('connectors page without a Connect provider', () => {
     // failed status probe must surface the Composio catalogue error rather than
     // quietly spending against the legacy Pipedream account.
     expect(catalog).toContain(
-      "(connectStatus.state === 'configured' || connectStatus.state === 'unknown')",
+      "connectStatus.state === 'configured' || connectStatus.state === 'unknown'",
     );
     expect(catalog).toContain("return { state: 'unknown', provider: 'composio' };");
     expect(catalog).not.toContain("provider: 'auto'");
@@ -81,7 +81,9 @@ describe('connectors page without a Connect provider', () => {
     // and All off when it answers `absent`, which turns `enabled` off with
     // them; a probe that then stopped answering would reopen the tabs, which
     // would re-enable the probe — a strip that flickers forever.
-    expect(catalog).toContain("useConnectProviderStatus(source === 'easy-connect')");
+    // Easy Connect is the BASE catalogue on every project now — the probe is
+    // unconditional (Discover only ADDS on top when its flag is on).
+    expect(catalog).toContain('useConnectProviderStatus(true)');
     expect(catalog).not.toContain('useConnectProviderStatus(opts.enabled');
   });
 
@@ -90,7 +92,7 @@ describe('connectors page without a Connect provider', () => {
     // is a different catalogue backend entirely, so a project with that flag on
     // keeps Discovery and All whatever Pipedream's status is — and with the flag
     // off, Pipedream is the only catalogue left, so its absence removes both.
-    expect(page).toContain('const connectStatus = useConnectProviderStatus(!discoverEnabled);');
+    expect(page).toContain('const connectStatus = useConnectProviderStatus(true);');
     expect(page).toContain(
       "const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';",
     );
