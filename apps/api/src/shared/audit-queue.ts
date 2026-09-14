@@ -24,6 +24,7 @@
  *    fail an entire batch.
  */
 import { type Database, auditEvents } from '@kortix/db';
+import { errorSqlstate, innermostMessage } from './error-cause';
 
 export type AuditRow = typeof auditEvents.$inferInsert;
 
@@ -104,6 +105,36 @@ export function statementBatches(rows: AuditRow[], max: number): AuditRow[][] {
   return batches;
 }
 
+/**
+ * What actually went wrong, in one bounded line.
+ *
+ * Passing the error object straight to `console.error` printed a
+ * `DrizzleQueryError`, whose `.message` is the entire generated statement —
+ * 48 column names, 44 placeholders — followed by `params:` and every bound
+ * value. The SQLSTATE that says WHY is not in there at all; it lives on
+ * `.cause` (see the audit-db learning: a wrapper error hides its cause, so
+ * never read `.message`). Prod dropped ~600 audit events over 48 hours and no
+ * line in the log could tell anyone which failure it was.
+ *
+ * Two problems, one fix. The bound values are audit payloads: IP addresses,
+ * user agents, account and project ids. They do not belong in an error log at
+ * all, and they were the reason each of these lines ran to several kilobytes.
+ *
+ * So: the SQLSTATE first, then the innermost cause's own message, truncated.
+ * No statement text, no parameters.
+ */
+export function describeAuditWriteFailure(error: unknown): string {
+  const sqlstate = errorSqlstate(error);
+  const detail = innermostMessage(error) ?? 'no error message available';
+  const trimmed =
+    detail.length > AUDIT_FAILURE_DETAIL_MAX
+      ? `${detail.slice(0, AUDIT_FAILURE_DETAIL_MAX)}…`
+      : detail;
+  return sqlstate ? `sqlstate=${sqlstate} ${trimmed}` : trimmed;
+}
+
+const AUDIT_FAILURE_DETAIL_MAX = 300;
+
 export class AuditQueue {
   private readonly rows: AuditRow[] = [];
   private readonly flushMs: number;
@@ -139,8 +170,8 @@ export class AuditQueue {
       options.onError ??
       ((error, rowCount) => {
         console.error(
-          `[audit] Dropped a batch of ${rowCount} events after a write failure:`,
-          error,
+          `[audit] Dropped a batch of ${rowCount} events after a write failure: ` +
+            describeAuditWriteFailure(error),
         );
       });
     this.onDrop =

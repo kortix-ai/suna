@@ -1,8 +1,8 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { createConnector, getConnectorConfig, type AdminConnector } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';

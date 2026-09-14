@@ -3,15 +3,16 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  catalogAppForConnector,
+  catalogEntryConnectors,
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
-  catalogSections,
+  catalogEntryKind,
+  catalogEntryKindLabel,
   computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
-  POPULAR_SECTION,
 } from './catalog-entry';
-import { CATEGORY_ROW_CAP } from './connector-categories';
 
 const connector = (over: Partial<DiscoverConnector> = {}): DiscoverConnector =>
   ({
@@ -164,50 +165,94 @@ describe('connected join', () => {
   });
 });
 
-describe('catalogSections', () => {
-  const ranked = (slug: string, popularity: number, categories: string[]) =>
-    catalogEntryFromDiscover(connector({ id: slug, slug, name: slug, popularity, categories }));
-
-  test('Popular leads, ordered by descending rank and capped', () => {
-    const sections = catalogSections(
-      [ranked('a', 1, ['dev']), ranked('b', 9, ['dev']), ranked('c', 5, ['dev'])],
-      { popularCap: 2 },
+describe('catalogEntryKindLabel — the quiet line every card carries', () => {
+  test('maps each source and kind to its short noun', () => {
+    expect(catalogEntryKindLabel(catalogEntryFromDiscover(connector({ kind: 'mcp' })))).toBe('MCP');
+    expect(catalogEntryKindLabel(catalogEntryFromDiscover(connector({ kind: 'openapi' })))).toBe(
+      'API',
     );
-    expect(sections[0]?.category).toBe(POPULAR_SECTION);
-    expect(sections[0]?.items.map((i) => i.slug)).toEqual(['b', 'c']);
-  });
-
-  // An app is both popular and a developer tool. Removing it from Developer to
-  // avoid repeating it would make that section lie about what it contains.
-  test('a popular entry still appears in its real category', () => {
-    const sections = catalogSections([ranked('b', 9, ['dev'])], { popularCap: 6 });
-    expect(sections.map((s) => s.category)).toEqual([POPULAR_SECTION, 'dev']);
-    expect(sections[1]?.items.map((i) => i.slug)).toEqual(['b']);
-  });
-
-  // Easy Connect ranks nothing, so it must produce no Popular heading at all
-  // rather than an empty one.
-  test('an unranked catalogue gets no Popular section', () => {
-    const sections = catalogSections([catalogEntryFromEasyConnect(app())], { popularCap: 6 });
-    expect(sections.some((s) => s.category === POPULAR_SECTION)).toBe(false);
-  });
-
-  test('an empty catalogue produces no sections', () => {
-    expect(catalogSections([], { popularCap: 6 })).toEqual([]);
-  });
-
-  // `CategorySection` offers "View all" on `items.length > CATEGORY_ROW_CAP`
-  // alone — there is no `category !== POPULAR_SECTION` special case any more,
-  // and this is what makes dropping it safe rather than an oversight. Popular
-  // is synthesised from a per-item rank, not published as a category, so
-  // expanding it would mean expanding a bucket that has no more members to
-  // load. Capping it at exactly the row cap means the button never appears.
-  test('Popular never exceeds the row cap, so it never offers "View all"', () => {
-    const many = Array.from({ length: CATEGORY_ROW_CAP * 3 }, (_, index) =>
-      ranked(`app-${index}`, index, ['dev']),
+    expect(catalogEntryKindLabel(catalogEntryFromDiscover(connector({ kind: 'graphql' })))).toBe(
+      'GraphQL',
     );
-    const sections = catalogSections(many, { popularCap: CATEGORY_ROW_CAP });
-    expect(sections[0]?.category).toBe(POPULAR_SECTION);
-    expect(sections[0]?.items.length).toBe(CATEGORY_ROW_CAP);
+    expect(catalogEntryKindLabel(catalogEntryFromDiscover(connector({ kind: 'cli' })))).toBe('CLI');
+    expect(catalogEntryKindLabel(computersCatalogEntry(testUiTranslator))).toBe('Native');
+  });
+
+  test('kind resolves only for discover entries', () => {
+    expect(catalogEntryKind(catalogEntryFromDiscover(connector({ kind: 'mcp' })))).toBe('mcp');
+    expect(catalogEntryKind(computersCatalogEntry(testUiTranslator))).toBe(null);
+  });
+});
+
+describe('catalogue membership join — prefix-aware (the Canva case)', () => {
+  const admin = (over: Partial<AdminConnector>): AdminConnector =>
+    ({
+      slug: 'x',
+      name: 'X',
+      provider: 'mcp',
+      status: 'active',
+      credentialMode: 'shared',
+      authorizationStrategy: 'project',
+      sensitive: false,
+      actions: [],
+      authSecret: null,
+      secretSet: false,
+      ...over,
+    }) as AdminConnector;
+
+  const canvaEntry = catalogEntryFromDiscover(
+    connector({ id: 'cv', slug: 'canva', name: 'Canva', kind: 'mcp' }),
+  );
+
+  test('default-named servers ("Canva MCP server", "…2") match the Canva entry', () => {
+    const one = admin({ slug: 'canva-mcp-server', name: 'Canva MCP server' });
+    const two = admin({ slug: 'canva-mcp-server-2', name: 'Canva MCP server 2' });
+    const other = admin({ slug: 'linear', name: 'Linear' });
+    expect(catalogEntryConnectors([other, one, two], canvaEntry)).toEqual([one, two]);
+  });
+
+  test('the card mark agrees with the page list', () => {
+    const keys = connectedCatalogKeys([
+      admin({ slug: 'canva-mcp-server', name: 'Canva MCP server' }),
+    ]);
+    expect(isCatalogEntryConnected(canvaEntry, keys)).toBe(true);
+  });
+
+  test('short entry tokens never claim by prefix — "Git" does not own GitHub', () => {
+    const gitEntry = catalogEntryFromDiscover(
+      connector({ id: 'g', slug: 'git', name: 'Git', kind: 'cli' }),
+    );
+    const github = admin({ slug: 'github', name: 'GitHub' });
+    expect(catalogEntryConnectors([github], gitEntry)).toEqual([]);
+    expect(isCatalogEntryConnected(gitEntry, connectedCatalogKeys([github]))).toBe(false);
+  });
+
+  test('membership lists needs_auth rows; the card mark still does not', () => {
+    const half = admin({
+      slug: 'canva-mcp-server',
+      name: 'Canva MCP server',
+      status: 'needs_auth',
+    });
+    expect(catalogEntryConnectors([half], canvaEntry)).toEqual([half]);
+    expect(isCatalogEntryConnected(canvaEntry, connectedCatalogKeys([half]))).toBe(false);
+  });
+});
+
+describe('catalogAppForConnector — the reverse join for /connectors/<slug> resolution', () => {
+  const items = [
+    { slug: 'canva', name: 'Canva' },
+    { slug: 'github', name: 'GitHub' },
+  ];
+
+  test('a default-named server resolves to its app', () => {
+    expect(
+      catalogAppForConnector(items, { slug: 'canva-mcp-server-xe9gxn', name: 'Canva MCP server' }),
+    ).toEqual({ slug: 'canva', name: 'Canva' });
+  });
+
+  test('a connector no app can claim resolves to null', () => {
+    expect(
+      catalogAppForConnector(items, { slug: 'internal-billing', name: 'Internal Billing' }),
+    ).toBe(null);
   });
 });

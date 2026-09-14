@@ -402,3 +402,41 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
 });
+
+describe('buildSessionRuntimeEnv — S3 project snapshot pin', () => {
+  const PIN = `${'a'.repeat(40)}:${'b'.repeat(64)}:3177064`;
+
+  test('git mode (the default) emits neither the mode nor the pin', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'git', projectSnapshotPin: PIN });
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+  });
+
+  test('a fresh full-repository session carries the mode and the identity-only pin', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: PIN });
+    expect(env.KORTIX_PROJECT_SNAPSHOT_MODE).toBe('prefer-s3');
+    expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).toBe(PIN);
+    // The pin is identity only: never a URL, never a credential.
+    expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).not.toMatch(/https?:|X-Amz-/);
+  });
+
+  test('a cache miss carries the mode without a pin (the daemon records the miss and boots from Git)', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: null });
+    expect(env.KORTIX_PROJECT_SNAPSHOT_MODE).toBe('prefer-s3');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+  });
+
+  test('a resumed (not fresh) session never receives the S3 keys', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: false, restoreSessionBranch: true, projectSnapshotMode: 'require-s3', projectSnapshotPin: PIN });
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+    expect(env.KORTIX_SESSION_BRANCH_RESTORE).toBe('1');
+  });
+
+  test('a restricted workspace mode receives no repository and therefore no archive', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, workspaceMode: 'read', projectSnapshotMode: 'prefer-s3', projectSnapshotPin: PIN });
+    expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+  });
+});

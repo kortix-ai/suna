@@ -12,7 +12,8 @@
     "./runtime-versions": "./src/runtime-versions.ts",
     "./email-url": "./src/email-url.ts",
     "./sandbox": "./src/sandbox/index.ts",
-    "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts"
+    "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts",
+    "./connector-sections": "./src/connector-sections.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

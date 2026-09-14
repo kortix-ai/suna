@@ -130,8 +130,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
     stability: 'experimental',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
-    platformDefault: () => false,
+    // ON by default since COR-17: the marketplace is MCP-first, so the Discover
+    // catalogue (integrations.sh — server-cached, no credentials required) is
+    // the default source. Easy Connect (Composio/Pipedream) stays reachable as
+    // the secondary source via the catalogue's source switch. A project can
+    // still opt out explicitly (`experimental.connectors_api_discover: false`).
+    platformDefault: () => true,
     enforcement: 'routes',
   },
   {

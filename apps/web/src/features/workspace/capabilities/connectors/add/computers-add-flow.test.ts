@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'computers-add-flow.tsx'), 'utf8');
