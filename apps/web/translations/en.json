@@ -19223,5 +19223,21 @@
         "prompt": "Write the document a new hire reads in their first week — how we work, where things live, who to ask, what good looks like. Take what you can from project memory, and list anything you had to guess at the end rather than stopping to ask me."
       }
     }
+  },
+  "modelAccess": {
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "enableProvider": "Enable {name}",
+    "defaultProviderHint": "Choose a project default from another provider before disabling this provider.",
+    "credentialsHint": "Disable inference without removing credentials.",
+    "providerError": "Could not update provider access.",
+    "managedTitle": "Kortix Managed Models",
+    "managedDescription": "Use Kortix credits for inference. Turn off to use only your own providers.",
+    "hiddenHint": "Hidden from the picker. Direct requests are still allowed; use the model menu to disable them.",
+    "hidden": "Hidden from picker",
+    "disableModel": "Disable model",
+    "modelError": "Could not update model access.",
+    "hiddenShort": "Hidden from the picker. Direct requests are still allowed.",
+    "resetError": "Could not reset the model list."
   }
 }

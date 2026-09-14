@@ -19223,5 +19223,21 @@
         "prompt": "Scrivi il documento che una nuova persona legge durante la prima settimana: come lavoriamo, dove si trovano le cose, a chi chiedere e come si riconosce un buon lavoro. Ricava tutto ciò che puoi dalla memoria del progetto ed elenca alla fine ciò che hai dovuto dedurre, invece di fermarti per chiedermelo."
       }
     }
+  },
+  "modelAccess": {
+    "enabled": "Attivato",
+    "disabled": "Disattivato",
+    "enableProvider": "Attiva {name}",
+    "defaultProviderHint": "Scegli un modello predefinito di un altro fornitore prima di disattivare questo fornitore.",
+    "credentialsHint": "Disattiva l’inferenza senza rimuovere le credenziali.",
+    "providerError": "Impossibile aggiornare l’accesso al fornitore.",
+    "managedTitle": "Modelli gestiti da Kortix",
+    "managedDescription": "Usa i crediti Kortix per l’inferenza. Disattiva questa opzione per usare solo i tuoi fornitori.",
+    "hiddenHint": "Nascosto nel selettore. Le richieste dirette sono ancora consentite; disattivale dal menu del modello.",
+    "hidden": "Nascosto nel selettore",
+    "disableModel": "Disattiva modello",
+    "modelError": "Impossibile aggiornare l’accesso al modello.",
+    "hiddenShort": "Nascosto nel selettore. Le richieste dirette sono ancora consentite.",
+    "resetError": "Impossibile reimpostare l’elenco dei modelli."
   }
 }

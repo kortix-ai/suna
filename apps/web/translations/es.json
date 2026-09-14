@@ -19223,5 +19223,21 @@
         "prompt": "Escribe el documento que una persona recién contratada lee durante su primera semana: cómo trabajamos, dónde están las cosas, a quién preguntar y cómo es un buen trabajo. Usa todo lo que puedas de la memoria del proyecto y, al final, enumera lo que hayas tenido que suponer en lugar de detenerte a preguntarme."
       }
     }
+  },
+  "modelAccess": {
+    "enabled": "Activado",
+    "disabled": "Desactivado",
+    "enableProvider": "Activar {name}",
+    "defaultProviderHint": "Elige un modelo predeterminado de otro proveedor antes de desactivar este proveedor.",
+    "credentialsHint": "Desactiva la inferencia sin eliminar las credenciales.",
+    "providerError": "No se pudo actualizar el acceso al proveedor.",
+    "managedTitle": "Modelos gestionados por Kortix",
+    "managedDescription": "Usa créditos de Kortix para la inferencia. Desactiva esta opción para usar solo tus propios proveedores.",
+    "hiddenHint": "Oculto en el selector. Las solicitudes directas siguen permitidas; desactívalas desde el menú del modelo.",
+    "hidden": "Oculto en el selector",
+    "disableModel": "Desactivar modelo",
+    "modelError": "No se pudo actualizar el acceso al modelo.",
+    "hiddenShort": "Oculto en el selector. Las solicitudes directas siguen permitidas.",
+    "resetError": "No se pudo restablecer la lista de modelos."
   }
 }

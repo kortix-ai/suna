@@ -82,6 +82,7 @@ export function ModelsTab({
   search?: string;
   canWrite?: boolean;
 }) {
+  const tAccess = useTranslations('modelAccess');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [ownSearch, setOwnSearch] = useState('');
   const search = hostSearch ?? ownSearch;
@@ -172,7 +173,7 @@ export function ModelsTab({
                   .resetToDefaults()
                   .catch((error: unknown) =>
                     errorToast(
-                      error instanceof Error ? error.message : 'Could not reset the model list.',
+                      error instanceof Error ? error.message : tAccess('resetError'),
                     ),
                   )
               }
@@ -260,11 +261,11 @@ export function ModelsTab({
                             {model.modelName}
                           </span>
                           {hiddenFromPicker && (
-                            <Hint label="Hidden from the picker. Direct requests are still allowed; use the model menu to disable them.">
-                              <Tag>Hidden from picker</Tag>
+                            <Hint label={tAccess('hiddenHint')}>
+                              <Tag>{tAccess('hidden')}</Tag>
                             </Hint>
                           )}
-                          {modelDisabled && !providerDisabled && <Tag>Disabled</Tag>}
+                          {modelDisabled && !providerDisabled && <Tag>{tAccess('disabled')}</Tag>}
                           <ModelCapabilityIcons
                             reasoning={model.capabilities?.reasoning}
                             toolCall={model.capabilities?.toolcall}
@@ -351,11 +352,11 @@ export function ModelsTab({
                                   void access
                                     .setEnabled({ target: 'model', id: wireId, enabled: false })
                                     .catch((error: unknown) =>
-                                      errorToast(error instanceof Error ? error.message : 'Could not update model access.'),
+                                      errorToast(error instanceof Error ? error.message : tAccess('modelError')),
                                     )
                                 }
                               >
-                                Disable model
+                                {tAccess('disableModel')}
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
@@ -408,7 +409,7 @@ export function ModelsTab({
                             ? tI18nComplete('texta931b0c34b16', { value0: model.modelName })
                             : `Enable ${model.modelName}`
                         }
-                        title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : hiddenFromPicker ? 'Hidden from the picker. Direct requests are still allowed.' : undefined}
+                        title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : hiddenFromPicker ? tAccess('hiddenShort') : undefined}
                         onCheckedChange={(next) =>
                           void access
                             .setEnabled({ target: 'model', id: wireId, enabled: next })
@@ -416,7 +417,7 @@ export function ModelsTab({
                               errorToast(
                                 error instanceof Error
                                   ? error.message
-                                  : 'Could not update model access.',
+                                  : tAccess('modelError'),
                               ),
                             )
                         }

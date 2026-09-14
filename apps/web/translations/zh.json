@@ -19223,5 +19223,21 @@
         "prompt": "编写一份新员工第一周阅读的文档——介绍我们的工作方式、资料存放位置、可以向谁求助，以及什么才算做好。尽可能从项目记忆中提取信息，并在最后列出所有不得不猜测的内容，而不是停下来询问我。"
       }
     }
+  },
+  "modelAccess": {
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "enableProvider": "启用{name}",
+    "defaultProviderHint": "禁用此提供商前，请将其他提供商的模型设为项目默认模型。",
+    "credentialsHint": "禁用推理但保留凭据。",
+    "providerError": "无法更新提供商访问权限。",
+    "managedTitle": "Kortix 托管模型",
+    "managedDescription": "使用 Kortix 额度进行推理。关闭后仅使用您自己的提供商。",
+    "hiddenHint": "已从选择器中隐藏。仍允许直接请求；请通过模型菜单禁用。",
+    "hidden": "已从选择器中隐藏",
+    "disableModel": "禁用模型",
+    "modelError": "无法更新模型访问权限。",
+    "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
+    "resetError": "无法重置模型列表。"
   }
 }

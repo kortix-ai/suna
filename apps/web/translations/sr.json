@@ -19223,5 +19223,21 @@
         "prompt": "Напиши документ који нови запослени чита током прве недеље — како радимо, где се ствари налазе, кога да питају и како изгледа добар резултат. Узми све што можеш из меморије пројекта, а на крају наведи све што си морао да претпоставиш, уместо да застанеш и питаш ме."
       }
     }
+  },
+  "modelAccess": {
+    "enabled": "Omogućeno",
+    "disabled": "Onemogućeno",
+    "enableProvider": "Omogući {name}",
+    "defaultProviderHint": "Izaberite podrazumevani model drugog provajdera pre nego što onemogućite ovog provajdera.",
+    "credentialsHint": "Onemogućite inferenciju bez uklanjanja akreditiva.",
+    "providerError": "Nije moguće ažurirati pristup provajderu.",
+    "managedTitle": "Modeli kojima upravlja Kortix",
+    "managedDescription": "Koristite Kortix kredite za inferenciju. Isključite da biste koristili samo svoje provajdere.",
+    "hiddenHint": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni; onemogućite ih u meniju modela.",
+    "hidden": "Sakriven iz birača",
+    "disableModel": "Onemogući model",
+    "modelError": "Nije moguće ažurirati pristup modelu.",
+    "hiddenShort": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni.",
+    "resetError": "Nije moguće resetovati listu modela."
   }
 }

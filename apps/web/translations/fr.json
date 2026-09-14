@@ -19223,5 +19223,21 @@
         "prompt": "Rédige le document qu’une nouvelle recrue lit durant sa première semaine — notre façon de travailler, où se trouvent les éléments, à qui s’adresser et ce qui caractérise un travail de qualité. Utilise ce que tu peux tirer de la mémoire du projet et, à la fin, liste tout ce que tu as dû supposer au lieu de t’arrêter pour me poser des questions."
       }
     }
+  },
+  "modelAccess": {
+    "enabled": "Activé",
+    "disabled": "Désactivé",
+    "enableProvider": "Activer {name}",
+    "defaultProviderHint": "Choisissez un modèle par défaut chez un autre fournisseur avant de désactiver celui-ci.",
+    "credentialsHint": "Désactivez l’inférence sans supprimer les identifiants.",
+    "providerError": "Impossible de modifier l’accès au fournisseur.",
+    "managedTitle": "Modèles gérés par Kortix",
+    "managedDescription": "Utilisez des crédits Kortix pour l’inférence. Désactivez cette option pour utiliser uniquement vos propres fournisseurs.",
+    "hiddenHint": "Masqué dans le sélecteur. Les requêtes directes restent autorisées ; désactivez-les dans le menu du modèle.",
+    "hidden": "Masqué dans le sélecteur",
+    "disableModel": "Désactiver le modèle",
+    "modelError": "Impossible de modifier l’accès au modèle.",
+    "hiddenShort": "Masqué dans le sélecteur. Les requêtes directes restent autorisées.",
+    "resetError": "Impossible de réinitialiser la liste des modèles."
   }
 }
