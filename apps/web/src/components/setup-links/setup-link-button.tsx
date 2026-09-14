@@ -10,9 +10,7 @@ import {
 } from '@/components/ui/modal';
 import { OutcomeCard } from '@/features/session/outcomes/outcome-card';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
-import { outcomeTint } from '@/features/session/outcomes/outcome-vocabulary';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { cn } from '@/lib/utils';
 import { KeyIcon, PlugIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -40,9 +38,6 @@ const COPY = {
     doneStatus: 'Connected',
   },
 } as const satisfies Record<SetupLinkKind, unknown>;
-
-/** The tile treatment, shared by the card and the modal header so they cannot drift. */
-const TILE = 'flex size-9 shrink-0 items-center justify-center rounded-sm ring-1';
 
 function textOf(node: React.ReactNode): string {
   if (node == null || typeof node === 'boolean') return '';
@@ -92,7 +87,6 @@ export function SetupLinkButton({
   const localizedCopy = useLocalizedUiCatalog(COPY);
   const copy = localizedCopy[kind];
   const Icon = copy.icon;
-  const tint = outcomeTint(settled ? 'success' : 'warning');
   const label = setupLinkChipLabel(textOf(children), token, copy.fallback);
 
   /** Stable so `ConnectorIntake`'s notify effect does not refire on every render. */
@@ -134,25 +128,17 @@ export function SetupLinkButton({
         outcome={outcome}
         index={0}
         icon={Icon}
-        // Filled only while it blocks the turn. Once settled it is a record,
-        // and a filled button on a record is a call to action with nothing to
-        // call for.
         actionVariant={settled ? 'outline' : 'default'}
         onOpen={() => setOpen(true)}
         className="my-2"
       />
 
       <Modal open={open} onOpenChange={handleOpenChange}>
-        <ModalContent className="lg:max-w-md">
-          {/* The card's tile repeats here so the open reads as continuous. */}
-          <ModalHeader className="flex-row items-center gap-3">
-            <span className={cn(TILE, tint.ring, tint.bg)}>
-              <Icon weight="fill" className={cn('size-5', tint.fg)} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <ModalTitle>{copy.title}</ModalTitle>
-              <ModalDescription>{copy.blurb}</ModalDescription>
-            </div>
+        <ModalContent className="lg:max-w-lg">
+          {/* `pr-12` keeps the text clear of the absolute close button (`top-3 right-3 size-8`). */}
+          <ModalHeader className=" pr-12">
+            <ModalTitle>{copy.title}</ModalTitle>
+            <ModalDescription className="text-pretty">{copy.blurb}</ModalDescription>
           </ModalHeader>
 
           <ModalBody className="max-h-[60vh] overflow-y-auto">
