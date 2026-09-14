@@ -94,6 +94,17 @@ function validate(state: PiHistoryProjection, event: PiHistoryTransition): void 
   )) throw new PiHistoryTransitionError('history cannot stage a committed hidden message');
 }
 
+function validateAdmissionRevision(state: PiHistoryProjection, revision: unknown): void {
+  if (revision === undefined) {
+    if (state.hasHistory) throw new PiHistoryTransitionError('admission history revision is required after rewind');
+    return;
+  }
+  if (!Number.isSafeInteger(revision) || (revision as number) < 0) {
+    throw new PiHistoryTransitionError('invalid admission history revision', 400);
+  }
+  if (revision !== state.revision) throw new PiHistoryTransitionError('history revision changed');
+}
+
 export function projectPiHistory(items: readonly unknown[]): PiHistoryProjection {
   const state: PiHistoryProjection = {
     revision: 0, hasHistory: false, staged: null,
@@ -144,6 +155,7 @@ export function projectPiHistory(items: readonly unknown[]): PiHistoryProjection
     if (record.type === 'accepted') {
       const id = object(record.turn)?.messageId;
       if (!identity(id) || accepted.has(id)) continue;
+      validateAdmissionRevision(state, record.historyRevision);
       accepted.add(id);
       state.unfinishedTurnIds.add(id);
       state.revision++;
@@ -181,14 +193,5 @@ export function validatePiHistoryControlAppend(items: readonly unknown[], value:
     return;
   }
   if (!isPiHistoryControlItem(item)) return;
-  const state = projectPiHistory(items);
-  const revision = object(item!.record)?.historyRevision;
-  if (revision === undefined) {
-    if (state.hasHistory) throw new PiHistoryTransitionError('admission history revision is required after rewind');
-    return;
-  }
-  if (!Number.isSafeInteger(revision) || (revision as number) < 0) {
-    throw new PiHistoryTransitionError('invalid admission history revision', 400);
-  }
-  if (revision !== state.revision) throw new PiHistoryTransitionError('history revision changed');
+  validateAdmissionRevision(projectPiHistory(items), object(item!.record)?.historyRevision);
 }

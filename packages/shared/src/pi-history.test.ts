@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { projectPiHistory, validatePiHistoryTransition, validatePiHistoryControlAppend } from './pi-history';
 
-const accepted = (id: string) => ({ kind: 'journal', stream: 'kortix.pi.turn-admission.v1', record: { type: 'accepted', turn: { messageId: id } } });
+const accepted = (id: string, historyRevision?: number) => ({ kind: 'journal', stream: 'kortix.pi.turn-admission.v1', record: { type: 'accepted', turn: { messageId: id }, ...(historyRevision === undefined ? {} : { historyRevision }) } });
 const completed = (id: string) => ({ kind: 'journal', stream: 'kortix.pi.turn-admission.v1', record: { type: 'completed', messageId: id } });
 const stage = (revision: number, messageId = 'u2', fromLeaf = 'e4', toLeaf: string | null = 'e2', hiddenMessageIds = ['u2', 'a2']) => ({ kind: 'history', version: 1, revision, action: 'stage', messageId, fromLeaf, toLeaf, hiddenMessageIds });
 const restore = (revision: number) => ({ kind: 'history', version: 1, revision, action: 'restore' });
@@ -19,7 +19,7 @@ test('staging and restoring preserve one reversible model branch and exact hidde
 });
 
 test('a new accepted prompt commits the hidden branch and prevents a later restore', () => {
-  const log = [...base, stage(2), accepted('u3'), completed('u3')];
+  const log = [...base, stage(2), accepted('u3', 3), completed('u3')];
   const state = projectPiHistory(log);
   expect(state.staged).toBeNull();
   expect([...state.hiddenMessageIds]).toEqual(['u2', 'a2']);
@@ -34,7 +34,7 @@ test('an earlier rewind retains the original head and restores every staged mess
 });
 
 test('restore does not resurrect a branch committed before the current rewind', () => {
-  const log = [...base, stage(2), accepted('u3'), completed('u3'), stage(4, 'u3', 'e6', 'e2', ['u3', 'a3']), restore(5)];
+  const log = [...base, stage(2), accepted('u3', 3), completed('u3'), stage(4, 'u3', 'e6', 'e2', ['u3', 'a3']), restore(5)];
   expect([...projectPiHistory(log).hiddenMessageIds]).toEqual(['u2', 'a2']);
 });
 
@@ -99,10 +99,16 @@ test('rejects a conflicting duplicate history identity during replay', () => {
 });
 
 test('rejects staging committed hidden identities instead of resurrecting them on restore', () => {
-  const log = [...base, stage(2), accepted('u3'), completed('u3')];
+  const log = [...base, stage(2), accepted('u3', 3), completed('u3')];
   expect(() => validatePiHistoryTransition(log, stage(4, 'u3', 'e6', 'e2', ['u3', 'u2']))).toThrow('committed hidden message');
 });
 
 test('ignores other journal streams when checking unfinished turns', () => {
   expect(() => validatePiHistoryTransition([...base, { ...accepted('other'), stream: 'other' }], stage(2))).not.toThrow();
+});
+
+test('replay rejects an old or stale writer that bypassed the history gate during rollout', () => {
+  expect(() => projectPiHistory([...base, stage(2), accepted('u3')])).toThrow('history revision is required');
+  expect(() => projectPiHistory([...base, stage(2), accepted('u3', 2)])).toThrow('history revision changed');
+  expect(projectPiHistory([...base, stage(2), accepted('u3', 3)]).staged).toBeNull();
 });

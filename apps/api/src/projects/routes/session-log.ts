@@ -125,11 +125,12 @@ projectsApp.openapi(
               WHEN ${sessionWorkerLog.item}->>'kind' = 'history' THEN ${sessionWorkerLog.item}
               ELSE jsonb_build_object(
                 'kind', 'journal', 'stream', 'kortix.pi.turn-admission.v1',
-                'record', jsonb_build_object(
+                'record', jsonb_strip_nulls(jsonb_build_object(
                   'type', ${sessionWorkerLog.item}->'record'->>'type',
                   'messageId', ${sessionWorkerLog.item}->'record'->>'messageId',
+                  'historyRevision', ${sessionWorkerLog.item}->'record'->'historyRevision',
                   'turn', jsonb_build_object('messageId', ${sessionWorkerLog.item}->'record'->'turn'->>'messageId')
-                )
+                ))
               ) END` })
             .from(sessionWorkerLog)
             .where(and(
