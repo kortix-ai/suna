@@ -54,7 +54,7 @@ import { attachEnvironment, readCached as readEnvironment, waitForRepo, ENVIRONM
 import { envRpcExecutionEnv, mintUserContext } from "./execenv.envrpc.js";
 import { machineTool } from "./machine-tool.js";
 import { machineFs, machineGit } from "./machine-fs.js";
-import { loadPlugins, pluginsDirFor, pluginsSummary, toPiTool } from "./plugins.js";
+import { loadPlugins, pluginsDirFor, pluginsSummary, toPiTool, isPluginFile } from "./plugins.js";
 import { createNodeRuntime, collectWorkspace, seedRuntime } from "./nodejs.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
 // through the ExecutionEnv in execenv.platinum.js (see pitools.js). The module
@@ -1181,13 +1181,20 @@ export class AgentCell {
     if (usesCellFilesystem(this.effectiveEnv())) this.cellFs ??= cellFs(this.sql);
     const env = executionEnvFor(this.effectiveEnv(), sessionId, "plugins", undefined, this.cellFs ?? null);
     const net = (...a) => this.cellFs?.net?.(...a) ?? fetch(...a);
-    // THE WALK READS THROUGH THE SAME EXECUTION ENV THE PLUGIN FILES CAME FROM.
+    // PLUGINS COME FROM THE WORKSPACE, AND THE WORKSPACE MOVES.
     //
-    // Not through `workspaceFs()`: that answers the cell-shaped wrapper rather
-    // than an fs, and — the part that matters — it instantiates `this.cellFs`
-    // unconditionally, which is what `/model` reads to decide which backend to
-    // report. Loading plugins would have flipped a daemon session to reporting
-    // `cell`. One env, one truth, and it works over a machine too.
+    // Once a machine is attached it IS the workspace — the panel, git and the
+    // tools all answer from it — but the loader kept reading the cell's own
+    // tree, so a plugin written on the machine was not merely broken, it was
+    // INVISIBLE: not loaded, and not named in the diagnostics either. Measured
+    // 2026-09-14 on a real session: `.kortix/pi/plugins/pad.js` listed by the
+    // file route and absent from `/plugins`.
+    //
+    // The machine's copy arrives in ONE exec (machine-fs `bundle`). Reading it
+    // the way the cell is read would be one RPC per file, which for a checkout
+    // that has run `npm install` is thousands.
+    const machine = await this.machineEnv();
+    if (machine) await this.machineRepoReady();
     const readable = {
       async readdirWithFileTypes(dir) {
         const r = await env.listDir(dir);
@@ -1200,18 +1207,41 @@ export class AgentCell {
         return r.value;
       },
     };
-    const workspace = await collectWorkspace(readable, CELL_CWD).catch((e) => {
+    // A PROJECT THAT SHIPS NO PLUGINS PAYS NOTHING. That is nearly every
+    // project and every turn, and the walk is the expensive part — one cheap
+    // listing of the plugins directory decides it.
+    const shipped = await env.listDir(dir)
+      .then((r) => (r?.ok ? (r.value ?? []).filter((e) => e.kind === "file").map((e) => e.name) : []))
+      .catch(() => []);
+    const workspace = !shipped.some(isPluginFile)
+      ? { files: [], dirs: [] }
+      : await (machine ? machineFs(machine).bundle(CELL_CWD) : collectWorkspace(readable, CELL_CWD)).catch((e) => {
       this.broadcast({ type: "plugin", line: `could not read the workspace: ${e?.message ?? e}` });
       return { files: [], dirs: [] };
     });
+    // ONE SOURCE OF TRUTH. The listing and the reads come from what was
+    // collected, so the loader cannot look in a different place than the
+    // runtime it hands the files to — which is exactly how a plugin on the
+    // machine went missing without a word.
+    const collectedAt = new Map(workspace.files);
+    const dec = new TextDecoder();
+    const absOf = (p) => (p.startsWith("/") ? p : `${CELL_CWD}/${p}`).replace(/\/+/g, "/");
     const loaded = await loadPlugins({
       dir,
       readDir: async (d) => {
+        const prefix = `${absOf(d)}/`;
+        const names = [...collectedAt.keys()].filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"))
+          .map((p) => p.slice(prefix.length));
+        if (names.length) return names;
+        // A directory with nothing the collector takes is still a directory;
+        // ask, so "no plugins" and "no such directory" stay different answers.
         const r = await env.listDir(d);
         if (!r?.ok) throw new Error(r?.error?.message ?? "no such directory");
         return (r.value ?? []).filter((e) => e.kind === "file").map((e) => e.name);
       },
       readFile: async (p) => {
+        const bytes = collectedAt.get(absOf(p));
+        if (bytes) return dec.decode(bytes);
         const r = await env.readTextFile(p);
         if (!r?.ok) throw new Error(r?.error?.message ?? "unreadable");
         return r.value;

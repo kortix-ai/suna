@@ -17,7 +17,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=66
+// EXPECTED_PASSES=69
 
 import { execFile } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -210,6 +210,16 @@ const SRC = "const a = 1;\nconst b = 2;\nconst a2 = 1;\n";
     const i = src.indexOf(needle);
     return i === -1 ? null : Boolean(m[i]);
   };
+  // A `/*` INSIDE A STRING OPENS NOTHING. This is the over-masking the header
+  // calls the worse failure, and it was real: machine-fs.js builds a shell
+  // command holding `-not -path './.git/*'`, and the two conditionals after it
+  // were reported as prose while the auditor quietly skipped them.
+  check("a /* inside a STRING does not open a comment, so the code after it is still audited",
+    masked(`const a = "./.git/*";\nif (b) c();\n`, "if (b)") === false, "");
+  check("nor inside a TEMPLATE, where this package builds its shell commands",
+    masked("const a = `x /* y`;\nif (b) c();\n", "if (b)") === false, "");
+  check("and a conditional inside a string is still CODE to commentMask — it masks comments, nothing else",
+    masked(`const a = ${String.fromCharCode(39)}if (z)${String.fromCharCode(39)};`, "if (z)") === false, "");
   check("a line comment is masked", masked("// if (x) y;\n", "if (x)") === true);
   check("a block comment is masked", masked("/* if (x) y; */\n", "if (x)") === true);
   check("an unterminated block comment masks to the end of the file",

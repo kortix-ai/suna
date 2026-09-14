@@ -7,11 +7,11 @@
 // porcelain and numstat parse into the panel's rows; commit-push says
 // "nothing to do" on a clean tree, commits and pushes on a dirty one, and
 // reports a failed push as a failure with the output rather than a success.
-// EXPECTED_PASSES=25
+// EXPECTED_PASSES=31
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
-const { machineFs, machineGit, parsePorcelain, parseNumstat } = await import("../src/machine-fs.js");
+const { machineFs, machineGit, parsePorcelain, parseNumstat, untar } = await import("../src/machine-fs.js");
 
 const ok = (value) => ({ ok: true, value });
 const err = (message, code = "unknown") => ({ ok: false, error: { code, message } });
@@ -152,6 +152,41 @@ check("numstat parses additions and deletions per path, and a binary's dashes as
   const dead = { exec: async () => err("fetch failed: ECONNREFUSED") };
   const e = await machineGit(dead).status().catch((x) => x);
   check("a machine that cannot run git throws, so a route never reports a dead box as a clean tree", e instanceof Error && /ECONNREFUSED/.test(e.message), String(e?.message));
+}
+
+// ── THE WHOLE WORKSPACE IN ONE ROUND TRIP ──
+//
+// `require` is synchronous, so a plugin's imports must be in hand before it
+// runs, and on a machine that is one RPC per file. The first version of this
+// spawned `base64` once per file in a shell loop: 48 files took 10.1 s to carry
+// 56 KB — the cost was the spawns. One tar carries the set instead, and the
+// isolate reads the archive, so this parser is what stands between a plugin
+// loading and a plugin timing out.
+{
+  const { execFileSync } = await import("node:child_process");
+  const { mkdirSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
+  rmSync("/tmp/pi-untar", { recursive: true, force: true });
+  mkdirSync("/tmp/pi-untar/node_modules/dep", { recursive: true });
+  writeFileSync("/tmp/pi-untar/plug.js", "module.exports = 1;");
+  writeFileSync("/tmp/pi-untar/node_modules/dep/index.js", "x".repeat(1200));
+  writeFileSync("/tmp/pi-untar/node_modules/dep/package.json", '{"name":"dep","main":"index.js"}');
+  execFileSync("tar", ["czf", "/tmp/pi-untar.tgz", "-C", "/tmp/pi-untar", "."]);
+  const gz = readFileSync("/tmp/pi-untar.tgz");
+  const tar = new Uint8Array(await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+  const entries = untar(tar);
+  const byName = new Map(entries.map(([n, b]) => [n.replace(/^\.\//, ""), b]));
+  const dec = new TextDecoder();
+  check("a real tar is read entry by entry — a GNU archive, not one this test wrote by hand",
+    byName.has("plug.js") && byName.has("node_modules/dep/index.js"), [...byName.keys()].join(","));
+  check("and each file's bytes are exactly its own, so a module is not handed its neighbour's source",
+    dec.decode(byName.get("plug.js")) === "module.exports = 1;", dec.decode(byName.get("plug.js") ?? new Uint8Array()).slice(0, 40));
+  check("a file whose size is not a whole number of blocks still ends where it ends",
+    byName.get("node_modules/dep/index.js")?.length === 1200, String(byName.get("node_modules/dep/index.js")?.length));
+  check("directory entries are skipped — a loader wants bytes, and the paths imply the tree",
+    entries.every(([, b]) => b instanceof Uint8Array) && !entries.some(([n]) => n.endsWith("/")), entries.map(([n]) => n).join(","));
+  check("a truncated archive stops rather than running off the end",
+    untar(tar.subarray(0, 700)).length <= 1, String(untar(tar.subarray(0, 700)).length));
+  check("and empty input is no entries, not a throw", untar(new Uint8Array(0)).length === 0, "");
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");

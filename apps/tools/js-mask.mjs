@@ -14,36 +14,23 @@
 // write a claim for code that does not exist. Same failure the suite map had —
 // the tool reporting confidently about something it never actually examined.
 //
-// COMMENTS ONLY, not string literals. Masking strings as well would need to
-// tell a regex literal from a division, and a regex holding a quote — this
-// package has `/^([\w-]+)(?:([~^$*|]?=)"?'?([^"']*)"?'?)?$/` — would swallow
-// real code up to the next matching quote and silently shrink the audit.
-// Under-auditing while reporting success is the failure worth avoiding here, so
-// the scanner does less and stays right.
+// COMMENTS ONLY — BUT THE SCANNER STILL HAS TO KNOW WHERE A STRING IS.
+//
+// This used to skip string tracking entirely, on the reasoning that masking
+// strings needs to tell a regex from a division and doing less stays right.
+// The second half of that does not follow: a `/*` INSIDE a string opens a
+// comment that never existed, and everything up to the next `*/` is masked —
+// real code, silently removed from the audit. Measured 2026-09-14:
+// machine-fs.js builds a shell command containing `-not -path './.git/*'`, and
+// two live conditionals after it were reported as prose.
+//
+// That is the over-masking this file already calls the worse failure. So the
+// two masks share one scanner — the one below, which does make the regex call —
+// and differ only in what they mark: commentMask marks comments, literalMask
+// marks comments, strings, templates and regex literals as well.
 
 /** A byte mask over `src`: 1 where the byte is inside a // or /* comment. */
-export function commentMask(src) {
-  const mask = new Uint8Array(src.length);
-  let i = 0;
-  while (i < src.length) {
-    if (src[i] === "/" && src[i + 1] === "/") {
-      const nl = src.indexOf("\n", i);
-      const end = nl === -1 ? src.length : nl;
-      mask.fill(1, i, end);
-      i = end;
-      continue;
-    }
-    if (src[i] === "/" && src[i + 1] === "*") {
-      const close = src.indexOf("*/", i + 2);
-      const end = close === -1 ? src.length : close + 2;
-      mask.fill(1, i, end);
-      i = end;
-      continue;
-    }
-    i++;
-  }
-  return mask;
-}
+export function commentMask(src) { return scanMask(src, true); }
 
 // WHICH BYTES ARE NOT CODE — comments, strings, templates AND regex literals.
 //
@@ -68,8 +55,14 @@ const ENDS_EXPRESSION = /[\w$)\]]$/;
 const KEYWORD_BEFORE_REGEX = /\b(return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)$/;
 
 /** A byte mask over `src`: 1 where the byte is NOT code. */
-export function literalMask(src) {
+export function literalMask(src) { return scanMask(src, false); }
+
+/** The shared scan. `commentsOnly` marks comments and nothing else, but still
+ *  walks strings, templates and regex literals so a `/*` inside one cannot open
+ *  a comment that is not there. */
+function scanMask(src, commentsOnly) {
   const mask = new Uint8Array(src.length);
+  const lit = (a, b) => { if (!commentsOnly) mask.fill(1, a, Math.min(b, src.length)); };
   const stack = [];            // template-literal nesting: {} depth per level
   let i = 0;
   let lastSignificant = "";    // code seen so far, for the regex/division call
@@ -92,25 +85,25 @@ export function literalMask(src) {
 
     if (inTemplate()) {
       // Inside a template's text: only `${` and the closing backtick end it.
-      if (c === "\\") { mask.fill(1, i, i + 2); i += 2; continue; }
-      if (c === "$" && src[i + 1] === "{") { stack[stack.length - 1].braces = 1; mask.fill(1, i, i + 2); i += 2; lastSignificant = "("; continue; }
-      if (c === "`") { stack.pop(); mask[i] = 1; i++; lastSignificant = "x"; continue; }
-      mask[i] = 1; i++; continue;
+      if (c === "\\") { lit(i, i + 2); i += 2; continue; }
+      if (c === "$" && src[i + 1] === "{") { stack[stack.length - 1].braces = 1; lit(i, i + 2); i += 2; lastSignificant = "("; continue; }
+      if (c === "`") { stack.pop(); lit(i, i + 1); i++; lastSignificant = "x"; continue; }
+      lit(i, i + 1); i++; continue;
     }
 
     if (stack.length && (c === "{" || c === "}")) {
       const top = stack[stack.length - 1];
       if (c === "{") top.braces++;
-      else if (--top.braces === 0) { mask[i] = 1; i++; continue; } // back to template text
+      else if (--top.braces === 0) { lit(i, i + 1); i++; continue; } // back to template text
     }
 
     if (c === "'" || c === '"') {
       const q = c; let j = i + 1;
       while (j < src.length && src[j] !== q) { if (src[j] === "\\") j++; j++; }
-      mask.fill(1, i, Math.min(j + 1, src.length)); i = j + 1; lastSignificant = "x"; continue;
+      lit(i, j + 1); i = j + 1; lastSignificant = "x"; continue;
     }
 
-    if (c === "`") { stack.push({ braces: 0 }); mask[i] = 1; i++; continue; }
+    if (c === "`") { stack.push({ braces: 0 }); lit(i, i + 1); i++; continue; }
 
     if (c === "/") {
       const tail = lastSignificant;
@@ -127,7 +120,7 @@ export function literalMask(src) {
         }
         if (j > i) {
           while (j + 1 < src.length && /[dgimsuvy]/.test(src[j + 1])) j++;
-          mask.fill(1, i, Math.min(j + 1, src.length)); i = j + 1; lastSignificant = "x"; continue;
+          lit(i, j + 1); i = j + 1; lastSignificant = "x"; continue;
         }
       }
     }

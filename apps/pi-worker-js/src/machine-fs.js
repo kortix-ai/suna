@@ -26,6 +26,36 @@ const MAX_FILES = 20_000;
 const MAX_TEXT_MATCHES = 500;
 
 /** A dirent in the shape cell-files reads: booleans, not methods. */
+/**
+ * A TAR, READ WHERE IT LANDS.
+ *
+ * Only what a regular file needs: the 512-byte header's name, its ustar prefix
+ * and its octal size, with the data padded to the next block. Directory and
+ * link entries are skipped — a module loader wants bytes, and the directories
+ * are implied by the paths.
+ */
+export function untar(bytes) {
+  const dec = new TextDecoder();
+  const out = [];
+  for (let off = 0; off + 512 <= bytes.length; ) {
+    const head = bytes.subarray(off, off + 512);
+    let empty = true;
+    for (let i = 0; i < 512; i++) if (head[i] !== 0) { empty = false; break; }
+    if (empty) break;
+    const str = (at, len) => dec.decode(head.subarray(at, at + len)).replace(/\0[\s\S]*$/, "").trim();
+    const name = str(0, 100);
+    const prefix = str(345, 155);
+    const size = parseInt(str(124, 12) || "0", 8) || 0;
+    const type = String.fromCharCode(head[156] || 48);
+    off += 512;
+    if ((type === "0" || type === "\0" || head[156] === 0) && name) {
+      out.push([prefix ? `${prefix}/${name}` : name, bytes.subarray(off, off + size)]);
+    }
+    off += Math.ceil(size / 512) * 512;
+  }
+  return out;
+}
+
 const dirent = (info) => ({ name: info.name, isDirectory: info.kind === "directory", isFile: info.kind === "file" });
 
 /**
@@ -79,6 +109,42 @@ export function machineFs(env, workspace = CELL_CWD) {
     async listAll(root = workspace) {
       const out = await sh(`cd ${q(root)} && rg --files --hidden -g '!.git' -g '!node_modules' -g '!.next' -g '!dist' -g '!build' 2>/dev/null | head -n ${MAX_FILES}`);
       return out.stdout.split("\n").map((l) => l.replace(/^\.\//, "")).filter(Boolean);
+    },
+    /**
+     * EVERY FILE A MODULE LOADER COULD NEED, IN ONE ROUND TRIP.
+     *
+     * `require` is synchronous, so a plugin's imports have to be in hand before
+     * it runs — and on a machine that is one RPC per file, which for a
+     * node_modules is thousands.
+     *
+     * ONE `tar`, NOT ONE PROCESS PER FILE. The first version spawned `base64`
+     * per file in a shell loop: 48 files took 10.1 s, and the data was 56 KB —
+     * the cost was the spawns, not the bytes. tar streams the whole set through
+     * one gzip and one base64, and the isolate reads the archive itself.
+     *
+     * Bounded by per-file size and by total bytes, because a checkout that has
+     * run `npm install` is exactly what this has to survive.
+     */
+    async bundle(root = workspace, { maxBytes = 8 * 1024 * 1024 } = {}) {
+      const names = "-name '*.js' -o -name '*.cjs' -o -name '*.mjs' -o -name '*.json' -o -name '*.ts' -o -name '*.mts' -o -name '*.cts'";
+      const out = await sh(`cd ${q(root)} && find . -type f \\( ${names} \\) -size -1024k -not -path './.git/*' -print0 2>/dev/null | tar czf - --null -T - 2>/dev/null | base64 -w0`, 120);
+      const b64 = (out.stdout || "").trim();
+      if (!b64) return { files: [], dirs: [], truncated: false };
+      let gz;
+      try { gz = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); } catch { return { files: [], dirs: [], truncated: false }; }
+      const tar = new Uint8Array(await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+      const files = [];
+      const dirs = new Set();
+      let bytes = 0;
+      for (const [rel, data] of untar(tar)) {
+        bytes += data.length;
+        if (bytes > maxBytes) return { files, dirs: [...dirs], truncated: true };
+        const path = `${root}/${rel.replace(/^\.\//, "")}`.replace(/\/+/g, "/");
+        files.push([path, data]);
+        for (let d = path.slice(0, path.lastIndexOf("/")); d.length > root.length; d = d.slice(0, d.lastIndexOf("/"))) dirs.add(d);
+        dirs.add(root);
+      }
+      return { files, dirs: [...dirs], truncated: false };
     },
     /** `GET /find?pattern=` — ripgrep's own JSON, reduced to the route's match shape. */
     async search(pattern, root = workspace) {
