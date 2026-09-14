@@ -196,6 +196,7 @@ run_suite box-loss   ./test/dev-box-loss.sh
 run_suite session-e2e ./test/dev-session-e2e.sh
 run_suite routes-e2e ./test/dev-routes-e2e.sh
 run_suite default-e2e ./test/dev-default-harness-e2e.sh
+run_suite runtime-e2e bash test/dev-runtime-e2e.sh
 # The cell against a REAL Platinum dev sandbox as its workspace. Opt-in by the
 # presence of a dev token (PT_SANDBOX_KEY or ~/.config/platinum/credentials);
 # without one it SKIPs and says so. Last, because it owns the node's lifecycle.
