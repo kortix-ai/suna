@@ -548,7 +548,7 @@ function ProviderRow({
               rel="noopener noreferrer"
               title={tI18nComplete('text2a94ea8db704', { value0: row.label })}
               aria-label={tI18nComplete('text2a94ea8db704', { value0: row.label })}
-              className="text-muted-foreground/50 hover:text-foreground shrink-0 transition-colors"
+              className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
             >
               <ExternalLink className="size-3.5 shrink-0" />
             </a>
@@ -560,7 +560,7 @@ function ProviderRow({
             <button
               type="button"
               onClick={() => onOpenDetail(row.id)}
-              className="text-muted-foreground/50 hover:text-foreground cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
+              className="text-muted-foreground hover:text-foreground cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
             >
               {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
               {row.modelCount === 1 ? '' : 's'}
