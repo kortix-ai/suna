@@ -2319,7 +2319,7 @@ export function SessionChat({
   const runtimeReasoningAllowed = runtimePromptOverridesAllowed ||
     (isPiWorkerSession && local.model.variant.list.length > 0);
   const historyMutationsEnabled =
-    !isPiWorkerSession && (!projectSessionId || projectSessionRuntimeIdentity === 'opencode');
+    !projectSessionId || projectSessionRuntimeIdentity !== 'unknown';
   const compactSessionId = projectSessionId
     ? resolveProjectSessionCompactionId(projectSessionRow)
     : sessionId;

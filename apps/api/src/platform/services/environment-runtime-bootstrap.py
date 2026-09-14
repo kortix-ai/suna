@@ -34,7 +34,7 @@ def bootstrap(root=Path('/'), reuse_workspace=False):
             return {}
 
     def execution_ready(value):
-        return value.get('workload') == 'environment' and value.get('opencode') == 'disabled' and value.get('runtimeReady') is True and value.get('environmentRuntimeVersion', 0) >= 3
+        return value.get('workload') == 'environment' and value.get('opencode') == 'disabled' and value.get('runtimeReady') is True and value.get('environmentRuntimeVersion', 0) >= 4 and value.get('workspaceHistory') is True
 
     if execution_ready(health()):
         print(json.dumps({'ready': True, 'changed': False}))
@@ -85,6 +85,7 @@ def bootstrap(root=Path('/'), reuse_workspace=False):
     download('entrypoint', staged_entrypoint)
     env.update({
         'KORTIX_WORKLOAD': 'environment', 'KORTIX_WARM_SEED': '0',
+        'KORTIX_ENVIRONMENT_HISTORY': '1',
         'KORTIX_BOOTSTRAP_OPENCODE_SESSION': '0', 'KORTIX_COMPILED_BOOT_MODE': 'off',
         'KORTIX_AGENT_BIN': str(floor), 'KORTIX_AGENT_STATE_DIR': str(runtime),
         'KORTIX_SESSION_FRESH': '0', 'KORTIX_SESSION_BRANCH_RESTORE': '1',

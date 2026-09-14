@@ -292,7 +292,7 @@ describe('session environment provision ownership', () => {
       provider: 'daytona',
     });
     expect(createdEnvVars).toMatchObject({
-      KORTIX_WORKLOAD: 'environment', KORTIX_WARM_SEED: '0',
+      KORTIX_WORKLOAD: 'environment', KORTIX_WARM_SEED: '0', KORTIX_ENVIRONMENT_HISTORY: '1',
       KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0', KORTIX_COMPILED_BOOT_MODE: 'off',
     });
     for (let i = 0; i < 100 && bootstrappedExternalIds.length === 0; i++) await Bun.sleep(1);

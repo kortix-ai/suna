@@ -781,6 +781,7 @@ describe('raw OpenCode turn routes', () => {
     });
     expect(malformed.status).toBe(400);
     expect(malformed.headers.get('content-type')).toContain('application/json');
+    expect((await malformed.json()).ok).toBe(false);
 
     const oversized = await request(worker, '/turn', {
       method: 'POST',
@@ -789,6 +790,7 @@ describe('raw OpenCode turn routes', () => {
     });
     expect(oversized.status).toBe(413);
     expect(oversized.headers.get('content-type')).toContain('application/json');
+    expect((await oversized.json()).ok).toBe(false);
     for (const invalid of [null, [], 'x', { text: 1 }]) {
       const response = await request(worker, '/turn', {
         method: 'POST',
@@ -797,6 +799,7 @@ describe('raw OpenCode turn routes', () => {
       });
       expect(response.status).toBe(400);
       expect(response.headers.get('content-type')).toContain('application/json');
+      expect((await response.json()).ok).toBe(false);
     }
     expect((await (await request(worker, '/health')).json()).ok).toBe(true);
   });
@@ -2693,6 +2696,7 @@ describe('raw OpenCode turn routes', () => {
     }
     const removed = items.filter(
       (item) =>
+        (item.kind === 'journal' && item.stream === 'kortix.pi.workspace.v1' && item.record.messageId === messageID) ||
         (item.kind === 'journal' &&
           [
             'started',

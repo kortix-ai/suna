@@ -263,7 +263,7 @@ Pi implements every OpenCode mutation.
 | `POST /session/:id/abort` | Requests durable Stop and waits for owner acknowledgement. It returns `503` if acknowledgement times out. |
 | `DELETE /session/:id/message/:messageID` | Deletes only a queued turn before model execution. Running or durable history returns `409`. |
 | `DELETE .../part/:partID` | Returns `409`. Part-only mutation is not durable. |
-| `POST .../revert` and `POST .../unrevert` | Returns `501 feature_not_supported` without changing the transcript. |
+| `POST .../revert` and `POST .../unrevert` | Rewinds a whole visible user turn and its recorded workspace changes; restore remains available until the next accepted prompt. Refuses incomplete or conflicting file history. |
 | `GET /command` | Returns project commands compiled from the immutable session SHA. |
 | `POST /session/:id/command` | Executes the supported command subset through the durable turn queue. Unsupported command features return an explicit capability error. |
 | `GET /skill` | Returns authorized project skill Markdown compiled from the immutable session SHA. |

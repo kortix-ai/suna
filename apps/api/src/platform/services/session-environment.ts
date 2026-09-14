@@ -644,6 +644,7 @@ async function provisionEnvironment(
         KORTIX_TOKEN: credential.secretKey,
         KORTIX_ENV_RPC_SECRET: rpcSecret,
         KORTIX_WORKLOAD: 'environment',
+        KORTIX_ENVIRONMENT_HISTORY: '1',
         KORTIX_WARM_SEED: '0',
         KORTIX_COMPILED_BOOT_MODE: 'off',
         // The daemon serves /file, /find and /pty without an OpenCode

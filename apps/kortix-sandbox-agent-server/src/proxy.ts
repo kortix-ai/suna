@@ -1,3 +1,4 @@
+import { workspaceAccess } from './workspace-access';
 import { Hono, type Context } from 'hono';
 import { BOOT_PHASE_HEADER, bootPhaseLabel } from './boot-phase';
 import { runtimeAssetsActivity } from './runtime-assets';
@@ -332,6 +333,15 @@ export function buildOpencodeApp(
 ): Hono {
   const app = new Hono();
   const executionOnly = cfg.workload === 'environment';
+  const workspaceGate = workspaceAccess(cfg);
+  if (workspaceGate) app.use('*', async (c, next) => {
+    const pathname = new URL(c.req.url).pathname;
+    if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) || !/^\/(file|presentation|vcs|kortix\/(git|pty))(\/|$)/.test(pathname)) return next();
+    if (workspaceGate.locked) return c.json({ error: 'Workspace history is busy. Retry after recovery.' }, 409);
+    const release = workspaceGate.enter(false);
+    if (!release) return c.json({ error: 'Workspace history is busy.' }, 409);
+    try { return await next(); } finally { release(); }
+  });
 
   // The daemon owns a small Kortix-namespaced control surface. Everything else is
   // pure passthrough to opencode. Mount at both `/health` and `/health/` so

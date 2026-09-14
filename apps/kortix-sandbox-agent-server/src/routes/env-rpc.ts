@@ -13,6 +13,7 @@ import {
 import type { Config } from '../config';
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context';
 import { logger } from '../logger';
+import { workspaceAccess } from '../workspace-access';
 import { WorkspaceHistory, WorkspaceHistoryError } from '../workspace-history';
 
 /**
@@ -274,8 +275,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
   const history = cfg.environmentHistory && cfg.workload === 'environment' && cfg.projectId && cfg.sessionId
     ? new WorkspaceHistory({ workspace: cfg.workspace, state: path.join(cfg.agentStateDir || '/opt/kortix/environment-runtime', 'workspace-history'), scope: JSON.stringify([cfg.projectId, cfg.sessionId]) })
     : null;
-  let historyActive = false;
-  let regularActive = 0;
+  const access = workspaceAccess(cfg);
 
   app.use('*', async (c, next) => {
     if (!rpcSecret) {
@@ -341,11 +341,12 @@ export function createEnvRpcRouter(cfg: Config): Hono {
         ? body.requestId
         : undefined;
 
-    const historyOperation = ['historyCapture', 'historyApply', 'historyPending'].includes(op);
+    const historyOperation = ['historyCapture', 'historyApply', 'historyPending', 'historyPlan', 'historyAbort'].includes(op);
+    const tracking = !!history && typeof args.__kortixHistoryOperation === 'string' && ['writeFile', 'appendFile', 'renameFile', 'createDir', 'remove', 'exec'].includes(op);
+    const exclusive = historyOperation || tracking;
     if (historyOperation && !history) return c.json(err({ code: 'not_supported', message: 'environment workspace history is disabled' }));
-    if (history && (historyActive || (historyOperation && regularActive > 0))) return c.json(err({ code: 'busy', message: 'environment RPC operations are active' }));
-    if (historyOperation) historyActive = true;
-    else regularActive += 1;
+    const release = access?.enter(exclusive);
+    if (access && !release) return c.json(err({ code: 'busy', message: 'environment operations are active' }));
     let admitted = true;
     const p = (key = 'path') => resolveIn(cwd, String(args[key] ?? ''));
     const execution = cancellations.begin(requestId, c.req.raw.signal);
@@ -355,45 +356,66 @@ export function createEnvRpcRouter(cfg: Config): Hono {
       execution.finish();
       if (!admitted) return;
       admitted = false;
-      if (historyOperation) historyActive = false;
-      else regularActive -= 1;
+      release?.();
     };
 
+    let before: string | null = null;
+    let workspace: { from: string; to: string } | null = null;
+    let checkpointFinished = false;
+    const finishCheckpoint = async () => {
+      if (checkpointFinished) return workspace;
+      checkpointFinished = true;
+      if (before && !access?.terminalActive()) {
+        try { workspace = { from: before, to: (await history!.capture(crypto.randomUUID())).snapshotId }; }
+        catch { workspace = null; }
+      }
+      return workspace;
+    };
+    const reply = async (body: any) => c.json(tracking ? { ...body, workspace: await finishCheckpoint() } : body);
     try {
-      if (signal.aborted) return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
-      if (history && !historyOperation && await history.pending()) return c.json(err({ code: 'pending', message: 'workspace history recovery is pending' }));
+      if (tracking && !access?.terminalActive()) {
+        try { before = (await history!.capture(crypto.randomUUID())).snapshotId; }
+        catch { before = null; }
+      }
+      if (signal.aborted) return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
+      if (history && !historyOperation && await history.pending()) return await reply(err({ code: 'pending', message: 'workspace history recovery is pending' }));
+      if (historyOperation && !['historyAbort', 'historyPending'].includes(op) && access?.terminalActive()) return await reply(err({ code: 'busy', message: 'Close running terminals before rewinding workspace files.' }));
       switch (op) {
         case 'historyCapture':
-          return c.json(ok(await history!.capture(args.captureId as string)));
+          return await reply(ok(await history!.capture(args.captureId as string)));
         case 'historyApply':
-          return c.json(ok(await history!.apply({ operationId: args.operationId as string, from: args.from as string, to: args.to as string })));
+          return await reply(ok(await history!.apply({ operationId: args.operationId as string, from: args.from as string, to: args.to as string })));
+        case 'historyPlan':
+          return await reply(ok(await history!.plan(args.moves as Array<{ from: string; to: string }>)));
+        case 'historyAbort':
+          return await reply(ok(await history!.abort({ operationId: args.operationId as string, from: args.from as string, to: args.to as string })));
         case 'historyPending':
-          return c.json(ok(await history!.pending()));
+          return await reply(ok(await history!.pending()));
         case 'absolutePath':
-          return c.json(ok(p()));
+          return await reply(ok(p()));
         case 'canonicalPath': {
           try {
-            return c.json(ok(await fs.realpath(p())));
+            return await reply(ok(await fs.realpath(p())));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'joinPath':
-          return c.json(ok(path.join(...((args.parts as string[]) ?? []))));
+          return await reply(ok(path.join(...((args.parts as string[]) ?? []))));
         case 'exists': {
           try {
             await fs.lstat(p());
-            return c.json(ok(true));
+            return await reply(ok(true));
           } catch (e) {
-            if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return c.json(ok(false));
-            return c.json(fsError(e, p()));
+            if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return await reply(ok(false));
+            return await reply(fsError(e, p()));
           }
         }
         case 'readTextFile': {
           try {
-            return c.json(ok(await fs.readFile(p(), { encoding: 'utf8', signal })));
+            return await reply(ok(await fs.readFile(p(), { encoding: 'utf8', signal })));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'readTextLines': {
@@ -402,17 +424,17 @@ export function createEnvRpcRouter(cfg: Config): Hono {
             const lines = text.split(/\r\n|\n|\r/);
             if (lines.at(-1) === '') lines.pop();
             const max = typeof args.maxLines === 'number' ? args.maxLines : undefined;
-            return c.json(ok(max === undefined ? lines : lines.slice(0, Math.max(0, max))));
+            return await reply(ok(max === undefined ? lines : lines.slice(0, Math.max(0, max))));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'readBinaryFile': {
           try {
             const buf = await fs.readFile(p(), { signal });
-            return c.json(ok(buf.toString('base64')));
+            return await reply(ok(buf.toString('base64')));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'writeFile':
@@ -422,12 +444,12 @@ export function createEnvRpcRouter(cfg: Config): Hono {
             const data =
               args.encoding === 'base64' ? Buffer.from(raw, 'base64') : Buffer.from(raw, 'utf8');
             await fs.mkdir(path.dirname(p()), { recursive: true });
-            if (signal.aborted) return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
+            if (signal.aborted) return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
             if (op === 'appendFile') await fs.appendFile(p(), data);
             else await fs.writeFile(p(), data, { signal });
-            return c.json(ok(undefined));
+            return await reply(ok(undefined));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'renameFile': {
@@ -435,19 +457,19 @@ export function createEnvRpcRouter(cfg: Config): Hono {
           const dst = resolveIn(cwd, String(args.destinationPath ?? ''));
           try {
             await fs.mkdir(path.dirname(dst), { recursive: true });
-            if (signal.aborted) return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
+            if (signal.aborted) return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
             await fs.rename(src, dst);
-            return c.json(ok(undefined));
+            return await reply(ok(undefined));
           } catch (e) {
-            return c.json(fsError(e, src));
+            return await reply(fsError(e, src));
           }
         }
         case 'fileInfo': {
           try {
             const addressedPath = p();
-            return c.json(fileInfoValue(addressedPath, await fs.lstat(addressedPath)));
+            return await reply(fileInfoValue(addressedPath, await fs.lstat(addressedPath)));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'listDir': {
@@ -458,37 +480,37 @@ export function createEnvRpcRouter(cfg: Config): Hono {
             for (const entry of entries) {
               const entryPath = path.join(directoryPath, entry.name);
               const info = fileInfoValue(entryPath, await fs.lstat(entryPath));
-              if (!info.ok) return c.json(info);
+              if (!info.ok) return await reply(info);
               infos.push(info.value);
             }
-            return c.json(ok(infos));
+            return await reply(ok(infos));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'createDir': {
           try {
             await fs.mkdir(p(), { recursive: args.recursive !== false });
-            return c.json(ok(undefined));
+            return await reply(ok(undefined));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'remove': {
           try {
             await fs.rm(p(), { recursive: !!args.recursive, force: !!args.force });
-            return c.json(ok(undefined));
+            return await reply(ok(undefined));
           } catch (e) {
-            return c.json(fsError(e, p()));
+            return await reply(fsError(e, p()));
           }
         }
         case 'createTempDir': {
           try {
-            return c.json(
+            return await reply(
               ok(await fs.mkdtemp(path.join(os.tmpdir(), String(args.prefix ?? 'tmp-')))),
             );
           } catch (e) {
-            return c.json(fsError(e));
+            return await reply(fsError(e));
           }
         }
         case 'createTempFile': {
@@ -498,16 +520,16 @@ export function createEnvRpcRouter(cfg: Config): Hono {
               dir,
               `${String(args.prefix ?? '')}file${String(args.suffix ?? '')}`,
             );
-            if (signal.aborted) return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
+            if (signal.aborted) return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
             await fs.writeFile(file, '', { signal });
-            return c.json(ok(file));
+            return await reply(ok(file));
           } catch (e) {
-            return c.json(fsError(e));
+            return await reply(fsError(e));
           }
         }
         case 'exec': {
           const command = String(args.command ?? '');
-          if (!command) return c.json(err({ code: 'invalid', message: 'command required' }));
+          if (!command) return await reply(err({ code: 'invalid', message: 'command required' }));
           const timeoutMs = Math.min(
             typeof args.timeout === 'number' && args.timeout > 0
               ? args.timeout
@@ -542,7 +564,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
                 await writes;
                 const { aborted, ...value } = result;
                 const body = aborted ? err({ code: 'ABORT_ERR', message: 'aborted' }) : ok(value);
-                await output.write(JSON.stringify({ type: 'result', body }) + '\n');
+                await output.write(JSON.stringify({ type: 'result', body: tracking ? { ...body, workspace: await finishCheckpoint() } : body }) + '\n');
               } finally {
                 execution.controller.abort();
                 finish();
@@ -551,22 +573,22 @@ export function createEnvRpcRouter(cfg: Config): Hono {
           }
           const result = await runExec(input);
           if (result.aborted) {
-            return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
+            return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
           }
           const { aborted: _aborted, ...value } = result;
-          return c.json(ok(value));
+          return await reply(ok(value));
         }
         default:
-          return c.json(
+          return await reply(
             err({ code: 'unknown_op', message: `unsupported op: ${op || '(missing)'}` }),
           );
       }
     } catch (e) {
-      if (signal.aborted) return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
-      if (e instanceof WorkspaceHistoryError) return c.json(fsError(e));
+      if (signal.aborted) return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
+      if (e instanceof WorkspaceHistoryError) return await reply(fsError(e));
       // Belt and braces: nothing above should reach here, but a Result beats a 500.
       logger.error('[env-rpc] unexpected failure', e);
-      return c.json(fsError(e));
+      return await reply(fsError(e));
     } finally {
       if (!streamingExecution) finish();
     }

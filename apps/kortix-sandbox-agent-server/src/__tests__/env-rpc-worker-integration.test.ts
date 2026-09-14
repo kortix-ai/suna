@@ -115,6 +115,7 @@ async function buildRig(historyEnabled = false): Promise<Rig> {
 
   const rig = { ensureCalls: 0 } as Rig;
   const api = new Hono();
+  api.get('/v1/projects/:pid/sessions/:sid/environment', c => c.json({ external_id: 'env-box-1', status: 'active' }));
   api.post('/v1/projects/:pid/sessions/:sid/environment/ensure', (c) => {
     rig.ensureCalls += 1;
     if (c.req.header('authorization') !== `Bearer ${WORKER_TOKEN}`) {
@@ -742,3 +743,65 @@ test('lazy history methods attach only on explicit use and return transport resu
   expect(await rig.env.pendingWorkspace()).toEqual({ ok: true, value: null });
   expect(rig.ensureCalls).toBe(1);
 });
+
+test.each(['write', 'bash', 'custom'])('real worker %s rewind coordinates history, files, conflicts, restore and replacement', async mode => {
+  const globals = globalThis as any;
+  const priorFactory = globals.__KORTIX_PI_AGENT__;
+  if (mode === 'custom') globals.__KORTIX_PI_AGENT__ = (ctx: any) => ({ tools: [{ name: 'custom_write', label: 'Custom write', description: 'Write the report', parameters: { type: 'object', properties: {} }, execute: async () => { const results = await Promise.all([ctx.env.writeFile('report', 'after'), ctx.env.writeFile('parallel', 'custom')]); for (const result of results) if (!result.ok) throw result.error; return { content: [{ type: 'text', text: 'saved' }] }; } }] });
+  const { validatePiHistoryControlAppend, projectPiHistory } = await import('../../../../packages/shared/src/pi-history');
+  const rig = await buildRig(true);
+  const items: any[] = [];
+  const store = Bun.serve({ port: 0, async fetch(request) {
+    if (request.method === 'GET') return Response.json(items);
+    const item = await request.json();
+    const prior = items.find(row => row._kortixAppendId === item._kortixAppendId);
+    if (prior) return new Response(null, { status: JSON.stringify(prior) === JSON.stringify(item) ? 204 : 409 });
+    try { validatePiHistoryControlAppend(items, item); }
+    catch (error) { return Response.json({ error: String(error) }, { status: 409 }); }
+    items.push(item);
+    return new Response(null, { status: 204 });
+  } });
+  const config = {
+    port: 0, envUrl: 'http://unused', envCwd: rig.workspace, systemPrompt: 'Follow the user.',
+    modelMode: 'faux' as const, sessionId: 'sess-1', projectId: 'proj-1',
+    fauxScript: [{ tool: mode === 'custom' ? 'custom_write' : mode, args: mode === 'bash' ? { command: 'printf after > report; printf streaming-output' } : { path: 'report', content: 'after' } }, { text: 'Saved report.' }],
+    kortixToken: WORKER_TOKEN, storeUrl: store.url.toString().replace(/\/$/, ''),
+    apiUrl: (rig.env as any).opts.apiUrl,
+  };
+  let worker = await startWorker(config);
+  const request = (path: string, body?: unknown) => fetch(`http://127.0.0.1:${worker.port}${path}`, {
+    headers: { authorization: `Bearer ${WORKER_TOKEN}`, 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }),
+  });
+  const id = (await (await request('/session')).json())[0].id;
+  const history = async () => (await request(`/session/${id}/message`)).json() as Promise<any[]>;
+  const restart = async () => { worker.server.closeAllConnections(); await worker.close(); worker = await startWorker(config); };
+  try {
+    await fs.writeFile(path.join(rig.workspace, 'report'), 'before');
+    expect((await request(`/session/${id}/message`, { parts: [{ type: 'text', text: 'Update report.' }] })).status).toBe(200);
+    expect(await fs.readFile(path.join(rig.workspace, 'report'), 'utf8')).toBe('after');
+    const original = await history();
+    const user = original.find(message => message.info.role === 'user').info.id;
+    await fs.writeFile(path.join(rig.workspace, 'manual'), 'preserve');
+    await fs.writeFile(path.join(rig.workspace, 'report'), 'manual conflict');
+    const conflict = await request(`/session/${id}/revert`, { messageID: user });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.text()).toContain('conflict');
+    expect(await history()).toEqual(original);
+    expect(projectPiHistory(items).pending).toBeNull();
+    await fs.writeFile(path.join(rig.workspace, 'report'), 'after');
+    const rewind = await request(`/session/${id}/revert`, { messageID: user });
+    const result = await rewind.json();
+    expect(result).toMatchObject({ revert: { messageID: user } });
+    expect(rewind.status).toBe(200);
+    expect(await history()).toEqual([]);
+    expect(await fs.readFile(path.join(rig.workspace, 'report'), 'utf8')).toBe('before');
+    expect(await fs.readFile(path.join(rig.workspace, 'manual'), 'utf8')).toBe('preserve');
+    await restart();
+    expect(await history()).toEqual([]);
+    expect((await request(`/session/${id}/unrevert`, {})).status).toBe(200);
+    expect(await history()).toEqual(original);
+    expect(await fs.readFile(path.join(rig.workspace, 'report'), 'utf8')).toBe('after');
+    expect(await fs.readFile(path.join(rig.workspace, 'manual'), 'utf8')).toBe('preserve');
+  } finally { worker.server.closeAllConnections(); await worker.close(); store.stop(true); await rig.stop(); globals.__KORTIX_PI_AGENT__ = priorFactory; }
+}, 20000);

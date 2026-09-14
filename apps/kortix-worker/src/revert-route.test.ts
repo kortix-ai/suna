@@ -108,3 +108,22 @@ describe('POST /session/:id/revert at the RAW ROOT', () => {
     expect(visible(s)).toHaveLength(4);
   });
 });
+
+test('history projection publishes staged, restored and committed events with the same session identity', () => {
+  const s = surfaceWithHistory();
+  const events: any[] = [];
+  const subscription = s.bus.subscribe(event => events.push(event), { since: null, epoch: null });
+  s.setHistoryProjection('msg_03');
+  expect(s.historySessionObject().revert).toEqual({ messageID: 'msg_03' });
+  s.setHistoryProjection('msg_03');
+  s.setHistoryProjection(null);
+  expect(s.historySessionObject().revert).toBeUndefined();
+  s.setHistoryProjection('msg_01');
+  s.setHistoryProjection(null, new Set(['msg_01', 'msg_02', 'msg_03', 'msg_04']));
+  subscription.unsubscribe();
+  expect(events.filter(event => event.type.startsWith('session.next')).map(event => [event.type, event.payload.sessionID])).toEqual([
+    ['session.next.revert.staged', ROOT], ['session.next.revert.cleared', ROOT],
+    ['session.next.revert.staged', ROOT], ['session.next.revert.committed', ROOT],
+  ]);
+  expect(visible(s)).toEqual(['msg_01', 'msg_02', 'msg_03', 'msg_04']);
+});

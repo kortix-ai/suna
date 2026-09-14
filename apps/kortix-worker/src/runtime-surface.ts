@@ -1171,6 +1171,19 @@ export class RuntimeSurface {
     this.opts.imageAttachments = images;
   }
 
+  private historyMessageId: string | null = null;
+  setHistoryProjection(messageId: string | null, hiddenIds: Set<string> = new Set()): void {
+    if (messageId === this.historyMessageId) return;
+    const previous = this.historyMessageId;
+    this.historyMessageId = messageId;
+    this.publishWire({
+      type: messageId ? 'session.next.revert.staged' : previous && hiddenIds.has(previous) ? 'session.next.revert.committed' : 'session.next.revert.cleared',
+      properties: { sessionID: this.rootId, timestamp: Date.now(), ...(messageId ? { revert: { messageID: messageId } } : previous ? { messageID: previous } : {}) }, busOnly: true,
+    });
+    this.publishWire({ type: 'session.updated', properties: { info: this.opencodeSessionObject() }, busOnly: true });
+  }
+  historySessionObject() { return this.opencodeSessionObject(); }
+
   private sessionProjection() {
     return {
       id: this.rootId,
@@ -1178,7 +1191,7 @@ export class RuntimeSurface {
       parent_id: null,
       directory: this.opts.workspace ?? '/workspace',
       time: { created: this.createdAt, updated: this.updatedAt, compacting: null },
-      revert: null,
+      revert: this.historyMessageId ? { messageID: this.historyMessageId } : null,
     };
   }
 
@@ -1336,7 +1349,7 @@ export class RuntimeSurface {
 
   private opencodeSessionObject(): Pick<
     Session,
-    'id' | 'slug' | 'projectID' | 'title' | 'directory' | 'time' | 'version' | 'permission'
+    'id' | 'slug' | 'projectID' | 'title' | 'directory' | 'time' | 'version' | 'permission' | 'revert'
   > {
     const s = this.sessionProjection();
     return {
@@ -1347,6 +1360,7 @@ export class RuntimeSurface {
       directory: s.directory,
       time: { created: s.time.created, updated: s.time.updated },
       version: 'pi',
+      ...(s.revert ? { revert: s.revert } : {}),
       ...(this.opts.sessionPermission ? { permission: this.opts.sessionPermission() } : {}),
     };
   }

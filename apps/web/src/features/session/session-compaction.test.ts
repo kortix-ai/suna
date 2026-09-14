@@ -70,7 +70,7 @@ describe('resolveProjectSessionRuntimeIdentity', () => {
     ).toEqual(['unknown', 'pi-worker']);
   });
 
-  test('opens history mutations only after an unknown project session resolves to OpenCode', () => {
+  test('resolves an OpenCode project session after its row loads', () => {
     expect(
       [
         undefined,
@@ -112,8 +112,8 @@ describe('Pi session compaction controls', () => {
 });
 
 describe('Pi session rewind controls', () => {
-  test('disables edit-from-here and omits the composer restore control until history mutations are safe', () => {
-    expect(sessionChatSource).toContain("projectSessionRuntimeIdentity === 'opencode'");
+  test('enables existing rewind controls for resolved runtimes and keeps unknown sessions disabled', () => {
+    expect(sessionChatSource).toContain("!projectSessionId || projectSessionRuntimeIdentity !== 'unknown'");
     expect(sessionChatSource).toContain('const composerRewind =\n    historyMutationsEnabled &&');
     expect(sessionChatSource).toContain(
       'editingText={\n                                    historyMutationsEnabled &&',

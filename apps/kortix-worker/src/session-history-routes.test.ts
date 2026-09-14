@@ -76,7 +76,14 @@ test('worker replacement restores staged history, undo restores exact envelopes,
     await restart();
     expect(await history()).toEqual(final);
     expect(worker.env.calls).toHaveLength(0);
-    expect((await request(`/session/${id}/revert`, { messageID: final[2].info.id })).status).toBe(501);
+    expect((await request(`/session/${id}/revert`, { messageID: final[2].info.id })).status).toBe(200);
+    expect(await history()).toEqual(final.slice(0, 2));
+    expect((await (await request(`/session/${id}`)).json()).revert).toEqual({ messageID: final[2].info.id });
+    await restart();
+    expect(await history()).toEqual(final.slice(0, 2));
+    expect((await request(`/session/${id}/unrevert`, {})).status).toBe(200);
+    expect(await history()).toEqual(final);
+    expect(worker.env.calls).toHaveLength(0);
   } finally {
     worker.server.closeAllConnections(); await worker.close(); store.stop(true);
   }

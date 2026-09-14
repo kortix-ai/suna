@@ -1,3 +1,6 @@
+import { SessionRewind, SessionRewindError } from './session-rewind';
+import { workspaceJournalItem, workspaceUndoPlan, type WorkspaceObserver } from './workspace-journal';
+import { projectPiHistory, type PiHistoryWorkspaceMove, type PiHistorySelection } from '../../../packages/shared/src/pi-history';
 import { AttachmentInputError, SessionAttachmentStore, attachmentDigest, attachmentUserContent, type PromptAttachment } from './session-attachments.ts';
 import { parseWorkerModelLimits, type WorkerModelLimits } from './model-limits';
 import { sessionModelConfigUrl, applySessionModelLimits, parseSessionModelSelection, readSessionModelSelection, type SessionModelSelection } from './session-model';
@@ -555,9 +558,22 @@ export async function buildHarness(cfg: WorkerConfig) {
   // env URL) the first compute tool call provisions the session's environment
   // through the Kortix API and every operation then runs over the provider
   // edge. Bench/spike rigs keep the direct-URL path by setting KORTIX_ENV_URL.
+  const workspaceOwners = new Map<string, string>();
+  const observeWorkspace: WorkspaceObserver = async event => {
+    const messageId = event.phase === 'begin' ? persistenceTurnIdentity?.() : workspaceOwners.get(event.operationId);
+    if (!messageId || !turnJournalRef) return false;
+    if (event.phase === 'begin') workspaceOwners.set(event.operationId, messageId);
+    if (!await turnJournalRef.appendTranscriptMutation(messageId, workspaceJournalItem({
+      type: event.phase, messageId, operationId: event.operationId,
+      ...(event.phase === 'begin' ? { environmentId: lazy?.externalId ?? cfg.envUrl } : { workspace: event.workspace ?? null }),
+    }))) throw new TurnOwnerLeaseLostError('Workspace recording lost the turn owner lease');
+    if (event.phase === 'end') workspaceOwners.delete(event.operationId);
+    return true;
+  };
   const lazy =
     !cfg.envUrlExplicit && cfg.apiUrl && cfg.kortixToken && cfg.projectId && cfg.sessionId
       ? new LazyKortixEnv({
+          observeWorkspace,
           apiUrl: cfg.apiUrl,
           token: cfg.kortixToken,
           projectId: cfg.projectId,
@@ -568,6 +584,7 @@ export async function buildHarness(cfg: WorkerConfig) {
   const env =
     lazy ??
     new KortixExecutionEnv({
+      observeWorkspace,
       baseUrl: cfg.envUrl,
       cwd: cfg.envCwd,
       token: cfg.envToken,
@@ -1721,8 +1738,73 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     const messages = await refreshDurableTranscript();
     const journal = await turnJournal.refresh();
     await permissionApprovals.refresh();
+    if (sessionLog) {
+      const history = turnJournal.history;
+      surface.setHistoryProjection(history.staged?.messageId ?? null, history.hiddenMessageIds);
+    }
     surface.replaceDurableMessages(messages, journal.wireMessages);
     recoveryProjectionPending = false;
+  };
+  const requireHistoryEnvironment = async (environmentId: string) => {
+    const matches = lazy ? await lazy.historyEnvironment(environmentId) : environmentId === cfg.envUrl;
+    if (!matches) throw new SessionRewindError('The original environment is unavailable. Rewind requires its workspace checkpoints.');
+  };
+  const historyCoordinator = sessionLog ? new SessionRewind(sessionLog, {
+    apply: async move => {
+      await requireHistoryEnvironment(move.environmentId);
+      const result = await env.applyWorkspace(move);
+      if (!result.ok) throw result.error;
+      return result.value;
+    },
+    abort: async move => {
+      await requireHistoryEnvironment(move.environmentId);
+      const result = await env.abortWorkspace(move);
+      if (!result.ok) throw result.error;
+      return result.value;
+    },
+  }) : null;
+  if (sessionLog) surface.setHistoryProjection(turnJournal.history.staged?.messageId ?? null);
+  const recoverHistory = async () => {
+    if (!historyCoordinator || !sessionLog || !turnJournal.history.pending) return;
+    await historyCoordinator.recover();
+    await hydrateDurableState();
+  };
+  const changeHistory = async (messageId: string | null) => {
+    if (!sessionLog || !historyCoordinator || !sessionRef()) throw new SessionRewindError('Rewind requires durable session storage.', 503);
+    await recoverHistory();
+    await hydrateDurableState();
+    const items = await sessionLog.read();
+    const history = projectPiHistory(items);
+    if (history.unfinishedTurnIds.size || surface.turnProbe(null).turn_in_flight) throw new SessionRewindError('Stop the current turn before rewinding.');
+    const operationId = crypto.randomUUID();
+    let workspace: PiHistoryWorkspaceMove | null = null;
+    let selection: PiHistorySelection;
+    let plan: { environmentId: string; moves: Array<{ from: string; to: string }> } | null = null;
+    if (messageId === null) {
+      if (!history.staged) return;
+      selection = { kind: 'history', version: 1, action: 'restore', revision: history.revision };
+      const moves = history.staged.workspaceMoves;
+      if (moves.length) plan = { environmentId: moves[0]!.environmentId, moves: [...moves].reverse().map(move => ({ from: move.to, to: move.from })) };
+    } else {
+      const visible = surface.transcript.page({ limit: Math.max(surface.transcript.count, 1), before: null }).messages;
+      const index = visible.findIndex(message => message.info.id === messageId && message.info.role === 'user');
+      if (index < 0) throw new SessionRewindError('Rewind requires a visible user message.', 400);
+      const leaf = await sessionRef()!.getLeafId();
+      const entries = leaf ? await sessionRef()!.findEntriesOnBranch({ start: leaf } as any) : [];
+      const boundary = entries.find((entry: any) => entry.message?.kortixWireMessageId === messageId);
+      if (!boundary) throw new SessionRewindError('This message has no recorded model branch.');
+      const hidden = visible.slice(index);
+      selection = { kind: 'history', version: 1, action: 'stage', revision: history.revision, messageId, fromLeaf: leaf, toLeaf: boundary.parentId ?? null, hiddenMessageIds: hidden.map(message => String(message.info.id)) };
+      plan = workspaceUndoPlan(items, new Set(hidden.filter(message => message.info.role === 'user').map(message => String(message.info.id))));
+    }
+    if (plan) {
+      await requireHistoryEnvironment(plan.environmentId);
+      const result = await env.planWorkspace(plan.moves);
+      if (!result.ok) throw result.error;
+      workspace = { ...result.value, environmentId: plan.environmentId, operationId };
+    }
+    await historyCoordinator.prepare(selection, workspace, operationId);
+    await hydrateDurableState();
   };
   const recoverAndProjectTurn = async (messageId: string): Promise<void> => {
     recoveryProjectionCount++;
@@ -2114,6 +2196,9 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           .join('\n');
       }
       try {
+        if (!await turnJournal.appendTranscriptMutation(turn.messageId, workspaceJournalItem({ type: 'covered', messageId: turn.messageId }))) {
+          throw new TurnOwnerLeaseLostError('Workspace recording lost the turn owner lease');
+        }
         if (turn.options.modelSelection) {
           const selected = parseSessionModelSelection(turn.options.modelSelection);
           setActiveModel(resolveSessionModel(selected));
@@ -2441,6 +2526,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     if (sessionLog) {
       const durable = await turnJournal.refresh();
       surface.seedWireMessages(durable.wireMessages);
+      await recoverHistory();
     }
     // Delivery retries reuse messageID. Reuse the first durable envelope too:
     // rebuilding it would stamp a new creation time and turn a valid retry
@@ -2680,6 +2766,29 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
       url.pathname === '/session' ||
       url.pathname.startsWith('/session/')
     ) {
+      const rewindRoute = url.pathname.match(/^\/session\/([^/]+)\/(revert|unrevert)$/);
+      if (rewindRoute && req.method === 'POST') {
+        if (!surface.authorize(req, url)) { res.writeHead(401).end(); return; }
+        const target = decodePathSegment(rewindRoute[1]!);
+        if (target !== surface.rootId) { res.writeHead(target === null ? 400 : 404).end(); return; }
+        try {
+          const raw = await readBoundedRequestBody(req);
+          const input = raw ? JSON.parse(raw) : {};
+          if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SessionRewindError('Request body must be an object.', 400);
+          const restore = rewindRoute[2] === 'unrevert';
+          if (Object.keys(input).some(key => key !== 'messageID' || restore)) throw new SessionRewindError('Only whole user turns can be rewound.', 400);
+          if (!restore && (typeof input.messageID !== 'string' || !input.messageID.trim())) throw new SessionRewindError('messageID is required.', 400);
+          for (const key of ['workspace', 'directory']) {
+            if (url.searchParams.getAll(key).some(value => value !== cfg.envCwd)) throw new SessionRewindError('Rewind workspace must equal the session workspace.', 400);
+          }
+          await changeHistory(restore ? null : input.messageID);
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(surface.historySessionObject()));
+        } catch (error) {
+          const status = error instanceof SessionRewindError ? error.status : error instanceof SyntaxError ? 400 : error instanceof RequestBodyTooLargeError ? 413 : 409;
+          res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+        }
+        return;
+      }
       const summarizeRoute = url.pathname.match(/^\/session\/([^/]+)\/summarize$/);
       if (summarizeRoute && req.method === 'POST') {
         if (!surface.authorize(req, url)) {

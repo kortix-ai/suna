@@ -15,6 +15,7 @@
  * Same contract as the inner env: operations never throw — a failed ensure is
  * a Result the tool renders, not a crash.
  */
+import type { WorkspaceObserver } from './workspace-journal';
 import type { WorkspaceHistoryMove } from '../../../packages/shared/src/workspace-history';
 import { createHmac } from 'node:crypto';
 import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
@@ -58,6 +59,7 @@ class OperationAbortedError extends Error {
 }
 
 export interface LazyEnvOptions {
+  observeWorkspace?: WorkspaceObserver;
   /** Kortix API base incl. /v1 (KORTIX_API_URL). */
   apiUrl: string;
   /** The worker's session credential (KORTIX_TOKEN). */
@@ -219,6 +221,7 @@ export class LazyKortixEnv {
       if (!ready) throw new EnvUnavailableError('environment daemon never became ready');
       this.externalId = ensured.external_id ?? null;
       this.inner = new KortixExecutionEnv({
+        observeWorkspace: this.opts.observeWorkspace,
         baseUrl: `${edge}/kortix/env-rpc`,
         cwd: this.cwd,
         headers,
@@ -353,12 +356,31 @@ export class LazyKortixEnv {
     }
   }
 
+  async historyEnvironment(expected: string): Promise<boolean> {
+    const response = await fetch(`${this.opts.apiUrl.replace(/\/+$/, '')}/projects/${this.opts.projectId}/sessions/${this.opts.sessionId}/environment`, {
+      headers: { authorization: `Bearer ${this.opts.token}` }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new EnvUnavailableError('Cannot verify the original environment');
+    const current = await response.json() as EnsureResponse;
+    if (current.external_id !== expected || ['removed', 'deleted'].includes(current.status ?? '')) return false;
+    await this.attach();
+    return this.externalId === expected;
+  }
+
   captureWorkspace(captureId: string, signal?: AbortSignal) {
     return this.op((env) => env.captureWorkspace(captureId, signal), true, signal);
   }
 
-  applyWorkspace(move: WorkspaceHistoryMove, signal?: AbortSignal) {
-    return this.op((env) => env.applyWorkspace(move, signal), true, signal);
+  applyWorkspace(move: WorkspaceHistoryMove & { environmentId?: string }, signal?: AbortSignal) {
+    return this.op((env) => move.environmentId && move.environmentId !== this.externalId ? Promise.resolve(err(new EnvUnavailableError('Original environment identity changed'))) : env.applyWorkspace(move, signal), true, signal);
+  }
+
+  planWorkspace(moves: Array<{ from: string; to: string }>, signal?: AbortSignal) {
+    return this.op((env) => env.planWorkspace(moves, signal), true, signal);
+  }
+
+  abortWorkspace(move: WorkspaceHistoryMove & { environmentId?: string }, signal?: AbortSignal) {
+    return this.op((env) => move.environmentId && move.environmentId !== this.externalId ? Promise.resolve(err(new EnvUnavailableError('Original environment identity changed'))) : env.abortWorkspace(move, signal), true, signal);
   }
 
   pendingWorkspace(signal?: AbortSignal) {

@@ -695,6 +695,8 @@ export class TurnAdmissionJournal {
     return new TurnAdmissionJournal(log, reduceItems(items));
   }
 
+  get history(): PiHistoryProjection { return structuredClone(this.reduced.history); }
+
   get pending(): TurnAdmission[] {
     return snapshot(this.reduced).pending;
   }

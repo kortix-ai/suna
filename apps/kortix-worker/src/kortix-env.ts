@@ -19,6 +19,7 @@
 
 import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
 import type { WorkspaceCheckpoint, WorkspaceHistoryMove, WorkspaceHistoryReceipt } from '../../../packages/shared/src/workspace-history';
+import type { WorkspaceObserver } from './workspace-journal';
 import type { RpcProgress } from '../../../packages/shared/src/env-rpc-stream';
 import {
   makeTransport,
@@ -107,6 +108,7 @@ class ExecutionErrorLike extends Error {
 export type TransportKind = 'fetch' | 'keepalive' | 'ws' | 'auto';
 
 export interface KortixEnvOptions {
+  observeWorkspace?: WorkspaceObserver;
   /** Base URL of the environment's RPC endpoint. In production this is the Kortix sandbox proxy. */
   baseUrl: string;
   /** Working directory inside the environment. */
@@ -136,17 +138,20 @@ export function toExecTimeoutMs(timeoutSeconds: unknown): number | undefined {
 
 export class KortixExecutionEnv {
   readonly cwd: string;
+  private readonly observeWorkspace?: WorkspaceObserver;
   private readonly baseUrl: string;
   private readonly token?: string;
   private readonly headers: Record<string, string>;
   private readonly transport: RpcTransport;
   private readonly timeoutMs: number;
+  private workspaceTail: Promise<unknown> = Promise.resolve();
   private readonly abortSettlements = new Set<Promise<void>>();
 
   /** Every RPC that crossed the boundary. The proof harness reads this. */
   readonly calls: Array<{ op: string; args: unknown }> = [];
 
   constructor(opts: KortixEnvOptions) {
+    this.observeWorkspace = opts.observeWorkspace;
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
     this.cwd = opts.cwd;
     this.token = opts.token;
@@ -172,7 +177,7 @@ export class KortixExecutionEnv {
     onProgress?: (progress: RpcProgress) => void,
   ): Promise<Result<T, any>> {
     this.calls.push({ op, args });
-    const operation = (async () => {
+    const invoke = async () => {
       // One retry for reads: a pooled keep-alive socket retired by the peer
       // between calls is a transport artifact, not a tool failure. Mutations
       // cannot be replayed because the daemon may commit the side effect before
@@ -188,7 +193,9 @@ export class KortixExecutionEnv {
         return this.rpcOnce<T>(op, args, signal, onProgress);
       }
       return first;
-    })();
+    };
+    const operation = this.observeWorkspace ? this.workspaceTail.then(invoke, invoke) : invoke();
+    if (this.observeWorkspace) this.workspaceTail = operation.then(() => undefined, () => undefined);
     if (signal) {
       const trackAbort = () => {
         const settlement = operation.then((result) => {
@@ -215,6 +222,12 @@ export class KortixExecutionEnv {
     signal?: AbortSignal,
     onProgress?: (progress: RpcProgress) => void,
   ): Promise<Result<T, any>> {
+    const operationId = crypto.randomUUID();
+    const mutating = ['writeFile', 'appendFile', 'renameFile', 'createDir', 'remove', 'exec'].includes(op);
+    let tracked = false;
+    try {
+      if (mutating && this.observeWorkspace) tracked = await this.observeWorkspace({ phase: 'begin', operationId });
+    } catch (error) { return err(error); }
     const operationController = new AbortController();
     let abortSource: 'caller' | 'timeout' | undefined;
     let progressError: unknown;
@@ -232,7 +245,7 @@ export class KortixExecutionEnv {
       transportOperation = Promise.resolve(
         this.transport.call(
           op,
-          args,
+          tracked ? { ...args, __kortixHistoryOperation: operationId } : args,
           this.cwd,
           operationController.signal,
           onProgress
@@ -279,6 +292,10 @@ export class KortixExecutionEnv {
     });
     try {
       const body: any = await Promise.race([transportOperation, timer]);
+      if (tracked) {
+        await this.observeWorkspace!({ phase: 'end', operationId, workspace: body?.workspace ?? null });
+        tracked = false;
+      }
       if (progressFailed) throw progressError;
       if (body?.ok) return ok(body.value as T);
       return err(
@@ -314,6 +331,14 @@ export class KortixExecutionEnv {
 
   applyWorkspace(move: WorkspaceHistoryMove, signal?: AbortSignal) {
     return this.rpc<WorkspaceHistoryReceipt>('historyApply', { ...move }, signal);
+  }
+
+  planWorkspace(moves: Array<{ from: string; to: string }>, signal?: AbortSignal) {
+    return this.rpc<{ from: string; to: string }>('historyPlan', { moves }, signal);
+  }
+
+  abortWorkspace(move: WorkspaceHistoryMove, signal?: AbortSignal) {
+    return this.rpc<WorkspaceHistoryReceipt>('historyAbort', { ...move }, signal);
   }
 
   pendingWorkspace(signal?: AbortSignal) {

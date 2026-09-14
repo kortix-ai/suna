@@ -135,4 +135,27 @@ flow('SESS-33', {
     (await append(restore(7))).status(204);
     await mirror(['u0', 'a0', 'u2', 'a2']);
   });
+  await ctx.step('prepare fences prompts without hiding messages, cancel releases it, and commit changes visibility once', async () => {
+    const operationId = crypto.randomUUID();
+    const selection = { ...stage(8, 'u2') };
+    delete (selection as any)._kortixAppendId;
+    const prepared = identified({ kind: 'history', version: 1, revision: 8, action: 'prepare', operationId, selection, workspace: null });
+    (await append(prepared)).status(204);
+    (await append(prepared)).status(204);
+    await mirror(['u0', 'a0', 'u2', 'a2']);
+    (await append(accepted('fenced', 9))).status(409).body().has('$.error', 'history recovery is pending');
+    (await append(identified({ kind: 'history', version: 1, revision: 9, action: 'commit', operationId: crypto.randomUUID() }))).status(409);
+    (await append(identified({ kind: 'history', version: 1, revision: 9, action: 'cancel', operationId }))).status(204);
+    await mirror(['u0', 'a0', 'u2', 'a2']);
+    const second = crypto.randomUUID();
+    (await append(identified({ ...prepared, revision: 10, operationId: second, selection: { ...selection, revision: 10 } }))).status(204);
+    const committed = identified({ kind: 'history', version: 1, revision: 11, action: 'commit', operationId: second });
+    (await append(committed)).status(204);
+    (await append(committed)).status(204);
+    await mirror(['u0', 'a0']);
+    const undoId = crypto.randomUUID();
+    (await append(identified({ kind: 'history', version: 1, revision: 12, action: 'prepare', operationId: undoId, selection: { kind: 'history', version: 1, revision: 12, action: 'restore' }, workspace: null }))).status(204);
+    (await append(identified({ kind: 'history', version: 1, revision: 13, action: 'commit', operationId: undoId }))).status(204);
+    await mirror(['u0', 'a0', 'u2', 'a2']);
+  });
 });

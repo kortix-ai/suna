@@ -72,11 +72,35 @@ and pagination. Mirror rows remain archived for restore. A rewind that hides
 all captured rows returns a known empty transcript. Mirror metadata, history,
 and messages are read from one database snapshot.
 
-This is internal preparation. Raw `revert`/`unrevert` still return `501`.
-The environment now has a tested checkpoint component, described below. Automatic
-checkpoint capture, PostgreSQL/file coordination, SSE transitions, and the
-existing UI controls remain to be connected. Direct log writes do not undo files,
-commands, or external API effects.
+`POST /session/:id/revert` takes `{ "messageID": "..." }` for a visible user turn.
+`POST /session/:id/unrevert` restores the staged branch. The existing Edit and
+Restore controls use these routes for Pi and OpenCode. A new accepted prompt
+commits the discarded branch and removes Restore. Text-only rewind needs no
+environment.
+
+Each turn records workspace coverage in PostgreSQL. Each environment mutation
+records its start before execution and its checkpoint pair after execution.
+Default tools and custom `ctx.env` operations use the same path. The daemon
+captures around the operation, including streamed Bash, and the worker serializes
+concurrent calls. Manual changes between operations are not attributed to the
+agent. Rewind composes these deltas in reverse order. A discontinuity on the
+same file refuses the whole rewind.
+
+The coordinator first appends `prepare` under the PostgreSQL session lock.
+New admissions then fail until recovery finishes. It applies one environment
+operation with a stable UUID, then appends `commit`. Only commit changes the
+model branch and visible messages. A durable environment cancellation prevents
+a delayed apply from running. If a response is lost after completion, recovery
+uses the receipt and commits once. An unresolved operation stays pending; retry
+rewind or the next prompt to recover it. The worker emits the existing staged,
+cleared, committed, and message SSE events. Reload restores the same pointer.
+
+Rewind refuses unfinished turns, missing checkpoints, replaced environments,
+conflicting manual edits, and turns recorded before workspace coverage existed.
+A missing completion record after an interrupted tool is also refused. Tools
+still work if capture exceeds its limits; that turn becomes non-rewindable.
+Conversation and file rewind do not undo custom state, permissions, database
+writes, Git commits, network calls, or other external effects.
 
 ### Environment workspace checkpoints
 
@@ -104,17 +128,19 @@ capture or apply. Scope, directory identity, and content hashes reject stale or
 corrupt checkpoints. SQLite supplies an OS-released operation lock only; file
 history lives in the manifests and blobs.
 
-The component requires a quiescent workspace. Its lock excludes other history
-operations. The daemon RPC gate also excludes concurrent environment RPC calls.
-It does not control detached processes, terminals, or other filesystem clients. Individual replacements are atomic, but a multi-file apply is resumable,
-not one atomic filesystem transaction. Commands, network effects, ACLs, extended
+The component requires a quiescent workspace. The daemon excludes other RPC,
+Files, VCS, and terminal creation while capturing or applying history. An open
+terminal prevents file rewind. A persisted pending receipt blocks managed file
+writes after daemon restart. This gate does not control detached processes or
+external filesystem clients; stop those writers before using rewind. Individual
+replacements are atomic, but a multi-file apply is resumable, not one atomic
+filesystem transaction. Commands, network effects, ACLs, extended
 attributes, and hard-link relationships are outside the checkpoint contract.
-The future rewind coordinator must gate writers and recover a pending file move
-before accepting another prompt or publishing a conversation-history transition.
 
 Internal RPC access requires `KORTIX_ENVIRONMENT_HISTORY=1`, workload
-`environment`, `KORTIX_PROJECT_ID`, and `KORTIX_SESSION_ID`. The API does not set
-this flag yet. Storage defaults to
+`environment`, `KORTIX_PROJECT_ID`, and `KORTIX_SESSION_ID`. The API enables this
+flag and upgrades existing environments to daemon contract version 4 while
+preserving their workspace. Storage defaults to
 `/opt/kortix/environment-runtime/workspace-history`; `KORTIX_AGENT_STATE_DIR`
 overrides the parent. Request arguments cannot change the workspace or scope.
 The ordinary purpose-bound environment RPC authentication applies.
@@ -124,6 +150,8 @@ The ordinary purpose-bound environment RPC authentication applies.
 | `historyCapture` | `captureId` UUIDv4 | `snapshotId`, `files`, `bytes` |
 | `historyApply` | `operationId` UUIDv4, `from` hash, `to` hash | Durable receipt: IDs, `status`, `changedPaths` |
 | `historyPending` | None | Pending receipt or `null` |
+| `historyPlan` | Ordered checkpoint pairs | Composed source and target hashes |
+| `historyAbort` | Same move identity | Complete or cancelled receipt; refuses partial apply |
 
 The worker adapters expose `captureWorkspace`, `applyWorkspace`, and
 `pendingWorkspace` through the existing transports. Only explicit method calls
