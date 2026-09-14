@@ -156,7 +156,6 @@ PREVIEW_INSTANCE_DIR=${shellQuote(instanceDir)} \
 PREVIEW_STATE_DIR=${shellQuote(state)} \
 PREVIEW_ORIGIN=${shellQuote(origin.origin)} \
 PREVIEW_SHA=${shellQuote(input.sha)} \
-PREVIEW_PR_NUMBER=${input.prNumber} \
 PREVIEW_SECRETS_FILE="$SECRETS" \
 bun tests/bin/preview-stack.ts
 

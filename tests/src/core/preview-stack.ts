@@ -1,10 +1,4 @@
 export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
-  // Temporary credentials the deploy job obtained by assuming the preview
-  // OIDC role (12 h); the API's AWS SDK default chain reads them as-is for
-  // the project-snapshot bucket. Never a long-lived key.
-  'AWS_ACCESS_KEY_ID',
-  'AWS_SECRET_ACCESS_KEY',
-  'AWS_SESSION_TOKEN',
   'DAYTONA_API_KEY',
   'KE2E_STRIPE_SECRET_KEY',
   'KE2E_STRIPE_WEBHOOK_SECRET',
@@ -17,10 +11,6 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'OPENROUTER_API_KEY',
   'PLATINUM_API_KEY',
 ] as const;
-
-/** The bucket infra/terraform/environments/preview owns; each preview writes under pr-<n>/. */
-export const PREVIEW_PROJECT_SNAPSHOT_BUCKET = 'kortix-preview-project-snapshots';
-export const PREVIEW_PROJECT_SNAPSHOT_REGION = 'us-west-2';
 
 export type PreviewRuntimeSecretName = (typeof PREVIEW_RUNTIME_SECRET_ALLOWLIST)[number];
 export type PreviewRuntimeSecrets = Partial<Record<PreviewRuntimeSecretName, string>>;
@@ -39,8 +29,6 @@ export interface PreviewStackInput {
   apiImage: string;
   gatewayImage: string;
   frontendImage: string;
-  /** Pull-request number: the project-snapshot object prefix (`pr-<n>/`). Falls back to the sha. */
-  prNumber?: number;
   /** Platinum API base URL, offered as a second session provider when PLATINUM_API_KEY is present. */
   platinumApiUrl?: string;
 }
@@ -343,22 +331,6 @@ export function applyPreviewEnvironment(
       : {}),
     DATABASE_URL: `postgresql://postgres:${postgresPassword}@supabase-db:5432/postgres`,
     DAYTONA_API_KEY: rawSecrets.DAYTONA_API_KEY ?? '',
-    // Project snapshots (S3 config provider): only when the deploy job could
-    // assume the preview OIDC role. The API's SDK default chain reads AWS_*;
-    // the bucket is Terraform's, the prefix keeps previews apart. Without
-    // credentials the bucket stays unset and the API validates it as
-    // optional: the Git path, exactly as before. Consumption still needs
-    // prefer-s3 / require-s3 per project (metadata.project_snapshot_mode).
-    ...(rawSecrets.AWS_ACCESS_KEY_ID && rawSecrets.AWS_SECRET_ACCESS_KEY
-      ? {
-          AWS_ACCESS_KEY_ID: rawSecrets.AWS_ACCESS_KEY_ID,
-          AWS_SECRET_ACCESS_KEY: rawSecrets.AWS_SECRET_ACCESS_KEY,
-          AWS_SESSION_TOKEN: rawSecrets.AWS_SESSION_TOKEN ?? '',
-          KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: PREVIEW_PROJECT_SNAPSHOT_BUCKET,
-          KORTIX_PROJECT_SNAPSHOT_S3_REGION: PREVIEW_PROJECT_SNAPSHOT_REGION,
-          KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: input.prNumber ? `pr-${input.prNumber}` : `sha-${input.sha.slice(0, 12)}`,
-        }
-      : {}),
     MANAGED_GIT_PROVIDER: 'github',
     MANAGED_GIT_GITHUB_OWNER: rawSecrets.MANAGED_GIT_GITHUB_OWNER ?? '',
     MANAGED_GIT_GITHUB_INSTALL_ID: rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID ?? '',
@@ -398,8 +370,6 @@ export function applyPreviewEnvironment(
     KE2E_STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
     E2E_AGENTMAIL_API_KEY: '',
     KE2E_CAP_DAYTONA: rawSecrets.DAYTONA_API_KEY ? '1' : '0',
-    KE2E_CAP_PLATINUM: rawSecrets.PLATINUM_API_KEY ? '1' : '0',
-    KE2E_CAP_PROJECT_SNAPSHOTS: rawSecrets.AWS_ACCESS_KEY_ID && rawSecrets.AWS_SECRET_ACCESS_KEY ? '1' : '0',
     KE2E_CAP_MANAGED_GIT: managedGitEnabled ? '1' : '0',
     KE2E_CAP_MANAGED_GIT_PUSH: managedGitEnabled ? '1' : '0',
     KE2E_DEFAULT_FLOW_ATTEMPTS: '1',

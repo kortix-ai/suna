@@ -283,42 +283,23 @@ the steps are the same with `dev` in place of `staging`):
 
 ### Previews (the `preview` label)
 
-A preview API runs inside a sandbox from the self-host Compose bundle and has
-no AWS identity, so previews get **temporary** credentials, never a key:
+Previews stay on the **Git path**. A preview API runs inside a sandbox from the
+self-host Compose bundle, next to code from the pull request, and the preview
+pipeline holds **no cloud identity** by contract
+(`infra/scripts/test-ecs-preview-runtime.py`
+`test_the_preview_pipeline_holds_no_cloud_or_delivery_identity`,
+`tests/unit/web-ecs-workflow.test.ts`). `AWS_*` is outside the runtime-secret
+allowlist in `tests/src/core/preview-stack.ts`, so the preview API never names a
+bucket, validates it as optional, and `GET …/project-snapshot` answers 503.
 
 | Piece | Where |
 | --- | --- |
-| Bucket | `infra/terraform/environments/preview/project-snapshots.tf`: `kortix-preview-project-snapshots`, objects expire after 7 days, each preview under `pr-<n>/` |
-| Grant | the same file adds `s3:PutObject` + `s3:GetObject` on the objects to the existing `kortix-gha-preview-deploy` OIDC role; `main.tf` raises that role's `max_session_duration` to 12 h |
-| Credentials | `deploy-preview.yml` assumes the role for 12 h (`continue-on-error`) right before the deploy step; `tests/bin/sandbox-preview.ts` forwards `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` through the allowlist in `tests/src/core/preview-stack.ts`, which sets the bucket, region and prefix only when they are present |
-| Providers | the stack now offers `daytona,platinum` when `PLATINUM_API_KEY` is present (Daytona stays the default for unpinned sessions; pin `{"provider":"platinum"}` on create to test Platinum) |
+| Providers | the stack offers `daytona,platinum` when `PLATINUM_API_KEY` is present (Daytona stays the default for unpinned sessions; pin `{"provider":"platinum"}` on create to test Platinum) |
+| S3 path | not exercised on previews; verify it locally (MinIO, above) and on dev/staging |
 
-What expires: after 12 h the producer's uploads and the presigned GETs fail
-(`config_provider_s3_failed` with `unavailable` / `expired-authorization`) and
-sessions fall back to Git until the preview is redeployed; a push or a
-workflow dispatch mints a fresh session. The workflow's assume step is
-`continue-on-error`, so a preview without S3 is still a complete preview.
-
-Remember the preview rule from the learnings register: `deploy-preview.yml`
-and everything it calls under `tests/` run from **`main`**, so this wiring
-takes effect for previews only after it is merged.
-
-Testing on a preview, once merged and applied:
-
-1. Label the PR `preview`; in the deploy log the assume step must succeed and
-   the stack log show `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET` set.
-2. Create a project on the preview origin, push, then
-   `GET <origin>/v1/git/<project>.git/project-snapshot?sha=<tip>` with a PAT →
-   200 with `tree` and `blobs` URLs (404 `not_prepared` = worker still building).
-3. Set the project to `prefer-s3` (SQL through the preview's direct database
-   port, see `KE2E_DATABASE_URL` in the stack's test env), start a fresh
-   session on Daytona and one pinned to Platinum, read `config_provider` on
-   `<origin>/v1/p/<external_id>/8000/kortix/health` for both: `provider: s3`,
-   `sha_matches: true`, `s3_extractor: tar`, `hydration.status: ok`,
-   `timings.s3_acquire`.
-4. `project-snapshot-bench.ts run --provider daytona|platinum` against the
-   preview origin with a `git` and a `prefer-s3` project alternating gives the
-   in-region numbers.
+Exercising S3 on previews needs a decision to change that contract first — for
+example a MinIO service inside the preview Compose bundle, which keeps the
+pipeline free of AWS credentials.
 
 Expiry semantics: objects are derived data, so `expiration_days` is safe.
 Both the descriptor route and the session-create pin lookup HEAD both objects;
