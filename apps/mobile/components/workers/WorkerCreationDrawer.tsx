@@ -284,8 +284,8 @@ export function WorkerCreationDrawer({
             </View>
 
             {/* Cancel button */}
-            <Button variant="outline" onPress={onClose} className="rounded-xl">
-              <Text className="text-center font-roobert-medium text-sm text-muted-foreground">
+            <Button variant="outline" onPress={onClose}>
+              <Text className="text-center">
                 Cancel
               </Text>
             </Button>
@@ -298,7 +298,7 @@ export function WorkerCreationDrawer({
                 variant="ghost"
                 size="icon"
                 onPress={handleBack}
-                className="absolute left-0 top-0 h-10 w-10 rounded-xl">
+                className="absolute left-0 top-0">
                 <Icon as={ArrowLeft} size={20} className="text-foreground" />
               </Button>
               <View className="mb-3 p-3 rounded-2xl bg-muted/50">
@@ -349,12 +349,12 @@ export function WorkerCreationDrawer({
             {/* Actions */}
             <View className="space-y-3">
               <Button
+                size="lg"
                 onPress={handleChatContinue}
                 disabled={!chatDescription.trim() || isLoading}
-                className="rounded-xl"
-                style={{ backgroundColor: THEME.accent.green, paddingVertical: 16 }}>
+                style={{ backgroundColor: THEME.accent.green }}>
                 <Text
-                  className="text-center font-roobert-semibold text-base"
+                  className="text-center"
                   style={{ color: THEME.light.primaryForeground }}>
                   {isLoading ? 'Creating...' : 'Create Worker'}
                 </Text>
@@ -362,11 +362,10 @@ export function WorkerCreationDrawer({
               <Button
                 variant="outline"
                 onPress={handleBack}
-                disabled={isLoading}
-                className="rounded-xl">
+                disabled={isLoading}>
                 <View className="flex-row items-center justify-center gap-2">
                   <Icon as={ArrowLeft} size={16} className="text-muted-foreground" />
-                  <Text className="font-roobert-medium text-sm text-muted-foreground">Back</Text>
+                  <Text>Back</Text>
                 </View>
               </Button>
             </View>

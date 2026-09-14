@@ -131,7 +131,6 @@ function ByoSlackSheet({
   const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   const border = withAlpha(fg, isDark ? 0.1 : 0.12);
   const inputBg = withAlpha(fg, isDark ? 0.05 : 0.03);
-  const closeBg = withAlpha(fg, isDark ? 0.05 : 0.04);
 
   const copyManifest = async () => {
     haptics.tap();
@@ -160,12 +159,11 @@ function ByoSlackSheet({
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: withAlpha(fg, 0.08) }}>
         <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Bring your own Slack app</Text>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="icon"
           onPress={() => { haptics.tap(); onClose(); }}
           hitSlop={8}
-          className="h-[30px] w-[30px] rounded-full"
-          style={{ backgroundColor: closeBg }}
+          className="rounded-full"
         >
           <Icon as={X} size={17} color={muted} />
         </Button>
@@ -186,22 +184,22 @@ function ByoSlackSheet({
             </Text>
 
             <Button
+              size="lg"
               onPress={copyManifest}
-              className="h-11 flex-row items-center justify-center gap-2 rounded-full mb-2.5"
-              style={{ backgroundColor: theme.primary }}
+              className="rounded-full mb-2.5"
             >
               <Icon as={copied ? CircleCheck : Copy} size={16} color={theme.primaryForeground} />
-              <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>{copied ? 'Copied' : 'Copy manifest'}</Text>
+              <Text>{copied ? 'Copied' : 'Copy manifest'}</Text>
             </Button>
 
             <Button
+              size="lg"
               variant="outline"
               onPress={() => { haptics.tap(); WebBrowser.openBrowserAsync(SLACK_APPS_URL); }}
-              className="h-11 flex-row items-center justify-center gap-2 rounded-full mb-4"
-              style={{ borderColor: border }}
+              className="rounded-full mb-4"
             >
               <Icon as={ExternalLink} size={16} color={fg} />
-              <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: fg }}>Open Slack apps</Text>
+              <Text>Open Slack apps</Text>
             </Button>
 
             <View style={{ borderRadius: 12, borderWidth: 1, borderColor: border, backgroundColor: inputBg, padding: 12 }}>
@@ -249,25 +247,25 @@ function ByoSlackSheet({
       <View style={{ flexDirection: 'row', gap: 10, padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: withAlpha(fg, 0.08) }}>
         {step === 'tokens' && (
           <Button
+            size="lg"
             variant="outline"
             onPress={() => { haptics.tap(); setStep('manifest'); }}
-            className="h-12 rounded-full px-5"
-            style={{ borderColor: border }}
+            className="rounded-full"
           >
-            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
+            <Text>Back</Text>
           </Button>
         )}
         <Button
+          size="lg"
           onPress={() => {
             if (step === 'manifest') { haptics.tap(); setStep('tokens'); }
             else handleConnect();
           }}
           disabled={step === 'tokens' && !canConnect}
-          className="h-12 flex-1 flex-row items-center justify-center gap-2 rounded-full"
-          style={{ backgroundColor: theme.primary, opacity: step === 'tokens' && !canConnect ? 0.5 : 1 }}
+          className="flex-1 rounded-full"
         >
           {connectMut.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
+          <Text>
             {step === 'manifest' ? 'I installed it — next' : 'Connect Slack'}
           </Text>
         </Button>
@@ -400,14 +398,14 @@ export function ChannelsNavPage({
               </View>
 
               <Button
+                size="lg"
                 variant="outline"
                 onPress={handleDisconnect}
                 disabled={disconnectMut.isPending}
-                className="mt-[22px] h-12 flex-row items-center justify-center gap-2 rounded-full"
-                style={{ borderColor: withAlpha(destructiveColor, 0.4), opacity: disconnectMut.isPending ? 0.5 : 1 }}
+                className="mt-[22px] rounded-full"
               >
                 {disconnectMut.isPending ? <ActivityIndicator size="small" color={destructiveColor} /> : <Icon as={Trash2} size={15} color={destructiveColor} />}
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: destructiveColor }}>Disconnect Slack</Text>
+                <Text style={{ color: destructiveColor }}>Disconnect Slack</Text>
               </Button>
             </>
           ) : (
@@ -425,8 +423,9 @@ export function ChannelsNavPage({
 
               {oauth && (
                 <Button
+                  size="lg"
                   onPress={handleAddToSlack}
-                  className="h-[50px] flex-row items-center justify-center gap-2 rounded-full"
+                  className="rounded-full"
                   style={{ backgroundColor: SLACK }}
                 >
                   <SlackIcon width={18} height={18} />
@@ -443,13 +442,14 @@ export function ChannelsNavPage({
               )}
 
               <Button
+                size="lg"
                 variant="outline"
                 onPress={() => { haptics.tap(); byoSheetRef.current?.present(); }}
-                className="h-[50px] flex-row items-center justify-center gap-2 rounded-full"
-                style={{ borderColor: border, marginTop: oauth ? 0 : 4 }}
+                className="rounded-full"
+                style={{ marginTop: oauth ? 0 : 4 }}
               >
                 <Icon as={Plug} size={17} color={fg} />
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>Bring your own Slack app</Text>
+                <Text>Bring your own Slack app</Text>
               </Button>
 
               <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, textAlign: 'center', marginTop: 14 }}>

@@ -149,7 +149,7 @@ export function GlobalUpgradeSheet() {
 
           {offer.canManageBilling ? (
             <>
-              <Button onPress={handleViewPlans} className="w-full ">
+              <Button onPress={handleViewPlans}>
                 <Text>
                   {offer.hasSeatMath
                     ? `Subscribe — $${offer.monthlyTotal}/mo`

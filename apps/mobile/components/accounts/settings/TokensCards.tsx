@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
 import {
   getPatPolicy,
   updatePatPolicy,
@@ -134,8 +134,7 @@ function PatPolicyCard({ accountId, canManage, isDark }: { accountId: string; ca
             <Button
               onPress={handleSave}
               disabled={save.isPending}
-              className="h-10 flex-row items-center self-end gap-1.5 rounded-full px-[18px] mt-3"
-              style={{ backgroundColor: theme.primary }}
+              className="self-end rounded-full mt-3"
             >
               {save.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
               <Text>Save policy</Text>
@@ -196,8 +195,7 @@ function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: stri
           <Button
             size="sm"
             onPress={() => open({ kind: 'create' })}
-            className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
-            style={{ backgroundColor: theme.primary }}
+            className="rounded-full"
           >
             <Plus size={14} color={theme.primaryForeground} />
             <Text>New</Text>
@@ -224,9 +222,9 @@ function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: stri
                 {canManage && (busyId === sa.service_account_id ? <ActivityIndicator size="small" color={c.muted} /> : (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     {sa.status === 'active' && (
-                      <Button variant="ghost" size="icon" onPress={() => confirmDisable(sa)} hitSlop={6} className="h-8 w-8 rounded-full" style={{ borderWidth: 1, borderColor: c.border }}><CirclePause size={14} color={THEME.accent.orange} /></Button>
+                      <Button variant="outline" size="icon" onPress={() => confirmDisable(sa)} hitSlop={6} className="rounded-full"><CirclePause size={14} color={THEME.accent.orange} /></Button>
                     )}
-                    <Button variant="ghost" size="icon" onPress={() => confirmDelete(sa)} hitSlop={6} className="h-8 w-8 rounded-full" style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.35) }}><Trash2 size={14} color={destructiveColor(isDark)} /></Button>
+                    <Button variant="outline" size="icon" onPress={() => confirmDelete(sa)} hitSlop={6} className="rounded-full"><Trash2 size={14} color={destructiveColor(isDark)} /></Button>
                   </View>
                 ))}
               </View>
@@ -312,10 +310,9 @@ function BearerSheet({ sa, onClose, isDark }: { sa: CreatedServiceAccount; onClo
           <Text style={{ fontSize: 12.5, lineHeight: 18, fontFamily: MONO, color: c.fg }} selectable>{sa.secret}</Text>
         </View>
         <Button
-          variant="ghost"
+          variant="outline"
           onPress={copy}
-          className="h-[38px] flex-row items-center self-start gap-1.5 rounded-full px-3.5 mt-3"
-          style={{ borderWidth: 1, borderColor: c.border }}
+          className="self-start rounded-full mt-3"
         >
           {copied ? <Check size={14} color={theme.primary} /> : <Copy size={14} color={c.muted} />}
           <Text style={{ color: copied ? theme.primary : c.fg }}>{copied ? 'Copied' : 'Copy bearer'}</Text>

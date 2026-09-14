@@ -113,9 +113,9 @@ function FieldLabel({ children, color }: { children: React.ReactNode; color: str
 function SaveButton({ onPress, disabled, pending }: { onPress: () => void; disabled: boolean; pending: boolean }) {
   const theme = useThemeColors();
   return (
-    <Button onPress={onPress} disabled={disabled} className="self-end flex-row items-center gap-1.5 rounded-full px-[18px]">
+    <Button onPress={onPress} disabled={disabled} className="self-end rounded-full">
       {pending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-      <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
+      <Text>Save</Text>
     </Button>
   );
 }
@@ -195,10 +195,9 @@ function RepositoryCard({ project, canManage, isDark }: { project: KortixProject
             size="sm"
             className="rounded-full"
             onPress={() => { haptics.tap(); Linking.openURL(githubUrl); }}
-            style={{ borderColor: c.border }}
           >
             <ExternalLink size={13} color={c.muted} />
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.fg }}>GitHub</Text>
+            <Text>GitHub</Text>
           </Button>
         )}
       </View>
@@ -252,12 +251,13 @@ function RepoCollaboratorInvite({ projectId, isDark }: { projectId: string; isDa
           <TextInput value={username} onChangeText={setUsername} placeholder="GitHub username" placeholderTextColor={c.muted} autoCapitalize="none" autoCorrect={false} spellCheck={false} style={{ flex: 1, fontSize: 14, color: c.fg, fontFamily: 'Roobert', padding: 0 }} />
         </View>
         <Button
+          size="lg"
           onPress={() => invite.mutate()}
           disabled={!canSubmit}
-          className="flex-row items-center gap-1.5 rounded-full px-3.5 h-11"
+          className="rounded-full"
         >
           {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <UserPlus size={14} color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add</Text>
+          <Text>Add</Text>
         </Button>
       </View>
       {/* Permission toggle */}
@@ -397,10 +397,9 @@ function DangerCard({ project, isDark }: { project: KortixProject; isDark: boole
           className="rounded-full"
           onPress={confirm}
           disabled={archive.isPending}
-          style={{ borderColor: withAlpha(destructiveColor, 0.4) }}
         >
           {archive.isPending ? <ActivityIndicator size="small" color={destructiveColor} /> : <Trash2 size={14} color={destructiveColor} />}
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: destructiveColor }}>Archive</Text>
+          <Text style={{ color: destructiveColor }}>Archive</Text>
         </Button>
       </View>
     </Card>
@@ -447,9 +446,8 @@ export function SettingsNavPage({
                 size="sm"
                 className="self-start mt-3 rounded-full"
                 onPress={() => refetch()}
-                style={{ borderColor: c.border }}
               >
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text>
+                <Text>Retry</Text>
               </Button>
             </Card>
           ) : project ? (

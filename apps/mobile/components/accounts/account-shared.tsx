@@ -208,12 +208,11 @@ export function SheetCloseButton({ onPress, isDark }: { onPress: () => void; isD
   const c = accountColors(isDark);
   return (
     <Button
-      variant="ghost"
+      variant="secondary"
       size="icon"
       onPress={onPress}
       hitSlop={8}
-      className="h-[30px] w-[30px] rounded-full"
-      style={{ backgroundColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.05 : 0.04) }}
+      className="rounded-full"
     >
       <X size={17} color={c.muted} />
     </Button>
@@ -231,10 +230,10 @@ export function PrimaryButton({ label, onPress, disabled, pending, icon, isDark 
   const theme = useThemeColors();
   return (
     <Button
+      size="lg"
       onPress={onPress}
       disabled={disabled}
-      className="h-11 flex-row items-center justify-center gap-1.5 rounded-full px-4"
-      style={{ backgroundColor: theme.primary, opacity: disabled ? 0.5 : 1 }}
+      className="rounded-full"
     >
       {pending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : icon}
       <Text>{label}</Text>

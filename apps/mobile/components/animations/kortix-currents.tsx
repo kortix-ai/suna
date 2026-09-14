@@ -37,17 +37,46 @@ import {
 import { useSharedValue } from 'react-native-reanimated';
 
 import { KORTIX_SYMBOL_PATH, SYMBOL_ASPECT, SYMBOL_HEIGHT, clamp01, flowAngle } from '@/lib/effects/mark-math';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
-// ── Palette — mirrors the web effect ─────────────────────────────────────────
-// Every value below is hex-allowlist: always-dark decorative Skia canvas
-// (fixed ink background + ambient/glow particle colors) — a brand animation,
-// never a themed UI surface, so none of these route through THEME.
-const palette = {
-  ink: '#0A0A0A', // hex-allowlist: always-dark canvas background
-  ambient: 'rgba(232,232,232,0.42)', // hex-allowlist: fixed particle glow, not themed
-  ambientOrange: 'rgba(224,138,51,0.80)', // hex-allowlist: fixed particle glow, not themed
-  glowOrange: 'rgba(240,150,62,0.46)', // hex-allowlist: fixed particle glow, not themed
-  glowWhite: 'rgba(255,255,255,0.38)', // hex-allowlist: fixed particle glow, not themed
+// ── Palettes — dark mirrors the web effect ───────────────────────────────────
+// The canvas fill is the theme background token, so the hero meets the screen
+// with no seam. Particle colors are fixed brand glow, not themed UI surfaces.
+//
+// Skia's native CSS parser (cpp/api/third_party/CSSColorParser.cpp) strips all
+// spaces, then splits arguments on commas — so THEME's `hsl(0 0% 100%)` parses
+// to an empty color. `withAlpha(token, 1)` emits `hsla(0, 0%, 100%, 1)`, which
+// it reads correctly.
+export type CurrentsTone = 'dark' | 'light';
+
+type Palette = {
+  ink: string;
+  ambient: string;
+  ambientOrange: string;
+  glowOrange: string;
+  /** The mark's secondary glow: white on dark, graphite on light. */
+  glowNeutral: string;
+  /** Additive on dark (glow blooms); multiply on light (glow reads as ink). */
+  blendMode: 'plus' | 'multiply';
+};
+
+const PALETTES: Record<CurrentsTone, Palette> = {
+  dark: {
+    ink: withAlpha(THEME.dark.background, 1),
+    ambient: 'rgba(232,232,232,0.42)', // hex-allowlist: near-white rgb(232,232,232) streak at 42%
+    ambientOrange: 'rgba(224,138,51,0.80)', // hex-allowlist: Kortix orange rgb(224,138,51) streak at 80%
+    glowOrange: 'rgba(240,150,62,0.46)', // hex-allowlist: Kortix orange rgb(240,150,62) glow at 46%
+    glowNeutral: 'rgba(255,255,255,0.38)', // hex-allowlist: white rgb(255,255,255) glow at 38%
+    blendMode: 'plus',
+  },
+  light: {
+    ink: withAlpha(THEME.light.background, 1),
+    ambient: 'rgba(23,23,23,0.22)', // hex-allowlist: near-black rgb(23,23,23) streak at 22%
+    ambientOrange: 'rgba(224,138,51,0.70)', // hex-allowlist: Kortix orange rgb(224,138,51) streak at 70%
+    glowOrange: 'rgba(230,128,40,0.62)', // hex-allowlist: Kortix orange rgb(230,128,40) glow at 62%
+    glowNeutral: 'rgba(23,23,23,0.30)', // hex-allowlist: near-black rgb(23,23,23) glow at 30%
+    blendMode: 'multiply',
+  },
 };
 
 // ── Simulation constants ─────────────────────────────────────────────────────
@@ -104,7 +133,7 @@ type Particle = {
  * Renders the 4 sprites once into a CPU surface. `Surface.Make` (not
  * `MakeOffscreen`) so this works before a GPU context exists.
  */
-function makeSpriteSheet(): SkImage | null {
+function makeSpriteSheet(palette: Palette): SkImage | null {
   const surface = Skia.Surface.Make(CELL * 4, CELL);
   if (!surface) return null;
   const canvas = surface.getCanvas();
@@ -152,7 +181,7 @@ function makeSpriteSheet(): SkImage | null {
   drawStreak(CELL_AMBIENT, palette.ambient);
   drawStreak(CELL_AMBIENT_ORANGE, palette.ambientOrange);
   drawGlow(CELL_GLOW_ORANGE, palette.glowOrange);
-  drawGlow(CELL_GLOW_WHITE, palette.glowWhite);
+  drawGlow(CELL_GLOW_WHITE, palette.glowNeutral);
 
   return surface.makeImageSnapshot();
 }
@@ -241,12 +270,14 @@ function CurrentsField({
   width,
   height,
   markCenterY,
+  palette,
 }: {
   width: number;
   height: number;
   markCenterY: number;
+  palette: Palette;
 }) {
-  const image = React.useMemo(makeSpriteSheet, []);
+  const image = React.useMemo(() => makeSpriteSheet(palette), [palette]);
   const edgePoints = React.useMemo(
     () => buildEdgePoints(width, height, markCenterY),
     [width, height, markCenterY]
@@ -323,7 +354,7 @@ function CurrentsField({
   return (
     <Canvas style={{ flex: 1 }}>
       <Fill color={palette.ink} />
-      <Atlas image={image} sprites={sprites} transforms={transforms} blendMode="plus" />
+      <Atlas image={image} sprites={sprites} transforms={transforms} blendMode={palette.blendMode} />
     </Canvas>
   );
 }
@@ -333,12 +364,14 @@ function StaticField({
   width,
   height,
   markCenterY,
+  palette,
 }: {
   width: number;
   height: number;
   markCenterY: number;
+  palette: Palette;
 }) {
-  const image = React.useMemo(makeSpriteSheet, []);
+  const image = React.useMemo(() => makeSpriteSheet(palette), [palette]);
   const { sprites, transforms } = React.useMemo(() => {
     const points = buildEdgePoints(width, height, markCenterY);
     const s: SkRect[] = [];
@@ -357,7 +390,7 @@ function StaticField({
   return (
     <Canvas style={{ flex: 1 }}>
       <Fill color={palette.ink} />
-      <Atlas image={image} sprites={sprites} transforms={transforms} blendMode="plus" />
+      <Atlas image={image} sprites={sprites} transforms={transforms} blendMode={palette.blendMode} />
     </Canvas>
   );
 }
@@ -366,13 +399,16 @@ export type KortixCurrentsProps = {
   style?: React.ComponentProps<typeof View>['style'];
   /** Mark's centre as a fraction of frame height. `0.5` centres it; lower sits higher. */
   markCenterY?: number;
+  /** Canvas + particle palette. Pass the resolved color scheme. Defaults to dark. */
+  tone?: CurrentsTone;
 };
 
 /**
  * Full-frame flow field with the Kortix mark hidden inside it. Fills its
  * parent — give it a sized container.
  */
-export function KortixCurrents({ style, markCenterY = 0.5 }: KortixCurrentsProps) {
+export function KortixCurrents({ style, markCenterY = 0.5, tone = 'dark' }: KortixCurrentsProps) {
+  const palette = PALETTES[tone];
   const [{ width, height }, setSize] = React.useState({ width: 0, height: 0 });
   const [reduceMotion, setReduceMotion] = React.useState(false);
 
@@ -401,9 +437,9 @@ export function KortixCurrents({ style, markCenterY = 0.5 }: KortixCurrentsProps
     <View style={[{ flex: 1, backgroundColor: palette.ink }, style]} onLayout={onLayout}>
       {width > 0 && height > 0 ? (
         reduceMotion ? (
-          <StaticField width={width} height={height} markCenterY={markCenterY} />
+          <StaticField width={width} height={height} markCenterY={markCenterY} palette={palette} />
         ) : (
-          <CurrentsField width={width} height={height} markCenterY={markCenterY} />
+          <CurrentsField width={width} height={height} markCenterY={markCenterY} palette={palette} />
         )
       ) : null}
     </View>

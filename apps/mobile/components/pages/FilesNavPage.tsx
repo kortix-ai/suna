@@ -160,7 +160,6 @@ function VersionSheet({
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const border = withAlpha(fg, 0.08);
-  const closeBg = withAlpha(fg, isDark ? 0.05 : 0.04);
 
   const sorted = useMemo(() => {
     const def = branches.filter((b) => b.is_default);
@@ -172,7 +171,7 @@ function VersionSheet({
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
         <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Version</Text>
-        <Button variant="ghost" size="icon" className="h-[30px] w-[30px] rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ backgroundColor: closeBg }}>
+        <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
           <Icon as={X} size={17} color={muted} />
         </Button>
       </View>
@@ -254,10 +253,9 @@ function VersionSheet({
               {onRetry ? (
                 <Button
                   onPress={() => { haptics.tap(); onRetry(); }}
-                  className="mt-3.5 rounded-full px-[22px] py-[11px]"
-                  style={{ backgroundColor: fg }}
+                  className="mt-3.5 rounded-full"
                 >
-                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: isDark ? THEME.light.foreground : THEME.dark.foreground }}>
+                  <Text>
                     Try again
                   </Text>
                 </Button>
@@ -303,7 +301,6 @@ function FileViewerModal({
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const border = withAlpha(fg, 0.08);
-  const chipBg = withAlpha(fg, isDark ? 0.06 : 0.04);
 
   // Reset to content when navigating files.
   useEffect(() => { setView('content'); setHistoryCommit(null); }, [file?.path]);
@@ -330,25 +327,25 @@ function FileViewerModal({
       <View style={{ flex: 1, backgroundColor: bg, paddingTop: insets.top }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: border }}>
-          <Button variant="ghost" size="icon" className="h-9 w-9" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
+          <Button variant="ghost" size="icon" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
             <Icon as={ChevronLeft} size={22} color={fg} />
           </Button>
           <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{file.name}</Text>
           {files.length > 1 && view === 'content' && (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onPress={() => onNavigate(index - 1)} hitSlop={6} style={{ opacity: index === 0 ? 0.35 : 1 }}>
+              <Button variant="ghost" size="icon" disabled={index === 0} onPress={() => onNavigate(index - 1)} hitSlop={6}>
                 <Icon as={ChevronLeft} size={18} color={fg} />
               </Button>
               <Text style={{ fontSize: 12, color: muted, minWidth: 30, textAlign: 'center' }}>{index + 1}/{files.length}</Text>
-              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === files.length - 1} onPress={() => onNavigate(index + 1)} hitSlop={6} style={{ opacity: index === files.length - 1 ? 0.35 : 1 }}>
+              <Button variant="ghost" size="icon" disabled={index === files.length - 1} onPress={() => onNavigate(index + 1)} hitSlop={6}>
                 <Icon as={ChevronRight} size={18} color={fg} />
               </Button>
             </View>
           )}
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onPress={() => { haptics.tap(); setHistoryCommit(null); setView(view === 'history' ? 'content' : 'history'); }} hitSlop={8} style={{ backgroundColor: view === 'history' ? theme.primaryLight : chipBg }}>
+          <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); setHistoryCommit(null); setView(view === 'history' ? 'content' : 'history'); }} hitSlop={8}>
             <Icon as={History} size={16} color={view === 'history' ? theme.primary : muted} />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onPress={download} disabled={busy} hitSlop={8} style={{ backgroundColor: chipBg }}>
+          <Button variant="secondary" size="icon" className="rounded-full" onPress={download} disabled={busy} hitSlop={8}>
             {busy ? <ActivityIndicator size="small" color={muted} /> : <Icon as={Download} size={16} color={muted} />}
           </Button>
         </View>
@@ -361,9 +358,9 @@ function FileViewerModal({
         ) : content.isError ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10 }}>
             <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>This file can't be shown as text. Download it to view.</Text>
-            <Button variant="outline" size="sm" className="rounded-full gap-1.5" onPress={download} style={{ borderColor: border }}>
+            <Button variant="outline" size="sm" className="rounded-full" onPress={download}>
               <Icon as={Download} size={15} color={fg} />
-              <Text style={{ fontFamily: 'Roobert-Medium', color: fg }}>Download</Text>
+              <Text>Download</Text>
             </Button>
           </View>
         ) : (
@@ -398,7 +395,6 @@ function CheckpointSheet({
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const border = withAlpha(fg, 0.08);
-  const chipBg = withAlpha(fg, isDark ? 0.06 : 0.04);
 
   // Keep the last commit rendered while the close animation plays out.
   const [rendered, setRendered] = useState<ProjectCommit | null>(commit);
@@ -440,7 +436,7 @@ function CheckpointSheet({
               {rendered.author_name || 'Unknown'} · {relativeTime(rendered.committed_at || rendered.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{rendered.short_hash}</Text>
             </Text>
           </View>
-          <Button variant="ghost" size="icon" className="h-[30px] w-[30px] rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ backgroundColor: chipBg }}>
+          <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
             <Icon as={X} size={17} color={muted} />
           </Button>
         </View>
@@ -572,7 +568,6 @@ export function FilesNavPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const theme = useThemeColors();
 
   const [ref_, setRef] = useState<string>('');
   const [path, setPath] = useState<string>('');
@@ -597,8 +592,6 @@ export function FilesNavPage({
   const bgColor = isDark ? THEME.dark.background : THEME.light.background;
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = withAlpha(fg, 0.08);
-  const chipBg = withAlpha(fg, isDark ? 0.05 : 0.04);
 
   // Build the current directory's rows.
   const rows = useMemo<SandboxFile[]>(() => {
@@ -683,13 +676,12 @@ export function FilesNavPage({
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
               onPress={() => { haptics.selection(); setViewMode((v) => (v === 'list' ? 'grid' : 'list')); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Icon as={viewMode === 'list' ? LayoutGrid : List} size={18} color={fg} strokeWidth={2} />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 mr-1" onPress={() => filesQuery.refetch()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Button variant="ghost" size="icon" className="mr-1" onPress={() => filesQuery.refetch()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               {filesQuery.isFetching ? <ActivityIndicator size="small" color={muted} /> : <Icon as={RefreshCw} size={18} color={fg} />}
             </Button>
           </View>
@@ -702,21 +694,20 @@ export function FilesNavPage({
           <Button
             variant="outline"
             size="sm"
-            className="rounded-full gap-1.5"
+            className="rounded-full"
             onPress={() => { haptics.tap(); versionSheetRef.current?.present(); }}
-            style={{ borderColor: border }}
           >
             <Icon as={GitBranch} size={14} color={muted} />
-            <Text style={{ color: fg, maxWidth: 120 }} numberOfLines={1}>{ref_ ? shortRef(ref_) : '—'}</Text>
-            {ref_ === defaultBranch && defaultBranch ? <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>MAIN</Text> : null}
+            <Text style={{ maxWidth: 120 }} numberOfLines={1}>{ref_ ? shortRef(ref_) : '—'}</Text>
+            {ref_ === defaultBranch && defaultBranch ? <Text>MAIN</Text> : null}
             <Icon as={ChevronDown} size={14} color={muted} />
           </Button>
           <View style={{ flex: 1 }} />
-          <Button variant="outline" size="sm" className="rounded-full gap-1" onPress={cycleSort} style={{ borderColor: border }}>
+          <Button variant="outline" size="sm" className="rounded-full" onPress={cycleSort}>
             <Icon as={ArrowDownUp} size={13} color={muted} />
-            <Text style={{ color: muted }}>{sortLabel}</Text>
+            <Text>{sortLabel}</Text>
           </Button>
-          <Button variant="ghost" size="icon" className="h-[34px] w-[34px] rounded-full" onPress={downloadDir} disabled={downloadingDir} hitSlop={6} style={{ backgroundColor: chipBg, opacity: downloadingDir ? 0.6 : 1 }}>
+          <Button variant="secondary" size="icon" className="rounded-full" onPress={downloadDir} disabled={downloadingDir} hitSlop={6}>
             {downloadingDir ? <ActivityIndicator size="small" color={muted} /> : <Icon as={Download} size={16} color={muted} />}
           </Button>
         </View>
@@ -755,8 +746,8 @@ export function FilesNavPage({
           ) : filesQuery.isError ? (
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(filesQuery.error as Error)?.message ?? 'Failed to load files'}</Text>
-              <Button variant="outline" size="sm" className="rounded-full" onPress={() => filesQuery.refetch()} style={{ borderColor: border }}>
-                <Text style={{ fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
+              <Button variant="outline" size="sm" className="rounded-full" onPress={() => filesQuery.refetch()}>
+                <Text>Retry</Text>
               </Button>
             </View>
           ) : listEmpty ? (
@@ -768,8 +759,8 @@ export function FilesNavPage({
                   These are the project’s git files — they’re read-only here. To add or edit files, ask the agent in a session, or open a different version.
                 </Text>
               )}
-              <Button variant="outline" size="sm" className="mt-1 rounded-full" onPress={() => { haptics.tap(); filesQuery.refetch(); branchesQuery.refetch(); }} style={{ borderColor: border }}>
-                <Text style={{ fontFamily: 'Roobert-Medium', color: fg }}>Refresh</Text>
+              <Button variant="outline" size="sm" className="mt-1 rounded-full" onPress={() => { haptics.tap(); filesQuery.refetch(); branchesQuery.refetch(); }}>
+                <Text>Refresh</Text>
               </Button>
             </View>
           ) : viewMode === 'grid' ? (

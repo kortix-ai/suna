@@ -64,17 +64,17 @@ export function SessionConnecting({
           ) : null}
           {onRestart ? (
             <Button
-              variant="ghost"
+              variant="outline"
               onPress={onRestart}
               disabled={restarting}
-              className="mt-1 h-auto flex-row items-center gap-2 rounded-full border border-border px-4 py-2.5 active:bg-transparent active:opacity-70"
+              className="mt-1 rounded-full"
             >
               {restarting ? (
                 <ActivityIndicator size="small" color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
               ) : (
                 <RotateCcw size={15} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
               )}
-              <Text className="text-[13px] font-roobert-medium text-foreground">
+              <Text>
                 {restarting ? 'Restarting…' : 'Restart session'}
               </Text>
             </Button>

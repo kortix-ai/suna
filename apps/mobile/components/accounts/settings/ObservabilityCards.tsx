@@ -15,7 +15,6 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
-import { withAlpha } from '@/lib/utils/theme';
 import {
   listAuditWebhooks,
   createAuditWebhook,
@@ -94,8 +93,7 @@ export function ObservabilityCards({ accountId, canManage, isDark }: { accountId
           <Button
             size="sm"
             onPress={() => open({ kind: 'create' })}
-            className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
-            style={{ backgroundColor: theme.primary }}
+            className="rounded-full"
           >
             <Plus size={14} color={theme.primaryForeground} />
             <Text>New</Text>
@@ -133,15 +131,14 @@ export function ObservabilityCards({ accountId, canManage, isDark }: { accountId
                   {canManage && (busyId === h.webhook_id ? <ActivityIndicator size="small" color={c.muted} /> : (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         onPress={() => { haptics.tap(); setBusyId(h.webhook_id); toggle.mutate({ id: h.webhook_id, enabled: !h.enabled }); }}
-                        className="h-[30px] justify-center rounded-full px-2.5"
-                        style={{ borderWidth: 1, borderColor: c.border }}
+                        className="rounded-full"
                       >
-                        <Text style={{ color: c.fg }}>{h.enabled ? 'Disable' : 'Enable'}</Text>
+                        <Text>{h.enabled ? 'Disable' : 'Enable'}</Text>
                       </Button>
-                      <Button variant="ghost" size="icon" onPress={() => confirmDelete(h)} hitSlop={6} className="h-[30px] w-[30px] rounded-full" style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.35) }}><Trash2 size={13} color={destructiveColor(isDark)} /></Button>
+                      <Button variant="outline" size="icon" onPress={() => confirmDelete(h)} hitSlop={6} className="rounded-full"><Trash2 size={13} color={destructiveColor(isDark)} /></Button>
                     </View>
                   ))}
                 </View>
@@ -177,7 +174,6 @@ export function ObservabilityCards({ accountId, canManage, isDark }: { accountId
 
 function CreateSheet({ accountId, onCreated, onClose, isDark }: { accountId: string; onCreated: (h: CreatedAuditWebhook) => void; onClose: () => void; isDark: boolean }) {
   const c = accountColors(isDark);
-  const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
@@ -210,13 +206,12 @@ function CreateSheet({ accountId, onCreated, onClose, isDark }: { accountId: str
             return (
               <Button
                 key={p.label}
-                variant="ghost"
+                variant={on ? 'secondary' : 'outline'}
                 size="sm"
                 onPress={() => { haptics.tap(); setPrefix(p.prefix); }}
-                className="h-[30px] justify-center rounded-full px-2.5"
-                style={{ borderWidth: 1, borderColor: on ? theme.primary : c.border, backgroundColor: on ? theme.primaryLight : 'transparent' }}
+                className="rounded-full"
               >
-                <Text style={{ color: on ? c.fg : c.muted }}>{p.label}</Text>
+                <Text>{p.label}</Text>
               </Button>
             );
           })}
@@ -249,10 +244,9 @@ function SecretSheet({ hook, onClose, isDark }: { hook: CreatedAuditWebhook; onC
           <Text style={{ fontSize: 12.5, lineHeight: 18, fontFamily: MONO, color: c.fg }} selectable>{hook.secret}</Text>
         </View>
         <Button
-          variant="ghost"
+          variant="outline"
           onPress={copy}
-          className="h-[38px] flex-row items-center self-start gap-1.5 rounded-full px-3.5 mt-3"
-          style={{ borderWidth: 1, borderColor: c.border }}
+          className="self-start rounded-full mt-3"
         >
           {copied ? <Check size={14} color={theme.primary} /> : <Copy size={14} color={c.muted} />}
           <Text style={{ color: copied ? theme.primary : c.fg }}>{copied ? 'Copied' : 'Copy secret'}</Text>

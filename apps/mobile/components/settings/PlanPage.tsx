@@ -162,7 +162,7 @@ function PlanCard({
         <Button
           variant="secondary"
           size="lg"
-          className="mt-5 h-12 w-full"
+          className="mt-5"
           onPress={onContinueFree}>
           <Text>Continue on Free</Text>
         </Button>
@@ -170,7 +170,7 @@ function PlanCard({
         <Button
           variant={plan.highlight ? 'default' : 'secondary'}
           size="lg"
-          className="mt-5 h-12 w-full"
+          className="mt-5"
           onPress={onGetStarted}>
           <Text>{ctaLabel}</Text>
           <Icon

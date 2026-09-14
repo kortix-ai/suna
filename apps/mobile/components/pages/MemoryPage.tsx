@@ -356,11 +356,11 @@ function MemoryCard({
           <Button
             variant="ghost"
             size="sm"
-            className="mt-2.5 self-end px-2"
+            className="mt-2.5 self-end"
             onPress={(e) => { e.stopPropagation?.(); onDelete(entry); }}
           >
             <Icon as={Trash2} size={13} color={destructiveColor} />
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: destructiveColor }}>Delete</Text>
+            <Text style={{ color: destructiveColor }}>Delete</Text>
           </Button>
         </View>
       )}

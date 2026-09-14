@@ -110,8 +110,7 @@ export function WorkerConfigDrawer({
             <Button
               variant="ghost"
               size="icon"
-              onPress={onClose}
-              className="h-10 w-10 rounded-xl">
+              onPress={onClose}>
               <Icon as={ArrowLeft} size={20} className="text-foreground" />
             </Button>
             <View>
@@ -133,8 +132,7 @@ export function WorkerConfigDrawer({
           <Button
             variant="ghost"
             size="icon"
-            onPress={onClose}
-            className="h-10 w-10 rounded-xl">
+            onPress={onClose}>
             <Icon as={X} size={20} className="text-muted-foreground" />
           </Button>
         </View>

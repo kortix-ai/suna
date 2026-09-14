@@ -62,7 +62,6 @@ export function SearchBar({
           variant="ghost"
           size="icon"
           onPress={handleClear}
-          className="h-8 w-8"
           accessibilityLabel="Clear search"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >

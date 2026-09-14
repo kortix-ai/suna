@@ -393,6 +393,19 @@ rectangle. Decision: accept the change. `components/ui/button.tsx` stays
 byte-identical to registry output, so no re-application is needed after future
 `add --all` runs.
 
+### button.tsx `lg` label — DEVIATES (2026-09-12)
+Stock `buttonTextVariants` maps every `size` to `''`, so a `size="lg"` button
+(44pt box) renders a 14px medium label. Consumers patched that with
+`className="h-14 text-base"` on the button and `variant="large"` on its `Text`
+— and `variant="large"` never applied, because `cn(textVariants,
+TextClassContext, className)` lets the context's `text-sm font-medium` win.
+Jay's rule: no explicit height, size, or text classes on a `Button`. Decision:
+`size.lg` in `buttonTextVariants` is `'text-base font-semibold'` (16px,
+`global.css` remaps `font-semibold` to `Roobert-SemiBold`). This is the third
+documented deviation. Re-apply it after any `add --all --overwrite`.
+Consumers of `size="lg"`: `app/auth/index.tsx`, `components/settings/PlanPage.tsx`,
+`components/auth/EmailAuthDrawer.tsx` (zero importers).
+
 ### input.tsx chrome — KEEP STOCK bordered / 16px
 The fork defaulted to a filled card surface at 14.4px. 3 call sites change.
 Decision: accept the change. Stock is also the better mobile default

@@ -64,8 +64,7 @@ function GeneralSection({ account, canWrite, isDark }: { account: AccountDetail;
         <Button
           onPress={save}
           disabled={!dirty || update.isPending}
-          className="h-10 flex-row items-center gap-1.5 rounded-full px-[18px]"
-          style={{ backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}
+          className="rounded-full"
         >
           {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text>Save</Text>

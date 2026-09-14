@@ -183,8 +183,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
             <Button
               size="sm"
               onPress={() => { haptics.tap(); openSheet({ kind: 'invite' }); }}
-              className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
-              style={{ backgroundColor: theme.primary }}
+              className="rounded-full"
             >
               <UserPlus size={14} color={theme.primaryForeground} />
               <Text>Invite</Text>
@@ -243,7 +242,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
         ) : membersQuery.isError ? (
           <View style={{ paddingVertical: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: destructiveColor(isDark) }}>{(membersQuery.error as Error)?.message || 'Failed to load members'}</Text>
-            <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); membersQuery.refetch(); }} className="h-auto self-start rounded-full px-3.5 py-2" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Retry</Text></Button>
+            <Button variant="outline" size="sm" onPress={() => { haptics.tap(); membersQuery.refetch(); }} className="self-start rounded-full"><Text>Retry</Text></Button>
           </View>
         ) : sorted.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 32, gap: 10 }}>
@@ -297,9 +296,9 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: c.border, backgroundColor: isDark ? THEME.dark.background : THEME.light.background, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>{selectedCount} selected</Text>
           <View style={{ flex: 1 }} />
-          {canInvite && <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); openSheet({ kind: 'bulkGroup' }); }} className="h-9 justify-center rounded-full px-3" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Group</Text></Button>}
-          {canUpdateRole && <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); openSheet({ kind: 'bulkRole' }); }} className="h-9 justify-center rounded-full px-3" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Role</Text></Button>}
-          {canRemove && <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); bulkRemove(); }} className="h-9 justify-center rounded-full px-3" style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.4) }}><Text style={{ color: destructiveColor(isDark) }}>Remove</Text></Button>}
+          {canInvite && <Button variant="outline" size="sm" onPress={() => { haptics.tap(); openSheet({ kind: 'bulkGroup' }); }} className="rounded-full"><Text>Group</Text></Button>}
+          {canUpdateRole && <Button variant="outline" size="sm" onPress={() => { haptics.tap(); openSheet({ kind: 'bulkRole' }); }} className="rounded-full"><Text>Role</Text></Button>}
+          {canRemove && <Button variant="outline" size="sm" onPress={() => { haptics.tap(); bulkRemove(); }} className="rounded-full"><Text style={{ color: destructiveColor(isDark) }}>Remove</Text></Button>}
         </View>
       )}
 
@@ -518,11 +517,11 @@ function MemberSheet({ account, member, isSelf, can, sorted, onClose, isDark }: 
 
         {canRemove && (
           <Button
-            variant="ghost"
+            size="lg"
+            variant="outline"
             onPress={doRemove}
             disabled={isLastOwner}
-            className="h-[46px] flex-row items-center justify-center gap-2 rounded-full mt-4"
-            style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.4), opacity: isLastOwner ? 0.4 : 1 }}
+            className="rounded-full mt-4"
           >
             <Trash2 size={15} color={destructiveColor(isDark)} />
             <Text style={{ color: destructiveColor(isDark) }}>Remove from team</Text>
@@ -530,11 +529,11 @@ function MemberSheet({ account, member, isSelf, can, sorted, onClose, isDark }: 
         )}
         {isSelf && (
           <Button
-            variant="ghost"
+            size="lg"
+            variant="outline"
             onPress={doLeave}
             disabled={isLastOwner}
-            className="h-[46px] flex-row items-center justify-center gap-2 rounded-full mt-4"
-            style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.4), opacity: isLastOwner ? 0.4 : 1 }}
+            className="rounded-full mt-4"
           >
             <Trash2 size={15} color={destructiveColor(isDark)} />
             <Text style={{ color: destructiveColor(isDark) }}>Leave team</Text>

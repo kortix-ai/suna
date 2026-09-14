@@ -122,10 +122,9 @@ function CommandDetail({
             className="rounded-full"
             onPress={handleCopy}
             disabled={!fileQuery.data?.content}
-            style={{ borderColor: border, opacity: fileQuery.data?.content ? 1 : 0.4 }}
           >
             {copied ? <Check size={13} color={THEME.accent.green} /> : <Copy size={13} color={muted} />}
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>
+            <Text>
               {copied ? 'Copied' : 'Copy'}
             </Text>
           </Button>
@@ -134,10 +133,9 @@ function CommandDetail({
             size="sm"
             className="rounded-full"
             onPress={() => { haptics.tap(); onConfigure(editConfigPrompt('command', command.name, command.path)); }}
-            style={{ borderColor: border }}
           >
             <Pencil size={13} color={muted} />
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>Edit</Text>
+            <Text>Edit</Text>
           </Button>
         </View>
 
@@ -290,8 +288,8 @@ export function CommandsPage({
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                   {(error as Error)?.message ?? 'Failed to load commands'}
                 </Text>
-                <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); refetch(); }} style={{ borderColor: border }}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
+                <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); refetch(); }}>
+                  <Text>Retry</Text>
                 </Button>
               </View>
             ) : filtered.length === 0 ? (
@@ -305,10 +303,9 @@ export function CommandsPage({
                     size="sm"
                     className="rounded-full"
                     onPress={() => { haptics.tap(); onConfigure(newConfigPrompt('command')); }}
-                    style={{ borderColor: border }}
                   >
                     <Plus size={15} color={fg} />
-                    <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>New command</Text>
+                    <Text>New command</Text>
                   </Button>
                 )}
               </View>

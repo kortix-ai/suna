@@ -74,7 +74,7 @@ function BackButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   return (
-    <Button variant="ghost" size="icon" onPress={onPress} className="h-8 w-8">
+    <Button variant="ghost" size="icon" onPress={onPress}>
       <ArrowLeft size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
     </Button>
   );
@@ -305,7 +305,6 @@ export function AgentDrawer({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     hasFreeTier ? handleUpgradeRequired() : onCreateAgent();
@@ -371,8 +370,9 @@ export function AgentDrawer({
           {selectedAgent && (
             <View style={styles.quickActionsContainer}>
               <Button
+                size="lg"
                 variant="outline"
-                className="flex-1 h-12 rounded-xl"
+                className="flex-1"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
@@ -384,8 +384,9 @@ export function AgentDrawer({
                 <Brain size={18} color={c.foreground} />
               </Button>
               <Button
+                size="lg"
                 variant="outline"
-                className="flex-1 h-12 rounded-xl"
+                className="flex-1"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
@@ -397,8 +398,9 @@ export function AgentDrawer({
                 <Wrench size={18} color={c.foreground} />
               </Button>
               <Button
+                size="lg"
                 variant="outline"
-                className="flex-1 h-12 rounded-xl"
+                className="flex-1"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
@@ -410,8 +412,9 @@ export function AgentDrawer({
                 <Server size={18} color={c.foreground} />
               </Button>
               <Button
+                size="lg"
                 variant="outline"
-                className="flex-1 h-12 rounded-xl"
+                className="flex-1"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
@@ -463,7 +466,6 @@ export function AgentDrawer({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               hasFreeTier ? handleUpgradeRequired() : onCreateAgent();

@@ -286,9 +286,9 @@ export function UpdateDialog({
               <Button variant="outline" onPress={() => { haptics.tap(); onClose(); }}>
                 <Text className="font-roobert-medium text-foreground">Cancel</Text>
               </Button>
-              <Button onPress={handleConfirm} style={{ backgroundColor: themeColors.primary }}>
+              <Button onPress={handleConfirm}>
                 <Icon as={ArrowDownToLine} size={16} color={themeColors.primaryForeground} strokeWidth={2.5} />
-                <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
+                <Text>
                   Update now
                 </Text>
               </Button>
@@ -373,9 +373,9 @@ export function UpdateDialog({
                 <Button variant="outline" size="sm" onPress={() => { haptics.tap(); onClose(); }}>
                   <Text className="font-roobert-medium text-foreground">Close</Text>
                 </Button>
-                <Button size="sm" onPress={handleRetry} style={{ backgroundColor: themeColors.primary }}>
+                <Button size="sm" onPress={handleRetry}>
                   <Icon as={RotateCw} size={14} color={themeColors.primaryForeground} strokeWidth={2.5} />
-                  <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
+                  <Text>
                     Retry
                   </Text>
                 </Button>

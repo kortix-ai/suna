@@ -283,10 +283,9 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             <Button
               onPress={handleOpenDialog}
               className="mt-4 self-start"
-              style={{ backgroundColor: themeColors.primary }}
             >
               <Icon as={ArrowDownToLine} size={15} color={themeColors.primaryForeground} strokeWidth={2.5} />
-              <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
+              <Text>
                 Update to {latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
               </Text>
             </Button>

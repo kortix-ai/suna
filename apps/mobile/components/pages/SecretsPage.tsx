@@ -156,14 +156,14 @@ function SecretRow({
         </Text>
         <View style={{ flexDirection: 'row', gap: 4 }}>
           {hasValue && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onPress={() => onToggleVisibility(secretKey)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Button variant="ghost" size="icon" onPress={() => onToggleVisibility(secretKey)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Icon as={isVisible ? EyeOff : Eye} size={15} color={mutedColor} />
             </Button>
           )}
-          <Button variant="ghost" size="icon" className="h-8 w-8" onPress={() => onEdit(secretKey, value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Button variant="ghost" size="icon" onPress={() => onEdit(secretKey, value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Icon as={Pencil} size={15} color={mutedColor} />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onPress={() => onDelete(secretKey)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Button variant="ghost" size="icon" onPress={() => onDelete(secretKey)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Icon as={Trash2} size={15} color={mutedColor} />
           </Button>
         </View>

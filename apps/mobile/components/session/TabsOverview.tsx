@@ -438,9 +438,10 @@ export function TabsOverview({
         )}
 
         <Button
-          variant="ghost"
+          variant="secondary"
+          size="icon"
           onPress={onNewSession}
-          className="h-9 w-9 items-center justify-center rounded-full bg-muted p-0 active:opacity-70"
+          className="rounded-full"
         >
           <Ionicons name="add" size={24} color={iconColor} />
         </Button>

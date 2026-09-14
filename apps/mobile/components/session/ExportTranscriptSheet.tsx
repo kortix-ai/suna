@@ -247,49 +247,33 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           <View style={{ flexDirection: 'row', gap: 10 }}>
             {/* Copy */}
             <Button
-              variant="ghost"
+              variant="outline"
+              size="lg"
               onPress={handleCopy}
               disabled={!canExport || sharing}
-              className="h-auto flex-1 flex-row items-center justify-center gap-1.5 rounded-full active:bg-transparent active:opacity-70"
-              style={{
-                paddingVertical: 12,
-                borderWidth: 1,
-                borderColor: border,
-                backgroundColor: cardBg,
-              }}>
+              className="flex-1 rounded-full">
               <Ionicons
                 name={copied ? 'checkmark' : 'copy-outline'}
                 size={16}
                 color={copied ? THEME.accent.green : fg}
               />
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontFamily: 'Roobert-Medium',
-                  color: copied ? THEME.accent.green : fg,
-                }}>
+              <Text style={{ color: copied ? THEME.accent.green : fg }}>
                 {copied ? 'Copied' : 'Copy'}
               </Text>
             </Button>
 
             {/* Share / Download */}
             <Button
-              variant="ghost"
+              size="lg"
               onPress={handleShare}
               disabled={!canExport || sharing}
-              className="h-auto flex-1 flex-row items-center justify-center gap-1.5 rounded-full active:bg-transparent active:opacity-70"
-              style={{
-                paddingVertical: 12,
-                backgroundColor: theme.primary,
-              }}>
+              className="flex-1 rounded-full">
               {sharing ? (
                 <ActivityIndicator size="small" color={theme.primaryForeground} />
               ) : (
                 <>
                   <Ionicons name="share-outline" size={16} color={theme.primaryForeground} />
-                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
-                    Share .md
-                  </Text>
+                  <Text>Share .md</Text>
                 </>
               )}
             </Button>

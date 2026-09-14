@@ -106,7 +106,6 @@ function ScheduleCreateSheet({
   const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   const border = withAlpha(fg, isDark ? 0.1 : 0.12);
   const inputBg = withAlpha(fg, isDark ? 0.05 : 0.03);
-  const closeBg = withAlpha(fg, isDark ? 0.05 : 0.04);
   const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: fg, fontFamily: 'Roobert' as const };
 
   const canSave =
@@ -140,7 +139,7 @@ function ScheduleCreateSheet({
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: withAlpha(fg, 0.08) }}>
         <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>New schedule</Text>
-        <Button variant="ghost" size="icon" className="h-[30px] w-[30px] rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ backgroundColor: closeBg }}>
+        <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
           <Icon as={X} size={17} color={muted} />
         </Button>
       </View>
@@ -225,9 +224,9 @@ function ScheduleCreateSheet({
       </BottomSheetScrollView>
 
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: withAlpha(fg, 0.08) }}>
-        <Button onPress={handleSave} disabled={!canSave} className="h-12 flex-row items-center justify-center gap-2 rounded-full" style={{ backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}>
+        <Button size="lg" onPress={handleSave} disabled={!canSave} className="rounded-full">
           {create.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Create schedule</Text>
+          <Text>Create schedule</Text>
         </Button>
       </View>
     </View>
@@ -259,7 +258,6 @@ function ScheduleDetailSheet({
   const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   const border = withAlpha(fg, 0.08);
   const iconBg = withAlpha(fg, isDark ? 0.06 : 0.04);
-  const closeBg = withAlpha(fg, isDark ? 0.05 : 0.04);
   const inputBg = withAlpha(fg, isDark ? 0.05 : 0.03);
 
   const oneOff = !!trigger.run_at;
@@ -323,21 +321,21 @@ function ScheduleDetailSheet({
             </View>
           </View>
         </View>
-        <Button variant="ghost" size="icon" className="h-[30px] w-[30px] rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ backgroundColor: closeBg }}>
+        <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
           <Icon as={X} size={17} color={muted} />
         </Button>
       </View>
 
       {/* Action bar */}
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 14 }}>
-        <Button onPress={handleFire} disabled={fire.isPending} className="flex-1 h-11 flex-row items-center justify-center gap-1.5 rounded-full" style={{ backgroundColor: theme.primary, opacity: fire.isPending ? 0.6 : 1 }}>
+        <Button size="lg" onPress={handleFire} disabled={fire.isPending} className="flex-1 rounded-full">
           {fire.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Icon as={Play} size={15} color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Fire now</Text>
+          <Text>Fire now</Text>
         </Button>
-        <Button variant="outline" size="icon" className="h-11 w-12 rounded-full" onPress={togglePaused} disabled={update.isPending} style={{ borderColor: border }}>
+        <Button variant="outline" size="icon" className="rounded-full" onPress={togglePaused} disabled={update.isPending}>
           <Icon as={trigger.enabled ? Pause : Play} size={17} color={fg} />
         </Button>
-        <Button variant="outline" size="icon" className="h-11 w-12 rounded-full" onPress={handleDelete} disabled={del.isPending} style={{ borderColor: withAlpha(destructiveColor, 0.4) }}>
+        <Button variant="outline" size="icon" className="rounded-full" onPress={handleDelete} disabled={del.isPending}>
           {del.isPending ? <ActivityIndicator size="small" color={destructiveColor} /> : <Icon as={Trash2} size={16} color={destructiveColor} />}
         </Button>
       </View>
@@ -368,9 +366,9 @@ function ScheduleDetailSheet({
         />
         <Text style={{ fontSize: 11.5, color: muted, marginTop: 6 }}>Placeholders: {'{{ message.text }}'} · {'{{ fired_at }}'}</Text>
         {promptChanged && (
-          <Button onPress={handleSavePrompt} disabled={update.isPending} className="mt-2.5 h-[42px] flex-row items-center justify-center gap-2 rounded-full" style={{ backgroundColor: theme.primary }}>
+          <Button size="lg" onPress={handleSavePrompt} disabled={update.isPending} className="mt-2.5 rounded-full">
             {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save prompt</Text>
+            <Text>Save prompt</Text>
           </Button>
         )}
 
@@ -475,8 +473,8 @@ export function SchedulesPage({
           ) : isError ? (
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(error as Error)?.message ?? 'Failed to load schedules'}</Text>
-              <Button variant="outline" size="sm" className="rounded-full" onPress={() => refetch()} style={{ borderColor: border }}>
-                <Text style={{ fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
+              <Button variant="outline" size="sm" className="rounded-full" onPress={() => refetch()}>
+                <Text>Retry</Text>
               </Button>
             </View>
           ) : filtered.length === 0 ? (
@@ -484,8 +482,8 @@ export function SchedulesPage({
               <Timer size={26} color={muted} />
               <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{all.length === 0 ? 'No schedules yet.' : 'No schedules match your search.'}</Text>
               {all.length === 0 && (
-                <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); addSheetRef.current?.present(); }} style={{ borderColor: border }}>
-                  <Text style={{ fontFamily: 'Roobert-Medium', color: fg }}>New schedule</Text>
+                <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); addSheetRef.current?.present(); }}>
+                  <Text>New schedule</Text>
                 </Button>
               )}
             </View>

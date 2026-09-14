@@ -198,7 +198,6 @@ function ProviderRow({
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9"
             onPress={() => onDisconnect(provider)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -209,10 +208,9 @@ function ProviderRow({
             onPress={() => onConnect(provider)}
             size="sm"
             className="rounded-full"
-            style={{ backgroundColor: themeColors.primary }}
           >
             <Icon as={Plus} size={12} color={themeColors.primaryForeground} />
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: themeColors.primaryForeground }}>Connect</Text>
+            <Text>Connect</Text>
           </Button>
         )}
       </View>

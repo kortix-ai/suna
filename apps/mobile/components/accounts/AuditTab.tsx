@@ -20,7 +20,6 @@ import { useAccountMembers } from '@/lib/accounts/hooks';
 import { listAuditEvents } from '@/lib/accounts/accounts-client';
 import type { AccountDetail, AuditEvent } from '@/lib/accounts/accounts-client';
 import { humanizeAuditAction, formatResourcePill, KIND_DOT_COLOR } from '@/lib/accounts/audit-display';
-import { THEME, withAlpha } from '@/lib/utils/theme';
 import { accountColors, destructiveColor, SkeletonList } from './account-shared';
 
 const MONO = 'Menlo';
@@ -112,7 +111,7 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
           <Text style={{ flex: 1, fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Audit log</Text>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onPress={() => { if (exporting) return; haptics.tap(); Alert.alert('Export audit log', 'Choose a format', [
               { text: 'CSV', onPress: () => exportEvents('csv') },
@@ -120,11 +119,10 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
               { text: 'Cancel', style: 'cancel' },
             ]); }}
             disabled={exporting}
-            className="h-[30px] flex-row items-center gap-1.5 rounded-full px-[11px]"
-            style={{ borderWidth: 1, borderColor: c.border }}
+            className="rounded-full"
           >
             {exporting ? <ActivityIndicator size="small" color={c.muted} /> : <Download size={13} color={c.muted} />}
-            <Text style={{ color: c.fg }}>Export</Text>
+            <Text>Export</Text>
           </Button>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12, gap: 7 }}>
@@ -133,13 +131,12 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
             return (
               <Button
                 key={f.label}
-                variant="ghost"
+                variant={on ? 'secondary' : 'outline'}
                 size="sm"
                 onPress={() => { haptics.selection(); setFilterIndex(i); }}
-                className="h-[30px] justify-center rounded-full px-3"
-                style={{ borderWidth: 1, borderColor: on ? withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.3) : c.border, backgroundColor: on ? c.avatarBg : 'transparent' }}
+                className="rounded-full"
               >
-                <Text style={{ color: on ? c.fg : c.muted }}>{f.label}</Text>
+                <Text>{f.label}</Text>
               </Button>
             );
           })}
@@ -157,7 +154,7 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
         ) : query.isError ? (
           <View style={{ padding: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: destructiveColor(isDark) }}>{(query.error as Error)?.message || 'Failed to load audit events'}</Text>
-            <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); query.refetch(); }} className="h-auto self-start rounded-full px-3.5 py-2" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Retry</Text></Button>
+            <Button variant="outline" size="sm" onPress={() => { haptics.tap(); query.refetch(); }} className="self-start rounded-full"><Text>Retry</Text></Button>
           </View>
         ) : events.length === 0 ? (
           <View style={{ paddingVertical: 48, alignItems: 'center', gap: 4 }}>
@@ -172,15 +169,14 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
             {query.hasNextPage && (
               <View style={{ alignItems: 'center', paddingVertical: 14 }}>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onPress={() => { haptics.tap(); query.fetchNextPage(); }}
                   disabled={query.isFetchingNextPage}
-                  className="h-9 flex-row items-center gap-1.5 rounded-full px-4"
-                  style={{ borderWidth: 1, borderColor: c.border }}
+                  className="rounded-full"
                 >
                   {query.isFetchingNextPage && <ActivityIndicator size="small" color={c.muted} />}
-                  <Text style={{ color: c.fg }}>Load more</Text>
+                  <Text>Load more</Text>
                 </Button>
               </View>
             )}

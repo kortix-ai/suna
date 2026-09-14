@@ -268,15 +268,15 @@ export default function ProjectsTab() {
               </Button>
             )}
             <Button
-              variant="ghost"
+              variant="secondary"
               size="icon"
               onPress={() => {
                 haptics.selection();
                 setAccountMenuOpen(true);
               }}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              className="h-8 w-8 items-center justify-center rounded-full bg-foreground/10 active:bg-foreground/10 active:opacity-85">
-              <Text className="font-semibold text-sm text-foreground">
+              className="rounded-full">
+              <Text>
                 {(user?.email?.trim()?.[0] || '?').toUpperCase()}
               </Text>
             </Button>

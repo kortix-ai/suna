@@ -633,14 +633,13 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
 
                         <View style={{ flexDirection: 'row', gap: 8 }}>
                           {(status.status === 'needs_auth' || status.status === 'needs_client_registration') && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onPress={() => handleMcpAuth(name)}>
+                            <Button variant="ghost" size="icon" onPress={() => handleMcpAuth(name)}>
                               <Icon as={Plug} size={16} color={THEME.accent.orange} />
                             </Button>
                           )}
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
                             onPress={() => {
                               haptics.medium();
                               if (status.status === 'connected') {
@@ -656,7 +655,6 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
                               onPress={() => {
                                 haptics.selection();
                                 const next = new Set(expandedServers);
@@ -703,7 +701,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'mcp' && mcpView === 'add' && (
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                <Button variant="ghost" size="icon" className="h-7 w-7 mr-3" onPress={() => { haptics.tap(); setMcpView('list'); setMcpError(''); }}>
+                <Button variant="ghost" size="icon" className="mr-3" onPress={() => { haptics.tap(); setMcpView('list'); setMcpError(''); }}>
                   <Icon as={X} size={18} color={fg} />
                 </Button>
                 <Text style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Add MCP Server</Text>
@@ -779,7 +777,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                 <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
                   Environment Variables
                 </Text>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onPress={() => { haptics.tap(); setMcpEnvPairs([...mcpEnvPairs, { key: '', value: '' }]); }}>
+                <Button variant="ghost" size="icon" onPress={() => { haptics.tap(); setMcpEnvPairs([...mcpEnvPairs, { key: '', value: '' }]); }}>
                   <Icon as={Plus} size={16} color={theme.primary} />
                 </Button>
               </View>
@@ -801,7 +799,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     secureTextEntry
                     style={{ flex: 1, backgroundColor: inputBg, borderRadius: 10, borderWidth: 1, borderColor, padding: 10, fontSize: 12, fontFamily: 'Roobert', color: fg }}
                   />
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onPress={() => { haptics.medium(); setMcpEnvPairs(mcpEnvPairs.filter((_, j) => j !== i)); }}>
+                  <Button variant="ghost" size="icon" onPress={() => { haptics.medium(); setMcpEnvPairs(mcpEnvPairs.filter((_, j) => j !== i)); }}>
                     <Icon as={Trash2} size={14} color={destructiveColor} />
                   </Button>
                 </View>
@@ -838,7 +836,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'mcp' && mcpView === 'auth' && (
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                <Button variant="ghost" size="icon" className="h-7 w-7 mr-3" onPress={() => { haptics.tap(); setMcpView('list'); }}>
+                <Button variant="ghost" size="icon" className="mr-3" onPress={() => { haptics.tap(); setMcpView('list'); }}>
                   <Icon as={X} size={18} color={fg} />
                 </Button>
                 <Text style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Authorize: {mcpAuthName}</Text>

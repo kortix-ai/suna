@@ -1292,7 +1292,6 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9"
               onPress={handleReconnect}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -1320,9 +1319,9 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
           <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedColor, textAlign: 'center', marginBottom: 16 }}>
             {error}
           </Text>
-          <Button onPress={handleReconnect} className="flex-row items-center rounded-lg px-4 py-2">
+          <Button onPress={handleReconnect}>
             <Ionicons name="refresh-outline" size={14} color={themeColors.primaryForeground} style={{ marginRight: 6 }} />
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: themeColors.primaryForeground }}>Retry</Text>
+            <Text>Retry</Text>
           </Button>
         </View>
       ) : !terminalHtml ? (

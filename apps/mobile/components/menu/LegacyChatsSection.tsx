@@ -78,7 +78,7 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
           size="icon"
           onPress={() => { haptics.tap(); setConfirmOpen(true); }}
           disabled={buttonBusy || !sandboxId}
-          className="h-8 w-8 ml-1"
+          className="ml-1"
           hitSlop={6}
         >
           {migrateDone ? (

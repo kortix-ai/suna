@@ -217,8 +217,7 @@ function SessionControlsCard({ accountId, canManage, isDark }: { accountId: stri
         <Button
           onPress={handleSave}
           disabled={save.isPending}
-          className="h-10 flex-row items-center self-end gap-1.5 rounded-full px-[18px] mt-3"
-          style={{ backgroundColor: theme.primary }}
+          className="self-end rounded-full mt-3"
         >
           {save.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text>Save</Text>
@@ -261,7 +260,7 @@ function SessionRow({ s, label, canManage, pending, isDark, onRevoke }: { s: Act
         <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>{relative(s.last_seen_at)}{s.ip ? ` · ${s.ip}` : ''}</Text>
       </View>
       {canManage && (
-        <Button variant="ghost" size="icon" onPress={onRevoke} disabled={pending} hitSlop={8} className="h-8 w-8 rounded-full">
+        <Button variant="ghost" size="icon" onPress={onRevoke} disabled={pending} hitSlop={8} className="rounded-full">
           <LogOut size={15} color={destructiveColor(isDark)} />
         </Button>
       )}

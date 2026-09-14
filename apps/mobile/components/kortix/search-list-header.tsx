@@ -59,7 +59,7 @@ export function SearchListHeader({
           variant="default"
           size="icon"
           onPress={onAdd}
-          className="h-[42px] w-[42px] rounded-full"
+          className="rounded-full"
         >
           <Icon as={Plus} size={20} className="text-primary-foreground" />
         </Button>

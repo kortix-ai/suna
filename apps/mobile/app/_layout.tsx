@@ -41,6 +41,7 @@ import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 import { useThemeStore } from '@/stores/theme-store';
+import { DEFAULT_THEME_PREFERENCE, parseThemePreference } from '@/stores/theme-preference';
 import { installHapticsGate } from '@/lib/haptics';
 import { configureKortix } from '@kortix/sdk';
 import { API_URL, getAuthToken } from '@/api/config';
@@ -141,17 +142,11 @@ export default function RootLayout() {
         if (!isMounted) return;
 
         themeLoadedRef.current = true;
-
-        if (saved === 'system' || saved === 'dark' || saved === 'light') {
-          setColorScheme(saved);
-        } else if (!colorScheme) {
-          setColorScheme('light');
-        }
+        // No saved choice → light mode (DEFAULT_THEME_PREFERENCE).
+        setColorScheme(parseThemePreference(saved));
       } catch {
         if (!isMounted) return;
-        if (!colorScheme) {
-          setColorScheme('light');
-        }
+        setColorScheme(DEFAULT_THEME_PREFERENCE);
       }
     };
 

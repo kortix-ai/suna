@@ -147,22 +147,14 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
 
           {/* Save */}
           <Button
-            variant="ghost"
+            size="lg"
             onPress={handleSave}
             disabled={rename.isPending}
-            className="h-auto items-center justify-center rounded-full active:bg-transparent active:opacity-70"
-            style={{
-              paddingVertical: 14,
-              backgroundColor: theme.primary,
-            }}>
+            className="rounded-full">
             {rename.isPending ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
             ) : (
-              <Text
-                className="font-roobert-medium text-[15px]"
-                style={{ color: theme.primaryForeground }}>
-                Save
-              </Text>
+              <Text>Save</Text>
             )}
           </Button>
         </BottomSheetView>

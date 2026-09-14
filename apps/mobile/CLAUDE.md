@@ -7,7 +7,7 @@ styling inline. If a primitive is missing a capability, extend the primitive
 
 `components/ui/` is unmodified React Native Reusables (RNR) registry output —
 32 files, no barrel, no capitalized filenames. `components/kortix/` is
-Kortix-specific: 19 files, built on top of `components/ui/`. **There is no
+Kortix-specific: 20 files, built on top of `components/ui/`. **There is no
 `@/components/ui` barrel.** Import direct paths only, e.g.
 `@/components/ui/button`, `@/components/kortix/avatar`.
 
@@ -48,7 +48,7 @@ Kortix-specific: 19 files, built on top of `components/ui/`. **There is no
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
 
-## Kortix-specific components — `components/kortix/` (19 files)
+## Kortix-specific components — `components/kortix/` (20 files)
 
 | File | Purpose |
 | --- | --- |
@@ -56,6 +56,7 @@ Kortix-specific: 19 files, built on top of `components/ui/`. **There is no
 | `ThreadAvatar.tsx` | Thin wrapper around `kortix/avatar` for thread rows. |
 | `sheet.tsx` | `<Sheet>` bottom-sheet wrapper + `SheetHeader`/`SheetBody`/`SheetFooter`, and the shared gorhom chrome — `SheetBackdrop`, `sheetHandleIndicatorStyle(isDark)`, `useSheetBackground()`. See **Bottom sheets** invariant below. |
 | `SheetInput.tsx` | Canonical pill text field for inside a bottom sheet (wraps gorhom's `BottomSheetTextInput`). |
+| `pill-input.tsx` | `PillInput` — the same pill on a plain `TextInput`, for full screens outside a sheet (the auth forms). Forwards its ref. Exports `usePillInputStyle`, the one source of the pill's look for both fields. |
 | `KortixLogo.tsx` | Brand mark / wordmark, light and dark SVG variants. |
 | `SearchBar.tsx` | Standalone search input with clear button. |
 | `search-list-header.tsx` | "Search input + add button" row under `PageHeader` on list pages. |
@@ -115,15 +116,19 @@ children.
   `black` — do not reintroduce them.
 - Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `icon` (`h-10 w-10`).
 
-**Gotcha — `size` never changes text size.** `buttonTextVariants` in
-`components/ui/button.tsx:56` declares both a `variant` key and a `size` key,
-but every `size` entry (`default`/`sm`/`lg`/`icon`) maps to `''`. The `size`
-passed at line 95 changes the box (height/width/padding) but has zero effect
-on the label — every button renders `text-sm` (14px) at every size. Do not
-"fix" this with a `className` text override on the button or its `<Text>`
-child — that forks the primitive. If a screen genuinely needs a bigger label
-on a large button, that is a real gap in the primitive; extend
-`buttonTextVariants` itself (and update every consumer), don't patch around it.
+**No sizing classes on a Button.** Never pass a height, width, padding, or
+text size/weight in a `Button`'s `className` (`h-14`, `h-[46px]`, `px-1`,
+`text-base`), or on its `<Text>` child. Pick `size` and `variant`. Allowed:
+layout-only classes (`mt-*`, `flex-1`, `self-*`) and `rounded-full` for a pill
+(e.g. the auth screen's provider buttons).
+
+**Label size follows `size`.** `buttonTextVariants` in
+`components/ui/button.tsx` maps `size="lg"` to `text-base font-semibold`
+(16px Roobert SemiBold). `default`, `sm`, and `icon` keep stock `text-sm
+font-medium`. A `<Text variant="large">` inside a Button does nothing: `Text`
+merges `cn(textVariants, TextClassContext, className)`, so the button context
+overrides the variant's size and weight. If a screen needs a different label,
+change `buttonTextVariants` (and check every consumer), don't patch around it.
 
 ## Input / Textarea
 
@@ -133,6 +138,10 @@ on a large button, that is a real gap in the primitive; extend
   focus-chaining keeps a raw `TextInput` for that field and says why in a
   comment; do not silently drop the chaining.
 - `<Textarea>` — multiline field, same non-`forwardRef` caveat applies.
+- For a pill field on a full screen (44pt, matches `Button size="lg"`), use
+  `@/components/kortix/pill-input` → `<PillInput>`. It forwards its ref, so
+  it supports focus-chaining. `BottomSheetTextInput` throws outside a sheet,
+  so never reuse `SheetTextInput` there.
 - Inside a bottom sheet, use `@/components/kortix/SheetInput` instead — it
   wraps gorhom's `BottomSheetTextInput` so the keyboard behaves correctly.
 
@@ -285,11 +294,13 @@ that drops props silently breaks the screens that still pass them.
    The permanent record of what deviates is `scratchpad/rnr-fork-delta.md`,
    which IS tracked — that file, not the captures, is the source of truth.
 
-   Exactly two files may differ, both recorded in `rnr-fork-delta.md`:
+   Exactly three files may differ, all recorded in `rnr-fork-delta.md`:
    `text.tsx` (adds `font-roobert` to the base class — 164 importers depend on
-   it, and React Native cannot synthesize the family) and
+   it, and React Native cannot synthesize the family),
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
-   reproduces against stock). A third entry means someone forked a primitive.
+   reproduces against stock), and `button.tsx` (`size="lg"` label is
+   `text-base font-semibold`, so no screen sets label or box size by class).
+   A fourth entry means someone forked a primitive.
 2. `global.css` is the single source of color (see **Color** above),
    pinned by `lib/utils/theme.test.ts`.
 3. Mobile spacing intentionally diverges from web's tighter scale (see

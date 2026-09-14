@@ -8,10 +8,14 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { haptics } from '@/lib/haptics';
 import { getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { useThemeStore } from '@/stores/theme-store';
+import {
+  DEFAULT_THEME_PREFERENCE,
+  parseThemePreference,
+  type ThemePreference,
+} from '@/stores/theme-preference';
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
-
-type ThemePreference = 'light' | 'dark' | 'system';
 
 const COLOR_MODES: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -21,25 +25,19 @@ const COLOR_MODES: { value: ThemePreference; label: string; icon: typeof Sun }[]
 
 export default function AppearanceScreen() {
   const insets = useSafeAreaInsets();
-  const { colorScheme, setColorScheme } = useColorScheme();
+  const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   const [isLoaded, setIsLoaded] = React.useState(false);
-  const [modePreference, setModePreference] = React.useState<ThemePreference>('light');
+  const [modePreference, setModePreference] = React.useState<ThemePreference>(DEFAULT_THEME_PREFERENCE);
 
   React.useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         const savedMode = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
-
         if (!mounted) return;
-
-        if (savedMode === 'light' || savedMode === 'dark' || savedMode === 'system') {
-          setModePreference(savedMode);
-        } else {
-          setModePreference(colorScheme === 'dark' ? 'dark' : 'light');
-        }
+        setModePreference(parseThemePreference(savedMode));
       } finally {
         if (mounted) {
           setIsLoaded(true);
@@ -50,7 +48,7 @@ export default function AppearanceScreen() {
     return () => {
       mounted = false;
     };
-  }, [colorScheme]);
+  }, []);
 
   const handleModeSelect = React.useCallback(
     async (mode: ThemePreference) => {
@@ -58,10 +56,11 @@ export default function AppearanceScreen() {
 
       haptics.selection();
       setModePreference(mode);
-      setColorScheme(mode);
-      await AsyncStorage.setItem(THEME_PREFERENCE_KEY, mode);
+      // Route through the theme store: it persists AND applies the scheme to
+      // NativeWind, so the account-menu pills and resolvedTheme stay in sync.
+      await useThemeStore.getState().setPreference(mode);
     },
-    [modePreference, setColorScheme],
+    [modePreference],
   );
 
   if (!isLoaded) {

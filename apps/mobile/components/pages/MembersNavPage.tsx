@@ -166,8 +166,6 @@ function CardHeader({ title, description, count, isDark, action }: { title: stri
 }
 
 function RolePills({ value, onChange, isDark, disabled }: { value: ProjectRole; onChange: (r: ProjectRole) => void; isDark: boolean; disabled?: boolean }) {
-  const c = useColors(isDark);
-  const theme = useThemeColors();
   return (
     <View style={{ flexDirection: 'row', gap: 8 }}>
       {ROLES.map((r) => {
@@ -175,13 +173,12 @@ function RolePills({ value, onChange, isDark, disabled }: { value: ProjectRole; 
         return (
           <Button
             key={r}
-            variant="ghost"
+            variant={active ? 'secondary' : 'outline'}
             onPress={() => { if (disabled) return; haptics.tap(); onChange(r); }}
             disabled={disabled}
             className="flex-1 rounded-full"
-            style={{ borderWidth: 1, borderColor: active ? theme.primary : c.border, backgroundColor: active ? theme.primaryLight : 'transparent', opacity: disabled ? 0.5 : 1 }}
           >
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: active ? c.fg : c.muted }}>{ROLE_DESC[r].label}</Text>
+            <Text>{ROLE_DESC[r].label}</Text>
           </Button>
         );
       })}
@@ -233,9 +230,9 @@ function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean 
         />
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 14, marginBottom: 8 }}>Role</Text>
         <RolePills value={role} onChange={setRole} isDark={isDark} disabled={invite.isPending} />
-        <Button onPress={submit} disabled={!canSubmit} className="mt-3.5 h-[46px] flex-row items-center justify-center gap-2 rounded-full" style={{ backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
+        <Button size="lg" onPress={submit} disabled={!canSubmit} className="mt-3.5 rounded-full">
           {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Icon as={UserPlus} size={15} color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Invite</Text>
+          <Text>Invite</Text>
         </Button>
       </View>
     </View>
@@ -306,10 +303,10 @@ function PendingInvitesCard({ projectId, isDark }: { projectId: string; isDark: 
                   <ActivityIndicator size="small" color={c.muted} />
                 ) : (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <Button variant="outline" size="icon" className="h-[34px] w-[34px] rounded-full" onPress={() => onResend(inv.invite_id)} hitSlop={6} style={{ borderColor: c.border }}>
+                    <Button variant="outline" size="icon" className="rounded-full" onPress={() => onResend(inv.invite_id)} hitSlop={6}>
                       <Icon as={RefreshCw} size={14} color={c.muted} />
                     </Button>
-                    <Button variant="outline" size="icon" className="h-[34px] w-[34px] rounded-full" onPress={() => onRevoke(inv.invite_id, inv.email)} hitSlop={6} style={{ borderColor: withAlpha(c.destructive, 0.35) }}>
+                    <Button variant="outline" size="icon" className="rounded-full" onPress={() => onRevoke(inv.invite_id, inv.email)} hitSlop={6}>
                       <Icon as={X} size={14} color={c.destructive} />
                     </Button>
                   </View>
@@ -344,8 +341,8 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
       ) : accessQuery.isError ? (
         <View style={{ paddingVertical: 12, gap: 10 }}>
           <Text style={{ fontSize: 13, color: c.destructive }}>{(accessQuery.error as Error)?.message || 'Failed to load access'}</Text>
-          <Button variant="outline" size="sm" className="self-start rounded-full" onPress={() => accessQuery.refetch()} style={{ borderColor: c.border }}>
-            <Text style={{ fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text>
+          <Button variant="outline" size="sm" className="self-start rounded-full" onPress={() => accessQuery.refetch()}>
+            <Text>Retry</Text>
           </Button>
         </View>
       ) : (
@@ -419,9 +416,9 @@ function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, on
         count={grants.length}
         isDark={isDark}
         action={canManage ? (
-          <Button variant="outline" size="sm" className="h-[34px] flex-row items-center gap-1.5 rounded-full" onPress={() => { haptics.tap(); onAttach(); }} style={{ borderColor: theme.primary }}>
+          <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); onAttach(); }}>
             <Icon as={UserPlus} size={13} color={theme.primary} />
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primary }}>Attach</Text>
+            <Text style={{ color: theme.primary }}>Attach</Text>
           </Button>
         ) : undefined}
       />
@@ -465,12 +462,11 @@ function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, on
 
 function SheetHeader({ title, onClose, isDark, leading }: { title: string; onClose: () => void; isDark: boolean; leading?: React.ReactNode }) {
   const c = useColors(isDark);
-  const closeBg = withAlpha(c.fg, isDark ? 0.05 : 0.04);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
       {leading}
       <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{title}</Text>
-      <Button variant="ghost" size="icon" className="h-[30px] w-[30px] rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ backgroundColor: closeBg }}>
+      <Button variant="secondary" size="icon" className="rounded-full" onPress={() => { haptics.tap(); onClose(); }} hitSlop={8}>
         <Icon as={X} size={17} color={c.muted} />
       </Button>
     </View>
@@ -579,9 +575,9 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
                 </View>
               ))}
             </View>
-            <Button variant="outline" onPress={doRevoke} disabled={busy} className="mt-4 h-[46px] flex-row items-center justify-center gap-2 rounded-full" style={{ borderColor: withAlpha(c.destructive, 0.4) }}>
+            <Button size="lg" variant="outline" onPress={doRevoke} disabled={busy} className="mt-4 rounded-full">
               {revoke.isPending ? <ActivityIndicator size="small" color={c.destructive} /> : <Icon as={Trash2} size={15} color={c.destructive} />}
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.destructive }}>Revoke access</Text>
+              <Text style={{ color: c.destructive }}>Revoke access</Text>
             </Button>
           </>
         )}
@@ -642,9 +638,9 @@ function AttachGroupSheet({ projectId, accountId, attachedIds, onClose, isDark }
       </BottomSheetScrollView>
       {available.length > 0 && (
         <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
-          <Button onPress={submit} disabled={!canSubmit} className="h-12 flex-row items-center justify-center gap-2 rounded-full" style={{ backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
+          <Button size="lg" onPress={submit} disabled={!canSubmit} className="rounded-full">
             {attach.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Attach group</Text>
+            <Text>Attach group</Text>
           </Button>
         </View>
       )}
@@ -689,9 +685,9 @@ function GrantSheet({ projectId, grant, onClose, isDark }: { projectId: string; 
             </View>
           ))}
         </View>
-        <Button variant="outline" onPress={doDetach} disabled={busy} className="mt-4 h-[46px] flex-row items-center justify-center gap-2 rounded-full" style={{ borderColor: withAlpha(c.destructive, 0.4) }}>
+        <Button size="lg" variant="outline" onPress={doDetach} disabled={busy} className="mt-4 rounded-full">
           {detach.isPending ? <ActivityIndicator size="small" color={c.destructive} /> : <Icon as={Trash2} size={15} color={c.destructive} />}
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.destructive }}>Detach group</Text>
+          <Text style={{ color: c.destructive }}>Detach group</Text>
         </Button>
       </BottomSheetScrollView>
     </View>

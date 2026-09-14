@@ -67,8 +67,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
             <Button
               size="sm"
               onPress={() => { haptics.tap(); createRef.current?.present(); }}
-              className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
-              style={{ backgroundColor: theme.primary }}
+              className="rounded-full"
             >
               <Plus size={14} color={theme.primaryForeground} />
               <Text>Create</Text>
@@ -88,7 +87,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
         ) : query.isError ? (
           <View style={{ paddingVertical: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: destructiveColor(isDark) }}>{(query.error as Error)?.message || 'Failed to load groups'}</Text>
-            <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); query.refetch(); }} className="h-auto self-start rounded-full px-3.5 py-2" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Retry</Text></Button>
+            <Button variant="outline" size="sm" onPress={() => { haptics.tap(); query.refetch(); }} className="self-start rounded-full"><Text>Retry</Text></Button>
           </View>
         ) : filtered.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 36, gap: 10 }}>
@@ -112,7 +111,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
                   </Text>
                 </View>
                 {canCreate && (busyId === g.group_id ? <ActivityIndicator size="small" color={c.muted} /> : (
-                  <Button variant="ghost" size="icon" onPress={() => { haptics.tap(); confirmDelete(g.group_id, g.name); }} hitSlop={8} className="h-8 w-8 rounded-full"><Trash2 size={14} color={destructiveColor(isDark)} /></Button>
+                  <Button variant="ghost" size="icon" onPress={() => { haptics.tap(); confirmDelete(g.group_id, g.name); }} hitSlop={8} className="rounded-full"><Trash2 size={14} color={destructiveColor(isDark)} /></Button>
                 ))}
                 <ChevronRight size={16} color={c.muted} />
               </Pressable>

@@ -77,7 +77,7 @@ const buttonTextVariants = cva(
       size: {
         default: '',
         sm: '',
-        lg: '',
+        lg: 'text-base font-semibold',
         icon: '',
       },
     },

@@ -97,8 +97,7 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
             size="sm"
             onPress={handleConnect}
             disabled={connecting}
-            className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
-            style={{ backgroundColor: theme.primary }}
+            className="rounded-full"
           >
             {connecting ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Github size={14} color={theme.primaryForeground} />}
             <Text>{connecting ? 'Connecting' : 'Connect'}</Text>
@@ -146,24 +145,22 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                     {inst.installation_url && (
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         onPress={() => { haptics.tap(); Linking.openURL(inst.installation_url!); }}
-                        className="h-8 flex-row items-center gap-1.5 rounded-full px-3"
-                        style={{ borderWidth: 1, borderColor: c.border }}
+                        className="rounded-full"
                       >
                         <ExternalLink size={13} color={c.muted} />
-                        <Text style={{ color: c.fg }}>Configure</Text>
+                        <Text>Configure</Text>
                       </Button>
                     )}
                     {canManage && id && (
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         onPress={() => { haptics.tap(); confirmDisconnect(id, inst.owner_login); }}
                         disabled={disconnect.isPending}
-                        className="h-8 flex-row items-center gap-1.5 rounded-full px-3"
-                        style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.4) }}
+                        className="rounded-full"
                       >
                         {disconnect.isPending ? <ActivityIndicator size="small" color={destructiveColor(isDark)} /> : <Unplug size={13} color={destructiveColor(isDark)} />}
                         <Text style={{ color: destructiveColor(isDark) }}>Disconnect</Text>

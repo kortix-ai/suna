@@ -102,12 +102,11 @@ function CommandBlock({ lines, isDark }: { lines: string[]; isDark: boolean }) {
         </View>
       </ScrollView>
       <Button
-        variant="ghost"
+        variant="secondary"
         size="icon"
         onPress={copy}
         hitSlop={8}
-        className="absolute top-2 right-2 h-[30px] w-[30px] rounded-full"
-        style={{ backgroundColor: withAlpha(fg, isDark ? 0.06 : 0.04) }}
+        className="absolute top-2 right-2 rounded-full"
       >
         <Icon as={copied ? Check : Copy} size={copied ? 15 : 14} color={copied ? theme.primary : muted} />
       </Button>
@@ -120,10 +119,7 @@ function CommandBlock({ lines, isDark }: { lines: string[]; isDark: boolean }) {
 function LauncherChip({ label, command, isDark }: { label: string; command: string; isDark: boolean }) {
   const [copied, setCopied] = useState(false);
   const theme = useThemeColors();
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = withAlpha(fg, 0.1);
-  const bg = withAlpha(fg, isDark ? 0.03 : 0.025);
 
   const copy = async () => {
     haptics.tap();
@@ -136,11 +132,10 @@ function LauncherChip({ label, command, isDark }: { label: string; command: stri
     <Button
       variant="outline"
       onPress={copy}
-      className="h-[38px] flex-row items-center gap-2 rounded-full pl-3 pr-[11px]"
-      style={{ borderColor: border, backgroundColor: bg }}
+      className="rounded-full"
     >
-      <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: fg }}>{label}</Text>
-      <Text style={{ fontSize: 11.5, fontFamily: MONO, color: muted }}>{command}</Text>
+      <Text>{label}</Text>
+      <Text style={{ fontFamily: MONO }}>{command}</Text>
       <Icon as={copied ? Check : Copy} size={copied ? 14 : 13} color={copied ? theme.primary : muted} />
     </Button>
   );
@@ -189,13 +184,13 @@ function RepoAccessForm({ projectId, isDark }: { projectId: string; isDark: bool
         />
       </View>
       <Button
+        size="lg"
         onPress={() => { haptics.tap(); invite.mutate(); }}
         disabled={!canSubmit}
-        className="h-11 flex-row items-center gap-1.5 rounded-full px-3.5"
-        style={{ backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}
+        className="rounded-full"
       >
         {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Icon as={UserPlus} size={14} color={theme.primaryForeground} />}
-        <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add me</Text>
+        <Text>Add me</Text>
       </Button>
     </View>
   );
@@ -242,7 +237,6 @@ export function DevPage({
   const bgColor = isDark ? THEME.dark.background : THEME.light.background;
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = withAlpha(fg, 0.08);
   const chipBg = withAlpha(fg, isDark ? 0.06 : 0.05);
   const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
@@ -275,9 +269,8 @@ export function DevPage({
                 size="sm"
                 onPress={() => { haptics.tap(); refetch(); }}
                 className="self-start rounded-full"
-                style={{ borderColor: border }}
               >
-                <Text style={{ fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
+                <Text>Retry</Text>
               </Button>
             </View>
           ) : project ? (
