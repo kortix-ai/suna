@@ -15,13 +15,13 @@ const projectIndexPage = source('../../../app/(app)/projects/[id]/page.tsx');
 const projectSessionPage = source('../../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 
 describe('existing project session composer runtime contract', () => {
-  test('locks compiled selectors and gates attachments on the running worker capability', () => {
+  test('allows saved Pi model changes, locks the agent and gates attachments on the worker capability', () => {
     expect(sessionChat).toContain(
       'onAgentChange={runtimePromptOverridesAllowed ? handleAgentChange : undefined}',
     );
     expect(sessionChat).toContain('agentSelectorLocked={!runtimePromptOverridesAllowed}');
     expect(sessionChat).toContain(
-      'onModelChange={runtimePromptOverridesAllowed ? handleModelChange : undefined}',
+      'onModelChange={runtimePromptOverridesAllowed || isPiWorkerSession ? handleModelChange : undefined}',
     );
     expect(sessionChat).toContain(
       'onVariantChange={runtimeReasoningAllowed ? handleVariantChange : undefined}',

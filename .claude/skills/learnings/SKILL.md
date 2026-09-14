@@ -6315,3 +6315,10 @@ channel guarantee, honest denials, ten calls after a mid-session add).
 ## Pi pinned manifests are authoritative, even at older commits (2026-09-10)
 
 A merge with the grant provenance guard treated an intentionally pinned Pi commit as a stale mirror read. This could retain a token grant from a newer, broader manifest. Skip the moving-branch ancestry guard for immutable Pi identities. Continue failing closed when the pinned manifest cannot be read. `session-token-grant-provenance.test.ts` verifies pinned narrowing and unreadable pinned manifests.
+
+### Derive new worker endpoints from persisted runtime identity (2026-09-14)
+
+**When:** adding a control-plane endpoint to a worker that supports stop/resume.
+**Incident:** preview `1877cccc43` upgraded the worker code but retained its original environment. The missing model endpoint kept live model selection disabled.
+**Rule:** derive additive endpoint URLs from existing API, project, and session identity when the new variable is absent. Test an existing worker through stop/resume, not only a fresh sandbox.
+**Enforcer:** `session-model.test.ts` covers the legacy environment fallback. The preview model-switch check starts its session on the preceding worker build.

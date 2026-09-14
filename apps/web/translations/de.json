@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "Modell für neue Eingaben gespeichert. Bereits angenommene Eingaben behalten ihr Modell.",
+    "changeFailed": "Das Modell konnte nicht geändert werden",
     "search": "Modelle suchen",
     "free": "Kostenlos",
     "addProvider": "Anbieter hinzufügen",

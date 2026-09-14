@@ -1,6 +1,6 @@
 import { AttachmentInputError, SessionAttachmentStore, attachmentDigest, attachmentUserContent, type PromptAttachment } from './session-attachments.ts';
 import { parseWorkerModelLimits, type WorkerModelLimits } from './model-limits';
-import { applySessionModelLimits, parseSessionModelSelection, readSessionModelSelection, type SessionModelSelection } from './session-model';
+import { sessionModelConfigUrl, applySessionModelLimits, parseSessionModelSelection, readSessionModelSelection, type SessionModelSelection } from './session-model';
 import { installCustomAgent } from './custom-agent.ts';
 import { applyGenerationSettings, applyReasoningVariant, supportedReasoningVariants } from './generation-settings.ts';
 import { applyAgentSteps } from './agent-steps.ts';
@@ -519,7 +519,7 @@ export function configFromEnv(): WorkerConfig {
     providerId: process.env.KORTIX_PROVIDER ?? 'openrouter',
     modelId: process.env.KORTIX_MODEL,
     modelLimits: parseWorkerModelLimits(process.env.KORTIX_MODEL_LIMITS),
-    modelConfigUrl: process.env.KORTIX_MODEL_CONFIG_URL,
+    modelConfigUrl: sessionModelConfigUrl(process.env),
     fauxScript: mode === 'faux' ? parseFauxScript(process.env.KORTIX_FAUX_SCRIPT) : undefined,
     // The platform injects the session credential and the gateway base under
     // its OWN names (KORTIX_TOKEN / KORTIX_LLM_BASE_URL, see
@@ -1200,7 +1200,7 @@ export async function buildHarness(cfg: WorkerConfig) {
       };
       let summary: Awaited<ReturnType<typeof summarizeContext>>;
       try {
-        summary = await summarizeContext(entries, models, model, controller.signal);
+        summary = await summarizeContext(entries, models, model, controller.signal, { preserveActiveTurn: userMessage.kortixCompactionAuto === true });
       } catch (error) {
         return failCompaction(error);
       }

@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "Model je sačuvan za nove zahteve. Već prihvaćeni zahtevi zadržavaju svoj model.",
+    "changeFailed": "Nije moguće promeniti model",
     "search": "Претражи моделе",
     "free": "Бесплатно",
     "addProvider": "Додај добављача",

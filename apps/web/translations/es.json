@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "Modelo guardado para nuevas solicitudes. Las solicitudes ya aceptadas conservan su modelo.",
+    "changeFailed": "No se pudo cambiar el modelo",
     "search": "Buscar modelos",
     "free": "Gratis",
     "addProvider": "Añadir proveedor",

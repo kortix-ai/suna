@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "新しいリクエストに使用するモデルを保存しました。受け付け済みのリクエストは元のモデルを使用します。",
+    "changeFailed": "モデルを変更できませんでした",
     "search": "モデルを検索",
     "free": "無料",
     "addProvider": "プロバイダーを追加",

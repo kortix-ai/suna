@@ -63,3 +63,9 @@ export function applySessionModelLimits(model: any, selection: SessionModelSelec
   }
   return result;
 }
+
+export function sessionModelConfigUrl(env: Record<string, string | undefined>): string | undefined {
+  if (env.KORTIX_MODEL_CONFIG_URL) return env.KORTIX_MODEL_CONFIG_URL;
+  if (!env.KORTIX_API_URL || !env.KORTIX_PROJECT_ID || !env.KORTIX_SESSION_ID) return undefined;
+  return `${env.KORTIX_API_URL.replace(/\/+$/, '')}/projects/${encodeURIComponent(env.KORTIX_PROJECT_ID)}/sessions/${encodeURIComponent(env.KORTIX_SESSION_ID)}/model`;
+}

@@ -3892,6 +3892,7 @@ describe('durable context compaction', () => {
       fauxAssistantMessage('OVERFLOW_SUMMARY: read completed exactly once, report cobalt.'),
       ctx => {
         expect(JSON.stringify(ctx.messages)).toContain('OVERFLOW_SUMMARY');
+        expect(ctx.messages.at(-1)).toMatchObject({ role: 'toolResult', toolName: 'overflow_read', content: [{ type: 'text', text: 'cobalt read completed' }] });
         return fauxAssistantMessage('Recovered cobalt.');
       },
     ]);

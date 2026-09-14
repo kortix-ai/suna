@@ -32,7 +32,7 @@ test('skips models that have no valid context limit', () => {
   }
 });
 
-test('summarizes an oversized retained tool batch with its file metadata and no remaining tool payload', async () => {
+test.each([false, true])('summarizes an oversized retained tool batch without retaining its payload, automatic=%s', async preserveActiveTurn => {
   const provider = fauxProvider({ provider: 'retention-test' });
   const models = createModels();
   models.setProvider(provider.provider);
@@ -49,7 +49,7 @@ test('summarizes an oversized retained tool batch with its file metadata and no 
     expect(text.includes('cobalt')).toBe(true);
     return fauxAssistantMessage('The report contains cobalt.');
   }]);
-  const result = await summarizeContext(entries, models, selected, new AbortController().signal);
+  const result = await summarizeContext(entries, models, selected, new AbortController().signal, { preserveActiveTurn });
   expect(result.retainedTail).toEqual([]);
   expect(result.summary).toContain('The report contains cobalt.');
   expect(result.details).toEqual({ readFiles: [], modifiedFiles: ['/workspace/report.txt'] });
@@ -65,4 +65,20 @@ test('retained assistant usage from before compaction cannot trigger another ful
   const context = compactedModelContext([shown], entries);
   expect(contextNeedsCompaction(context, user('Continue.'), model, '', [])).toBe(false);
   expect(assistant.usage.input).toBe(120000);
+});
+
+test('automatic recovery retains a completed current tool batch even when short history is fully summarized', async () => {
+  const provider = fauxProvider({ provider: 'active-tail-test' });
+  const models = createModels();
+  models.setProvider(provider.provider);
+  const current: AgentMessage[] = [
+    user('Increment exactly once and report the count.'),
+    fauxAssistantMessage([fauxToolCall('increment', {}, { id: 'increment-once' })], { stopReason: 'toolUse' }),
+    { role: 'toolResult', toolCallId: 'increment-once', toolName: 'increment', content: [{ type: 'text', text: 'count=2' }], isError: false, timestamp: 2 },
+  ];
+  const messages: AgentMessage[] = [user('Remember cobalt.'), fauxAssistantMessage('Remembered.'), ...current];
+  const entries = messages.map((message, seq) => ({ type: 'message', id: String(seq), parentId: seq ? String(seq - 1) : null, seq, timestamp: seq, message })) as Entry[];
+  provider.setResponses([fauxAssistantMessage('Remember cobalt. The increment completed and returned 2.')]);
+  const result = await summarizeContext(entries, models, provider.getModel(), new AbortController().signal, { preserveActiveTurn: true });
+  expect(result.retainedTail).toEqual(current);
 });

@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "已保存新请求使用的模型。已接受的请求将继续使用原来的模型。",
+    "changeFailed": "无法更改模型",
     "search": "搜索模型",
     "free": "免费",
     "addProvider": "添加提供商",

@@ -36,3 +36,11 @@ test('configuration responses cannot redirect authentication or silently select 
     expect(await readSessionModelSelection(server.url.toString(), 'fixture')).toBeNull();
   } finally { server.stop(true); }
 });
+
+test('an upgraded worker derives model configuration from its existing session identity', async () => {
+  const { sessionModelConfigUrl } = await import('./session-model');
+  expect(sessionModelConfigUrl({ KORTIX_API_URL: 'https://api.test/v1/', KORTIX_PROJECT_ID: 'project', KORTIX_SESSION_ID: 'session' }))
+    .toBe('https://api.test/v1/projects/project/sessions/session/model');
+  expect(sessionModelConfigUrl({ KORTIX_MODEL_CONFIG_URL: 'https://fixture.test/model' })).toBe('https://fixture.test/model');
+  expect(sessionModelConfigUrl({ KORTIX_API_URL: 'https://api.test/v1' })).toBeUndefined();
+});

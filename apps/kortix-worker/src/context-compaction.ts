@@ -104,12 +104,22 @@ export async function summarizeContext(
   models: Models,
   model: Model<Api>,
   signal: AbortSignal,
+  options: { preserveActiveTurn?: boolean } = {},
 ) {
   const context = buildSessionContext(entries).messages;
   const tokens = context.reduce(
     (total, message) => total + estimateTokens(message),
     0,
   );
+  const retainActiveTurn = <T extends { retainedTail: AgentMessage[] }>(result: T): T => {
+    if (!options.preserveActiveTurn || result.retainedTail.length || context.at(-1)?.role !== 'toolResult') return result;
+    const start = context.findLastIndex(message => message.role === 'user');
+    if (start < 0) return result;
+    const active = context.slice(start);
+    const budget = Math.min(16000, Math.floor(model.contextWindow / 4));
+    if (active.reduce((total, message) => total + estimateTokens(message), 0) > budget) return result;
+    return { ...result, retainedTail: active };
+  };
   const prepared = prepareCompaction(entries, {
     enabled: true,
     reserveTokens: Math.min(
@@ -174,15 +184,15 @@ export async function summarizeContext(
     for (const kind of ['read', 'written', 'edited'] as const) {
       for (const path of preparation.fileOps[kind]) allFileOps[kind].add(path);
     }
-    return recoverCompactionOverflow(
+    return retainActiveTurn(await recoverCompactionOverflow(
       { ...preparation, fileOps: allFileOps },
       summaryModels,
       model,
       signal,
-    );
+    ));
   }
   signal.throwIfAborted();
   if (!result.value.summary.trim())
     throw new Error("The model returned an empty compaction summary");
-  return result.value;
+  return retainActiveTurn(result.value);
 }

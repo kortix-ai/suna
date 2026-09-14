@@ -2008,6 +2008,7 @@ export function SessionChat({
   deferComposerFocus,
 }: SessionChatProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tModelSelector = useTranslations('modelSelector');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
   const onboardingSessionId = useOnboardingModeStore((s) => s.sessionId);
   const disableToolNavigation = onboardingActive && onboardingSessionId === sessionId;
@@ -4896,10 +4897,10 @@ export function SessionChat({
       if (!isPiWorkerSession) { local.model.set(m ?? undefined, { recent: true }); return; }
       if (!m || local.model.isChanging) return;
       void local.model.change(m).then(() => {
-        infoToast('Model saved for new prompts. Accepted prompts keep their model.');
-      }).catch((error: Error) => errorToast(error.message || 'Could not change the model'));
+        infoToast(tModelSelector('savedForNewPrompts'));
+      }).catch((error: Error) => errorToast(error.message || tModelSelector('changeFailed')));
     },
-    [isPiWorkerSession, local.model],
+    [isPiWorkerSession, local.model, tModelSelector],
   );
 
   // Only the ACCOUNT default is settable from the picker now — it is the one

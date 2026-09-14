@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "Model saved for new prompts. Accepted prompts keep their model.",
+    "changeFailed": "Could not change the model",
     "search": "Search models",
     "free": "Free",
     "addProvider": "Add provider",
